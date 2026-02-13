@@ -1,0 +1,35 @@
+[Unit]
+Description=Wood Fired Bugs Task Tracker
+After=network.target
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=stuart
+Group=stuart
+WorkingDirectory=/opt/wood-fired-bugs
+EnvironmentFile=/opt/wood-fired-bugs/.env
+ExecStart=/usr/bin/node /opt/wood-fired-bugs/dist/api/start.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/opt/wood-fired-bugs/data /opt/wood-fired-bugs/backups
+
+# Graceful shutdown
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Logging to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wood-fired-bugs
+
+[Install]
+WantedBy=multi-user.target
