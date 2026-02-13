@@ -13,6 +13,30 @@ export function isJsonMode(): boolean {
 }
 
 /**
+ * Determines if ANSI color codes should be used in output.
+ *
+ * Respects NO_COLOR env var per https://no-color.org standard.
+ * Returns false if:
+ * - NO_COLOR environment variable is set (any value)
+ * - --json flag is present (JSON mode implies no colors)
+ *
+ * @returns true if colors should be used, false otherwise
+ */
+export function shouldUseColor(): boolean {
+  // NO_COLOR env var takes precedence (standard: any value = disable)
+  if (process.env.NO_COLOR !== undefined) {
+    return false;
+  }
+
+  // JSON mode should never have colors
+  if (isJsonMode()) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Strip ANSI color codes from text if in JSON mode.
  *
  * @param text - Text that may contain ANSI codes
@@ -31,10 +55,10 @@ export function stripAnsiIfJsonMode(text: string): string {
 /**
  * Color-code task status values.
  *
- * Returns plain text in JSON mode, colored text in terminal mode.
+ * Returns plain text in JSON mode or when NO_COLOR is set, colored text in terminal mode.
  */
 export function formatStatus(status: string): string {
-  if (isJsonMode()) {
+  if (!shouldUseColor()) {
     return status;
   }
   switch (status) {
@@ -56,10 +80,10 @@ export function formatStatus(status: string): string {
 /**
  * Color-code task priority values.
  *
- * Returns plain text in JSON mode, colored text in terminal mode.
+ * Returns plain text in JSON mode or when NO_COLOR is set, colored text in terminal mode.
  */
 export function formatPriority(priority: string): string {
-  if (isJsonMode()) {
+  if (!shouldUseColor()) {
     return priority;
   }
   switch (priority) {
@@ -80,18 +104,20 @@ export function formatPriority(priority: string): string {
  * Format a list of tasks as a table.
  */
 export function formatTaskTable(tasks: TaskResponse[]): string {
+  const useColor = shouldUseColor();
+
   const table = new Table({
     head: [
-      chalk.bold('ID'),
-      chalk.bold('Title'),
-      chalk.bold('Status'),
-      chalk.bold('Priority'),
-      chalk.bold('Assignee'),
-      chalk.bold('Due Date'),
+      useColor ? chalk.bold('ID') : 'ID',
+      useColor ? chalk.bold('Title') : 'Title',
+      useColor ? chalk.bold('Status') : 'Status',
+      useColor ? chalk.bold('Priority') : 'Priority',
+      useColor ? chalk.bold('Assignee') : 'Assignee',
+      useColor ? chalk.bold('Due Date') : 'Due Date',
     ],
     style: {
       head: [], // Disable cli-table3 default head colors (we use chalk instead)
-      border: ['gray'],
+      border: useColor ? ['gray'] : [],
     },
     wordWrap: true,
   });
@@ -117,24 +143,27 @@ export function formatTaskTable(tasks: TaskResponse[]): string {
  * Format a single task for detailed display.
  */
 export function formatTaskDetail(task: TaskResponse): string {
+  const useColor = shouldUseColor();
   const lines: string[] = [];
 
-  lines.push(`${chalk.bold('ID:')}          ${task.id}`);
-  lines.push(`${chalk.bold('Title:')}       ${task.title}`);
-  lines.push(`${chalk.bold('Status:')}      ${formatStatus(task.status)}`);
-  lines.push(`${chalk.bold('Priority:')}    ${formatPriority(task.priority)}`);
-  lines.push(`${chalk.bold('Project:')}     ${task.project_id}`);
-  lines.push(`${chalk.bold('Assignee:')}    ${task.assignee || '-'}`);
-  lines.push(`${chalk.bold('Created by:')}  ${task.created_by}`);
+  const bold = (text: string) => (useColor ? chalk.bold(text) : text);
+
+  lines.push(`${bold('ID:')}          ${task.id}`);
+  lines.push(`${bold('Title:')}       ${task.title}`);
+  lines.push(`${bold('Status:')}      ${formatStatus(task.status)}`);
+  lines.push(`${bold('Priority:')}    ${formatPriority(task.priority)}`);
+  lines.push(`${bold('Project:')}     ${task.project_id}`);
+  lines.push(`${bold('Assignee:')}    ${task.assignee || '-'}`);
+  lines.push(`${bold('Created by:')}  ${task.created_by}`);
   lines.push(
-    `${chalk.bold('Due date:')}    ${task.due_date ? new Date(task.due_date).toLocaleString() : '-'}`
+    `${bold('Due date:')}    ${task.due_date ? new Date(task.due_date).toLocaleString() : '-'}`
   );
-  lines.push(`${chalk.bold('Tags:')}        ${task.tags.length > 0 ? task.tags.join(', ') : '-'}`);
-  lines.push(`${chalk.bold('Created:')}     ${new Date(task.created_at).toLocaleString()}`);
+  lines.push(`${bold('Tags:')}        ${task.tags.length > 0 ? task.tags.join(', ') : '-'}`);
+  lines.push(`${bold('Created:')}     ${new Date(task.created_at).toLocaleString()}`);
 
   if (task.description) {
     lines.push('');
-    lines.push(`${chalk.bold('Description:')}`);
+    lines.push(`${bold('Description:')}`);
     lines.push(task.description);
   }
 
