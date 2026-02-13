@@ -2,8 +2,10 @@ import { initDatabase } from './db/database.js';
 import { runMigrations } from './db/migrate.js';
 import { ProjectRepository } from './repositories/project.repository.js';
 import { TaskRepository } from './repositories/task.repository.js';
+import { DependencyRepository } from './repositories/dependency.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
+import { DependencyService } from './services/dependency.service.js';
 import type Database from 'better-sqlite3';
 
 /**
@@ -13,6 +15,7 @@ export interface App {
   db: Database.Database;
   projectService: ProjectService;
   taskService: TaskService;
+  dependencyService: DependencyService;
 }
 
 /**
@@ -28,15 +31,18 @@ export async function createApp(dbPath?: string): Promise<App> {
   // Create repositories
   const projectRepo = new ProjectRepository(db);
   const taskRepo = new TaskRepository(db);
+  const dependencyRepo = new DependencyRepository(db);
 
   // Create services
   const projectService = new ProjectService(projectRepo);
   const taskService = new TaskService(taskRepo, projectRepo);
+  const dependencyService = new DependencyService(dependencyRepo, taskRepo);
 
   return {
     db,
     projectService,
     taskService,
+    dependencyService,
   };
 }
 

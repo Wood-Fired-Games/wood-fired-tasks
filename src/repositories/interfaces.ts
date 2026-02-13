@@ -25,6 +25,7 @@ export interface ITaskRepository {
   update(id: number, updates: UpdateTaskDTO): Task & { tags: string[] };
   delete(id: number): void;
   findByFilters(filters: TaskFilters): Array<Task & { tags: string[] }>;
+  findChildren(parentId: number): Array<Task & { tags: string[] }>;
   count(filters?: TaskFilters): number;
 }
 
