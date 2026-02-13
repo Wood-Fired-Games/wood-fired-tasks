@@ -23,6 +23,7 @@ export interface Task {
   priority: TaskPriority;
   project_id: number;
   parent_task_id: number | null;
+  estimated_minutes: number | null;
   assignee: string | null;
   created_by: string;
   due_date: string | null; // ISO8601
@@ -51,6 +52,15 @@ export interface Dependency {
   created_at: string;
 }
 
+export interface Comment {
+  id: number;
+  task_id: number;
+  author: string;
+  content: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
 // DTOs for create/update operations
 export interface CreateTaskDTO {
   title: string;
@@ -59,6 +69,7 @@ export interface CreateTaskDTO {
   priority: TaskPriority;
   project_id: number;
   parent_task_id?: number | null;
+  estimated_minutes?: number | null;
   assignee?: string | null;
   created_by: string;
   due_date?: string | null;
@@ -70,6 +81,7 @@ export interface UpdateTaskDTO {
   status?: TaskStatus;
   priority?: TaskPriority;
   parent_task_id?: number | null;
+  estimated_minutes?: number | null;
   assignee?: string | null;
   due_date?: string | null;
   tags?: string[];
@@ -83,6 +95,12 @@ export interface CreateProjectDTO {
 export interface CreateDependencyDTO {
   task_id: number;
   blocks_task_id: number;
+}
+
+export interface CreateCommentDTO {
+  task_id: number;
+  author: string;
+  content: string;
 }
 
 // Task filtering interface

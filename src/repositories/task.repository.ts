@@ -20,10 +20,10 @@ export class TaskRepository implements ITaskRepository {
     this.insertTaskStmt = db.prepare(`
       INSERT INTO tasks (
         title, description, status, priority, project_id, parent_task_id,
-        assignee, created_by, due_date, created_at, updated_at
+        estimated_minutes, assignee, created_by, due_date, created_at, updated_at
       ) VALUES (
         @title, @description, @status, @priority, @project_id, @parent_task_id,
-        @assignee, @created_by, @due_date, @created_at, @updated_at
+        @estimated_minutes, @assignee, @created_by, @due_date, @created_at, @updated_at
       )
     `);
 
@@ -52,6 +52,7 @@ export class TaskRepository implements ITaskRepository {
         priority: dto.priority,
         project_id: dto.project_id,
         parent_task_id: dto.parent_task_id || null,
+        estimated_minutes: dto.estimated_minutes ?? null,
         assignee: dto.assignee || null,
         created_by: dto.created_by,
         due_date: dto.due_date || null,
@@ -151,6 +152,10 @@ export class TaskRepository implements ITaskRepository {
       if (updates.parent_task_id !== undefined) {
         fields.push('parent_task_id = @parent_task_id');
         params.parent_task_id = updates.parent_task_id;
+      }
+      if (updates.estimated_minutes !== undefined) {
+        fields.push('estimated_minutes = @estimated_minutes');
+        params.estimated_minutes = updates.estimated_minutes;
       }
 
       // Always update updated_at
