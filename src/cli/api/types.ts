@@ -120,3 +120,17 @@ export interface CreateCommentInput {
   author: string;
   content: string;
 }
+
+// ── Health types ────────────────────────────────────────────
+
+/**
+ * Health check response (matches REST API /health response).
+ */
+export interface HealthResponse {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  version: string;
+  checks: {
+    database: 'ok' | 'failed';
+  };
+}
