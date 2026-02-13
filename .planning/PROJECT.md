@@ -25,7 +25,11 @@ Any agent on the local network can reliably create, find, and update work items 
 
 ### Active
 
-(None — define with next milestone)
+- MCP server exposes tools for all REST API endpoints (project CRUD, health) — v1.1
+- CLI supports all REST API operations (projects, delete, dependencies, comments, subtasks, estimates, health) — v1.1
+- CLI `--json` flag on all commands for machine-readable output — v1.1
+- CLI interactive prompts when required fields are missing — v1.1
+- CLI improved table formatting with color-coded priorities and statuses — v1.1
 
 ### Out of Scope
 
@@ -64,5 +68,16 @@ The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 | Fastify + Zod type provider | Schema-driven validation, auto OpenAPI generation | Good — Zod schemas shared across REST + MCP for consistent validation |
 | Status lifecycle enforcement | Prevents invalid state transitions at service layer | Good — 14 tests verify all valid/invalid transitions |
 
+## Current Milestone: v1.1 Interface Parity & CLI Polish
+
+**Goal:** Full 1:1 feature parity across REST API, MCP server, and CLI — plus CLI UX improvements.
+
+**Target features:**
+- MCP tools for project CRUD and health check (closing the 7-tool gap)
+- CLI commands for every REST endpoint (projects, task delete, dependencies, comments, subtasks, estimates, health)
+- `--json` flag on all CLI commands for scripting and piping
+- Interactive prompts when required fields are missing
+- Better table formatting with color-coded statuses and priorities
+
 ---
-*Last updated: 2026-02-13 after v1.0 milestone*
+*Last updated: 2026-02-13 after v1.1 milestone started*
