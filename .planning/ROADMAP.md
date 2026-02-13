@@ -34,9 +34,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Database schema, migrations, and SQLite configuration (WAL mode, pragmas, indexes)
-- [ ] 01-02: Repository layer for tasks, projects, tags, and assignments
-- [ ] 01-03: Service layer with business logic, validation, filtering, and search
+- [ ] 01-01-PLAN.md -- TypeScript project init, SQLite database config (WAL mode, pragmas), migrations, schema (tables, indexes, FTS5), type definitions
+- [ ] 01-02-PLAN.md -- Repository layer: ProjectRepository and TaskRepository with interfaces, prepared statements, dynamic filters, FTS5 search, tag management
+- [ ] 01-03-PLAN.md -- Service layer: Zod validation schemas, status lifecycle enforcement, business logic, error handling, createApp entry point
 
 ### Phase 2: REST API
 **Goal**: Any HTTP client on the LAN can perform full task management through authenticated, well-documented JSON endpoints
@@ -120,7 +120,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/3 | Not started | - |
+| 1. Foundation | 0/3 | Planned | - |
 | 2. REST API | 0/2 | Not started | - |
 | 3. CLI | 0/2 | Not started | - |
 | 4. MCP Server | 0/2 | Not started | - |
