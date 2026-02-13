@@ -68,7 +68,14 @@ Plans:
 4. User can manage subtasks via CLI (create under parent, list all children)
 5. User can check service health via `tasks health` and see database status, uptime, version
 
-**Plans:** 0/0
+**Plans:** 5 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Task delete and show commands
+- [ ] 08-02-PLAN.md — Project CRUD commands (create, list, show, update, delete)
+- [ ] 08-03-PLAN.md — Dependency management commands (add, remove, list)
+- [ ] 08-04-PLAN.md — Comment management commands (add, list, delete)
+- [ ] 08-05-PLAN.md — Subtask and health check commands
 
 ---
 
@@ -122,6 +129,6 @@ Plans:
 | 5. Production Deployment | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 6. Advanced Features | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 7. Core CLI Infrastructure | v1.1 | 3/3 | Complete | 2026-02-13 |
-| 8. CLI Command Expansion | v1.1 | 0/0 | Pending | — |
+| 8. CLI Command Expansion | v1.1 | 0/5 | Planned | — |
 | 9. MCP Tool Expansion | v1.1 | 0/0 | Pending | — |
 | 10. Testing & Integration | v1.1 | 0/0 | Pending | — |
