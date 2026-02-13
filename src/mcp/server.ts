@@ -6,11 +6,17 @@ import { CommentService } from '../services/comment.service.js';
 import { registerTaskTools } from './tools/task-tools.js';
 import { registerDependencyTools } from './tools/dependency-tools.js';
 import { registerCommentTools } from './tools/comment-tools.js';
+import { registerProjectTools } from './tools/project-tools.js';
 
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with task tools registered.
+ * Factory function that creates an McpServer with 23 tools registered:
+ * - 6 task tools (create, get, update, list, delete, get_subtasks)
+ * - 5 project tools (create, get, update, list, delete)
+ * - 7 dependency tools (add, remove, list, get_blocks, get_blocked_by, graph, check_cycle)
+ * - 5 comment tools (add, list, get, update, delete)
+ *
  * This pattern allows tests to instantiate servers without stdio transport.
  *
  * @param taskService - Service for task operations
@@ -32,6 +38,7 @@ export function createMcpServer(
 
   // Register all tools
   registerTaskTools(server, taskService, projectService);
+  registerProjectTools(server, projectService);
   registerDependencyTools(server, dependencyService);
   registerCommentTools(server, commentService);
 
