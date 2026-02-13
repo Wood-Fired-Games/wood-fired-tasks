@@ -18,6 +18,12 @@ vi.mock('../config/env.js', () => ({
   },
 }));
 
+// Mock the json-output module
+vi.mock('../output/json-output.js', () => ({
+  jsonOutput: vi.fn(),
+  messageOutput: vi.fn(),
+}));
+
 describe('list command', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -37,6 +43,10 @@ describe('list command', () => {
     // Import after mocks are set up
     const { listCommand } = await import('../commands/list.js');
     program = new Command();
+    // Register global options (like the main CLI does)
+    program.option('--json', 'Output as JSON (machine-readable)');
+    program.option('--no-input', 'Disable interactive prompts');
+    program.option('--force', 'Skip confirmation prompts');
     program.addCommand(listCommand);
   });
 
@@ -218,5 +228,88 @@ describe('list command', () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
     expect(listTasks).not.toHaveBeenCalled();
+  });
+
+  it('outputs JSON when --json flag set', async () => {
+    const { listTasks } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+
+    const mockTasks = [
+      {
+        id: 1,
+        title: 'Task 1',
+        description: null,
+        status: 'open' as const,
+        priority: 'medium' as const,
+        project_id: 1,
+        assignee: null,
+        created_by: 'stuart',
+        due_date: null,
+        created_at: '2026-02-13T00:00:00Z',
+        updated_at: '2026-02-13T00:00:00Z',
+        tags: [],
+      },
+      {
+        id: 2,
+        title: 'Task 2',
+        description: null,
+        status: 'done' as const,
+        priority: 'high' as const,
+        project_id: 1,
+        assignee: 'bob',
+        created_by: 'stuart',
+        due_date: null,
+        created_at: '2026-02-13T00:00:00Z',
+        updated_at: '2026-02-13T00:00:00Z',
+        tags: [],
+      },
+    ];
+
+    vi.mocked(listTasks).mockResolvedValue(mockTasks);
+
+    // Global options like --json go before subcommand name
+    await program.parseAsync(['node', 'test', '--json', 'list']);
+
+    expect(jsonOutput).toHaveBeenCalledWith(mockTasks, { count: 2 });
+    // Should NOT show task count message in JSON mode
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('task(s) found'));
+  });
+
+  it('JSON output is parseable', async () => {
+    const { listTasks } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+
+    const mockTasks = [
+      {
+        id: 1,
+        title: 'Task 1',
+        description: null,
+        status: 'open' as const,
+        priority: 'medium' as const,
+        project_id: 1,
+        assignee: null,
+        created_by: 'stuart',
+        due_date: null,
+        created_at: '2026-02-13T00:00:00Z',
+        updated_at: '2026-02-13T00:00:00Z',
+        tags: [],
+      },
+    ];
+
+    vi.mocked(listTasks).mockResolvedValue(mockTasks);
+
+    // Global options like --json go before subcommand name
+    await program.parseAsync(['node', 'test', '--json', 'list']);
+
+    // Verify jsonOutput was called (the function itself handles JSON stringification)
+    expect(jsonOutput).toHaveBeenCalled();
+
+    // Verify the data structure passed to jsonOutput is valid
+    const callArgs = vi.mocked(jsonOutput).mock.calls[0];
+    expect(callArgs[0]).toEqual(mockTasks);
+    expect(callArgs[1]).toEqual({ count: 1 });
+
+    // Verify it would be parseable as JSON
+    expect(() => JSON.stringify({ success: true, data: callArgs[0], metadata: callArgs[1] })).not.toThrow();
   });
 });
