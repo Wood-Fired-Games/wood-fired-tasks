@@ -13,6 +13,9 @@ import { projectDeleteCommand } from '../commands/project-delete.js';
 import { depAddCommand } from '../commands/dep-add.js';
 import { depRemoveCommand } from '../commands/dep-remove.js';
 import { depListCommand } from '../commands/dep-list.js';
+import { commentAddCommand } from '../commands/comment-add.js';
+import { commentListCommand } from '../commands/comment-list.js';
+import { commentDeleteCommand } from '../commands/comment-delete.js';
 
 // Configure CLI program
 program
@@ -44,6 +47,11 @@ program.addCommand(projectDeleteCommand);
 program.addCommand(depAddCommand);
 program.addCommand(depRemoveCommand);
 program.addCommand(depListCommand);
+
+// Register comment commands
+program.addCommand(commentAddCommand);
+program.addCommand(commentListCommand);
+program.addCommand(commentDeleteCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
