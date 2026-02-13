@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { updateTask } from '../api/client.js';
 import { formatTaskDetail } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
+import { jsonOutput } from '../output/json-output.js';
 import chalk from 'chalk';
 import type { UpdateTaskInput } from '../api/types.js';
 
@@ -85,10 +86,21 @@ export const updateCommand = new Command('update')
       // Call API
       const task = await updateTask(id, updates);
 
+      // Check if JSON mode (global flag from program)
+      const program = updateCommand.parent;
+      const globalOpts = program?.optsWithGlobals() || {};
+      const isJsonMode = globalOpts.json || false;
+
       // Display success
-      console.log(chalk.green(`Task #${task.id} updated successfully`));
-      console.log('');
-      console.log(formatTaskDetail(task));
+      if (isJsonMode) {
+        // JSON mode: output envelope to stdout
+        jsonOutput({ task }, { id: task.id });
+      } else {
+        // Terminal mode: formatted output
+        console.log(chalk.green(`Task #${task.id} updated successfully`));
+        console.log('');
+        console.log(formatTaskDetail(task));
+      }
     } catch (error) {
       handleError(error);
     }

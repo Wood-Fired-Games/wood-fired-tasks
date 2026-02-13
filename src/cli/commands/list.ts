@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { listTasks } from '../api/client.js';
 import { formatTaskTable } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
+import { jsonOutput, messageOutput } from '../output/json-output.js';
 import chalk from 'chalk';
 import type { TaskFilters } from '../api/types.js';
 
@@ -65,14 +66,25 @@ export const listCommand = new Command('list')
       // Call API
       const tasks = await listTasks(Object.keys(filters).length > 0 ? filters : undefined);
 
-      // Display results
-      if (tasks.length === 0) {
-        console.log(chalk.yellow('No tasks found'));
-        return;
-      }
+      // Check if JSON mode (global flag from program)
+      const program = listCommand.parent;
+      const globalOpts = program?.optsWithGlobals() || {};
+      const isJsonMode = globalOpts.json || false;
 
-      console.log(formatTaskTable(tasks));
-      console.log(chalk.gray(`\n${tasks.length} task(s) found`));
+      // Display results
+      if (isJsonMode) {
+        // JSON mode: output envelope to stdout
+        jsonOutput(tasks, { count: tasks.length });
+      } else {
+        // Terminal mode: formatted output
+        if (tasks.length === 0) {
+          console.log(chalk.yellow('No tasks found'));
+          return;
+        }
+
+        console.log(formatTaskTable(tasks));
+        console.log(chalk.gray(`\n${tasks.length} task(s) found`));
+      }
     } catch (error) {
       handleError(error);
     }
