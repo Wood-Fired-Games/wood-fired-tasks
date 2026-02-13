@@ -11,6 +11,8 @@ import type {
   DependencyResponse,
   DependencyListResponse,
   CreateDependencyInput,
+  CommentResponse,
+  CreateCommentInput,
 } from './types.js';
 
 /**
@@ -216,4 +218,37 @@ export async function removeDependency(
  */
 export async function getDependencies(taskId: number): Promise<DependencyListResponse> {
   return apiRequest<DependencyListResponse>(`/api/v1/tasks/${taskId}/dependencies`);
+}
+
+// ── Comment management functions ────────────────────────────
+
+/**
+ * Add a comment to a task.
+ */
+export async function addComment(
+  taskId: number,
+  data: CreateCommentInput
+): Promise<CommentResponse> {
+  return apiRequest<CommentResponse>(`/api/v1/tasks/${taskId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Get all comments for a task.
+ */
+export async function getComments(taskId: number): Promise<CommentResponse[]> {
+  return apiRequest<CommentResponse[]>(`/api/v1/tasks/${taskId}/comments`);
+}
+
+/**
+ * Delete a comment by ID.
+ * Note: REST API route is nested under tasks (/tasks/:taskId/comments/:commentId)
+ * but server only uses commentId for deletion.
+ */
+export async function deleteComment(taskId: number, commentId: number): Promise<void> {
+  await apiRequest<void>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
+    method: 'DELETE',
+  });
 }
