@@ -46,9 +46,12 @@ class SQLiteStorage implements UmzugStorage {
  * Create an Umzug instance configured for this project.
  */
 function createUmzug(db: Database.Database): Umzug<Database.Database> {
+  // Support both .ts (dev/test via tsx) and .js (production compiled) migrations
+  const ext = __dirname.includes('/dist/') ? 'js' : 'ts';
+
   return new Umzug({
     migrations: {
-      glob: join(__dirname, 'migrations', '*.ts'),
+      glob: join(__dirname, 'migrations', `*.${ext}`),
       resolve: ({ name, path }) => ({
         name,
         up: async () => {
