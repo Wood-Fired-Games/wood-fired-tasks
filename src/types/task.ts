@@ -62,6 +62,7 @@ export interface UpdateTaskDTO {
   priority?: TaskPriority;
   assignee?: string | null;
   due_date?: string | null;
+  tags?: string[];
 }
 
 export interface CreateProjectDTO {
