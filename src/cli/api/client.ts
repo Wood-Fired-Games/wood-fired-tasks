@@ -123,3 +123,12 @@ export async function updateTask(id: number, data: UpdateTaskInput): Promise<Tas
     body: JSON.stringify(data),
   });
 }
+
+/**
+ * Delete a task by ID.
+ */
+export async function deleteTask(id: number): Promise<void> {
+  await apiRequest<void>(`/api/v1/tasks/${id}`, {
+    method: 'DELETE',
+  });
+}
