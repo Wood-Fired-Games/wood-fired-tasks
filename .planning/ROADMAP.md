@@ -95,8 +95,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: systemd unit file, environment configuration, and LAN network binding
-- [ ] 05-02: Pino structured logging to journald and automated daily SQLite backup script
+- [ ] 05-01-PLAN.md -- Production entry point with graceful shutdown, systemd unit file, environment template, and deployment script
+- [ ] 05-02-PLAN.md -- Pino structured logging verification for journald, SQLite backup/restore scripts, and cron schedule
 
 ### Phase 6: Advanced Features
 **Goal**: Tasks can be organized into hierarchies with dependencies, annotated with comments, and estimated for effort
