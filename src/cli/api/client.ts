@@ -5,6 +5,9 @@ import type {
   UpdateTaskInput,
   TaskFilters,
   ApiErrorResponse,
+  ProjectResponse,
+  CreateProjectInput,
+  UpdateProjectInput,
 } from './types.js';
 
 /**
@@ -129,6 +132,51 @@ export async function updateTask(id: number, data: UpdateTaskInput): Promise<Tas
  */
 export async function deleteTask(id: number): Promise<void> {
   await apiRequest<void>(`/api/v1/tasks/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// ── Project CRUD functions ──────────────────────────────────
+
+/**
+ * Create a new project.
+ */
+export async function createProject(data: CreateProjectInput): Promise<ProjectResponse> {
+  return apiRequest<ProjectResponse>('/api/v1/projects', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * List all projects.
+ */
+export async function listProjects(): Promise<ProjectResponse[]> {
+  return apiRequest<ProjectResponse[]>('/api/v1/projects');
+}
+
+/**
+ * Get a single project by ID.
+ */
+export async function getProject(id: number): Promise<ProjectResponse> {
+  return apiRequest<ProjectResponse>(`/api/v1/projects/${id}`);
+}
+
+/**
+ * Update a project by ID.
+ */
+export async function updateProject(id: number, data: UpdateProjectInput): Promise<ProjectResponse> {
+  return apiRequest<ProjectResponse>(`/api/v1/projects/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Delete a project by ID.
+ */
+export async function deleteProject(id: number): Promise<void> {
+  await apiRequest<void>(`/api/v1/projects/${id}`, {
     method: 'DELETE',
   });
 }

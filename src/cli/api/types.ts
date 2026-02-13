@@ -57,6 +57,16 @@ export interface TaskFilters {
   due_after?: string;
 }
 
+export interface CreateProjectInput {
+  name: string;
+  description?: string | null;
+}
+
+export interface UpdateProjectInput {
+  name?: string;
+  description?: string | null;
+}
+
 export interface ApiErrorResponse {
   error: string;
   message: string;
