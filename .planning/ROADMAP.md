@@ -80,8 +80,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: MCP server setup and tool definitions (create, get, update, list, delete)
-- [ ] 04-02: Transport configuration, shared validation integration, and structured error handling
+- [ ] 04-01-PLAN.md -- MCP SDK setup, error conversion utility, 5 task tool handlers (create, get, update, list, delete), server factory, stdio entry point
+- [ ] 04-02-PLAN.md -- Comprehensive tests for error conversion and all 5 MCP tool handlers
 
 ### Phase 5: Production Deployment
 **Goal**: The service runs persistently on the Ubuntu LAN machine, survives reboots, and protects data with automated backups
@@ -123,6 +123,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Foundation | 3/3 | Complete | 2026-02-13 |
 | 2. REST API | 2/2 | Complete | 2026-02-13 |
 | 3. CLI | 0/2 | Planned | - |
-| 4. MCP Server | 0/2 | Not started | - |
+| 4. MCP Server | 0/2 | Planned | - |
 | 5. Production Deployment | 0/2 | Not started | - |
 | 6. Advanced Features | 0/2 | Not started | - |
