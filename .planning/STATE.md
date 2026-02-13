@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Any agent on the local network can reliably create, find, and update work items in real time -- making this the single source of truth for all Wood Fired Games task tracking.
-**Current focus:** Phase 4: MCP Server
+**Current focus:** Phase 6: Advanced Features
 
 ## Current Position
 
-Phase: 5 of 6 (Production Deployment)
+Phase: 6 of 6 (Advanced Features)
 Plan: 2 of 2 in current phase
 Status: Completed
-Last activity: 2026-02-13 -- Completed plan 05-01 (systemd Service Infrastructure)
+Last activity: 2026-02-13 -- Completed plan 06-01 (Task Hierarchy and Dependency Tracking)
 
-Progress: [███████████████████████] 60%
+Progress: [█████████████████████████] 65%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 4 minutes
-- Total execution time: 0.75 hours
+- Total execution time: 0.87 hours
 
 **By Phase:**
 
@@ -32,13 +32,14 @@ Progress: [███████████████████████
 | 03-cli | 2 | 5 min | 3 min |
 | 04-mcp-server | 2 | 9 min | 5 min |
 | 05-production-deployment | 2 | 11 min | 6 min |
+| 06-advanced-features | 1 | 7 min | 7 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (4 min), 04-02 (5 min), 05-02 (5 min), 05-01 (6 min)
-- Trend: Consistent velocity (averaging 5 min per plan)
+- Last 5 plans: 04-02 (5 min), 05-02 (5 min), 05-01 (6 min), 06-01 (7 min)
+- Trend: Consistent velocity (averaging 5-6 min per plan)
 
 *Updated after each plan completion*
-| Phase 05 P01 | 6 | 2 tasks | 7 files |
+| Phase 06 P01 | 7 | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -109,17 +110,24 @@ Progress: [███████████████████████
 - Service must be stopped before restore (integrity protection)
 - Parameterized script paths for testability outside /opt
 
+**Phase 06-01 (Task Hierarchy and Dependency Tracking):**
+- Used SQLite DROP COLUMN in migration down() (safe in better-sqlite3 12.x with SQLite 3.46+)
+- Self-dependency rejection enforced at both DB (CHECK constraint) and validation (Zod refine)
+- CASCADE delete from tasks to task_dependencies (automatic cleanup)
+- CASCADE delete from parent task to child tasks (hierarchy cleanup)
+- CycleDetector rebuilds full graph on each check (acceptable for current scale)
+- Parent task must exist in same project (cross-project hierarchies not allowed)
+
 ### Pending Todos
 
 None yet.
 
 ### Blockers/Concerns
 
-- Phase 6: Dependency cycle detection (DFS graph traversal) flagged as high complexity by research. Budget accordingly.
 - Pre-existing: 67 TypeScript compilation errors in src/mcp/__tests__/task-tools.test.ts (tests pass at runtime, should be fixed in dedicated plan)
 
 ## Session Continuity
 
-Last session: 2026-02-13T20:36:49Z
-Stopped at: Completed 05-01-PLAN.md (systemd Service Infrastructure)
-Resume file: .planning/phases/05-production-deployment/05-01-SUMMARY.md
+Last session: 2026-02-13T20:52:29Z
+Stopped at: Completed 06-01-PLAN.md (Task Hierarchy and Dependency Tracking)
+Resume file: .planning/phases/06-advanced-features/06-01-SUMMARY.md
