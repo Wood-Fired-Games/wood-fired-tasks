@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: Fastify server, task CRUD routes, and API key authentication middleware
-- [ ] 02-02: Request/response validation (Zod schemas), structured errors, OpenAPI generation, and health check
+- [ ] 02-01-PLAN.md -- Fastify server factory with Zod type provider, task and project CRUD routes, API key authentication middleware
+- [ ] 02-02-PLAN.md -- Custom error handler mapping Phase 1 errors to structured HTTP responses, OpenAPI generation via @fastify/swagger, health check endpoint
 
 ### Phase 3: CLI
 **Goal**: Stuart can manage tasks from the terminal without touching curl or JSON
@@ -120,8 +120,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/3 | Planned | - |
-| 2. REST API | 0/2 | Not started | - |
+| 1. Foundation | 3/3 | Complete | 2026-02-13 |
+| 2. REST API | 0/2 | Planned | - |
 | 3. CLI | 0/2 | Not started | - |
 | 4. MCP Server | 0/2 | Not started | - |
 | 5. Production Deployment | 0/2 | Not started | - |
