@@ -218,4 +218,139 @@ describe('Task CRUD Routes', () => {
 
     expect(response.statusCode).toBeGreaterThanOrEqual(400);
   });
+
+  it('should return subtasks for a parent task', async () => {
+    // Create parent task
+    const parentResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Parent Task',
+        priority: 'medium',
+        project_id: testProjectId,
+        created_by: 'test-user',
+      },
+    });
+    const parent = JSON.parse(parentResponse.body);
+
+    // Create child tasks
+    await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Child Task 1',
+        priority: 'medium',
+        project_id: testProjectId,
+        parent_task_id: parent.id,
+        created_by: 'test-user',
+      },
+    });
+    await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Child Task 2',
+        priority: 'medium',
+        project_id: testProjectId,
+        parent_task_id: parent.id,
+        created_by: 'test-user',
+      },
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/v1/tasks/${parent.id}/subtasks`,
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const subtasks = JSON.parse(response.body);
+    expect(subtasks).toHaveLength(2);
+    expect(subtasks[0].title).toBe('Child Task 1');
+    expect(subtasks[1].title).toBe('Child Task 2');
+    expect(subtasks[0].parent_task_id).toBe(parent.id);
+  });
+
+  it('should include parent_task_id in task response', async () => {
+    const parentResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Parent Task',
+        priority: 'medium',
+        project_id: testProjectId,
+        created_by: 'test-user',
+      },
+    });
+    const parent = JSON.parse(parentResponse.body);
+
+    const childResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Child Task',
+        priority: 'medium',
+        project_id: testProjectId,
+        parent_task_id: parent.id,
+        created_by: 'test-user',
+      },
+    });
+
+    expect(childResponse.statusCode).toBe(201);
+    const child = JSON.parse(childResponse.body);
+    expect(child.parent_task_id).toBe(parent.id);
+
+    // Parent should have null parent_task_id
+    expect(parent.parent_task_id).toBeNull();
+  });
+
+  it('should include estimated_minutes in task response', async () => {
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Task with estimate',
+        priority: 'medium',
+        project_id: testProjectId,
+        estimated_minutes: 120,
+        created_by: 'test-user',
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const task = JSON.parse(response.body);
+    expect(task.estimated_minutes).toBe(120);
+  });
+
+  it('should return estimated_minutes in GET task', async () => {
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers,
+      payload: {
+        title: 'Task with estimate',
+        priority: 'medium',
+        project_id: testProjectId,
+        estimated_minutes: 60,
+        created_by: 'test-user',
+      },
+    });
+    const created = JSON.parse(createResponse.body);
+
+    const getResponse = await server.inject({
+      method: 'GET',
+      url: `/api/v1/tasks/${created.id}`,
+      headers,
+    });
+
+    expect(getResponse.statusCode).toBe(200);
+    const task = JSON.parse(getResponse.body);
+    expect(task.estimated_minutes).toBe(60);
+  });
 });

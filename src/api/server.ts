@@ -8,8 +8,12 @@ import {
 import { createApp, App } from '../index.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
+import { DependencyService } from '../services/dependency.service.js';
+import { CommentService } from '../services/comment.service.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
+import dependencyRoutes from './routes/dependencies/index.js';
+import commentRoutes from './routes/comments/index.js';
 import healthRoutes from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
 import { registerSwagger } from './plugins/swagger.js';
@@ -19,6 +23,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     taskService: TaskService;
     projectService: ProjectService;
+    dependencyService: DependencyService;
+    commentService: CommentService;
     db: Database.Database;
   }
 }
@@ -55,6 +61,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // Decorate server with Phase 1 services
   server.decorate('taskService', app.taskService);
   server.decorate('projectService', app.projectService);
+  server.decorate('dependencyService', app.dependencyService);
+  server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
 
   // Set custom error handler (must be set before routes)
@@ -106,6 +114,12 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
       // Register project routes
       await api.register(projectRoutes, { prefix: '/projects' });
+
+      // Register dependency routes (nested under tasks)
+      await api.register(dependencyRoutes, { prefix: '/tasks' });
+
+      // Register comment routes (nested under tasks)
+      await api.register(commentRoutes, { prefix: '/tasks' });
     },
     { prefix: '/api/v1' }
   );

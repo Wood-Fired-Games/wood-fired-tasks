@@ -111,6 +111,25 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       return reply.code(204).send(null);
     }
   );
+
+  // GET /:id/subtasks - Get subtasks of a task
+  fastify.get(
+    '/:id/subtasks',
+    {
+      schema: {
+        tags: ['tasks'],
+        description: 'Get all subtasks (children) of a task',
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        response: {
+          200: TaskListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const subtasks = fastify.taskService.getSubtasks(request.params.id);
+      return reply.send(subtasks);
+    }
+  );
 };
 
 export default taskRoutes;

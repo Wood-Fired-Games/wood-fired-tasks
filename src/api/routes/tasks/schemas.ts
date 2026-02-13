@@ -11,6 +11,8 @@ export const TaskResponseSchema = z.object({
   status: z.enum(TASK_STATUSES),
   priority: z.enum(TASK_PRIORITIES),
   project_id: z.number(),
+  parent_task_id: z.number().nullable(),
+  estimated_minutes: z.number().nullable(),
   assignee: z.string().nullable(),
   created_by: z.string(),
   due_date: z.string().nullable(),

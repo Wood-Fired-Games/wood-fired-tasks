@@ -16,7 +16,12 @@ async function main() {
   const app = await createApp(dbPath);
 
   // Create MCP server with initialized services
-  const server = createMcpServer(app.taskService, app.projectService);
+  const server = createMcpServer(
+    app.taskService,
+    app.projectService,
+    app.dependencyService,
+    app.commentService
+  );
 
   // Create stdio transport
   const transport = new StdioServerTransport();

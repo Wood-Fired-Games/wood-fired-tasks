@@ -19,11 +19,15 @@ export class CommentService {
     // Validate input
     const result = CreateCommentSchema.safeParse(input);
     if (!result.success) {
-      const fieldErrors = result.error.issues.map((issue) => ({
-        field: issue.path.join('.'),
-        message: issue.message,
-      }));
-      throw new ValidationError('Comment validation failed', fieldErrors);
+      const fieldErrors: Record<string, string[]> = {};
+      result.error.issues.forEach((issue) => {
+        const field = issue.path.join('.');
+        if (!fieldErrors[field]) {
+          fieldErrors[field] = [];
+        }
+        fieldErrors[field].push(issue.message);
+      });
+      throw new ValidationError(fieldErrors);
     }
 
     const dto = result.data;
