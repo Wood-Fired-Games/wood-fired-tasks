@@ -5,6 +5,8 @@ import type {
   CreateTaskDTO,
   UpdateTaskDTO,
   TaskFilters,
+  Dependency,
+  CreateDependencyDTO,
 } from '../types/task.js';
 
 export interface IProjectRepository {
@@ -24,4 +26,13 @@ export interface ITaskRepository {
   delete(id: number): void;
   findByFilters(filters: TaskFilters): Array<Task & { tags: string[] }>;
   count(filters?: TaskFilters): number;
+}
+
+export interface IDependencyRepository {
+  create(dto: CreateDependencyDTO): Dependency;
+  findAll(): Dependency[];
+  findByTaskId(taskId: number): Dependency[];
+  findBlockingTask(taskId: number): Dependency[];
+  delete(taskId: number, blocksTaskId: number): boolean;
+  deleteByTaskId(taskId: number): void;
 }
