@@ -1,6 +1,6 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import type { TaskResponse, ProjectResponse } from '../api/types.js';
+import type { TaskResponse, ProjectResponse, DependencyListResponse } from '../api/types.js';
 
 /**
  * Detect if JSON output mode is enabled via --json flag.
@@ -225,6 +225,40 @@ export function formatProjectDetail(project: ProjectResponse): string {
   lines.push(`${bold('Description:')}  ${project.description || '-'}`);
   lines.push(`${bold('Created:')}      ${new Date(project.created_at).toLocaleString()}`);
   lines.push(`${bold('Updated:')}      ${new Date(project.updated_at).toLocaleString()}`);
+
+  return lines.join('\n');
+}
+
+// ── Dependency formatters ───────────────────────────────────
+
+/**
+ * Format a dependency list showing blocks and blocked_by sections.
+ */
+export function formatDependencyList(deps: DependencyListResponse): string {
+  const useColor = shouldUseColor();
+  const lines: string[] = [];
+
+  const bold = (text: string) => (useColor ? chalk.bold(text) : text);
+
+  lines.push(bold('Blocks (this task blocks):'));
+  if (deps.blocks.length > 0) {
+    for (const dep of deps.blocks) {
+      lines.push(`  - Task #${dep.blocks_task_id}`);
+    }
+  } else {
+    lines.push('  None');
+  }
+
+  lines.push('');
+
+  lines.push(bold('Blocked by (blocked by these tasks):'));
+  if (deps.blocked_by.length > 0) {
+    for (const dep of deps.blocked_by) {
+      lines.push(`  - Task #${dep.task_id}`);
+    }
+  } else {
+    lines.push('  None');
+  }
 
   return lines.join('\n');
 }
