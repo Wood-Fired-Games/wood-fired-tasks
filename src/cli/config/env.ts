@@ -12,21 +12,25 @@ const envPath = path.join(projectRoot, '.env');
 dotenv.config({ path: envPath });
 
 // Validate and export environment configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
-const API_KEY = process.env.API_KEY;
-
-// Fail fast if API_KEY is missing
-if (!API_KEY) {
-  console.error('Error: API_KEY is required but not set.');
-  console.error('');
-  console.error('Please set API_KEY in one of the following ways:');
-  console.error('  1. Create a .env file in the project root with: API_KEY=your-key-here');
-  console.error('  2. Set it as an environment variable: export API_KEY=your-key-here');
-  console.error('');
-  process.exit(1);
+function validateApiKey(): string {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.error('Error: API_KEY is required but not set.');
+    console.error('');
+    console.error('Please set API_KEY in one of the following ways:');
+    console.error('  1. Create a .env file in the project root with: API_KEY=your-key-here');
+    console.error('  2. Set it as an environment variable: export API_KEY=your-key-here');
+    console.error('');
+    process.exit(1);
+  }
+  return apiKey;
 }
 
 export const env = {
-  API_BASE_URL,
-  API_KEY,
+  API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:3000',
+  // Use getter to defer validation until API_KEY is accessed
+  // This allows --help to work without requiring API_KEY
+  get API_KEY(): string {
+    return validateApiKey();
+  },
 };
