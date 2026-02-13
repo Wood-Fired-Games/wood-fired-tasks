@@ -3,9 +3,40 @@ import chalk from 'chalk';
 import type { TaskResponse } from '../api/types.js';
 
 /**
+ * Detect if JSON output mode is enabled via --json flag.
+ *
+ * Checks process.argv to avoid circular dependencies with Commander.
+ * This is safe for formatters since we only need to know output mode.
+ */
+export function isJsonMode(): boolean {
+  return process.argv.includes('--json');
+}
+
+/**
+ * Strip ANSI color codes from text if in JSON mode.
+ *
+ * @param text - Text that may contain ANSI codes
+ * @returns Plain text in JSON mode, original text otherwise
+ */
+export function stripAnsiIfJsonMode(text: string): string {
+  if (!isJsonMode()) {
+    return text;
+  }
+
+  // Remove ANSI escape sequences (color codes)
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\u001b\[\d+m/g, '');
+}
+
+/**
  * Color-code task status values.
+ *
+ * Returns plain text in JSON mode, colored text in terminal mode.
  */
 export function formatStatus(status: string): string {
+  if (isJsonMode()) {
+    return status;
+  }
   switch (status) {
     case 'open':
       return chalk.blue(status);
@@ -24,8 +55,13 @@ export function formatStatus(status: string): string {
 
 /**
  * Color-code task priority values.
+ *
+ * Returns plain text in JSON mode, colored text in terminal mode.
  */
 export function formatPriority(priority: string): string {
+  if (isJsonMode()) {
+    return priority;
+  }
   switch (priority) {
     case 'urgent':
       return chalk.red.bold(priority);
