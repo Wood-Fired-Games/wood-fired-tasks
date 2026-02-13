@@ -1,337 +1,267 @@
-# Research Summary: Wood Fired Bugs
+# Project Research Summary
 
-**Domain:** LLM-Accessible Task Tracking Service
+**Project:** Wood Fired Bugs - CLI/MCP Interface Parity Expansion
+**Domain:** Task Management System Interface Extension
 **Researched:** 2026-02-13
-**Overall confidence:** HIGH
+**Confidence:** HIGH
 
 ## Executive Summary
 
-Wood Fired Bugs is an API-first task tracking service optimized for LLM agent consumption. The research validates this as a greenfield opportunity with clear differentiation: existing task trackers (Jira, Linear, GitHub Issues) are human-centric with web UIs, lacking native LLM integration. This project fills the gap by providing MCP server integration, structured JSON responses, and OpenAPI specifications that enable agents to discover and use the API programmatically.
+Wood Fired Bugs is a mature task tracking service with a well-architected REST API, MCP server, and CLI. The v1.1 milestone aims to achieve full CLI/MCP parity with all REST endpoints, expanding from 3 CLI commands to 18+ and 12 MCP tools to 19+. The research reveals that the existing architecture is sound and well-suited for this expansion - layered service design with clean separation between interfaces, shared Zod schemas, and proper abstraction boundaries.
 
-The recommended stack (Node.js 22 with TypeScript, Fastify, SQLite via better-sqlite3, MCP TypeScript SDK) aligns with the LLM-first architecture goals. Node.js 22's native SQLite support and the MCP SDK's maturity make this a proven, production-ready foundation. The layered architecture (Interface → Service → Repository → Database) enables sharing business logic across three interfaces: REST API, MCP server, and CLI.
+The recommended approach is straightforward: extend the existing patterns rather than redesign. The CLI should remain an HTTP client calling the REST API (never direct service access), MCP tools should continue calling services directly, and all new commands/tools should follow established naming conventions. The stack is production-ready: Node.js 22 LTS, TypeScript 5.7+, Fastify 5.x for REST, Commander.js 14.x for CLI, and MCP TypeScript SDK 1.x. The only additions needed are @clack/prompts for interactive CLI experiences when required fields are missing.
 
-Critical success factors identified through research:
-1. **SQLite WAL mode + write queuing** to handle concurrent agent writes without SQLITE_BUSY errors
-2. **Schema-driven validation** with Zod for predictable LLM consumption
-3. **Structured error responses** with machine-readable error codes for agent error handling
-4. **Cycle detection** in dependency graphs to prevent impossible task states
-
-The feature landscape research reveals a lean MVP: focus on core CRUD, filtering, multi-project support, and dual interfaces (REST + MCP). Defer complex features like parent/child relationships, webhooks, and natural language query translation until usage patterns emerge. Anti-features clearly identified: no web UI, no real-time sync (polling suffices), no custom workflows (simple status model with tags for flexibility).
+Key risks center on maintaining consistency while scaling: ensuring all 18 commands support `--json` output without stdout contamination, establishing global option inheritance before adding subcommands, and enforcing MCP tool naming conventions (snake_case, resource_action pattern) before proliferation. The research identifies 10 critical pitfalls with clear prevention strategies, most of which must be addressed in Phase 1 (CLI Infrastructure) to avoid expensive retrofitting.
 
 ## Key Findings
 
-**Stack:** Node.js 22 + TypeScript + Fastify for REST, MCP TypeScript SDK for agent integration, better-sqlite3 for zero-config local storage, systemd for Ubuntu service management
+### Recommended Stack
 
-**Architecture:** Layered architecture with shared service layer across REST/MCP/CLI interfaces. Repository pattern for database abstraction. Single-writer queue pattern for SQLite concurrency.
+All core technologies are already in place and production-ready. Research confirms the current stack is optimal for this milestone with minimal additions needed.
 
-**Critical pitfall:** SQLite write lock contention kills multi-agent workflows. Mitigation required from day one: WAL mode, write queuing, busy timeout configuration.
+**Core technologies:**
+- **Node.js 22 LTS + TypeScript 5.7+**: Runtime environment - current LTS with native SQLite support, stable for production services
+- **Fastify 5.7.4**: REST API framework - already implemented, 2.7x faster than Express with built-in schema validation
+- **better-sqlite3 12.6.2**: SQLite driver - already implemented, 5-10x faster than alternatives, synchronous API perfect for local services
+- **Commander.js 14.0.3**: CLI framework - already implemented, zero dependencies, clean subcommand syntax, 12M weekly downloads
+- **MCP TypeScript SDK 1.x**: MCP server - already implemented, production-ready official SDK with Zod integration
+- **@clack/prompts 1.0.1**: Interactive CLI prompts - NEW addition for missing required fields, 80% smaller than alternatives, beautiful UX
+
+**No changes needed:** The existing stack handles everything required. The only addition is @clack/prompts for enhanced CLI UX when users forget required fields.
+
+### Expected Features
+
+The research identifies clear feature priorities based on CLI/MCP interface parity goals and industry standards.
+
+**Must have (table stakes):**
+- **CLI: --json output flag** - Essential for scripting, piping to jq, agent consumption; standard in git/docker/gh
+- **CLI: Subcommand organization** - Industry standard pattern (gh pr create, docker container ls) for scalable command structure
+- **CLI: Interactive prompts for missing fields** - Improves human UX while respecting non-interactive mode for scripts
+- **CLI: Delete confirmation prompts** - Prevent accidental data loss (standard practice: rm -i, git branch -D)
+- **MCP: snake_case tool naming** - MCP standard, enables LLM tool name prediction
+- **MCP: Consistent parameter naming** - Same concepts use same names across tools (task_id everywhere, not mixed with id)
+- **MCP: Project CRUD tools (5 tools)** - Closes parity gap with REST API
+
+**Should have (competitive advantage):**
+- **CLI: Smart defaults from context** - Infer project_id from .wfb-project file in current directory
+- **CLI: Suggest corrections on typos** - "Did you mean 'tasks list'?" for better UX
+- **MCP: Rich error context** - Include error_code and validation_failures array in structured errors
+- **CLI: --format flag** - Support table/plain/json for different consumption modes
+
+**Defer (v2+):**
+- **CLI: Batch operations** - `tasks update --status done --ids 1,2,3` (wait for user demand)
+- **CLI: Config file support** - ~/.wfbrc for default flags (wait for repeated requests)
+- **CLI: Shell completions** - Bash/zsh tab completion (polish feature, not critical)
+- **MCP: Batch tool execution** - Single tool that takes array of operations (wait for performance issues)
+
+### Architecture Approach
+
+Wood Fired Bugs uses a clean layered architecture that's ideal for interface expansion: CLI → HTTP → REST API → Service Layer → Repository Layer → SQLite. The CLI is intentionally decoupled as an HTTP client, while MCP calls services directly for performance. This separation allows each interface to evolve independently.
+
+**Major components:**
+1. **CLI Commands** - Organized in folders by resource (tasks/, projects/, dependencies/, comments/), each command is a separate file exporting Commander.js Command instance, all call REST API via client.ts
+2. **API Client** - HTTP client functions in src/cli/api/client.ts, provides typed interfaces to REST endpoints, handles errors with ApiClientError, 10s timeout for all requests
+3. **MCP Tools** - Grouped by resource in separate files (task-tools.ts, project-tools.ts, etc.), each file exports registerXxxTools() function, shares Zod schemas from src/schemas/
+4. **Output Formatters** - Centralized in src/cli/output/formatters.ts, separates presentation from logic, supports table/detail views, handles color coding consistently
+5. **Service Layer** - Already implements all operations, shared by REST API and MCP, validates with Zod schemas, no changes needed for v1.1
+6. **Repository Layer** - Already has all data access methods, no changes needed for v1.1
+
+**Build order:** Foundation (types, API client, formatters) → CLI Commands → Integration (subcommands, global options) → MCP Tools → Testing. Phases 1-3 are sequential, Phase 4 (MCP) can parallel Phase 2-3.
+
+### Critical Pitfalls
+
+Research identified 10 critical pitfalls specific to scaling CLI/MCP interfaces. Top 5 by impact:
+
+1. **--json flag breaking interactive prompts** - Interactive prompts corrupt JSON output stream when users run `tasks create --json`. Prevention: Detect TTY vs. non-TTY, auto-disable prompts when --json is present, all prompts write to stderr not stdout, fail fast with clear error if required fields missing in non-interactive mode. Address in Phase 1.
+
+2. **Global options not inherited by subcommands** - Commander.js doesn't automatically propagate global options like --json to subcommands unless configured correctly. Prevention: Add global options to root program before registering subcommands, use .command() for automatic inheritance or call .copyInheritedSettings() with .addCommand(), access via .optsWithGlobals() in handlers. Address in Phase 1.
+
+3. **Async action handlers with .parse() instead of .parseAsync()** - Using .parse() causes Node.js to exit before async handlers complete, resulting in uncommitted database writes and no output. Prevention: Always use .parseAsync(), wrap in try/catch, set process.exitCode not process.exit(), add top-level error handler. Address in Phase 1.
+
+4. **Stdout contamination in JSON mode** - Progress messages, debug output, and console.log() statements write to stdout, breaking JSON parseability. Prevention: Create output abstraction (output.info(), output.json()), write messages to stderr, single JSON.stringify() at end, test each command with `| jq`. Address in Phase 1.
+
+5. **MCP tool name explosion without convention** - Growing to 19+ tools without naming standard creates discovery chaos for LLM agents. Prevention: Establish snake_case convention (resource_action pattern) before expansion, rename existing 12 tools to match, document in naming guide, enforce in code review. Address in Phase 2.
+
+**Pattern:** All top pitfalls require architectural decisions in early phases. Retrofitting is expensive and breaks existing usage.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+Based on research, suggested phase structure mirrors the existing roadmap with validation from technical findings:
 
-### Phase 1: Foundation (Database + Core Services)
-**Rationale:** Cannot build interfaces without working data layer. Services must be shared across REST/MCP/CLI to avoid duplication.
+### Phase 1: Core CLI Infrastructure
+**Rationale:** Foundation must be correct before adding 15+ commands. Output abstraction, global option handling, and async patterns affect every command. Building these correctly from the start avoids expensive retrofitting.
 
-**Addresses:**
-- Database schema with migrations (Drizzle Kit or raw SQL)
-- Core domain models (Task, Project, Tag, Comment)
-- Repository pattern implementation
-- Service layer with business logic
-- SQLite optimization (WAL mode, indexes, pragmas)
+**Delivers:**
+- Output abstraction layer (separates stdout for data, stderr for messages)
+- Global --json flag with proper inheritance to all commands
+- .parseAsync() pattern for all async handlers
+- Interactive prompt system with TTY detection and --no-input flag
+- Enhanced error handling with consistent formatting
 
-**Avoids:**
-- Pitfall: Missing migration strategy
-- Pitfall: Over-normalized schema
+**Addresses (from FEATURES.md):**
+- CLI: --json output flag (table stakes)
+- CLI: Interactive prompts for missing fields (table stakes)
+- CLI: Error messages to stderr (table stakes)
 
-**Duration:** 3-5 days
+**Avoids (from PITFALLS.md):**
+- Pitfall 1: --json breaking prompts (critical)
+- Pitfall 2: Global options not inherited (critical)
+- Pitfall 3: Async handlers incomplete (critical)
+- Pitfall 5: Stdout contamination (critical)
 
----
+**Research flag:** Standard patterns, skip research-phase. Commander.js and @clack/prompts well-documented.
 
-### Phase 2: REST API
-**Rationale:** Easiest interface to build and test first. Validates service layer design. OpenAPI spec becomes documentation for MCP and CLI.
+### Phase 2: CLI Command Expansion
+**Rationale:** With infrastructure in place, can safely add 15 new commands following established patterns. Folder organization by resource enables parallel development and clear code navigation.
 
-**Addresses:**
-- Fastify REST server with routes
-- API key authentication middleware
-- Request validation with Zod schemas
-- OpenAPI spec generation
-- Error handling with structured responses
-- Health check endpoint
+**Delivers:**
+- Project CRUD commands (5 commands)
+- Dependency management commands (3 commands)
+- Comment management commands (3 commands)
+- Additional task commands: get, delete (2 commands)
+- Subcommand grouping (tasks project create, tasks dep add, etc.)
 
-**Avoids:**
-- Pitfall: Business logic in route handlers
-- Pitfall: Unstructured error responses
-- Pitfall: No health check
+**Addresses (from FEATURES.md):**
+- CLI: Subcommand organization (table stakes)
+- CLI: Delete confirmation prompts (table stakes)
+- All REST endpoint parity
 
-**Duration:** 4-6 days
+**Uses (from STACK.md):**
+- Commander.js subcommand patterns
+- @clack/prompts for interactive flows
+- Existing API client extensions
 
----
+**Implements (from ARCHITECTURE.md):**
+- Command folder structure (tasks/, projects/, dependencies/, comments/)
+- API client extensions (12+ new functions)
+- Output formatters (project, dependency, comment tables)
 
-### Phase 3: CLI
-**Rationale:** Validates that service layer is truly reusable. Provides human interface for testing and debugging. Builds confidence before tackling MCP.
+**Avoids (from PITFALLS.md):**
+- Pitfall 8: Commander camelCase/kebab-case confusion (via TypeScript types)
+- Pitfall 9: No JSON test coverage (via test pattern establishment)
 
-**Addresses:**
-- Commander.js CLI framework
-- HTTP client calling REST API
-- Pretty terminal output with Rich/Chalk
-- Subcommands: task create/list/update, project list, tag management
+**Research flag:** Standard patterns, skip research-phase. Established CLI patterns.
 
-**Avoids:**
-- Pitfall: CLI duplicating business logic
-- Anti-pattern: Reimplementing validation
+### Phase 3: MCP Tool Expansion
+**Rationale:** Can proceed in parallel with Phase 2 since MCP and CLI are independent interfaces. Must establish naming convention before adding 7+ new tools to avoid discovery chaos.
 
-**Duration:** 2-3 days
+**Delivers:**
+- Project CRUD MCP tools (5 tools: create_project, get_project, list_projects, update_project, delete_project)
+- Health check tool (check_health)
+- List subtasks tool (list_subtasks for consistency)
+- Updated tool registration in MCP server
 
----
+**Addresses (from FEATURES.md):**
+- MCP: Project CRUD tools (table stakes)
+- MCP: Health check tool (table stakes)
+- Complete MCP parity with REST endpoints
 
-### Phase 4: MCP Server Integration
-**Rationale:** Core differentiator. Enables Claude Code native integration. Builds on proven REST API and service layer.
+**Uses (from STACK.md):**
+- MCP TypeScript SDK 1.x
+- Shared Zod schemas from src/schemas/
 
-**Addresses:**
-- MCP TypeScript SDK integration
-- Tool definitions (create_task, get_task, update_task, list_tasks, add_comment)
-- Zod schema reuse from REST API
-- JSON-RPC transport configuration
-- Error handling adapted for MCP protocol
+**Implements (from ARCHITECTURE.md):**
+- project-tools.ts file with registerProjectTools() function
+- Tool naming convention: {resource}_{action} snake_case pattern
+- Structured error responses via convertToMcpError()
 
-**Avoids:**
-- Pitfall: Duplicating business logic
-- Pitfall: Inconsistent validation
+**Avoids (from PITFALLS.md):**
+- Pitfall 6: MCP tool name explosion (via convention enforcement)
+- Pitfall 7: Missing schema validation (via .strict() Zod schemas)
+- Pitfall 10: Tool proliferation without categorization (via consistent prefixes)
 
-**Duration:** 3-4 days
+**Research flag:** Standard patterns, skip research-phase. MCP SDK well-documented, existing tool patterns established.
 
----
+### Phase 4: Testing & Documentation
+**Rationale:** Comprehensive testing validates all interfaces work correctly and consistently. JSON output testing particularly important since it's machine-consumed.
 
-### Phase 5: Production Deployment
-**Rationale:** Real-world testing requires running as persistent service. Deployment complexity isolated from development work.
+**Delivers:**
+- JSON output tests for all 18 CLI commands
+- MCP tool tests for all 19 tools
+- Integration tests for CLI → REST → Service flow
+- MCP inspector validation (no stdout pollution)
+- Updated documentation for new commands/tools
 
-**Addresses:**
-- systemd service configuration
-- Environment variable management (dotenvx)
-- Automated backups (daily SQLite file copy)
-- Logging with Pino to journald
-- LAN network binding
+**Avoids (from PITFALLS.md):**
+- Pitfall 9: No JSON test coverage (via dedicated test suite)
+- Verification checklist ensures all architectural boundaries respected
 
-**Avoids:**
-- Pitfall: Running in tmux/screen
-- Pitfall: No backup strategy
+**Research flag:** Standard patterns, skip research-phase. Testing patterns established in existing codebase.
 
-**Duration:** 2-3 days
+### Phase Ordering Rationale
 
----
+- **Phase 1 first:** Infrastructure patterns affect all subsequent commands. Global options, output abstraction, and async handling must be correct before scaling to 18 commands. Retrofitting these is expensive and breaks existing usage.
 
-### Phase 6: Advanced Features (v1.x - Post-Launch)
-**Rationale:** Validate core functionality with real agent usage before building complex features. Let usage patterns guide priorities.
+- **Phases 2 & 3 parallel:** CLI and MCP are independent interfaces. Can develop simultaneously once Phase 1 infrastructure is ready. Both follow established patterns (CLI commands, MCP tools) with clear templates.
 
-**Deferred features:**
-- Parent/child task relationships
-- Task dependencies (blocks/requires)
-- Comments and activity log
-- Change history/audit log
-- Bulk operations
-- Time tracking
+- **Phase 4 last:** Testing validates integration across all components. Cannot fully test until all commands/tools are implemented.
 
-**Research flag:** Dependency cycle detection is HIGH complexity. Requires graph traversal algorithm (DFS) and thorough testing. Budget extra time if dependencies are prioritized.
+- **Dependencies:** Phase 1 → (Phase 2 || Phase 3) → Phase 4. Sequential execution for infrastructure, parallel for interface expansion, final testing.
 
----
+**Architecture alignment:** Phase structure matches the existing layered architecture. Each phase respects the architectural boundaries: CLI commands stay as HTTP clients, MCP tools call services directly, no duplicate validation logic, centralized formatters.
 
-## Phase Ordering Rationale
+**Pitfall mitigation:** This ordering addresses 9 of 10 critical pitfalls before they can manifest. Phase 1 handles the 5 most severe architectural pitfalls. Phase 2 and 3 address naming and testing gaps.
 
-**Why Database First:** All interfaces depend on working data layer. Services must exist before routes/tools/commands can call them.
+### Research Flags
 
-**Why REST Before MCP:** REST is more familiar, easier to test with curl/Postman. OpenAPI spec generated from REST routes informs MCP tool schemas. Debugging is simpler without JSON-RPC layer.
+**Phases with standard patterns (skip research-phase):**
+- **Phase 1 (CLI Infrastructure):** Commander.js and @clack/prompts have excellent documentation, existing error-handler.ts provides pattern
+- **Phase 2 (CLI Command Expansion):** Existing create.ts, list.ts, update.ts provide clear templates for new commands
+- **Phase 3 (MCP Tool Expansion):** Existing task-tools.ts, dependency-tools.ts, comment-tools.ts provide clear templates for project-tools.ts
+- **Phase 4 (Testing & Documentation):** Standard testing patterns, no novel integration challenges
 
-**Why CLI Third:** Validates service reusability across different interfaces. Catches service design flaws before MCP integration. Provides debugging tool for production issues.
-
-**Why MCP After REST+CLI:** MCP is core value but highest risk. Building on proven service layer reduces risk. If MCP integration has issues, REST and CLI still work.
-
-**Why Deployment Last:** Production environment config shouldn't block development. Can test locally with `npm run dev` throughout phases 1-4.
-
-## Research Flags for Phases
-
-**Phase 1: Database Schema**
-- Standard patterns, unlikely to need research
-- SQLite documentation is excellent
-- Migration tools (Drizzle Kit) are well-documented
-
-**Phase 2: REST API**
-- Standard patterns, unlikely to need research
-- Fastify documentation covers all use cases
-- OpenAPI generation is automatic
-
-**Phase 3: CLI**
-- Standard patterns, unlikely to need research
-- Commander.js examples cover Git-style subcommands
-
-**Phase 4: MCP Server**
-- **Likely needs deeper research**
-- MCP TypeScript SDK is new (v1.x in 2026), fewer examples than REST frameworks
-- Tool schema design for LLM consumption may require iteration
-- Error handling patterns for MCP are less established than REST
-- stdio vs SSE transport decision needs validation
-
-**Phase 5: Deployment**
-- Standard patterns, unlikely to need research
-- systemd service files well-documented
-- Ubuntu LAN binding is straightforward
-
-**Phase 6: Advanced Features**
-- **Dependency cycle detection needs deeper research**
-- Graph algorithms (DFS, topological sort) require careful implementation
-- Testing complex dependency chains is time-consuming
-- Parent/child relationships may have subtle edge cases
+**No phases need deeper research:** All work extends existing patterns with well-documented libraries. Research has already identified pitfalls and prevention strategies.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Node.js 22 + Fastify + SQLite recommended by recent 2025-2026 sources. MCP TypeScript SDK production-ready. |
-| Features | HIGH | Feature landscape validated against Jira/Linear/GitHub Issues. Table stakes vs differentiators clearly identified from multiple sources. |
-| Architecture | HIGH | Layered architecture pattern proven across 10+ sources. Repository pattern, dependency injection standard for Node.js services. |
-| Pitfalls | HIGH | SQLite concurrency issues documented extensively. API design for LLMs validated by recent research (RestGPT, Gravitee). |
+| Stack | HIGH | All core technologies verified via official docs, version compatibility confirmed, existing implementation proven |
+| Features | HIGH | Feature priorities based on CLI best practices (clig.dev), competitor analysis (gh, taskwarrior), and MCP specification |
+| Architecture | HIGH | Existing codebase analysis reveals clean layered design, extension points clear, no architectural changes needed |
+| Pitfalls | HIGH | 10 critical pitfalls identified from Commander.js issues, MCP SDK docs, CLI best practices guides, all with prevention strategies |
 
-## Gaps to Address
+**Overall confidence:** HIGH
 
-### Not Fully Researched
+All research areas are grounded in official documentation, established best practices, or existing codebase analysis. No speculative recommendations. The existing architecture is sound and well-suited for this expansion.
 
-**MCP Tool Design Patterns:**
-- **Gap:** Limited examples of MCP tools for task management. Most MCP servers expose file systems, databases, or external APIs.
-- **Action:** Phase 4 may require experimentation with tool schemas. Follow MCP best practices documentation closely.
+### Gaps to Address
 
-**Dependency Graph Visualization:**
-- **Gap:** Unclear if agents need graph export functionality.
-- **Action:** Defer to v2+. Wait for agent usage patterns to clarify value.
+**No significant gaps identified.** The research is comprehensive for the v1.1 milestone scope. Minor validation items:
 
-**Natural Language Query Translation:**
-- **Gap:** Feasibility unclear. LLMs might generate filter parameters directly, making NL translation unnecessary.
-- **Action:** Mark as v2+ experimental feature. Test whether agents struggle with structured filters before building.
+- **@clack/prompts integration:** While library is well-documented (v1.0.1, Jan 2026), test interactive prompt flow with TTY detection and Ctrl+C handling before committing to implementation pattern
+- **Commander.js global option inheritance:** Test `tasks --json list` vs `tasks list --json` early in Phase 1 to verify .optsWithGlobals() behavior matches research expectations
+- **MCP tool naming convention:** Confirm snake_case preference aligns with LLM agent expectations (research shows this is MCP community standard, but validate with actual Claude usage)
 
-### Explicitly Out of Scope (Per PROJECT.md)
-
-- Web UI implementation
-- Mobile app development
-- Cloud hosting strategies
-- Multi-user authentication systems
-- Real-time push notification infrastructure
-
-## Technology Decision Rationale
-
-### Why Node.js Over Python?
-
-Node.js 22 chosen over Python based on:
-1. **Native SQLite support** in Node.js 22.5.0+ reduces dependencies
-2. **MCP TypeScript SDK maturity** - production-ready v1.x with official support
-3. **Fastify performance** - 2.7x faster than Express, built-in schema validation
-4. **Single-language stack** - TypeScript for REST, MCP, CLI simplifies development
-5. **better-sqlite3** is faster and more mature than Python's sqlite3
-
-Python (FastAPI) would work well but adds language context-switching overhead for Stuart as primary developer.
-
-### Why Fastify Over Express?
-
-Fastify chosen over Express based on:
-1. **Performance:** 2.7x faster (45k vs 15k req/sec) matters for multi-agent load
-2. **Auto-gen OpenAPI:** Built-in schema validation generates OpenAPI spec automatically
-3. **Modern architecture:** HTTP/2, async/await native, plugin system
-4. **Type safety:** First-class TypeScript support
-
-Express is proven but stagnant. Fastify is modern standard for 2026 Node.js APIs.
-
-### Why SQLite Over PostgreSQL?
-
-SQLite chosen over PostgreSQL based on:
-1. **Zero configuration:** Single file, no server process to manage
-2. **Local performance:** Faster for read-heavy workloads on same machine
-3. **Simple backups:** Copy file = backup. No pg_dump complexity.
-4. **Scale sufficient:** Handles 100K+ tasks with proper indexing
-5. **Open source:** No licensing, runs anywhere
-
-PostgreSQL offers better write concurrency but adds operational overhead unnecessary for LAN service with known agent count.
-
-### Why better-sqlite3 Over node:sqlite?
-
-better-sqlite3 chosen over node:sqlite based on:
-1. **Production ready:** Proven in production, node:sqlite is experimental (v1.1)
-2. **Performance:** 5-10x faster than async node-sqlite3
-3. **Synchronous API:** Perfect for single-writer pattern, simpler code
-4. **Maturity:** Most popular SQLite library for Node.js, extensive documentation
-
-node:sqlite will likely mature but better-sqlite3 is safer choice for 2026.
-
-## Feature Prioritization Summary
-
-### Must-Have (P1) for Launch
-
-1. Task CRUD via REST API
-2. MCP server with basic tools (create, get, update, list)
-3. Task search and filtering (status, project, assignee, tags)
-4. Multi-project support
-5. API key authentication
-6. CLI for human use
-7. OpenAPI specification
-8. Tags/labels for categorization
-9. Due dates for time-sensitive tasks
-
-### Should-Have (P2) After Validation
-
-10. Parent/child task relationships
-11. Task dependencies (blocks/requires)
-12. Comments/activity log
-13. Change history/audit log
-14. Bulk operations
-15. Automated task linking (#TASK-123 mentions)
-16. Time tracking (estimate + actual)
-
-### Nice-to-Have (P3) Future Consideration
-
-17. Webhooks for task events
-18. Task templates
-19. Dependency graph visualization
-20. Natural language query translation
-21. Rich semantic search context fields
-
-## Critical Success Metrics
-
-### Technical Success
-- [ ] API response time p95 < 100ms for simple queries
-- [ ] Zero SQLITE_BUSY errors in production
-- [ ] 100% OpenAPI spec coverage of all endpoints
-- [ ] All MCP tools tested with Claude Code agents
-
-### Product Success
-- [ ] Claude Code agent creates task via MCP without errors
-- [ ] Stuart uses CLI daily for task management
-- [ ] 10+ agents on local network use service without conflicts
-- [ ] Zero data loss incidents in first month
-
-### Quality Gates
-- [ ] Integration tests with 10K+ task database
-- [ ] Concurrent write tests (5+ agents simultaneously)
-- [ ] Dependency cycle detection validated
-- [ ] Migration system tested with up/down reversibility
-
-## Next Steps (For Orchestrator)
-
-1. **Create roadmap** based on phase structure above
-2. **Define milestones:**
-   - Milestone 1: Foundation + REST API
-   - Milestone 2: CLI + MCP Server
-   - Milestone 3: Production Deployment
-3. **Flag Phase 4 (MCP)** as requiring deeper research during implementation
-4. **Budget extra time** for dependency cycle detection if Phase 6 includes dependencies
-5. **Defer v2 features** (webhooks, templates, NL query) until v1 validates core value
+All gaps are validation items, not knowledge gaps. Existing research provides clear implementation guidance.
 
 ## Sources
 
-All research files (FEATURES.md, STACK.md, ARCHITECTURE.md, PITFALLS.md) contain detailed source citations. Key high-confidence sources:
+### Primary (HIGH confidence)
+- [Fastify Official Documentation](https://fastify.dev/benchmarks/) - Performance benchmarks, v5 features, plugin architecture
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Official repository, v1.x production status, tool registration patterns
+- [Commander.js Official Repository](https://github.com/tj/commander.js) - Subcommand documentation, global options, async handlers
+- [Model Context Protocol Specification (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25) - Tool naming format, schema validation requirements
+- [Node.js SQLite Module](https://nodejs.org/api/sqlite.html) - Native support status in v22.5.0+
+- [TypeScript 5.7+ Documentation](https://www.typescriptlang.org/docs/) - Native Node.js execution, module resolution
+- [@clack/prompts npm](https://www.npmjs.com/package/@clack/prompts) - Version 1.0.1 verified, API documentation, bundle size
 
-- [Fastify Official Documentation](https://fastify.dev/) - Performance benchmarks, v5 features
-- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-11-25) - Official MCP protocol definition
-- [Architecture of SQLite](https://sqlite.org/arch.html) - Official SQLite architecture
-- [Designing APIs for LLM Apps](https://www.gravitee.io/blog/designing-apis-for-llm-apps) - API design for LLM consumption
-- [Linear vs Jira Comparison](https://everhour.com/blog/linear-vs-jira/) - Competitor feature analysis
+### Secondary (MEDIUM confidence)
+- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/) - Industry best practices for --json output, error handling, interactivity
+- [The Definitive Guide to Commander.js](https://betterstack.com/community/guides/scaling-nodejs/commander-explained/) - Patterns and best practices
+- [Commander.js GitHub Issues](https://github.com/tj/commander.js/issues) - Issue #476 (global options), #806 (async actions), #983 (organization), #1426 (option sharing)
+- [MCP Best Practices Guide](https://modelcontextprotocol.info/docs/best-practices/) - Architecture and implementation patterns
+- [MCP Error Handling Guide](https://mcpcat.io/guides/error-handling-custom-mcp-servers/) - Structured error response patterns
+- [SEP-986: Tool Name Format](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986) - Tool naming specification discussion
+- [MCP Server Naming Conventions](https://zazencodes.com/blog/mcp-server-naming-conventions) - Community standards for snake_case
+- [GitHub CLI Manual](https://cli.github.com/manual/) - Competitor analysis for subcommand patterns
+- [Taskwarrior Documentation](https://taskwarrior.org/docs/) - Competitor analysis for CLI UX patterns
+- [Node.js CLI Best Practices](https://github.com/lirantal/nodejs-cli-apps-best-practices) - JSON output, error handling, testing
+- Existing codebase analysis - src/cli/, src/mcp/, src/services/, src/api/
+
+### Tertiary (LOW confidence)
+- [npm-compare: Interactive prompts](https://npm-compare.com/enquirer,inquirer,prompts,readline-sync) - @clack/prompts selected based on bundle size and UX, but comparison data from older sources
 
 ---
-*Research summary for: Wood Fired Bugs*
-*Researched: 2026-02-13*
+*Research completed: 2026-02-13*
+*Ready for roadmap: yes*

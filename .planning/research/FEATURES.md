@@ -1,262 +1,495 @@
-# Feature Landscape
+# Feature Research: CLI/MCP Interface Patterns
 
-**Domain:** LLM-Accessible Task Tracking Service
+**Domain:** Task Management CLI and MCP Tool UX
 **Researched:** 2026-02-13
 **Confidence:** HIGH
 
-## Table Stakes
+## Feature Landscape
 
-Features users (LLM agents and humans) expect. Missing = product feels incomplete.
+### Table Stakes (Users Expect These)
+
+Features users assume exist. Missing these = product feels incomplete.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Task CRUD (Create, Read, Update, Delete) | Core task management requirement, every task tracker has this | LOW | Basic REST endpoints + MCP tools for create, get, update, delete operations |
-| Task status tracking | Users must know if work is todo, in-progress, done, blocked | LOW | Simple state machine: open → in_progress → done/closed. Add blocked state |
-| Task search and filtering | Finding specific tasks without scrolling hundreds of entries | MEDIUM | Filter by status, project, assignee, tags, date ranges. Full-text search on title/description |
-| Multi-project support | Wood Fired Games has multiple projects that need separate organization | LOW | Project entity with FK on tasks. List tasks by project |
-| Task assignment | Knowing who/what is working on what | LOW | assigned_to field (agent or human name), created_by field for tracking origin |
-| Basic metadata (title, description, priority) | Minimum context to understand what needs doing | LOW | Text fields + priority enum (low/medium/high/urgent) |
-| Due dates | Time-sensitive work needs deadlines | LOW | Optional due_date timestamp field |
-| Tags/labels | Flexible categorization beyond projects | LOW | Many-to-many relationship, tags table |
-| Comments/activity log | Discussion and status updates over time | MEDIUM | Comments table with FK to task, timestamp, author |
-| Parent/child task relationships | Breaking down complex work into subtasks | MEDIUM | self-referential FK: parent_task_id. Query children, roll-up status |
-| Task dependencies | Modeling "A blocks B" or "B requires A" relationships | MEDIUM | task_dependencies join table with type (blocks/requires/related) |
-| API key authentication | LAN-accessible service needs access control | LOW | API key in header, validate before executing requests |
-| CLI for humans | Human operators need terminal access | MEDIUM | Command-line interface using REST API client internally |
-| Bulk operations | Agents creating/updating multiple tasks in one action | LOW | Batch create/update endpoints accepting arrays |
+| **CLI: Subcommand organization** | Industry standard (git, docker, gh) uses noun-verb or verb-noun patterns | LOW | Already have `tasks create/list/update`, need to add: `tasks delete`, `tasks project <action>`, `tasks deps <action>`, etc. |
+| **CLI: --json output flag** | Required for scripting, piping to jq, agent consumption | LOW | Add to all commands. Return valid JSON to stdout, errors to stderr |
+| **CLI: --help on all commands** | Users expect --help to show usage, options, examples | LOW | Commander.js provides this automatically |
+| **CLI: Error messages to stderr** | Exit code 0 = success, 1+ = error. Errors go to stderr, output to stdout | LOW | Already implemented in error-handler.ts |
+| **CLI: Status/priority color coding** | Visual differentiation (red=urgent/blocked, yellow=medium/in_progress, green=done) | LOW | Already implemented in formatters.ts (status: blue/yellow/green/gray/red, priority: red/yellow/gray) |
+| **CLI: Table truncation** | Long titles/descriptions shouldn't break table layout | LOW | Already truncates titles to 45 chars in formatters.ts |
+| **CLI: Interactive prompts for missing required fields** | If user forgets a required field, prompt instead of erroring | MEDIUM | Need to detect TTY, check if field missing, prompt with validation, respect --no-input flag |
+| **MCP: snake_case tool names** | MCP standard: alphanumeric + underscore/dash/dot, prefer snake_case | LOW | Already using snake_case (create_task, get_dependencies, etc.) |
+| **MCP: Consistent parameter naming** | Same concepts use same parameter names across tools (task_id not id in one and task_id in another) | LOW | Already consistent: task_id, project_id, blocks_task_id |
+| **MCP: Structured content + text summary** | Return both human-readable text and structured data for agents | LOW | Already implemented: all tools return content array + structuredContent |
 
-## Differentiators
+### Differentiators (Competitive Advantage)
 
-Features that set this product apart. Not expected, but valuable for LLM-first architecture.
+Features that set the product apart. Not required, but valuable.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| MCP server integration | Native Claude Code agent integration without REST overhead | MEDIUM | Expose tools via MCP protocol for create_task, get_task, update_task, list_tasks, add_comment |
-| Structured JSON responses optimized for LLM parsing | LLMs consume structured data better than human-friendly formats | LOW | Consistent schema-driven JSON with no HTML, clear field names, no abbreviations |
-| OpenAPI specification | Machine-readable API contract enables dynamic tool discovery by LLMs | LOW | Generate OpenAPI 3.0+ spec from routes, rich descriptions in schemas |
-| Task templates for common patterns | Agents can spawn standardized work structures (e.g., "bug report" template) | MEDIUM | Template system with field defaults, subtask scaffolding |
-| Semantic search context fields | Dedicated fields for LLM context (related files, code blocks, logs) | LOW | JSON field for structured context data agents can populate |
-| Automated task linking via mentions | Detect "#TASK-123" in descriptions/comments and auto-link | LOW | Regex parsing on input, store as explicit relationship |
-| Query by natural language intent | "Find all high-priority bugs assigned to Claude in wood-fired-platform" | HIGH | LLM-powered query translation to SQL filters (defer to v2+) |
-| Change history/audit log | LLMs can review what changed when for debugging workflows | MEDIUM | task_history table tracking field changes with timestamp, actor |
-| Webhook notifications for task events | External systems (agents, CI/CD) react to task state changes | MEDIUM | HTTP POST to registered URLs on create/update/status_change |
-| Rich time tracking | Estimate vs actual time, multiple time entries | MEDIUM | time_estimate field, time_entries table for logging work |
-| Dependency graph visualization endpoint | Export task graph as DOT/JSON for visualization tools | LOW | Recursive query returning nodes/edges |
+| **CLI: Progressive disclosure in --help** | Show common options first, --verbose for full docs | MEDIUM | Commander.js supports this via .addHelpText(). Show 5-7 most common flags, note "use --verbose for all options" |
+| **CLI: Smart defaults from context** | Infer project_id from current directory .wfb-project file | MEDIUM | If no --project flag, check for .wfb-project in cwd. Makes CLI feel contextual |
+| **CLI: Suggest corrections on typos** | "Did you mean 'tasks list'?" when user types 'tasks ls' | LOW | Use string distance algorithm on unknown commands |
+| **MCP: Rich error context in structuredContent** | Include error_code, validation_failures array in MCP errors | LOW | Extend convertToMcpError() to include structured error details |
+| **CLI: --format flag** | Support --format=json/table/plain for different consumption modes | MEDIUM | --format=table (default, colored), --format=plain (no colors, for grep), --format=json (alias for --json) |
+| **CLI: Confirmation prompts for destructive actions** | Require --force or interactive Y/N for delete operations | LOW | Prevents accidental deletions, standard practice (rm -i, git branch -D) |
 
-## Anti-Features
+### Anti-Features (Commonly Requested, Often Problematic)
 
-Features to explicitly NOT build.
+Features that seem good but create problems.
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| Web UI | Scope creep, maintenance burden, not needed for agents or CLI-first human | Provide excellent CLI and document REST API for custom UIs if needed later |
-| Real-time push notifications | Adds complexity (websockets/SSE), agents poll efficiently enough | Webhooks for event-driven integration, polling for status checks |
-| User accounts with passwords | Overkill for single-human + agent use case, complicates auth | API key per agent/system is sufficient, simpler security model |
-| Email integration | Feature bloat, external dependency, not needed for LAN service | Keep focus on API/MCP interfaces |
-| Gantt charts / timeline views | Complex feature, low value for agent-driven workflows | Agents query dependency graphs and due dates to plan work |
-| Advanced permission system (roles, ACLs) | Unnecessary complexity for single-operator environment | API key is sufficient access control |
-| File attachments | Storage complexity, large data in DB or file management | Store file paths as text fields, let agents manage files separately |
-| Built-in time tracking UI | Human-centric feature, agents track programmatically | Provide time_entries API, let CLI/agents log time as data |
-| Sprint/iteration management | Agile ceremony overhead not needed for agent workflows | Use tags/filters to group tasks, let agents organize work their way |
-| Customizable workflows | Over-engineering, adds UI complexity | Fixed, sensible state machine; tags for custom categorization |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **CLI: Arbitrary command abbreviations** | Convenience (like git co for checkout) | Prevents adding new commands (if 'ls' = 'list', can't add 'list-something' later) | Explicit aliases in shell config (~/.bashrc), not CLI itself |
+| **CLI: --verbose on every command** | Debugging output | Pollutes normal usage, users forget to turn it off, breaks scripting | Use DEBUG=wfb:* environment variable, keeps verbose output opt-in |
+| **MCP: Single "do_everything" tool** | Seems simpler than many tools | Agents can't discover capabilities, poor error messages, hard to validate | Keep tools granular: one tool = one operation |
+| **CLI: Auto-update checking** | Keep users on latest version | Network I/O on every command = slow startup, privacy concerns | Document manual update process, check on explicit `tasks version --check-update` only |
+| **CLI: Pagination in table output** | Handle 1000+ task lists | Adds complexity, users can pipe to `less` or use filters | Encourage filtering (--status, --project, --search) instead of paginating everything |
 
 ## Feature Dependencies
 
 ```
-Task CRUD (base requirement)
-    ├──requires──> SQLite database schema
-    ├──requires──> REST API framework
-    └──requires──> API key auth
+[CLI: Interactive prompts]
+    └──requires──> [TTY detection]
+    └──requires──> [--no-input flag]
 
-MCP server
-    ├──requires──> Task CRUD endpoints
-    └──requires──> MCP protocol implementation
+[CLI: --json output]
+    └──required-by──> [Agent CLI consumption]
+    └──required-by──> [jq piping]
 
-Task search/filtering
-    └──requires──> Task CRUD
+[CLI: Subcommand structure]
+    └──enables──> [Future expansion without breaking changes]
 
-Parent/child relationships
-    ├──requires──> Task CRUD
-    └──enhances──> Task search (filter by hierarchy)
+[MCP: Structured error context]
+    └──enhances──> [Agent error recovery]
 
-Task dependencies
-    ├──requires──> Task CRUD
-    └──conflicts──> Circular dependency detection needed
+[CLI: Smart defaults from context]
+    └──optional-enhances──> [Project-scoped workflow]
 
-Comments/activity log
-    └──requires──> Task CRUD
-
-Change history/audit log
-    └──requires──> Task CRUD + database triggers or application-level tracking
-
-Webhooks
-    ├──requires──> Task CRUD
-    └──requires──> Event system for state changes
-
-Task templates
-    └──requires──> Task CRUD + parent/child relationships
-
-Automated task linking
-    └──requires──> Task CRUD + comments
-
-CLI
-    ├──requires──> REST API
-    └──optional──> MCP server for direct integration
-
-OpenAPI spec
-    └──requires──> REST API routes defined
-
-Bulk operations
-    └──requires──> Task CRUD
+[CLI: --format flag]
+    └──conflicts──> [Single responsibility - use --json instead]
 ```
 
 ### Dependency Notes
 
-- **Task CRUD is foundational** — everything depends on basic create/read/update/delete operations working correctly
-- **MCP server enhances REST API** — both provide task access, MCP optimized for Claude Code integration
-- **Parent/child + dependencies** — both model task relationships but serve different purposes (decomposition vs sequencing)
-- **Circular dependency detection required** — if task A depends on task B which depends on task A, system must reject or warn
-- **Audit log vs comments** — audit log is machine tracking, comments are intentional communication
-- **Webhooks enable event-driven workflows** — agents can react to task changes without polling
+- **Interactive prompts require TTY detection:** Don't prompt if stdin is not a TTY (piped input, cron jobs). Must provide --no-input flag to disable prompts and error on missing fields instead.
+- **--json output required by agents:** Agents and scripts need machine-readable output. Must be valid JSON, not pretty-printed unless requested.
+- **Subcommand structure enables expansion:** Using `tasks project create` allows adding `tasks project archive` later without breaking `tasks create`.
+- **--format flag conflicts with single responsibility:** Instead of --format=json/table/plain, use --json and --plain as separate flags. Simpler mental model.
 
 ## MVP Definition
 
-### Launch With (v1.0)
+### Launch With (v1.1 - Current Milestone)
 
-Minimum viable product to validate LLM-agent task tracking concept.
+Minimum viable additions to achieve CLI/MCP parity and basic polish.
 
-- [x] Task CRUD via REST API — Core functionality for creating, reading, updating, deleting tasks
-- [x] Task model: title, description, status, priority, project, assignee, created_by, due_date
-- [x] Multi-project support — Separate Wood Fired Games projects cleanly
-- [x] Tags/labels — Flexible categorization
-- [x] Task search and filtering — Find tasks by status, project, assignee, tags
-- [x] API key authentication — Secure LAN service
-- [x] MCP server with basic tools — Native Claude Code integration (create_task, get_task, update_task, list_tasks)
-- [x] CLI for human use — Stuart can manage tasks from terminal
-- [x] OpenAPI specification — Machine-readable API contract for LLM discovery
-- [x] Structured JSON optimized for LLM parsing — Clear schemas, no ambiguity
+- [x] **CLI: Subcommand structure for all REST endpoints** — Already have create/list/update, need: delete, project CRUD, deps, comments, subtasks, estimates, health
+- [ ] **CLI: --json flag on all commands** — Essential for agent consumption and scripting
+- [ ] **CLI: Interactive prompts for missing required fields** — Improves human UX when fields forgotten
+- [ ] **CLI: Confirmation prompt on delete** — Prevent accidental data loss
+- [ ] **MCP: Project CRUD tools (5 tools)** — Closes the parity gap with REST API
+- [ ] **MCP: Health check tool** — Allows agents to verify service is running
+- [ ] **MCP: List subtasks tool** — Already have get_subtasks, need list_subtasks for consistency
 
 ### Add After Validation (v1.x)
 
-Features to add once core is working and validated with agent workflows.
+Features to add once core is working and user feedback is gathered.
 
-- [ ] Parent/child task relationships — Task decomposition (wait for agents to request subtask workflows)
-- [ ] Task dependencies (blocks/requires) — Sequencing work (add when agents need to model complex workflows)
-- [ ] Comments/activity log — Communication on tasks (add when multi-agent collaboration emerges)
-- [ ] Change history/audit log — Track who changed what when (useful for debugging agent behaviors)
-- [ ] Bulk operations — Batch create/update for efficiency (add if agents frequently create task sets)
-- [ ] Automated task linking via mentions — Detect #TASK-123 references (convenience feature)
-- [ ] Time tracking (estimate, actual) — Work measurement (if agents start providing time data)
+- [ ] **CLI: Progressive disclosure in --help** — Add when help text becomes overwhelming (>15 flags)
+- [ ] **CLI: Smart defaults from .wfb-project file** — Add when users report fatigue from typing --project repeatedly
+- [ ] **CLI: Suggest corrections on typos** — Polish feature, add when core commands stable
+- [ ] **CLI: --plain output format** — Add when users report issues piping colored output to grep/awk
+- [ ] **MCP: Rich error context in structuredContent** — Add when agents need better error recovery
 
 ### Future Consideration (v2+)
 
-Features to defer until product-market fit is established and usage patterns clarify.
+Features to defer until product-market fit is established.
 
-- [ ] Webhooks for task events — Event-driven integration (requires clear external integration use cases)
-- [ ] Task templates — Standardized work patterns (wait to observe common task structures)
-- [ ] Dependency graph visualization — Export task relationships as graphs (nice-to-have, not critical)
-- [ ] Natural language query translation — "Find all bugs in project X" → SQL (high complexity, unclear value)
-- [ ] Semantic search context fields — Structured LLM context storage (experimental, needs validation)
-- [ ] Rich time tracking with entries — Detailed work logging (unclear if agents/human need this granularity)
+- [ ] **CLI: Batch operations** — `tasks update --status done --ids 1,2,3` (wait for user demand)
+- [ ] **CLI: Config file support** — `~/.wfbrc` for default flags (wait for repeated requests)
+- [ ] **MCP: Batch tool execution** — Single tool that takes array of operations (wait for performance issues)
+- [ ] **CLI: Shell completions** — Bash/zsh tab completion (polish feature, not critical)
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Task CRUD via REST | HIGH | LOW | P1 |
-| MCP server integration | HIGH | MEDIUM | P1 |
-| Task search/filtering | HIGH | MEDIUM | P1 |
-| Multi-project support | HIGH | LOW | P1 |
-| API key auth | HIGH | LOW | P1 |
-| CLI | HIGH | MEDIUM | P1 |
-| OpenAPI spec | HIGH | LOW | P1 |
-| Tags/labels | MEDIUM | LOW | P1 |
-| Due dates | MEDIUM | LOW | P1 |
-| Parent/child relationships | MEDIUM | MEDIUM | P2 |
-| Task dependencies | MEDIUM | MEDIUM | P2 |
-| Comments | MEDIUM | MEDIUM | P2 |
-| Audit log | MEDIUM | MEDIUM | P2 |
-| Bulk operations | MEDIUM | LOW | P2 |
-| Automated linking | LOW | LOW | P2 |
-| Time tracking | LOW | MEDIUM | P2 |
-| Webhooks | LOW | MEDIUM | P3 |
-| Task templates | LOW | MEDIUM | P3 |
-| Dependency graph export | LOW | LOW | P3 |
-| NL query translation | LOW | HIGH | P3 |
+| **CLI: --json on all commands** | HIGH | LOW | P1 |
+| **CLI: Delete command** | HIGH | LOW | P1 |
+| **CLI: Project CRUD commands** | HIGH | LOW | P1 |
+| **CLI: Dependency commands** | MEDIUM | LOW | P1 |
+| **CLI: Comment commands** | MEDIUM | LOW | P1 |
+| **CLI: Interactive prompts** | HIGH | MEDIUM | P1 |
+| **CLI: Delete confirmation** | HIGH | LOW | P1 |
+| **MCP: Project CRUD tools** | HIGH | LOW | P1 |
+| **MCP: Health check tool** | MEDIUM | LOW | P1 |
+| **CLI: Progressive disclosure** | LOW | MEDIUM | P2 |
+| **CLI: Smart context defaults** | MEDIUM | MEDIUM | P2 |
+| **CLI: Typo suggestions** | LOW | LOW | P2 |
+| **CLI: --plain output** | MEDIUM | LOW | P2 |
+| **MCP: Rich error context** | MEDIUM | MEDIUM | P2 |
+| **CLI: Batch operations** | LOW | HIGH | P3 |
+| **CLI: Config file** | LOW | MEDIUM | P3 |
+| **CLI: Shell completions** | LOW | MEDIUM | P3 |
 
 **Priority key:**
-- P1: Must have for launch (validate LLM-agent integration)
-- P2: Should have, add based on usage patterns (enhance workflows)
-- P3: Nice to have, future consideration (wait for clear demand)
+- P1: Must have for v1.1 (interface parity milestone)
+- P2: Should have, add when user feedback indicates need
+- P3: Nice to have, future consideration
+
+## Command Structure Patterns
+
+### Industry Standards Analysis
+
+| Tool | Pattern | Example | Notes |
+|------|---------|---------|-------|
+| **Git** | verb-noun (sometimes noun-verb) | `git commit`, `git branch delete` | Inconsistent, but established |
+| **Docker** | noun-verb | `docker container create`, `docker image ls` | Highly consistent, scales well |
+| **GitHub CLI (gh)** | noun-verb | `gh pr create`, `gh issue list` | Modern standard, easy to discover |
+| **Taskwarrior** | verb-only | `task add`, `task list`, `task delete` | Simple but doesn't scale to multiple entities |
+| **Kubernetes (kubectl)** | verb-noun | `kubectl get pods`, `kubectl delete service` | Verb-first for action-oriented workflow |
+
+**Recommendation for Wood Fired Bugs:**
+
+Use **noun-verb pattern** like `gh` and Docker for consistency and scalability:
+
+```bash
+tasks task create        # Create a task
+tasks task list          # List tasks
+tasks task update <id>   # Update task
+tasks task delete <id>   # Delete task
+
+tasks project create     # Create project
+tasks project list       # List projects
+
+tasks deps add           # Add dependency
+tasks deps list <id>     # List dependencies for task
+
+tasks comments add       # Add comment
+tasks comments list <id> # List comments for task
+```
+
+**Alternative (simpler for v1.1):**
+
+Keep current flat structure, expand it:
+
+```bash
+tasks create              # Create task (current)
+tasks list                # List tasks (current)
+tasks update <id>         # Update task (current)
+tasks delete <id>         # NEW
+tasks show <id>           # NEW - detailed view
+
+tasks project-create      # NEW
+tasks project-list        # NEW
+tasks project-update <id> # NEW
+tasks project-delete <id> # NEW
+tasks project-show <id>   # NEW
+
+tasks deps-add <id> <blocks-id>      # NEW
+tasks deps-remove <id> <blocks-id>   # NEW
+tasks deps-list <id>                 # NEW
+
+tasks comment-add <id> "text"        # NEW
+tasks comment-list <id>              # NEW
+tasks comment-delete <comment-id>    # NEW
+```
+
+**Chosen approach:** Flat structure with hyphenated commands (simpler, no subcommand parser changes needed).
+
+## JSON Output Format
+
+### Standard Envelope
+
+All --json output uses consistent structure:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "metadata": {
+    "timestamp": "2026-02-13T17:30:00Z",
+    "version": "1.1.0"
+  }
+}
+```
+
+### Error Format
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid task status: 'invalid'",
+    "details": {
+      "field": "status",
+      "valid_values": ["open", "in_progress", "done", "closed", "blocked"]
+    }
+  },
+  "metadata": {
+    "timestamp": "2026-02-13T17:30:00Z",
+    "version": "1.1.0"
+  }
+}
+```
+
+### List Results
+
+```json
+{
+  "success": true,
+  "data": [
+    { "id": 1, "title": "Task 1", ... },
+    { "id": 2, "title": "Task 2", ... }
+  ],
+  "metadata": {
+    "count": 2,
+    "timestamp": "2026-02-13T17:30:00Z",
+    "version": "1.1.0"
+  }
+}
+```
+
+**jq-friendly patterns:**
+
+```bash
+# Get all task IDs
+tasks list --json | jq '.data[].id'
+
+# Get tasks with high priority
+tasks list --json | jq '.data[] | select(.priority == "high")'
+
+# Count tasks by status
+tasks list --json | jq 'group_by(.data[].status) | map({status: .[0].status, count: length})'
+```
+
+## Interactive Prompt Patterns
+
+### When to Prompt
+
+**Prompt when:**
+- Required field missing AND stdin is TTY
+- Destructive action (delete) AND no --force flag AND stdin is TTY
+
+**Don't prompt when:**
+- stdin is not TTY (piped input, cron, agent)
+- --no-input flag is set
+- --json flag is set (machine mode)
+
+### Prompt Implementation
+
+```typescript
+import readline from 'readline';
+
+// Check if stdin is TTY
+const isTTY = process.stdin.isTTY;
+
+// Prompt for missing field
+async function promptForField(fieldName: string, required = true): Promise<string> {
+  if (!isTTY) {
+    if (required) {
+      throw new Error(`${fieldName} is required when running non-interactively`);
+    }
+    return '';
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${fieldName}: `, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+// Ctrl+C handling
+process.on('SIGINT', () => {
+  console.log('\nOperation cancelled');
+  process.exit(130); // Standard exit code for SIGINT
+});
+```
+
+### Confirmation Prompts
+
+```typescript
+async function confirm(message: string, defaultYes = false): Promise<boolean> {
+  const suffix = defaultYes ? '[Y/n]' : '[y/N]';
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${message} ${suffix}: `, (answer) => {
+      rl.close();
+      const normalized = answer.toLowerCase().trim();
+      if (normalized === '') {
+        resolve(defaultYes);
+      } else {
+        resolve(normalized === 'y' || normalized === 'yes');
+      }
+    });
+  });
+}
+```
+
+**Usage:**
+
+```bash
+# With TTY
+$ tasks delete 123
+Delete task 123: "Implement feature X"? [y/N]: y
+Task 123 deleted
+
+# Force flag (no prompt)
+$ tasks delete 123 --force
+Task 123 deleted
+
+# Non-TTY (error)
+$ echo "123" | tasks delete
+Error: task_id must be provided as argument when running non-interactively
+
+# Correct non-TTY usage
+$ echo "123" | xargs tasks delete --force
+```
+
+## Table Formatting Best Practices
+
+### Responsive Width
+
+Current implementation uses cli-table3 with wordWrap enabled. Considerations:
+
+- **Fixed width columns:** Prevents table from breaking terminal width
+- **Truncation with ellipsis:** Title truncated to 45 chars (already implemented)
+- **Hide columns on narrow terminals:** Check process.stdout.columns, hide less critical columns if <80
+
+```typescript
+const terminalWidth = process.stdout.columns || 80;
+const includeAssignee = terminalWidth >= 100;
+const includeDueDate = terminalWidth >= 120;
+```
+
+### Color Coding Reference
+
+**Status colors (already implemented):**
+- open: blue (new work)
+- in_progress: yellow (active)
+- done: green (completed)
+- closed: gray (archived)
+- blocked: red (attention needed)
+
+**Priority colors (already implemented):**
+- urgent: red bold (immediate action)
+- high: red (soon)
+- medium: yellow (normal)
+- low: gray (when possible)
+
+**Best practice:** Use ANSI color codes via chalk, not terminal-specific codes. Respect NO_COLOR environment variable.
+
+## MCP Tool Naming Conventions
+
+### Official MCP Specification
+
+- **Length:** 1-64 characters (inclusive)
+- **Case:** Case-sensitive
+- **Allowed:** Alphanumeric, underscore (_), dash (-), dot (.), forward slash (/)
+- **Prohibited:** Spaces, commas, special characters
+- **Recommendation:** snake_case for tool names
+
+### Current Implementation (Already Compliant)
+
+```
+create_task           ✓ snake_case, descriptive
+get_task              ✓ snake_case, follows CRUD pattern
+update_task           ✓ snake_case, follows CRUD pattern
+delete_task           ✓ snake_case, follows CRUD pattern
+list_tasks            ✓ snake_case, plural for list operations
+get_subtasks          ✓ snake_case, clear parent-child relationship
+add_dependency        ✓ snake_case, verb_noun pattern
+remove_dependency     ✓ snake_case, verb_noun pattern
+get_dependencies      ✓ snake_case, plural for multiple items
+add_comment           ✓ snake_case, verb_noun pattern
+list_comments         ✓ snake_case, plural for list operations
+delete_comment        ✓ snake_case, verb_noun pattern
+```
+
+### Naming Patterns to Follow
+
+**CRUD operations:**
+- create_[entity] (POST)
+- get_[entity] (GET single)
+- list_[entities] (GET collection)
+- update_[entity] (PUT/PATCH)
+- delete_[entity] (DELETE)
+
+**Relationships:**
+- add_[relationship] (create edge)
+- remove_[relationship] (delete edge)
+- get_[relationships] (list edges)
+
+**Special operations:**
+- check_health
+- search_tasks (when search is primary operation)
+
+### Tools to Add for v1.1
+
+```
+create_project        # POST /api/v1/projects
+get_project           # GET /api/v1/projects/:id
+list_projects         # GET /api/v1/projects
+update_project        # PUT /api/v1/projects/:id
+delete_project        # DELETE /api/v1/projects/:id
+check_health          # GET /api/v1/health
+```
 
 ## Competitor Feature Analysis
 
-| Feature | Jira | Linear | GitHub Issues | Wood Fired Bugs Approach |
-|---------|------|--------|---------------|--------------------------|
-| Task CRUD | Full-featured | Streamlined | Basic | Streamlined, LLM-optimized JSON |
-| API access | REST + GraphQL | GraphQL | REST + GraphQL | REST (simple) + MCP (native) |
-| Multi-project | Yes (complex) | Yes (clean) | Per-repo only | Yes, simple project FK |
-| Parent/child tasks | Subtasks, epics | Yes | Tasklists | Simple parent_task_id FK |
-| Dependencies | Links, blocks | Dependencies | Not native | blocks/requires relationship types |
-| Search/filter | Advanced JQL | Fast, minimal | Basic | Filter by key fields, full-text on title/desc |
-| CLI | Third-party | Official CLI | gh CLI | Built-in, first-class |
-| LLM integration | None native | None native | None native | **MCP server, structured JSON, OpenAPI** |
-| Auth | OAuth, users | OAuth, users | OAuth, users | **API keys (simpler)** |
-| Comments | Rich, @mentions | Threaded | Comments + reactions | Simple comment log |
-| Time tracking | Built-in | Via integrations | Not native | Estimate + actual (optional) |
-| Webhooks | Yes | Yes | Yes | Planned for v2+ |
-| Web UI | Complex, powerful | Fast, minimal | Integrated with code | **None (anti-feature)** |
-| Self-hosted | Yes (expensive) | No | GitHub Enterprise | **Yes, SQLite on LAN** |
-
-### Competitive Positioning
-
-**Jira:** Over-engineered for single-operator + agents. Complex UI, heavyweight, requires database server.
-**Linear:** Modern, fast, but cloud-only and human-centric UI. No native LLM integration.
-**GitHub Issues:** Tightly coupled to repos. Not suitable for multi-project game studio work tracking.
-
-**Wood Fired Bugs:** LLM-first architecture with MCP, simple self-hosted SQLite service, API-key auth, no UI bloat. Optimized for agent consumption with structured JSON and OpenAPI.
+| Feature | Taskwarrior | GitHub CLI (gh) | Our Approach |
+|---------|-------------|-----------------|--------------|
+| **JSON output** | `task export` (always JSON) | `--json` flag on most commands | `--json` flag on all commands (v1.1) |
+| **Interactive prompts** | No (all via flags) | Yes (`gh pr create` prompts for fields) | Yes, with --no-input escape hatch (v1.1) |
+| **Delete confirmation** | No (immediate delete) | Yes (shows preview, asks Y/N) | Yes, unless --force (v1.1) |
+| **Color coding** | Yes (extensive) | Yes (status-based colors) | Yes (status + priority colors, already in v1.0) |
+| **Subcommand structure** | Flat (task add, task done) | Nested (gh pr create, gh issue list) | Flat with hyphens (tasks project-create) for simplicity |
+| **Table truncation** | No (can overflow) | Yes (truncates to terminal width) | Yes (fixed 45 char title truncation, v1.0) |
+| **--help quality** | Excellent (man page level) | Good (examples included) | Good (Commander.js auto-generates, can enhance with examples) |
 
 ## Sources
 
-### Task Tracking Ecosystem
-- [13 best issue tracking software tools for 2026](https://www.zendesk.com/service/help-desk-software/issue-tracking-software/)
-- [10 Most Effective Issue Tracking Software Tools in 2026](https://www.cflowapps.com/issue-tracking-software-tools/)
-- [Linear vs Jira: A 2026 Guide](https://everhour.com/blog/linear-vs-jira/)
-- [Jira vs GitHub Issues](https://www.atlassian.com/software/jira/comparison/jira-vs-github)
-- [Jira vs Linear vs GitHub Issues in 2025](https://medium.com/@samurai.stateless.coder/jira-vs-linear-vs-github-issues-in-2025-what-real-web-dev-teams-actually-use-and-why-d808740317e6)
+### CLI Best Practices
+- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/)
+- [Taskwarrior Documentation](https://taskwarrior.org/docs/)
+- [GitHub CLI Manual](https://cli.github.com/manual/)
 
-### API-First Design
-- [Best Task Management Software with API 2026](https://www.getapp.com/project-management-planning-software/task-management/f/api/)
-- [API Governance Best Practices for 2026](https://treblle.com/blog/api-governance-best-practices)
-- [Guide to Project Management APIs](https://www.merge.dev/blog/guide-to-project-management-apis)
+### JSON Output Conventions
+- [jq Manual](https://jqlang.org/manual/)
+- [AWS CLI Output Formats](https://docs.aws.amazon.com/cli/v1/userguide/cli-usage-output-format.html)
 
-### LLM Integration
-- [Designing APIs for LLM Apps](https://www.gravitee.io/blog/designing-apis-for-llm-apps)
-- [RestGPT: Connecting LLMs with RESTful APIs](https://restgpt.github.io/)
-- [Multi-Agent Multi-LLM Systems Guide 2026](https://dasroot.net/posts/2026/02/multi-agent-multi-llm-systems-future-ai-architecture-guide-2026/)
-- [The Complete Guide to LLM & AI Agent Evaluation in 2026](https://www.adaline.ai/blog/complete-guide-llm-ai-agent-evaluation-2026)
+### Interactive Prompt Patterns
+- [Node.js prompts library](https://www.npmjs.com/package/prompts)
+- [Command Line Interface Guidelines - Interactivity](https://clig.dev/)
 
-### MCP Protocol
-- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-11-25)
-- [Model Context Protocol - Anthropic](https://www.anthropic.com/news/model-context-protocol)
-- [Top 10 MCP Servers in 2026](https://www.intuz.com/blog/best-mcp-servers)
-- [How MCP Servers Enable Cross-Platform AI Integration 2026](https://goldeneagle.ai/blog/artificial-intelligence/mcp-servers-cross-platform-ai-2026/)
+### Table Formatting
+- [cli-table3 Documentation](https://github.com/cli-table/cli-table3)
+- [PowerShell Format-Table](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/format-table)
 
-### Task Dependencies & Relationships
-- [What are task dependencies and how to manage them](https://activecollab.com/blog/project-management/task-dependencies-for-better-project-management)
-- [Jira Issue Links and dependencies management](https://bigpicture.one/blog/jira-bigpicture-dependencies/)
-- [Parent-Child Relationships - Google Issue Tracker](https://developers.google.com/issue-tracker/concepts/parent-child-relationships)
+### MCP Conventions
+- [Model Context Protocol Specification (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25)
+- [SEP-986: Tool Name Format Specification](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986)
+- [MCP Server Naming Conventions (zazencodes.com)](https://zazencodes.com/blog/mcp-server-naming-conventions)
 
-### Anti-Patterns
-- [Sprint Anti-Patterns: 29 Examples to Avoid](https://age-of-product.com/sprint-anti-patterns-2/)
-- [25+ Anti-patterns of Sprint Planning](https://agilemania.com/anti-patterns-of-sprint-planning-task-creation)
-- [Eight project management anti-patterns and how to avoid them](https://www.catalyte.io/insights/project-management-anti-patterns/)
-
-### MVP Principles
-- [How to Prioritize and Identify Key Features for Your MVP](https://www.lowcode.agency/blog/how-to-choose-mvp-features)
-- [How to Build a Task Management App [2026 Guide]](https://www.freshcodeit.com/blog/how-to-create-task-management-app-mvp)
-- [How to Define Your MVP's Core Features](https://designli.co/blog/how-to-define-your-mvps-core-features)
+### Color Coding Standards
+- [Project Management Color Conventions](https://www.linkedin.com/pulse/color-codes-project-management-irene)
+- [RAG Status Color Scheme](https://www.schemecolor.com/order-of-priority.php)
 
 ---
-*Feature research for: Wood Fired Bugs (LLM-Accessible Task Tracking Service)*
+*Feature research for: CLI/MCP Interface Parity and Polish*
 *Researched: 2026-02-13*
+*Confidence: HIGH (official sources + existing codebase analysis)*

@@ -1,479 +1,476 @@
-# Pitfalls Research
+# Pitfalls Research: CLI/MCP Parity Expansion
 
-**Domain:** SQLite-backed task tracking service with REST + MCP APIs on Linux
+**Domain:** Adding full CLI/MCP parity to existing task tracking service
+**Context:** Subsequent milestone - expanding from 3 CLI commands to 18+, 12 MCP tools to 19+
 **Researched:** 2026-02-13
 **Confidence:** HIGH
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, data corruption, or major security issues.
+Mistakes that cause rewrites, breaking changes, or major integration failures when scaling interfaces.
 
-### Pitfall 1: SQLite Transaction Upgrade Deadlock
+### Pitfall 1: --json Flag Breaking Interactive Prompts
 
 **What goes wrong:**
-Read transactions that upgrade to write transactions cause immediate SQLITE_BUSY errors even with busy_timeout configured. Multiple concurrent agent clients attempting to read then write creates instant deadlocks that ignore timeout settings.
+Adding `--json` output flag to all CLI commands without properly handling interactive prompts. When users run `tasks create --json`, the command prompts for missing required fields (interactively reading from stdin), but these prompts corrupt the JSON output stream. Scripts parsing JSON receive mixed plaintext prompts and JSON, causing parse failures.
 
 **Why it happens:**
-SQLite requires exclusive write locks. When a connection starts a read transaction (`BEGIN`), then tries to write (INSERT/UPDATE), it must upgrade to a write transaction. If another connection has already begun modifying the database, the upgrade fails immediately with SQLITE_BUSY, completely ignoring the configured timeout.
+Interactive prompts are added to improve CLI UX for humans, but developers forget that `--json` mode targets machine consumption. The code checks `if (!options.title)` and calls `readline.question()`, writing prompt to stdout even when `--json` is active. All stdout writes (prompts, progress, debug messages) intermix with JSON output.
 
 **Consequences:**
-- SQLITE_BUSY errors appear instantly even with 5-10 second timeouts
-- Errors correlate with concurrent agent requests
-- Operations work in isolation but fail with multiple clients
-- Debugging is difficult because errors seem contradictory (timeout ignored)
+- Shell scripts fail with "unexpected token" when parsing JSON output
+- CI/CD pipelines break when commands expect non-interactive execution
+- `--json` flag becomes unreliable, defeating its purpose
+- Mixed content on stdout: `"Enter task title: {"id": 123, ...`
+- Inconsistent behavior: sometimes prompts, sometimes fails silently
+- Users must remember to pass `--non-interactive` alongside `--json`
 
 **Prevention:**
-- Use `BEGIN IMMEDIATE` instead of `BEGIN` when writes are expected
-- Never start with read transaction and upgrade to writes
-- Structure API endpoints to declare intent: read-only vs. write operations
-- For REST endpoints that modify data, use IMMEDIATE transactions
-- For MCP tools that write, use IMMEDIATE from the start
-- Document this pattern clearly for all database access code
+- Detect TTY vs. non-TTY stdin before prompting: `if (!process.stdin.isTTY) { throw error }`
+- Auto-disable prompts when `--json` flag is present
+- All prompts must write to stderr, not stdout (even in non-JSON mode)
+- Fail fast with clear error if required fields missing in non-interactive mode
+- Add `--non-interactive` flag that forces error-on-missing-fields behavior
+- Test each command with `echo | tasks command --json` to verify no prompts leak
+- Document: JSON mode always implies non-interactive mode
 
 **Detection:**
-- SQLITE_BUSY errors appear even with high busy_timeout values
-- Errors occur immediately, not after waiting
-- Database operations work in single-threaded tests but fail under concurrent load
-- Error logs show "database is locked" despite proper timeout configuration
+- Run `echo | tasks create --json` and check if output is valid JSON
+- Search codebase for `readline`, `prompt`, `inquirer` imports without TTY checks
+- Test logs show "invalid JSON" errors when piping output to `jq`
+- CI pipeline failures when shell scripts parse command output
+- Manual testing works, automated testing fails
 
 **Phase to address:**
-Phase 1 (Core Data Layer) - Database connection pooling and transaction management must handle this from the start.
+Phase 1 (Core CLI Infrastructure) - Interactive prompt design must respect output mode from the start. Retrofitting is complex.
 
 ---
 
-### Pitfall 2: WAL Checkpoint Starvation with Continuous Agent Activity
+### Pitfall 2: Global Options Not Inherited by Subcommands
 
 **What goes wrong:**
-With multiple concurrent agent clients constantly querying tasks, there are never "reader gaps" (moments when no processes are reading). WAL file grows unbounded, eventually consuming all disk space or causing severe performance degradation.
+Adding global options like `--json`, `--quiet`, `--api-url` to the root program, but these options don't propagate to subcommands. Users run `tasks --json list` expecting JSON output, but the `list` subcommand doesn't receive the `--json` flag, outputting plain text tables instead. Each of 18 commands needs separate flag handling.
 
 **Why it happens:**
-WAL mode requires checkpoints to merge write-ahead log back to main database file. PASSIVE checkpoints (default) cannot complete if any reader exists. If agents maintain continuous connections for watching task updates, checkpoints never complete and the WAL file grows without bound.
+Commander.js uses `.command()` which automatically copies inherited settings **only at creation time**. If global options are added to the root program after subcommands are registered, those options never reach subcommands. Using `.addCommand()` doesn't copy settings at all unless `.copyInheritedSettings()` is called explicitly. Developers assume flags "just work" globally but need manual propagation.
 
 **Consequences:**
-- WAL file (-wal) grows continuously without shrinking
-- WAL file can reach several gigabytes, filling disk space
-- Database directory fills disk space unexpectedly
-- Query performance degrades over time as WAL grows
-- Service fails when disk is full
+- Users must repeat flags per command: `tasks list --json` instead of `tasks --json list`
+- Inconsistent behavior across commands (some inherit, some don't)
+- Frustrating UX: global options don't work globally
+- Documentation becomes complex explaining which flags work where
+- Code duplication: every command redeclares same options
+- Difficult to add new global option later (requires touching all commands)
 
 **Prevention:**
-- Configure `wal_autocheckpoint` appropriately (default 1000 pages, adjust based on workload)
-- Implement periodic FULL or TRUNCATE checkpoints during quiet periods
-- Design API clients to use polling intervals rather than persistent connections
-- Monitor WAL file size and checkpoint completion rates
-- Use `PRAGMA wal_checkpoint(TRUNCATE)` periodically (e.g., nightly maintenance)
-- Consider connection pooling with max connection lifetime to force reader gaps
-- Set up alerts when WAL file exceeds reasonable size (e.g., 10MB)
+- Add global options to root program **before** registering subcommands
+- Use `.command()` for automatic inheritance (not `.addCommand()`)
+- If using `.addCommand()`, call `.copyInheritedSettings()` explicitly for each
+- Access global options via `.optsWithGlobals()` in action handlers
+- Test global option propagation: verify `tasks --json list` works, not just `tasks list --json`
+- Document: "Global flags must appear before command: `tasks --json list`"
+- Create shared option factory function to ensure consistency
 
 **Detection:**
-- WAL file (-wal) grows continuously without shrinking back
-- WAL file exceeds several megabytes or gigabytes
-- `PRAGMA wal_checkpoint` returns non-zero for uncompleted frames
-- Disk space alerts triggered by database directory growth
-- Query performance degrades over days of operation
+- Run `tasks --json list` and verify JSON output (not plain text)
+- Code review shows `.addCommand()` without `.copyInheritedSettings()`
+- Help output shows global options but they don't affect subcommands
+- Users report flags "not working" when placed before command name
+- Test suite doesn't cover global flag positioning
 
 **Phase to address:**
-Phase 1 (Core Data Layer) - WAL configuration and checkpoint strategy must be designed upfront.
+Phase 1 (Core CLI Infrastructure) - Global option architecture must be designed correctly upfront. Changing later requires modifying all commands.
 
 ---
 
-### Pitfall 3: POSIX Advisory Lock Cancellation on Thread Close
+### Pitfall 3: Async Action Handlers with .parse() Instead of .parseAsync()
 
 **What goes wrong:**
-On Linux, calling close() on any file descriptor to the database cancels ALL POSIX advisory locks for that file across all threads in the process. A background health check thread opening and closing the database file invalidates locks held by request-handling threads, corrupting the database.
+Scaling from 3 to 18 commands means more async handlers (database queries, API calls). Using `.parse()` instead of `.parseAsync()` causes Node.js to exit before async handlers complete. Commands appear to succeed but database writes never commit, API calls never return, and users see no output or partial results.
 
 **Why it happens:**
-POSIX advisory locking quirk: "the close() system call will cancel all POSIX advisory locks on the same file for all threads and all file descriptors in the process." SQLite relies on these locks for concurrency control. A separate thread opening/closing the database file - even just to check existence - cancels locks held by active transactions.
+Commander.js supports async action handlers, but `.parse()` doesn't wait for promises. The CLI script calls `.parse(process.argv)`, action handler returns a promise, but Node.js exits immediately because `.parse()` returns synchronously. No error appears - the process exits with code 0 while async work is still pending. This works accidentally in synchronous commands (v1.0's 3 simple commands) but breaks when adding database/network operations.
 
 **Consequences:**
-- Database corruption appears during normal multi-threaded operation
-- SQLite error: "database disk image is malformed"
-- Corruption correlates with health checks or monitoring activity
-- Data loss requiring restore from backup
-- Complete service failure until database is repaired
+- Commands exit before completing database writes
+- Transactions started but never committed
+- API responses never returned to user
+- Silent failures: no error message, just incomplete execution
+- Works in development with artificial delays, fails in production
+- Difficult to debug: logs show handler started but not completed
 
 **Prevention:**
-- Use a single connection pool managed by a dedicated database layer
-- Never open additional database connections for health checks or status queries
-- Don't spawn threads that independently access the database file
-- Use existing connection pool for all database access (including health checks)
-- Document this danger clearly with warnings in code comments
-- For systemd health checks, query an HTTP endpoint that uses existing pool
-- Test with concurrent operations and health checks to verify safety
+- Always use `.parseAsync()` instead of `.parse()` if any handlers are async
+- Wrap `.parseAsync()` in try/catch to handle rejections properly
+- Set `process.exitCode = 1` on error, don't call `process.exit()` directly
+- Add top-level error handler: `.parseAsync().catch(err => { console.error(err); process.exitCode = 1; })`
+- Test with timeouts to verify completion: run command, verify database changes committed
+- Add ESLint rule or code review checklist to flag `.parse()` usage
+- Document: "All CLI commands must use .parseAsync() for consistency"
 
 **Detection:**
-- Database corruption appears during normal operation with no power failures
-- Corruption correlates with health check or monitoring execution
-- File system monitoring shows database opened by multiple threads
-- SQLite integrity check (`PRAGMA integrity_check`) fails unexpectedly
+- Commands exit immediately without showing expected output
+- Database writes don't persist despite successful exit code
+- Adding `await sleep(100)` at end of handler "fixes" the issue
+- Code shows `.parse(process.argv)` instead of `.parseAsync(process.argv)`
+- Integration tests fail intermittently due to timing issues
 
 **Phase to address:**
-Phase 1 (Core Data Layer) and Phase 2 (REST API) - Architecture must enforce single connection pool from the start. Health check design must use pool.
+Phase 1 (Core CLI Infrastructure) - Must be correct from the start for all commands. Subtle bug that's hard to catch in testing.
 
 ---
 
-### Pitfall 4: MCP Confused Deputy Token Theft
+### Pitfall 4: Inconsistent Error Handling Between CLI and MCP
 
 **What goes wrong:**
-Attacker exploits static Client ID in MCP OAuth flow to steal authorization codes and access tokens. Multiple agents using same MCP server creates authorization ambiguity - server acts on behalf of wrong user or with attacker's stolen credentials.
+CLI commands and MCP tools use different error handling approaches. CLI throws exceptions that crash the process with stack traces. MCP tools return `isError: true` in responses. When adding 15 new CLI commands with same logic as MCP tools, error handling diverges. Users see inconsistent error messages, stack traces leak internal details, and automation breaks on unexpected output formats.
 
 **Why it happens:**
-MCP proxy servers often use a single static OAuth Client ID for all users. When third-party authorization servers remember consent via cookies, an attacker can initiate OAuth flow, trick victim into authorizing, and intercept the authorization code because it redirects to the attacker's registered callback. Attackers exchange code for access token, gaining access to victim's connected services.
+CLI and MCP evolved separately. CLI uses `throw new Error()` or `handleError(error)` that prints to stderr. MCP uses structured error responses: `{ isError: true, content: [{type: 'text', text: error.message}] }`. When reusing service layer code across both interfaces, errors propagate differently. CLI developers add `console.error()` calls, MCP developers add `try/catch` with structured responses. Codebase splits into two error handling patterns.
 
 **Consequences:**
-- Attacker gains access to victim's connected services (Gmail, Slack, GitHub, databases)
-- Authorization ambiguity: cannot determine which user authorized action
-- No audit trail showing who actually accessed resources
-- Complete compromise of multi-user MCP deployment
-- Violation of security principles (confused deputy problem)
+- Same operation produces different error formats via CLI vs. MCP
+- CLI error messages change unexpectedly when service layer throws different error types
+- Stack traces expose internal paths, database structure, API keys in logs
+- MCP errors are clean, CLI errors are verbose and scary
+- Automation scripts must handle multiple error output formats
+- Difficult to maintain: fixing error message requires changes in multiple places
 
 **Prevention:**
-- Implement per-user client ID registry for OAuth flows
-- Validate client_id against approved list before starting auth flow
-- Store consent decisions server-side in database, not in cookies
-- Use short-lived, scoped tokens issued explicitly to MCP server
-- Validate token audience and claims before using for API calls
-- Implement user-scoped authentication for MCP tools (not shared credentials)
-- Maintain audit trail of which user triggered which tool calls
-- Never use token passthrough (passing client tokens to downstream APIs)
+- Create shared error type hierarchy: `TaskNotFoundError`, `ValidationError`, `DatabaseError`
+- Implement central error formatter: `formatError(error, format: 'cli' | 'mcp' | 'json')`
+- CLI handler wraps all errors: `catch (e) { console.error(formatError(e, 'cli')); process.exitCode = 1; }`
+- MCP handler wraps all errors: `catch (e) { return { isError: true, content: formatError(e, 'mcp') }; }`
+- Service layer throws typed errors, never logs directly (no console.log/error)
+- JSON mode uses structured error format: `{ success: false, error: { code, message, details } }`
+- Test error scenarios across all interfaces to verify consistency
 
 **Detection:**
-- Single shared credential used across all MCP clients
-- OAuth implementation uses static client ID for all users
-- No per-user token tracking or validation
-- MCP tools run with server-level permissions, not user-level
-- Audit logs cannot distinguish between different users' actions
+- Same error produces different messages via CLI and MCP
+- Grep codebase for `console.error` shows usage in service layer
+- Stack traces appear in CLI output but not in structured errors
+- Error handling tests only cover one interface, not both
+- Users report confusing error messages that don't match documentation
 
 **Phase to address:**
-Phase 4 (MCP Server) - Security model must be designed correctly from initial implementation. Cannot be retrofitted easily.
+Phase 1 (Core CLI Infrastructure) and Phase 2 (MCP Tool Expansion) - Error handling architecture must be unified before scaling both interfaces.
 
 ---
 
-### Pitfall 5: Circular Task Dependency Loops
+### Pitfall 5: Stdout Contamination in JSON Mode
 
 **What goes wrong:**
-Task A depends on Task B, Task B depends on Task C, Task C depends on Task A. System allows creation, then queries hang, updates fail, or dependency resolution produces infinite loops. Agents attempting to determine "what can I work on next" time out or crash.
+Adding `--json` flag to 18 commands requires auditing all output paths. Progress indicators (`console.log('Creating task...')`), debug messages (`console.log('Query:', sql)`), and success messages (`console.log('Task created successfully')`) all write to stdout, breaking JSON parsability. A single stray `console.log()` corrupts the entire output stream.
 
 **Why it happens:**
-Graph traversal without cycle detection. Developers implement dependency tracking as simple foreign keys without validation logic. REST API accepts dependency additions without checking for cycles. Recursive queries (CTEs) to find "all blockers" never terminate.
+Developers add helpful messages during development: status updates, confirmations, debug output. These go to stdout by default. When `--json` flag is added later, these messages remain. Code has dozens of `console.log()` scattered throughout. Each new command adds more. No enforcement mechanism prevents stdout writes in JSON mode.
 
 **Consequences:**
-- Recursive CTE queries don't return or time out
-- Database CPU spikes when querying task dependencies
-- "Find available tasks" queries hang or run indefinitely
-- Tasks stuck in permanent "blocked" state with no resolution
-- LLM agents confused by impossible dependency chains
-- Manual intervention required to break cycles
+- JSON output contains plaintext messages: `Creating task...{"id": 123}`
+- Shell scripts fail to parse output with `jq`: "invalid JSON"
+- Intermittent failures: depends on which code path executes
+- Works for simple cases, breaks when errors occur or edge cases trigger
+- Testing with `jq` catches some but not all contamination
+- Every new feature risks introducing new stdout writes
 
 **Prevention:**
-- Implement cycle detection on dependency insertion/update
-- Use topological sort to validate dependency graph before accepting changes
-- Return 400 Bad Request with clear message if adding dependency would create cycle
-- For large graphs, limit dependency chain depth (e.g., max 10 levels)
-- Add database constraint: CHECK constraint preventing task from depending on itself
-- Implement breadth-first search with visited-node tracking for dependency resolution
-- Add API endpoint to validate dependency graph integrity
-- Include cycle path in error message: "Would create cycle: A → B → C → A"
+- Create output abstraction: `output.info()`, `output.success()`, `output.data()` instead of `console.log()`
+- Output class checks `--json` flag: writes to stderr for messages, stdout only for JSON data
+- Single point of JSON writing: `output.json(data)` at end of command handler
+- Lint rule: prohibit `console.log` in CLI command files (enforce output abstraction)
+- All informational messages to stderr: `console.error('Creating task...')` even in non-JSON mode
+- Test each command: `tasks command --json | jq` must parse without errors
+- Code review checklist: verify no direct stdout writes in command handlers
 
 **Detection:**
-- Recursive CTE queries timeout or never complete
-- Database CPU usage spikes when querying dependencies
-- Dependency visualization shows circular paths
-- Tasks appear as simultaneously blocked and blocking
-- Agent reports inability to find actionable tasks despite tasks existing
+- Run command with `--json | jq` and get parse error
+- Search codebase for `console.log` in CLI command files
+- Test logs show "unexpected token" when parsing JSON output
+- Integration tests fail when validating JSON structure
+- Manual testing works, but piping to `jq` fails
 
 **Phase to address:**
-Phase 1 (Core Data Layer) - Dependency model must include cycle detection from the start. Retrofitting is expensive.
+Phase 1 (Core CLI Infrastructure) - Output abstraction must be established before adding 15 new commands. Retrofitting is expensive.
 
 ---
 
-### Pitfall 6: N+1 Query Problem in Comment Threading
+### Pitfall 6: MCP Tool Name Explosion Without Convention
 
 **What goes wrong:**
-Loading a task with comments requires 1 query for task + N queries for comments + N queries for comment authors + N*M queries for threaded replies. A task with 50 comments and replies requires 200+ database queries. API response time degrades from milliseconds to seconds.
+Growing from 12 to 19+ MCP tools without naming conventions creates discovery chaos. Tools named inconsistently: `createTask`, `get_task`, `task-update`, `delete-task-by-id`, `listAllTasksWithFilters`. LLM agents cannot predict tool names. Developers can't find existing tools. Similar tools duplicate functionality with different names.
 
 **Why it happens:**
-ORM or naive SQL fetches parent entities, then loops to fetch related entities individually. Comment threading exacerbates this - each comment might have replies, each reply might have nested replies. Without JOIN queries or materialized paths, system performs separate SELECT for each relationship.
+No naming standard established with initial 12 tools. Different developers add tools over time with personal preferences. Some follow REST conventions (`GET /tasks` → `getTasks`), others use CRUD verbs (`createTask`), others use descriptive names (`listAllTasksWithFilters`). MCP spec allows 64 characters with underscores, dashes, dots, slashes - developers use all variations.
 
 **Consequences:**
-- Response times increase dramatically for tasks with many comments
-- Database connection pool exhaustion under light load
-- Profiler shows hundreds of identical SELECT queries with different IDs
-- API becomes unusable as comment count grows
-- Scaling problems appear early (at 100-200 comments)
+- LLM agents guess tool names incorrectly, wasting tokens on tool list inspection
+- Difficult to discover what operations are available
+- Similar functionality duplicated under different names: `getTask` vs. `task_get` vs. `fetchTaskById`
+- Documentation nightmare: must explain naming variations
+- Refactoring blocked by inconsistent naming (cannot batch rename)
+- New developers confused about which naming style to follow
 
 **Prevention:**
-- Use materialized path for threaded comments (single query with ORDER BY path)
-- Implement eager loading with JOINs for comment + author data
-- Denormalize comment counts into task table for list views
-- Use CTEs or recursive queries to fetch entire comment tree in one query
-- Add query logging in development to detect N+1 patterns
-- Paginate comments (don't load all comments for old tasks, default to recent 50)
-- Use `EXPLAIN QUERY PLAN` to verify JOIN efficiency
+- Establish naming convention before tool proliferation: `{resource}_{action}` (e.g., `task_create`, `task_list`, `comment_add`)
+- Use snake_case consistently (most common MCP pattern based on research)
+- Group by resource first: `task_*`, `project_*`, `comment_*`, `dependency_*`
+- Action verbs from standard set: create, get, list, update, delete, add, remove
+- Avoid IDs in names: `task_get` (takes ID param) not `getTaskById`
+- Document convention in `MCP_TOOL_NAMING.md` with examples
+- Rename existing 12 tools to match convention before adding new ones
+- Code review checklist: verify new tool follows naming convention
 
 **Detection:**
-- Database query count scales linearly with comment count
-- Query logs show hundreds of nearly-identical SELECT statements
-- Response time profiling shows database time dominates
-- Connection pool shows high utilization with few concurrent requests
-- Adding more comments to task causes proportional slowdown
+- Tool list shows mixed naming styles: camelCase, snake_case, kebab-case
+- Similar operations have different name patterns
+- Tool descriptions explain what name means (indicates unclear naming)
+- Grep shows `registerTool` calls with inconsistent name formats
+- LLM chat logs show failed tool call attempts with wrong names
 
 **Phase to address:**
-Phase 3 (Task Comments & Metadata) - Comment data model must be designed for efficient retrieval from the start.
+Phase 2 (MCP Tool Expansion) - Naming convention must be established and existing tools renamed before adding 7+ new tools.
 
 ---
 
-### Pitfall 7: API Key Exposure in Query Parameters
+### Pitfall 7: Missing Schema Validation Causes Cryptic MCP Errors
 
 **What goes wrong:**
-REST API accepts authentication via query parameter (?api_key=xxx). API keys appear in server access logs, browser history, proxy logs, and error tracking systems. Keys are stolen from logs or intercepted by network monitoring. Attackers gain full access to task system.
+Adding 7 new MCP tools with complex parameters. Forgetting to add proper Zod schema validation for all fields. LLM passes invalid arguments (wrong type, missing required field, extra field). Tool fails with JavaScript error deep in service layer: "Cannot read property 'id' of undefined". Error message doesn't explain what was wrong with input parameters.
 
 **Why it happens:**
-Query parameters are simpler to implement and test (just paste URL in browser). Developers don't realize URLs are logged everywhere: nginx access logs, application logs, reverse proxies, CDN logs, browser history, error tracking services. Unlike request headers, query parameters persist in many systems indefinitely.
+Zod schemas define both validation and TypeScript types. Developers copy existing tool registration, update description and logic, but forget to update schema. Schema copied from different tool has wrong required fields. MCP SDK's default validation mode is flexible, allowing extra fields. Service layer expects certain shape, receives different shape. Errors appear at usage point, not validation point.
 
 **Consequences:**
-- API keys appear in plain text in multiple log files
-- Keys stolen from log files grant full system access
-- Browser history contains working API keys
-- Error tracking services (Sentry, etc.) capture URLs with keys
-- Compliance violations (logging sensitive credentials)
-- No way to revoke keys already in logs
+- Cryptic errors: "Cannot read property 'x' of undefined" instead of "Missing required field: x"
+- LLM receives unhelpful feedback, cannot self-correct
+- Debugging requires reading stack traces to find parameter issue
+- Same tool call fails intermittently based on which fields LLM includes
+- No clear contract between tool schema and implementation expectations
+- Wasted tokens as LLM retries with guessed parameter variations
 
 **Prevention:**
-- Use Authorization header exclusively: `Authorization: Bearer <api_key>`
-- Return 401 Unauthorized if API key appears in query parameter
-- Document header-based auth clearly in API documentation
-- Implement request logging that redacts Authorization headers
-- For MCP tools, use header-based authentication in HTTP calls
-- Add integration tests that verify query-parameter authentication is rejected
-- Configure nginx/reverse proxy to not log Authorization header
+- Every tool registration includes complete Zod schema with `.strict()` modifier
+- Schema validation catches: wrong types, missing required fields, extra fields, invalid enums
+- Use schema composition for common patterns: `TaskIdSchema`, `PaginationSchema`
+- Error messages from schema failures are descriptive: Zod provides path and expected type
+- Test each tool with invalid inputs: missing fields, wrong types, extra fields
+- MCP SDK configured for strict validation: `inputSchema: TaskSchema.strict()`
+- Code review checklist: verify schema matches service layer function signature
+- Generate TypeScript types from Zod schemas to ensure consistency
 
 **Detection:**
-- API documentation shows examples with ?api_key=
-- Server access logs contain patterns matching API key format
-- Error messages include full request URLs with keys
-- No middleware to reject query-parameter authentication
-- Security audit finds keys in log files
+- MCP tool errors mention undefined properties or type mismatches
+- Error messages don't clearly identify which parameter was invalid
+- Same tool call works with some parameter combinations, fails with others
+- Schema shows `.passthrough()` or no `.strict()` modifier
+- Test coverage missing for invalid parameter scenarios
 
 **Phase to address:**
-Phase 2 (REST API) - Authentication mechanism must be secure from initial implementation. Changing later is breaking change.
+Phase 2 (MCP Tool Expansion) - Schema validation must be comprehensive before deploying to LLM agents. Poor validation creates frustrating debugging cycles.
 
 ---
 
-### Pitfall 8: File System Lock Failure on Network Mounts
+### Pitfall 8: Commander Option CamelCase/kebab-case Confusion
 
 **What goes wrong:**
-SQLite database file placed on NFS, CIFS, or other network filesystem. POSIX advisory locks fail or behave incorrectly. Multiple processes believe they have exclusive write access. Database becomes corrupted. All task data lost or requires complex recovery.
+Adding 15+ CLI commands with many options. Developer defines option `--created-by <name>` but tries to access via `options.created-by` in action handler. JavaScript throws syntax error or returns undefined. Different commands use different access patterns: some use camelCase, some try kebab-case, some use bracket notation `options['created-by']`.
 
 **Why it happens:**
-Network filesystems often don't implement POSIX advisory locking correctly. SQLite relies on these locks for multi-process concurrency. NFS is particularly notorious for buggy locking implementation. Even if locking works sometimes, network delays or disconnections cause lock state inconsistencies that lead to corruption.
+Commander.js automatically normalizes kebab-case flags to camelCase properties. `--template-engine` becomes `options.templateEngine`. Developers don't realize this, try to access with original flag name. Works sometimes when flag has no hyphens (`--title` → `options.title`), fails with multi-word flags. Copy-paste code from different sources shows different access patterns.
 
 **Consequences:**
-- Database corruption appears randomly without clear cause
-- Corruption correlates with network issues or server moves
-- Multiple "database is locked" errors despite low concurrency
-- Complete data loss requiring restore from backup
-- Service completely fails, cannot recover without intervention
+- Options are undefined despite user passing them: `--due-date 2026-12-31` but `options.due-date` is undefined
+- Inconsistent access patterns across commands confuse maintenance
+- Intermittent bugs: works for single-word flags, fails for multi-word flags
+- Error messages unhelpful: "undefined is not a valid date"
+- TypeScript types don't prevent the error (using wrong key)
 
 **Prevention:**
-- Store SQLite database on local filesystem only (ext4, xfs, btrfs on Linux)
-- Document explicitly: database MUST be on local disk, never network mount
-- Add startup validation: check if database path is on network filesystem, refuse to start
-- Use `df -T` or parse `/proc/mounts` to verify local filesystem at startup
-- If backups need network storage, copy completed database file after checkpoint
-- Add systemd unit file with filesystem dependency on local mount
-- Test deployment to verify database is on local storage
+- Document Commander's automatic normalization in development guide
+- Always access multi-word options via camelCase: `options.createdBy` not `options.created-by`
+- Use TypeScript with properly typed `.opts()` return value
+- Add ESLint rule to detect bracket notation with kebab-case strings: `options['created-by']`
+- Code review checklist: verify option access uses camelCase
+- Test option parsing: verify all flags accessible via correct property name
+- Consider using single-word flags to avoid confusion: `--creator` instead of `--created-by`
 
 **Detection:**
-- Database corruption appears without power failures or crashes
-- Corruption correlates with network events
-- Database file path contains /mnt/, /net/, or known NFS/CIFS paths
-- `df` command shows filesystem type as nfs, nfs4, cifs, or similar
-- SQLite documentation warnings about network filesystems apply
+- Options passed by user but show as undefined in handler
+- Code shows `options['created-by']` or `options.created_by` access patterns
+- Error messages indicate missing data despite CLI showing option was passed
+- Different commands access options inconsistently
+- TypeScript doesn't catch access errors (using `any` or incorrect typing)
 
 **Phase to address:**
-Phase 0 (Infrastructure/Deployment) - Infrastructure requirements must specify local filesystem before any development starts.
+Phase 1 (Core CLI Infrastructure) - Understanding Commander's normalization is critical before scaling to 18 commands with many options.
 
 ---
 
-### Pitfall 9: Stray Logging to STDOUT Corrupting MCP Protocol
+### Pitfall 9: No Test Coverage for --json Output Validation
 
 **What goes wrong:**
-MCP server logs debug messages, stack traces, or progress updates to stdout. MCP client (Claude Code) receives corrupted protocol messages. All tool calls fail. Agents cannot track tasks. Error messages are cryptic: "invalid JSON" or "unexpected token".
+Adding `--json` flag to all commands but testing only table/text output format. JSON output is manually tested ("looks good"), but no automated tests validate JSON structure, schema, or parseability. When refactoring, JSON output breaks but tests pass. Users discover broken JSON output in production.
 
 **Why it happens:**
-MCP uses STDIO transport - JSON-RPC messages over stdin/stdout. Any print(), console.log(), or logging framework writing to stdout inserts non-JSON data into message stream. Client parser fails when it encounters "DEBUG: processing request..." between JSON messages. Problem is invisible to server (logs look fine in isolation) but completely breaks all clients.
+Existing tests focus on happy path: "does command execute without error?" JSON output testing requires additional assertions: parse JSON, validate schema, check specific fields. Developers assume "if the data is correct, JSON will be correct too." Snapshot testing captures output, but doesn't validate JSON structure. Tests don't pipe output to JSON parser.
 
 **Consequences:**
-- MCP tool calls fail with JSON parsing errors
-- Error messages mention "unexpected token" or "invalid character"
-- Server logs show successful processing, but client reports complete failures
-- Testing with curl/HTTP works fine, but MCP client fails
-- Adding debug logging makes problems worse, not better
-- Agents completely unable to use MCP tools
+- JSON output breaks silently during refactoring
+- Shell scripts fail in production while test suite passes
+- Invalid JSON structure ships: missing fields, wrong types, extra fields
+- No contract enforcement for JSON output schema
+- Manual testing required for every change
+- CI doesn't catch JSON-specific regressions
 
 **Prevention:**
-- Configure logging framework to stderr exclusively (never stdout)
-- For Python: use `logging.StreamHandler(sys.stderr)`
-- For Node.js: configure winston/pino to use stderr
-- Add startup message to stderr confirming logging configuration
-- Test MCP server with official MCP inspector tool before integration
-- Add prominent comment in code: "CRITICAL: MCP uses stdout for protocol, all logs MUST go to stderr"
-- Implement structured logging to make accidental stdout writes more obvious
-- Code review checklist: verify no print/console.log statements
+- Every command test includes JSON mode variant: `describe('--json output', ...)`
+- Assert JSON parseability: `expect(() => JSON.parse(output)).not.toThrow()`
+- Validate JSON schema: define expected shape with Zod, validate output against it
+- Test specific fields exist and have correct types: `expect(json.id).toBeTypeOf('number')`
+- Use external validation: run `echo output | jq .id` in integration test
+- Test error cases in JSON mode: errors should produce valid JSON with error structure
+- Snapshot test JSON structure, not raw output (to catch unintended changes)
+- Add coverage requirement: all commands must have JSON output tests
 
 **Detection:**
-- MCP tool calls fail with JSON parsing errors
-- Server logs show successful operations but client reports failures
-- Error messages reference unexpected characters or tokens
-- Testing with HTTP/REST works but STDIO MCP fails
-- Problem gets worse when debug logging is enabled
+- Test suite shows no assertions on JSON structure
+- Commands have `--json` flag but tests don't use it
+- JSON parsing failures in production logs but tests pass
+- Manual testing required before release to verify JSON output
+- Test files have no `JSON.parse()` or schema validation calls
 
 **Phase to address:**
-Phase 4 (MCP Server) - Logging configuration must be correct from first implementation. Difficult to debug if wrong.
+Phase 1 (Core CLI Infrastructure) - JSON testing patterns must be established before adding 15 new commands. Retrofitting tests is expensive.
 
 ---
 
-### Pitfall 10: Missing Journal Files After Crash Leading to Corruption
+### Pitfall 10: MCP Tool Proliferation Without Categorization
 
 **What goes wrong:**
-Application crashes or power fails during write transaction. System recovery procedures move or delete "temporary" files including database.db-wal or database.db-journal. Next startup, SQLite cannot recover uncommitted transactions. Database is corrupted. Task data is inconsistent or completely lost.
+Growing to 19+ tools without logical grouping. MCP protocol returns flat list of 19 tools to LLM. Agent must inspect every tool's description to find relevant ones. Long tool descriptions needed to differentiate similar tools. Token waste on tool discovery. LLM chooses wrong tool because descriptions are similar.
 
 **Why it happens:**
-SQLite writes transaction data to journal files (-wal, -journal, -shm) before committing to main database. These files are critical for crash recovery. Cleanup scripts, backup tools, or system administrators see "temporary-looking" files and delete them. Without journal files, SQLite cannot roll back partial transactions or complete pending writes, leaving database in inconsistent state.
+MCP protocol supports tags and categories, but developers focus on functionality, not discovery UX. All tools registered at same level. Tool descriptions become verbose trying to explain when to use each tool. No metadata to help LLM filter relevant tools. Assumption that "LLM is smart enough to figure it out."
 
 **Consequences:**
-- Database corruption appears after system crashes or reboots
-- Backup/restore doesn't work (only .db file copied, not journals)
-- Integrity check fails after restoring from backup
-- Data loss requires manual recovery or rebuild
-- Cannot trust backup procedures
+- LLM must read all 19 tool descriptions to find relevant one
+- Token waste: hundreds of tokens listing tools before every operation
+- Wrong tool selected when descriptions are ambiguous
+- Tool descriptions become paragraphs trying to differentiate
+- Cannot efficiently answer "what task operations are available?"
+- Adding more tools makes problem exponentially worse
 
 **Prevention:**
-- Document clearly: never delete, move, or rename database-related files
-- Keep database.db, database.db-wal, database.db-shm, database.db-journal together always
-- Configure backup tools to include all database-related files atomically
-- Use SQLite backup API (`sqlite3_backup_*`) or `VACUUM INTO` instead of file copying
-- Add file monitoring to alert if journal files are deleted while service runs
-- Implement health check that verifies database integrity (`PRAGMA integrity_check`)
-- For backups, use `sqlite3_rsync` utility or official backup API
-- Test backup/restore procedures regularly, verify integrity after restore
+- Group tools by resource: task operations, project operations, comment operations, dependency operations
+- Use consistent tool prefixes for discovery: `task_*`, `project_*`, `comment_*`
+- Implement tool tags if MCP SDK supports: `tags: ['task', 'read']` vs. `tags: ['task', 'write']`
+- Consider separate MCP servers by domain (task server, project server) if tool count exceeds 25
+- Tool descriptions: one sentence explaining action, not when to use it
+- Provide separate "tool guide" resource for LLM to read when planning workflow
+- Optimize tool discovery with consistent naming that LLMs can pattern-match
+- Monitor LLM token usage for tool listing vs. actual work
 
 **Detection:**
-- Database corruption appears after crashes but not during normal operation
-- Backup procedures only copy .db file, not -wal or -journal files
-- Cleanup scripts in /etc/cron.daily match *.journal or *.wal patterns
-- Database directory shows missing -wal file during active writes
-- `PRAGMA integrity_check` fails after backup restore
+- Tool list endpoint returns 19+ tools in flat list
+- Tool descriptions longer than one sentence
+- LLM chat logs show entire tool list repeated before each operation
+- Similar tools with confusing descriptions: hard to choose correct one
+- Token usage analysis shows high overhead for tool discovery
+- MCP inspector shows tools without categorization metadata
 
 **Phase to address:**
-Phase 5 (CLI & Operations) - Backup and recovery procedures must be designed correctly from the start.
+Phase 2 (MCP Tool Expansion) - Tool organization strategy must be designed before reaching 19+ tools. Reorganizing later is breaking change for LLM workflows.
 
 ---
 
 ## Technical Debt Patterns
 
-Shortcuts that seem reasonable but create long-term problems.
+Shortcuts that seem reasonable but create long-term problems when scaling interfaces.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| PRAGMA synchronous=OFF | 2-3x write performance | Database corruption on power failure or crash | Never in production, only throwaway dev/test |
-| Single global database connection | Simple implementation | SQLITE_BUSY errors, no concurrency | Only for single-threaded CLI tools |
-| No cycle detection on dependencies | Faster dependency insertion | Infinite loops in resolution, data integrity issues | Never - cost to add later is very high |
-| Storing API keys in environment variables | Easy configuration | Keys in process listings, logs, crash dumps | Acceptable only if filesystem permissions strictly controlled |
-| Loading all task comments eagerly | Simpler code structure | N+1 queries, severe performance degradation | Acceptable for MVP with guaranteed <100 comments/task |
-| Array/JSON field for task tags | Avoids JOIN complexity | Cannot efficiently filter by tag, poor query performance | Acceptable for MVP, must refactor before scale |
-| No request rate limiting | Simpler initial implementation | API abuse, resource exhaustion, DoS | Acceptable for internal-only, trusted deployment |
-| Exposing auto-increment IDs | Convenient, matches database | Cannot safely migrate/merge data, info disclosure | Never - use UUIDs or scoped IDs from start |
+| Skipping --json testing | Faster test writing, smaller test suite | JSON output breaks silently, production failures | Never when adding machine-readable output |
+| Manual output formatting in each command | Simple, no abstraction needed | Inconsistent formats, can't add --quiet globally | Only for MVP with 2-3 commands, not 18+ |
+| Reusing service types in CLI | No type duplication, faster development | Breaking changes to internal types break CLI, tight coupling | Never - CLI types are API contract |
+| Copy-pasting tool registration | Fast initial implementation | Inconsistent error handling, schema drift | Only acceptable if followed by refactor before phase complete |
+| Console.log for all output | Works for simple cases | Cannot add --json flag later without rewrite | Never when JSON output is planned |
+| Single error message format | Simpler error handling | Cannot distinguish user errors from bugs, poor UX | Acceptable for MVP, must refactor before scale |
+| Global shared CLI state | Easy to pass options around | Untestable, race conditions, breaks parallel testing | Never - use dependency injection |
+| No MCP tool versioning | Simpler deployment | Cannot deploy breaking changes without coordination | Acceptable for single-agent deployment only |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting to external services.
+Common mistakes when connecting CLI, MCP, and service layer.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| MCP Client Auth | Using token passthrough from client to downstream APIs | Issue short-lived tokens specifically for MCP server, validate audience claims |
-| SQLite Backup | Copying database file with cp/rsync while service runs | Use VACUUM INTO or SQLite backup API, or stop service during copy |
-| systemd Service | Not handling SIGTERM gracefully | Implement signal handlers to close database connections cleanly before exit |
-| REST API CORS | Allowing * origin with credentials | Specify exact allowed origins, or use * without credentials |
-| Task Webhooks | Synchronous HTTP calls blocking request thread | Queue webhook events, deliver asynchronously via background worker |
-| Git Integration | Storing full absolute repo paths in database | Store relative paths, configure base path separately in config |
-| Health Checks | Opening separate database connection for checks | Use existing connection pool via HTTP endpoint query |
+| CLI → Service Layer | Passing Commander options directly to service | Transform to service input types, validate at boundary |
+| MCP → Service Layer | Passing Zod-validated args directly | Transform to service input types (MCP args ≠ service types) |
+| CLI --json mode | Writing JSON with console.log() | Use single JSON.stringify() at end, validate with JSON.parse() |
+| MCP error responses | Throwing exceptions | Return `{ isError: true, content: [...] }` with structured error |
+| CLI exit codes | Calling process.exit() directly | Set process.exitCode, let process exit naturally |
+| Shared validation logic | Duplicating Zod schemas | Define schemas in shared package, reuse across CLI/MCP/REST |
+| API client in CLI | Hardcoded localhost URL | Read from env var with fallback, support custom --api-url flag |
+| MCP stdio transport | Logging to stdout | Configure all loggers to stderr exclusively, test with MCP inspector |
 
 ---
 
 ## Performance Traps
 
-Patterns that work at small scale but fail as usage grows.
+Patterns that work at small scale but fail with 18+ commands or 19+ tools.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| No pagination on task lists | All tasks loaded in single query, memory exhaustion | Implement cursor-based pagination from start, default limit 100 | >1,000 tasks |
-| Unbounded comment loading | API timeouts for tasks with many comments | Paginate comments, default to most recent 50 | >200 comments/task |
-| Full task reindex on every update | High write latency, CPU spikes | Update search index incrementally for changed fields only | >10,000 tasks |
-| No connection pooling | SQLITE_BUSY errors increase linearly | Implement pool with max 1 writer + N readers from start | >5 concurrent clients |
-| Synchronous dependency validation | API latency increases with chain depth | Limit max dependency depth (10 levels), consider async validation | Dependency chains >10 deep |
-| No database index on foreign keys | Slow JOINs, full table scans | Add indexes on task_id, parent_id, user_id, project_id | >5,000 tasks with relationships |
-| Loading full task history | Memory exhaustion, slow queries | Separate current state from history table, paginate history | >100,000 task updates |
-| No prepared statement reuse | Parse overhead for each query | Use prepared statements, bind parameters | High query volume (>100/sec) |
-
----
-
-## Security Mistakes
-
-Domain-specific security issues beyond general web security.
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Shared API key for all agents | Cannot identify which agent took action, no audit trail, blast radius of compromise | Issue unique API key per agent, track usage and attribution |
-| No task ownership validation | Any agent can modify/delete any task, privilege escalation | Implement ownership model, validate permissions on every access |
-| SQL injection in task search | Database compromise, data exfiltration, complete system takeover | Use parameterized queries exclusively, never string concatenation |
-| Storing API keys plaintext in database | Key theft if database file leaked or backed up insecurely | Hash API keys (bcrypt/argon2), store only hash, verify on auth |
-| No rate limiting per API key | Single compromised key can DoS entire service | Implement per-key rate limits (e.g., 100 req/min), track in memory |
-| MCP tools with unrestricted filesystem access | Agents can read arbitrary files, info disclosure, privilege escalation | Restrict tools to specific directories via chroot or path validation |
-| No validation of task IDs in URLs | Enumeration attack, information disclosure about other users | Use UUIDs, validate ownership on every access before returning data |
-| Exposing internal sequential IDs | Predictable resource access, reveals volume metrics | Use UUIDs for external API, keep sequential IDs internal only |
-| No API key rotation mechanism | Compromised keys remain valid indefinitely | Implement key expiration and rotation, admin endpoint to revoke |
+| Loading all commands eagerly | Slow CLI startup (500ms+) | Lazy-load command modules, register on first use | >15 commands with heavy imports |
+| No command result caching | Repeated API calls for same data | Cache results for duration of command execution | Commands with multiple service calls |
+| Synchronous schema validation | Tool registration takes seconds | Use pre-compiled schemas, avoid re-validation | >20 tools with complex schemas |
+| Table formatting with full dataset | Memory exhaustion, slow output | Stream table rows, paginate at CLI level | >1000 rows in table output |
+| Full tool list in every MCP response | High token usage, slow responses | Client-side tool caching, incremental discovery | >25 tools |
+| No CLI output buffering | Slow terminal rendering | Buffer output, flush once at end | Commands outputting >1000 lines |
+| MCP tool schema re-validation | High latency per tool call | Validate once at registration, cache validated schemas | >50 tool calls/second |
+| Rebuilding table formatters | CPU waste, memory leaks | Reuse formatter instances across commands | Commands called in loops |
 
 ---
 
 ## UX Pitfalls
 
-Common user experience mistakes in this domain.
+Common user experience mistakes when scaling CLI and MCP interfaces.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No partial match in task search | Can't find tasks without exact title match, poor search experience | Implement FTS5 full-text search with ranking, or LIKE with wildcards |
-| 500 errors for dependency cycle attempts | Confusing error, no actionable information | Return 400 with clear message: "Would create dependency cycle: Task A → B → C → A" |
-| Silent failures for agent API calls | Agent receives 200 OK but operation didn't complete, incorrect state | Use correct HTTP status codes, include error details in structured response |
-| No indication of task blocking status | Agents waste time on blocked tasks, poor workflow efficiency | Include blockers[] array in task response, add is_blocked boolean flag |
-| Pagination without total count | Cannot show progress, unclear dataset size, poor UX | Include X-Total-Count header and/or total_count field in response |
-| No bulk operations | Thousands of individual requests to update statuses, slow and fragile | Implement PATCH /tasks/bulk for batch updates, return per-item results |
-| Timestamp format inconsistency | Parsing errors, timezone confusion, data quality issues | Use ISO 8601 with UTC exclusively (2026-02-13T15:30:00Z) everywhere |
-| Generic error messages | Difficult debugging, unclear how to fix | Include request_id, error_code, human message, and machine-readable details |
+| Inconsistent flag names | --due-date in one command, --due in another, confusing muscle memory | Standardize flag names across all commands, document in style guide |
+| No command aliases | Must type full command names, verbose for common operations | Add aliases: `tasks create` → `tasks new`, `tasks list` → `tasks ls` |
+| Missing --help for flags | Users don't know what values are valid | Every flag includes description and example in --help output |
+| Error without suggestion | "Invalid priority" without showing valid values | Include valid options in error: "Invalid priority 'urgent'. Valid: low, medium, high" |
+| --json output without --pretty | Unreadable single-line JSON | Add --pretty flag for human-readable JSON with indentation |
+| Silent truncation | Tables truncate without indication | Show truncation indicator: "... and 47 more rows (use --limit to show more)" |
+| MCP tool names not discoverable | LLM must read all descriptions to find right tool | Use consistent naming pattern LLM can predict: {resource}_{action} |
+| No progress indication | Long operations appear frozen | Show progress for operations >2 seconds, respect --quiet flag |
+| Inconsistent date formats | Confusion parsing dates, timezone issues | ISO 8601 everywhere: 2026-02-13T15:30:00Z |
+| Generic error codes | Cannot programmatically handle specific errors | Use specific exit codes: 1=general error, 2=invalid input, 3=not found |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear complete but are missing critical pieces.
+Things that appear complete but are missing critical pieces when scaling CLI/MCP.
 
-- [ ] **SQLite WAL mode**: Often missing checkpoint strategy - verify wal_autocheckpoint configured and periodic TRUNCATE checkpoints scheduled
-- [ ] **API authentication**: Often missing key rotation mechanism - verify admin endpoint to revoke/regenerate keys exists and works
-- [ ] **Task dependencies**: Often missing cycle detection - verify graph validation logic exists and tested with circular dependency attempts
-- [ ] **MCP tools**: Often missing error handling for database locks - verify retry logic with exponential backoff implemented
-- [ ] **REST API errors**: Often missing structured error format - verify all endpoints return consistent JSON error objects with code, message, details
-- [ ] **Database migrations**: Often missing rollback capability - verify down migrations exist, tested, and documented
-- [ ] **Comment threading**: Often missing depth limit - verify max nesting level enforced (prevent 100-level deep threads causing performance issues)
-- [ ] **Task filtering**: Often missing index support - verify EXPLAIN QUERY PLAN shows index usage for common filter combinations
-- [ ] **Service shutdown**: Often missing graceful connection close - verify SIGTERM handler closes database cleanly, waits for pending writes
-- [ ] **Backup validation**: Often missing restore testing - verify backup can actually restore to working database with integrity check
-- [ ] **API rate limiting**: Often missing burst allowance - verify implementation allows reasonable bursts, not strict per-second limits
-- [ ] **MCP authentication**: Often missing per-user scoping - verify tools operate with user context, not server-wide shared credentials
-- [ ] **Transaction management**: Often missing BEGIN IMMEDIATE - verify write operations use IMMEDIATE, not default read transactions
-- [ ] **Connection pool**: Often missing health validation - verify connections tested before use, stale connections removed
+- [ ] **--json flag added**: Often missing stderr/stdout separation - verify prompts/messages go to stderr, only JSON to stdout
+- [ ] **Global options**: Often missing inheritance setup - verify `tasks --json list` works, not just `tasks list --json`
+- [ ] **Interactive prompts**: Often missing TTY detection - verify `echo | tasks create --json` fails with clear error, doesn't hang
+- [ ] **Async handlers**: Often missing .parseAsync() - verify commands complete before exit, database writes committed
+- [ ] **Error handling**: Often missing consistent formatting - verify CLI and MCP return similar errors for same failure
+- [ ] **MCP tool schemas**: Often missing .strict() validation - verify extra/invalid fields rejected with clear errors
+- [ ] **Option access**: Often missing camelCase normalization - verify multi-word flags accessible via correct property name
+- [ ] **JSON test coverage**: Often missing schema validation - verify tests parse JSON and assert on structure, not just snapshot
+- [ ] **MCP tool naming**: Often missing convention adherence - verify all tools follow {resource}_{action} pattern
+- [ ] **Output abstraction**: Often missing centralized output handling - verify no direct console.log in command handlers
+- [ ] **Exit codes**: Often missing process.exitCode setting - verify commands set exitCode, don't call process.exit()
+- [ ] **MCP logging**: Often missing stderr configuration - verify MCP server passes inspector test with no stdout pollution
+- [ ] **Commander parsing**: Often missing error handling - verify .parseAsync() wrapped in try/catch with proper error output
+- [ ] **Flag consistency**: Often missing standardization - verify similar flags named identically across commands
 
 ---
 
@@ -483,16 +480,16 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Transaction upgrade deadlock | LOW | Add BEGIN IMMEDIATE to write operations, restart service, verify fixed with load test |
-| WAL checkpoint starvation | LOW | Run `PRAGMA wal_checkpoint(TRUNCATE)` manually, configure wal_autocheckpoint, add scheduled checkpoints |
-| POSIX lock cancellation corruption | HIGH | Restore from last good backup, redesign to use single connection pool, prevent health check file access |
-| MCP confused deputy attack | MEDIUM | Revoke all potentially stolen tokens, implement client ID registry, audit all access logs for suspicious activity |
-| Circular dependency loops | MEDIUM | Identify cycles with graph analysis, break manually via SQL UPDATE, add cycle detection, run integrity check |
-| N+1 query problem | MEDIUM | Add indexes, optimize queries with JOINs/CTEs, implement query result caching, add pagination |
-| API key exposure in logs | HIGH | Revoke all exposed keys immediately, regenerate new keys, configure log redaction, audit who had access to logs |
-| Network filesystem corruption | HIGH | Restore from backup, migrate database to local filesystem, add startup check to prevent network mount usage |
-| STDOUT logging corruption | LOW | Fix logging config to stderr, restart MCP server, verify with MCP inspector tool |
-| Missing journal file corruption | MEDIUM-HIGH | Restore from backup (if includes journals), run `PRAGMA integrity_check`, rebuild database if necessary, fix backup procedure |
+| --json with prompts | LOW | Add TTY detection and --json auto-disables prompts, test with piping |
+| Global options not inherited | MEDIUM | Refactor to add global options before subcommands, call .copyInheritedSettings() |
+| .parse() instead of .parseAsync() | LOW | Replace .parse() with .parseAsync(), wrap in try/catch, verify async completion |
+| Inconsistent error handling | MEDIUM | Extract error formatting layer, refactor CLI and MCP to use shared formatter |
+| Stdout contamination | LOW-MEDIUM | Create output abstraction, replace all console.log with output.info(), test with jq |
+| MCP tool naming chaos | HIGH | Define convention, rename all existing tools (breaking change), update documentation |
+| Missing schema validation | LOW | Add .strict() to schemas, add tests with invalid inputs, verify error messages clear |
+| CamelCase confusion | LOW | Fix option access to use camelCase, add TypeScript types to prevent recurrence |
+| No JSON test coverage | MEDIUM | Write JSON tests for all commands, validate parseability and schema |
+| Tool proliferation | MEDIUM-HIGH | Reorganize tools by resource, consider splitting into multiple MCP servers |
 
 ---
 
@@ -502,72 +499,65 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Transaction upgrade deadlock | Phase 1 (Core Data Layer) | Load test with 10 concurrent write requests, verify no SQLITE_BUSY errors |
-| WAL checkpoint starvation | Phase 1 (Core Data Layer) | Monitor WAL file size over 24h continuous load, verify stays under 10MB |
-| POSIX lock cancellation | Phase 1 (Core Data Layer) | Code review shows single connection pool, health checks use pool not file access |
-| MCP confused deputy | Phase 4 (MCP Server) | Security audit shows per-user token validation and audit logging |
-| Circular dependencies | Phase 1 (Core Data Layer) | Unit tests attempt cycle creation, verify rejection with clear error |
-| N+1 queries | Phase 3 (Comments & Metadata) | Query logs show <=3 queries per task load with comments |
-| API key in query params | Phase 2 (REST API) | Integration tests verify query param auth rejected with 401 |
-| Network filesystem locks | Phase 0 (Infrastructure) | Startup script checks `df -T`, refuses to start on network filesystem |
-| STDOUT MCP corruption | Phase 4 (MCP Server) | MCP inspector test suite passes with no parse errors |
-| Missing journal files | Phase 5 (CLI & Operations) | Backup restore test includes all files, integrity check passes |
+| --json prompts conflict | Phase 1: CLI Infrastructure | Test `echo \| tasks create --json` fails fast, `tasks create --json --title X` succeeds |
+| Global option inheritance | Phase 1: CLI Infrastructure | Test `tasks --json list` produces JSON, verify all global flags work before command |
+| .parse vs .parseAsync | Phase 1: CLI Infrastructure | All commands use .parseAsync, integration tests verify async completion |
+| Error handling divergence | Phase 1: CLI Infrastructure | Same error produces consistent message via CLI --json and MCP tool |
+| Stdout contamination | Phase 1: CLI Infrastructure | All commands with --json pass `\| jq` test, no stdout pollution |
+| MCP tool naming | Phase 2: MCP Expansion | All tools follow {resource}_{action} convention, documented in naming guide |
+| Schema validation | Phase 2: MCP Expansion | All tools reject invalid inputs with Zod errors, tests cover invalid cases |
+| CamelCase confusion | Phase 1: CLI Infrastructure | Options accessed via camelCase, TypeScript types enforce correct access |
+| JSON test coverage | Phase 1: CLI Infrastructure | All commands have JSON tests, CI fails if JSON output invalid |
+| Tool proliferation | Phase 2: MCP Expansion | Tools organized by resource, discovery UX tested with token usage metrics |
 
 ---
 
 ## Sources
 
-### SQLite Concurrency & Locking
-- [Abusing SQLite to Handle Concurrency](https://blog.skypilot.co/abusing-sqlite-to-handle-concurrency/)
-- [SQLite User Forum: Multiple Writers](https://sqlite.org/forum/info/b4e8b29ae409cd198652c6b7e70b53b702f269e67e1d2573d627feeba37bbf85)
-- [File Locking And Concurrency In SQLite Version 3](https://sqlite.org/lockingv3.html)
-- [SQLite concurrent writes and "database is locked" errors](https://tenthousandmeters.com/blog/sqlite-concurrent-writes-and-database-is-locked-errors/)
-- [What to do about SQLITE_BUSY errors despite setting a timeout](https://berthub.eu/articles/posts/a-brief-post-on-sqlite3-database-locked-despite-timeout/)
-- [Four different ways to handle SQLite concurrency](https://medium.com/@gwendal.roue/four-different-ways-to-handle-sqlite-concurrency-db3bcc74d00e)
+### Commander.js Best Practices
+- [The Definitive Guide to Commander.js | Better Stack Community](https://betterstack.com/community/guides/scaling-nodejs/commander-explained/)
+- [GitHub - tj/commander.js: node.js command-line interfaces made easy](https://github.com/tj/commander.js)
+- [What is the best practice for organising large commander tool? · Issue #983](https://github.com/tj/commander.js/issues/983)
+- [Async typescript functions as actions · Issue #806](https://github.com/tj/commander.js/issues/806)
+- [Options shared by a root command and its subCommands · Issue #1426](https://github.com/tj/commander.js/issues/1426)
 
-### SQLite WAL Mode
-- [Write-Ahead Logging](https://sqlite.org/wal.html)
-- [How SQLite Scales Read Concurrency](https://fly.io/blog/sqlite-internals-wal/)
-- [Handling Concurrency in SQLite: Best Practices](https://www.sqliteforum.com/p/handling-concurrency-in-sqlite-best)
-- [SQLite WAL File: Complete Guide 2026](https://copyprogramming.com/howto/sqlite-wal-file-size-keeps-growing)
+### CLI --json Output Best Practices
+- [Flag deprecation warning should be send to stderr not stdout · Issue #5674](https://github.com/cli/cli/issues/5674)
+- [BUG --json outputs errors to stdout instead of stderr · Issue #2150](https://github.com/npm/cli/issues/2150)
+- [Deprecated warning message part of stdout instead of stderr · Issue #1896](https://github.com/forcedotcom/cli/issues/1896)
+- [Command Line Interface Guidelines](https://clig.dev/)
+- [Terraform validate - machine-readable JSON output](https://developer.hashicorp.com/terraform/cli/commands/validate)
 
-### SQLite Corruption & Backup
-- [How To Corrupt An SQLite Database File](https://sqlite.org/howtocorrupt.html)
-- [SQLite Over a Network, Caveats and Considerations](https://sqlite.org/useovernet.html)
-- [Backup strategies for SQLite in production](https://oldmoe.blog/2024/04/30/backup-strategies-for-sqlite-in-production/)
-- [SQLite Backup API](https://www.sqlite.org/backup.html)
-- [Understanding and Resolving the "SQLite Database is Locked" Error](https://www.beekeeperstudio.io/blog/how-to-solve-sqlite-database-is-locked-error)
+### MCP SDK and Tool Design
+- [Specification - Model Context Protocol](https://modelcontextprotocol.io/specification/2025-11-25)
+- [Tools - Model Context Protocol](https://modelcontextprotocol.info/docs/concepts/tools/)
+- [Error Handling in MCP Servers - Best Practices Guide](https://mcpcat.io/guides/error-handling-custom-mcp-servers/)
+- [Add Custom Tools to TypeScript MCP Servers](https://mcpcat.io/guides/adding-custom-tools-mcp-server-typescript/)
+- [MCP Best Practices: Architecture & Implementation Guide](https://modelcontextprotocol.info/docs/best-practices/)
 
-### MCP Implementation & Security
-- [Implementing model context protocol (MCP): Tips, tricks and pitfalls](https://nearform.com/digital-community/implementing-model-context-protocol-mcp-tips-tricks-and-pitfalls/)
-- [Security Best Practices - Model Context Protocol](https://modelcontextprotocol.io/specification/draft/basic/security_best_practices)
-- [Model Context Protocol: Security Risks & Mitigations](https://socprime.com/blog/mcp-security-risks-and-mitigations/)
-- [MCP Authorization Patterns for Upstream API Calls](https://www.solo.io/blog/mcp-authorization-patterns-for-upstream-api-calls)
-- [MCP Security Checklist: Complete Protection Guide 2026](https://www.networkintelligence.ai/blogs/model-context-protocol-mcp-security-checklist/)
-- [Securing the Model Context Protocol: A Comprehensive Guide](https://dasroot.net/posts/2026/02/securing-model-context-protocol-oauth-mtls-zero-trust/)
+### MCP Tool Naming Conventions
+- [MCP Server Naming Conventions](https://zazencodes.com/blog/mcp-server-naming-conventions)
+- [SEP-986: Specify Format for Tool Names · Issue #986](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986)
+- [Tool Naming Convention - ShotGrid MCP Server](https://pipeline-f26f1c83.mintlify.app/guides/tool-naming-convention)
 
-### REST API Design & Security
-- [Top 10 Mistakes in REST API Design](https://newsletter.kanaiyakatarmal.com/p/top-10-mistakes-in-rest-api-design)
-- [REST API Best Practices: A Developer's Guide](https://blog.postman.com/rest-api-best-practices/)
-- [REST API Security Best Practices (2026)](https://www.levo.ai/resources/blogs/rest-api-security-best-practices)
-- [API Keys: Weaknesses and security best practices](https://www.techtarget.com/searchsecurity/tip/API-keys-Weaknesses-and-security-best-practices)
-- [The State of API Security in 2026: Common Misconfigurations](https://www.appsecure.security/blog/state-of-api-security-common-misconfigurations)
+### MCP Testing and Validation
+- [MCP inspector - Visual testing tool for MCP servers](https://github.com/modelcontextprotocol/inspector)
+- [Unit Testing MCP Servers - Complete Testing Guide](https://mcpcat.io/guides/writing-unit-tests-mcp-servers/)
+- [MCP Tool Input Validation Testing](https://mcpcat.io/guides/validation-tests-tool-inputs/)
+- [MCP JSON Schema Validation: Tools & Best Practices 2025](https://www.byteplus.com/en/topic/542256)
 
-### Task Dependencies & Data Modeling
-- [8 Data Modeling Mistakes to Avoid in 2025 for Accuracy](https://www.owox.com/blog/articles/mistakes-in-data-modeling)
-- [Understanding and managing task dependencies in project management](https://www.hellobonsai.com/blog/task-dependencies)
-- [How would you model posts, comments, and threaded chat replies in a relational database?](https://github.com/orgs/community/discussions/167352)
+### CLI Testing Strategy
+- [Testing in CI/CD: Unit, Integration, E2E Automation](https://dasroot.net/posts/2026/01/testing-ci-cd-unit-integration-e2e-automation/)
+- [Integration tests on Node.js CLI: Part 4 — Mocking Services](https://medium.com/@zorrodg/%EF%B8%8F-integration-tests-on-node-js-cli-part-4-mocking-services-b6fba2d9d01b)
+- [Unit and Integration Testing | anthropics/claude-code-sdk-python](https://deepwiki.com/anthropics/claude-code-sdk-python/5.1-unit-and-integration-testing)
 
-### API Pagination & Performance
-- [REST API Design: Filtering, Sorting, and Pagination](https://www.moesif.com/blog/technical/api-design/REST-API-Design-Filtering-Sorting-and-Pagination/)
-- [REST API Response Pagination, Sorting and Filtering](https://restfulapi.net/api-pagination-sorting-filtering/)
-
-### Schema Migrations & Versioning
-- [SQLite Versioning and Migration Strategies](https://www.sqliteforum.com/p/sqlite-versioning-and-migration-strategies)
-- [How to Safely Modify Table Columns in SQLite with Production Data](https://synkee.com.sg/blog/safely-modify-sqlite-table-columns-with-production-data/)
-- [API Versioning Best Practices](https://redocly.com/blog/api-versioning-best-practices)
-- [How to Handle API Deprecation](https://oneuptime.com/blog/post/2026-02-02-api-deprecation/view)
+### Terminal Compatibility
+- [GitHub - chalk/chalk: Terminal string styling done right](https://github.com/chalk/chalk)
+- [fix: Replace colors with chalk to fix infinite loop · Pull Request #250](https://github.com/cli-table/cli-table3/pull/250)
+- [BUG Background color bleed in terminal from chalk usage · Issue #1341](https://github.com/anthropics/claude-code/issues/1341)
 
 ---
-*Pitfalls research for: Wood Fired Bugs - SQLite-backed task tracking service with REST + MCP APIs*
+
+*Pitfalls research for: Wood Fired Bugs v1.1 - CLI/MCP Parity Expansion*
+*Context: Scaling from 3 CLI commands to 18+, 12 MCP tools to 19+*
 *Researched: 2026-02-13*

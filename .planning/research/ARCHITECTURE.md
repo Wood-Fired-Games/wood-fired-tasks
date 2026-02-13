@@ -1,519 +1,841 @@
-# Architecture Patterns
+# Architecture Research: CLI/MCP Parity Integration
 
-**Domain:** LLM-Accessible Task Tracking Service
+**Domain:** Task tracking CLI/MCP extension
 **Researched:** 2026-02-13
+**Confidence:** HIGH
 
-## Recommended Architecture
+## Integration Context
 
-### High-Level System Design
+Wood Fired Bugs has a well-established layered architecture:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Consumers (LLM Agents + Human)                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │ Claude Code  │  │ Other Agents │  │ Stuart (CLI User)    │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘  │
-└─────────┼──────────────────┼─────────────────────┼──────────────┘
-          │                  │                     │
-          │ MCP Protocol     │ HTTP REST           │ HTTP REST
-          │ (stdio/SSE)      │ (JSON)              │ (via CLI)
-          │                  │                     │
-┌─────────▼──────────────────▼─────────────────────▼──────────────┐
-│                  Wood Fired Bugs Service                         │
-│  ┌──────────────────────┐      ┌──────────────────────────┐    │
-│  │   MCP Server         │      │   REST API Server        │    │
-│  │   (Tools)            │      │   (Endpoints)            │    │
-│  ├──────────────────────┤      ├──────────────────────────┤    │
-│  │ - create_task        │      │ POST   /tasks            │    │
-│  │ - get_task           │      │ GET    /tasks/{id}       │    │
-│  │ - list_tasks         │      │ GET    /tasks            │    │
-│  │ - update_task        │      │ PUT    /tasks/{id}       │    │
-│  │ - add_comment        │      │ POST   /tasks/{id}/cmnts │    │
-│  │ - search_tasks       │      │ GET    /tasks/search     │    │
-│  └──────────┬───────────┘      │ DELETE /tasks/{id}       │    │
-│             │                  │ GET    /projects         │    │
-│             │                  │ POST   /tags             │    │
-│             │                  │ GET    /healthz          │    │
-│             │                  └──────────┬───────────────┘    │
-│             │                             │                     │
-│             └─────────┬───────────────────┘                     │
-│                       │                                         │
-│              ┌────────▼─────────────────┐                       │
-│              │   Auth Middleware        │                       │
-│              │   (API Key Validation)   │                       │
-│              └────────┬─────────────────┘                       │
-│                       │                                         │
-│              ┌────────▼─────────────────┐                       │
-│              │  Business Logic Layer    │                       │
-│              │  - TaskService           │                       │
-│              │  - ProjectService        │                       │
-│              │  - CommentService        │                       │
-│              │  - SearchService         │                       │
-│              └────────┬─────────────────┘                       │
-│                       │                                         │
-│              ┌────────▼─────────────────┐                       │
-│              │  Data Access Layer (DAL) │                       │
-│              │  - TaskRepository        │                       │
-│              │  - ProjectRepository     │                       │
-│              │  - CommentRepository     │                       │
-│              │  - TagRepository         │                       │
-│              └────────┬─────────────────┘                       │
-│                       │                                         │
-└───────────────────────┼─────────────────────────────────────────┘
-                        │
-                ┌───────▼────────┐
-                │ SQLite Database│
-                │   (tasks.db)   │
-                └────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   Client Interfaces Layer                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                   │
+│  │   CLI    │  │   REST   │  │   MCP    │                   │
+│  │  (HTTP)  │  │   API    │  │ (Direct) │                   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘                   │
+│       │ HTTP        │             │                          │
+├───────┴─────────────┴─────────────┴──────────────────────────┤
+│                     Service Layer                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │   Task   │  │ Project  │  │Dependency│  │ Comment  │     │
+│  │ Service  │  │ Service  │  │ Service  │  │ Service  │     │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
+│       │             │              │             │           │
+├───────┴─────────────┴──────────────┴─────────────┴───────────┤
+│                   Repository Layer                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
+│  │   Task   │  │ Project  │  │Dependency│  │ Comment  │     │
+│  │   Repo   │  │   Repo   │  │   Repo   │  │   Repo   │     │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
+│       │             │              │             │           │
+├───────┴─────────────┴──────────────┴─────────────┴───────────┤
+│                     Database Layer                            │
+│  ┌─────────────────────────────────────────────────────┐     │
+│  │              SQLite (better-sqlite3)                 │     │
+│  └─────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Component Boundaries
+**Key architectural decisions:**
+- **CLI → REST → Service**: CLI is HTTP client, decoupled from backend
+- **MCP → Service**: MCP directly calls services (no HTTP overhead)
+- **Shared schemas**: Zod schemas shared between REST and MCP
+- **Separate types**: CLI has its own type definitions (decoupled)
 
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| **MCP Server** | Expose task operations as MCP tools for Claude Code agents. Handle stdio/SSE transport, schema validation via Zod | Business Logic Layer (TaskService, CommentService) |
-| **REST API Server** | HTTP endpoints for task CRUD, projects, tags, search. OpenAPI spec generation. Request validation | Auth Middleware → Business Logic Layer |
-| **CLI** | Human-friendly command-line interface for task management. Makes HTTP requests internally | REST API Server (as HTTP client) |
-| **Auth Middleware** | Validate API keys from headers. Reject unauthorized requests before they reach business logic | REST API Server, reads from environment/config |
-| **Business Logic Layer (Services)** | Core domain operations: create tasks, validate relationships, enforce business rules (e.g., no circular dependencies), orchestrate multi-step operations | Data Access Layer (Repositories) |
-| **Data Access Layer (Repositories)** | SQLite queries, transactions, schema mapping. Abstracts database details from business logic | SQLite database via ORM/query builder |
-| **SQLite Database** | Persistent storage. Single-file database. ACID guarantees. Handles concurrency via WAL mode | Data Access Layer |
+## New Components for v1.1
 
-### Data Flow
+### CLI Command Structure
 
-**Creating a Task (via MCP):**
+**Location:** `src/cli/commands/`
+
+**Current state:**
+- create.ts (task creation)
+- list.ts (task listing)
+- update.ts (task updates)
+
+**New structure needed:**
+
 ```
-1. Claude Code calls create_task MCP tool with parameters
-2. MCP Server validates parameters against Zod schema
-3. MCP Server calls TaskService.create(data)
-4. TaskService validates business rules (project exists, valid status)
-5. TaskService calls TaskRepository.insert(task)
-6. TaskRepository executes SQL INSERT into tasks table
-7. SQLite commits transaction, returns inserted row ID
-8. TaskRepository returns Task entity to TaskService
-9. TaskService returns Task to MCP Server
-10. MCP Server returns tool result to Claude Code
+src/cli/commands/
+├── tasks/
+│   ├── create.ts          # Existing: tasks create
+│   ├── list.ts            # Existing: tasks list
+│   ├── update.ts          # Existing: tasks update
+│   ├── get.ts             # NEW: tasks get <id>
+│   └── delete.ts          # NEW: tasks delete <id>
+├── projects/
+│   ├── create.ts          # NEW: tasks project create
+│   ├── list.ts            # NEW: tasks project list
+│   ├── get.ts             # NEW: tasks project get <id>
+│   ├── update.ts          # NEW: tasks project update <id>
+│   └── delete.ts          # NEW: tasks project delete <id>
+├── dependencies/
+│   ├── add.ts             # NEW: tasks dep add <task-id> <blocks-id>
+│   ├── list.ts            # NEW: tasks dep list <task-id>
+│   └── remove.ts          # NEW: tasks dep remove <task-id> <blocks-id>
+└── comments/
+    ├── add.ts             # NEW: tasks comment add <task-id>
+    ├── list.ts            # NEW: tasks comment list <task-id>
+    └── delete.ts          # NEW: tasks comment delete <comment-id>
 ```
 
-**Querying Tasks (via REST):**
-```
-1. HTTP client sends GET /tasks?status=open&project=wood-fired-platform
-2. REST API Server extracts query params, validates
-3. Auth Middleware validates API key from X-API-Key header
-4. REST endpoint calls TaskService.list(filters)
-5. TaskService calls TaskRepository.findByFilters(filters)
-6. TaskRepository builds SQL query with WHERE clauses
-7. SQLite executes SELECT with filters
-8. TaskRepository maps rows to Task entities
-9. TaskService returns Task[] to REST endpoint
-10. REST endpoint serializes to JSON with Pydantic/Zod schema
-11. HTTP response sent to client with tasks array
-```
+**Rationale for folder structure:**
+- Each resource type gets its own folder
+- Commands are organized by noun (resource) then verb (action)
+- Mirrors REST API organization (`/api/v1/projects`, `/api/v1/tasks/:id/comments`)
+- Enables better file organization as CLI grows
 
-## Patterns to Follow
+### CLI Entry Point Changes
 
-### Pattern 1: Repository Pattern for Data Access
-**What:** Separate data access logic from business logic. Repositories handle SQL queries, business services orchestrate operations.
+**File:** `src/cli/bin/tasks.ts`
 
-**When:** Always. Keeps business logic testable and database-agnostic.
-
-**Example:**
+**Current:**
 ```typescript
-// Data Access Layer
-class TaskRepository {
-  async findById(id: number): Promise<Task | null> {
-    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
-    return row ? this.mapRowToTask(row) : null;
-  }
+program.addCommand(createCommand);
+program.addCommand(listCommand);
+program.addCommand(updateCommand);
+```
 
-  async insert(task: Omit<Task, 'id'>): Promise<Task> {
-    const result = db.prepare(
-      'INSERT INTO tasks (title, description, status, project_id) VALUES (?, ?, ?, ?)'
-    ).run(task.title, task.description, task.status, task.project_id);
-    return this.findById(result.lastInsertRowid)!;
-  }
+**New pattern (Commander.js subcommands):**
+```typescript
+// Top-level commands (backwards compatible)
+program.addCommand(createCommand);    // tasks create
+program.addCommand(listCommand);      // tasks list
+program.addCommand(updateCommand);    // tasks update
+
+// Resource group commands
+const projectCommand = new Command('project')
+  .description('Manage projects');
+projectCommand.addCommand(createProjectCommand);
+projectCommand.addCommand(listProjectsCommand);
+// ... more project commands
+program.addCommand(projectCommand);
+
+const depCommand = new Command('dep')
+  .description('Manage task dependencies')
+  .alias('dependency');
+depCommand.addCommand(addDependencyCommand);
+// ... more dependency commands
+program.addCommand(depCommand);
+
+const commentCommand = new Command('comment')
+  .description('Manage task comments');
+commentCommand.addCommand(addCommentCommand);
+// ... more comment commands
+program.addCommand(commentCommand);
+```
+
+**Source:** [Commander.js nested subcommands pattern](https://maxschmitt.me/posts/nested-subcommands-commander-node-js)
+
+### Global Options Pattern
+
+**Challenge:** Add `--json` flag to all commands for machine-readable output
+
+**Solution (Commander.js global options):**
+
+```typescript
+// src/cli/bin/tasks.ts
+program
+  .name('tasks')
+  .description('Wood Fired Bugs - Task management CLI')
+  .version('1.0.0')
+  .option('--json', 'Output results as JSON', false);  // Global option
+
+// Commands can access via program.opts()
+// or inherit automatically through subcommands
+```
+
+**Alternative solution (per-command):** Add `.option('--json', 'Output as JSON')` to each command individually.
+
+**Recommendation:** Global option at program level, then each command checks `program.parent?.opts().json` to determine output format.
+
+**Source:** [Commander.js global options discussion](https://github.com/tj/commander.js/issues/476)
+
+### API Client Extensions
+
+**Location:** `src/cli/api/client.ts`
+
+**Current functions:**
+- createTask()
+- listTasks()
+- getTask()
+- updateTask()
+
+**New functions needed:**
+
+```typescript
+// Projects
+export async function createProject(data: CreateProjectInput): Promise<ProjectResponse>
+export async function listProjects(): Promise<ProjectResponse[]>
+export async function getProject(id: number): Promise<ProjectResponse>
+export async function updateProject(id: number, data: UpdateProjectInput): Promise<ProjectResponse>
+export async function deleteProject(id: number): Promise<void>
+
+// Dependencies (nested under tasks)
+export async function addDependency(taskId: number, blocksTaskId: number): Promise<DependencyResponse>
+export async function listDependencies(taskId: number): Promise<DependencyListResponse>
+export async function removeDependency(taskId: number, blocksTaskId: number): Promise<void>
+
+// Comments (nested under tasks)
+export async function addComment(taskId: number, data: CreateCommentInput): Promise<CommentResponse>
+export async function listComments(taskId: number): Promise<CommentResponse[]>
+export async function deleteComment(commentId: number): Promise<void>
+```
+
+**Pattern follows existing conventions:**
+- Returns typed responses
+- Throws ApiClientError on failure
+- Uses apiRequest() helper with 10s timeout
+- Maps to REST endpoints: `/api/v1/projects`, `/api/v1/tasks/:id/comments`, etc.
+
+### CLI Type Definitions
+
+**Location:** `src/cli/api/types.ts`
+
+**Current types:**
+- TaskResponse
+- ProjectResponse (already exists)
+- CreateTaskInput
+- UpdateTaskInput
+- TaskFilters
+- ApiErrorResponse
+
+**New types needed:**
+
+```typescript
+// Project types (CreateProjectInput might exist, verify)
+export interface CreateProjectInput {
+  name: string;
+  description?: string;
 }
 
-// Business Logic Layer
-class TaskService {
-  constructor(private taskRepo: TaskRepository, private projectRepo: ProjectRepository) {}
-
-  async createTask(data: CreateTaskDTO): Promise<Task> {
-    // Business rule: project must exist
-    const project = await this.projectRepo.findById(data.project_id);
-    if (!project) throw new Error('Project not found');
-
-    // Business rule: validate status
-    if (!['open', 'in_progress', 'done', 'blocked'].includes(data.status)) {
-      throw new Error('Invalid status');
-    }
-
-    return this.taskRepo.insert(data);
-  }
+export interface UpdateProjectInput {
+  name?: string;
+  description?: string | null;
 }
-```
 
-### Pattern 2: Schema-Driven Validation
-**What:** Define request/response schemas using Zod (TypeScript) or Pydantic (Python). Use schemas for validation AND type generation.
-
-**When:** All API inputs and MCP tool parameters. Ensures LLMs receive predictable, well-documented structures.
-
-**Example:**
-```typescript
-import { z } from 'zod';
-
-// Schema definition
-const CreateTaskSchema = z.object({
-  title: z.string().min(1).max(255),
-  description: z.string().optional(),
-  status: z.enum(['open', 'in_progress', 'done', 'blocked']),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']),
-  project_id: z.number().int().positive(),
-  assignee: z.string().optional(),
-  due_date: z.string().datetime().optional(),
-  tags: z.array(z.string()).optional()
-});
-
-// Type inference from schema
-type CreateTaskDTO = z.infer<typeof CreateTaskSchema>;
-
-// MCP tool definition
-const createTaskTool = {
-  name: 'create_task',
-  description: 'Create a new task in the tracking system',
-  inputSchema: zodToJsonSchema(CreateTaskSchema), // Convert Zod to JSON Schema for MCP
-  handler: async (params: CreateTaskDTO) => {
-    const validated = CreateTaskSchema.parse(params); // Validates and throws if invalid
-    return taskService.createTask(validated);
-  }
-};
-
-// REST endpoint validation
-app.post('/tasks', async (req, reply) => {
-  const data = CreateTaskSchema.parse(req.body); // Automatic validation
-  const task = await taskService.createTask(data);
-  return reply.code(201).send(task);
-});
-```
-
-### Pattern 3: Optimistic Locking for Concurrent Updates
-**What:** Use version column to detect conflicting updates. Prevent lost updates when multiple agents modify same task.
-
-**When:** Update operations on tasks. Critical for multi-agent environments.
-
-**Example:**
-```typescript
-// Schema includes version column
-interface Task {
+// Dependency types
+export interface DependencyResponse {
   id: number;
-  title: string;
-  // ... other fields
-  version: number; // Incremented on every update
-  updated_at: Date;
-}
-
-// Update with optimistic locking
-class TaskRepository {
-  async update(id: number, changes: Partial<Task>, expectedVersion: number): Promise<Task> {
-    const result = db.prepare(
-      `UPDATE tasks
-       SET title = ?, description = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND version = ?`
-    ).run(changes.title, changes.description, id, expectedVersion);
-
-    if (result.changes === 0) {
-      // Either task doesn't exist or version mismatch
-      const current = await this.findById(id);
-      if (!current) throw new Error('Task not found');
-      throw new Error('Conflict: task was modified by another process');
-    }
-
-    return this.findById(id)!;
-  }
-}
-```
-
-### Pattern 4: Structured Error Responses for LLMs
-**What:** Return error responses with machine-readable codes and helpful messages. LLMs need clear error context to retry or adapt.
-
-**When:** All error conditions in API and MCP tools.
-
-**Example:**
-```typescript
-// Standard error structure
-interface APIError {
-  error: {
-    code: string;           // Machine-readable error code
-    message: string;        // Human-readable description
-    details?: unknown;      // Additional context
-    field?: string;         // For validation errors
-  };
-}
-
-// REST API error handler
-app.setErrorHandler((error, request, reply) => {
-  if (error instanceof z.ZodError) {
-    reply.code(400).send({
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid request data',
-        details: error.errors.map(e => ({
-          field: e.path.join('.'),
-          message: e.message
-        }))
-      }
-    });
-  } else if (error.message.includes('not found')) {
-    reply.code(404).send({
-      error: {
-        code: 'NOT_FOUND',
-        message: error.message
-      }
-    });
-  } else {
-    reply.code(500).send({
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred'
-      }
-    });
-  }
-});
-
-// MCP tool error handling
-const getTaskTool = {
-  name: 'get_task',
-  handler: async (params: { id: number }) => {
-    const task = await taskService.getById(params.id);
-    if (!task) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            error: {
-              code: 'NOT_FOUND',
-              message: `Task ${params.id} not found`
-            }
-          })
-        }],
-        isError: true
-      };
-    }
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(task)
-      }]
-    };
-  }
-};
-```
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Exposing Database Entities Directly
-**What:** Returning raw database rows in API responses without mapping to DTOs.
-
-**Why bad:** Leaks implementation details, breaks API contracts when schema changes, exposes internal fields not meant for consumption.
-
-**Instead:** Use Data Transfer Objects (DTOs) with explicit field mapping.
-
-```typescript
-// BAD: Direct database exposure
-app.get('/tasks/:id', async (req, reply) => {
-  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  return row; // Exposes internal_notes, created_by_user_id, etc.
-});
-
-// GOOD: DTO mapping
-interface TaskDTO {
-  id: number;
-  title: string;
-  description: string;
-  status: string;
-  priority: string;
+  task_id: number;
+  blocks_task_id: number;
   created_at: string;
-  // Only fields intended for API consumers
 }
 
-app.get('/tasks/:id', async (req, reply) => {
-  const task = await taskService.getById(req.params.id);
-  const dto: TaskDTO = {
-    id: task.id,
-    title: task.title,
-    description: task.description,
-    status: task.status,
-    priority: task.priority,
-    created_at: task.created_at.toISOString()
-  };
-  return dto;
+export interface DependencyListResponse {
+  blocks: DependencyResponse[];      // Tasks this task blocks
+  blocked_by: DependencyResponse[];  // Tasks blocking this task
+}
+
+// Comment types
+export interface CommentResponse {
+  id: number;
+  task_id: number;
+  author: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCommentInput {
+  author: string;
+  content: string;
+}
+```
+
+**Rationale:** CLI types mirror REST API responses but remain decoupled from server types. This allows CLI to evolve independently.
+
+### Output Formatters
+
+**Location:** `src/cli/output/formatters.ts`
+
+**Current formatters:**
+- formatStatus(status: string): string
+- formatPriority(priority: string): string
+- formatTaskTable(tasks: TaskResponse[]): string
+- formatTaskDetail(task: TaskResponse): string
+
+**New formatters needed:**
+
+```typescript
+// Project formatters
+export function formatProjectTable(projects: ProjectResponse[]): string
+export function formatProjectDetail(project: ProjectResponse): string
+
+// Dependency formatters
+export function formatDependencyTree(deps: DependencyListResponse): string
+export function formatDependencyList(deps: DependencyResponse[]): string
+
+// Comment formatters
+export function formatCommentList(comments: CommentResponse[]): string
+export function formatCommentDetail(comment: CommentResponse): string
+
+// JSON formatter (global)
+export function formatJson(data: unknown): string {
+  return JSON.stringify(data, null, 2);
+}
+```
+
+**Pattern:** Each resource gets table and detail formatters. Use `cli-table3` for tables, chalk for colors.
+
+**Source:** [CLI best practices for --json flag](https://github.com/lirantal/nodejs-cli-apps-best-practices)
+
+### MCP Tool Structure
+
+**Location:** `src/mcp/tools/`
+
+**Current files:**
+- task-tools.ts (6 tools: create, get, update, list, delete, get_subtasks)
+- dependency-tools.ts (3 tools: add, remove, get_dependencies)
+- comment-tools.ts (3 tools: add, get_comments, delete)
+
+**New file needed:**
+- project-tools.ts (5 tools: create, get, update, list, delete)
+
+**Registration pattern:**
+
+```typescript
+// src/mcp/tools/project-tools.ts
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ProjectService } from '../../services/project.service.js';
+import { CreateProjectSchema } from '../../schemas/task.schema.js';
+import { z } from 'zod';
+import { convertToMcpError } from '../errors.js';
+
+export function registerProjectTools(
+  server: McpServer,
+  projectService: ProjectService
+): void {
+  server.registerTool(
+    'create_project',
+    {
+      description: 'Create a new project',
+      inputSchema: CreateProjectSchema,
+    },
+    async (args) => {
+      try {
+        const project = projectService.createProject(args);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Project created: "${project.name}" (ID: ${project.id})`,
+            },
+          ],
+          structuredContent: project as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    }
+  );
+
+  // Additional tools: get_project, update_project, list_projects, delete_project
+}
+```
+
+**Then update:** `src/mcp/server.ts`
+
+```typescript
+import { registerProjectTools } from './tools/project-tools.js';
+
+export function createMcpServer(
+  taskService: TaskService,
+  projectService: ProjectService,
+  dependencyService: DependencyService,
+  commentService: CommentService
+): McpServer {
+  const server = new McpServer({
+    name: 'wood-fired-bugs',
+    version: '1.0.0',
+  });
+
+  // Register all tools
+  registerTaskTools(server, taskService, projectService);
+  registerProjectTools(server, projectService);  // NEW
+  registerDependencyTools(server, dependencyService);
+  registerCommentTools(server, commentService);
+
+  return server;
+}
+```
+
+**Pattern:** One tool file per resource, registerXxxTools() function, shares Zod schemas from `src/schemas/`.
+
+## Architectural Patterns
+
+### Pattern 1: Command File Structure
+
+**What:** Each CLI command is a separate file exporting a Commander.js Command instance.
+
+**When to use:** Always, for all new commands.
+
+**Example:**
+```typescript
+// src/cli/commands/projects/create.ts
+import { Command } from 'commander';
+import { createProject } from '../../api/client.js';
+import { formatProjectDetail } from '../../output/formatters.js';
+import { handleError } from '../../output/error-handler.js';
+import chalk from 'chalk';
+import type { CreateProjectInput } from '../../api/types.js';
+
+export const createProjectCommand = new Command('create')
+  .description('Create a new project')
+  .requiredOption('-n, --name <name>', 'Project name')
+  .option('-d, --description <text>', 'Project description')
+  .action(async (options) => {
+    try {
+      const input: CreateProjectInput = {
+        name: options.name,
+      };
+      if (options.description) {
+        input.description = options.description;
+      }
+
+      const project = await createProject(input);
+
+      // Check for global --json flag
+      const parentOpts = this.parent?.opts();
+      if (parentOpts?.json) {
+        console.log(JSON.stringify(project, null, 2));
+        return;
+      }
+
+      console.log(chalk.green('Project created successfully'));
+      console.log('');
+      console.log(formatProjectDetail(project));
+    } catch (error) {
+      handleError(error);
+    }
+  });
+```
+
+**Trade-offs:**
+- Pro: Clean separation, easy to test, follows existing pattern
+- Pro: Commander.js automatically inherits options from parent
+- Con: More files, but organized by folder
+
+### Pattern 2: JSON Output Handling
+
+**What:** Commands check for global `--json` flag and output raw JSON instead of formatted text.
+
+**When to use:** All commands that return data.
+
+**Example:**
+```typescript
+.action(async (options) => {
+  try {
+    const result = await someApiCall();
+
+    // Check global --json flag from parent program
+    if (this.parent?.opts().json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    // Otherwise, use formatted output
+    console.log(formatSomeTable(result));
+  } catch (error) {
+    handleError(error);
+  }
 });
 ```
 
-### Anti-Pattern 2: N+1 Query Problem
-**What:** Loading related entities one-by-one in a loop instead of batching.
+**Trade-offs:**
+- Pro: Machine-readable output for scripting
+- Pro: Industry standard (npm, git, gh all support --json)
+- Con: Requires checking flag in every command action
 
-**Why bad:** 100 tasks with comments = 1 query for tasks + 100 queries for comments = terrible performance.
+**Source:** [CLI best practices: enable JSON output](https://github.com/lirantal/nodejs-cli-apps-best-practices)
 
-**Instead:** Use JOINs or batch loading.
+### Pattern 3: MCP Tool Registration
 
+**What:** Group related MCP tools in separate files with `registerXxxTools()` function.
+
+**When to use:** When adding 3+ tools for a new resource type.
+
+**Example:**
 ```typescript
-// BAD: N+1 queries
-async function getTasksWithComments() {
-  const tasks = await db.prepare('SELECT * FROM tasks').all();
-  for (const task of tasks) {
-    task.comments = await db.prepare('SELECT * FROM comments WHERE task_id = ?').all(task.id);
-  }
-  return tasks;
-}
-
-// GOOD: Single query with JOIN
-async function getTasksWithComments() {
-  const rows = await db.prepare(`
-    SELECT
-      t.*,
-      json_group_array(
-        json_object('id', c.id, 'text', c.text, 'author', c.author)
-      ) as comments
-    FROM tasks t
-    LEFT JOIN comments c ON c.task_id = t.id
-    GROUP BY t.id
-  `).all();
-
-  return rows.map(row => ({
-    ...row,
-    comments: JSON.parse(row.comments)
-  }));
+// src/mcp/tools/project-tools.ts
+export function registerProjectTools(
+  server: McpServer,
+  projectService: ProjectService
+): void {
+  server.registerTool('create_project', { ... }, async (args) => { ... });
+  server.registerTool('get_project', { ... }, async (args) => { ... });
+  server.registerTool('list_projects', { ... }, async (args) => { ... });
+  server.registerTool('update_project', { ... }, async (args) => { ... });
+  server.registerTool('delete_project', { ... }, async (args) => { ... });
 }
 ```
 
-### Anti-Pattern 3: Storing JSON Blobs for Structured Data
-**What:** Using JSON columns for data that should be relational (tags, comments, dependencies).
+**Trade-offs:**
+- Pro: Mirrors existing pattern (task-tools.ts, dependency-tools.ts, comment-tools.ts)
+- Pro: Clean separation of concerns
+- Con: None, this is the established pattern
 
-**Why bad:** Can't query efficiently, can't enforce constraints, harder to maintain consistency.
+### Pattern 4: Interactive Prompts (Future)
 
-**Instead:** Use proper relational tables with foreign keys.
+**What:** For complex inputs, use interactive prompts instead of many flags.
 
+**When to use:** When command requires 5+ inputs or conditional logic.
+
+**Library recommendation:** `enquirer` (preferred) or `@inquirer/prompts`
+
+**Example (future use):**
 ```typescript
-// BAD: JSON blob for tags
-CREATE TABLE tasks (
-  id INTEGER PRIMARY KEY,
-  title TEXT,
-  tags TEXT -- JSON array like '["bug", "frontend"]'
-);
+import { prompt } from 'enquirer';
 
-// Can't efficiently query "all tasks with tag 'bug'"
-// Can't prevent duplicate tags
-// Can't enforce tag naming conventions
+export const createTaskInteractive = new Command('create-interactive')
+  .description('Create a task with interactive prompts')
+  .action(async () => {
+    try {
+      const answers = await prompt([
+        { type: 'input', name: 'title', message: 'Task title:' },
+        { type: 'select', name: 'priority', message: 'Priority:', choices: ['low', 'medium', 'high', 'urgent'] },
+        // ... more prompts
+      ]);
 
-// GOOD: Relational many-to-many
-CREATE TABLE tasks (
-  id INTEGER PRIMARY KEY,
-  title TEXT
-);
-
-CREATE TABLE tags (
-  id INTEGER PRIMARY KEY,
-  name TEXT UNIQUE
-);
-
-CREATE TABLE task_tags (
-  task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
-  tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
-  PRIMARY KEY (task_id, tag_id)
-);
-
--- Efficient query: all tasks with tag 'bug'
-SELECT t.* FROM tasks t
-JOIN task_tags tt ON tt.task_id = t.id
-JOIN tags tag ON tag.id = tt.tag_id
-WHERE tag.name = 'bug';
-```
-
-### Anti-Pattern 4: Ignoring Database Transactions
-**What:** Multi-step operations without transactions, risking partial updates.
-
-**Why bad:** If step 2 fails, step 1 already committed. Leaves inconsistent state.
-
-**Instead:** Wrap multi-step operations in transactions.
-
-```typescript
-// BAD: No transaction
-async function createTaskWithComments(taskData, comments) {
-  const task = await taskRepo.insert(taskData); // Commits
-  for (const comment of comments) {
-    await commentRepo.insert({ task_id: task.id, ...comment }); // Could fail halfway
-  }
-}
-
-// GOOD: Transactional
-async function createTaskWithComments(taskData, comments) {
-  return db.transaction(() => {
-    const task = taskRepo.insert(taskData);
-    for (const comment of comments) {
-      commentRepo.insert({ task_id: task.id, ...comment });
+      const task = await createTask(answers);
+      console.log(formatTaskDetail(task));
+    } catch (error) {
+      handleError(error);
     }
-    return task;
-  })(); // Commits only if all succeed, rolls back on any error
-}
+  });
 ```
 
-## Scalability Considerations
+**Trade-offs:**
+- Pro: Better UX for complex inputs
+- Pro: Enquirer is lightweight (~4ms load time)
+- Con: Not needed for v1.1 (all commands have simple inputs)
+- Con: Requires new dependency
 
-| Concern | At 100 tasks | At 10K tasks | At 100K tasks |
-|---------|--------------|--------------|---------------|
-| **Database Size** | <1MB, no optimization needed | 10-50MB, ensure indexes on status, project_id, assignee | 100MB-1GB, vacuum regularly, consider archiving closed tasks |
-| **Query Performance** | All queries <5ms | Add composite indexes for common filter combinations | Consider full-text search index (FTS5) for description search |
-| **Concurrent Writes** | SQLite WAL mode handles this easily | No changes needed, WAL supports multiple readers + 1 writer | If write-heavy, batch updates or consider queuing writes |
-| **Backup Strategy** | Manual file copy sufficient | Automated daily backups using SQLite backup API | Incremental backups, retention policy, test restore process |
-| **API Response Times** | No pagination needed | Paginate list endpoints (50-100 per page) | Implement cursor-based pagination for stable results |
-| **MCP Tool Performance** | All tools <100ms | Optimize commonly used tools (list_tasks), cache project/tag lookups | Consider read replicas if MCP tools dominate usage |
+**Source:** [Enquirer vs Inquirer comparison](https://npm-compare.com/enquirer,inquirer,prompt,prompt-sync,prompts,readline-sync)
 
-### SQLite Optimization for Scale
+**Recommendation:** Defer interactive prompts until v1.2+. Current flag-based approach is sufficient.
 
-```sql
--- Enable WAL mode for better concurrency
-PRAGMA journal_mode = WAL;
+## Data Flow
 
--- Increase cache size (64MB)
-PRAGMA cache_size = -64000;
+### CLI Request Flow
 
--- Synchronous mode for balance
-PRAGMA synchronous = NORMAL;
-
--- Critical indexes
-CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_project ON tasks(project_id);
-CREATE INDEX idx_tasks_assignee ON tasks(assignee);
-CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
-CREATE INDEX idx_comments_task_id ON comments(task_id);
-
--- Composite indexes for common queries
-CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
-CREATE INDEX idx_tasks_assignee_status ON tasks(assignee, status) WHERE assignee IS NOT NULL;
-
--- Full-text search for descriptions (if needed at scale)
-CREATE VIRTUAL TABLE tasks_fts USING fts5(title, description, content=tasks, content_rowid=id);
 ```
+User Command
+    ↓
+Commander.js Parser
+    ↓
+Command Action Handler
+    ↓
+API Client Function (HTTP fetch)
+    ↓
+REST API Endpoint (Fastify)
+    ↓
+Service Layer (Zod validation)
+    ↓
+Repository Layer (SQL queries)
+    ↓
+SQLite Database
+    ↓
+Repository → Service → API → HTTP Response
+    ↓
+API Client (parse JSON)
+    ↓
+Format Output (table or JSON)
+    ↓
+Console Output
+```
+
+### MCP Request Flow
+
+```
+MCP Client (Claude, etc.)
+    ↓
+MCP Server (stdio transport)
+    ↓
+Tool Handler (registerTool)
+    ↓
+Service Layer (Zod validation)
+    ↓
+Repository Layer (SQL queries)
+    ↓
+SQLite Database
+    ↓
+Repository → Service → Tool Response
+    ↓
+MCP Client
+```
+
+### Key Differences
+
+| Aspect | CLI | MCP |
+|--------|-----|-----|
+| Transport | HTTP (fetch) | stdio (process communication) |
+| Service access | Via REST API | Direct function calls |
+| Type safety | CLI types (decoupled) | Service types (shared schemas) |
+| Validation | REST API validates | Service validates |
+| Error handling | ApiClientError + HTTP codes | convertToMcpError() |
+| Output format | Formatted text or JSON | Structured MCP response |
+
+## Integration Points
+
+### New Components Summary
+
+| Component | Type | Location | Purpose |
+|-----------|------|----------|---------|
+| Project commands | CLI | `src/cli/commands/projects/*.ts` | Project CRUD operations |
+| Dependency commands | CLI | `src/cli/commands/dependencies/*.ts` | Dependency management |
+| Comment commands | CLI | `src/cli/commands/comments/*.ts` | Comment management |
+| Task commands (new) | CLI | `src/cli/commands/tasks/*.ts` | Additional task operations (get, delete) |
+| Project tools | MCP | `src/mcp/tools/project-tools.ts` | MCP project tools |
+| API client extensions | Shared | `src/cli/api/client.ts` | HTTP client functions |
+| Type definitions | CLI | `src/cli/api/types.ts` | CLI type interfaces |
+| Formatters | CLI | `src/cli/output/formatters.ts` | Output formatting |
+| Main program | CLI | `src/cli/bin/tasks.ts` | Command registration |
+| MCP server | MCP | `src/mcp/server.ts` | Tool registration |
+
+### Modified Components
+
+| Component | Change | Reason |
+|-----------|--------|--------|
+| `src/cli/bin/tasks.ts` | Add subcommand groups (project, dep, comment) | Organize commands by resource |
+| `src/cli/bin/tasks.ts` | Add global `--json` option | Machine-readable output |
+| `src/mcp/server.ts` | Import and register project tools | Enable MCP project operations |
+| `src/cli/api/client.ts` | Add 12+ new API functions | Support new CLI commands |
+| `src/cli/api/types.ts` | Add dependency and comment types | Type safety for new features |
+| `src/cli/output/formatters.ts` | Add formatters for projects, deps, comments | Consistent output formatting |
+
+### No Changes Needed
+
+These components work as-is:
+
+- `src/services/` - Already implements all operations
+- `src/repositories/` - Already has all data access
+- `src/schemas/` - Already defines all Zod schemas
+- `src/api/routes/` - Already exposes all REST endpoints
+- `src/db/` - Database layer complete
+- `src/cli/config/env.ts` - Environment config sufficient
+- `src/cli/output/error-handler.ts` - Error handling sufficient
+
+## Build Order
+
+Recommended implementation sequence:
+
+### Phase 1: Foundation (Build first)
+1. Add new types to `src/cli/api/types.ts`
+2. Add new API client functions to `src/cli/api/client.ts`
+3. Add new formatters to `src/cli/output/formatters.ts`
+
+### Phase 2: CLI Commands (Build second)
+4. Create command folder structure (`src/cli/commands/projects/`, etc.)
+5. Move existing commands to `src/cli/commands/tasks/`
+6. Implement project commands
+7. Implement dependency commands
+8. Implement comment commands
+9. Implement additional task commands (get, delete)
+
+### Phase 3: Integration (Build third)
+10. Update `src/cli/bin/tasks.ts` with subcommand groups
+11. Add global `--json` option handling
+
+### Phase 4: MCP Tools (Build fourth)
+12. Create `src/mcp/tools/project-tools.ts`
+13. Update `src/mcp/server.ts` to register project tools
+
+### Phase 5: Testing (Build last)
+14. Test all CLI commands with formatted output
+15. Test all CLI commands with `--json` output
+16. Test all MCP tools
+17. Update documentation
+
+**Rationale for ordering:**
+- Foundation first: API client and types needed by all commands
+- Commands second: Core functionality
+- Integration third: Ties commands together
+- MCP fourth: Independent from CLI, can be done in parallel
+- Testing last: Validates everything works together
+
+**Dependencies:**
+- Phases 1-3 are sequential (each depends on previous)
+- Phase 4 (MCP) can be done in parallel with Phase 2-3
+- Phase 5 requires all previous phases
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Direct Service Access from CLI
+
+**What people do:** Import service classes into CLI commands for direct calls.
+
+**Why it's wrong:**
+- Breaks the architectural boundary (CLI should be HTTP client)
+- Creates tight coupling between CLI and server
+- Requires database connection in CLI process
+- Makes CLI unusable if server changes implementation
+
+**Do this instead:** Always call REST API via `src/cli/api/client.ts`. Let the server handle all business logic.
+
+### Anti-Pattern 2: Duplicate Validation Logic
+
+**What people do:** Add Zod validation or business logic in CLI commands.
+
+**Why it's wrong:**
+- Duplicates validation that exists in services
+- CLI validation can get out of sync with server
+- Harder to maintain (two places to update)
+
+**Do this instead:** Let CLI commands be thin wrappers. Pass user input to API client, let server validate.
+
+**Example (wrong):**
+```typescript
+// DON'T DO THIS
+.action(async (options) => {
+  // Validating in CLI
+  const schema = z.object({ name: z.string().min(1) });
+  const validated = schema.parse(options);  // ❌ Duplicate validation
+  await createProject(validated);
+});
+```
+
+**Example (correct):**
+```typescript
+// DO THIS
+.action(async (options) => {
+  // Just pass through, let server validate
+  await createProject({ name: options.name });  // ✅ Server validates
+});
+```
+
+### Anti-Pattern 3: Adding MCP Tools to Existing Tool Files
+
+**What people do:** Add all new tools to `task-tools.ts` instead of creating `project-tools.ts`.
+
+**Why it's wrong:**
+- Violates single responsibility principle
+- Makes files large and hard to navigate
+- Doesn't scale as project grows
+
+**Do this instead:** Create separate tool files per resource type (`project-tools.ts`, `dependency-tools.ts`, etc.).
+
+### Anti-Pattern 4: Hardcoded Output Formatting
+
+**What people do:** Put formatting logic directly in command action handlers.
+
+**Why it's wrong:**
+- Duplicates formatting across commands
+- Hard to change output style consistently
+- Mixing concerns (command logic + presentation)
+
+**Do this instead:** Extract all formatting to `src/cli/output/formatters.ts`. Commands call formatters.
+
+**Example (wrong):**
+```typescript
+// DON'T DO THIS
+.action(async () => {
+  const projects = await listProjects();
+  // ❌ Formatting in action handler
+  projects.forEach(p => console.log(`${p.id}: ${p.name}`));
+});
+```
+
+**Example (correct):**
+```typescript
+// DO THIS
+.action(async () => {
+  const projects = await listProjects();
+  // ✅ Use formatter
+  console.log(formatProjectTable(projects));
+});
+```
+
+### Anti-Pattern 5: Git-Style Subcommand Executables
+
+**What people do:** Use Commander's git-style subcommands (separate executables).
+
+**Why it's wrong:**
+- Adds complexity (multiple entry points)
+- Harder to share code between commands
+- TypeScript build becomes more complex
+- Not needed for this project size
+
+**Do this instead:** Use action handlers with `.addCommand()` for all subcommands.
+
+**Source:** [Commander.js subcommand documentation](https://github.com/tj/commander.js)
+
+## Scaling Considerations
+
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| Current (v1.1) | Monorepo with shared code. CLI commands in folders by resource. Single `tasks` binary. |
+| v1.2-v2.0 | Add interactive prompts (enquirer) for complex commands. Add config file support (.tasksrc). Add command aliases. |
+| v2.0+ | Consider splitting CLI into separate package. Add plugin system for custom commands. Add shell completions (bash, zsh). |
+
+### Scaling Priorities
+
+1. **First bottleneck:** Too many top-level commands.
+   - **Fix:** Use subcommand groups (already planned: `tasks project create`)
+
+2. **Second bottleneck:** Inconsistent output formats across commands.
+   - **Fix:** Centralize formatters (already designed: `src/cli/output/formatters.ts`)
+
+3. **Third bottleneck:** Complex multi-step operations requiring many flags.
+   - **Fix:** Add interactive prompts with enquirer (defer to v1.2+)
+
+## Files to Create
+
+### CLI Commands (15 new files)
+
+```
+src/cli/commands/tasks/get.ts
+src/cli/commands/tasks/delete.ts
+src/cli/commands/projects/create.ts
+src/cli/commands/projects/list.ts
+src/cli/commands/projects/get.ts
+src/cli/commands/projects/update.ts
+src/cli/commands/projects/delete.ts
+src/cli/commands/dependencies/add.ts
+src/cli/commands/dependencies/list.ts
+src/cli/commands/dependencies/remove.ts
+src/cli/commands/comments/add.ts
+src/cli/commands/comments/list.ts
+src/cli/commands/comments/delete.ts
+```
+
+### MCP Tools (1 new file)
+
+```
+src/mcp/tools/project-tools.ts
+```
+
+### No New Folders
+
+All new files fit into existing folder structure. Just reorganize `src/cli/commands/` into subfolders.
+
+## Verification Checklist
+
+Before marking integration complete:
+
+- [ ] All CLI commands use api-client.ts (no direct service access)
+- [ ] All CLI commands support `--json` flag
+- [ ] All CLI types decoupled from server types
+- [ ] All MCP tools follow registerXxxTools() pattern
+- [ ] All formatters extracted to formatters.ts
+- [ ] All REST endpoints have corresponding CLI commands
+- [ ] All REST endpoints have corresponding MCP tools
+- [ ] Command organization mirrors REST API structure
+- [ ] No duplicate validation logic in CLI
+- [ ] Error handling consistent across all commands
 
 ## Sources
 
-### Architecture Patterns
-- [Designing a RESTful API to interact with SQLite database](https://www.geeksforgeeks.org/python/designing-a-restful-api-to-interact-with-sqlite-database/)
-- [GitHub - sqlite-rest](https://github.com/b4fun/sqlite-rest)
-- [SQLite for Modern Apps: A Practical First Look (2026)](https://thelinuxcode.com/sqlite-for-modern-apps-a-practical-first-look-2026/)
-
-### API Design for LLMs
-- [Designing APIs for LLM Apps](https://www.gravitee.io/blog/designing-apis-for-llm-apps)
-- [RestGPT: Connecting LLMs with RESTful APIs](https://restgpt.github.io/)
-
-### MCP Protocol
-- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-11-25)
-- [How MCP Servers Enable Cross-Platform AI Integration 2026](https://goldeneagle.ai/blog/artificial-intelligence/mcp-servers-cross-platform-ai-2026/)
-
-### SQLite Architecture
-- [Architecture of SQLite](https://sqlite.org/arch.html)
+- [Commander.js nested subcommands](https://maxschmitt.me/posts/nested-subcommands-commander-node-js)
+- [Commander.js official repository](https://github.com/tj/commander.js)
+- [Commander.js global options discussion](https://github.com/tj/commander.js/issues/476)
+- [CLI architecture patterns](https://clig.dev/)
+- [Node.js CLI best practices](https://github.com/lirantal/nodejs-cli-apps-best-practices)
+- [Enquirer vs Inquirer comparison](https://npm-compare.com/enquirer,inquirer,prompt,prompt-sync,prompts,readline-sync)
+- [CLI --json flag best practices](https://devcenter.heroku.com/articles/cli-style-guide)
 
 ---
-*Architecture patterns for: Wood Fired Bugs*
+*Architecture research for: Wood Fired Bugs CLI/MCP Parity Integration*
 *Researched: 2026-02-13*
