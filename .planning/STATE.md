@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Any agent on the local network can reliably create, find, and update work items in real time -- making this the single source of truth for all Wood Fired Games task tracking.
-**Current focus:** Phase 6: Advanced Features
+**Current focus:** Planning next milestone
 
 ## Current Position
 
