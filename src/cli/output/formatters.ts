@@ -1,6 +1,6 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import type { TaskResponse, ProjectResponse, DependencyListResponse, CommentResponse } from '../api/types.js';
+import type { TaskResponse, ProjectResponse, DependencyListResponse, CommentResponse, HealthResponse } from '../api/types.js';
 
 /**
  * Detect if JSON output mode is enabled via --json flag.
@@ -263,6 +263,60 @@ export function formatCommentList(comments: CommentResponse[]): string {
   }
 
   return parts.join('\n\n');
+}
+
+// ── Health formatters ───────────────────────────────────────
+
+/**
+ * Format uptime in seconds to human-readable string.
+ */
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  const parts = [];
+  if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+  if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
+
+  return parts.join(', ') || '0 minutes';
+}
+
+/**
+ * Format health check response for terminal display.
+ *
+ * Shows service status, database connectivity, uptime, and version
+ * with color-coded indicators (green checkmark / red cross).
+ */
+export function formatHealthStatus(health: HealthResponse): string {
+  const useColor = shouldUseColor();
+  const lines: string[] = [];
+
+  const bold = (text: string) => (useColor ? chalk.bold(text) : text);
+
+  // Service status
+  const statusText = health.status === 'healthy'
+    ? useColor ? chalk.green('OK') + ' ' + chalk.green('\u2713') : 'OK \u2713'
+    : useColor ? chalk.red('ERROR') + ' ' + chalk.red('\u2717') : 'ERROR \u2717';
+  lines.push(`${bold('Service Status:')} ${statusText}`);
+
+  // Database status
+  const dbStatus = health.checks.database === 'ok';
+  const dbText = dbStatus
+    ? useColor ? chalk.green('Connected') + ' ' + chalk.green('\u2713') : 'Connected \u2713'
+    : useColor ? chalk.red('Disconnected') + ' ' + chalk.red('\u2717') : 'Disconnected \u2717';
+  lines.push(`${bold('Database:')} ${dbText}`);
+
+  // Version
+  if (health.version) {
+    lines.push(`${bold('Version:')} ${health.version}`);
+  }
+
+  // Timestamp
+  lines.push(`${bold('Last checked:')} ${new Date(health.timestamp).toLocaleString()}`);
+
+  return lines.join('\n');
 }
 
 /**
