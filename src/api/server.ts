@@ -8,7 +8,6 @@ import {
 import { createApp, App } from '../index.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
-import authPlugin from './plugins/auth.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
 
@@ -57,8 +56,37 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // Register routes under /api/v1 with auth protection
   await server.register(
     async (api) => {
-      // Register auth plugin (applies to all routes in this scope)
-      await api.register(authPlugin);
+      // Read API keys from environment
+      const apiKeysRaw = process.env.API_KEYS || '';
+      const validKeys = new Set(
+        apiKeysRaw
+          .split(',')
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0)
+      );
+
+      if (validKeys.size === 0) {
+        api.log.warn('No API keys configured in API_KEYS env var. All API requests will be rejected.');
+      }
+
+      // Add preHandler hook directly to this scope
+      api.addHook('preHandler', async (request, reply) => {
+        const apiKey = request.headers['x-api-key'];
+
+        if (!apiKey) {
+          return reply.code(401).send({
+            error: 'UNAUTHORIZED',
+            message: 'Missing API key. Provide X-API-Key header.',
+          });
+        }
+
+        if (!validKeys.has(apiKey as string)) {
+          return reply.code(401).send({
+            error: 'UNAUTHORIZED',
+            message: 'Invalid API key.',
+          });
+        }
+      });
 
       // Register task routes
       await api.register(taskRoutes, { prefix: '/tasks' });
