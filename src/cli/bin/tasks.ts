@@ -10,6 +10,9 @@ import { projectListCommand } from '../commands/project-list.js';
 import { projectShowCommand } from '../commands/project-show.js';
 import { projectUpdateCommand } from '../commands/project-update.js';
 import { projectDeleteCommand } from '../commands/project-delete.js';
+import { depAddCommand } from '../commands/dep-add.js';
+import { depRemoveCommand } from '../commands/dep-remove.js';
+import { depListCommand } from '../commands/dep-list.js';
 
 // Configure CLI program
 program
@@ -36,6 +39,11 @@ program.addCommand(projectListCommand);
 program.addCommand(projectShowCommand);
 program.addCommand(projectUpdateCommand);
 program.addCommand(projectDeleteCommand);
+
+// Register dependency commands
+program.addCommand(depAddCommand);
+program.addCommand(depRemoveCommand);
+program.addCommand(depListCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
