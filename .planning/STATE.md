@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 4 of 6 (MCP Server)
-Plan: 1 of 2 in current phase
+Plan: 2 of 2 in current phase
 Status: Completed
-Last activity: 2026-02-13 -- Completed plan 04-01 (MCP Server Foundation)
+Last activity: 2026-02-13 -- Completed plan 04-02 (MCP Testing)
 
-Progress: [████████████████░░░░] 40%
+Progress: [██████████████████░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 3 minutes
-- Total execution time: 0.49 hours
+- Total execution time: 0.57 hours
 
 **By Phase:**
 
@@ -30,14 +30,14 @@ Progress: [████████████████░░░░] 40%
 | 01-foundation | 3 | 11 min | 4 min |
 | 02-rest-api | 2 | 9 min | 5 min |
 | 03-cli | 2 | 5 min | 3 min |
-| 04-mcp-server | 1 | 4 min | 4 min |
+| 04-mcp-server | 2 | 9 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (3 min), 03-01 (2 min), 03-02 (3 min), 04-01 (4 min)
-- Trend: Excellent velocity (averaging 3 min per plan)
+- Last 5 plans: 03-01 (2 min), 03-02 (3 min), 04-01 (4 min), 04-02 (5 min)
+- Trend: Excellent velocity (averaging 4 min per plan)
 
 *Updated after each plan completion*
-| Phase 04 P01 | 4 | 2 tasks | 4 files |
+| Phase 04 P02 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -88,6 +88,11 @@ Progress: [████████████████░░░░] 40%
 - Used console.error() exclusively in MCP code (stdout reserved for JSON-RPC protocol in stdio transport)
 - Shared Zod schemas (CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema) between REST API and MCP server for consistent validation
 
+**Phase 04-02 (MCP Testing):**
+- Used Client + InMemoryTransport pattern for MCP integration tests (SDK doesn't expose direct tool invocation)
+- Check isError flag instead of exception-based error handling (MCP SDK returns errors as successful responses with isError=true)
+- Fixed list_tasks structuredContent by wrapping tasks array in object with tasks key (SDK validates record type, not array)
+
 ### Pending Todos
 
 None yet.
@@ -98,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-13T20:04:50Z
-Stopped at: Completed 04-01-PLAN.md (MCP Server Foundation)
-Resume file: .planning/phases/04-mcp-server/04-01-SUMMARY.md
+Last session: 2026-02-13T20:12:40Z
+Stopped at: Completed 04-02-PLAN.md (MCP Testing)
+Resume file: .planning/phases/04-mcp-server/04-02-SUMMARY.md
