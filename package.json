@@ -9,6 +9,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "start": "node dist/api/start.js",
+    "dev": "tsx src/api/start.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate": "tsx src/db/migrate.ts",

@@ -112,16 +112,3 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
   return { server, app };
 }
-
-/**
- * Start the server (used as entry point, not in tests)
- */
-export async function startServer(): Promise<void> {
-  const { server } = await createServer();
-
-  const port = parseInt(process.env.PORT || '3000', 10);
-  const host = process.env.HOST || '0.0.0.0';
-
-  await server.listen({ port, host });
-  server.log.info(`Server listening on ${host}:${port}`);
-}
