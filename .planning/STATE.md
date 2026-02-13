@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Any agent on the local network can reliably create, find, and update work items in real time -- making this the single source of truth for all Wood Fired Games task tracking.
-**Current focus:** Phase 3: CLI
+**Current focus:** Phase 4: MCP Server
 
 ## Current Position
 
-Phase: 3 of 6 (CLI)
-Plan: 2 of 2 in current phase
+Phase: 4 of 6 (MCP Server)
+Plan: 1 of 2 in current phase
 Status: Completed
-Last activity: 2026-02-13 -- Completed plan 03-02 (CLI Commands and Tests)
+Last activity: 2026-02-13 -- Completed plan 04-01 (MCP Server Foundation)
 
-Progress: [████████████████░░░░] 35%
+Progress: [████████████████░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 3 minutes
-- Total execution time: 0.42 hours
+- Total execution time: 0.49 hours
 
 **By Phase:**
 
@@ -30,13 +30,14 @@ Progress: [████████████████░░░░] 35%
 | 01-foundation | 3 | 11 min | 4 min |
 | 02-rest-api | 2 | 9 min | 5 min |
 | 03-cli | 2 | 5 min | 3 min |
+| 04-mcp-server | 1 | 4 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (6 min), 02-02 (3 min), 03-01 (2 min), 03-02 (3 min)
+- Last 5 plans: 02-02 (3 min), 03-01 (2 min), 03-02 (3 min), 04-01 (4 min)
 - Trend: Excellent velocity (averaging 3 min per plan)
 
 *Updated after each plan completion*
-| Phase 03 P02 | 3 | 2 tasks | 6 files |
+| Phase 04 P01 | 4 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -81,17 +82,22 @@ Progress: [████████████████░░░░] 35%
 - [Phase 03-02]: Used importOriginal in vi.mock to preserve ApiClientError class while mocking API functions
 - [Phase 03-02]: Update command requires at least one field to be specified (prevents no-op API calls)
 
+**Phase 04-01 (MCP Server Foundation):**
+- Used double type assertion (as unknown as) for structuredContent to satisfy TypeScript strict mode without weakening Task type safety
+- Made tool handlers async but call synchronous service methods directly (better-sqlite3 is sync, no await needed)
+- Used console.error() exclusively in MCP code (stdout reserved for JSON-RPC protocol in stdio transport)
+- Shared Zod schemas (CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema) between REST API and MCP server for consistent validation
+
 ### Pending Todos
 
 None yet.
 
 ### Blockers/Concerns
 
-- Phase 4 (MCP): MCP TypeScript SDK is newer with fewer established patterns than REST frameworks. May need deeper research during planning.
 - Phase 6: Dependency cycle detection (DFS graph traversal) flagged as high complexity by research. Budget accordingly.
 
 ## Session Continuity
 
-Last session: 2026-02-13T19:46:04Z
-Stopped at: Completed 03-02-PLAN.md (CLI Commands and Tests)
-Resume file: .planning/phases/03-cli/03-02-SUMMARY.md
+Last session: 2026-02-13T20:04:50Z
+Stopped at: Completed 04-01-PLAN.md (MCP Server Foundation)
+Resume file: .planning/phases/04-mcp-server/04-01-SUMMARY.md
