@@ -67,7 +67,7 @@ export interface UpdateTaskDTO {
 
 export interface CreateProjectDTO {
   name: string;
-  description?: string;
+  description?: string | null;
 }
 
 // Task filtering interface

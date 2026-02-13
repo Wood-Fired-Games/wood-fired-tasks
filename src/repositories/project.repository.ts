@@ -21,7 +21,10 @@ export class ProjectRepository implements IProjectRepository {
   }
 
   create(dto: CreateProjectDTO): Project {
-    const info = this.insertStmt.run(dto);
+    const info = this.insertStmt.run({
+      name: dto.name,
+      description: dto.description ?? null,
+    });
     const project = this.findById(info.lastInsertRowid as number);
     if (!project) {
       throw new Error('Failed to create project');
