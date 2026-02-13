@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 5 of 6 (Production Deployment)
-Plan: 2 of 3 in current phase
+Plan: 2 of 2 in current phase
 Status: Completed
-Last activity: 2026-02-13 -- Completed plan 05-02 (Logging & Backup Automation)
+Last activity: 2026-02-13 -- Completed plan 05-01 (systemd Service Infrastructure)
 
-Progress: [█████████████████████░] 55%
+Progress: [███████████████████████] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 3 minutes
-- Total execution time: 0.65 hours
+- Total plans completed: 11
+- Average duration: 4 minutes
+- Total execution time: 0.75 hours
 
 **By Phase:**
 
@@ -31,14 +31,14 @@ Progress: [█████████████████████░] 5
 | 02-rest-api | 2 | 9 min | 5 min |
 | 03-cli | 2 | 5 min | 3 min |
 | 04-mcp-server | 2 | 9 min | 5 min |
-| 05-production-deployment | 1 | 5 min | 5 min |
+| 05-production-deployment | 2 | 11 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (3 min), 04-01 (4 min), 04-02 (5 min), 05-02 (5 min)
-- Trend: Consistent velocity (averaging 4 min per plan)
+- Last 5 plans: 04-01 (4 min), 04-02 (5 min), 05-02 (5 min), 05-01 (6 min)
+- Trend: Consistent velocity (averaging 5 min per plan)
 
 *Updated after each plan completion*
-| Phase 05 P02 | 5 | 2 tasks | 4 files |
+| Phase 05 P01 | 6 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -94,6 +94,13 @@ Progress: [█████████████████████░] 5
 - Check isError flag instead of exception-based error handling (MCP SDK returns errors as successful responses with isError=true)
 - Fixed list_tasks structuredContent by wrapping tasks array in object with tasks key (SDK validates record type, not array)
 
+**Phase 05-01 (systemd Service Infrastructure):**
+- StartLimitBurst/IntervalSec placed in [Unit] section (not [Service]) to avoid silent ignore
+- Restart=on-failure (not always) to allow manual stop without restart loop
+- ProtectHome=read-only (not yes) so service can read ~/.npmrc or node paths
+- Migration glob auto-detects *.ts vs *.js based on __dirname (supports dev and prod)
+- Signal handlers in start.ts call server.close() then db.close() for graceful shutdown
+
 **Phase 05-02 (Logging & Backup Automation):**
 - Use Pino name field (not custom field) for journald service identification
 - No pino-journald transport needed (stdout with StandardOutput=journal is correct pattern)
@@ -113,6 +120,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-13T20:33:00Z
-Stopped at: Completed 05-02-PLAN.md (Logging & Backup Automation)
-Resume file: .planning/phases/05-production-deployment/05-02-SUMMARY.md
+Last session: 2026-02-13T20:36:49Z
+Stopped at: Completed 05-01-PLAN.md (systemd Service Infrastructure)
+Resume file: .planning/phases/05-production-deployment/05-01-SUMMARY.md
