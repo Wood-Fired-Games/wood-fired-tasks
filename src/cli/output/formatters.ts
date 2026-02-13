@@ -1,6 +1,6 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import type { TaskResponse } from '../api/types.js';
+import type { TaskResponse, ProjectResponse } from '../api/types.js';
 
 /**
  * Detect if JSON output mode is enabled via --json flag.
@@ -166,6 +166,65 @@ export function formatTaskDetail(task: TaskResponse): string {
     lines.push(`${bold('Description:')}`);
     lines.push(task.description);
   }
+
+  return lines.join('\n');
+}
+
+// ── Project formatters ──────────────────────────────────────
+
+/**
+ * Format a list of projects as a table.
+ */
+export function formatProjectTable(projects: ProjectResponse[]): string {
+  const useColor = shouldUseColor();
+
+  const table = new Table({
+    head: [
+      useColor ? chalk.bold('ID') : 'ID',
+      useColor ? chalk.bold('Name') : 'Name',
+      useColor ? chalk.bold('Description') : 'Description',
+      useColor ? chalk.bold('Created') : 'Created',
+    ],
+    style: {
+      head: [], // Disable cli-table3 default head colors (we use chalk instead)
+      border: useColor ? ['gray'] : [],
+    },
+    wordWrap: true,
+  });
+
+  for (const project of projects) {
+    // Truncate description to 50 chars with ellipsis if needed
+    const desc = project.description
+      ? project.description.length > 50
+        ? project.description.slice(0, 47) + '...'
+        : project.description
+      : '-';
+
+    table.push([
+      project.id,
+      project.name,
+      desc,
+      new Date(project.created_at).toLocaleDateString(),
+    ]);
+  }
+
+  return table.toString();
+}
+
+/**
+ * Format a single project for detailed display.
+ */
+export function formatProjectDetail(project: ProjectResponse): string {
+  const useColor = shouldUseColor();
+  const lines: string[] = [];
+
+  const bold = (text: string) => (useColor ? chalk.bold(text) : text);
+
+  lines.push(`${bold('ID:')}           ${project.id}`);
+  lines.push(`${bold('Name:')}         ${project.name}`);
+  lines.push(`${bold('Description:')}  ${project.description || '-'}`);
+  lines.push(`${bold('Created:')}      ${new Date(project.created_at).toLocaleString()}`);
+  lines.push(`${bold('Updated:')}      ${new Date(project.updated_at).toLocaleString()}`);
 
   return lines.join('\n');
 }
