@@ -19,10 +19,10 @@ export class TaskRepository implements ITaskRepository {
     // Prepare reusable statements
     this.insertTaskStmt = db.prepare(`
       INSERT INTO tasks (
-        title, description, status, priority, project_id,
+        title, description, status, priority, project_id, parent_task_id,
         assignee, created_by, due_date, created_at, updated_at
       ) VALUES (
-        @title, @description, @status, @priority, @project_id,
+        @title, @description, @status, @priority, @project_id, @parent_task_id,
         @assignee, @created_by, @due_date, @created_at, @updated_at
       )
     `);
@@ -51,6 +51,7 @@ export class TaskRepository implements ITaskRepository {
         status: dto.status,
         priority: dto.priority,
         project_id: dto.project_id,
+        parent_task_id: dto.parent_task_id || null,
         assignee: dto.assignee || null,
         created_by: dto.created_by,
         due_date: dto.due_date || null,
@@ -146,6 +147,10 @@ export class TaskRepository implements ITaskRepository {
       if (updates.due_date !== undefined) {
         fields.push('due_date = @due_date');
         params.due_date = updates.due_date;
+      }
+      if (updates.parent_task_id !== undefined) {
+        fields.push('parent_task_id = @parent_task_id');
+        params.parent_task_id = updates.parent_task_id;
       }
 
       // Always update updated_at
@@ -253,6 +258,29 @@ export class TaskRepository implements ITaskRepository {
     `;
 
     const rows = this.db.prepare(query).all(params) as Array<
+      Task & { tags_csv: string | null }
+    >;
+
+    return rows.map((row) => {
+      const { tags_csv, ...task } = row;
+      const tags = tags_csv ? tags_csv.split(',').sort() : [];
+      return { ...task, tags };
+    });
+  }
+
+  findChildren(parentId: number): Array<Task & { tags: string[] }> {
+    const query = `
+      SELECT
+        t.*,
+        GROUP_CONCAT(tt.tag, ',') as tags_csv
+      FROM tasks t
+      LEFT JOIN task_tags tt ON tt.task_id = t.id
+      WHERE t.parent_task_id = ?
+      GROUP BY t.id
+      ORDER BY t.created_at ASC
+    `;
+
+    const rows = this.db.prepare(query).all(parentId) as Array<
       Task & { tags_csv: string | null }
     >;
 

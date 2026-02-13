@@ -37,6 +37,21 @@ export class TaskService {
       throw new BusinessError(`Project with id ${result.data.project_id} does not exist`);
     }
 
+    // Validate parent_task_id if provided
+    if (result.data.parent_task_id) {
+      const parentTask = this.taskRepo.findById(result.data.parent_task_id);
+      if (!parentTask) {
+        throw new BusinessError(
+          `Parent task with id ${result.data.parent_task_id} does not exist`
+        );
+      }
+
+      // Ensure parent task is in the same project
+      if (parentTask.project_id !== result.data.project_id) {
+        throw new BusinessError('Parent task must be in the same project');
+      }
+    }
+
     // Create task with status forced to 'open'
     return this.taskRepo.create(
       { ...result.data, status: 'open' },
@@ -159,5 +174,18 @@ export class TaskService {
    */
   searchTasks(query: string): Array<Task & { tags: string[] }> {
     return this.listTasks({ search: query });
+  }
+
+  /**
+   * Get all subtasks (children) of a parent task
+   */
+  getSubtasks(taskId: number): Array<Task & { tags: string[] }> {
+    // Verify parent task exists
+    const parentTask = this.taskRepo.findById(taskId);
+    if (!parentTask) {
+      throw new NotFoundError('Task', taskId);
+    }
+
+    return this.taskRepo.findChildren(taskId);
   }
 }

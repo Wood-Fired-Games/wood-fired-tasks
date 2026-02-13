@@ -606,13 +606,133 @@ describe('TaskService', () => {
     });
   });
 
+  describe('parent_task_id and subtasks', () => {
+    it('should create task with parent_task_id pointing to existing task', () => {
+      const parentTask = taskService.createTask({
+        title: 'Parent Task',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const childTask = taskService.createTask({
+        title: 'Child Task',
+        project_id: testProjectId,
+        parent_task_id: parentTask.id,
+        created_by: 'user',
+      });
+
+      expect(childTask.parent_task_id).toBe(parentTask.id);
+    });
+
+    it('should reject parent_task_id pointing to nonexistent task', () => {
+      expect(() =>
+        taskService.createTask({
+          title: 'Child Task',
+          project_id: testProjectId,
+          parent_task_id: 9999,
+          created_by: 'user',
+        })
+      ).toThrow(BusinessError);
+
+      try {
+        taskService.createTask({
+          title: 'Child Task',
+          project_id: testProjectId,
+          parent_task_id: 9999,
+          created_by: 'user',
+        });
+      } catch (err: any) {
+        expect(err.message).toContain('Parent task with id 9999 does not exist');
+      }
+    });
+
+    it('should reject parent_task_id pointing to task in different project', () => {
+      // Create another project
+      const project2 = projectService.createProject({
+        name: 'Project 2',
+      });
+
+      // Create task in project 2
+      const taskInProject2 = taskService.createTask({
+        title: 'Task in Project 2',
+        project_id: project2.id,
+        created_by: 'user',
+      });
+
+      // Attempt to create task in project 1 with parent in project 2
+      expect(() =>
+        taskService.createTask({
+          title: 'Child Task',
+          project_id: testProjectId,
+          parent_task_id: taskInProject2.id,
+          created_by: 'user',
+        })
+      ).toThrow(BusinessError);
+
+      try {
+        taskService.createTask({
+          title: 'Child Task',
+          project_id: testProjectId,
+          parent_task_id: taskInProject2.id,
+          created_by: 'user',
+        });
+      } catch (err: any) {
+        expect(err.message).toContain('Parent task must be in the same project');
+      }
+    });
+
+    it('should return children of a parent task via getSubtasks', () => {
+      const parentTask = taskService.createTask({
+        title: 'Parent Task',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const child1 = taskService.createTask({
+        title: 'Child 1',
+        project_id: testProjectId,
+        parent_task_id: parentTask.id,
+        created_by: 'user',
+      });
+
+      const child2 = taskService.createTask({
+        title: 'Child 2',
+        project_id: testProjectId,
+        parent_task_id: parentTask.id,
+        created_by: 'user',
+      });
+
+      const subtasks = taskService.getSubtasks(parentTask.id);
+
+      expect(subtasks).toHaveLength(2);
+      expect(subtasks.map((t) => t.id)).toContain(child1.id);
+      expect(subtasks.map((t) => t.id)).toContain(child2.id);
+    });
+
+    it('should return empty array for task with no children', () => {
+      const task = taskService.createTask({
+        title: 'Task with no children',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const subtasks = taskService.getSubtasks(task.id);
+      expect(subtasks).toEqual([]);
+    });
+
+    it('should throw NotFoundError for getSubtasks with nonexistent task', () => {
+      expect(() => taskService.getSubtasks(9999)).toThrow(NotFoundError);
+    });
+  });
+
   describe('createApp tests', () => {
-    it('createTestApp returns db, projectService, taskService', async () => {
+    it('createTestApp returns db, projectService, taskService, dependencyService', async () => {
       const testApp = await createTestApp();
 
       expect(testApp.db).toBeDefined();
       expect(testApp.projectService).toBeDefined();
       expect(testApp.taskService).toBeDefined();
+      expect(testApp.dependencyService).toBeDefined();
     });
 
     it('createApp initializes database with WAL mode', async () => {
