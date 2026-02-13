@@ -10,8 +10,11 @@ program
   .description('Wood Fired Bugs - Task management CLI')
   .version('1.0.0');
 
-// Global options (must be registered BEFORE commands)
+// Global options must be registered before subcommands to inherit properly
+// Commands access via program.optsWithGlobals() or process.argv check
 program.option('--json', 'Output as JSON (machine-readable)');
+program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
+program.option('--force', 'Skip confirmation prompts for destructive actions');
 
 // Register commands
 program.addCommand(createCommand);
