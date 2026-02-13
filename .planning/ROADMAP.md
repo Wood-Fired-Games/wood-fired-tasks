@@ -66,8 +66,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Commander.js setup, create/list/search/update task commands
-- [ ] 03-02: Output formatting with tables, color, and human-friendly display
+- [ ] 03-01-PLAN.md -- CLI foundation: Commander.js setup, API client, env config, output formatters, and create task command
+- [ ] 03-02-PLAN.md -- List command with filters/search, update command, and integration tests for all commands
 
 ### Phase 4: MCP Server
 **Goal**: Claude Code and other MCP-capable agents can natively create, query, and update tasks without HTTP knowledge
@@ -121,8 +121,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2026-02-13 |
-| 2. REST API | 0/2 | Planned | - |
-| 3. CLI | 0/2 | Not started | - |
+| 2. REST API | 2/2 | Complete | 2026-02-13 |
+| 3. CLI | 0/2 | Planned | - |
 | 4. MCP Server | 0/2 | Not started | - |
 | 5. Production Deployment | 0/2 | Not started | - |
 | 6. Advanced Features | 0/2 | Not started | - |
