@@ -35,7 +35,8 @@ describe('MCP Task Tools', () => {
       app.taskService,
       app.projectService,
       app.dependencyService,
-      app.commentService
+      app.commentService,
+      app.db
     );
 
     // Create paired in-memory transports
@@ -400,6 +401,93 @@ describe('MCP Task Tools', () => {
       if (result.content[0].type === 'text') {
         expect(result.content[0].text).toContain('MCP error');
         expect(result.content[0].text).toContain('9999');
+      }
+    });
+  });
+
+  describe('list_subtasks tool', () => {
+    it('lists subtasks with detailed formatting', async () => {
+      // Create parent task
+      const parent = (await client.callTool({
+        name: 'create_task',
+        arguments: {
+          title: 'Parent task',
+          project_id: testProjectId,
+          created_by: 'test-agent',
+        },
+      })) as ToolResult;
+
+      const parentId = (parent.structuredContent as { id: number }).id;
+
+      // Create 2 child tasks
+      await client.callTool({
+        name: 'create_task',
+        arguments: {
+          title: 'Subtask 1',
+          project_id: testProjectId,
+          parent_task_id: parentId,
+          created_by: 'test-agent',
+        },
+      });
+
+      await client.callTool({
+        name: 'create_task',
+        arguments: {
+          title: 'Subtask 2',
+          project_id: testProjectId,
+          parent_task_id: parentId,
+          created_by: 'test-agent',
+        },
+      });
+
+      // List subtasks
+      const result = (await client.callTool({
+        name: 'list_subtasks',
+        arguments: { task_id: parentId },
+      })) as ToolResult;
+
+      expect(result.content[0].type).toBe('text');
+      if (result.content[0].type === 'text') {
+        expect(result.content[0].text).toContain('2 subtask(s)');
+        expect(result.content[0].text).toContain('Subtask 1');
+        expect(result.content[0].text).toContain('Subtask 2');
+      }
+
+      expect(result.structuredContent).toBeDefined();
+      if (result.structuredContent) {
+        const data = result.structuredContent as {
+          parent_task_id: number;
+          subtasks: Array<{ title: string }>;
+        };
+        expect(data.parent_task_id).toBe(parentId);
+        expect(data.subtasks).toHaveLength(2);
+      }
+    });
+
+    it('returns empty array when task has no subtasks', async () => {
+      const task = (await client.callTool({
+        name: 'create_task',
+        arguments: {
+          title: 'Task with no children',
+          project_id: testProjectId,
+          created_by: 'test-agent',
+        },
+      })) as ToolResult;
+
+      const taskId = (task.structuredContent as { id: number }).id;
+
+      const result = (await client.callTool({
+        name: 'list_subtasks',
+        arguments: { task_id: taskId },
+      })) as ToolResult;
+
+      if (result.content[0].type === 'text') {
+        expect(result.content[0].text).toContain('no subtasks');
+      }
+
+      if (result.structuredContent) {
+        const data = result.structuredContent as { subtasks: unknown[] };
+        expect(data.subtasks).toHaveLength(0);
       }
     });
   });

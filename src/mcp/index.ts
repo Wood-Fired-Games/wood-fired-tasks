@@ -20,7 +20,8 @@ async function main() {
     app.taskService,
     app.projectService,
     app.dependencyService,
-    app.commentService
+    app.commentService,
+    app.db
   );
 
   // Create stdio transport
