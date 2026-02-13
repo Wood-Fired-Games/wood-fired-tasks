@@ -35,20 +35,20 @@ vi.mock('../output/formatters.js', () => ({
 }));
 
 const mockHealthOk = {
-  status: 'healthy',
+  status: 'healthy' as const,
   timestamp: '2024-01-15T10:30:00Z',
   version: '1.0.0',
   checks: {
-    database: 'ok',
+    database: 'ok' as const,
   },
 };
 
 const mockHealthError = {
-  status: 'unhealthy',
+  status: 'unhealthy' as const,
   timestamp: '2024-01-15T10:30:00Z',
   version: '1.0.0',
   checks: {
-    database: 'failed',
+    database: 'failed' as const,
   },
 };
 

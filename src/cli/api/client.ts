@@ -42,12 +42,19 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
+    const headers: Record<string, string> = {
+      'X-API-Key': env.API_KEY,
+    };
+    // Only set Content-Type for requests that have a body
+    if (options?.body) {
+      headers['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': env.API_KEY,
+        ...headers,
         ...options?.headers,
       },
     });
