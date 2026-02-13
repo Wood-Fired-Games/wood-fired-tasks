@@ -4,11 +4,15 @@
   "description": "Network-wide task tracking system for Wood Fired Games",
   "type": "module",
   "main": "index.js",
+  "bin": {
+    "tasks": "./dist/cli/bin/tasks.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "cli": "tsx src/cli/bin/tasks.ts"
   },
   "keywords": [],
   "author": "",
