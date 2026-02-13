@@ -1,0 +1,11 @@
+# Wood Fired Bugs - Automated Daily Backup
+# Install with: crontab -e (as stuart), then paste the line below
+#
+# Schedule: Daily at 2:00 AM
+# Logs: Appended to /var/log/wood-fired-bugs-backup.log
+#
+# To verify cron is running: crontab -l
+# To check backup logs: tail -20 /var/log/wood-fired-bugs-backup.log
+# To list backups: ls -lh /opt/wood-fired-bugs/backups/
+
+0 2 * * * /opt/wood-fired-bugs/deploy/backup-sqlite.sh >> /var/log/wood-fired-bugs-backup.log 2>&1
