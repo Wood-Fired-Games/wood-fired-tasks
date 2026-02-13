@@ -99,3 +99,24 @@ export interface DependencyListResponse {
 export interface CreateDependencyInput {
   blocks_task_id: number;
 }
+
+// ── Comment types ───────────────────────────────────────────
+
+/**
+ * Comment response (matches REST API response).
+ */
+export interface CommentResponse {
+  id: number;
+  task_id: number;
+  author: string;
+  content: string;
+  created_at: string;
+}
+
+/**
+ * Input for creating a comment on a task.
+ */
+export interface CreateCommentInput {
+  author: string;
+  content: string;
+}
