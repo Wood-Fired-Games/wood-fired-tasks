@@ -84,43 +84,50 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| INFRA-04 | — | Pending |
-| INFRA-05 | — | Pending |
-| CMD-01 | — | Pending |
-| CMD-02 | — | Pending |
-| CMD-03 | — | Pending |
-| CMD-04 | — | Pending |
-| CMD-05 | — | Pending |
-| CMD-06 | — | Pending |
-| CMD-07 | — | Pending |
-| CMD-08 | — | Pending |
-| CMD-09 | — | Pending |
-| CMD-10 | — | Pending |
-| CMD-11 | — | Pending |
-| CMD-12 | — | Pending |
-| CMD-13 | — | Pending |
-| CMD-14 | — | Pending |
-| CMD-15 | — | Pending |
-| CMD-16 | — | Pending |
-| MCP-01 | — | Pending |
-| MCP-02 | — | Pending |
-| MCP-03 | — | Pending |
-| MCP-04 | — | Pending |
-| MCP-05 | — | Pending |
-| MCP-06 | — | Pending |
-| MCP-07 | — | Pending |
-| UX-01 | — | Pending |
-| UX-02 | — | Pending |
-| UX-03 | — | Pending |
+| INFRA-01 | Phase 7 | Pending |
+| INFRA-02 | Phase 7 | Pending |
+| INFRA-03 | Phase 7 | Pending |
+| INFRA-04 | Phase 7 | Pending |
+| INFRA-05 | Phase 7 | Pending |
+| UX-01 | Phase 7 | Pending |
+| UX-02 | Phase 7 | Pending |
+| UX-03 | Phase 7 | Pending |
+| CMD-01 | Phase 8 | Pending |
+| CMD-02 | Phase 8 | Pending |
+| CMD-03 | Phase 8 | Pending |
+| CMD-04 | Phase 8 | Pending |
+| CMD-05 | Phase 8 | Pending |
+| CMD-06 | Phase 8 | Pending |
+| CMD-07 | Phase 8 | Pending |
+| CMD-08 | Phase 8 | Pending |
+| CMD-09 | Phase 8 | Pending |
+| CMD-10 | Phase 8 | Pending |
+| CMD-11 | Phase 8 | Pending |
+| CMD-12 | Phase 8 | Pending |
+| CMD-13 | Phase 8 | Pending |
+| CMD-14 | Phase 8 | Pending |
+| CMD-15 | Phase 8 | Pending |
+| CMD-16 | Phase 8 | Pending |
+| MCP-01 | Phase 9 | Pending |
+| MCP-02 | Phase 9 | Pending |
+| MCP-03 | Phase 9 | Pending |
+| MCP-04 | Phase 9 | Pending |
+| MCP-05 | Phase 9 | Pending |
+| MCP-06 | Phase 9 | Pending |
+| MCP-07 | Phase 9 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 31 total
-- Mapped to phases: 0
-- Unmapped: 31
+- Mapped to phases: 31
+- Unmapped: 0
+- Coverage: 100%
+
+**Phase breakdown:**
+- Phase 7 (Core CLI Infrastructure): 8 requirements
+- Phase 8 (CLI Command Expansion): 16 requirements
+- Phase 9 (MCP Tool Expansion): 7 requirements
+- Phase 10 (Testing & Integration): 0 requirements (validation phase)
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after initial definition*
+*Last updated: 2026-02-13 after v1.1 roadmap creation*
