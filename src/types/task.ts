@@ -22,6 +22,7 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   project_id: number;
+  parent_task_id: number | null;
   assignee: string | null;
   created_by: string;
   due_date: string | null; // ISO8601
@@ -43,6 +44,13 @@ export interface TaskTag {
   tag: string;
 }
 
+export interface Dependency {
+  id: number;
+  task_id: number;
+  blocks_task_id: number;
+  created_at: string;
+}
+
 // DTOs for create/update operations
 export interface CreateTaskDTO {
   title: string;
@@ -50,6 +58,7 @@ export interface CreateTaskDTO {
   status: TaskStatus;
   priority: TaskPriority;
   project_id: number;
+  parent_task_id?: number | null;
   assignee?: string | null;
   created_by: string;
   due_date?: string | null;
@@ -60,6 +69,7 @@ export interface UpdateTaskDTO {
   description?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
+  parent_task_id?: number | null;
   assignee?: string | null;
   due_date?: string | null;
   tags?: string[];
@@ -68,6 +78,11 @@ export interface UpdateTaskDTO {
 export interface CreateProjectDTO {
   name: string;
   description?: string | null;
+}
+
+export interface CreateDependencyDTO {
+  task_id: number;
+  blocks_task_id: number;
 }
 
 // Task filtering interface
