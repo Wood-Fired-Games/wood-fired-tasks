@@ -7,6 +7,8 @@ import type {
   TaskFilters,
   Dependency,
   CreateDependencyDTO,
+  Comment,
+  CreateCommentDTO,
 } from '../types/task.js';
 
 export interface IProjectRepository {
@@ -36,4 +38,12 @@ export interface IDependencyRepository {
   findBlockingTask(taskId: number): Dependency[];
   delete(taskId: number, blocksTaskId: number): boolean;
   deleteByTaskId(taskId: number): void;
+}
+
+export interface ICommentRepository {
+  create(dto: CreateCommentDTO): Comment;
+  findByTaskId(taskId: number): Comment[];
+  findById(id: number): Comment | null;
+  delete(id: number): boolean;
+  countByTaskId(taskId: number): number;
 }
