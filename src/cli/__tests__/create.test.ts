@@ -18,6 +18,18 @@ vi.mock('../config/env.js', () => ({
   },
 }));
 
+// Mock the prompts module
+vi.mock('../prompts/interactive.js', () => ({
+  promptForMissing: vi.fn((field, value) => Promise.resolve(value)),
+  shouldPrompt: vi.fn(() => true),
+}));
+
+// Mock the json-output module
+vi.mock('../output/json-output.js', () => ({
+  jsonOutput: vi.fn(),
+  messageOutput: vi.fn(),
+}));
+
 describe('create command', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -37,6 +49,10 @@ describe('create command', () => {
     // Import after mocks are set up
     const { createCommand } = await import('../commands/create.js');
     program = new Command();
+    // Register global options (like the main CLI does)
+    program.option('--json', 'Output as JSON (machine-readable)');
+    program.option('--no-input', 'Disable interactive prompts');
+    program.option('--force', 'Skip confirmation prompts');
     program.addCommand(createCommand);
   });
 
@@ -182,5 +198,63 @@ describe('create command', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+
+  it('outputs JSON when --json flag set', async () => {
+    const { createTask } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+
+    const mockTask = {
+      id: 10,
+      title: 'JSON test task',
+      description: null,
+      status: 'open' as const,
+      priority: 'medium' as const,
+      project_id: 1,
+      assignee: null,
+      created_by: 'stuart',
+      due_date: null,
+      created_at: '2026-02-13T00:00:00Z',
+      updated_at: '2026-02-13T00:00:00Z',
+      tags: [],
+    };
+
+    vi.mocked(createTask).mockResolvedValue(mockTask);
+
+    // Global options like --json go before subcommand name
+    await program.parseAsync(['node', 'test', '--json', 'create', '-t', 'JSON test task', '-p', '1', '-c', 'stuart']);
+
+    expect(jsonOutput).toHaveBeenCalledWith({ task: mockTask }, { id: mockTask.id });
+    // Should NOT show success message in JSON mode
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('created successfully'));
+  });
+
+  it('prompts for missing title when not provided', async () => {
+    const { createTask } = await import('../api/client.js');
+    const { promptForMissing } = await import('../prompts/interactive.js');
+
+    vi.mocked(promptForMissing).mockImplementation(
+      (field, value) => Promise.resolve(value || 'Prompted title')
+    );
+
+    vi.mocked(createTask).mockResolvedValue({
+      id: 11,
+      title: 'Prompted title',
+      description: null,
+      status: 'open',
+      priority: 'medium',
+      project_id: 1,
+      assignee: null,
+      created_by: 'stuart',
+      due_date: null,
+      created_at: '2026-02-13T00:00:00Z',
+      updated_at: '2026-02-13T00:00:00Z',
+      tags: [],
+    });
+
+    await program.parseAsync(['node', 'test', 'create', '-p', '1', '-c', 'stuart']);
+
+    // Verify promptForMissing was called for title
+    expect(promptForMissing).toHaveBeenCalledWith('title', undefined);
   });
 });

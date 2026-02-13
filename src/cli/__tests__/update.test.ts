@@ -18,6 +18,12 @@ vi.mock('../config/env.js', () => ({
   },
 }));
 
+// Mock the json-output module
+vi.mock('../output/json-output.js', () => ({
+  jsonOutput: vi.fn(),
+  messageOutput: vi.fn(),
+}));
+
 describe('update command', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -37,6 +43,10 @@ describe('update command', () => {
     // Import after mocks are set up
     const { updateCommand } = await import('../commands/update.js');
     program = new Command();
+    // Register global options (like the main CLI does)
+    program.option('--json', 'Output as JSON (machine-readable)');
+    program.option('--no-input', 'Disable interactive prompts');
+    program.option('--force', 'Skip confirmation prompts');
     program.addCommand(updateCommand);
   });
 
@@ -204,5 +214,34 @@ describe('update command', () => {
     expect(updateTask).toHaveBeenCalledWith(1, {
       tags: ['bug', 'ui', 'frontend'],
     });
+  });
+
+  it('outputs JSON when --json flag set', async () => {
+    const { updateTask } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+
+    const mockTask = {
+      id: 5,
+      title: 'Updated task',
+      description: null,
+      status: 'done' as const,
+      priority: 'high' as const,
+      project_id: 1,
+      assignee: 'bob',
+      created_by: 'stuart',
+      due_date: null,
+      created_at: '2026-02-13T00:00:00Z',
+      updated_at: '2026-02-13T00:00:00Z',
+      tags: [],
+    };
+
+    vi.mocked(updateTask).mockResolvedValue(mockTask);
+
+    // Global options like --json go before subcommand name
+    await program.parseAsync(['node', 'test', '--json', 'update', '5', '-s', 'done', '--priority', 'high', '-a', 'bob']);
+
+    expect(jsonOutput).toHaveBeenCalledWith({ task: mockTask }, { id: mockTask.id });
+    // Should NOT show success message in JSON mode
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('updated successfully'));
   });
 });
