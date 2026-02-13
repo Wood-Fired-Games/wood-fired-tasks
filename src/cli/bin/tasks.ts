@@ -5,6 +5,11 @@ import { listCommand } from '../commands/list.js';
 import { updateCommand } from '../commands/update.js';
 import { deleteCommand } from '../commands/delete.js';
 import { showCommand } from '../commands/show.js';
+import { projectCreateCommand } from '../commands/project-create.js';
+import { projectListCommand } from '../commands/project-list.js';
+import { projectShowCommand } from '../commands/project-show.js';
+import { projectUpdateCommand } from '../commands/project-update.js';
+import { projectDeleteCommand } from '../commands/project-delete.js';
 
 // Configure CLI program
 program
@@ -18,12 +23,19 @@ program.option('--json', 'Output as JSON (machine-readable)');
 program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
 program.option('--force', 'Skip confirmation prompts for destructive actions');
 
-// Register commands
+// Register task commands
 program.addCommand(createCommand);
 program.addCommand(listCommand);
 program.addCommand(updateCommand);
 program.addCommand(deleteCommand);
 program.addCommand(showCommand);
+
+// Register project commands
+program.addCommand(projectCreateCommand);
+program.addCommand(projectListCommand);
+program.addCommand(projectShowCommand);
+program.addCommand(projectUpdateCommand);
+program.addCommand(projectDeleteCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
