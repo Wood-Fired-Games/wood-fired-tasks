@@ -9,7 +9,7 @@ const projectRoot = path.resolve(__dirname, '../../..');
 const envPath = path.join(projectRoot, '.env');
 
 // Load environment variables from .env file
-dotenv.config({ path: envPath });
+dotenv.config({ path: envPath, quiet: true });
 
 // Validate and export environment configuration
 function validateApiKey(): string {
