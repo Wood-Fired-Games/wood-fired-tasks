@@ -12,6 +12,7 @@ import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
 import healthRoutes from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
+import { registerSwagger } from './plugins/swagger.js';
 
 // Extend Fastify instance with our service decorations
 declare module 'fastify' {
@@ -57,6 +58,9 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
   // Set custom error handler (must be set before routes)
   server.setErrorHandler(errorHandler);
+
+  // Register Swagger/OpenAPI documentation (must be before routes to capture schemas)
+  await registerSwagger(server);
 
   // Register public health check route (no auth required)
   await server.register(healthRoutes, { prefix: '/health' });
