@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 
 ## Current Position
 
-Phase: 4 of 6 (MCP Server)
-Plan: 2 of 2 in current phase
+Phase: 5 of 6 (Production Deployment)
+Plan: 2 of 3 in current phase
 Status: Completed
-Last activity: 2026-02-13 -- Completed plan 04-02 (MCP Testing)
+Last activity: 2026-02-13 -- Completed plan 05-02 (Logging & Backup Automation)
 
-Progress: [██████████████████░░] 50%
+Progress: [█████████████████████░] 55%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 3 minutes
-- Total execution time: 0.57 hours
+- Total execution time: 0.65 hours
 
 **By Phase:**
 
@@ -31,13 +31,14 @@ Progress: [██████████████████░░] 50%
 | 02-rest-api | 2 | 9 min | 5 min |
 | 03-cli | 2 | 5 min | 3 min |
 | 04-mcp-server | 2 | 9 min | 5 min |
+| 05-production-deployment | 1 | 5 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01 (2 min), 03-02 (3 min), 04-01 (4 min), 04-02 (5 min)
-- Trend: Excellent velocity (averaging 4 min per plan)
+- Last 5 plans: 03-02 (3 min), 04-01 (4 min), 04-02 (5 min), 05-02 (5 min)
+- Trend: Consistent velocity (averaging 4 min per plan)
 
 *Updated after each plan completion*
-| Phase 04 P02 | 5 | 2 tasks | 3 files |
+| Phase 05 P02 | 5 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,14 @@ Progress: [██████████████████░░] 50%
 - Check isError flag instead of exception-based error handling (MCP SDK returns errors as successful responses with isError=true)
 - Fixed list_tasks structuredContent by wrapping tasks array in object with tasks key (SDK validates record type, not array)
 
+**Phase 05-02 (Logging & Backup Automation):**
+- Use Pino name field (not custom field) for journald service identification
+- No pino-journald transport needed (stdout with StandardOutput=journal is correct pattern)
+- sqlite3 .backup command instead of file copy (WAL mode safety)
+- 30-day backup retention with automatic cleanup
+- Service must be stopped before restore (integrity protection)
+- Parameterized script paths for testability outside /opt
+
 ### Pending Todos
 
 None yet.
@@ -100,9 +109,10 @@ None yet.
 ### Blockers/Concerns
 
 - Phase 6: Dependency cycle detection (DFS graph traversal) flagged as high complexity by research. Budget accordingly.
+- Pre-existing: 67 TypeScript compilation errors in src/mcp/__tests__/task-tools.test.ts (tests pass at runtime, should be fixed in dedicated plan)
 
 ## Session Continuity
 
-Last session: 2026-02-13T20:12:40Z
-Stopped at: Completed 04-02-PLAN.md (MCP Testing)
-Resume file: .planning/phases/04-mcp-server/04-02-SUMMARY.md
+Last session: 2026-02-13T20:33:00Z
+Stopped at: Completed 05-02-PLAN.md (Logging & Backup Automation)
+Resume file: .planning/phases/05-production-deployment/05-02-SUMMARY.md
