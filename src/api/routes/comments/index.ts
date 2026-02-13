@@ -1,0 +1,86 @@
+import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { z } from 'zod';
+import {
+  CommentResponseSchema,
+  CommentListResponseSchema,
+  CreateCommentBodySchema,
+} from './schemas.js';
+
+const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
+  // POST /tasks/:id/comments - Add comment
+  fastify.post(
+    '/:id/comments',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: CreateCommentBodySchema,
+        response: {
+          201: CommentResponseSchema,
+        },
+        tags: ['comments'],
+        description: 'Add a comment to a task',
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { author, content } = request.body;
+
+      const comment = fastify.commentService.addComment({
+        task_id: id,
+        author,
+        content,
+      });
+
+      return reply.code(201).send(comment);
+    }
+  );
+
+  // GET /tasks/:id/comments - Get comments for a task
+  fastify.get(
+    '/:id/comments',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        response: {
+          200: CommentListResponseSchema,
+        },
+        tags: ['comments'],
+        description: 'Get all comments for a task in chronological order',
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const comments = fastify.commentService.getComments(id);
+
+      return reply.send(comments);
+    }
+  );
+
+  // DELETE /tasks/:id/comments/:commentId - Delete comment
+  fastify.delete(
+    '/:id/comments/:commentId',
+    {
+      schema: {
+        params: z.object({
+          id: z.coerce.number().int().positive(),
+          commentId: z.coerce.number().int().positive(),
+        }),
+        response: {
+          204: z.void(),
+        },
+        tags: ['comments'],
+        description: 'Delete a comment',
+      },
+    },
+    async (request, reply) => {
+      const { commentId } = request.params;
+
+      fastify.commentService.deleteComment(commentId);
+
+      return reply.code(204).send();
+    }
+  );
+};
+
+export default commentRoutes;

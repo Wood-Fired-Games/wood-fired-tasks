@@ -190,4 +190,36 @@ export function registerTaskTools(
       }
     }
   );
+
+  // Tool: get_subtasks
+  server.registerTool(
+    'get_subtasks',
+    {
+      description: 'Get all subtasks (children) of a parent task',
+      inputSchema: z.object({
+        task_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const subtasks = taskService.getSubtasks(args.task_id);
+        const summary = `Found ${subtasks.length} subtask(s) for task ${args.task_id}`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: summary,
+            },
+          ],
+          structuredContent: {
+            parent_task_id: args.task_id,
+            subtasks,
+          } as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    }
+  );
 }
