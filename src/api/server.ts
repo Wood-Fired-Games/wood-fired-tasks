@@ -36,6 +36,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // Create Fastify instance with logger
   const server = Fastify({
     logger: {
+      name: 'wood-fired-bugs',
       level: process.env.LOG_LEVEL || 'info',
       transport:
         process.env.NODE_ENV === 'development'
