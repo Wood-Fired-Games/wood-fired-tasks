@@ -16,6 +16,9 @@ import { depListCommand } from '../commands/dep-list.js';
 import { commentAddCommand } from '../commands/comment-add.js';
 import { commentListCommand } from '../commands/comment-list.js';
 import { commentDeleteCommand } from '../commands/comment-delete.js';
+import { subtaskCreateCommand } from '../commands/subtask-create.js';
+import { subtaskListCommand } from '../commands/subtask-list.js';
+import { healthCommand } from '../commands/health.js';
 
 // Configure CLI program
 program
@@ -52,6 +55,13 @@ program.addCommand(depListCommand);
 program.addCommand(commentAddCommand);
 program.addCommand(commentListCommand);
 program.addCommand(commentDeleteCommand);
+
+// Register subtask commands
+program.addCommand(subtaskCreateCommand);
+program.addCommand(subtaskListCommand);
+
+// Register health command
+program.addCommand(healthCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
