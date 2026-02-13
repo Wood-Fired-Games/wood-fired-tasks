@@ -13,6 +13,7 @@ import type {
   CreateDependencyInput,
   CommentResponse,
   CreateCommentInput,
+  HealthResponse,
 } from './types.js';
 
 /**
@@ -251,4 +252,37 @@ export async function deleteComment(taskId: number, commentId: number): Promise<
   await apiRequest<void>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
     method: 'DELETE',
   });
+}
+
+// ── Subtask management functions ────────────────────────────
+
+/**
+ * Create a subtask under a parent task.
+ * Subtasks are regular tasks with parent_task_id set.
+ */
+export async function createSubtask(
+  parentTaskId: number,
+  data: CreateTaskInput
+): Promise<TaskResponse> {
+  return apiRequest<TaskResponse>('/api/v1/tasks', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, parent_task_id: parentTaskId }),
+  });
+}
+
+/**
+ * Get all subtasks (children) of a parent task.
+ */
+export async function getSubtasks(parentTaskId: number): Promise<TaskResponse[]> {
+  return apiRequest<TaskResponse[]>(`/api/v1/tasks/${parentTaskId}/subtasks`);
+}
+
+// ── Health check functions ──────────────────────────────────
+
+/**
+ * Check service health status.
+ * Note: Health endpoint is public (no auth required), but CLI still sends API key.
+ */
+export async function checkHealth(): Promise<HealthResponse> {
+  return apiRequest<HealthResponse>('/health');
 }
