@@ -110,8 +110,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Parent/child relationships and dependency tracking with cycle detection
-- [ ] 06-02: Comments system and time estimates
+- [ ] 06-01-PLAN.md -- Parent/child relationships (subtasks) and dependency tracking with DFS cycle detection
+- [ ] 06-02-PLAN.md -- Comments system, time estimates, and REST API + MCP integration for all Phase 6 features
 
 ## Progress
 
