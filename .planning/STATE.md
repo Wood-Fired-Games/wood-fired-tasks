@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Any agent on the local network can reliably create, find, and update work items in real time -- making this the single source of truth for all Wood Fired Games task tracking.
-**Current focus:** Phase 1: Foundation
+**Current focus:** Phase 2: REST API
 
 ## Current Position
 
-Phase: 1 of 6 (Foundation)
-Plan: 3 of 3 in current phase
-Status: Phase Complete
-Last activity: 2026-02-13 -- Completed plan 01-03 (Service Layer)
+Phase: 2 of 6 (REST API)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-13 -- Completed plan 02-01 (REST API Core)
 
-Progress: [████████████░░░░░░░░] 15%
+Progress: [█████████████░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 4 minutes
-- Total execution time: 0.20 hours
+- Total plans completed: 4
+- Average duration: 5 minutes
+- Total execution time: 0.30 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 3 | 11 min | 4 min |
+| 02-rest-api | 1 | 6 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (3 min), 01-02 (3 min), 01-03 (5 min)
-- Trend: Consistent velocity
+- Last 5 plans: 01-01 (3 min), 01-02 (3 min), 01-03 (5 min), 02-01 (6 min)
+- Trend: Stable velocity
 
 *Updated after each plan completion*
 
@@ -57,6 +58,12 @@ Progress: [████████████░░░░░░░░] 15%
 - All service methods validate unknown input via Zod safeParse before processing
 - Custom error classes provide structured error information (ValidationError with fieldErrors, NotFoundError with entity+id)
 
+**Phase 02-01 (REST API Core):**
+- Moved auth preHandler hook from separate plugin to inline registration in server scope for proper encapsulation
+- Used z.coerce for query/param number types to handle URL string coercion automatically
+- Disabled parallel test file execution to prevent environment variable conflicts in tests
+- Tags returned in alphabetical order from database GROUP_CONCAT (not insertion order)
+
 ### Pending Todos
 
 None yet.
@@ -68,6 +75,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-13T18:50:16Z
-Stopped at: Completed 01-03-PLAN.md (Service Layer) - Phase 01 Complete
-Resume file: .planning/phases/01-foundation/01-03-SUMMARY.md
+Last session: 2026-02-13T19:13:44Z
+Stopped at: Completed 02-01-PLAN.md (REST API Core)
+Resume file: .planning/phases/02-rest-api/02-01-SUMMARY.md
