@@ -71,11 +71,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Task delete and show commands
-- [ ] 08-02-PLAN.md — Project CRUD commands (create, list, show, update, delete)
-- [ ] 08-03-PLAN.md — Dependency management commands (add, remove, list)
-- [ ] 08-04-PLAN.md — Comment management commands (add, list, delete)
-- [ ] 08-05-PLAN.md — Subtask and health check commands
+- [x] 08-01-PLAN.md — Task delete and show commands
+- [x] 08-02-PLAN.md — Project CRUD commands (create, list, show, update, delete)
+- [x] 08-03-PLAN.md — Dependency management commands (add, remove, list)
+- [x] 08-04-PLAN.md — Comment management commands (add, list, delete)
+- [x] 08-05-PLAN.md — Subtask and health check commands
 
 ---
 
@@ -97,8 +97,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Project CRUD MCP tools (create, get, list, update, delete)
-- [ ] 09-02-PLAN.md — Health check and subtask list MCP tools
+- [x] 09-01-PLAN.md — Project CRUD MCP tools (create, get, list, update, delete)
+- [x] 09-02-PLAN.md — Health check and subtask list MCP tools
 
 ---
 
@@ -118,7 +118,7 @@ Plans:
 4. Integration tests verify CLI → REST → Service flow for all new commands
 5. Documentation updated with examples for all new commands and tools
 
-**Plans:** 0/0
+**Plans:** 0/0 (validation phase — verified via milestone audit)
 
 ---
 
@@ -133,6 +133,6 @@ Plans:
 | 5. Production Deployment | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 6. Advanced Features | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 7. Core CLI Infrastructure | v1.1 | 3/3 | Complete | 2026-02-13 |
-| 8. CLI Command Expansion | v1.1 | 0/5 | Planned | — |
-| 9. MCP Tool Expansion | v1.1 | 0/2 | Planned | — |
-| 10. Testing & Integration | v1.1 | 0/0 | Pending | — |
+| 8. CLI Command Expansion | v1.1 | 5/5 | Complete | 2026-02-13 |
+| 9. MCP Tool Expansion | v1.1 | 2/2 | Complete | 2026-02-13 |
+| 10. Testing & Integration | v1.1 | 0/0 | Complete | 2026-02-13 |
