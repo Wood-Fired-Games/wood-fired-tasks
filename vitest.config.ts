@@ -5,5 +5,6 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     fileParallelism: false, // Run test files sequentially to avoid env var conflicts
+    exclude: ['dist/**', 'node_modules/**'],
   },
 });
