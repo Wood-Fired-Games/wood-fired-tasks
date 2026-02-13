@@ -46,9 +46,9 @@ Active milestone. Full CLI/MCP parity with REST API.
 **Plans:** 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Output abstraction layer and global --json flag
-- [ ] 07-02-PLAN.md — Interactive prompts with @clack/prompts
-- [ ] 07-03-PLAN.md — Retrofit existing commands with JSON and prompts
+- [x] 07-01-PLAN.md — Output abstraction layer and global --json flag
+- [x] 07-02-PLAN.md — Interactive prompts with @clack/prompts
+- [x] 07-03-PLAN.md — Retrofit existing commands with JSON and prompts
 
 ---
 
@@ -121,7 +121,7 @@ Plans:
 | 4. MCP Server | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 5. Production Deployment | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 6. Advanced Features | v1.0 | 2/2 | Complete | 2026-02-13 |
-| 7. Core CLI Infrastructure | v1.1 | 0/3 | Pending | — |
+| 7. Core CLI Infrastructure | v1.1 | 3/3 | Complete | 2026-02-13 |
 | 8. CLI Command Expansion | v1.1 | 0/0 | Pending | — |
 | 9. MCP Tool Expansion | v1.1 | 0/0 | Pending | — |
 | 10. Testing & Integration | v1.1 | 0/0 | Pending | — |
