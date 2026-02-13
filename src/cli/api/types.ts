@@ -72,3 +72,30 @@ export interface ApiErrorResponse {
   message: string;
   details?: unknown;
 }
+
+// ── Dependency types ────────────────────────────────────────
+
+/**
+ * Dependency relationship response (matches REST API response).
+ */
+export interface DependencyResponse {
+  id: number;
+  task_id: number;
+  blocks_task_id: number;
+  created_at: string;
+}
+
+/**
+ * Dependency list response with both directions.
+ */
+export interface DependencyListResponse {
+  blocks: DependencyResponse[];        // Tasks this task blocks
+  blocked_by: DependencyResponse[];    // Tasks that block this task
+}
+
+/**
+ * Input for creating a dependency relationship.
+ */
+export interface CreateDependencyInput {
+  blocks_task_id: number;
+}

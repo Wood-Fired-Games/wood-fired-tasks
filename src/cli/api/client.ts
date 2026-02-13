@@ -8,6 +8,9 @@ import type {
   ProjectResponse,
   CreateProjectInput,
   UpdateProjectInput,
+  DependencyResponse,
+  DependencyListResponse,
+  CreateDependencyInput,
 } from './types.js';
 
 /**
@@ -179,4 +182,38 @@ export async function deleteProject(id: number): Promise<void> {
   await apiRequest<void>(`/api/v1/projects/${id}`, {
     method: 'DELETE',
   });
+}
+
+// ── Dependency management functions ─────────────────────────
+
+/**
+ * Add a dependency (task blocks another task).
+ */
+export async function addDependency(
+  taskId: number,
+  data: CreateDependencyInput
+): Promise<DependencyResponse> {
+  return apiRequest<DependencyResponse>(`/api/v1/tasks/${taskId}/dependencies`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Remove a dependency relationship.
+ */
+export async function removeDependency(
+  taskId: number,
+  blocksTaskId: number
+): Promise<void> {
+  await apiRequest<void>(`/api/v1/tasks/${taskId}/dependencies/${blocksTaskId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Get all dependencies for a task.
+ */
+export async function getDependencies(taskId: number): Promise<DependencyListResponse> {
+  return apiRequest<DependencyListResponse>(`/api/v1/tasks/${taskId}/dependencies`);
 }
