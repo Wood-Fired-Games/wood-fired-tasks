@@ -1,6 +1,6 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import type { TaskResponse, ProjectResponse, DependencyListResponse } from '../api/types.js';
+import type { TaskResponse, ProjectResponse, DependencyListResponse, CommentResponse } from '../api/types.js';
 
 /**
  * Detect if JSON output mode is enabled via --json flag.
@@ -230,6 +230,40 @@ export function formatProjectDetail(project: ProjectResponse): string {
 }
 
 // ── Dependency formatters ───────────────────────────────────
+
+// ── Comment formatters ──────────────────────────────────────
+
+/**
+ * Format a list of comments for chronological display.
+ *
+ * Shows each comment with timestamp, author, and indented content.
+ * Returns "No comments" if the list is empty.
+ */
+export function formatCommentList(comments: CommentResponse[]): string {
+  if (comments.length === 0) {
+    return 'No comments';
+  }
+
+  const useColor = shouldUseColor();
+  const parts: string[] = [];
+
+  for (const comment of comments) {
+    const timestamp = new Date(comment.created_at).toLocaleString();
+    const header = useColor
+      ? `${chalk.bold(`[${timestamp}]`)} ${chalk.bold(comment.author)}:`
+      : `[${timestamp}] ${comment.author}:`;
+
+    // Indent each line of content by 2 spaces
+    const indentedContent = comment.content
+      .split('\n')
+      .map((line) => `  ${line}`)
+      .join('\n');
+
+    parts.push(`${header}\n${indentedContent}`);
+  }
+
+  return parts.join('\n\n');
+}
 
 /**
  * Format a dependency list showing blocks and blocked_by sections.
