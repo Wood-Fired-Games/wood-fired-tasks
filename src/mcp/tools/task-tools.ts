@@ -191,6 +191,57 @@ export function registerTaskTools(
     }
   );
 
+  // Tool: list_subtasks
+  server.registerTool(
+    'list_subtasks',
+    {
+      description: 'List all subtasks (children) of a parent task',
+      inputSchema: z.object({
+        task_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const subtasks = taskService.getSubtasks(args.task_id);
+
+        if (subtasks.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Task ${args.task_id} has no subtasks.`,
+              },
+            ],
+            structuredContent: {
+              parent_task_id: args.task_id,
+              subtasks: [],
+            } as unknown as { [x: string]: unknown },
+          };
+        }
+
+        const summary = [`Task ${args.task_id} has ${subtasks.length} subtask(s):\n`];
+        subtasks.forEach((task) => {
+          summary.push(`- [${task.id}] ${task.title} (${task.status})`);
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: summary.join('\n'),
+            },
+          ],
+          structuredContent: {
+            parent_task_id: args.task_id,
+            subtasks,
+          } as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    }
+  );
+
   // Tool: get_subtasks
   server.registerTool(
     'get_subtasks',
