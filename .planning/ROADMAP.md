@@ -94,7 +94,11 @@ Plans:
 3. Agent can list subtasks via list_subtasks MCP tool with consistent parameter naming (task_id)
 4. All MCP tools follow snake_case naming convention (resource_action pattern)
 
-**Plans:** 0/0
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Project CRUD MCP tools (create, get, list, update, delete)
+- [ ] 09-02-PLAN.md — Health check and subtask list MCP tools
 
 ---
 
@@ -130,5 +134,5 @@ Plans:
 | 6. Advanced Features | v1.0 | 2/2 | Complete | 2026-02-13 |
 | 7. Core CLI Infrastructure | v1.1 | 3/3 | Complete | 2026-02-13 |
 | 8. CLI Command Expansion | v1.1 | 0/5 | Planned | — |
-| 9. MCP Tool Expansion | v1.1 | 0/0 | Pending | — |
+| 9. MCP Tool Expansion | v1.1 | 0/2 | Planned | — |
 | 10. Testing & Integration | v1.1 | 0/0 | Pending | — |
