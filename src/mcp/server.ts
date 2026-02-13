@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { Database } from 'better-sqlite3';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
@@ -7,15 +8,17 @@ import { registerTaskTools } from './tools/task-tools.js';
 import { registerDependencyTools } from './tools/dependency-tools.js';
 import { registerCommentTools } from './tools/comment-tools.js';
 import { registerProjectTools } from './tools/project-tools.js';
+import { registerHealthTools } from './tools/health-tools.js';
 
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 23 tools registered:
- * - 6 task tools (create, get, update, list, delete, get_subtasks)
+ * Factory function that creates an McpServer with 25 tools registered:
+ * - 7 task tools (create, get, update, list, delete, get_subtasks, list_subtasks)
  * - 5 project tools (create, get, update, list, delete)
  * - 7 dependency tools (add, remove, list, get_blocks, get_blocked_by, graph, check_cycle)
  * - 5 comment tools (add, list, get, update, delete)
+ * - 1 health tool (check_health)
  *
  * This pattern allows tests to instantiate servers without stdio transport.
  *
@@ -23,13 +26,15 @@ import { registerProjectTools } from './tools/project-tools.js';
  * @param projectService - Service for project operations
  * @param dependencyService - Service for dependency operations
  * @param commentService - Service for comment operations
+ * @param db - Database instance for health checks
  * @returns Configured McpServer instance ready to connect to a transport
  */
 export function createMcpServer(
   taskService: TaskService,
   projectService: ProjectService,
   dependencyService: DependencyService,
-  commentService: CommentService
+  commentService: CommentService,
+  db: Database
 ): McpServer {
   const server = new McpServer({
     name: 'wood-fired-bugs',
@@ -41,6 +46,7 @@ export function createMcpServer(
   registerProjectTools(server, projectService);
   registerDependencyTools(server, dependencyService);
   registerCommentTools(server, commentService);
+  registerHealthTools(server, db);
 
   return server;
 }
