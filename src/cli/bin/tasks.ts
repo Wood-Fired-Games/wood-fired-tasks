@@ -3,6 +3,8 @@ import { program } from 'commander';
 import { createCommand } from '../commands/create.js';
 import { listCommand } from '../commands/list.js';
 import { updateCommand } from '../commands/update.js';
+import { deleteCommand } from '../commands/delete.js';
+import { showCommand } from '../commands/show.js';
 
 // Configure CLI program
 program
@@ -20,6 +22,8 @@ program.option('--force', 'Skip confirmation prompts for destructive actions');
 program.addCommand(createCommand);
 program.addCommand(listCommand);
 program.addCommand(updateCommand);
+program.addCommand(deleteCommand);
+program.addCommand(showCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
