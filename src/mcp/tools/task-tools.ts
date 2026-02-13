@@ -139,7 +139,7 @@ export function registerTaskTools(
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: [] as unknown as { [x: string]: unknown },
+            structuredContent: { tasks: [] } as unknown as { [x: string]: unknown },
           };
         }
 
@@ -157,7 +157,7 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: tasks as unknown as { [x: string]: unknown },
+          structuredContent: { tasks } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         throw convertToMcpError(error);
