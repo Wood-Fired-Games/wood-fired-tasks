@@ -55,6 +55,7 @@ The API uses standard HTTP status codes and returns error details in JSON format
 | 400 | Bad Request (validation error) |
 | 401 | Unauthorized (missing or invalid API key) |
 | 404 | Not Found |
+| 409 | Conflict (claim already taken, invalid state transition) |
 | 500 | Internal Server Error |
 
 ### Error Response Format
@@ -668,6 +669,160 @@ Remove a dependency relationship.
 curl -X DELETE http://localhost:3000/api/v1/tasks/42/dependencies/43 \
   -H "X-API-Key: your-key"
 ```
+
+## Claim Endpoint
+
+### POST /api/v1/tasks/:id/claim
+
+Atomically claim an unassigned task. Sets assignee and transitions status to `in_progress` in a single atomic operation using optimistic locking.
+
+**Request Body:**
+
+```json
+{
+  "assignee": "string (required, 1-100 chars)"
+}
+```
+
+**Request Headers (optional):**
+
+| Header | Description |
+|--------|-------------|
+| X-Idempotency-Key | Unique key for retry safety (24h TTL). If the same key is reused, the original response is returned without re-executing. |
+
+**Response:** 200 OK
+
+```json
+{
+  "id": 42,
+  "title": "Implement authentication",
+  "status": "in_progress",
+  "assignee": "agent-1",
+  "version": 2,
+  "claimed_at": "2026-02-14T12:00:00.000Z",
+  ...
+}
+```
+
+**Response:** 409 Conflict (task already claimed or not in valid state)
+
+```json
+{
+  "error": "CONFLICT",
+  "message": "Task is already assigned to another agent"
+}
+```
+
+**Response:** 404 Not Found
+
+```json
+{
+  "error": "NOT_FOUND",
+  "message": "Task not found"
+}
+```
+
+**Examples:**
+
+```bash
+# Claim a task
+curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
+  -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"assignee": "agent-1"}'
+
+# Claim with idempotency key (safe to retry)
+curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
+  -H "X-API-Key: your-key" \
+  -H "X-Idempotency-Key: claim-42-agent-1" \
+  -H "Content-Type: application/json" \
+  -d '{"assignee": "agent-1"}'
+```
+
+**Concurrency guarantees:**
+- Uses CAS (Compare-And-Swap) with a `version` field for optimistic locking
+- Uses `BEGIN IMMEDIATE` SQLite transactions to acquire write lock early
+- Verified with 20 concurrent agents: exactly 1 success, 19 conflicts, 0 server errors
+- Stale claims auto-released after 30 minutes of inactivity
+
+## Event Stream Endpoint
+
+### GET /api/v1/events
+
+Subscribe to real-time task and project change notifications via Server-Sent Events (SSE).
+
+**Query Parameters (all optional):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| project_id | number | Only receive events for this project |
+| event_types | string | Comma-separated event types to filter (e.g., `task.created,task.claimed`) |
+
+**Request Headers (optional):**
+
+| Header | Description |
+|--------|-------------|
+| Last-Event-ID | Resume from this event ID after reconnection |
+
+**Event Types:**
+
+| Type | Trigger |
+|------|---------|
+| task.created | New task created |
+| task.updated | Task fields modified |
+| task.deleted | Task deleted |
+| task.status_changed | Task status transition |
+| task.claimed | Task claimed by agent |
+| project.created | New project created |
+| project.updated | Project modified |
+| project.deleted | Project deleted |
+
+**Event Format:**
+
+```
+id: 42
+event: task.created
+data: {"eventType":"task.created","timestamp":"2026-02-14T12:00:00.000Z","data":{"id":42,"title":"New task",...},"metadata":{"source":"user"}}
+```
+
+**Heartbeat:**
+
+The server sends a heartbeat comment every 30 seconds to keep the connection alive:
+
+```
+:heartbeat
+```
+
+**Examples:**
+
+```bash
+# Subscribe to all events
+curl -N -H "X-API-Key: your-key" \
+  http://localhost:3000/api/v1/events
+
+# Filter by project
+curl -N -H "X-API-Key: your-key" \
+  "http://localhost:3000/api/v1/events?project_id=1"
+
+# Filter by event type
+curl -N -H "X-API-Key: your-key" \
+  "http://localhost:3000/api/v1/events?event_types=task.created,task.claimed"
+
+# Resume after reconnection
+curl -N -H "X-API-Key: your-key" \
+  -H "Last-Event-ID: 42" \
+  http://localhost:3000/api/v1/events
+```
+
+**Reconnection:**
+
+The server buffers up to 1000 events for 5 minutes. Include `Last-Event-ID` header when reconnecting to replay missed events. Events older than 5 minutes are discarded.
+
+**Metadata:**
+
+Each event includes a `metadata.source` field:
+- `"user"` — triggered by a direct API call
+- `"workflow"` — triggered by workflow automation (parent auto-complete or dependency auto-unblock)
 
 ## Interactive Documentation
 

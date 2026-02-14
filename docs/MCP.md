@@ -8,7 +8,8 @@ Wood Fired Bugs exposes task management capabilities via the Model Context Proto
 
 The MCP server provides:
 
-- 16 tools for task, project, comment, dependency, and health operations
+- 20 tools for task, project, comment, dependency, and health operations
+- 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 10 pre-built skill files for common workflows
 - Shared SQLite database with the REST API and CLI
@@ -96,9 +97,9 @@ Both installers:
 
 ## Tools Reference
 
-The MCP server exposes 16 tools organized by domain.
+The MCP server exposes 20 tools organized by domain.
 
-### Task Tools (7 tools)
+### Task Tools (8 tools)
 
 #### create_task
 
@@ -195,6 +196,21 @@ Delete a task by its ID.
 ```
 
 **Usage:** When Claude Code needs to remove a task permanently.
+
+#### claim_task
+
+Atomically claim an unassigned task, setting assignee and transitioning status to `in_progress`.
+
+**Input Schema:**
+
+```json
+{
+  "task_id": "number (required, positive integer)",
+  "assignee": "string (required, 1-100 chars)"
+}
+```
+
+**Usage:** When Claude Code needs to claim a task for an agent. Returns the updated task on success. Returns a 409-equivalent error if the task is already claimed or not in a claimable state. Multiple agents can race to claim; exactly one wins.
 
 #### list_subtasks
 
@@ -407,6 +423,26 @@ Check service health status, database connectivity, and version information.
 
 **Usage:** When Claude Code needs to verify the MCP server and database are functioning correctly.
 
+## Resources Reference
+
+The MCP server exposes 1 resource.
+
+### events://stream
+
+**Name:** Event Stream
+
+**Description:** Real-time task and project event stream via Server-Sent Events.
+
+This resource provides discovery documentation for the SSE event stream endpoint. It tells agents:
+
+- The SSE endpoint URL (`GET /api/v1/events`)
+- Required authentication (`X-API-Key` header)
+- Available query parameters for filtering (`project_id`, `event_types`)
+- All 8 event types and their triggers
+- Reconnection protocol (`Last-Event-ID` header)
+
+**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. The resource does not stream events directly; it provides the HTTP endpoint documentation so agents can connect via HTTP.
+
 ## Skill Files
 
 Wood Fired Bugs provides 10 pre-built skill files in the `/tasks:` namespace.
@@ -571,6 +607,8 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`
-- Explore the 16 MCP tools for custom workflows
+- Explore the 20 MCP tools for custom workflows
+- Use `claim_task` for multi-agent task coordination
+- Read the `events://stream` resource for real-time event integration
 - Read the [API.md](API.md) reference for REST API details
 - Read the [CLI.md](CLI.md) reference for command-line usage

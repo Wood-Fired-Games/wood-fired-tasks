@@ -22,7 +22,7 @@ Any agent on the local network can reliably create, find, and update work items 
 - Rich metadata: tags/labels, due dates, time estimates, comments with author/timestamp — v1.0
 - Multi-project support with project CRUD — v1.0
 - Full task lifecycle with enforced status transitions: open -> in_progress -> done -> closed, with blocked state — v1.0
-- MCP server exposes tools for all REST API endpoints (25 tools: tasks, projects, deps, comments, subtasks, health) — v1.1
+- MCP server exposes tools for all REST API endpoints (20 tools: tasks, projects, deps, comments, subtasks, claim, health) — v1.1+v1.3
 - CLI supports all REST API operations (19 commands: tasks, projects, deps, comments, subtasks, health) — v1.1
 - CLI `--json` flag on all commands for machine-readable output with consistent envelope format — v1.1
 - CLI interactive prompts when required fields are missing (`--no-input` to disable) — v1.1
@@ -69,7 +69,7 @@ The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 
 Interface inventory:
 - REST API: 20 endpoints (tasks CRUD + claim, projects CRUD, dependencies, comments, subtasks, events, health)
-- MCP Server: 26 tools (same coverage as REST) + events://stream resource
+- MCP Server: 20 tools (same coverage as REST) + events://stream resource
 - CLI: 20 commands (same coverage as REST + interactive prompts)
 - Claude Code Skills: 10 workflow skills (/tasks: namespace)
 - Installers: install.sh (Linux/macOS), install.ps1 (Windows)
