@@ -89,17 +89,20 @@ export class SSEManager {
   }
 
   private sendEvent(conn: SSEConnection, eventId: number, event: EventPayload<unknown>): void {
-    try {
-      conn.reply.sse({
+    // Send SSE message (fire-and-forget, catch errors to prevent unhandled rejections)
+    conn.reply.sse
+      .send({
         id: String(eventId),
         event: event.eventType,
-        data: JSON.stringify(event),
+        data: event,
+      })
+      .then(() => {
+        conn.lastEventId = eventId;
+      })
+      .catch(() => {
+        // Connection likely closed, remove it
+        this.removeConnection(conn.id);
       });
-      conn.lastEventId = eventId;
-    } catch (err) {
-      // Connection likely closed, remove it
-      this.removeConnection(conn.id);
-    }
   }
 
   private replayEvents(connectionId: string, fromEventId: number): void {
@@ -132,14 +135,11 @@ export class SSEManager {
       const now = Date.now();
 
       for (const conn of this.connections.values()) {
-        // Send heartbeat ping
-        try {
-          conn.reply.sse({ event: 'ping', data: '' });
-        } catch (err) {
+        // Send heartbeat ping (fire-and-forget)
+        conn.reply.sse.send({ event: 'ping', data: '' }).catch(() => {
           // Connection closed, remove it
           this.removeConnection(conn.id);
-          continue;
-        }
+        });
 
         // Enforce max connection age
         const age = now - conn.createdAt.getTime();
