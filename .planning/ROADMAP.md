@@ -91,10 +91,11 @@ Plans:
   5. Installer writes API key to MCP config env section (not just shell profile)
   6. Installer validates connectivity to wood-fired-bugs service post-setup
   7. Skills are accessible in Claude Code after installer completes successfully
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 13-01: TBD
+- [ ] 13-01-PLAN.md — Bash installer (install.sh) for Linux/macOS
+- [ ] 13-02-PLAN.md — PowerShell installer (install.ps1) for Windows
 
 ## Progress
 
@@ -115,4 +116,4 @@ Phases execute in numeric order: 11 → 12 → 13
 | 10. Testing & Integration | v1.1 | 0/0 | Complete | 2026-02-13 |
 | 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
 | 12. Skill File Authoring | v1.2 | 4/4 | Complete | 2026-02-14 |
-| 13. Cross-Platform Installer | v1.2 | 0/TBD | Not started | - |
+| 13. Cross-Platform Installer | v1.2 | 0/2 | Not started | - |
