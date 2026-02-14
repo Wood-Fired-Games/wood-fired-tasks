@@ -61,10 +61,10 @@ See: [milestones/v1.2-ROADMAP.md](./milestones/v1.2-ROADMAP.md) for full details
 **Plans:** 4 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — EventBus implementation with TDD (type-safe pub/sub foundation)
-- [ ] 14-02-PLAN.md — Service event emissions (TaskService and ProjectService emit domain events)
-- [ ] 14-03-PLAN.md — SSE endpoint infrastructure (SSEManager, filtering, heartbeat, reconnection)
-- [ ] 14-04-PLAN.md — MCP integration and verification (events resource + human testing)
+- [x] 14-01-PLAN.md — EventBus implementation with TDD (type-safe pub/sub foundation)
+- [x] 14-02-PLAN.md — Service event emissions (TaskService and ProjectService emit domain events)
+- [x] 14-03-PLAN.md — SSE endpoint infrastructure (SSEManager, filtering, heartbeat, reconnection)
+- [x] 14-04-PLAN.md — MCP integration and verification (events resource + human testing)
 
 **Success Criteria:**
 1. Agent subscribes to GET /api/v1/events and receives real-time task lifecycle events (created, updated, deleted, claimed, status_changed) with <100ms latency
@@ -86,9 +86,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 15-01-PLAN.md — Core claim protocol with TDD (migration, CAS repository, service logic, event emission)
-- [ ] 15-02-PLAN.md — REST endpoint with idempotency and auto-release (POST /claim, X-Idempotency-Key, stale claim sweep)
-- [ ] 15-03-PLAN.md — Interface parity (claim_task MCP tool, tasks claim CLI command)
+- [x] 15-01-PLAN.md — Core claim protocol with TDD (migration, CAS repository, service logic, event emission)
+- [x] 15-02-PLAN.md — REST endpoint with idempotency and auto-release (POST /claim, X-Idempotency-Key, stale claim sweep)
+- [x] 15-03-PLAN.md — Interface parity (claim_task MCP tool, tasks claim CLI command)
 
 **Success Criteria:**
 1. Agent atomically claims unassigned task via POST /api/v1/tasks/:id/claim (MCP: claim_task, CLI: tasks claim), transitioning assignee and status in single operation
@@ -133,8 +133,8 @@ Plans:
 | 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
 | 12. Skill File Authoring | v1.2 | 4/4 | Complete | 2026-02-14 |
 | 13. Cross-Platform Installer | v1.2 | 2/2 | Complete | 2026-02-14 |
-| 14. SSE Event Infrastructure | v1.3 | 0/4 | Pending | - |
-| 15. Atomic Claim Protocol | v1.3 | 0/3 | Pending | - |
+| 14. SSE Event Infrastructure | v1.3 | 4/4 | Complete | 2026-02-14 |
+| 15. Atomic Claim Protocol | v1.3 | 3/3 | Complete | 2026-02-14 |
 | 16. Workflow Automation | v1.3 | 0/? | Pending | - |
 
 ---
