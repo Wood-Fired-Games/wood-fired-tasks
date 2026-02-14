@@ -35,7 +35,12 @@ Any agent on the local network can reliably create, find, and update work items 
 
 ### Active
 
-(None — next milestone requirements TBD)
+<!-- v1.3: Multi-Agent Coordination -->
+- [ ] Server-Sent Events (SSE) endpoint for real-time task change notifications
+- [ ] Configurable event filtering (by project, assignee, status, event type)
+- [ ] Workflow automation rules (parent auto-complete, dependency auto-unblock)
+- [ ] Atomic task claim protocol (verify + assign + transition in one operation)
+- [ ] Event stream, workflow rules, and claim protocol exposed via all interfaces (REST, MCP, CLI)
 
 ### Out of Scope
 
@@ -46,6 +51,9 @@ Any agent on the local network can reliably create, find, and update work items 
 - CLI pagination — users can pipe to `less` or use filters
 - CLI auto-update checking — manual update is fine
 - CLI arbitrary command abbreviations — prevents adding new commands; use shell aliases
+- Agent registry / capability matching — validate coordination model first, registry is v1.4+
+- WebSocket transport — SSE is simpler and sufficient for push notifications
+- Task templates / batch creation — existing MCP skills handle creation patterns
 
 ## Context
 
@@ -92,5 +100,14 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | API key in MCP env section | MCP servers don't inherit shell profile variables | Good — installer writes to mcpServers.env, not .bashrc |
 | ConvertTo-Json -Depth 10 | PowerShell defaults to depth 2, truncating nested MCP config | Good — prevents silent data loss in installer |
 
+## Current Milestone: v1.3 Multi-Agent Coordination
+
+**Goal:** Enable AI-driven multi-agent task orchestration with real-time event streaming, workflow automation, and atomic task claiming.
+
+**Target features:**
+- Server-Sent Events (SSE) for real-time push notifications of task changes
+- Workflow automation rules (parent auto-complete, dependency auto-unblock)
+- Atomic claim protocol for race-free task assignment
+
 ---
-*Last updated: 2026-02-14 after v1.2 milestone*
+*Last updated: 2026-02-14 after v1.3 milestone started*
