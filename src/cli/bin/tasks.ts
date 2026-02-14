@@ -19,6 +19,7 @@ import { commentDeleteCommand } from '../commands/comment-delete.js';
 import { subtaskCreateCommand } from '../commands/subtask-create.js';
 import { subtaskListCommand } from '../commands/subtask-list.js';
 import { healthCommand } from '../commands/health.js';
+import { claimCommand } from '../commands/claim.js';
 
 // Configure CLI program
 program
@@ -59,6 +60,9 @@ program.addCommand(commentDeleteCommand);
 // Register subtask commands
 program.addCommand(subtaskCreateCommand);
 program.addCommand(subtaskListCommand);
+
+// Register claim command
+program.addCommand(claimCommand);
 
 // Register health command
 program.addCommand(healthCommand);
