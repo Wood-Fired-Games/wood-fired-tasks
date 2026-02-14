@@ -42,3 +42,24 @@
 
 ---
 
+
+## v1.2 Claude Code Skills & Installer (Shipped: 2026-02-14)
+
+**Phases completed:** 3 phases (11-13), 7 plans, 11 tasks
+
+**Key accomplishments:**
+- MCP server stdio compliance: fixed Umzug stdout pollution, added static + runtime regression guards
+- 10 curated Claude Code skill files (/tasks: namespace) covering full task lifecycle workflows
+- Cross-platform installers: Bash (install.sh) for Linux/macOS and PowerShell (install.ps1) for Windows
+- Installers handle skill copying, MCP config merge, API key setup, backup, and connectivity validation
+- Comprehensive documentation: README, API reference, CLI reference, MCP reference, setup guide (2,664 lines)
+- 386 tests passing across 36 files with dependency/comment MCP coverage and E2E regression tests
+
+**Stats:**
+- 59 files changed, 13,068 insertions
+- 386 tests passing (36 test files)
+- Built in ~7 minutes across 7 plans + 3 quick tasks
+- Git range: ef9e499..HEAD
+
+---
+
