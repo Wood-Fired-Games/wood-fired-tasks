@@ -58,6 +58,14 @@ See: [milestones/v1.2-ROADMAP.md](./milestones/v1.2-ROADMAP.md) for full details
 
 **Requirements:** EVT-01, EVT-02, EVT-03, EVT-04, EVT-05, EVT-06, EVT-07
 
+**Plans:** 4 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — EventBus implementation with TDD (type-safe pub/sub foundation)
+- [ ] 14-02-PLAN.md — Service event emissions (TaskService and ProjectService emit domain events)
+- [ ] 14-03-PLAN.md — SSE endpoint infrastructure (SSEManager, filtering, heartbeat, reconnection)
+- [ ] 14-04-PLAN.md — MCP integration and verification (events resource + human testing)
+
 **Success Criteria:**
 1. Agent subscribes to GET /api/v1/events and receives real-time task lifecycle events (created, updated, deleted, claimed, status_changed) with <100ms latency
 2. Agent filters event stream by project ID and event type, receiving only relevant events (verified by subscribing to Project A, creating task in Project B, confirming no event received)
@@ -118,7 +126,7 @@ See: [milestones/v1.2-ROADMAP.md](./milestones/v1.2-ROADMAP.md) for full details
 | 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
 | 12. Skill File Authoring | v1.2 | 4/4 | Complete | 2026-02-14 |
 | 13. Cross-Platform Installer | v1.2 | 2/2 | Complete | 2026-02-14 |
-| 14. SSE Event Infrastructure | v1.3 | 0/? | Pending | - |
+| 14. SSE Event Infrastructure | v1.3 | 0/4 | Pending | - |
 | 15. Atomic Claim Protocol | v1.3 | 0/? | Pending | - |
 | 16. Workflow Automation | v1.3 | 0/? | Pending | - |
 
