@@ -45,6 +45,8 @@ Recent decisions affecting v1.2:
 - [Phase 12]: Support project filtering via $ARGUMENTS for single-project view
 - [Phase 13]: ConvertTo-Json -Depth 10 for deep merge (PowerShell defaults to depth 2)
 - [Phase 13]: API key in MCP env section, not shell profile (MCP servers don't inherit shell vars)
+- [Quick 2]: Fixed getBlockers/getBlockedBy swap in dependency-tools.ts (bug discovered during test creation)
+- [Quick 2]: Accept numbered headings (### 1.) as valid workflow structure in skill validation
 
 ### Pending Todos
 
@@ -59,6 +61,7 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | Address all tech debt — zero TS errors, no test duplication, all 250 tests pass | 2026-02-13 | 5e721c0 | [1-address-all-of-the-tech-debt-and-ensure-](./quick/1-address-all-of-the-tech-debt-and-ensure-/) |
+| 2 | Create comprehensive automated tests for MCP tools — 25 new tests (dependency/comment/E2E/skill validation), 386 total | 2026-02-14 | 6180d71 | [2-create-comprehensive-automated-tests-for](./quick/2-create-comprehensive-automated-tests-for/) |
 
 **Phase Execution Metrics:**
 
@@ -70,12 +73,13 @@ None.
 | Phase 12 P03 | 1.4 | 3 tasks | 3 files |
 | Phase 13 P01 | 2 | 2 tasks | 1 files |
 | Phase 13 P02 | 2.1 | 2 tasks | 1 files |
+| Quick 2 | 4.4 | 2 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T01:25:15Z
+**Last session:** 2026-02-14T02:59:14Z
 
-**Stopped at:** Completed 13-02-PLAN.md
+**Stopped at:** Completed quick-2-PLAN.md (comprehensive test coverage)
 
 **Next session should:**
 1. Review v1.2 milestone completion
@@ -87,6 +91,7 @@ None.
 - Phase 11 complete: MCP server stdio compliance verified
 - Phase 12 complete: 4 Claude Code skill files created (create-task, list-tasks, update-task, project-status)
 - Phase 13 complete: Cross-platform installers (install.sh for Linux, install.ps1 for Windows)
+- Quick 2 complete: 386 total tests (25 new), MCP dependency/comment coverage, E2E regression, skill validation
 
 ## Milestone Status
 
