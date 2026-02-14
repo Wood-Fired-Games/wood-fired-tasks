@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-14T15:56:33Z
+**Last Updated:** 2026-02-14T16:03:53Z
 
 ## Project Reference
 
@@ -12,15 +12,15 @@
 
 **Milestone:** v1.3 Multi-Agent Coordination
 **Phase:** 15 - Atomic Claim Protocol
-**Plan:** 01 (1/3 plans complete)
-**Status:** Executing Phase 15 - Plan 01 complete (atomic claim core)
+**Plan:** 02 (2/3 plans complete)
+**Status:** Executing Phase 15 - Plan 02 complete (REST claim endpoint & auto-release)
 
 **Progress Bar:**
 ```
 v1.0 ████████████████████ 100% (6/6 phases complete)
 v1.1 ████████████████████ 100% (4/4 phases complete)
 v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ████████░░░░░░░░░░░░  42% (1/3 phases, 5/12 plans complete)
+v1.3 ██████████░░░░░░░░░░  50% (1/3 phases, 6/12 plans complete)
 ```
 
 ## Performance Metrics
@@ -33,8 +33,8 @@ v1.3 ████████░░░░░░░░░░░░  42% (1/3 phas
 **Current Milestone:**
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 5/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 1/3)
-- Tests: 453 passing (0 failing)
+- Plans: 6/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 2/3)
+- Tests: 479 passing (0 failing)
 
 ## Accumulated Context
 
@@ -51,6 +51,9 @@ v1.3 ████████░░░░░░░░░░░░  42% (1/3 phas
 | BEGIN IMMEDIATE for claims | Acquire write lock early, avoid transaction upgrade SQLITE_BUSY | 15 |
 | CAS with version column for atomic claim | Prevents double-claim without row locks, clear error messages | 15-01 |
 | Service pre-validates before CAS attempt | Returns clear errors for status/assignee conflicts before hitting DB | 15-01 |
+| Idempotency keys in SQLite with 24h TTL | Simple approach, no external cache needed, periodic cleanup | 15-02 |
+| Stale detection via claimed_at AND updated_at | Activity on task resets staleness clock, prevents false release | 15-02 |
+| BusinessError maps to 409 for claim conflicts | Clearer HTTP semantics for concurrent claim operations | 15-02 |
 | Event-driven workflow triggers | Decouple SSE from automation, EventBus enables parallel development | 16 |
 | Max cascade depth = 5 levels | Prevent infinite loops from circular task hierarchies | 16 |
 
@@ -70,6 +73,7 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### Recent Completions
 
+- [x] Phase 15 Plan 02 complete (2026-02-14) — REST claim endpoint with idempotency + auto-release (277s, 26 new tests, 479 total)
 - [x] Phase 15 Plan 01 complete (2026-02-14) — Atomic claim core with CAS + BEGIN IMMEDIATE (206s, 10 new tests, 453 total)
 - [x] Phase 14 COMPLETE (2026-02-14) — SSE Event Infrastructure fully operational (4 plans, 56 tests, 443 total passing)
 - [x] Phase 14 Plan 04 complete (2026-02-14) — MCP events resource for SSE stream discovery (141s, 9 new tests)
@@ -83,21 +87,22 @@ None (roadmap approved, awaiting plan-phase execution).
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 15 Plan 01 (Atomic Claim Core). Implemented CAS-based atomic task claiming with BEGIN IMMEDIATE transactions. Migration 004 adds version, claimed_at, and idempotency_keys table. TaskRepository.claimTask uses CAS with version guard. TaskService.claimTask validates state and emits task.claimed event. 10 new tests, 453 total passing, zero TypeScript errors.
+Completed Phase 15 Plan 02 (REST Claim Endpoint & Auto-Release). Added POST /api/v1/tasks/:id/claim endpoint with idempotency support (X-Idempotency-Key header, 24h TTL). Created IdempotencyService and ClaimReleaseService. Auto-release sweeps stale claims after 30-min timeout. 26 new tests, 479 total passing, zero TypeScript errors.
 
 **What's Next:**
-Phase 15 Plan 02 - REST endpoint POST /api/v1/tasks/:id/claim and conflict resolution (409 responses).
+Phase 15 Plan 03 - MCP tool and CLI command for claiming tasks.
 
 **Context for Next Session:**
-- Phase 15 Plan 01 complete: claimTask works at service and repository layers
-- TaskRepository.claimTask uses BEGIN IMMEDIATE with CAS-style UPDATE (version guard)
-- TaskService.claimTask validates status=open and assignee=null before CAS
-- task.claimed event now emitted on successful claim
-- Task type has version (INTEGER DEFAULT 1) and claimed_at (TEXT nullable) fields
-- ClaimTaskSchema added for input validation (assignee: string, min 1, max 100)
-- TaskResponseSchema updated with version and claimed_at
-- idempotency_keys table created (for future deduplication in Plan 02)
-- 453 tests passing across full suite
+- Phase 15 Plans 01-02 complete: full claim flow from repo through REST API
+- POST /api/v1/tasks/:id/claim returns 200 (claimed), 409 (conflict), 404 (not found)
+- X-Idempotency-Key header prevents duplicate claim processing (IdempotencyService)
+- X-Claim-Source header sets metadata.source to 'user' or 'workflow'
+- ClaimReleaseService sweeps stale claims every 5 min (30-min timeout default)
+- IdempotencyService cleanup runs hourly to purge expired keys
+- Server onClose hook stops all intervals and SSEManager
+- ClaimRequestSchema, ClaimResponseSchema, ConflictResponseSchema in schemas.ts
+- idempotencyService decorated on Fastify instance
+- 479 tests passing across full suite
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
