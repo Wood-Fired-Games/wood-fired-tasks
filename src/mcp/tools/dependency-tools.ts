@@ -88,8 +88,8 @@ export function registerDependencyTools(
     async (args) => {
       try {
         const taskId = args.task_id;
-        const blocks = dependencyService.getBlockers(taskId);
-        const blockedBy = dependencyService.getBlockedBy(taskId);
+        const blocks = dependencyService.getBlockedBy(taskId);
+        const blockedBy = dependencyService.getBlockers(taskId);
 
         return {
           content: [
