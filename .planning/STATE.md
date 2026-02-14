@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-14T16:03:53Z
+**Last Updated:** 2026-02-14T16:10:11Z
 
 ## Project Reference
 
@@ -11,16 +11,16 @@
 ## Current Position
 
 **Milestone:** v1.3 Multi-Agent Coordination
-**Phase:** 15 - Atomic Claim Protocol
-**Plan:** 02 (2/3 plans complete)
-**Status:** Executing Phase 15 - Plan 02 complete (REST claim endpoint & auto-release)
+**Phase:** 15 - Atomic Claim Protocol (COMPLETE)
+**Plan:** 03 (3/3 plans complete)
+**Status:** Phase 15 COMPLETE - Ready for Phase 16 (Workflow Automation)
 
 **Progress Bar:**
 ```
 v1.0 ████████████████████ 100% (6/6 phases complete)
 v1.1 ████████████████████ 100% (4/4 phases complete)
 v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ██████████░░░░░░░░░░  50% (1/3 phases, 6/12 plans complete)
+v1.3 ██████████████░░░░░░  58% (2/3 phases, 7/12 plans complete)
 ```
 
 ## Performance Metrics
@@ -33,8 +33,8 @@ v1.3 ██████████░░░░░░░░░░  50% (1/3 phas
 **Current Milestone:**
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 6/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 2/3)
-- Tests: 479 passing (0 failing)
+- Plans: 7/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE)
+- Tests: 492 passing (0 failing)
 
 ## Accumulated Context
 
@@ -55,6 +55,8 @@ v1.3 ██████████░░░░░░░░░░  50% (1/3 phas
 | Stale detection via claimed_at AND updated_at | Activity on task resets staleness clock, prevents false release | 15-02 |
 | BusinessError maps to 409 for claim conflicts | Clearer HTTP semantics for concurrent claim operations | 15-02 |
 | Event-driven workflow triggers | Decouple SSE from automation, EventBus enables parallel development | 16 |
+| Reuse TaskResponse for claim (no new CLI type) | Claim returns updated task, identical to TaskResponse shape | 15-03 |
+| MCP claim_task validates assignee z.string().min(1).max(100) | Catch invalid assignee at tool level before hitting service | 15-03 |
 | Max cascade depth = 5 levels | Prevent infinite loops from circular task hierarchies | 16 |
 
 ### Open Questions
@@ -73,6 +75,8 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### Recent Completions
 
+- [x] Phase 15 COMPLETE (2026-02-14) — Atomic Claim Protocol fully operational (3 plans, 49 tests, 492 total passing)
+- [x] Phase 15 Plan 03 complete (2026-02-14) — MCP claim_task tool + CLI tasks claim command (227s, 13 new tests, 492 total)
 - [x] Phase 15 Plan 02 complete (2026-02-14) — REST claim endpoint with idempotency + auto-release (277s, 26 new tests, 479 total)
 - [x] Phase 15 Plan 01 complete (2026-02-14) — Atomic claim core with CAS + BEGIN IMMEDIATE (206s, 10 new tests, 453 total)
 - [x] Phase 14 COMPLETE (2026-02-14) — SSE Event Infrastructure fully operational (4 plans, 56 tests, 443 total passing)
@@ -87,22 +91,20 @@ None (roadmap approved, awaiting plan-phase execution).
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 15 Plan 02 (REST Claim Endpoint & Auto-Release). Added POST /api/v1/tasks/:id/claim endpoint with idempotency support (X-Idempotency-Key header, 24h TTL). Created IdempotencyService and ClaimReleaseService. Auto-release sweeps stale claims after 30-min timeout. 26 new tests, 479 total passing, zero TypeScript errors.
+Completed Phase 15 Plan 03 (MCP & CLI Claim Interfaces) and Phase 15 overall. Added claim_task MCP tool (6 tests) and tasks claim CLI command (7 tests) completing interface parity for atomic claim across REST, MCP, and CLI. 492 total tests passing, zero TypeScript errors.
 
 **What's Next:**
-Phase 15 Plan 03 - MCP tool and CLI command for claiming tasks.
+Phase 16 - Workflow Automation (event-driven task automation and cascade operations).
 
 **Context for Next Session:**
-- Phase 15 Plans 01-02 complete: full claim flow from repo through REST API
-- POST /api/v1/tasks/:id/claim returns 200 (claimed), 409 (conflict), 404 (not found)
-- X-Idempotency-Key header prevents duplicate claim processing (IdempotencyService)
-- X-Claim-Source header sets metadata.source to 'user' or 'workflow'
-- ClaimReleaseService sweeps stale claims every 5 min (30-min timeout default)
-- IdempotencyService cleanup runs hourly to purge expired keys
-- Server onClose hook stops all intervals and SSEManager
-- ClaimRequestSchema, ClaimResponseSchema, ConflictResponseSchema in schemas.ts
-- idempotencyService decorated on Fastify instance
-- 479 tests passing across full suite
+- Phase 15 (Atomic Claim Protocol) COMPLETE: all 3 plans shipped
+- Full claim stack: TaskRepo.claimTask (CAS) -> TaskService.claimTask -> REST POST /claim -> MCP claim_task tool -> CLI tasks claim command
+- claim_task MCP tool accepts task_id (int) + assignee (string), returns task or MCP error
+- tasks claim CLI: `tasks claim <id> --assignee <name> [--idempotency-key <key>] [--json]`
+- claimTask() API client function supports idempotency key passthrough
+- IdempotencyService + ClaimReleaseService handle deduplication and stale claim sweep
+- 26 MCP tools registered (8 task, 5 project, 7 dependency, 5 comment, 1 health)
+- 492 tests passing across full suite
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
