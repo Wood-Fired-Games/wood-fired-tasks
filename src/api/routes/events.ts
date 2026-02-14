@@ -25,6 +25,14 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
       },
     } as any,
     async (request, reply) => {
+      // @fastify/sse only creates reply.sse when Accept: text/event-stream is present
+      if (!reply.sse) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'This endpoint requires Accept: text/event-stream header for SSE connections.',
+        });
+      }
+
       const filters: { project_id?: number; event_types?: string[] } = request.query as any;
       const connectionId = randomUUID();
 
