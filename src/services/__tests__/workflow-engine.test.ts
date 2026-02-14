@@ -23,6 +23,9 @@ describe('WorkflowEngine', () => {
 
   beforeEach(async () => {
     app = await createTestApp();
+    // Stop the app's built-in WorkflowEngine so tests can control their own
+    app.workflowEngine.stop();
+
     taskService = app.taskService;
     dependencyService = app.dependencyService;
     projectService = app.projectService;
@@ -357,6 +360,86 @@ describe('WorkflowEngine', () => {
 
       // B should still be 'open' -- no change, no error
       expect(taskService.getTask(taskB.id).status).toBe('open');
+    });
+  });
+
+  describe('integration: workflow events visible with source attribution', () => {
+    it('parent auto-complete events carry source workflow, child events carry source user', () => {
+      const receivedEvents: TaskEvent[] = [];
+      const unsub = eventBus.subscribe('task.status_changed', (event: TaskEvent) => {
+        receivedEvents.push(event);
+      });
+
+      const parent = createTask('Parent Task');
+      const child1 = createTask('Child 1', parent.id);
+      const child2 = createTask('Child 2', parent.id);
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
+      engine.start();
+
+      // Mark both children done to trigger parent auto-complete
+      markDone(child1.id);
+      markDone(child2.id);
+
+      // Find events for the parent task (auto-completed by workflow)
+      const parentDoneEvent = receivedEvents.find(
+        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done'
+      );
+      expect(parentDoneEvent).toBeDefined();
+      expect(parentDoneEvent!.metadata.source).toBe('workflow');
+
+      // Find events for child tasks (done by user)
+      const child1DoneEvent = receivedEvents.find(
+        (e) => e.data.id === child1.id && (e.metadata as any).to === 'done'
+      );
+      expect(child1DoneEvent).toBeDefined();
+      expect(child1DoneEvent!.metadata.source).toBe('user');
+
+      const child2DoneEvent = receivedEvents.find(
+        (e) => e.data.id === child2.id && (e.metadata as any).to === 'done'
+      );
+      expect(child2DoneEvent).toBeDefined();
+      expect(child2DoneEvent!.metadata.source).toBe('user');
+
+      unsub();
+    });
+  });
+
+  describe('integration: WorkflowEngine starts via createTestApp', () => {
+    it('app.workflowEngine exists and auto-completes when running', async () => {
+      // Create a fresh app that has its WorkflowEngine running
+      const freshApp = await createTestApp();
+
+      expect(freshApp.workflowEngine).toBeDefined();
+      expect(freshApp.workflowEngine).toBeInstanceOf(WorkflowEngine);
+
+      // Create parent + 1 child in the fresh app
+      const freshProject = freshApp.projectService.createProject({
+        name: 'Integration Project',
+        description: 'For integration test',
+      });
+
+      const parent = freshApp.taskService.createTask({
+        title: 'Parent',
+        project_id: freshProject.id,
+        created_by: 'test-user',
+      });
+
+      const child = freshApp.taskService.createTask({
+        title: 'Child',
+        project_id: freshProject.id,
+        created_by: 'test-user',
+        parent_task_id: parent.id,
+      });
+
+      // Mark child done -- parent should auto-complete (proves engine is running)
+      freshApp.taskService.updateTask(child.id, { status: 'in_progress' });
+      freshApp.taskService.updateTask(child.id, { status: 'done' });
+
+      expect(freshApp.taskService.getTask(parent.id).status).toBe('done');
+
+      // Clean up
+      freshApp.workflowEngine.stop();
     });
   });
 });

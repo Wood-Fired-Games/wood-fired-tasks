@@ -8,6 +8,8 @@ import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
 import { DependencyService } from './services/dependency.service.js';
 import { CommentService } from './services/comment.service.js';
+import { WorkflowEngine } from './services/workflow-engine.js';
+import { eventBus } from './events/event-bus.js';
 import type Database from 'better-sqlite3';
 
 /**
@@ -19,6 +21,7 @@ export interface App {
   taskService: TaskService;
   dependencyService: DependencyService;
   commentService: CommentService;
+  workflowEngine: WorkflowEngine;
 }
 
 /**
@@ -43,12 +46,22 @@ export async function createApp(dbPath?: string): Promise<App> {
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
 
+  // Create and start WorkflowEngine
+  const workflowEngine = new WorkflowEngine(
+    taskService,
+    taskRepo,
+    dependencyRepo,
+    eventBus
+  );
+  workflowEngine.start();
+
   return {
     db,
     projectService,
     taskService,
     dependencyService,
     commentService,
+    workflowEngine,
   };
 }
 
