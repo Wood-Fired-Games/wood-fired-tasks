@@ -71,14 +71,15 @@ describe('TaskService - claimTask', () => {
       // First claim succeeds
       taskService.claimTask(task.id, 'agent-1');
 
-      // Second claim should fail
+      // Second claim should fail -- task is now in_progress, so status check fires first
       expect(() => taskService.claimTask(task.id, 'agent-2')).toThrow(BusinessError);
 
       try {
         taskService.claimTask(task.id, 'agent-2');
       } catch (error) {
         expect(error).toBeInstanceOf(BusinessError);
-        expect((error as BusinessError).message).toContain('already claimed');
+        // After claiming, status becomes 'in_progress', so the status validation fires
+        expect((error as BusinessError).message).toContain('cannot be claimed');
       }
     });
   });
