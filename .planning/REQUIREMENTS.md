@@ -9,29 +9,29 @@ Requirements for v1.3 Multi-Agent Coordination. Each maps to roadmap phases.
 
 ### Event Streaming
 
-- [ ] **EVT-01**: Agent can subscribe to real-time SSE event stream via GET /api/v1/events
-- [ ] **EVT-02**: Events include task lifecycle changes (created, updated, deleted, claimed, status changed)
-- [ ] **EVT-03**: Agent can filter events by project ID via query parameter
-- [ ] **EVT-04**: Agent can filter events by event type via query parameter
-- [ ] **EVT-05**: Server sends heartbeat ping every 30 seconds to detect stale connections
-- [ ] **EVT-06**: Agent can resume from Last-Event-ID after reconnection with zero missed events
-- [ ] **EVT-07**: SSE event stream accessible via MCP resource or tool
+- [x] **EVT-01**: Agent can subscribe to real-time SSE event stream via GET /api/v1/events
+- [x] **EVT-02**: Events include task lifecycle changes (created, updated, deleted, claimed, status changed)
+- [x] **EVT-03**: Agent can filter events by project ID via query parameter
+- [x] **EVT-04**: Agent can filter events by event type via query parameter
+- [x] **EVT-05**: Server sends heartbeat ping every 30 seconds to detect stale connections
+- [x] **EVT-06**: Agent can resume from Last-Event-ID after reconnection with zero missed events
+- [x] **EVT-07**: SSE event stream accessible via MCP resource or tool
 
 ### Atomic Claiming
 
-- [ ] **CLM-01**: Agent can atomically claim an unassigned task via POST /api/v1/tasks/:id/claim
-- [ ] **CLM-02**: Concurrent claims on the same task return 409 Conflict (not crash or corruption)
-- [ ] **CLM-03**: Claimed tasks auto-release after configurable timeout (default 30 min) with no activity
-- [ ] **CLM-04**: Claim operation exposed as MCP tool (claim_task)
-- [ ] **CLM-05**: Claim operation exposed as CLI command (tasks claim)
+- [x] **CLM-01**: Agent can atomically claim an unassigned task via POST /api/v1/tasks/:id/claim
+- [x] **CLM-02**: Concurrent claims on the same task return 409 Conflict (not crash or corruption)
+- [x] **CLM-03**: Claimed tasks auto-release after configurable timeout (default 30 min) with no activity
+- [x] **CLM-04**: Claim operation exposed as MCP tool (claim_task)
+- [x] **CLM-05**: Claim operation exposed as CLI command (tasks claim)
 
 ### Workflow Automation
 
-- [ ] **WFL-01**: When all subtasks of a parent complete, parent auto-transitions to done
-- [ ] **WFL-02**: When a blocking dependency resolves, blocked task auto-transitions from blocked to open
-- [ ] **WFL-03**: Workflow-triggered state changes emit events visible via SSE stream
-- [ ] **WFL-04**: Workflow cascades enforce max depth limit (5 levels) to prevent infinite loops
-- [ ] **WFL-05**: Automated actions are attributed with source metadata (workflow vs user)
+- [x] **WFL-01**: When all subtasks of a parent complete, parent auto-transitions to done
+- [x] **WFL-02**: When a blocking dependency resolves, blocked task auto-transitions from blocked to open
+- [x] **WFL-03**: Workflow-triggered state changes emit events visible via SSE stream
+- [x] **WFL-04**: Workflow cascades enforce max depth limit (5 levels) to prevent infinite loops
+- [x] **WFL-05**: Automated actions are attributed with source metadata (workflow vs user)
 
 ## Future Requirements
 
@@ -69,23 +69,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EVT-01 | Phase 14 | Pending |
-| EVT-02 | Phase 14 | Pending |
-| EVT-03 | Phase 14 | Pending |
-| EVT-04 | Phase 14 | Pending |
-| EVT-05 | Phase 14 | Pending |
-| EVT-06 | Phase 14 | Pending |
-| EVT-07 | Phase 14 | Pending |
-| CLM-01 | Phase 15 | Pending |
-| CLM-02 | Phase 15 | Pending |
-| CLM-03 | Phase 15 | Pending |
-| CLM-04 | Phase 15 | Pending |
-| CLM-05 | Phase 15 | Pending |
-| WFL-01 | Phase 16 | Pending |
-| WFL-02 | Phase 16 | Pending |
-| WFL-03 | Phase 16 | Pending |
-| WFL-04 | Phase 16 | Pending |
-| WFL-05 | Phase 16 | Pending |
+| EVT-01 | Phase 14 | Complete |
+| EVT-02 | Phase 14 | Complete |
+| EVT-03 | Phase 14 | Complete |
+| EVT-04 | Phase 14 | Complete |
+| EVT-05 | Phase 14 | Complete |
+| EVT-06 | Phase 14 | Complete |
+| EVT-07 | Phase 14 | Complete |
+| CLM-01 | Phase 15 | Complete |
+| CLM-02 | Phase 15 | Complete |
+| CLM-03 | Phase 15 | Complete |
+| CLM-04 | Phase 15 | Complete |
+| CLM-05 | Phase 15 | Complete |
+| WFL-01 | Phase 16 | Complete |
+| WFL-02 | Phase 16 | Complete |
+| WFL-03 | Phase 16 | Complete |
+| WFL-04 | Phase 16 | Complete |
+| WFL-05 | Phase 16 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 17 total

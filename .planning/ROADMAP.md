@@ -110,9 +110,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 16-01-PLAN.md — WorkflowEngine core with TDD (parent auto-complete, cascade depth, source attribution)
-- [ ] 16-02-PLAN.md — Dependency auto-unblock and server integration (unblock logic, App/server wiring, SSE verification)
-- [ ] 16-03-PLAN.md — Transaction atomicity, edge cases, and human verification (crash safety, edge cases, end-to-end testing)
+- [x] 16-01-PLAN.md — WorkflowEngine core with TDD (parent auto-complete, cascade depth, source attribution)
+- [x] 16-02-PLAN.md — Dependency auto-unblock and server integration (unblock logic, App/server wiring, SSE verification)
+- [x] 16-03-PLAN.md — Transaction atomicity, edge cases, and human verification (crash safety, edge cases, end-to-end testing)
 
 **Success Criteria:**
 1. When all child tasks of parent transition to done, parent automatically transitions to done without manual intervention (verified by marking 3/3 subtasks complete, observing parent update)
@@ -142,7 +142,7 @@ Plans:
 | 13. Cross-Platform Installer | v1.2 | 2/2 | Complete | 2026-02-14 |
 | 14. SSE Event Infrastructure | v1.3 | 4/4 | Complete | 2026-02-14 |
 | 15. Atomic Claim Protocol | v1.3 | 3/3 | Complete | 2026-02-14 |
-| 16. Workflow Automation | v1.3 | 0/3 | Planned | - |
+| 16. Workflow Automation | v1.3 | 3/3 | Complete | 2026-02-14 |
 
 ---
 *Last updated: 2026-02-14 for v1.3 Multi-Agent Coordination*
