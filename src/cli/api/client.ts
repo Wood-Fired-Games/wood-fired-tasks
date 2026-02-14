@@ -284,6 +284,28 @@ export async function getSubtasks(parentTaskId: number): Promise<TaskResponse[]>
   return apiRequest<TaskResponse[]>(`/api/v1/tasks/${parentTaskId}/subtasks`);
 }
 
+// ── Claim functions ─────────────────────────────────────────
+
+/**
+ * Claim a task atomically.
+ * Sets assignee and transitions status to in_progress in a single operation.
+ */
+export async function claimTask(
+  taskId: number,
+  assignee: string,
+  idempotencyKey?: string
+): Promise<TaskResponse> {
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) {
+    headers['X-Idempotency-Key'] = idempotencyKey;
+  }
+  return apiRequest<TaskResponse>(`/api/v1/tasks/${taskId}/claim`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee }),
+    headers,
+  });
+}
+
 // ── Health check functions ──────────────────────────────────
 
 /**

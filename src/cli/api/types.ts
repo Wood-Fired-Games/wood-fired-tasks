@@ -73,6 +73,9 @@ export interface ApiErrorResponse {
   details?: unknown;
 }
 
+// ── Claim types ─────────────────────────────────────────────
+// ClaimTask response is TaskResponse (claimed task with updated assignee/status)
+
 // ── Dependency types ────────────────────────────────────────
 
 /**
