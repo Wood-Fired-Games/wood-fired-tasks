@@ -51,10 +51,10 @@ See: [milestones/v1.1-ROADMAP.md](./milestones/v1.1-ROADMAP.md) for full details
   2. All logging routed to stderr or log files (no console.log to stdout)
   3. Claude Code can invoke any MCP tool successfully via /mcp command
   4. Health check tool returns service status without transport errors
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 11-01: TBD
+- [ ] 11-01-PLAN.md — Fix stdout pollution (Umzug logger) and add automated stdio compliance tests
 
 ### Phase 12: Skill File Authoring
 **Goal**: 10 curated workflow skills ready to use with verified MCP tool names
