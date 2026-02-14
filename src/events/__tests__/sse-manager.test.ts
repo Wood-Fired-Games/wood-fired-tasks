@@ -10,9 +10,12 @@ function createMockReply(): any {
 
   return {
     raw,
-    sse: vi.fn((data: any) => {
-      sentEvents.push(data);
-    }),
+    sse: {
+      send: vi.fn((data: any) => {
+        sentEvents.push(data);
+        return Promise.resolve();
+      }),
+    },
     _getSentEvents: () => sentEvents,
   };
 }
@@ -47,7 +50,7 @@ describe('SSEManager', () => {
       };
 
       manager.broadcast(event);
-      expect(reply.sse).toHaveBeenCalled();
+      expect(reply.sse.send).toHaveBeenCalled();
     });
 
     it('should replay missed events when Last-Event-ID provided', () => {
@@ -77,7 +80,7 @@ describe('SSEManager', () => {
       const sentEvents = reply._getSentEvents();
       expect(sentEvents.length).toBe(1);
       expect(sentEvents[0].id).toBe('2');
-      expect(JSON.parse(sentEvents[0].data)).toMatchObject(event2);
+      expect(sentEvents[0].data).toMatchObject(event2);
     });
 
     it('should cleanup connection on close event', () => {
@@ -98,7 +101,7 @@ describe('SSEManager', () => {
       };
 
       manager.broadcast(event);
-      expect(reply.sse).not.toHaveBeenCalled(); // Should not be called since connection was removed
+      expect(reply.sse.send).not.toHaveBeenCalled(); // Should not be called since connection was removed
     });
 
     it('should cleanup connection on error event', () => {
@@ -119,7 +122,7 @@ describe('SSEManager', () => {
       };
 
       manager.broadcast(event);
-      expect(reply.sse).not.toHaveBeenCalled();
+      expect(reply.sse.send).not.toHaveBeenCalled();
     });
   });
 
@@ -140,7 +143,7 @@ describe('SSEManager', () => {
       };
 
       manager.broadcast(event);
-      expect(reply.sse).not.toHaveBeenCalled();
+      expect(reply.sse.send).not.toHaveBeenCalled();
     });
   });
 
@@ -162,15 +165,15 @@ describe('SSEManager', () => {
 
       manager.broadcast(event);
 
-      expect(reply1.sse).toHaveBeenCalledWith({
+      expect(reply1.sse.send).toHaveBeenCalledWith({
         id: '1',
         event: 'task.created',
-        data: JSON.stringify(event),
+        data: event,
       });
-      expect(reply2.sse).toHaveBeenCalledWith({
+      expect(reply2.sse.send).toHaveBeenCalledWith({
         id: '1',
         event: 'task.created',
-        data: JSON.stringify(event),
+        data: event,
       });
     });
 
@@ -191,12 +194,12 @@ describe('SSEManager', () => {
 
       manager.broadcast(event);
 
-      expect(reply1.sse).toHaveBeenCalledWith({
+      expect(reply1.sse.send).toHaveBeenCalledWith({
         id: '1',
         event: 'task.created',
-        data: JSON.stringify(event),
+        data: event,
       });
-      expect(reply2.sse).not.toHaveBeenCalled(); // Filtered out
+      expect(reply2.sse.send).not.toHaveBeenCalled(); // Filtered out
     });
 
     it('should filter events by event_types', () => {
@@ -216,12 +219,12 @@ describe('SSEManager', () => {
 
       manager.broadcast(event);
 
-      expect(reply1.sse).toHaveBeenCalledWith({
+      expect(reply1.sse.send).toHaveBeenCalledWith({
         id: '1',
         event: 'task.created',
-        data: JSON.stringify(event),
+        data: event,
       });
-      expect(reply2.sse).not.toHaveBeenCalled(); // Filtered out
+      expect(reply2.sse.send).not.toHaveBeenCalled(); // Filtered out
     });
 
     it('should add events to buffer for Last-Event-ID replay', () => {
@@ -242,17 +245,15 @@ describe('SSEManager', () => {
 
       const sentEvents = reply._getSentEvents();
       expect(sentEvents.length).toBe(1);
-      expect(JSON.parse(sentEvents[0].data)).toMatchObject(event);
+      expect(sentEvents[0].data).toMatchObject(event);
     });
 
-    it('should remove connection if send fails', () => {
+    it('should remove connection if send fails', async () => {
       manager = new SSEManager();
       const reply = createMockReply();
 
-      // Make sse throw an error
-      reply.sse.mockImplementationOnce(() => {
-        throw new Error('Connection closed');
-      });
+      // Make sse.send reject
+      reply.sse.send.mockRejectedValue(new Error('Connection closed'));
 
       manager.addConnection('conn-1', reply, {});
 
@@ -265,13 +266,18 @@ describe('SSEManager', () => {
 
       manager.broadcast(event);
 
-      // Try to broadcast again - connection should be removed
-      reply.sse.mockImplementation((data: any) => {
-        reply._getSentEvents().push(data);
-      });
+      // Wait for promise rejection to be handled and connection to be removed
+      await Promise.resolve();
+      await Promise.resolve();
 
+      // Reset mock
+      reply.sse.send.mockClear();
+      reply.sse.send.mockResolvedValue(undefined);
+
+      // Try to broadcast again - connection should be removed, so send should not be called
       manager.broadcast(event);
-      expect(reply.sse).toHaveBeenCalledTimes(1); // Only the failed call, not the second broadcast
+
+      expect(reply.sse.send).not.toHaveBeenCalled(); // Connection was removed, no call
     });
   });
 
@@ -285,22 +291,23 @@ describe('SSEManager', () => {
       // Advance time by 30 seconds
       vi.advanceTimersByTime(30000);
 
-      expect(reply.sse).toHaveBeenCalledWith({ event: 'ping', data: '' });
+      expect(reply.sse.send).toHaveBeenCalledWith({ event: 'ping', data: '' });
     });
 
-    it('should remove stale connections on heartbeat failure', () => {
+    it('should remove stale connections on heartbeat failure', async () => {
       manager = new SSEManager();
       const reply = createMockReply();
 
       manager.addConnection('conn-1', reply, {});
 
       // Make heartbeat fail
-      reply.sse.mockImplementationOnce(() => {
-        throw new Error('Connection closed');
-      });
+      reply.sse.send.mockRejectedValueOnce(new Error('Connection closed'));
 
       // Advance time to trigger heartbeat
       vi.advanceTimersByTime(30000);
+
+      // Wait for promise rejection to be handled
+      await Promise.resolve();
 
       // Verify connection removed
       const event: EventPayload<unknown> = {
@@ -310,12 +317,11 @@ describe('SSEManager', () => {
         metadata: { source: 'user' },
       };
 
-      reply.sse.mockImplementation((data: any) => {
-        reply._getSentEvents().push(data);
-      });
+      reply.sse.send.mockResolvedValue(undefined);
 
       manager.broadcast(event);
-      expect(reply.sse).toHaveBeenCalledTimes(1); // Only the failed heartbeat call
+
+      expect(reply.sse.send).toHaveBeenCalledTimes(1); // Only the failed heartbeat call
     });
 
     it('should enforce max connection age', () => {
@@ -339,7 +345,7 @@ describe('SSEManager', () => {
       };
 
       manager.broadcast(event);
-      expect(reply.sse).not.toHaveBeenCalledWith(
+      expect(reply.sse.send).not.toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'task.created',
         })
@@ -416,7 +422,7 @@ describe('SSEManager', () => {
 
       // Advance time - no heartbeat should fire
       vi.advanceTimersByTime(30000);
-      expect(reply.sse).not.toHaveBeenCalled();
+      expect(reply.sse.send).not.toHaveBeenCalled();
 
       // Broadcast should not reach any connections
       const event: EventPayload<unknown> = {
@@ -427,7 +433,7 @@ describe('SSEManager', () => {
       };
 
       manager.broadcast(event);
-      expect(reply.sse).not.toHaveBeenCalled();
+      expect(reply.sse.send).not.toHaveBeenCalled();
     });
   });
 });
