@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A centralized task tracking service for Wood Fired Games running as a persistent service on a local Ubuntu Linux machine. It provides a REST API (19 endpoints), MCP server (12 tools), and CLI for managing work items across all projects. LLM agents interact via REST or MCP; Stuart interacts via CLI.
+A centralized task tracking service for Wood Fired Games running as a persistent service on a local Ubuntu Linux machine. It provides a REST API (19 endpoints), MCP server (25 tools), and CLI (19 commands) for managing work items across all projects. LLM agents interact via REST or MCP; Stuart interacts via CLI. All three interfaces have full feature parity.
 
 ## Core Value
 
@@ -22,14 +22,16 @@ Any agent on the local network can reliably create, find, and update work items 
 - Rich metadata: tags/labels, due dates, time estimates, comments with author/timestamp — v1.0
 - Multi-project support with project CRUD — v1.0
 - Full task lifecycle with enforced status transitions: open -> in_progress -> done -> closed, with blocked state — v1.0
+- MCP server exposes tools for all REST API endpoints (25 tools: tasks, projects, deps, comments, subtasks, health) — v1.1
+- CLI supports all REST API operations (19 commands: tasks, projects, deps, comments, subtasks, health) — v1.1
+- CLI `--json` flag on all commands for machine-readable output with consistent envelope format — v1.1
+- CLI interactive prompts when required fields are missing (`--no-input` to disable) — v1.1
+- CLI improved table formatting with color-coded priorities/statuses, `NO_COLOR` support — v1.1
+- CLI confirmation prompts before destructive actions (`--force` to skip) — v1.1
 
 ### Active
 
-- MCP server exposes tools for all REST API endpoints (project CRUD, health) — v1.1
-- CLI supports all REST API operations (projects, delete, dependencies, comments, subtasks, estimates, health) — v1.1
-- CLI `--json` flag on all commands for machine-readable output — v1.1
-- CLI interactive prompts when required fields are missing — v1.1
-- CLI improved table formatting with color-coded priorities and statuses — v1.1
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -38,16 +40,25 @@ Any agent on the local network can reliably create, find, and update work items 
 - Real-time push notifications — agents poll or query as needed; webhooks in v2
 - Cloud hosting — runs on local Ubuntu machine only
 - User accounts / multi-user auth — API key auth is sufficient for single operator + agents
+- CLI pagination — users can pipe to `less` or use filters
+- CLI auto-update checking — manual update is fine
+- CLI arbitrary command abbreviations — prevents adding new commands; use shell aliases
 
 ## Context
 
-Shipped v1.0 with 9,020 lines of TypeScript across 117 files.
-Tech stack: Node.js, Fastify, better-sqlite3, MCP SDK, Commander.js, Zod, Pino.
-250 tests passing. Zero TypeScript errors. Zero warnings.
+Shipped v1.1 with 13,795 lines of TypeScript.
+357 tests passing across 32 test files. Zero TypeScript errors.
+
+Tech stack: Node.js, Fastify, better-sqlite3, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4.
 
 Primary consumers are LLM agents (Claude Code and others) running on the local network.
 Stuart is the sole human user, interacting via the `tasks` CLI.
 The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
+
+Interface inventory:
+- REST API: 19 endpoints (tasks CRUD, projects CRUD, dependencies, comments, subtasks, health)
+- MCP Server: 25 tools (same coverage as REST)
+- CLI: 19 commands (same coverage as REST + interactive prompts)
 
 ## Constraints
 
@@ -67,17 +78,11 @@ The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 | CLI over web UI | Stuart prefers terminal; agents don't need UI | Good — Commander.js CLI with colored table output works well |
 | Fastify + Zod type provider | Schema-driven validation, auto OpenAPI generation | Good — Zod schemas shared across REST + MCP for consistent validation |
 | Status lifecycle enforcement | Prevents invalid state transitions at service layer | Good — 14 tests verify all valid/invalid transitions |
-
-## Current Milestone: v1.1 Interface Parity & CLI Polish
-
-**Goal:** Full 1:1 feature parity across REST API, MCP server, and CLI — plus CLI UX improvements.
-
-**Target features:**
-- MCP tools for project CRUD and health check (closing the 7-tool gap)
-- CLI commands for every REST endpoint (projects, task delete, dependencies, comments, subtasks, estimates, health)
-- `--json` flag on all CLI commands for scripting and piping
-- Interactive prompts when required fields are missing
-- Better table formatting with color-coded statuses and priorities
+| chalk v4 over v5 | CJS/ESM compatibility via esModuleInterop; v5 is ESM-only | Good — avoids module resolution issues |
+| @clack/prompts over inquirer | Modern, lightweight, handles Ctrl+C automatically | Good — clean UX with minimal dependency footprint |
+| process.argv for flag detection | Avoids circular dependencies with Commander option parsing | Good — reliable for --json, --no-input, --force detection |
+| Flat hyphenated CLI commands | Commander subcommand nesting adds complexity for no benefit | Good — `project-create` is as discoverable as `project create` |
+| Content-Type only with body | DELETE requests fail with empty JSON content-type | Good — fixed bug found during live demo |
 
 ---
-*Last updated: 2026-02-13 after v1.1 milestone started*
+*Last updated: 2026-02-13 after v1.1 milestone shipped*
