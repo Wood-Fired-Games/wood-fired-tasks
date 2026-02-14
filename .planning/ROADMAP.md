@@ -40,7 +40,7 @@ See: [milestones/v1.1-ROADMAP.md](./milestones/v1.1-ROADMAP.md) for full details
 
 - [x] **Phase 11: MCP Server Verification** - Confirm stdio transport compliance -- completed 2026-02-13
 - [x] **Phase 12: Skill File Authoring** - Create 10 workflow skills -- completed 2026-02-14
-- [ ] **Phase 13: Cross-Platform Installer** - Bash and PowerShell setup automation
+- [x] **Phase 13: Cross-Platform Installer** - Bash and PowerShell setup automation -- completed 2026-02-14
 
 ### Phase 11: MCP Server Verification
 **Goal**: MCP server confirmed stdio-compliant with no stdout logging violations
@@ -94,8 +94,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 13-01-PLAN.md — Bash installer (install.sh) for Linux/macOS
-- [ ] 13-02-PLAN.md — PowerShell installer (install.ps1) for Windows
+- [x] 13-01-PLAN.md — Bash installer (install.sh) for Linux/macOS -- completed 2026-02-14
+- [x] 13-02-PLAN.md — PowerShell installer (install.ps1) for Windows -- completed 2026-02-14
 
 ## Progress
 
@@ -116,4 +116,4 @@ Phases execute in numeric order: 11 → 12 → 13
 | 10. Testing & Integration | v1.1 | 0/0 | Complete | 2026-02-13 |
 | 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
 | 12. Skill File Authoring | v1.2 | 4/4 | Complete | 2026-02-14 |
-| 13. Cross-Platform Installer | v1.2 | 0/2 | Not started | - |
+| 13. Cross-Platform Installer | v1.2 | 2/2 | Complete | 2026-02-14 |

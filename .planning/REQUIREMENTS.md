@@ -27,19 +27,19 @@ Requirements for v1.2 Claude Code Skills & Installer. Each maps to roadmap phase
 
 ### Installer — Linux
 
-- [ ] **LINX-01**: Bash installer copies skill files to ~/.claude/commands/tasks/
-- [ ] **LINX-02**: Bash installer merges MCP server config into Claude Code settings preserving existing servers
-- [ ] **LINX-03**: Bash installer writes API key to MCP config env section
-- [ ] **LINX-04**: Bash installer backs up existing Claude Code config before modification
-- [ ] **LINX-05**: Bash installer validates connectivity to wood-fired-bugs service after setup
+- [x] **LINX-01**: Bash installer copies skill files to ~/.claude/commands/tasks/
+- [x] **LINX-02**: Bash installer merges MCP server config into Claude Code settings preserving existing servers
+- [x] **LINX-03**: Bash installer writes API key to MCP config env section
+- [x] **LINX-04**: Bash installer backs up existing Claude Code config before modification
+- [x] **LINX-05**: Bash installer validates connectivity to wood-fired-bugs service after setup
 
 ### Installer — Windows
 
-- [ ] **WIN-01**: PowerShell installer copies skill files to appropriate Windows location
-- [ ] **WIN-02**: PowerShell installer merges MCP server config into Claude Code settings preserving existing servers
-- [ ] **WIN-03**: PowerShell installer merges API key to MCP config env section
-- [ ] **WIN-04**: PowerShell installer backs up existing Claude Code config before modification
-- [ ] **WIN-05**: PowerShell installer validates connectivity to wood-fired-bugs service after setup
+- [x] **WIN-01**: PowerShell installer copies skill files to appropriate Windows location
+- [x] **WIN-02**: PowerShell installer merges MCP server config into Claude Code settings preserving existing servers
+- [x] **WIN-03**: PowerShell installer merges API key to MCP config env section
+- [x] **WIN-04**: PowerShell installer backs up existing Claude Code config before modification
+- [x] **WIN-05**: PowerShell installer validates connectivity to wood-fired-bugs service after setup
 
 ## Future Requirements
 
@@ -87,16 +87,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKILL-08 | Phase 12 | Complete |
 | SKILL-09 | Phase 12 | Complete |
 | SKILL-10 | Phase 12 | Complete |
-| LINX-01 | Phase 13 | Pending |
-| LINX-02 | Phase 13 | Pending |
-| LINX-03 | Phase 13 | Pending |
-| LINX-04 | Phase 13 | Pending |
-| LINX-05 | Phase 13 | Pending |
-| WIN-01 | Phase 13 | Pending |
-| WIN-02 | Phase 13 | Pending |
-| WIN-03 | Phase 13 | Pending |
-| WIN-04 | Phase 13 | Pending |
-| WIN-05 | Phase 13 | Pending |
+| LINX-01 | Phase 13 | Complete |
+| LINX-02 | Phase 13 | Complete |
+| LINX-03 | Phase 13 | Complete |
+| LINX-04 | Phase 13 | Complete |
+| LINX-05 | Phase 13 | Complete |
+| WIN-01 | Phase 13 | Complete |
+| WIN-02 | Phase 13 | Complete |
+| WIN-03 | Phase 13 | Complete |
+| WIN-04 | Phase 13 | Complete |
+| WIN-05 | Phase 13 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 22 total
@@ -105,4 +105,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-14 after Phase 12 completion*
+*Last updated: 2026-02-14 after Phase 13 completion*
