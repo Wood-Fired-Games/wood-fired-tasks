@@ -13,6 +13,7 @@ import { DependencyService } from '../services/dependency.service.js';
 import { CommentService } from '../services/comment.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
+import { ClaimReleaseService } from '../services/claim-release.service.js';
 import { eventBus } from '../events/event-bus.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
@@ -89,6 +90,22 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   eventBus.subscribe('project.created', (event) => sseManager.broadcast(event));
   eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event));
   eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event));
+
+  // Create and start ClaimReleaseService for auto-releasing stale claims
+  const claimReleaseService = new ClaimReleaseService(app.db);
+  claimReleaseService.start(); // Sweep every 5 minutes by default
+
+  // Start periodic idempotency key cleanup (every hour)
+  const idempotencyCleanupInterval = setInterval(() => {
+    idempotencyService.cleanup();
+  }, 60 * 60 * 1000);
+
+  // Cleanup on server close
+  server.addHook('onClose', async () => {
+    clearInterval(idempotencyCleanupInterval);
+    claimReleaseService.stop();
+    sseManager.shutdown();
+  });
 
   // Set custom error handler (must be set before routes)
   server.setErrorHandler(errorHandler);
