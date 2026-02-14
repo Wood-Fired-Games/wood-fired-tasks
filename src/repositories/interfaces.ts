@@ -29,6 +29,7 @@ export interface ITaskRepository {
   findByFilters(filters: TaskFilters): Array<Task & { tags: string[] }>;
   findChildren(parentId: number): Array<Task & { tags: string[] }>;
   count(filters?: TaskFilters): number;
+  claimTask(id: number, assignee: string): (Task & { tags: string[] }) | null;
 }
 
 export interface IDependencyRepository {

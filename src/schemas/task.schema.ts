@@ -63,3 +63,12 @@ export const TaskFiltersSchema = z.object({
 }).partial();
 
 export type TaskFiltersInput = z.infer<typeof TaskFiltersSchema>;
+
+/**
+ * ClaimTaskSchema - validation for claiming a task
+ */
+export const ClaimTaskSchema = z.object({
+  assignee: z.string().min(1, 'Assignee is required').max(100),
+});
+
+export type ClaimTaskInput = z.infer<typeof ClaimTaskSchema>;

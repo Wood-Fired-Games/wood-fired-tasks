@@ -221,6 +221,44 @@ export class TaskService {
   }
 
   /**
+   * Claim a task atomically for an agent
+   * Uses CAS (Compare-And-Swap) pattern with BEGIN IMMEDIATE for SQLite concurrency safety
+   */
+  claimTask(taskId: number, assignee: string, source: 'user' | 'workflow' = 'user'): Task & { tags: string[] } {
+    // Validate task exists
+    const existing = this.taskRepo.findById(taskId);
+    if (!existing) {
+      throw new NotFoundError('Task', taskId);
+    }
+
+    // Validate task is in claimable state
+    if (existing.status !== 'open') {
+      throw new BusinessError(`Task ${taskId} cannot be claimed: status is '${existing.status}', must be 'open'`);
+    }
+
+    if (existing.assignee) {
+      throw new BusinessError(`Task ${taskId} is already claimed by '${existing.assignee}'`);
+    }
+
+    // Attempt atomic claim via repository
+    const claimed = this.taskRepo.claimTask(taskId, assignee);
+    if (!claimed) {
+      // CAS failed - another agent claimed it between our check and the update
+      throw new BusinessError(`Task ${taskId} is already claimed (concurrent claim detected)`);
+    }
+
+    // Emit task.claimed event after successful claim
+    eventBus.emit('task.claimed', {
+      eventType: 'task.claimed',
+      timestamp: new Date().toISOString(),
+      data: claimed,
+      metadata: { source }
+    });
+
+    return claimed;
+  }
+
+  /**
    * Get all subtasks (children) of a parent task
    */
   getSubtasks(taskId: number): Array<Task & { tags: string[] }> {

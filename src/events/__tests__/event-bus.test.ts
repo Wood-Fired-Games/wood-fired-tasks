@@ -39,6 +39,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: ['test']
         },
         metadata: {
@@ -74,6 +76,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: []
         },
         metadata: {
@@ -114,6 +118,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: []
         },
         metadata: {
@@ -153,6 +159,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: []
         },
         metadata: {
@@ -186,6 +194,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: []
         },
         metadata: {
@@ -225,6 +235,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: []
         },
         metadata: {
@@ -269,6 +281,8 @@ describe('EventBus', () => {
           due_date: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          version: 1,
+          claimed_at: null,
           tags: []
         },
         metadata: {

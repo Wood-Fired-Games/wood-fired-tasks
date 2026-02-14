@@ -18,6 +18,8 @@ export const TaskResponseSchema = z.object({
   due_date: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  version: z.number(),
+  claimed_at: z.string().nullable(),
   tags: z.array(z.string()),
 });
 

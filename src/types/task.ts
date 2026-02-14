@@ -29,6 +29,8 @@ export interface Task {
   due_date: string | null; // ISO8601
   created_at: string; // ISO8601
   updated_at: string; // ISO8601
+  version: number;
+  claimed_at: string | null;
 }
 
 export interface Project {

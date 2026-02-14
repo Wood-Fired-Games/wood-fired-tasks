@@ -273,6 +273,35 @@ export class TaskRepository implements ITaskRepository {
     });
   }
 
+  claimTask(id: number, assignee: string): (Task & { tags: string[] }) | null {
+    // Use .immediate() to acquire write lock early (BEGIN IMMEDIATE)
+    // This prevents SQLITE_BUSY when multiple agents try to claim simultaneously
+    const claimTransaction = this.db.transaction(() => {
+      // Read current task state
+      const task = this.findByIdStmt.get(id) as (import('../types/task.js').Task) | undefined;
+      if (!task) return null;
+
+      // CAS: only claim if unassigned and status is 'open'
+      const claimStmt = this.db.prepare(
+        `UPDATE tasks
+         SET assignee = ?, status = 'in_progress', version = version + 1,
+             claimed_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ? AND assignee IS NULL AND status = 'open' AND version = ?`
+      );
+      const info = claimStmt.run(assignee, id, task.version);
+
+      if (info.changes === 0) {
+        // CAS failed - task was already claimed or status changed
+        return null;
+      }
+
+      return this.findById(id);
+    });
+
+    // Execute with BEGIN IMMEDIATE to acquire write lock early
+    return claimTransaction.immediate();
+  }
+
   findChildren(parentId: number): Array<Task & { tags: string[] }> {
     const query = `
       SELECT
