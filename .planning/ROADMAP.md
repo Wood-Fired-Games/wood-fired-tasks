@@ -39,7 +39,7 @@ See: [milestones/v1.1-ROADMAP.md](./milestones/v1.1-ROADMAP.md) for full details
 **Milestone Goal:** Make wood-fired-bugs accessible from any Claude Code session via curated slash command skills and a cross-platform installer.
 
 - [x] **Phase 11: MCP Server Verification** - Confirm stdio transport compliance -- completed 2026-02-13
-- [ ] **Phase 12: Skill File Authoring** - Create 10 workflow skills
+- [x] **Phase 12: Skill File Authoring** - Create 10 workflow skills -- completed 2026-02-14
 - [ ] **Phase 13: Cross-Platform Installer** - Bash and PowerShell setup automation
 
 ### Phase 11: MCP Server Verification
@@ -74,10 +74,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Create log-bug, create-task, and my-work skill files
-- [ ] 12-02-PLAN.md — Create show-task, search, and pick-up skill files
-- [ ] 12-03-PLAN.md — Create done, blocked, and add-comment skill files
-- [ ] 12-04-PLAN.md — Create project-status skill file
+- [x] 12-01-PLAN.md — Create log-bug, create-task, and my-work skill files -- completed 2026-02-14
+- [x] 12-02-PLAN.md — Create show-task, search, and pick-up skill files -- completed 2026-02-14
+- [x] 12-03-PLAN.md — Create done, blocked, and add-comment skill files -- completed 2026-02-14
+- [x] 12-04-PLAN.md — Create project-status skill file -- completed 2026-02-14
 
 ### Phase 13: Cross-Platform Installer
 **Goal**: Bash and PowerShell installers that copy skills, configure MCP server, and validate connectivity
@@ -114,5 +114,5 @@ Phases execute in numeric order: 11 → 12 → 13
 | 9. MCP Tool Expansion | v1.1 | 2/2 | Complete | 2026-02-13 |
 | 10. Testing & Integration | v1.1 | 0/0 | Complete | 2026-02-13 |
 | 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
-| 12. Skill File Authoring | v1.2 | 0/4 | Not started | - |
+| 12. Skill File Authoring | v1.2 | 4/4 | Complete | 2026-02-14 |
 | 13. Cross-Platform Installer | v1.2 | 0/TBD | Not started | - |
