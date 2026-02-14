@@ -105,6 +105,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     clearInterval(idempotencyCleanupInterval);
     claimReleaseService.stop();
     sseManager.shutdown();
+    app.workflowEngine.stop();
   });
 
   // Set custom error handler (must be set before routes)
