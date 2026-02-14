@@ -71,10 +71,13 @@ Plans:
   8. User can mark task blocked via /tasks:blocked with reason
   9. User can add comment to task via /tasks:add-comment
   10. User can view project overview via /tasks:project-status
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 12-01: TBD
+- [ ] 12-01-PLAN.md — Create log-bug, create-task, and my-work skill files
+- [ ] 12-02-PLAN.md — Create show-task, search, and pick-up skill files
+- [ ] 12-03-PLAN.md — Create done, blocked, and add-comment skill files
+- [ ] 12-04-PLAN.md — Create project-status skill file
 
 ### Phase 13: Cross-Platform Installer
 **Goal**: Bash and PowerShell installers that copy skills, configure MCP server, and validate connectivity
@@ -111,5 +114,5 @@ Phases execute in numeric order: 11 → 12 → 13
 | 9. MCP Tool Expansion | v1.1 | 2/2 | Complete | 2026-02-13 |
 | 10. Testing & Integration | v1.1 | 0/0 | Complete | 2026-02-13 |
 | 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
-| 12. Skill File Authoring | v1.2 | 0/TBD | Not started | - |
+| 12. Skill File Authoring | v1.2 | 0/4 | Not started | - |
 | 13. Cross-Platform Installer | v1.2 | 0/TBD | Not started | - |
