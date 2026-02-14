@@ -107,6 +107,13 @@ Plans:
 
 **Requirements:** WFL-01, WFL-02, WFL-03, WFL-04, WFL-05
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — WorkflowEngine core with TDD (parent auto-complete, cascade depth, source attribution)
+- [ ] 16-02-PLAN.md — Dependency auto-unblock and server integration (unblock logic, App/server wiring, SSE verification)
+- [ ] 16-03-PLAN.md — Transaction atomicity, edge cases, and human verification (crash safety, edge cases, end-to-end testing)
+
 **Success Criteria:**
 1. When all child tasks of parent transition to done, parent automatically transitions to done without manual intervention (verified by marking 3/3 subtasks complete, observing parent update)
 2. When blocking dependency transitions to done, blocked task automatically transitions from blocked to open (verified by completing Task A which blocks Task B, observing Task B unblock)
@@ -135,7 +142,7 @@ Plans:
 | 13. Cross-Platform Installer | v1.2 | 2/2 | Complete | 2026-02-14 |
 | 14. SSE Event Infrastructure | v1.3 | 4/4 | Complete | 2026-02-14 |
 | 15. Atomic Claim Protocol | v1.3 | 3/3 | Complete | 2026-02-14 |
-| 16. Workflow Automation | v1.3 | 0/? | Pending | - |
+| 16. Workflow Automation | v1.3 | 0/3 | Planned | - |
 
 ---
 *Last updated: 2026-02-14 for v1.3 Multi-Agent Coordination*
