@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-14T16:32:39Z
+**Last Updated:** 2026-02-14T16:45:59Z
 
 ## Project Reference
 
@@ -12,15 +12,15 @@
 
 **Milestone:** v1.3 Multi-Agent Coordination
 **Phase:** 16 - Workflow Automation
-**Plan:** 02 (2/3 plans complete)
-**Status:** Executing Phase 16 plans
+**Plan:** 03 (3/3 plans complete)
+**Status:** Phase 16 COMPLETE - all plans executed
 
 **Progress Bar:**
 ```
 v1.0 ████████████████████ 100% (6/6 phases complete)
 v1.1 ████████████████████ 100% (4/4 phases complete)
 v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ████████████████░░░░  75% (2/3 phases, 9/12 plans complete)
+v1.3 ████████████████████ 100% (3/3 phases, 12/12 plans complete)
 ```
 
 ## Performance Metrics
@@ -33,8 +33,8 @@ v1.3 ████████████████░░░░  75% (2/3 phas
 **Current Milestone:**
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 9/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE, Phase 16: 2/3)
-- Tests: 507 passing (0 failing)
+- Plans: 12/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE, Phase 16: 3/3 COMPLETE)
+- Tests: 513 passing (0 failing)
 
 ## Accumulated Context
 
@@ -63,6 +63,9 @@ v1.3 ████████████████░░░░  75% (2/3 phas
 | Stop app WorkflowEngine in test beforeEach | createApp auto-starts engine; tests creating their own need isolation | 16-02 |
 | Auto-unblock participates in cascade depth | Unblock emits events that could trigger further workflow; depth prevents loops | 16-02 |
 | Auto-unblock only for blocked status tasks | Tasks in other statuses should not be modified when dependency resolves | 16-02 |
+| Wrap cascade at depth 0 in db.transaction() | Atomic rollback for crash safety; nested repo calls become savepoints | 16-03 |
+| Track cascadeError internally for EventBus bypass | EventBus wraps handlers in try/catch; internal tracking ensures rollback | 16-03 |
+| Add db as 5th WorkflowEngine constructor param | Minimal API change; db already available at all construction sites | 16-03 |
 
 ### Open Questions
 
@@ -80,6 +83,8 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### Recent Completions
 
+- [x] Phase 16 Plan 03 complete (2026-02-14) — Transaction atomicity + edge case tests (242s, 6 new tests, 513 total)
+- [x] Phase 16 COMPLETE (2026-02-14) — All 3 plans executed, 5/5 WFL requirements satisfied
 - [x] Phase 16 Plan 02 complete (2026-02-14) — Dependency auto-unblock + app lifecycle wiring (233s, 7 new tests, 507 total)
 - [x] Phase 16 Plan 01 complete (2026-02-14) — WorkflowEngine parent auto-complete with cascade depth (248s, 7 new tests, 500 total)
 - [x] Phase 15 VERIFIED (2026-02-14) — 5/5 success criteria passed, 20-agent concurrency test added (493 total passing)
@@ -98,20 +103,19 @@ None (roadmap approved, awaiting plan-phase execution).
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 16 Plan 02 (Dependency Auto-Unblock + App Lifecycle Wiring). Added dependency auto-unblock to WorkflowEngine and wired it into createApp/server lifecycle. 507 total tests passing, zero TypeScript errors.
+Completed Phase 16 Plan 03 (Transaction Atomicity + Edge Cases). Added db.transaction() wrapping for atomic cascade rollback and 6 edge case tests. Phase 16 COMPLETE. All v1.3 plans executed.
 
 **What's Next:**
-Phase 16 Plan 03 (final workflow automation plan).
+v1.3 milestone closure / human verification of end-to-end workflow automation.
 
 **Context for Next Session:**
-- Phase 16 Plan 02 COMPLETE: Dependency auto-unblock + app lifecycle wiring
-- WorkflowEngine now handles both parent auto-complete AND dependency auto-unblock
-- Completing a blocker auto-transitions blocked tasks to 'open' when ALL blockers are done
-- WorkflowEngine added to App interface and createApp (starts automatically)
-- server.ts onClose hook calls workflowEngine.stop()
-- Tests stop app.workflowEngine in beforeEach for isolation
-- 507 tests passing across full suite (14 workflow engine tests)
+- Phase 16 Plan 03 COMPLETE: Transaction atomicity + edge case tests
+- All 12/12 v1.3 plans executed across 3 phases (14, 15, 16)
+- WorkflowEngine cascade operations are now atomic (db.transaction wrapping)
+- CascadeError tracking ensures errors propagate through EventBus error isolation
+- 20 workflow engine tests, 513 total tests passing
 - Zero TypeScript errors, zero regressions
+- v1.3 milestone ready for closure pending human verification
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
