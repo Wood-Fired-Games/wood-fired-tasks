@@ -66,7 +66,12 @@ function createUmzug(db: Database.Database): Umzug<Database.Database> {
     },
     context: db,
     storage: new SQLiteStorage(db),
-    logger: console,
+    logger: {
+      info: (msg: Record<string, unknown>) => console.error('[migration]', msg),
+      warn: (msg: Record<string, unknown>) => console.error('[migration:warn]', msg),
+      error: (msg: Record<string, unknown>) => console.error('[migration:error]', msg),
+      debug: (msg: Record<string, unknown>) => console.error('[migration:debug]', msg),
+    },
   });
 }
 
