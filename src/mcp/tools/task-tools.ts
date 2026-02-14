@@ -8,12 +8,13 @@ import { convertToMcpError } from '../errors.js';
 /**
  * Register all task-related MCP tools
  *
- * Registers 5 tools for task CRUD operations:
+ * Registers 6 tools for task CRUD operations plus claim:
  * - create_task: Create a new task
  * - get_task: Get task by ID
  * - update_task: Update existing task
  * - list_tasks: List tasks with filters
  * - delete_task: Delete task by ID
+ * - claim_task: Atomically claim an unassigned task
  */
 export function registerTaskTools(
   server: McpServer,
@@ -184,6 +185,35 @@ export function registerTaskTools(
               text: `Task ${args.id} deleted successfully.`,
             },
           ],
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    }
+  );
+
+  // Tool: claim_task
+  server.registerTool(
+    'claim_task',
+    {
+      description:
+        'Atomically claim an unassigned task, setting assignee and transitioning status to in_progress. Returns 409-equivalent error if already claimed.',
+      inputSchema: z.object({
+        task_id: z.number().int().positive(),
+        assignee: z.string().min(1).max(100),
+      }),
+    },
+    async (args) => {
+      try {
+        const task = taskService.claimTask(args.task_id, args.assignee);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Task ${args.task_id} claimed by "${args.assignee}" (Status: ${task.status})`,
+            },
+          ],
+          structuredContent: task as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         throw convertToMcpError(error);
