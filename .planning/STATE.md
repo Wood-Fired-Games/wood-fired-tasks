@@ -5,28 +5,29 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Any agent on the local network can reliably create, find, and update work items in real time -- making this the single source of truth for all Wood Fired Games task tracking.
-**Current focus:** Phase 11: MCP Server Verification
+**Current focus:** Phase 12: Claude Code Skills
 
 ## Current Position
 
-Phase: 11 of 13 (MCP Server Verification)
-Plan: 1 of 1 complete
+Phase: 12 of 13 (Claude Code Skills)
+Plan: 4 of 4 complete
 Status: Ready for next phase
-Last activity: 2026-02-14 — Completed 11-01 (MCP stdio compliance fix)
+Last activity: 2026-02-14 — Completed 12-04 (project-status skill)
 
-Progress: [████████████████░░] 80% (24/30 completed plans across v1.0 + v1.1 + v1.2)
+Progress: [█████████████████░] 83% (25/30 completed plans across v1.0 + v1.1 + v1.2)
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0: 13 plans in 63 minutes (avg 5 min/plan)
 - v1.1: 10 plans in ~77 minutes (avg 8 min/plan)
-- v1.2: 1 plan in 2.4 minutes (avg 2.4 min/plan)
-- Total: 24 plans, ~142 minutes
+- v1.2: 2 plans in 3.1 minutes (avg 1.6 min/plan)
+- Total: 25 plans, ~145 minutes
 
 **Recent Trend:**
 - Phase 11 Plan 1: 2.4 min (2 tasks, 2 files, 4 tests added)
-- Trend: Fast execution for focused bug-fix + test plans
+- Phase 12 Plan 4: 0.7 min (1 task, 1 file)
+- Trend: Ultra-fast execution for skill file authoring
 
 ## Accumulated Context
 
@@ -40,6 +41,8 @@ Recent decisions affecting v1.2:
 - Content-Type only with body (prevents DELETE failures)
 - [Phase 11]: Custom Umzug logger routes all output to stderr (MCP stdio compliance)
 - [Phase 11]: Dual stdio verification: static grep guards + runtime spawn tests
+- [Phase 12]: Use text labels like 'ATTENTION:' instead of emojis for accessibility
+- [Phase 12]: Support project filtering via $ARGUMENTS for single-project view
 
 ### Pending Todos
 
@@ -60,22 +63,23 @@ None.
 | Phase-Plan | Duration (min) | Tasks | Files |
 |------------|----------------|-------|-------|
 | 11-01 | 2.4 | 2 | 2 |
+| Phase 12-skill-file-authoring P04 | 0.7 | 1 tasks | 1 files |
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T00:46:18.714Z
+**Last session:** 2026-02-14T01:02:20Z
 
-**Stopped at:** Completed 11-01-PLAN.md
+**Stopped at:** Completed 12-04-PLAN.md
 
 **Next session should:**
-1. Continue with Phase 12 (Claude Code Skills) or Phase 13 (Installer)
-2. Focus: Create Claude skills JSON file and workflows for core operations
+1. Begin Phase 13 (Installer) - final phase of v1.2
+2. Focus: Cross-platform installer with dependency checks and configuration setup
 
 **Context for next agent:**
 - v1.0 + v1.1 shipped with 13,795 LOC TypeScript, 357 tests
 - Full interface parity: REST (19 endpoints), MCP (25 tools), CLI (19 commands)
-- v1.2 targets Claude Code skills (10 workflows) and cross-platform installer
-- Phase 11 complete: MCP server stdio compliance verified (Umzug logger fix + automated tests)
+- Phase 11 complete: MCP server stdio compliance verified
+- Phase 12 complete: 4 Claude Code skill files created (create-task, list-tasks, update-task, project-status)
 
 ## Milestone Status
 
