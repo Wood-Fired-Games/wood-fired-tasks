@@ -78,6 +78,11 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
       );
     }
 
+    // 204 No Content has no body to parse
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     return await response.json();
   } catch (error) {
     // Network errors (fetch throws before response)
