@@ -1,306 +1,255 @@
-# Stack Research
+# Stack Research — Multi-Agent Coordination Features
 
-**Domain:** Claude Code Skills & Cross-Platform Installer
-**Researched:** 2026-02-13
+**Domain:** Multi-agent task coordination (SSE streaming, workflow automation, atomic claiming)
+**Researched:** 2026-02-14
 **Confidence:** HIGH
 
-## Recommended Stack
+## Executive Summary
 
-### Claude Code Skills (No New Dependencies)
+For adding SSE event streaming, workflow automation hooks, and atomic task claiming to the existing Fastify + SQLite stack, minimal additions are required. The existing stack (better-sqlite3 WAL mode, Fastify 5.x) already provides the foundations needed. Only **one new dependency** (`@fastify/sse`) is required, with workflow automation implemented using native Node.js EventEmitter with TypeScript generics.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Markdown | N/A | Skill file format | Official Claude Code skill format — YAML frontmatter + markdown content |
-| YAML | N/A | Skill metadata | Standard frontmatter format for Claude Code skills |
-| Bash | N/A | Dynamic context injection | `!`command`` syntax for live data insertion into skills |
+## New Dependencies Required
 
-**Rationale:** Claude Code skills are markdown files with YAML frontmatter. No npm dependencies needed — they're static files that Claude Code reads directly from `~/.claude/commands/tasks/` or `~/.claude/skills/tasks/`. The existing MCP tools become available to skills through Claude's tool invocation system.
-
-### MCP Server Configuration (No New Dependencies)
+### SSE Streaming
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| JSON | N/A | MCP config format | Claude Desktop's native configuration format at `~/.config/Claude/claude_desktop_config.json` |
-| Node.js | Existing | MCP server runtime | Already used for Wood Fired Bugs MCP server via @modelcontextprotocol/sdk |
-| npx | Comes with Node | Server launcher | Standard launcher in Claude Desktop configs |
+| `@fastify/sse` | ^0.4.0 | Server-Sent Events | Official Fastify plugin with native async iterator support, TypeScript types, backpressure handling, and Last-Event-ID replay. Clean integration with existing Fastify 5.7.4 server. |
 
-**Rationale:** MCP configuration uses JSON at a well-defined location. The Wood Fired Bugs MCP server is already built with @modelcontextprotocol/sdk v1.26.0 — no version changes needed. Configuration just registers the server with Claude Desktop.
+### Workflow Automation
 
-### Cross-Platform Installer Scripts
+**NO NEW DEPENDENCIES NEEDED**
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Bash | 4.0+ | Linux installer | Universal on Linux/macOS, handles symlinks, directory creation, config merging |
-| PowerShell | 7.0+ | Windows installer | Cross-platform PowerShell 7+ available on Windows 10/11, handles JSON manipulation |
-| jq | Latest | JSON config merging (Linux) | Industry standard for JSON manipulation in shell scripts |
-| Node.js | Existing | JSON parsing fallback | Already required for MCP server, can parse/merge JSON if jq unavailable |
+| Native EventEmitter | Built-in | Post-update hooks/rules | Node.js EventEmitter with TypeScript generics (available since @types/node July 2024) provides type-safe event emission. Zero dependencies, native performance, integrates with existing service layer pattern. |
 
-**Rationale:**
-- **Bash** is the standard for Linux scripting, pre-installed on all modern Linux distributions and macOS
-- **PowerShell 7+** is Microsoft's official cross-platform shell, recommended over older PowerShell 5.1 for better cross-platform compatibility
-- **jq** is the de facto standard for JSON manipulation in Bash, widely available via package managers
-- **Node.js** provides a fallback for JSON operations if jq is unavailable
+### Atomic Task Claiming
+
+**NO NEW DEPENDENCIES NEEDED**
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| better-sqlite3 transactions | Existing (12.6.2) | Atomic claim operations | Already using `db.transaction()` pattern in task.repository.ts. WAL mode already enabled. Use `BEGIN IMMEDIATE` for claim operations to acquire write lock early and fail fast under contention. |
 
 ## Installation
 
-**No new npm dependencies required.** The existing stack handles everything:
-
 ```bash
-# Already installed in package.json
-@modelcontextprotocol/sdk  # MCP server SDK
-commander                   # CLI framework (not needed for skills, but for installer CLI)
-chalk                       # Terminal colors (for installer feedback)
+# Only one new dependency needed
+npm install @fastify/sse
+
+# Type definitions (if needed, check if included)
+npm install -D @types/node@latest  # For EventEmitter TypeScript generics
 ```
 
-**System dependencies for installers:**
+## Integration Points with Existing Stack
 
-```bash
-# Linux (Ubuntu/Debian)
-sudo apt-get install jq  # Optional but recommended for JSON merging
+### 1. SSE Event Streaming via @fastify/sse
 
-# Windows
-# PowerShell 7+ recommended (https://github.com/PowerShell/PowerShell)
-# Ships with Windows 10/11, or install via:
-winget install --id Microsoft.PowerShell --source winget
-```
+**Integration:** Register as Fastify plugin in `src/api/server.ts`, create new route file `src/api/routes/events.ts`
 
-## Stack Patterns by Feature
+**Pattern:**
+```typescript
+// Register plugin
+import fastifySSE from '@fastify/sse';
+await server.register(fastifySSE);
 
-### Claude Code Skills
-
-**File Structure:**
-```
-~/.claude/commands/tasks/     # Legacy location (still works)
-~/.claude/skills/tasks/       # Recommended location
-  ├── SKILL.md                # Required: Main skill file
-  ├── templates/              # Optional: Templates for skill output
-  ├── examples/               # Optional: Example outputs
-  └── scripts/                # Optional: Helper scripts
-```
-
-**SKILL.md Format:**
-```markdown
----
-name: skill-name
-description: What this skill does and when to use it
-disable-model-invocation: true  # Optional: prevent auto-invocation
-user-invocable: false           # Optional: hide from menu
-allowed-tools: Read, Grep       # Optional: restrict tools
----
-
-# Skill Instructions
-
-Your instructions for Claude...
-
-$ARGUMENTS or $0, $1, $2 for positional arguments
-${CLAUDE_SESSION_ID} for session ID
-
-!`command` for dynamic context injection
-```
-
-**Discovery Hierarchy:**
-1. Enterprise (managed settings)
-2. Personal (`~/.claude/skills/`)
-3. Project (`.claude/skills/`)
-4. Plugins
-
-When names collide, higher priority wins. Skills take precedence over `.claude/commands/` files.
-
-### MCP Server Configuration
-
-**Config File Location:**
-```bash
-# Linux
-~/.config/Claude/claude_desktop_config.json
-
-# macOS
-~/Library/Application Support/Claude/claude_desktop_config.json
-
-# Windows
-%APPDATA%\Claude\claude_desktop_config.json
-```
-
-**Config Format:**
-```json
-{
-  "mcpServers": {
-    "wood-fired-bugs": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/wood-fired-bugs/dist/mcp/index.js"
-      ],
-      "env": {
-        "WOOD_FIRED_BUGS_API_KEY": "your-api-key-here",
-        "NODE_ENV": "production"
-      }
+// Use async generator for event streams
+app.get('/events', { sse: true }, async (request, reply) => {
+  async function* eventStream() {
+    // Listen to EventEmitter events from services
+    for await (const event of eventSource) {
+      yield { id: event.id, event: event.type, data: event.payload };
     }
+  }
+  await reply.sse.send(eventStream());
+});
+```
+
+**Why this works:** Fastify's plugin system makes this a 2-line registration. Async iterators bridge native EventEmitter to SSE cleanly.
+
+### 2. Workflow Automation with Native EventEmitter
+
+**Integration:** Add typed EventEmitter to service layer (`src/services/task.service.ts`), emit events on state changes
+
+**Pattern:**
+```typescript
+// Define event map type
+interface TaskEvents {
+  'task:created': (task: Task) => void;
+  'task:updated': (task: Task, changes: Partial<Task>) => void;
+  'task:status_changed': (task: Task, oldStatus: string, newStatus: string) => void;
+  'task:claimed': (task: Task, agent: string) => void;
+}
+
+// Extend service with EventEmitter
+class TaskService extends EventEmitter<TaskEvents> {
+  // Emit on operations
+  update(id: number, dto: UpdateTaskDTO): Task {
+    const oldTask = this.repo.findById(id);
+    const newTask = this.repo.update(id, dto);
+
+    this.emit('task:updated', newTask, dto);
+
+    if (oldTask.status !== newTask.status) {
+      this.emit('task:status_changed', newTask, oldTask.status, newTask.status);
+    }
+
+    return newTask;
   }
 }
 ```
 
-**Configuration Fields:**
-- `command`: Executable to run (node, npx, python, etc.)
-- `args`: Array of arguments (use absolute paths)
-- `env`: Environment variables (credentials, config)
+**Why this works:**
+- Native EventEmitter with TypeScript generics (built into @types/node since July 2024) provides compile-time type safety
+- Zero runtime dependencies
+- Follows existing service pattern in codebase
+- Listeners can be registered in API layer, MCP server, or workflow engine
 
-**Best Practices:**
-- Use absolute paths for reliability
-- Store credentials in `env` block
-- Server name becomes the identifier in Claude Desktop
-- Restart Claude Desktop after config changes
+### 3. Atomic Task Claiming with SQLite Transactions
 
-### Cross-Platform Installer Scripts
+**Integration:** Add `claim()` method to `src/repositories/task.repository.ts` using existing transaction pattern
 
-**Bash Pattern (Linux):**
-```bash
-#!/usr/bin/env bash
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+**Pattern:**
+```typescript
+claim(taskId: number, agent: string): Task | null {
+  return this.db.transaction(() => {
+    // Use BEGIN IMMEDIATE via transaction wrapper
+    const task = this.findById(taskId);
 
-# Detect paths
-CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/Claude"
-CLAUDE_COMMANDS_DIR="$HOME/.claude/commands/tasks"
-CLAUDE_SKILLS_DIR="$HOME/.claude/skills/tasks"
-
-# Create directories
-mkdir -p "$CLAUDE_CONFIG_DIR"
-mkdir -p "$CLAUDE_SKILLS_DIR"
-
-# Copy skill files
-cp -r ./skills/* "$CLAUDE_SKILLS_DIR/"
-
-# Merge MCP config using jq
-if command -v jq &> /dev/null; then
-  jq -s '.[0] * .[1]' \
-    "$CLAUDE_CONFIG_DIR/claude_desktop_config.json" \
-    ./config/mcp-server-config.json \
-    > "$CLAUDE_CONFIG_DIR/claude_desktop_config.json.tmp"
-  mv "$CLAUDE_CONFIG_DIR/claude_desktop_config.json.tmp" \
-     "$CLAUDE_CONFIG_DIR/claude_desktop_config.json"
-else
-  # Fallback: use Node.js
-  node ./scripts/merge-config.js
-fi
-
-# Set executable permissions
-chmod +x "$CLAUDE_SKILLS_DIR/"**/*.sh 2>/dev/null || true
-
-echo "✓ Installation complete"
-echo "  Skills installed to: $CLAUDE_SKILLS_DIR"
-echo "  MCP server configured at: $CLAUDE_CONFIG_DIR/claude_desktop_config.json"
-echo ""
-echo "⚠ Restart Claude Desktop to load changes"
-```
-
-**PowerShell Pattern (Windows):**
-```powershell
-#!/usr/bin/env pwsh
-#Requires -Version 7.0
-
-$ErrorActionPreference = "Stop"
-
-# Detect paths (cross-platform PowerShell 7+ syntax)
-$ClaudeConfigDir = if ($IsWindows) {
-    "$env:APPDATA\Claude"
-} else {
-    "$HOME/.config/Claude"
-}
-
-$ClaudeSkillsDir = "$HOME\.claude\skills\tasks"
-
-# Create directories
-New-Item -ItemType Directory -Force -Path $ClaudeConfigDir | Out-Null
-New-Item -ItemType Directory -Force -Path $ClaudeSkillsDir | Out-Null
-
-# Copy skill files
-Copy-Item -Recurse -Force ".\skills\*" $ClaudeSkillsDir
-
-# Merge MCP config using PowerShell
-$configPath = Join-Path $ClaudeConfigDir "claude_desktop_config.json"
-$newConfig = Get-Content ".\config\mcp-server-config.json" | ConvertFrom-Json
-
-if (Test-Path $configPath) {
-    $existingConfig = Get-Content $configPath | ConvertFrom-Json
-    # Merge mcpServers objects
-    $existingConfig.mcpServers.PSObject.Properties | ForEach-Object {
-        $newConfig.mcpServers | Add-Member -NotePropertyName $_.Name -NotePropertyValue $_.Value -Force
+    if (!task || task.assignee !== null || task.status !== 'open') {
+      return null;  // Already claimed or not claimable
     }
+
+    // Atomic update
+    const result = this.db.prepare(
+      'UPDATE tasks SET assignee = ?, status = ?, updated_at = ? WHERE id = ? AND assignee IS NULL'
+    ).run(agent, 'in_progress', new Date().toISOString(), taskId);
+
+    if (result.changes === 0) {
+      return null;  // Lost race condition
+    }
+
+    return this.findById(taskId);
+  })();  // Execute immediately
 }
-
-$newConfig | ConvertTo-Json -Depth 10 | Set-Content $configPath
-
-Write-Host "✓ Installation complete" -ForegroundColor Green
-Write-Host "  Skills installed to: $ClaudeSkillsDir"
-Write-Host "  MCP server configured at: $configPath"
-Write-Host ""
-Write-Host "⚠ Restart Claude Desktop to load changes" -ForegroundColor Yellow
 ```
 
-**Key Cross-Platform Considerations:**
-- Use `[IO.Path]::PathSeparator` for path separators (`;` on Windows, `:` on Unix)
-- Check `$IsWindows`, `$IsLinux`, `$IsMacOS` for platform-specific logic
-- Avoid aliases (use `Copy-Item` not `cp`, `Get-ChildItem` not `ls`)
-- Use forward slashes in paths where possible (PowerShell handles both)
-- Test on actual target platforms — cross-platform doesn't mean write-once-run-anywhere
+**Why this works:**
+- Already using `db.transaction()` in task.repository.ts (lines 46, 122)
+- WAL mode already enabled in db/database.ts for concurrent access
+- better-sqlite3 transactions use `BEGIN IMMEDIATE` by default for write operations, acquiring write lock early
+- Transaction rollback is automatic on errors
+- 5-second busy timeout already configured for contention handling
 
-## Alternatives Considered
-
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| Markdown skills in `~/.claude/` | Python/Node.js plugins | When skills need complex runtime logic or external dependencies |
-| JSON config merging | Manual user config | For single-user setups where automation isn't needed |
-| Bash (Linux) | Python installer | When Python is already required by the project |
-| PowerShell 7+ (Windows) | Batch scripts (.bat) | Never — batch scripts are legacy, PowerShell is the modern standard |
-| jq (JSON parsing) | Node.js scripts | When Node.js is already required (fallback in this project) |
-| `~/.claude/skills/` | `~/.claude/commands/` | Never for new projects — skills are the recommended approach |
+**Performance note:** SQLite WAL mode allows concurrent readers during claim operations. Write lock is exclusive but held briefly.
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `.claude/commands/` for new projects | Legacy location, skills have more features (supporting files, frontmatter controls) | `~/.claude/skills/` |
-| PowerShell 5.1 aliases in scripts | Platform-specific, non-portable | Full cmdlet names (`Copy-Item` not `cp`) |
-| Hardcoded paths in installers | Breaks on different systems | Environment variables, path detection |
-| Relative paths in MCP config | Claude Desktop may launch from different working directories | Absolute paths |
-| Git-committing `claude_desktop_config.json` | Contains user credentials, system-specific paths | Provide template/example config |
-| npm dependencies for skills | Skills are markdown files, not Node.js modules | Use dynamic context injection (`!`command``) |
-| Remote MCP servers for local tools | Adds network latency, auth complexity | Local stdio MCP servers |
+| `eventemitter3` | Marginal performance gains not worth additional dependency for this use case | Native EventEmitter with TypeScript generics |
+| `fastify-sse-v2` | Community plugin, less maintained than official | `@fastify/sse` (official Fastify organization) |
+| External workflow engines (Temporal, Bull, etc.) | Over-engineered for post-update hooks; adds Redis/PostgreSQL dependencies | Native EventEmitter + in-process listeners |
+| `typed-emitter` npm package | Unnecessary since @types/node includes EventEmitter generics natively (July 2024+) | Native EventEmitter with type map |
+| Manual SSE implementation via `reply.raw` | Error-prone, missing backpressure handling, connection management | `@fastify/sse` plugin |
+
+## Stack Patterns by Use Case
+
+### Pattern 1: Real-time Task Updates via SSE
+
+**When:** Agent wants to monitor task changes without polling
+**Stack:** @fastify/sse + EventEmitter bridge
+**Implementation:**
+1. TaskService emits events on changes
+2. SSE route listens to EventEmitter
+3. Async generator yields SSE messages
+4. Client receives real-time updates
+
+### Pattern 2: Post-Update Automation
+
+**When:** Trigger actions when task status changes (e.g., notify on completion, auto-assign subtasks)
+**Stack:** Native EventEmitter + listener registration
+**Implementation:**
+1. Define typed event map for all hook points
+2. Services emit events on state changes
+3. Register listeners in initialization (src/index.ts or API startup)
+4. Listeners execute automation logic (can be async)
+
+### Pattern 3: Multi-Agent Task Claiming
+
+**When:** Multiple agents compete for same task
+**Stack:** SQLite transaction + BEGIN IMMEDIATE
+**Implementation:**
+1. Agent calls claim endpoint
+2. Repository uses `db.transaction()` for atomic check-and-claim
+3. WHERE clause includes `assignee IS NULL` to prevent double-claim
+4. Returns null if claim fails (already claimed or status changed)
+5. WAL mode allows concurrent claims to different tasks
 
 ## Version Compatibility
 
-| Package | Version | Compatible With | Notes |
-|---------|---------|-----------------|-------|
-| @modelcontextprotocol/sdk | 1.26.0 | Claude Desktop 0.7+ | Existing version works, no upgrade needed |
-| Node.js | 18+ | MCP SDK 1.x | Already installed (required for better-sqlite3) |
-| PowerShell | 7.0+ | Windows 10/11, Linux, macOS | Required for cross-platform PowerShell features |
-| Bash | 4.0+ | All modern Linux/macOS | Universal, no compatibility concerns |
-| jq | 1.5+ | JSON config merging | Optional but recommended for Bash installer |
-| Claude Desktop | 0.7+ | MCP Protocol 2024-11-05 | Check via Claude menu → "Check for Updates..." |
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `@fastify/sse@0.4.0` | `fastify@5.7.4` | Official plugin, tested with Fastify 5.x |
+| `@types/node@25.2.3` | Current version includes EventEmitter generics | Update to latest for typed events |
+| `better-sqlite3@12.6.2` | WAL mode, immediate transactions | Already configured correctly |
 
-**Critical Compatibility Notes:**
-- Claude Code skills format is stable as of 2026 — YAML frontmatter + markdown content
-- MCP config schema is stable — `command`, `args`, `env` structure unchanged
-- PowerShell 7+ is NOT the same as Windows PowerShell 5.1 — scripts must target 7+ for cross-platform
-- Skills discovery is hierarchical — enterprise > personal > project > plugins
+## Migration from Current Stack
+
+### Phase 1: Add SSE Support (Minimal Change)
+```bash
+npm install @fastify/sse
+```
+- Register plugin in server.ts
+- Add /events route
+- No changes to existing routes
+
+### Phase 2: Add Event Emission (Service Layer Only)
+- Update TaskService to extend EventEmitter<TaskEvents>
+- Add emit() calls in update/create/delete methods
+- No database schema changes
+- Backward compatible (existing code unaffected)
+
+### Phase 3: Add Atomic Claiming (Repository Layer)
+- Add claim() method to TaskRepository
+- Use existing transaction pattern
+- Add REST endpoint POST /api/v1/tasks/:id/claim
+- Add MCP tool claim_task
+- No schema changes needed (uses existing assignee + status fields)
+
+## Performance Characteristics
+
+| Feature | Latency | Concurrency | Notes |
+|---------|---------|-------------|-------|
+| SSE event delivery | <10ms | Unlimited readers | Fastify async iterator + backpressure |
+| EventEmitter dispatch | <1ms | Synchronous listeners block, async don't | Use async listeners for I/O |
+| Atomic claim | <5ms (uncontended) | WAL mode allows concurrent operations | Write lock held only during UPDATE |
+| SSE connection limit | OS-dependent | ~10k on typical server | Use process clustering if needed |
 
 ## Sources
 
-### Claude Code Skills
-- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills) — MEDIUM confidence (official docs)
-- [GitHub - anthropics/skills](https://github.com/anthropics/skills) — MEDIUM confidence (official examples)
-- [Claude Skills and CLAUDE.md: a practical 2026 guide](https://www.gend.co/blog/claude-skills-claude-md-guide) — LOW confidence (community guide)
-- [Inside Claude Code Skills: Structure, prompts, invocation](https://mikhail.io/2025/10/claude-code-skills/) — LOW confidence (blog post)
+### High Confidence (Official Docs + npm)
+- [@fastify/sse npm package](https://www.npmjs.com/package/@fastify/sse) — Version 0.4.0, installation, features
+- [GitHub - fastify/sse](https://github.com/fastify/sse) — Official plugin repository
+- [SQLite WAL Mode Documentation](https://sqlite.org/wal.html) — Write-Ahead Logging mechanics
+- [SQLite Atomic Commit](https://sqlite.org/atomiccommit.html) — Transaction guarantees
 
-### MCP Configuration
-- [Connect to local MCP servers - Model Context Protocol](https://modelcontextprotocol.io/docs/develop/connect-local-servers) — HIGH confidence (official docs)
-- [Getting Started with Local MCP Servers on Claude Desktop](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) — HIGH confidence (official support)
-- [Ultimate Guide to Claude MCP Servers & Setup | 2026](https://generect.com/blog/claude-mcp/) — LOW confidence (community guide)
+### Medium Confidence (Articles + Community)
+- [Efficient Event Streaming with Fastify](https://nearform.com/insights/efficient-event-streaming-mastering-pub-sub-with-fastify-and-dragonfly/) — Best practices
+- [Fastify SSE Tutorial by Edison Devadoss](https://edisondevadoss.medium.com/fastify-server-sent-events-sse-93de994e013b) — Implementation patterns
+- [SQLite for Modern Apps 2026](https://thelinuxcode.com/sqlite-for-modern-apps-a-practical-first-look-2026/) — Transaction modes
+- [How to Use SQLite in Node.js 2026](https://oneuptime.com/blog/post/2026-02-02-sqlite-nodejs/view) — Modern patterns
 
-### Cross-Platform Scripting
-- [PowerShell 7 Cross-Platform Scripting Tips and Traps](https://jdhitsolutions.com/blog/scripting/7361/powershell-7-cross-platform-scripting-tips-and-traps/) — MEDIUM confidence (expert blog)
-- [Tips for Writing Cross-Platform PowerShell Code](https://powershell.org/2019/02/tips-for-writing-cross-platform-powershell-code/) — MEDIUM confidence (community org)
-- [GitHub - PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) — HIGH confidence (official repo)
-- [Installing PowerShell on Linux in 2026](https://thelinuxcode.com/installing-powershell-on-linux-in-2026-a-practical-opinionated-walkthrough/) — MEDIUM confidence (current guide)
+### TypeScript Event Patterns
+- [Make Node.js EventEmitter Type-Safe](https://typescript.tv/hands-on/make-nodejs-eventemitter-type-safe/) — Native generics approach
+- [Build Type-Safe Event Emitter](https://blog.makerx.com.au/a-type-safe-event-emitter-in-node-js/) — Implementation guide
+- [@types/node Discussion #55298](https://github.com/DefinitelyTyped/DefinitelyTyped/discussions/55298) — Native EventEmitter typing
+
+### Workflow Patterns
+- [Experimental Workflow Engine Design](https://betterprogramming.pub/experiment-design-of-workflow-engine-in-nodejs-72da8bb68734) — EventEmitter-based hooks
+- [Node.js Design Patterns (hooks-js)](https://github.com/bnoguchi/hooks-js) — Pre/post hook pattern
 
 ---
-*Stack research for: Claude Code Skills & Installer*
-*Researched: 2026-02-13*
+*Stack research for: Wood Fired Bugs multi-agent coordination*
+*Researched: 2026-02-14*

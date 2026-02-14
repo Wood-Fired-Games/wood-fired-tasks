@@ -1,323 +1,290 @@
-# Pitfalls Research: Claude Code Skills & Cross-Platform Installer
+# Pitfalls Research
 
-**Domain:** Adding Claude Code skills and cross-platform installer to existing MCP-enabled task tracking service
-**Context:** Subsequent milestone v1.2 - Adding skill files that reference MCP tools + Bash/PowerShell installer
-**Researched:** 2026-02-13
+**Domain:** Multi-agent coordination (SSE event streaming, workflow automation, atomic claim protocol)
+**Researched:** 2026-02-14
 **Confidence:** HIGH
 
 ## Critical Pitfalls
 
-Mistakes that cause skill invocation failures, broken MCP connections, or installer failures on target platforms.
-
-### Pitfall 1: Using Unqualified MCP Tool Names in Skills
+### Pitfall 1: SSE Connection Memory Leaks from Uncleaned Client Registry
 
 **What goes wrong:**
-Skill markdown files reference MCP tools with simple names like `create_task` or `list_tasks`, but Claude Code requires fully qualified tool names with the prefix `mcp__plugin_<plugin-name>_<server-name>__<tool-name>`. When skills use unqualified names, Claude cannot find the tools even though the MCP server is correctly configured and connected. Skills fail with "tool not found" errors despite the server showing all tools available via `/mcp`.
+When SSE clients disconnect (browser tab closed, network failure, timeout), their connection objects remain in the server's active client registry. Over hours/days with multiple agents polling and reconnecting, memory usage grows unbounded until the server crashes or becomes unresponsive.
 
 **Why it happens:**
-The MCP server defines tools with simple names (`create_task`, `get_task`, etc.) in its implementation. Developers write skill markdown referencing these same simple names, assuming Claude Code will auto-resolve them. However, Claude Code's MCP integration namespaces all tools to prevent collisions when multiple MCP servers are configured. A tool named `create_task` in server `wood-fired-bugs` becomes `mcp__plugin_tasks_wood-fired-bugs__create_task`. Documentation often shows simple tool names in examples, leading developers to copy the pattern without understanding the qualification requirement.
+Node.js HTTP connections don't always fire `close` events reliably, especially with proxy servers, load balancers, or abrupt network failures. Developers register clients in a Map/Set but forget to clean up on all exit paths (normal close, error, timeout). The existing Fastify app has no connection lifecycle management—adding SSE without cleanup patterns guarantees leaks.
 
-**Consequences:**
-- Skills invoke but fail immediately with "tool not found"
-- Error messages don't clearly indicate the qualification issue
-- Developers waste time debugging MCP server configuration thinking it's not connected
-- Users see "cannot complete action" without understanding the root cause
-- Skills work in testing with simplified configs but fail in production with multiple MCP servers
-- Skill must be completely rewritten with corrected tool names
+**How to avoid:**
+1. Track clients in a WeakMap or implement explicit cleanup on ALL exit events: `request.socket.on('close')`, `request.socket.on('error')`, `reply.raw.on('close')`
+2. Implement heartbeat/ping mechanism (every 15-30 seconds) to detect stale connections
+3. Add connection timeout (e.g., max 10 minutes) and force-close zombies
+4. Use `@fastify/sse` plugin (v7+) which handles cleanup automatically vs. raw `reply.raw.write()`
+5. Monitor active connection count via metrics endpoint
 
-**Prevention:**
-- **ALWAYS** use fully qualified tool names in skill markdown: `mcp__plugin_tasks_wood-fired-bugs__create_task`
-- Run `/mcp` command before writing skills to see exact tool names Claude Code expects
-- Document tool naming convention in skill authoring guide: `mcp__plugin_<plugin>_<server>__<tool>`
-- Use consistent naming: if server is `wood-fired-bugs`, plugin should be `tasks` for `mcp__plugin_tasks_wood-fired-bugs__*`
-- Test skills in environment with multiple MCP servers to verify qualification works
-- Add tool name reference section to each skill documenting the exact names used
-- In installer, document that users can run `/mcp` to verify tool names after installation
-
-**Detection:**
-- Skills trigger but immediately fail with tool invocation errors
-- `/mcp` command shows tools available but skill can't use them
-- Error logs show "tool not found: create_task" when tool exists as `mcp__plugin_tasks_wood-fired-bugs__create_task`
-- Skills work in minimal test environment but fail with additional MCP servers installed
-- Claude Code prompts for tool approval but using wrong tool name
+**Warning signs:**
+- Memory usage grows continuously in production (check Node.js heap size)
+- Active SSE connection count never decreases
+- Server becomes sluggish after 6-12 hours uptime
+- OOM crashes during peak agent activity
 
 **Phase to address:**
-Phase 9 (Skill Authoring) - Tool names must be correctly qualified from the start. Incorrect names require rewriting all skill markdown.
-
-**Sources:**
-- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills)
-- [Using MCP Tools in Commands and Agents - Plugin Dev Reference](https://github.com/anthropics/claude-plugins-official/plugins/plugin-dev/skills/mcp-integration/references/tool-usage.md)
-- [The Pulumi Blog on Claude Skills](https://www.pulumi.com/blog/top-8-claude-skills-devops-2026/)
+Phase 1 (SSE Infrastructure) - Implement connection registry with cleanup before any event broadcasting logic. Test with aggressive connect/disconnect cycles.
 
 ---
 
-### Pitfall 2: Writing MCP Server Logs to stdout Instead of stderr
+### Pitfall 2: Transaction Upgrade SQLITE_BUSY Despite Busy Timeout
 
 **What goes wrong:**
-The MCP server uses stdio transport and writes debug logs, info messages, or console.log() output to stdout. The stdio transport reserves stdout exclusively for JSON-RPC protocol messages (one per line, no embedded newlines). Any non-protocol output corrupts the message stream, causing -32000 "Connection closed" or "Unexpected token" parsing errors. Claude Code cannot connect to the MCP server even though the server starts successfully.
+An atomic claim operation starts with `SELECT` to check task availability (deferred read transaction), then attempts `UPDATE` to claim the task. When two agents try to claim simultaneously, one gets `SQLITE_BUSY` error IMMEDIATELY without respecting the 5-second `busy_timeout` configured in `database.ts`. Transaction fails, agent sees error, claim fails.
 
 **Why it happens:**
-Developers add `console.log()` debugging during development or use logging libraries with default stdout output. The MCP SDK documentation mentions stderr but doesn't enforce it, and console.log() is the default Node.js debugging habit. The server runs fine in isolation (stdio transport doesn't complain locally), but when Claude Code connects, any stdout pollution breaks JSON-RPC parsing. The error appears as a connection failure, not a logging issue, so developers troubleshoot the wrong problem.
+SQLite's transaction upgrade behavior: when upgrading from read to write mid-transaction, if another connection holds a write lock, SQLite returns `SQLITE_BUSY` immediately without waiting for `busy_timeout`. The existing codebase uses `db.transaction()` (defaults to `BEGIN DEFERRED`), which starts as read-only and upgrades on first write. This is incompatible with concurrent claim protocols.
 
-**Consequences:**
-- MCP server appears in Claude Code settings but shows "disconnected" or "error"
-- `-32000 Connection closed` error without clear indication of cause
-- Intermittent connection issues when logs happen to coincide with message traffic
-- "Unexpected token" JSON parsing errors when log lines arrive mid-message
-- Debug logs intended to help troubleshooting are the actual cause of failure
-- Server works in testing (without Claude Code client) but fails in production
+Reference: [What to do about SQLITE_BUSY errors despite setting a timeout](https://berthub.eu/articles/posts/a-brief-post-on-sqlite3-database-locked-despite-timeout/)
 
-**Prevention:**
-- **NEVER** use `console.log()` in MCP servers using stdio transport
-- **ALWAYS** use `console.error()` for all logging (debug, info, error, everything)
-- Configure Pino or other logging libraries to write to stderr: `pino({ dest: process.stderr })`
-- Set environment variable in installer to disable debug logging in production: `NODE_ENV=production`
-- Validate stdio protocol compliance: stdout must contain ONLY JSON-RPC messages (one per line)
-- Add comment in server code: `// CRITICAL: stdio transport - ALL logs must use console.error() not console.log()`
-- Test connection with logging enabled to verify stderr routing
+**How to avoid:**
+1. Use `BEGIN IMMEDIATE` for any transaction that will write: `db.prepare('BEGIN IMMEDIATE').run()` before claim logic
+2. Wrap repository methods that claim tasks in immediate transactions
+3. Implement retry logic with exponential backoff (3 retries, 50ms → 200ms → 800ms) for unavoidable SQLITE_BUSY
+4. Add application-level optimistic locking: check `updated_at` timestamp before committing claim
+5. Consider advisory locks table for claim coordination if claims become frequent
 
-**Detection:**
-- Run `node dist/mcp/index.js` and verify output is ONLY JSON-RPC (no plaintext logs)
-- `-32000` or parsing errors in Claude Code MCP connection
-- Server process runs but Claude Code shows "disconnected"
-- Logs appear on stdout when running server standalone
-- Search codebase for `console.log` in MCP server code
-- Grep for `pino()` without `dest: process.stderr` configuration
+**Warning signs:**
+- `SQLITE_BUSY` errors in logs during concurrent agent operations
+- Claim success rate drops below 95% during multi-agent tests
+- Retries succeed on second attempt (indicates upgrade issue, not true contention)
+- Error happens instantly (within 10ms) despite 5000ms timeout
 
 **Phase to address:**
-Phase 8 (MCP Server Verification) - Must be fixed before skills can reference tools. Existing v1.1 server may already have this issue if console.log() was used during development.
-
-**Sources:**
-- [STDIO Transport - MCP Framework](https://mcp-framework.com/docs/Transports/stdio-transport/)
-- [Debugging Model Context Protocol Servers](https://www.mcpevals.io/blog/debugging-mcp-servers-tips-and-best-practices)
-- [MCP Server Troubleshooting Guide 2025](https://www.mcpstack.org/learn/mcp-server-troubleshooting-guide-2025)
+Phase 2 (Atomic Claim Protocol) - Implement before exposing claim endpoints. Add integration test with 10+ concurrent claim attempts on same task.
 
 ---
 
-### Pitfall 3: MCP Server Path in config.json Using Relative or Wrong Paths
+### Pitfall 3: Cascading Workflow Updates Outside Transaction Boundaries
 
 **What goes wrong:**
-The Claude Code MCP configuration in `~/.claude/config.json` specifies the command to start the MCP server with a path like `"command": "node"` and `"args": ["dist/mcp/index.js"]`. Relative paths resolve from Claude Code's working directory (not the project directory), causing "command not found" or "module not found" errors. The server appears configured but never starts, showing as "disconnected" with no helpful error message.
+Task A transitions to "done" → workflow hook marks parent Task B as "in_progress" → SSE broadcasts "Task A done" event → another workflow marks dependent Task C as "blocked" → database crashes/process killed between updates → Task A is "done" but Task B and C never updated. System state becomes inconsistent. Agents act on stale data, creating cascading errors.
 
 **Why it happens:**
-Installer scripts copy skill files and configure MCP server without understanding where Claude Code will execute the command. Using `"command": "node dist/mcp/index.js"` works when testing from project root but fails when Claude Code runs it from a different working directory. npm-installed binaries (`tasks` CLI) work because they're in PATH, but project-relative paths don't. Developers test by manually running the command from the correct directory and it works, missing the real-world execution context.
+Workflow hooks execute AFTER the initiating transaction commits (post-update hooks for event emission), so cascading state changes happen in separate transactions. If any downstream update fails (validation error, database lock, process crash), earlier changes persist but later ones don't. The service layer in `task.service.ts` only wraps single-entity updates in transactions, not cross-entity workflows.
 
-**Consequences:**
-- MCP server shows "disconnected" or "error" in Claude Code
-- No clear error message about path resolution failure
-- Works for developer who set it up, fails for other users
-- Different behavior on different machines based on Claude Code installation location
-- Skills can't invoke tools because server never connected
-- Users manually starting server works, automatic startup fails
+Reference: [Reliable Workflow Automation Platforms](https://www.stacksync.com/blog/reliable-workflow-automation-platforms-for-real-time-enterprise-sync)
 
-**Prevention:**
-- **ALWAYS** use absolute paths in MCP server configuration
-- Installer must compute absolute path: `"args": ["/home/user/wood-fired-bugs/dist/mcp/index.js"]`
-- For npm-installed packages, use `npx` with package name: `"command": "npx"`, `"args": ["wood-fired-bugs-mcp"]`
-- Alternative: use `$HOME` environment variable expansion if Claude Code supports it
-- Test configuration by running from different working directories
-- Installer should detect project path and write absolute path to config
-- Document in README: "MCP config uses absolute paths to ensure Claude Code can start server from any location"
+**How to avoid:**
+1. Execute ALL cascading state changes within the SAME transaction as the triggering update
+2. Implement saga pattern for multi-step workflows: record compensation actions, roll back on failure
+3. Use event outbox table: write state changes + events atomically, process events in background
+4. Add workflow execution table to track in-progress cascades with status (pending/complete/failed)
+5. Make workflow hooks idempotent: check current state before applying changes
 
-**Detection:**
-- Claude Code shows MCP server as configured but "disconnected"
-- Running the command from project root works, from elsewhere fails
-- Error logs show "Cannot find module" or "ENOENT: no such file or directory"
-- `config.json` contains relative paths in command or args
-- Manual testing works, automated startup fails
+**Warning signs:**
+- Parent tasks stuck in wrong status after subtask completion
+- Dependency states don't match actual task states
+- Orphaned workflow events in logs without corresponding state changes
+- Integration test failures with "unexpected state" after multi-step workflows
+- Data inconsistencies after server restarts mid-operation
 
 **Phase to address:**
-Phase 10 (Installer Script) - Installer must write correct absolute paths. Relative paths discovered during testing won't work for end users.
-
-**Sources:**
-- [Configuring MCP Tools in Claude Code - Scott Spence](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code)
-- [Claude Code CLI Best Practices](https://notes.muthu.co/2026/02/claude-code-cli-best-practices-checklist/)
+Phase 3 (Workflow Automation) - Design transaction boundaries FIRST before implementing hooks. Add chaos testing (kill server mid-workflow).
 
 ---
 
-### Pitfall 4: Shell Profile Detection - Writing to Wrong RC File
+### Pitfall 4: SSE Event Broadcast Race with Transaction Visibility
 
 **What goes wrong:**
-The installer script writes `export WOOD_FIRED_BUGS_API_KEY="..."` to `~/.bashrc` on Linux, but the user's default shell is zsh (which reads `~/.zshrc`) or fish (which reads `~/.config/fish/config.fish`). The environment variable is configured in bash profile but never loaded in the actual shell the user runs. Skills fail with "unauthorized" or "API key not set" errors despite the installer claiming successful setup.
+Service layer commits transaction → broadcasts SSE event "task created" → agents receive event → query API for new task → get 404 or see stale data. Event arrives before the transaction is visible to other database connections. Agents retry, logs fill with errors, user experience degrades.
 
 **Why it happens:**
-Installer scripts assume bash as default shell and blindly write to `~/.bashrc`. On macOS since Catalina (2019) and many modern Linux distros, zsh is the default shell. Some developers use fish. Each shell has different profile file locations and syntax. Detecting the current shell requires checking `$SHELL` environment variable, but this might not match the shell that will actually source the environment variable later. Testing on developer's machine (bash user) succeeds, fails for zsh/fish users.
+SQLite WAL mode has snapshot isolation: readers see database state as of when their transaction started, not the latest committed state. Even with `synchronous = NORMAL`, there's a window where one connection commits but other connections haven't checkpointed the WAL yet. Broadcasting events immediately after `transaction()` returns creates race condition.
 
-**Consequences:**
-- Environment variable never loaded despite installer success message
-- MCP tools fail with "unauthorized" or authentication errors
-- Works for developer, fails for users with different shells
-- Different behavior on macOS (zsh) vs Linux (bash/zsh/fish)
-- Users must manually add export to correct shell profile
-- Installer claims success but setup is incomplete
+Reference: [Isolation In SQLite](https://sqlite.org/isolation.html)
 
-**Prevention:**
-- Detect shell with `$SHELL` environment variable: `echo $SHELL` returns `/bin/zsh`, `/bin/bash`, `/usr/bin/fish`
-- Write to appropriate profile for detected shell:
-  - **bash**: `~/.bashrc` (Linux) or `~/.bash_profile` (macOS login shell)
-  - **zsh**: `~/.zshrc` (both macOS and Linux)
-  - **fish**: `~/.config/fish/config.fish` (syntax: `set -Ux WOOD_FIRED_BUGS_API_KEY "value"`)
-- Fallback: if shell unknown, write to `~/.profile` (sourced by most shells) and warn user
-- Better approach: prompt user which shell they use instead of auto-detecting
-- For fish, use `set -Ux` (universal export) instead of `export` syntax
-- Remind user to reload shell: `source ~/.zshrc` or restart terminal
-- Test installer on virtual machines with different shells (bash, zsh, fish)
+**How to avoid:**
+1. Broadcast events INSIDE the transaction before commit (ensures visibility) OR
+2. Add small delay (10-50ms) after commit before broadcasting to allow WAL checkpoint
+3. Include full entity data in SSE events (event payload contains task object, not just ID)
+4. Implement event sequence numbers: clients reject events with gaps, request backfill
+5. Use `PRAGMA wal_checkpoint(TRUNCATE)` after critical writes (impacts performance)
 
-**Detection:**
-- Run `echo $WOOD_FIRED_BUGS_API_KEY` in fresh terminal and value is empty
-- Installer modified `~/.bashrc` but `echo $SHELL` shows `/bin/zsh`
-- MCP tools fail with authentication errors after "successful" installation
-- Environment variable present when running `bash` manually but not in default shell
-- Skills work after manual `export` but not in fresh terminal sessions
+**Warning signs:**
+- Clients log "404 Not Found" immediately after receiving creation events
+- Data appears "eventually" after 50-500ms delay
+- High retry rates in agent code after event reception
+- Integration tests flake with timing-dependent failures
+- Event sequence numbers show gaps in client logs
 
 **Phase to address:**
-Phase 10 (Installer Script) - Critical for Linux installer. Must handle bash, zsh, and fish. Wrong detection = broken installation for entire user segment.
-
-**Sources:**
-- [Moving to zsh, part 2: Configuration Files](https://scriptingosx.com/2019/06/moving-to-zsh-part-2-configuration-files/)
-- [fish shell Tutorial](https://fishshell.com/docs/current/tutorial.html)
-- [nvm profile detection issue](https://github.com/nvm-sh/nvm/issues/1837)
+Phase 1 (SSE Infrastructure) - Test event → query timing before integrating with workflows. Add artificial delay and verify data visibility.
 
 ---
 
-### Pitfall 5: Windows PowerShell Execution Policy Blocking Installer
+### Pitfall 5: HTTP/1.1 Six-Connection SSE Limit Per Domain
 
 **What goes wrong:**
-The Windows installer is a `.ps1` PowerShell script that users download and attempt to run with `.\install.ps1`. PowerShell's default execution policy (often `Restricted` or `RemoteSigned`) prevents running scripts that aren't signed, showing "cannot be loaded because running scripts is disabled on this system." The installer doesn't run at all, leaving users stuck without guidance on how to proceed.
+Multi-agent system on single machine opens 8+ EventSource connections to track different task contexts (project updates, assigned tasks, blocked tasks, comments). Browser hits 6-connection limit per domain. New SSE connections hang, agents stop receiving updates, polling fallback never implemented. System appears broken.
 
 **Why it happens:**
-PowerShell has security policies that block script execution by default on many Windows installations, especially corporate environments. Developers test on their own machines where execution policy is already `Unrestricted` or they run PowerShell as administrator (changing the policy globally). End users don't have admin rights or don't know how to change execution policy. The error message mentions execution policy but doesn't explain how to fix it. Users abandon installation.
+HTTP/1.1 spec limits browsers to 6 concurrent connections per origin. Each EventSource consumes one connection. MCP agents on the same machine share browser connection pool if using browser-based HTTP client. The existing system has no connection multiplexing or pooling strategy.
 
-**Consequences:**
-- Installer completely blocked on default Windows configurations
-- Error message is cryptic for non-PowerShell users
-- Users don't know whether to run as admin, change policy, or use different method
-- Corporate Windows machines often can't change execution policy (IT-enforced)
-- Installer works on developer machine but fails for real users
-- No graceful fallback or alternative installation method
+Reference: [Limit of 6 concurrent EventSource connections](https://bugs.chromium.org/p/chromium/issues/detail?id=275955)
 
-**Prevention:**
-- **Document** execution policy requirement prominently in README: "Windows users must run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`"
-- Provide alternative installation method: manual steps without script
-- Include batch file (`.bat`) wrapper that bypasses policy: `powershell -ExecutionPolicy Bypass -File .\install.ps1`
-- Better: single-line installation: `powershell -ExecutionPolicy Bypass -Command "& {$(irm install.ps1)}"`
-- Detect policy in script and provide helpful error: "Run: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`"
-- Document admin rights NOT required (use `-Scope CurrentUser` not `-Scope LocalMachine`)
-- Test on fresh Windows VM with default execution policy
-- Provide video walkthrough for Windows installation with policy change
+**How to avoid:**
+1. Use HTTP/2 for Fastify server (supports ~100 concurrent streams per connection)
+2. Multiplex multiple event topics over SINGLE SSE connection (filter client-side)
+3. Implement event topic subscription protocol: clients specify which events they want
+4. Use different subdomains for different event types (tasks.localhost, projects.localhost)
+5. Document connection limits and recommend HTTP/2 in deployment guide
 
-**Detection:**
-- Running `.\install.ps1` produces "scripts is disabled on this system" error
-- `Get-ExecutionPolicy` returns `Restricted` or `AllSigned`
-- Installer works on dev machine but fails for test users
-- Corporate Windows machines consistently reject installer
-- Users report "can't run PowerShell script"
+**Warning signs:**
+- SSE connections hang in "pending" state after 6th connection
+- Browser DevTools shows connection pool exhausted
+- Agents receive events for some tasks but not others (inconsistent behavior)
+- Connection works in isolation but fails in multi-agent scenario
+- Works in production (HTTP/2) but fails in local dev (HTTP/1.1)
 
 **Phase to address:**
-Phase 10 (Installer Script) - Windows installer must document or work around execution policy. Critical for Windows adoption.
-
-**Sources:**
-- [PowerShell Execution Policy - Microsoft Learn](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies)
-- [PowerShell Beyond Windows: Cross-Platform Guide](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
+Phase 1 (SSE Infrastructure) - Design single-connection multiplexing before implementing multiple event endpoints. Test with 10+ concurrent clients.
 
 ---
 
-### Pitfall 6: Environment Variables Not Persisting After Installer Runs
+### Pitfall 6: Missing SSE Reconnection with Last-Event-ID Resume
 
 **What goes wrong:**
-The installer script sets `export WOOD_FIRED_BUGS_API_KEY="..."` in the shell profile (`~/.zshrc` or `~/.bashrc`), shows "Installation complete! Environment variable configured," but when the user runs skills in Claude Code, the MCP server can't access the environment variable and reports "API key not set." The variable works in new terminal sessions but not in the Claude Code environment where MCP server actually runs.
+Agent loses network connection for 30 seconds → reconnects to SSE endpoint → misses events that occurred during disconnection → operates on stale state → makes incorrect decisions (claims already-claimed task, transitions task in wrong state). Data divergence grows over time.
 
 **Why it happens:**
-Claude Code's MCP server process inherits environment from the Claude Code application, not from the user's shell profile. On macOS, GUI applications don't source shell profiles (`~/.zshrc`), so environment variables set there aren't available. On Linux, it depends on how Claude Code was launched (terminal vs. application menu). The installer modifies shell profile successfully, new terminal sessions load it, but Claude Code launched from GUI doesn't see it. Users verify with `echo $WOOD_FIRED_BUGS_API_KEY` in terminal (works) and assume it's configured, but Claude Code process doesn't have it.
+Basic SSE implementation doesn't track event IDs or implement resume-from-last-event logic. Clients reconnect but server streams from "now" instead of missed events. The EventSource API supports `Last-Event-ID` header for resumption, but server must implement event buffering and replay logic.
 
-**Consequences:**
-- MCP tools fail with "unauthorized" despite variable being "configured"
-- Works in terminal testing, fails in actual Claude Code usage
-- Different behavior on macOS vs Linux vs Windows
-- Variable present in shell, absent in Claude Code MCP server process
-- Users frustrated by inconsistent environment variable behavior
-- Installer claims success but setup doesn't work where it matters
+Reference: [Server-Sent Events: A Comprehensive Guide](https://medium.com/@moali314/server-sent-events-a-comprehensive-guide-e4b15d147576)
 
-**Prevention:**
-- **macOS**: Document that GUI apps don't source shell profiles; recommend setting in `~/.MacOSX/environment.plist` (deprecated) or use LaunchAgent to set globally
-- **Better for all platforms**: Configure environment variable in MCP server's config.json directly:
-  ```json
-  {
-    "mcpServers": {
-      "wood-fired-bugs": {
-        "command": "node",
-        "args": ["/path/to/dist/mcp/index.js"],
-        "env": {
-          "WOOD_FIRED_BUGS_API_KEY": "actual-key-value"
-        }
-      }
-    }
-  }
-  ```
-- Installer should write API key to MCP config `env` section, not rely on shell profile
-- Still write to shell profile for CLI usage (terminal commands), but MCP config is critical
-- Test by launching Claude Code from GUI (not terminal) and verify MCP server has variable
-- Document: "Environment variables in shell profile work for terminal, MCP config for Claude Code"
+**How to avoid:**
+1. Assign sequential ID to every event: `id: ${timestamp}-${sequence}\n`
+2. Buffer recent events (last 1000 or 5-minute window) in memory
+3. On connection, check `Last-Event-ID` header and replay missed events
+4. Implement event retention strategy: buffer critical events longer than informational
+5. Add full-state snapshot endpoint for clients that missed too many events
 
-**Detection:**
-- Run `/mcp` in Claude Code and check if server shows "connected" or "auth error"
-- MCP server logs show "WOOD_FIRED_BUGS_API_KEY is undefined"
-- `echo $WOOD_FIRED_BUGS_API_KEY` in terminal works, but skills fail with auth error
-- Restarting terminal loads variable, restarting Claude Code doesn't help
-- Works when Claude Code launched from terminal, fails when launched from dock/menu
+**Warning signs:**
+- Agents request full task list after every reconnection (expensive)
+- State divergence between long-running vs. recently-reconnected agents
+- Duplicate actions (claiming task twice) after network blip
+- Logs show "missed N events during disconnect" warnings
+- Integration tests fail with intermittent network simulation
 
 **Phase to address:**
-Phase 10 (Installer Script) - Critical for MCP server authentication. Shell profile configuration is insufficient; must write to MCP config's `env` section.
-
-**Sources:**
-- [Managing API key environment variables in Claude Code](https://support.claude.com/en/articles/12304248-managing-api-key-environment-variables-in-claude-code)
-- [Common Mistakes with .env Files](https://medium.com/byte-of-knowledge/common-mistakes-developers-make-with-env-files-1dbd72272eba)
+Phase 1 (SSE Infrastructure) - Implement event ID and buffering before production use. Test reconnection with network chaos (disconnect for 1s, 10s, 60s).
 
 ---
 
-### Pitfall 7: Cross-Platform Path Separators in Installer
+### Pitfall 7: Workflow Hook Infinite Loop from Self-Triggering
 
 **What goes wrong:**
-The installer script constructs file paths using hardcoded `/` (forward slash) separators, which work on Linux and macOS but fail on Windows where paths use `\` (backslash). PowerShell commands like `Copy-Item "$HOME/.claude/commands/tasks/log-bug.md"` fail with "path not found" because PowerShell interprets forward slashes differently in some contexts. Paths get mangled, files end up in wrong locations, or operations fail completely.
+Workflow hook triggers on task status change → updates parent task → parent update triggers same hook → updates parent's parent → spirals until stack overflow or circular dependency detected. Server crashes or becomes unresponsive. Database fills with redundant updates.
 
 **Why it happens:**
-Bash and PowerShell handle path separators differently. While PowerShell often accepts forward slashes, certain operations (especially with `Copy-Item`, file system cmdlets) expect native backslashes or fail silently. Developers write `$HOME/.claude/commands` in Bash and `$env:USERPROFILE/.claude/commands` in PowerShell assuming equivalence, but path construction differs. Hardcoding separators seems simpler than using platform-specific path joining, but breaks cross-platform compatibility.
+Workflow automation hooks fire on EVERY update without checking if the update was caused by automation itself. The existing service layer has no hook execution context tracking. Circular task hierarchies (rare but possible with bugs) + cascading updates = infinite loop.
 
-**Consequences:**
-- Windows installer creates directories with wrong separators: `C:\Users\Name\.claude/commands`
-- Files copied to incorrect locations or fail with "path not found"
-- Different behavior on Windows vs. Linux for "identical" installer
-- Installer appears to succeed but files are misplaced
-- Skills not found by Claude Code because directory structure is wrong
-- Difficult to debug because paths look correct in some contexts
+Reference: [Make.com AI Agents: Patterns and Pitfalls](https://www.taskfoundry.com/2025/08/make-ai-agents-patterns-pitfalls-automation.html)
 
-**Prevention:**
-- **PowerShell**: Use `Join-Path` cmdlet instead of string concatenation:
-  ```powershell
-  $skillDir = Join-Path $env:USERPROFILE ".claude" "commands" "tasks"
-  ```
-- **Bash**: Use forward slashes (native on Linux/macOS), no special handling needed:
-  ```bash
-  skill_dir="$HOME/.claude/commands/tasks"
-  ```
-- Don't assume `/` works everywhere; PowerShell prefers `\` for native cmdlets
-- Test installer on actual Windows (not WSL) to verify path handling
-- Use PowerShell's `[System.IO.Path]::Combine()` for guaranteed correct separators
-- Avoid mixing `cmd.exe` path conventions with PowerShell paths
+**How to avoid:**
+1. Add execution context flag: `{ source: 'automation' | 'user' }` to skip hooks for automation updates
+2. Implement maximum cascade depth: fail after 5 levels of workflow propagation
+3. Track update chain: `[task1 → task2 → task3]` and detect cycles before executing
+4. Use idempotency: check if automation would make any actual change before executing
+5. Add circuit breaker: disable hooks if update rate exceeds threshold (100/sec)
 
-**Detection:**
-- Windows installation creates `.claude/commands` as single directory name instead of nested path
-- Files end up in `C:\Users\Name\.claude` instead of `C:\Users\Name\.claude\commands\tasks`
-- `Test-Path` checks fail on Windows but work on Linux
-- Skills not detected by Claude Code on Windows installation
-- Manual path inspection shows forward slashes in Windows registry or filesystem
+**Warning signs:**
+- CPU spikes to 100% during simple status transitions
+- Database transaction count explodes (1000+ transactions for single user action)
+- Logs show same task updated repeatedly (task-123 updated 50 times in 1 second)
+- Stack trace shows recursive service method calls
+- Integration tests timeout during workflow scenarios
 
 **Phase to address:**
-Phase 10 (Installer Script) - Windows installer must use PowerShell path cmdlets. Linux installer can use standard forward slashes.
+Phase 3 (Workflow Automation) - Implement loop detection before enabling any cascading logic. Add fuzzing test with random task hierarchies.
 
-**Sources:**
-- [PowerShell on Linux: Windows Script Compatibility](https://windowsforum.com/threads/powershell-on-linux-3-practical-paths-to-windows-script-compatibility.400301/)
-- [PowerShell differences on non-Windows platforms](https://learn.microsoft.com/en-us/powershell/scripting/whats-new/unix-support)
+---
+
+### Pitfall 8: Non-Idempotent Workflow Actions Create Duplicate Side Effects
+
+**What goes wrong:**
+Network timeout during task claim → client retries → claim succeeds twice (different transaction IDs) → two "task claimed" events broadcast → two notifications sent → two log entries → two API webhooks → downstream systems process duplicate actions. Audit trail corrupted.
+
+**Why it happens:**
+Workflow hooks execute on every successful transaction without deduplication. HTTP is not idempotent by default—retry after network failure re-executes full workflow. The service layer doesn't track request IDs or implement idempotency keys. MCP stdio transport retries without client-side dedup.
+
+Reference: [Idempotent Consumer Pattern](https://microservices.io/patterns/communication-style/idempotent-consumer.html)
+
+**How to avoid:**
+1. Accept client-provided idempotency key (`X-Idempotency-Key` header) on mutation endpoints
+2. Store processed idempotency keys in database table with TTL (24 hours)
+3. Check key before executing: if seen, return cached result instead of re-executing
+4. Make workflow actions naturally idempotent: "set status to done" not "increment counter"
+5. Use event outbox pattern: write events with unique ID, consumer deduplicates
+
+**Warning signs:**
+- Duplicate events in SSE stream (same task update broadcast twice)
+- Double-counting in metrics/analytics
+- Users report duplicate notifications
+- Audit logs show identical entries with different timestamps
+- Integration tests occasionally produce 2x expected side effects
+
+**Phase to address:**
+Phase 2 (Atomic Claim Protocol) + Phase 3 (Workflow Automation) - Implement for claim endpoint first, then extend to all mutations. Test with network fault injection.
+
+---
+
+### Pitfall 9: Prepared Statement Reuse Across Concurrent Transactions
+
+**What goes wrong:**
+Repository uses class-level prepared statements (see `TaskRepository` constructor). Two concurrent requests execute → both use same `this.insertTaskStmt` → statements interleave → parameter binding corrupts → Task A gets Task B's data. Silent data corruption, extremely hard to debug.
+
+**Why it happens:**
+Better-sqlite3 prepared statements are NOT safe for concurrent use. The existing repository pattern pre-compiles statements for reuse, which works for sequential operations but breaks with async concurrency. Node.js event loop can interleave execution between `stmt.run()` calls.
+
+**How to avoid:**
+1. ONLY reuse prepared statements within `db.transaction()` boundaries (synchronous)
+2. For async code paths, create statements inline: `db.prepare(...).run(...)` per request
+3. Use connection pooling with one connection per concurrent operation
+4. Add mutex/semaphore if async concurrency required (defeats performance benefit)
+5. Document that better-sqlite3 forces synchronous transaction model
+
+**Warning signs:**
+- Random data corruption in high-concurrency scenarios
+- Task A occasionally has Task B's title/description
+- Test failures only appear with parallel test execution
+- Production data inconsistencies that can't be reproduced locally
+- Corruption happens more frequently under load
+
+**Phase to address:**
+Phase 2 (Atomic Claim Protocol) - Before adding concurrent claim logic, audit statement reuse. Add concurrency stress test (100 simultaneous creates).
+
+---
+
+### Pitfall 10: SSE Event Payload Size Exceeds Buffer Limits
+
+**What goes wrong:**
+Task has 500 comments → status update triggers workflow → broadcasts event with full task + all comments → event payload is 2MB → SSE frame exceeds Node.js default buffer → connection drops or event truncated → clients receive malformed JSON → parsing fails → reconnect storm.
+
+**Why it happens:**
+SSE spec has no payload size limit, but HTTP servers, proxies, and clients do. Including full entity data (to avoid race conditions from Pitfall #4) seems safe but breaks with large aggregates. The existing schema allows unbounded comment count, unbounded tag count, unbounded description length.
+
+**How to avoid:**
+1. Limit event payload size: max 64KB per event (enforce at serialization)
+2. Send lightweight event with ID, type, timestamp → client fetches full data if needed
+3. Paginate large collections in event payload: include comment count, not all comments
+4. Add database constraints: max 1000 comments per task, max 10KB description
+5. Implement payload compression for large events (gzip SSE frames)
+
+**Warning signs:**
+- SSE connections drop randomly during high-activity periods
+- Client logs show JSON parse errors on event reception
+- Events arrive incomplete (truncated mid-JSON)
+- Memory usage spikes when broadcasting large updates
+- Proxy servers (nginx) return 502 errors during event broadcast
+
+**Phase to address:**
+Phase 1 (SSE Infrastructure) - Define event payload schema with size limits before implementation. Test with synthetic 1MB+ entities.
 
 ---
 
@@ -327,66 +294,103 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Hardcoding `mcp__plugin_tasks_wood-fired-bugs__` prefix in skills | Faster skill authoring, no need to look up full names | If server name changes, all skills break; harder to test with different MCP configs | Never - always use correct full names from start |
-| Using console.log() for debugging MCP server | Quick debugging during development | Breaks stdio transport when deployed; -32000 errors in production | Only in isolated test scripts, never in server code |
-| Copying skill examples without testing MCP tool names | Fast skill prototyping based on examples | Skills reference wrong tool names and fail at runtime | Only in draft phase; must verify before commit |
-| Installer assumes bash on Linux | Simpler installer logic, no shell detection | Fails for zsh/fish users (large user segment on modern distros) | Only if documenting "bash only" limitation clearly |
-| Shell profile for all env vars | Standard pattern, works for CLI tools | GUI-launched apps (Claude Code) don't source profiles | Acceptable for CLI-only tools; must use MCP config `env` for Claude Code |
-| Relative paths in MCP config | Shorter, more readable config | Breaks when Claude Code runs from different directory | Never - always use absolute paths in production config |
+| Poll for changes instead of SSE | Simpler implementation, no connection management | 10-100x higher database load, 1-5s latency, poor UX | Never (already have polling, this milestone exists to remove it) |
+| Use `BEGIN DEFERRED` for all transactions | Default behavior, less typing | Unpredictable SQLITE_BUSY under concurrency, fails Pitfall #2 | Read-only operations only |
+| Broadcast events after transaction without delay/buffering | Immediate event delivery, simpler code | Race conditions (Pitfall #4), flaky tests, client confusion | Never in multi-agent context |
+| Store SSE clients in plain array without cleanup | Quick prototype, works in dev | Memory leaks (Pitfall #1), production crashes | Never (add cleanup from day 1) |
+| Make workflow hooks fire-and-forget async | Non-blocking user requests, faster response | Lost errors, no rollback on failure, inconsistent state | Never (use transactional outbox) |
+| Skip idempotency key implementation | Faster initial delivery | Duplicate events (Pitfall #8), corrupted metrics, user complaints | Never for mutation endpoints |
+| Reuse prepared statements across requests | Better performance | Silent data corruption (Pitfall #9) under concurrency | Only within `db.transaction()` blocks |
+| Include full entity in events | Avoids client queries, prevents race conditions | Payload size issues (Pitfall #10), bandwidth waste | Only for entities with bounded size (<10KB) |
+| No event sequence numbers or buffering | Simpler server, less memory | Missed events on reconnect (Pitfall #6), stale client state | Never (Last-Event-ID is SSE spec) |
+| Single transaction per operation | Matches REST semantics | Workflow inconsistency (Pitfall #3), partial failures | Acceptable if using event outbox pattern |
+
+---
 
 ## Integration Gotchas
 
-Common mistakes when integrating Claude Code skills with existing MCP server.
+Common mistakes when connecting to external services.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| MCP tool references in skills | Using simple tool names (`create_task`) from server implementation | Use fully qualified names from `/mcp` command output (`mcp__plugin_tasks_wood-fired-bugs__create_task`) |
-| Skill directory structure | Creating flat `.md` files in `~/.claude/commands/` | Skills require directory with `SKILL.md` entrypoint; slash commands can be flat `.md` |
-| allowed-tools in skill frontmatter | Listing tools without full qualification | Must use full MCP tool names: `mcp__plugin_tasks_wood-fired-bugs__*` for wildcards |
-| API key configuration | Only setting in shell profile | Must set in MCP server config's `env` section for GUI-launched Claude Code |
-| Testing skills locally | Testing with MCP server run manually in terminal | Must test with server auto-started by Claude Code config to catch environment issues |
-| Installer verification | Checking if files copied and profile modified | Must test actual skill invocation in Claude Code after installation |
+| SSE + SQLite WAL | Broadcasting events immediately after `transaction()` return without checking visibility | Delay 10-50ms OR include full data in event OR use `PRAGMA wal_checkpoint` for critical events |
+| Fastify + SSE | Using `reply.raw.write()` without proper cleanup hooks | Use `@fastify/sse` plugin v7+ which handles connection lifecycle automatically |
+| Better-sqlite3 + Concurrency | Assuming prepared statements are thread-safe because Node is single-threaded | Create statements inline for async code or use only within `db.transaction()` synchronous blocks |
+| EventSource + HTTP/1.1 | Opening separate SSE connection per topic/resource type | Multiplex all events over single connection, filter client-side |
+| Fastify hooks + Transactions | Putting transaction logic in `preHandler`/`onSend` hooks | Transactions only in route handlers or service layer where rollback is possible |
+| SSE + Proxies (nginx/Apache) | Default proxy buffering holds events until buffer full | Set `X-Accel-Buffering: no` header and configure proxy for streaming |
+| WAL mode + Docker volumes | Using network-mounted volumes (NFS/SMB) for SQLite WAL files | Use local volumes or bind mounts; WAL requires POSIX locking |
+| TypeScript + better-sqlite3 | Type-casting statement results without runtime validation | Validate with Zod schema before type assertion; database could have old data |
+
+---
+
+## Performance Traps
+
+Patterns that work at small scale but fail as usage grows.
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Unbounded SSE client registry | Memory usage grows linearly with connection count; never freed | Implement connection timeout (10min), heartbeat detection (30s), max connections per IP | >500 concurrent connections |
+| Event broadcast to all clients | CPU spikes with each update; O(N) serialization cost | Implement topic-based subscriptions; clients specify filters | >100 concurrent clients |
+| Event buffer without size limit | Memory leak from buffering all events for Last-Event-ID resume | Cap buffer at 1000 events or 5-minute window; implement snapshot API | After 24hr uptime with high event rate |
+| No connection backpressure | Slow clients cause memory buildup; server buffers unlimited pending events | Detect slow consumers (buffer >100 events), disconnect them, force reconnect | Clients on 3G/poor networks |
+| Workflow cascade without depth limit | Exponential transaction count for deep task hierarchies | Maximum cascade depth of 5 levels; fail-fast with clear error | Task trees >10 levels deep |
+| Synchronous event broadcasting | Request latency includes event serialization + delivery time | Use async event queue; decouple HTTP response from broadcast | >50ms per broadcast with >20 clients |
+| Claim retries without backoff | Thundering herd when claim fails; all agents retry instantly | Exponential backoff with jitter (50ms → 200ms → 800ms) | >10 concurrent claimants |
+| Full task fetch after every event | Database load scales with event rate × client count | Include entity snapshot in event payload | >100 events/sec |
+
+---
 
 ## Security Mistakes
 
-Domain-specific security issues beyond general security practices.
+Domain-specific security issues beyond general web security.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Hardcoding API key in skill markdown | API key leaked in skill files, committed to git | Use environment variable reference only; installer sets actual key in user's environment |
-| Writing API key to shell profile with 644 permissions | Key readable by all users on shared machine | Installer should create or verify restrictive permissions (600) on profile files |
-| Including API key in MCP config JSON with default permissions | Key exposed in `~/.claude/config.json` readable by other processes | Set file permissions to 600 after writing; document security implication |
-| Skill examples showing real API keys | Users copy-paste examples with keys into their own configs | Always use placeholder `YOUR_API_KEY_HERE` in examples and documentation |
-| No validation of API key format in installer | Installer accepts any string, user enters invalid key | Validate API key format (pattern match) and optionally test connectivity before writing |
-| API key transmitted in MCP protocol | Key visible in process arguments or logs | Pass via environment variable, never as command-line argument |
+| No SSE connection authentication | Any client can connect and receive all events; data leakage | Validate `X-API-Key` on SSE endpoint same as REST endpoints |
+| Broadcasting sensitive data in events | All connected clients receive all events regardless of permissions | Implement per-client event filtering based on authenticated identity |
+| No rate limiting on claim endpoint | Malicious agent claims all tasks; denial of service | Rate limit claim attempts: max 10/minute per API key |
+| Event payload includes deleted/private data | Clients cache events; deleted comments still visible | Scrub sensitive fields from events; send tombstone records for deletes |
+| SSE endpoint exposed without CORS | Any website can connect to SSE stream from user's browser | Configure `@fastify/cors` to whitelist allowed origins |
+| Claim endpoint without atomic check-and-set | Race condition allows double-claiming via TOCTOU attack | Use `UPDATE ... WHERE claimed_by IS NULL` atomic constraint check |
+| Workflow hooks execute user-provided code | Arbitrary code execution if configuration allows expressions | Use safe state machine DSL; never `eval()` configuration strings |
+| No audit log for automated actions | Automated workflow bugs invisible; no accountability | Log all automation-triggered updates with source tracking |
+
+---
 
 ## UX Pitfalls
 
-Common user experience mistakes when adding skills and installer.
+Common user experience mistakes in this domain.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Error message: "tool not found: create_task" | User thinks MCP server not configured correctly | Detect unqualified tool name and suggest full name: "Did you mean mcp__plugin_tasks_wood-fired-bugs__create_task?" |
-| Installer completes but skills don't work | User assumes installation successful, wastes time debugging | Installer runs connectivity test at end: verify MCP server can be reached and responds |
-| No feedback during skill execution | User doesn't know if skill is working or stuck | Skills should log progress: "Searching tasks...", "Found 5 results", "Creating task..." |
-| Generic error when MCP server unreachable | User doesn't know if server is down, misconfigured, or network issue | Check specific failure: "MCP server not running. Start with: tasks serve" or "API key missing" |
-| Installer assumes user knows shell | Users confused by "reload your shell" instruction | Provide explicit command: "Run: source ~/.zshrc (or restart terminal)" |
-| Skills fail silently when API key wrong | User thinks service is down | Validate API key before MCP tool calls; provide clear auth error message |
+| No indication of SSE connection status | User doesn't know if updates are live or stale | Expose connection state: "connected", "reconnecting", "offline" |
+| Events arrive but UI doesn't update | User manually refreshes to see changes; thinks system is broken | Show toast/badge for new events; auto-refresh affected views |
+| Workflow runs but user sees no feedback | Status changes happen silently; confusing for debugging | Emit workflow execution events: "Marked 3 dependent tasks as blocked" |
+| Claim fails but no explanation why | User retries repeatedly; frustration | Return detailed error: "Task claimed by agent-007 2 seconds ago" |
+| SSE reconnection storm floods logs | Developers ignore logs; miss real errors | Quiet mode for expected reconnections; alert on excessive failures |
+| Concurrent update conflict lost silently | User's changes overwritten by workflow; data loss | Implement optimistic locking; show merge conflict UI |
+| Event ordering not guaranteed | User sees "Task done" before "Task started"; temporal confusion | Include causality chain in events; client reorders before displaying |
+| No offline resilience | SSE disconnect breaks entire agent; requires restart | Implement fallback to polling when SSE unavailable for >60s |
+
+---
 
 ## "Looks Done But Isn't" Checklist
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Skill markdown created:** Often missing actual testing with `/skill-name` invocation in Claude Code
-- [ ] **MCP config added:** Often missing `env` section with API key (relies on shell profile which doesn't work for GUI apps)
-- [ ] **Installer writes to shell profile:** Often missing verification that correct shell detected (bash vs zsh vs fish)
-- [ ] **Installer shows "success":** Often missing actual connectivity test (MCP server ping or health check)
-- [ ] **Tool names in skills:** Often missing fully qualified names (uses simple names that fail at runtime)
-- [ ] **Windows installer tested:** Often missing test on actual Windows (developer uses WSL which is Linux)
-- [ ] **MCP server logging:** Often missing stderr routing (console.log() used, breaks stdio transport)
-- [ ] **Cross-platform paths:** Often missing PowerShell path cmdlets (hardcoded `/` separators fail on Windows)
-- [ ] **Skill documentation:** Often missing MCP tool list showing full qualified names for reference
-- [ ] **Installer rollback:** Often missing cleanup on failure (leaves partial config, corrupted profile)
+- [ ] **SSE Implementation:** Often missing connection cleanup on `close`/`error` events — verify memory doesn't leak with 100 connect/disconnect cycles
+- [ ] **Atomic Claims:** Often missing `BEGIN IMMEDIATE` for write transactions — verify no SQLITE_BUSY with 10 concurrent claims
+- [ ] **Event Broadcasting:** Often missing transaction visibility delay — verify no 404s when querying entity immediately after event
+- [ ] **Workflow Hooks:** Often missing transaction boundaries for cascading updates — verify parent task updated atomically with child
+- [ ] **SSE Reconnection:** Often missing Last-Event-ID buffering and replay — verify no missed events after 30-second disconnect
+- [ ] **Idempotency:** Often missing deduplication for retried mutations — verify duplicate request returns same result without side effects
+- [ ] **Event Payloads:** Often missing size limits and validation — verify 500-comment task event doesn't break connection
+- [ ] **Connection Multiplexing:** Often missing topic filtering — verify 10 clients on same machine don't hit 6-connection limit
+- [ ] **Loop Prevention:** Often missing cascade depth limits — verify circular task hierarchy doesn't cause infinite loop
+- [ ] **Error Handling:** Often missing SQLITE_BUSY retry logic — verify claims succeed under high contention (>80% success rate)
+
+---
 
 ## Recovery Strategies
 
@@ -394,13 +398,18 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Unqualified tool names in skills | LOW | 1. Run `/mcp` to get correct names. 2. Find-replace in all skill .md files. 3. Test each skill. (1-2 hours for 10 skills) |
-| stdout logging in MCP server | LOW | 1. Replace console.log() with console.error(). 2. Rebuild. 3. Restart Claude Code to reconnect. (15 minutes) |
-| Wrong shell profile detection | MEDIUM | 1. Provide manual instructions for all shells. 2. Users run shell-specific setup. 3. Update installer with detection. (2-4 hours dev + user support) |
-| Relative paths in MCP config | LOW | 1. Update config.json with absolute paths. 2. Restart Claude Code. 3. Document absolute path requirement. (30 minutes) |
-| Environment variable not in Claude Code | MEDIUM | 1. Add `env` section to MCP config. 2. Users re-run installer or manual edit. 3. Restart Claude Code. (1 hour + user re-setup) |
-| Windows execution policy blocks installer | LOW | 1. Document policy change or bypass. 2. Provide alternative manual installation steps. 3. Create .bat wrapper. (1 hour) |
-| Path separator issues on Windows | MEDIUM | 1. Rewrite PowerShell installer with Join-Path. 2. Users re-run installer (overwrites incorrect paths). 3. Test on Windows VM. (2-3 hours) |
+| SSE Memory Leak | LOW | Restart server to clear connection registry; implement cleanup; redeploy |
+| Transaction Upgrade SQLITE_BUSY | LOW | Add retry logic in client; fix with BEGIN IMMEDIATE; redeploy |
+| Workflow Inconsistency | HIGH | Manual database surgery to fix orphaned state; implement saga rollback; may need full data audit |
+| Event Broadcast Race | MEDIUM | Clients self-heal on next full sync; add visibility delay; redeploy |
+| HTTP/1.1 Connection Limit | LOW | Switch to HTTP/2 or multiplex events; clients reconnect automatically |
+| Missed Events on Reconnect | MEDIUM | Clients fetch full state; implement Last-Event-ID; redeploy; clients auto-backfill |
+| Workflow Infinite Loop | HIGH | Kill runaway processes; add circuit breaker; fix loop detection; clear pending events |
+| Duplicate Side Effects | MEDIUM | Manual deduplication in downstream systems; implement idempotency keys; redeploy |
+| Prepared Statement Corruption | HIGH | Restore from backup; fix statement reuse; full data integrity audit required |
+| Event Payload Too Large | LOW | Truncate event or split into chunks; add size limit; redeploy; clients refetch |
+
+---
 
 ## Pitfall-to-Phase Mapping
 
@@ -408,63 +417,53 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Unqualified MCP tool names | Phase 9 (Skill Authoring) | Run each skill and verify tools invoke successfully; check skill .md files for `mcp__plugin_` prefix |
-| stdout logging | Phase 8 (MCP Server Verification) | Run MCP server standalone; verify stdout contains ONLY JSON-RPC (no text logs); test Claude Code connection |
-| MCP config paths | Phase 10 (Installer Script) | Install on fresh VM; verify config.json contains absolute paths; test MCP server auto-starts |
-| Shell profile detection | Phase 10 (Installer Script) | Test installer on bash, zsh, fish; verify correct profile modified; run `echo $VAR` in fresh shell |
-| Windows execution policy | Phase 10 (Installer Script) | Test on Windows with default Restricted policy; verify error message or bypass documented |
-| Environment variable in Claude Code | Phase 10 (Installer Script) | Launch Claude Code from GUI (not terminal); verify MCP server has env var; test skill auth |
-| Path separators on Windows | Phase 10 (Installer Script) | Run Windows installer; verify paths use backslashes; check files created in correct nested structure |
+| SSE Connection Memory Leaks | Phase 1: SSE Infrastructure | Load test: 1000 connect/disconnect cycles, memory stays flat |
+| Transaction Upgrade SQLITE_BUSY | Phase 2: Atomic Claim Protocol | Concurrency test: 20 agents claim same task, >95% succeed on first try |
+| Cascading Workflow Outside Transaction | Phase 3: Workflow Automation | Integration test: kill server mid-cascade, verify rollback or completion |
+| Event Broadcast Race | Phase 1: SSE Infrastructure | Timing test: receive event, immediate query returns 200 OK |
+| HTTP/1.1 Six-Connection Limit | Phase 1: SSE Infrastructure | Multi-agent test: 10 clients on localhost, all receive events |
+| Missing Last-Event-ID Resume | Phase 1: SSE Infrastructure | Chaos test: disconnect for 10s, reconnect, verify 0 missed events |
+| Workflow Hook Infinite Loop | Phase 3: Workflow Automation | Fuzzing test: random task hierarchies, detect cycles before executing |
+| Non-Idempotent Actions | Phase 2: Atomic Claim Protocol | Retry test: duplicate request returns 200 + cached result, no duplicate events |
+| Prepared Statement Concurrency | Phase 2: Atomic Claim Protocol | Stress test: 100 parallel creates, 0 data corruption |
+| Event Payload Size | Phase 1: SSE Infrastructure | Boundary test: 1MB task triggers error, not silent truncation |
 
-## Phase-Specific Research Flags
-
-Phases likely to need deeper research based on findings.
-
-| Phase | Research Flag | Why |
-|-------|---------------|-----|
-| Phase 8 (MCP Server Verification) | Deeper research needed | Verify existing v1.1 server doesn't use console.log(); test stdio transport compliance; may need refactoring |
-| Phase 9 (Skill Authoring) | Standard patterns available | MCP tool usage well-documented in plugin-dev examples; follow established patterns with verified tool names |
-| Phase 10 (Installer - Linux) | Moderate research needed | Shell detection logic for bash/zsh/fish; environment variable persistence across shells; testing on multiple distros |
-| Phase 10 (Installer - Windows) | Deeper research needed | PowerShell execution policy handling; path separator issues; environment variable for GUI apps; testing on Windows |
-| Phase 11 (Integration Testing) | Standard testing approaches | Verify skills invoke correctly; MCP server connects; installer produces working setup; E2E testing skills in Claude Code |
+---
 
 ## Sources
 
-### Claude Code Skills & MCP Integration
-- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills)
-- [The Pulumi Blog - Claude Skills for DevOps](https://www.pulumi.com/blog/top-8-claude-skills-devops-2026/)
-- [Claude Code Evolution: MCP, Commands, Agents & Skills](https://claude-world.com/articles/claude-code-evolution/)
-- [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
-- [Inside Claude Code Skills: Structure and Invocation](https://mikhail.io/2025/10/claude-code-skills/)
-- [Claude Skills vs Slash Commands 2026](https://yingtu.ai/blog/claude-code-skills-vs-slash-commands)
+### SSE Implementation
 
-### MCP Server Configuration & Transport
-- [STDIO Transport - MCP Framework](https://mcp-framework.com/docs/Transports/stdio-transport/)
-- [Debugging MCP Servers: Tips and Best Practices](https://www.mcpevals.io/blog/debugging-mcp-servers-tips-and-best-practices)
-- [MCP Server Troubleshooting Guide 2025](https://www.mcpstack.org/learn/mcp-server-troubleshooting-guide-2025)
-- [Configuring MCP Tools in Claude Code - Scott Spence](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code)
-- [Claude Code CLI Best Practices Checklist](https://notes.muthu.co/2026/02/claude-code-cli-best-practices-checklist/)
+- [GitHub - fastify/sse: Server-Sent Events for Fastify](https://github.com/fastify/sse) - Official Fastify SSE plugin
+- [Avoid Fastify's reply.raw and reply.hijack](https://lirantal.com/blog/avoid-fastify-reply-raw-and-reply-hijack-despite-being-a-powerful-http-streams-tool) - Connection cleanup pitfalls
+- [Server-Sent Events: A Comprehensive Guide](https://medium.com/@moali314/server-sent-events-a-comprehensive-guide-e4b15d147576) - Last-Event-ID and reconnection
+- [EventSource 6-connection limit bug](https://bugs.chromium.org/p/chromium/issues/detail?id=275955) - HTTP/1.1 browser limits
+- [How to Implement SSE in React](https://oneuptime.com/blog/post/2026-01-15-server-sent-events-sse-react/view) - Client cleanup patterns
 
-### Cross-Platform Installer & Environment Variables
-- [PowerShell Beyond Windows: Cross-Platform Guide](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
-- [Installing PowerShell on Linux in 2026](https://thelinuxcode.com/installing-powershell-on-linux-in-2026-a-practical-opinionated-walkthrough/)
-- [PowerShell differences on non-Windows platforms](https://learn.microsoft.com/en-us/powershell/scripting/whats-new/unix-support)
-- [Variables in any environment](https://cgjennings.ca/articles/environment-variables/)
-- [Managing API key environment variables in Claude Code](https://support.claude.com/en/articles/12304248-managing-api-key-environment-variables-in-claude-code)
+### SQLite Concurrency
 
-### Shell Profile Configuration
-- [Moving to zsh, part 2: Configuration Files](https://scriptingosx.com/2019/06/moving-to-zsh-part-2-configuration-files/)
-- [fish shell Tutorial](https://fishshell.com/docs/current/tutorial.html)
-- [Shell Profile Detection Issue - nvm](https://github.com/nvm-sh/nvm/issues/1837)
-- [Bash and Zsh Profile Files](https://ss64.com/mac/syntax-profile.html)
-- [Startup scripts of Bash and Zsh](https://tanguy.ortolo.eu/blog/article25/shrc)
+- [Write-Ahead Logging - SQLite](https://sqlite.org/wal.html) - Official WAL documentation
+- [What to do about SQLITE_BUSY errors despite timeout](https://berthub.eu/articles/posts/a-brief-post-on-sqlite3-database-locked-despite-timeout/) - Transaction upgrade pitfall
+- [SQLite Transaction Documentation](https://www.sqlite.org/lang_transaction.html) - BEGIN IMMEDIATE vs DEFERRED
+- [Isolation In SQLite](https://sqlite.org/isolation.html) - Snapshot isolation and WAL visibility
+- [Atomic Commit In SQLite](https://sqlite.org/atomiccommit.html) - Transaction atomicity guarantees
 
-### Security & Best Practices
-- [API Key Best Practices](https://support.claude.com/en/articles/9767949-api-key-best-practices-keeping-your-keys-safe-and-secure)
-- [Common Mistakes with .env Files](https://medium.com/byte-of-knowledge/common-mistakes-developers-make-with-env-files-1dbd72272eba)
-- [8 tips for securely using API keys](https://blog.streamlit.io/8-tips-for-securely-using-api-keys/)
+### Workflow Automation
+
+- [Reliable Workflow Automation Platforms](https://www.stacksync.com/blog/reliable-workflow-automation-platforms-for-real-time-enterprise-sync) - Cascading failures
+- [Make.com AI Agents: Patterns and Pitfalls](https://www.taskfoundry.com/2025/08/make-ai-agents-patterns-pitfalls-automation.html) - Infinite loops and self-triggering
+- [Queue is not a workflow engine](https://debugg.ai/resources/queue-is-not-a-workflow-engine-durable-execution-temporal-step-functions-2025) - Task queue anti-patterns
+- [Idempotent Consumer Pattern](https://microservices.io/patterns/communication-style/idempotent-consumer.html) - Deduplication strategies
+- [Event Sourcing and State Machines](https://gist.github.com/eulerfx/4ac420a14422ac960222) - Transaction boundaries
+
+### Event-Driven Architecture
+
+- [Event Sourcing pattern - Azure](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing) - Consistency guarantees
+- [State-Machine Replication: Concepts & Advances](https://www.emergentmind.com/topics/state-machine-replication-smr) - Atomicity in concurrent updates
+- [Idempotent Command Handling](https://event-driven.io/en/idempotent_command_handling/) - Request deduplication
 
 ---
-*Pitfalls research for: Wood Fired Bugs v1.2 - Claude Code Skills & Installer*
-*Researched: 2026-02-13*
-*Confidence: HIGH - Based on official documentation, community best practices, and cross-platform compatibility research*
+
+*Pitfalls research for: Multi-agent coordination features (SSE, workflow automation, atomic claims)*
+*Researched: 2026-02-14*
+*Confidence: HIGH - All critical pitfalls verified with official documentation + recent community sources*

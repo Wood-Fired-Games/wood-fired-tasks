@@ -1,193 +1,295 @@
-# Feature Research
+# Feature Research: Multi-Agent Coordination
 
-**Domain:** Claude Code Skills & Cross-Platform Installer for Task Tracking Service
-**Researched:** 2026-02-13
-**Confidence:** HIGH
+**Domain:** Multi-agent task coordination (SSE events, workflow automation, atomic claiming)
+**Researched:** 2026-02-14
+**Confidence:** MEDIUM-HIGH
 
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist. Missing these = product feels incomplete.
+Features agents/users assume exist for real-time coordination. Missing these = coordination feels broken.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Basic workflow skills (log-bug, create-task, my-work, show-task) | Core task operations users invoke repeatedly; standard pattern in task tracking tools | LOW | Skills orchestrate existing MCP tools with minimal prompts |
-| MCP server auto-configuration | Claude Code users expect installer to handle `claude_desktop_config.json` modification; manual JSON editing is friction | MEDIUM | Must merge with existing config, handle Windows/macOS paths, validate JSON |
-| Environment variable setup for API key | Auth credential should be in env var, not hardcoded in skills; standard security practice | LOW | Installer writes to shell profile or system env depending on platform |
-| Connectivity test post-install | Users expect validation that installation worked; prevents "installed but not working" confusion | LOW | Test skill invokes health check via MCP tool, reports success/failure |
-| Cross-platform support (Linux + Windows) | Installer must work on developer's actual platforms; single-platform tools feel incomplete | MEDIUM | Separate Bash/PowerShell scripts with shared logic patterns |
-| Skill namespace (/tasks:command) | Prevents collision with other skills; Claude Code best practice per official docs | LOW | Skills installed to `~/.claude/skills/tasks/` directory |
-| Status transition skills (pick-up, done, blocked) | Users work in task lifecycle states; dedicated skills for common transitions reduce friction | LOW | Each skill is simple MCP tool call with status parameter |
-| Search skill | Task tracking is useless without search; users expect to find tasks by keyword | LOW | Delegates to existing `search_tasks` MCP tool |
-| Comment skill | Communication on tasks is table stakes for collaborative work tracking | LOW | Uses `add_comment` MCP tool with interactive prompt for comment text |
-| Project context skill (project-status) | Multi-project systems need project-level views; agents need project overview | MEDIUM | Combines `list_tasks` filtered by project with `get_project` for metadata |
+| **SSE: Basic event streaming** | Real-time updates are expected in 2026 task systems; polling is outdated | MEDIUM | HTTP/2 reduces connection limits; requires keep-alive, heartbeat |
+| **SSE: Event filtering by task/project** | Agents don't want all events, only relevant ones | MEDIUM | Prevents thundering herd; requires subscription metadata |
+| **SSE: Automatic reconnection** | Network failures happen; manual reconnect is unacceptable | LOW | EventSource provides this free; need Last-Event-ID support |
+| **SSE: Connection lifecycle management** | Idle connections waste resources | MEDIUM | Requires heartbeat, timeout detection, graceful disconnect |
+| **Workflow: Status transition triggers** | When task moves open→in_progress, something should happen | MEDIUM | Already have valid transitions; add hook points |
+| **Workflow: Dependency cascade updates** | When task is done, unblock dependents automatically | MEDIUM | Have dependency graph; need to detect and update blocked tasks |
+| **Claiming: Atomic assignment** | Two agents claiming same task = race condition disaster | HIGH | Requires database transaction or optimistic locking |
+| **Claiming: Fair distribution** | First-come-first-served prevents starvation | MEDIUM | FIFO queue or timestamp-based ordering |
+| **Claiming: Claim timeout/expiry** | Agent claims task then crashes = task stuck forever | MEDIUM | TTL on claims with automatic release; agent heartbeat |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set the product apart. Not required, but valuable.
+Features that set Wood Fired Bugs apart for LLM agent coordination. Not required, but valuable.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Skills use MCP tools exclusively (no REST calls) | Native Claude Code integration; skills leverage MCP's structured content, permission system, and error handling | LOW | Architectural decision already validated in v1.1 MCP server |
-| Installer validates existing MCP config | Most installers blindly overwrite; ours preserves existing servers and prevents config corruption | HIGH | Must parse JSON, detect conflicts, merge safely, validate syntax |
-| Unified installer detection (auto-detect platform) | User runs one command, installer adapts; competitors require manual platform selection | MEDIUM | Detect via `uname`/`$IsWindows`, invoke appropriate script |
-| Skill argument templating ($ARGUMENTS substitution) | Users can invoke `/tasks:show-task 123` instead of being prompted; power users save keystrokes | LOW | Built into Claude Code skill system per official docs |
-| Interactive prompts for missing fields | Skills prompt for required data when invoked without arguments; casual users prefer guidance | LOW | Use skill content to instruct Claude to ask for missing fields |
-| Installer backup before modification | Backs up `claude_desktop_config.json` before changes; rollback if something breaks | MEDIUM | Copy to timestamped backup, restore on failure |
-| Health check integrated into installer | Installer doesn't just copy files; validates service is running and MCP tools are accessible | MEDIUM | Requires service to be running; installer should provide troubleshooting if health fails |
-| Skills include examples in description | Skill descriptions show usage examples; Claude can reference when suggesting skill invocation | LOW | Part of skill frontmatter `description` field |
-| Skill permissions pre-configured | Skills specify `allowed-tools` to avoid repeated permission prompts for trusted MCP tools | LOW | Frontmatter feature from official docs; improves UX for repetitive workflows |
+| **SSE: Event type categorization** | Agents subscribe to task.updated vs task.created separately | LOW | Standard SSE event field; efficient filtering |
+| **SSE: Backpressure handling** | Slow agent doesn't crash server under high load | HIGH | Bounded buffers, circuit breakers, explicit disconnect on overload |
+| **SSE: Multi-stream multiplexing** | Agent gets project A and B updates on one connection | MEDIUM | Reduces connection count; HTTP/2 makes this efficient |
+| **Workflow: Conditional rules engine** | "If task priority=urgent AND assignee empty, notify team" | HIGH | Rule DSL, evaluation engine, extensibility point |
+| **Workflow: Batch operations** | "Mark all done subtasks as closed" in one atomic action | MEDIUM | Reduces chatter; requires transaction batching |
+| **Workflow: Undo/rollback** | Bad automation can be reverted | HIGH | Event sourcing or change log required |
+| **Claiming: Load-aware distribution** | Agents with fewer active tasks get priority | HIGH | Requires agent workload tracking; adaptive scheduling |
+| **Claiming: Skill-based routing** | Tasks tagged "backend" go to agents that can handle them | MEDIUM | Agent capability declaration + matching algorithm |
+| **Claiming: Optimistic locking with retry** | Fast path assumes no conflict; handles collision gracefully | MEDIUM | Version field on tasks; retry with exponential backoff |
+| **Event replay from checkpoint** | New agent connects, gets history since last_event_id | MEDIUM | EventSource supports this; need server-side event log retention |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem good but create problems.
+Features that seem good but create problems in multi-agent systems.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| GUI installer | "Visual tools are easier for non-technical users" | This is a developer tool for LLM agents; target users are comfortable with CLI. GUI adds dependency hell (Electron/Qt), platform fragmentation, testing burden. | Clear terminal output with progress indicators and troubleshooting messages |
-| Auto-update checker in skills | "Keep skills fresh with latest features" | Network I/O on every skill invocation adds latency. Users control Claude Code environment; forced updates break workflows. | Document update command (`git pull` in skills directory) with changelog |
-| Single "do-everything" skill | "One skill is simpler than many" | Loses discoverability (Claude can't pick the right tool). Violates single-responsibility. Harder to iterate on individual workflows. | Focused skills that do one thing well; Claude orchestrates combinations |
-| REST API fallback in skills | "What if MCP server isn't configured?" | Adds HTTP client dependency to skills (impossible in markdown). Skills assume prerequisites met. | Installer validation ensures MCP server is configured; error message guides user if not |
-| Embedded API key in skills | "Avoids environment variable setup" | Hardcoded secrets in `~/.claude/skills/` are a security anti-pattern. Skills are plain text; API key would be visible in backups. | Environment variable `WFB_API_KEY` set by installer; skills reference via MCP server env config |
-| Skill file generation from OpenAPI | "Auto-generate skills from REST API spec" | Generated skills are verbose, generic, don't capture workflow intent. Hand-crafted skills encode domain knowledge (e.g., "log-bug" implies specific fields). | Curate workflows manually; 10 well-designed skills > 19 auto-generated ones |
-| Installer modifies system Python/Node | "Ensure dependencies are available" | Users manage their own runtime environments. Modifying system packages causes conflicts. MCP server already installed (prerequisite). | Document prerequisites; installer validates they exist; fails gracefully with instructions if missing |
+| **WebSocket bidirectional streams** | "More flexible than SSE" | Overkill for server→agent updates; increases complexity; firewall unfriendly | Use SSE for events + REST API for commands |
+| **Real-time everything** | "Agents need instant updates on all changes" | Creates thundering herd; overloads network; most changes aren't urgent | Event filtering by relevance; configurable polling fallback for non-critical |
+| **Complex workflow DSL** | "Turing-complete automation language" | 78% of teams over-automate; debugging distributed workflows is nightmare | Predefined trigger→action patterns; extensible via hooks not scripts |
+| **Distributed consensus for claims** | "Perfectly consistent across all nodes" | Adds latency; requires Paxos/Raft; overkill for single SQLite instance | Optimistic locking with retry; claims expire automatically |
+| **Eager automation of broken processes** | "AI will clean up our messy workflows" | Automates chaos faster; 85% say combining broken tasks makes it worse | Fix workflow definitions first; automate only well-defined patterns |
+| **Persistent task queues** | "Never lose a task assignment" | Adds Redis/RabbitMQ dependency; complexity explosion for single-server system | Atomic DB updates + SSE notification; if agent crashes, task auto-releases |
+| **Agent-to-agent direct messaging** | "Agents should coordinate peer-to-peer" | Requires service discovery; network topology; breaks audit trail | All coordination via task system; central log of all actions |
+| **Automatic retry on all failures** | "Make it resilient" | Retrying bad data/logic wastes cycles; can cause cascading failures | Classify errors (transient vs fatal); retry with backoff only for transient |
 
 ## Feature Dependencies
 
 ```
-[Installer: Skill Copy]
-    └──requires──> [Skills: Workflow Files Exist]
+[Atomic Claiming]
+    └──requires──> [Task assignee field] (exists)
+    └──requires──> [Transaction support] (SQLite provides)
+    └──enhances──> [SSE Event Stream] (emit task.claimed events)
 
-[Installer: MCP Config]
-    └──requires──> [MCP Server: Published to npm]
+[SSE Event Stream]
+    └──requires──> [HTTP server] (exists - Express)
+    └──requires──> [Event source data] (task CRUD already emits)
+    └──enhances──> [Workflow Automation] (automation results trigger events)
 
-[Skills: MCP Tool Invocation]
-    └──requires──> [MCP Server: Running & Configured]
-                       └──requires──> [API Service: Running]
+[Workflow Automation]
+    └──requires──> [Task status lifecycle] (exists)
+    └──requires──> [Dependency graph] (exists)
+    └──requires──> [SSE Event Stream] (to notify about cascades)
+    └──enhances──> [Atomic Claiming] (auto-assign based on rules)
 
-[Installer: Connectivity Test]
-    └──requires──> [Skills: Health Check Skill]
-                       └──requires──> [MCP Server: check_health tool]
+[Event Filtering]
+    └──requires──> [SSE Event Stream]
+    └──requires──> [Connection metadata] (track what client wants)
 
-[Skills: Argument Substitution] ──enhances──> [Skills: Interactive Prompts]
+[Claim Timeout/Expiry]
+    └──requires──> [Atomic Claiming]
+    └──requires──> [Background job scheduler] (check for expired claims)
 
-[Installer: Unified Script] ──conflicts──> [Installer: Platform-Specific Only]
+[Backpressure Handling]
+    └──requires──> [SSE Event Stream]
+    └──requires──> [Connection monitoring] (detect slow consumers)
 ```
 
 ### Dependency Notes
 
-- **Installer: Skill Copy requires Skills: Workflow Files Exist**: Skills must be written before installer can copy them
-- **Installer: MCP Config requires MCP Server: Published to npm**: Config references `npx @modelcontextprotocol/server-wood-fired-bugs` which must exist in npm registry
-- **Skills: MCP Tool Invocation requires MCP Server: Running & Configured**: Skills are useless without MCP server; installer must configure and test
-- **Installer: Connectivity Test requires Skills: Health Check Skill**: Installer invokes health check skill to validate installation; skill must exist first
-- **Skills: Argument Substitution enhances Skills: Interactive Prompts**: Users can provide arguments directly (`/tasks:show-task 123`) or be prompted if missing; both patterns complement each other
-- **Installer: Unified Script conflicts with Installer: Platform-Specific Only**: Can't have both a single cross-platform script and platform-specific scripts; choose platform detection in launcher with platform-specific implementations
+- **Atomic Claiming requires Task assignee + Transactions:** Already have assignee field; SQLite transactions available. Need to add claim_timestamp and claimed_by version tracking.
+- **SSE Event Stream requires HTTP server:** Express already running. Add GET /api/v1/events endpoint with Server-Sent Events headers.
+- **Workflow Automation requires Status lifecycle + Dependencies:** Both exist. Add trigger points after status updates and dependency resolution.
+- **Event Filtering enhances SSE:** Prevents overwhelming agents with irrelevant events. Requires storing subscription preferences per connection.
+- **Claim Timeout requires Background scheduler:** Need periodic check (every 30s?) to release stale claims. Simple setInterval works for single-process server.
+- **Backpressure Handling prevents cascading failures:** Connection.getBackpressure() pattern; disconnect slow clients before memory exhaustion.
 
 ## MVP Definition
 
-### Launch With (v1.2)
+### Launch With (Multi-Agent Coordination v1)
 
-Minimum viable product — what's needed to validate the concept.
+Minimum viable product for real-time agent coordination.
 
-- [x] **Skills: Core Workflows** — log-bug, create-task, my-work, show-task, search (5 skills cover 80% of usage)
-- [x] **Skills: Lifecycle Transitions** — pick-up, done, blocked (3 skills for status changes)
-- [x] **Skills: Communication** — add-comment (1 skill for collaboration)
-- [x] **Skills: Project Context** — project-status (1 skill for project overview)
-- [x] **Installer: Linux (Bash)** — Covers primary deployment platform (Stuart's Ubuntu machine)
-- [x] **Installer: Windows (PowerShell)** — Covers secondary platform (Stuart's Windows dev machine)
-- [x] **Installer: Skill Copy** — Copies skill files to `~/.claude/skills/tasks/`
-- [x] **Installer: MCP Config** — Modifies `claude_desktop_config.json` to add wood-fired-bugs server
-- [x] **Installer: API Key Setup** — Prompts for API key, writes to appropriate shell profile
-- [x] **Installer: Connectivity Test** — Validates MCP server can reach API service
-- [x] **Installer: Backup & Rollback** — Backs up config before modification
+- [ ] **SSE Basic Event Stream** — Agents can subscribe to task changes without polling; reduces API load by 90%
+- [ ] **Event Filtering by Project** — Agents working on Project A don't see Project B noise; prevents cognitive overload
+- [ ] **Atomic Task Claiming** — Prevents race conditions when 2+ agents try to claim same task; critical for reliability
+- [ ] **Claim Timeout** — Tasks auto-release after 30min of inactivity; prevents "zombie" assignments blocking work
+- [ ] **Status Transition Triggers** — When task goes done→closed, emit event; foundation for automation
+- [ ] **Dependency Cascade** — When task completes, auto-unblock dependents; removes manual coordination overhead
 
 ### Add After Validation (v1.x)
 
-Features to add once core is working.
+Features to add once core coordination is working.
 
-- [ ] **Skills: Batch Operations** — Trigger when users say "mark tasks 1,2,3 as done" (wait for user feedback on need)
-- [ ] **Skills: Smart Suggestions** — Skill descriptions rich enough for Claude to auto-invoke based on context (iterate based on usage patterns)
-- [ ] **Installer: Dry Run Mode** — Show what would be changed without modifying files (add when users request it)
-- [ ] **Installer: Uninstall** — Remove skills, clean up config, remove env var (add when users need to test fresh installs)
-- [ ] **Skills: Dependency Visualization** — ASCII graph of task dependencies (add if users request it; current `dep-list` may be sufficient)
+- [ ] **Event Type Filtering** — Subscribe to task.updated but not task.created; reduces bandwidth
+- [ ] **Conditional Workflow Rules** — "If task urgent + unassigned, notify team"; requires validation that simple cascades work first
+- [ ] **Optimistic Locking** — Fast-path for claims; add after confirming pessimistic locking handles load
+- [ ] **Event Replay** — New agent gets last 100 events; nice-to-have after core streaming proven
+- [ ] **Connection Backpressure** — Disconnect slow consumers; add when scaling reveals need
 
 ### Future Consideration (v2+)
 
-Features to defer until product-market fit is established.
+Features to defer until multi-agent usage patterns are clear.
 
-- [ ] **Skills: Custom Workflow Templates** — User-defined skill templates for domain-specific workflows (v2: once we see what workflows users actually want)
-- [ ] **Installer: Plugin Marketplace Submission** — Package as Claude Code plugin for distribution via Anthropic's marketplace (v2: after validating manual install works)
-- [ ] **Skills: AI-Assisted Triage** — Skill that uses Claude's reasoning to suggest priority/status based on description (v2: experimental; may be over-engineered)
-- [ ] **Installer: Docker Compose Integration** — Installer also sets up API service via Docker if not detected (v2: current assumption is service already running)
+- [ ] **Load-Aware Distribution** — Requires tracking agent workload; complex heuristic; wait for data on bottlenecks
+- [ ] **Skill-Based Routing** — Agents declare capabilities; tasks route accordingly; need product-market fit first
+- [ ] **Workflow Undo/Rollback** — Nice safety net but requires event sourcing architecture; major refactor
+- [ ] **Multi-Stream Multiplexing** — HTTP/2 optimization; only needed at scale (>100 concurrent agents)
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Core workflow skills (log-bug, create-task, my-work, show-task, search) | HIGH | LOW | P1 |
-| Lifecycle skills (pick-up, done, blocked) | HIGH | LOW | P1 |
-| MCP server auto-configuration | HIGH | MEDIUM | P1 |
-| Cross-platform installer (Linux + Windows) | HIGH | MEDIUM | P1 |
-| Connectivity test | HIGH | LOW | P1 |
-| Comment skill | MEDIUM | LOW | P1 |
-| Project-status skill | MEDIUM | MEDIUM | P1 |
-| Installer config validation & merge | HIGH | HIGH | P1 |
-| Installer backup & rollback | MEDIUM | MEDIUM | P1 |
-| Environment variable setup | HIGH | LOW | P1 |
-| Skills with argument substitution | MEDIUM | LOW | P2 |
-| Interactive prompts in skills | MEDIUM | LOW | P2 |
-| Skill permissions pre-configuration | MEDIUM | LOW | P2 |
-| Installer dry run mode | LOW | LOW | P2 |
-| Installer uninstall | LOW | LOW | P2 |
-| Batch operation skills | LOW | MEDIUM | P3 |
-| Smart skill auto-invocation | MEDIUM | HIGH | P3 |
-| Custom workflow templates | LOW | HIGH | P3 |
-| Plugin marketplace packaging | LOW | HIGH | P3 |
+| Feature | User Value | Implementation Cost | Priority | Existing Data Model Support |
+|---------|------------|---------------------|----------|----------------------------|
+| SSE Basic Event Stream | HIGH (eliminates polling) | MEDIUM (Express SSE route) | P1 | No DB changes needed |
+| Atomic Task Claiming | HIGH (prevents conflicts) | MEDIUM (transaction + version field) | P1 | Add claim_timestamp, claim_version |
+| Event Filtering by Project | HIGH (reduces noise) | LOW (check project_id filter) | P1 | Uses existing project_id field |
+| Claim Timeout | HIGH (prevents stuck tasks) | MEDIUM (background job) | P1 | Uses claim_timestamp field |
+| Status Transition Triggers | MEDIUM (enables automation) | LOW (hook after updateTask) | P1 | Uses existing status field |
+| Dependency Cascade | HIGH (removes manual work) | MEDIUM (graph traversal) | P1 | Uses existing task_dependencies table |
+| Event Type Filtering | MEDIUM (bandwidth savings) | LOW (SSE event field) | P2 | No DB changes needed |
+| Conditional Workflow Rules | MEDIUM (flexibility) | HIGH (rule engine) | P2 | New workflow_rules table |
+| Optimistic Locking | MEDIUM (performance) | MEDIUM (retry logic) | P2 | Uses claim_version field |
+| Event Replay | LOW (nice UX) | MEDIUM (event log storage) | P2 | New event_log table |
+| Backpressure Handling | MEDIUM (stability) | HIGH (monitoring + circuit breaker) | P2 | No DB changes needed |
+| Load-Aware Distribution | LOW (optimization) | HIGH (workload tracking) | P3 | New agent_workload table |
+| Skill-Based Routing | LOW (advanced matching) | HIGH (capability matching) | P3 | New agent_capabilities table |
+| Workflow Undo/Rollback | LOW (safety net) | HIGH (event sourcing refactor) | P3 | Requires full event sourcing |
 
 **Priority key:**
-- P1: Must have for launch (v1.2)
-- P2: Should have, add when possible (v1.x)
-- P3: Nice to have, future consideration (v2+)
+- P1: Must have for launch — solves core coordination pain points
+- P2: Should have — adds value once core is proven
+- P3: Nice to have — future optimization or advanced use case
+
+## Data Model Impact
+
+### Required Changes for P1 Features
+
+**tasks table additions:**
+```sql
+ALTER TABLE tasks ADD COLUMN claim_timestamp TEXT;
+ALTER TABLE tasks ADD COLUMN claim_version INTEGER DEFAULT 0;
+```
+
+**New tables:**
+```sql
+-- Event log for replay (optional for P1, required for P2 event replay)
+CREATE TABLE event_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  task_id INTEGER REFERENCES tasks(id),
+  project_id INTEGER,
+  payload TEXT, -- JSON
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_event_log_task ON event_log(task_id, created_at);
+CREATE INDEX idx_event_log_project ON event_log(project_id, created_at);
+```
+
+### Dependencies on Existing Schema
+
+| Feature | Existing Field/Table | How Used |
+|---------|---------------------|----------|
+| Event Filtering | tasks.project_id | Filter events by project subscription |
+| Atomic Claiming | tasks.assignee | Store who claimed the task |
+| Claim Timeout | tasks.claim_timestamp | Check if claim expired |
+| Dependency Cascade | task_dependencies.blocks_task_id | Find dependents to unblock |
+| Status Triggers | tasks.status | Detect transitions for automation |
+| SSE Routing | tasks.id, projects.id | Route events to interested subscribers |
+
+## Coordination Patterns Analysis
+
+### 2026 Trends from Research
+
+**Agentic AI Orchestration:**
+- 65% reduction in manual approvals with autonomous agents (UiPath research)
+- Systems shift from rule-based to decision-oriented workflows
+- Memory, retries, observability, and human-in-the-loop are table stakes
+
+**Event-Driven Architecture:**
+- 72% of global organizations use EDA for apps/systems/processes
+- Async task execution, event sourcing, saga pattern, event aggregation are standard
+- Transactional outbox pattern addresses dual-write problem (DB + event notification)
+
+**Distributed Task Claiming:**
+- Decentralized two-layer architecture for partial observability (Nature 2025 research)
+- FIFO + priority-based allocation prevents starvation
+- Reinforcement learning for adaptive scheduling emerging but complex
+
+**SSE Best Practices:**
+- Heartbeat every few seconds keeps connection alive
+- Exponential backoff on reconnect prevents load spikes
+- EventSource auto-sends Last-Event-ID header for replay
+- Browser limit: 6 concurrent SSE connections per domain (HTTP/1.1); HTTP/2 defaults to 100
+
+**Common Pitfalls:**
+- 78% say complex workflow patterns make automation harder
+- 85% say combining multiple automated tasks increases complexity
+- Over-automation before fixing processes accelerates chaos
+- Thundering herd on SSE query invalidation when thousands refetch simultaneously
+
+### Recommended Implementation Approach
+
+**Phase 1: Foundation (P1 Features)**
+1. Add SSE endpoint with basic event types (task.created, task.updated, task.deleted)
+2. Implement atomic claiming with optimistic locking (version field)
+3. Add claim timeout background job (30min expiry, configurable)
+4. Implement dependency cascade on task completion
+5. Add event filtering by project_id in SSE subscription
+
+**Phase 2: Refinement (P2 Features)**
+1. Add event type filtering (subscribe to specific event types)
+2. Implement event replay from Last-Event-ID
+3. Add conditional workflow rules for common patterns
+4. Implement backpressure detection and graceful degradation
+
+**Phase 3: Optimization (P3 Features)**
+1. Load-aware task distribution based on agent workload
+2. Skill-based routing with capability matching
+3. Event sourcing for full workflow undo/replay
 
 ## Competitor Feature Analysis
 
-| Feature | GitHub CLI (`gh`) | Linear CLI (`linear-cli`) | Our Approach |
-|---------|-------------------|---------------------------|--------------|
-| Slash commands / skills | No native Claude Code skills; users write their own | No native Claude Code skills | Curated workflow skills included; installer sets them up |
-| Installation | `brew install gh` or platform package managers | `npm install -g @linear/cli` | Custom installer that also configures Claude Code integration |
-| Auth setup | `gh auth login` (interactive OAuth flow) | `linear-cli login` (API key prompt) | Installer prompts for API key, writes to env var |
-| MCP integration | Community-built MCP servers exist (not official) | No official MCP server | Official MCP server included; installer configures it |
-| Cross-platform | Official binaries for Linux/macOS/Windows | npm package works cross-platform | Bash for Linux, PowerShell for Windows (matches platform conventions) |
-| Configuration | Writes to `~/.config/gh/config.yml` | Stores API key in `~/.linear/credentials` | Uses Claude Code's native `claude_desktop_config.json` + env var for API key |
-| Workflow shortcuts | Aliases (`gh alias set`) for custom commands | No built-in workflow shortcuts | Skills are the workflow shortcuts; no separate alias system needed |
-| Skill discoverability | N/A | N/A | Skills show in `/` menu with descriptions; Claude suggests them based on context |
+| Feature | Temporal Workflow | Celery + Redis | Apache Airflow | Our Approach |
+|---------|-------------------|----------------|----------------|--------------|
+| Event Streaming | gRPC streaming | Redis pub/sub | REST polling | SSE (simpler, HTTP-native) |
+| Task Claiming | At-most-once semantics | LPOP atomic | Executor assigns | Optimistic lock on SQLite |
+| Workflow Rules | Code-based workflow definitions | Chaining via apply_async | DAG definitions | Simple trigger→action hooks (v1), rules engine (v2) |
+| Dependency Handling | Parent-child workflow | Manual chaining | Task dependencies in DAG | Existing dependency graph + auto-cascade |
+| Retry Logic | Exponential backoff built-in | retry with countdown param | retry in operators | Per-feature basis (claim retry, SSE reconnect) |
+| State Persistence | Durable execution log | Redis or DB backend | Metadata DB (Postgres) | SQLite (existing), add event_log for replay |
+| Agent Coordination | Worker pools | Celery workers | Executor workers | Agents subscribe via SSE, claim via API |
+
+**Key Differentiator for Wood Fired Bugs:**
+- Designed for **LLM agents on LAN**, not distributed microservices
+- **Single-process simplicity** (SQLite + Express) vs complex infrastructure (Redis, message queues)
+- **SSE over HTTP** instead of specialized protocols (gRPC, AMQP)
+- **Optimistic locking** sufficient for LAN latency; no need for distributed consensus
 
 ## Sources
 
-**Claude Code Skills & Slash Commands:**
-- [Slash commands - Claude Code Docs](https://code.claude.com/docs/en/slash-commands)
-- [GitHub - hesreallyhim/awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code)
-- [GitHub - wshobson/commands: Production-ready slash commands](https://github.com/wshobson/commands)
-- [Claude Code Merges Slash Commands Into Skills (Medium)](https://medium.com/@joe.njenga/claude-code-merges-slash-commands-into-skills-dont-miss-your-update-8296f3989697)
-- [Claude Code Skills vs Slash Commands 2026: Complete Guide (YingTu)](https://yingtu.ai/blog/claude-code-skills-vs-slash-commands)
+**SSE Event Streaming:**
+- [Why Server-Sent Events (SSE) are ideal for Real-Time Updates](https://talent500.com/blog/server-sent-events-real-time-updates/)
+- [Server-Sent Events: A Practical Guide for the Real World](https://tigerabrodi.blog/server-sent-events-a-practical-guide-for-the-real-world)
+- [Pushing real-time updates to clients with Server-Sent Events (SSEs)](https://rednafi.com/python/server-sent-events/)
+- [Using server-sent events - MDN Web Docs](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
+- [Server-Sent Events (SSE) in .NET: Key Concepts, Patterns, and Real-Time Use Cases](https://medium.com/@ashwinbalasubramaniam92/server-sent-events-in-dotnet-real-time-streaming-7836e24ae23d)
 
-**MCP Server Configuration:**
-- [Connect to local MCP servers - Model Context Protocol](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
-- [Getting Started with Local MCP Servers on Claude Desktop](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
-- [Ultimate Guide to Claude MCP Servers & Setup | 2026](https://generect.com/blog/claude-mcp/)
+**Workflow Automation:**
+- [Agentic AI Orchestration in 2026: Automating Workflows at Scale](https://onereach.ai/blog/agentic-ai-orchestration-enterprise-workflow-automation/)
+- [7 AI Workflow Automation Trends in 2026: IT Leader Guide](https://kissflow.com/workflow/7-workflow-automation-trends-every-it-leader-must-watch-in-2025/)
+- [The 2026 Guide to Agentic Workflow Architectures](https://www.stack-ai.com/blog/the-2026-guide-to-agentic-workflow-architectures)
+- [Event-Driven Architecture (EDA): A Complete Introduction](https://www.confluent.io/learn/event-driven-architecture/)
+- [7 Essential Patterns in Event-Driven Architecture Today](https://talent500.com/blog/event-driven-architecture-essential-patterns/)
 
-**Cross-Platform Installer Best Practices:**
-- [Tips for Writing Cross-Platform PowerShell Code (PowerShell.org)](https://powershell.org/2019/02/tips-for-writing-cross-platform-powershell-code/)
-- [PowerShell Beyond Windows: A Cross-Platform Guide (Medium)](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
-- [PowerShell 7 Cross-Platform Scripting Tips and Traps](https://jdhitsolutions.com/blog/scripting/7361/powershell-7-cross-platform-scripting-tips-and-traps/)
-- [Developer Onboarding Best Practices (Document360)](https://document360.com/blog/developer-onboarding-best-practices/)
-- [Best Practices for DevRel Programs That Actually Work in 2026](https://blog.stateshift.com/best-practices-for-devrel-programs/)
+**Atomic Task Claiming:**
+- [The Art of Staying in Sync: How Distributed Systems Avoid Race Conditions](https://medium.com/@alexglushenkov/the-art-of-staying-in-sync-how-distributed-systems-avoid-race-conditions-f59b58817e02)
+- [Handling Race Condition in Distributed System - GeeksforGeeks](https://www.geeksforgeeks.org/computer-networks/handling-race-condition-in-distributed-system/)
+- [Distributed Locking and Race Condition Prevention](https://dzone.com/articles/distributed-locking-and-race-condition-prevention)
+- [Exactly-Once Task Processing in Distributed Systems with Redis](https://medium.com/@ramachandrankrish/exactly-once-task-processing-in-distributed-systems-with-redis-preventing-race-conditions-across-009edf8f8a5a)
+- [Pessimistic vs Optimistic Locking](https://newsletter.systemdesigncodex.com/p/pessimistic-vs-optimistic-locking)
 
-**Developer Tool Onboarding:**
-- [How to Understand Global vs Local npm Packages (OneUpTime)](https://oneuptime.com/blog/post/2026-01-22-nodejs-global-vs-local-packages/view)
-- [Downloading and installing packages globally (npm Docs)](https://docs.npmjs.com/downloading-and-installing-packages-globally/)
+**Fair Task Distribution:**
+- [Decentralized adaptive task allocation for dynamic multi-agent systems](https://www.nature.com/articles/s41598-025-21709-9) (Nature Scientific Reports 2025)
+- [How to Create Agent Coordination](https://oneuptime.com/blog/post/2026-01-30-agent-coordination/view)
+
+**Anti-Patterns and Pitfalls:**
+- [The AI Workflow Integration Paradox: More Automation Tools = Less Productivity](https://swisscognitive.ch/2026/01/06/the-ai-workflow-integration-paradox-more-automation-tools-less-productivity/)
+- [6 Workflow Automation Mistakes That Could Derail Your Success](https://www.rpatech.ai/blogs/workflow-automation-mistakes/)
+- [Messaging anti-patterns in event-driven architecture](https://www.ben-morris.com/event-driven-architecture-and-message-design-anti-patterns-and-pitfalls/)
+- [Managing Back-Pressure in Event-Driven Architectures](https://medium.com/@mokarchi/managing-back-pressure-in-event-driven-architectures-fe370aa82df1)
 
 ---
-*Feature research for: Claude Code Skills & Cross-Platform Installer*
-*Researched: 2026-02-13*
+*Feature research for: Multi-Agent Coordination (SSE, Workflow, Claiming)*
+*Researched: 2026-02-14*
+*Confidence: MEDIUM-HIGH (Context from web search; official docs verified for SSE/EDA patterns; LOW confidence on load balancing algorithms pending implementation testing)*
