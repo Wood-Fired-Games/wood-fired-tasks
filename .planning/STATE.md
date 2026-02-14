@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-02-14T15:56:33Z
 
 ## Project Reference
 
@@ -11,16 +11,16 @@
 ## Current Position
 
 **Milestone:** v1.3 Multi-Agent Coordination
-**Phase:** 14 - SSE Event Infrastructure (COMPLETE)
-**Plan:** 04 (4/4 plans complete)
-**Status:** Phase 14 Complete - SSE Event Infrastructure fully operational
+**Phase:** 15 - Atomic Claim Protocol
+**Plan:** 01 (1/3 plans complete)
+**Status:** Executing Phase 15 - Plan 01 complete (atomic claim core)
 
 **Progress Bar:**
 ```
 v1.0 ████████████████████ 100% (6/6 phases complete)
 v1.1 ████████████████████ 100% (4/4 phases complete)
 v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ██████░░░░░░░░░░░░░░  33% (1/3 phases, 4/12 plans complete)
+v1.3 ████████░░░░░░░░░░░░  42% (1/3 phases, 5/12 plans complete)
 ```
 
 ## Performance Metrics
@@ -33,8 +33,8 @@ v1.3 ██████░░░░░░░░░░░░░░  33% (1/3 phas
 **Current Milestone:**
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 4/12 completed (Phase 14: 4/4 COMPLETE)
-- Tests: 443 passing (0 failing)
+- Plans: 5/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 1/3)
+- Tests: 453 passing (0 failing)
 
 ## Accumulated Context
 
@@ -49,6 +49,8 @@ v1.3 ██████░░░░░░░░░░░░░░  33% (1/3 phas
 | MCP resource (not tool) for SSE discovery | SSE streams are long-lived connections; resource provides discovery docs, not streaming | 14-04 |
 | Optimistic locking with version field | Better for LAN latency + SQLite WAL mode than pessimistic row locks | 15 |
 | BEGIN IMMEDIATE for claims | Acquire write lock early, avoid transaction upgrade SQLITE_BUSY | 15 |
+| CAS with version column for atomic claim | Prevents double-claim without row locks, clear error messages | 15-01 |
+| Service pre-validates before CAS attempt | Returns clear errors for status/assignee conflicts before hitting DB | 15-01 |
 | Event-driven workflow triggers | Decouple SSE from automation, EventBus enables parallel development | 16 |
 | Max cascade depth = 5 levels | Prevent infinite loops from circular task hierarchies | 16 |
 
@@ -68,6 +70,7 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### Recent Completions
 
+- [x] Phase 15 Plan 01 complete (2026-02-14) — Atomic claim core with CAS + BEGIN IMMEDIATE (206s, 10 new tests, 453 total)
 - [x] Phase 14 COMPLETE (2026-02-14) — SSE Event Infrastructure fully operational (4 plans, 56 tests, 443 total passing)
 - [x] Phase 14 Plan 04 complete (2026-02-14) — MCP events resource for SSE stream discovery (141s, 9 new tests)
 - [x] Phase 14 Plan 03 complete (2026-02-14) — SSE endpoint with connection management (787s, 22 new tests)
@@ -80,18 +83,21 @@ None (roadmap approved, awaiting plan-phase execution).
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 14 Plan 04 (MCP Events Resource) and Phase 14 as a whole. All 4 plans delivered: EventBus foundation, service integration, SSE endpoint with connection management, and MCP resource for agent discovery. 443 tests passing, zero TypeScript errors. EVT-01 through EVT-07 all addressed.
+Completed Phase 15 Plan 01 (Atomic Claim Core). Implemented CAS-based atomic task claiming with BEGIN IMMEDIATE transactions. Migration 004 adds version, claimed_at, and idempotency_keys table. TaskRepository.claimTask uses CAS with version guard. TaskService.claimTask validates state and emits task.claimed event. 10 new tests, 453 total passing, zero TypeScript errors.
 
 **What's Next:**
-Phase 15 - Atomic Task Claiming. Implement optimistic locking with version field, BEGIN IMMEDIATE transactions, POST /api/v1/tasks/:id/claim endpoint, and conflict resolution.
+Phase 15 Plan 02 - REST endpoint POST /api/v1/tasks/:id/claim and conflict resolution (409 responses).
 
 **Context for Next Session:**
-- Phase 14 complete: EventBus, service emissions, SSE endpoint, MCP resource all operational
-- EventBus emits task.created/updated/deleted/status_changed and project.created/updated/deleted
-- SSEManager provides connection registry, filtering, heartbeat, and Last-Event-ID replay
-- MCP resource events://stream provides SSE endpoint discovery documentation
-- task.claimed event type defined but not yet emitted (Phase 15 responsibility)
-- 443 tests passing across full suite
+- Phase 15 Plan 01 complete: claimTask works at service and repository layers
+- TaskRepository.claimTask uses BEGIN IMMEDIATE with CAS-style UPDATE (version guard)
+- TaskService.claimTask validates status=open and assignee=null before CAS
+- task.claimed event now emitted on successful claim
+- Task type has version (INTEGER DEFAULT 1) and claimed_at (TEXT nullable) fields
+- ClaimTaskSchema added for input validation (assignee: string, min 1, max 100)
+- TaskResponseSchema updated with version and claimed_at
+- idempotency_keys table created (for future deduplication in Plan 02)
+- 453 tests passing across full suite
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
