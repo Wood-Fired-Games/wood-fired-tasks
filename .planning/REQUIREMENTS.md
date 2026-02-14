@@ -9,8 +9,8 @@ Requirements for v1.2 Claude Code Skills & Installer. Each maps to roadmap phase
 
 ### MCP Compliance
 
-- [ ] **MCP-01**: MCP server stdio transport produces only JSON-RPC on stdout (no logging)
-- [ ] **MCP-02**: MCP server passes end-to-end tool invocation test via Claude Code
+- [x] **MCP-01**: MCP server stdio transport produces only JSON-RPC on stdout (no logging)
+- [x] **MCP-02**: MCP server passes end-to-end tool invocation test via Claude Code
 
 ### Skills
 
@@ -75,8 +75,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MCP-01 | Phase 11 | Pending |
-| MCP-02 | Phase 11 | Pending |
+| MCP-01 | Phase 11 | Complete |
+| MCP-02 | Phase 11 | Complete |
 | SKILL-01 | Phase 12 | Pending |
 | SKILL-02 | Phase 12 | Pending |
 | SKILL-03 | Phase 12 | Pending |

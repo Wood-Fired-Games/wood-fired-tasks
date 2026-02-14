@@ -38,7 +38,7 @@ See: [milestones/v1.1-ROADMAP.md](./milestones/v1.1-ROADMAP.md) for full details
 
 **Milestone Goal:** Make wood-fired-bugs accessible from any Claude Code session via curated slash command skills and a cross-platform installer.
 
-- [ ] **Phase 11: MCP Server Verification** - Confirm stdio transport compliance
+- [x] **Phase 11: MCP Server Verification** - Confirm stdio transport compliance -- completed 2026-02-13
 - [ ] **Phase 12: Skill File Authoring** - Create 10 workflow skills
 - [ ] **Phase 13: Cross-Platform Installer** - Bash and PowerShell setup automation
 
@@ -54,7 +54,7 @@ See: [milestones/v1.1-ROADMAP.md](./milestones/v1.1-ROADMAP.md) for full details
 **Plans**: 1 plan
 
 Plans:
-- [ ] 11-01-PLAN.md — Fix stdout pollution (Umzug logger) and add automated stdio compliance tests
+- [x] 11-01-PLAN.md — Fix stdout pollution (Umzug logger) and add automated stdio compliance tests -- completed 2026-02-13
 
 ### Phase 12: Skill File Authoring
 **Goal**: 10 curated workflow skills ready to use with verified MCP tool names
@@ -110,6 +110,6 @@ Phases execute in numeric order: 11 → 12 → 13
 | 8. CLI Command Expansion | v1.1 | 5/5 | Complete | 2026-02-13 |
 | 9. MCP Tool Expansion | v1.1 | 2/2 | Complete | 2026-02-13 |
 | 10. Testing & Integration | v1.1 | 0/0 | Complete | 2026-02-13 |
-| 11. MCP Server Verification | v1.2 | 0/TBD | Not started | - |
+| 11. MCP Server Verification | v1.2 | 1/1 | Complete | 2026-02-13 |
 | 12. Skill File Authoring | v1.2 | 0/TBD | Not started | - |
 | 13. Cross-Platform Installer | v1.2 | 0/TBD | Not started | - |
