@@ -9,16 +9,23 @@ import { registerDependencyTools } from './tools/dependency-tools.js';
 import { registerCommentTools } from './tools/comment-tools.js';
 import { registerProjectTools } from './tools/project-tools.js';
 import { registerHealthTools } from './tools/health-tools.js';
+import {
+  EVENTS_RESOURCE_URI,
+  EVENTS_RESOURCE_NAME,
+  EVENTS_RESOURCE_DESCRIPTION,
+  getEventsResourceContent,
+} from './resources/events.js';
 
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 25 tools registered:
+ * Factory function that creates an McpServer with 25 tools and 1 resource:
  * - 7 task tools (create, get, update, list, delete, get_subtasks, list_subtasks)
  * - 5 project tools (create, get, update, list, delete)
  * - 7 dependency tools (add, remove, list, get_blocks, get_blocked_by, graph, check_cycle)
  * - 5 comment tools (add, list, get, update, delete)
  * - 1 health tool (check_health)
+ * - 1 resource (events://stream - SSE event stream discovery)
  *
  * This pattern allows tests to instantiate servers without stdio transport.
  *
@@ -47,6 +54,22 @@ export function createMcpServer(
   registerDependencyTools(server, dependencyService);
   registerCommentTools(server, commentService);
   registerHealthTools(server, db);
+
+  // Register resources
+  const apiUrl = process.env.API_URL || 'http://localhost:3000/api/v1';
+  const apiKey = process.env.API_KEY || '';
+
+  server.resource(
+    EVENTS_RESOURCE_NAME,
+    EVENTS_RESOURCE_URI,
+    {
+      description: EVENTS_RESOURCE_DESCRIPTION,
+      mimeType: 'text/event-stream',
+    },
+    async () => {
+      return getEventsResourceContent(apiUrl, apiKey);
+    }
+  );
 
   return server;
 }
