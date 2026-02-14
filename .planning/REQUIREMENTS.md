@@ -75,34 +75,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MCP-01 | — | Pending |
-| MCP-02 | — | Pending |
-| SKILL-01 | — | Pending |
-| SKILL-02 | — | Pending |
-| SKILL-03 | — | Pending |
-| SKILL-04 | — | Pending |
-| SKILL-05 | — | Pending |
-| SKILL-06 | — | Pending |
-| SKILL-07 | — | Pending |
-| SKILL-08 | — | Pending |
-| SKILL-09 | — | Pending |
-| SKILL-10 | — | Pending |
-| LINX-01 | — | Pending |
-| LINX-02 | — | Pending |
-| LINX-03 | — | Pending |
-| LINX-04 | — | Pending |
-| LINX-05 | — | Pending |
-| WIN-01 | — | Pending |
-| WIN-02 | — | Pending |
-| WIN-03 | — | Pending |
-| WIN-04 | — | Pending |
-| WIN-05 | — | Pending |
+| MCP-01 | Phase 11 | Pending |
+| MCP-02 | Phase 11 | Pending |
+| SKILL-01 | Phase 12 | Pending |
+| SKILL-02 | Phase 12 | Pending |
+| SKILL-03 | Phase 12 | Pending |
+| SKILL-04 | Phase 12 | Pending |
+| SKILL-05 | Phase 12 | Pending |
+| SKILL-06 | Phase 12 | Pending |
+| SKILL-07 | Phase 12 | Pending |
+| SKILL-08 | Phase 12 | Pending |
+| SKILL-09 | Phase 12 | Pending |
+| SKILL-10 | Phase 12 | Pending |
+| LINX-01 | Phase 13 | Pending |
+| LINX-02 | Phase 13 | Pending |
+| LINX-03 | Phase 13 | Pending |
+| LINX-04 | Phase 13 | Pending |
+| LINX-05 | Phase 13 | Pending |
+| WIN-01 | Phase 13 | Pending |
+| WIN-02 | Phase 13 | Pending |
+| WIN-03 | Phase 13 | Pending |
+| WIN-04 | Phase 13 | Pending |
+| WIN-05 | Phase 13 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after initial definition*
+*Last updated: 2026-02-13 after roadmap creation*
