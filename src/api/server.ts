@@ -12,6 +12,7 @@ import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
 import { CommentService } from '../services/comment.service.js';
 import { SSEManager } from '../events/sse-manager.js';
+import { IdempotencyService } from '../services/idempotency.service.js';
 import { eventBus } from '../events/event-bus.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
@@ -29,6 +30,7 @@ declare module 'fastify' {
     projectService: ProjectService;
     dependencyService: DependencyService;
     commentService: CommentService;
+    idempotencyService: IdempotencyService;
     db: Database.Database;
     sseManager: SSEManager;
   }
@@ -69,6 +71,10 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('dependencyService', app.dependencyService);
   server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
+
+  // Create and decorate IdempotencyService
+  const idempotencyService = new IdempotencyService(app.db);
+  server.decorate('idempotencyService', idempotencyService);
 
   // Create and decorate SSEManager
   const sseManager = new SSEManager();

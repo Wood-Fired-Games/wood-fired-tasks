@@ -1,8 +1,16 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { CreateTaskSchema, UpdateTaskSchema } from '../../../schemas/task.schema.js';
-import { TaskResponseSchema, TaskListResponseSchema, ErrorResponseSchema } from './schemas.js';
+import {
+  TaskResponseSchema,
+  TaskListResponseSchema,
+  ErrorResponseSchema,
+  ClaimRequestSchema,
+  ClaimResponseSchema,
+  ConflictResponseSchema,
+} from './schemas.js';
 import { TASK_STATUSES } from '../../../types/task.js';
+import { BusinessError } from '../../../services/errors.js';
 
 // Query parameter schema for task filters (uses coercion for URL params)
 const QueryTaskFiltersSchema = z.object({
@@ -109,6 +117,54 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       fastify.taskService.deleteTask(request.params.id);
       return reply.code(204).send(null);
+    }
+  );
+
+  // POST /:id/claim - Claim task atomically
+  fastify.post(
+    '/:id/claim',
+    {
+      schema: {
+        tags: ['tasks'],
+        description: 'Atomically claim an unassigned task',
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: ClaimRequestSchema,
+        response: {
+          200: ClaimResponseSchema,
+          409: ConflictResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Check idempotency key
+      const idempotencyKey = request.headers['x-idempotency-key'] as string | undefined;
+      if (idempotencyKey) {
+        const cached = fastify.idempotencyService.get(idempotencyKey);
+        if (cached) {
+          return reply.code(200).send(cached as z.infer<typeof ClaimResponseSchema>);
+        }
+      }
+
+      try {
+        // Determine source from request header or default to 'user'
+        const source = (request.headers['x-claim-source'] as 'user' | 'workflow') || 'user';
+        const task = fastify.taskService.claimTask(request.params.id, request.body.assignee, source);
+
+        // Cache response if idempotency key provided
+        if (idempotencyKey) {
+          fastify.idempotencyService.set(idempotencyKey, task);
+        }
+
+        return reply.code(200).send(task);
+      } catch (error) {
+        if (error instanceof BusinessError) {
+          return reply.code(409).send({
+            error: 'CONFLICT' as const,
+            message: error.message,
+          });
+        }
+        throw error; // Let error handler deal with NotFoundError, etc.
+      }
     }
   );
 

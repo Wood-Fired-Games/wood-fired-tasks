@@ -26,6 +26,26 @@ export const TaskResponseSchema = z.object({
 export const TaskListResponseSchema = z.array(TaskResponseSchema);
 
 /**
+ * ClaimRequestSchema - validation for claim request body
+ */
+export const ClaimRequestSchema = z.object({
+  assignee: z.string().min(1, 'Assignee is required').max(100),
+});
+
+/**
+ * ClaimResponseSchema - same as TaskResponse (returns the claimed task)
+ */
+export const ClaimResponseSchema = TaskResponseSchema;
+
+/**
+ * ConflictResponseSchema - returned when claim conflicts with existing state
+ */
+export const ConflictResponseSchema = z.object({
+  error: z.literal('CONFLICT'),
+  message: z.string(),
+});
+
+/**
  * ErrorResponseSchema - shared error response format
  */
 export const ErrorResponseSchema = z.object({
