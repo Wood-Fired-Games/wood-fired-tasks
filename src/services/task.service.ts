@@ -108,7 +108,7 @@ export class TaskService {
   /**
    * Update task with status lifecycle validation
    */
-  updateTask(id: number, input: unknown): Task & { tags: string[] } {
+  updateTask(id: number, input: unknown, source: 'user' | 'workflow' = 'user'): Task & { tags: string[] } {
     // Validate input
     const result = UpdateTaskSchema.safeParse(input);
     if (!result.success) {
@@ -148,7 +148,7 @@ export class TaskService {
       eventType: 'task.updated',
       timestamp: new Date().toISOString(),
       data: updatedTask,
-      metadata: { source: 'user' }
+      metadata: { source }
     });
 
     // If status changed, also emit task.status_changed event
@@ -158,7 +158,7 @@ export class TaskService {
         timestamp: new Date().toISOString(),
         data: updatedTask,
         metadata: {
-          source: 'user',
+          source,
           from: existing.status,
           to: result.data.status!
         } as any // Metadata can include additional fields beyond the base type
