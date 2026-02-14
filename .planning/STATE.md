@@ -5,16 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Any agent on the local network can reliably create, find, and update work items in real time -- making this the single source of truth for all Wood Fired Games task tracking.
-**Current focus:** Planning next milestone
+**Current focus:** v1.2 Claude Code Skills & Installer
 
 ## Current Position
 
-**Phase:** —
-**Plan:** —
-**Status:** v1.1 shipped, planning next milestone
-**Progress:** [██████████] 100%
-
-Last activity: 2026-02-13 — v1.1 milestone archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-13 — Milestone v1.2 started
 
 ## Performance Metrics
 

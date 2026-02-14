@@ -31,7 +31,11 @@ Any agent on the local network can reliably create, find, and update work items 
 
 ### Active
 
-(None — planning next milestone)
+<!-- v1.2: Claude Code Skills & Installer -->
+- [ ] Curated Claude Code skills for common task workflows (namespaced under /tasks:)
+- [ ] Skills use MCP tools for all API interactions
+- [ ] Cross-platform installer (Bash for Linux, PowerShell for Windows)
+- [ ] Installer copies skills, configures MCP server, sets up auth
 
 ### Out of Scope
 
@@ -84,5 +88,15 @@ Interface inventory:
 | Flat hyphenated CLI commands | Commander subcommand nesting adds complexity for no benefit | Good — `project-create` is as discoverable as `project create` |
 | Content-Type only with body | DELETE requests fail with empty JSON content-type | Good — fixed bug found during live demo |
 
+## Current Milestone: v1.2 Claude Code Skills & Installer
+
+**Goal:** Make wood-fired-bugs accessible from any Claude Code session via curated slash command skills and a cross-platform installer.
+
+**Target features:**
+- Curated workflow skills: log-bug, create-task, my-work, pick-up, done, blocked, search, project-status, add-comment, show-task
+- Skills use MCP tools for API interaction, auth via environment variable
+- Installer scripts for Linux (Bash) and Windows (PowerShell)
+- Installer handles: skill file copy, MCP server config, API key setup, connectivity test
+
 ---
-*Last updated: 2026-02-13 after v1.1 milestone shipped*
+*Last updated: 2026-02-13 after v1.2 milestone started*
