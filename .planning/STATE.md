@@ -11,16 +11,16 @@
 ## Current Position
 
 **Milestone:** v1.3 Multi-Agent Coordination
-**Phase:** 14 - SSE Event Infrastructure
-**Plan:** 03 (2/4 plans complete)
-**Status:** In Progress - Services integrated with EventBus
+**Phase:** 14 - SSE Event Infrastructure (COMPLETE)
+**Plan:** 04 (4/4 plans complete)
+**Status:** Phase 14 Complete - SSE Event Infrastructure fully operational
 
 **Progress Bar:**
 ```
 v1.0 ████████████████████ 100% (6/6 phases complete)
 v1.1 ████████████████████ 100% (4/4 phases complete)
 v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ███░░░░░░░░░░░░░░░░░  17% (0/3 phases, 2/12 plans complete)
+v1.3 ██████░░░░░░░░░░░░░░  33% (1/3 phases, 4/12 plans complete)
 ```
 
 ## Performance Metrics
@@ -33,8 +33,8 @@ v1.3 ███░░░░░░░░░░░░░░░░░  17% (0/3 phas
 **Current Milestone:**
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 2/12 completed (Phase 14: 2/4)
-- Tests: 429 passing (7 failing from incomplete plan 14-03)
+- Plans: 4/12 completed (Phase 14: 4/4 COMPLETE)
+- Tests: 443 passing (0 failing)
 
 ## Accumulated Context
 
@@ -46,6 +46,7 @@ v1.3 ███░░░░░░░░░░░░░░░░░  17% (0/3 phas
 | Native EventEmitter over external pub/sub | Zero dependencies, TypeScript generics since @types/node July 2024, follows existing patterns | 14 |
 | Wrap handlers in try/catch for error isolation | Prevents one subscriber from crashing EventBus or blocking other subscribers | 14-01 |
 | Define task.claimed type but defer emission to Phase 15 | Type safety now, implementation when atomic claim endpoint exists | 14-01 |
+| MCP resource (not tool) for SSE discovery | SSE streams are long-lived connections; resource provides discovery docs, not streaming | 14-04 |
 | Optimistic locking with version field | Better for LAN latency + SQLite WAL mode than pessimistic row locks | 15 |
 | BEGIN IMMEDIATE for claims | Acquire write lock early, avoid transaction upgrade SQLITE_BUSY | 15 |
 | Event-driven workflow triggers | Decouple SSE from automation, EventBus enables parallel development | 16 |
@@ -67,8 +68,11 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### Recent Completions
 
-- [x] Phase 14 Plan 02 complete (2026-02-14) — Service integration with EventBus (399s, 17 new tests, 429 total passing)
-- [x] Phase 14 Plan 01 complete (2026-02-14) — EventBus foundation with TDD (127s, 8 tests passing)
+- [x] Phase 14 COMPLETE (2026-02-14) — SSE Event Infrastructure fully operational (4 plans, 56 tests, 443 total passing)
+- [x] Phase 14 Plan 04 complete (2026-02-14) — MCP events resource for SSE stream discovery (141s, 9 new tests)
+- [x] Phase 14 Plan 03 complete (2026-02-14) — SSE endpoint with connection management (787s, 22 new tests)
+- [x] Phase 14 Plan 02 complete (2026-02-14) — Service integration with EventBus (399s, 17 new tests)
+- [x] Phase 14 Plan 01 complete (2026-02-14) — EventBus foundation with TDD (127s, 8 tests)
 - [x] v1.3 milestone research completed (2026-02-14) — identified 10 critical pitfalls with prevention strategies
 - [x] v1.3 roadmap created (2026-02-14) — 3 phases covering 17 requirements with 100% coverage
 - [x] Requirement traceability mapped (2026-02-14) — EVT→14, CLM→15, WFL→16
@@ -76,19 +80,18 @@ None (roadmap approved, awaiting plan-phase execution).
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 14 Plan 02 - Service Integration with EventBus. TaskService and ProjectService now emit domain events after successful CRUD operations. Events include full entity snapshots to prevent race conditions (Pitfall #4). Fixed @fastify/sse API bug from plan 14-03 as blocking issue. All service tests passing (79 new + 23 existing = 102 total). Total test suite: 429 passing, 7 failing from incomplete plan 14-03 (SSE routes not yet implemented).
+Completed Phase 14 Plan 04 (MCP Events Resource) and Phase 14 as a whole. All 4 plans delivered: EventBus foundation, service integration, SSE endpoint with connection management, and MCP resource for agent discovery. 443 tests passing, zero TypeScript errors. EVT-01 through EVT-07 all addressed.
 
 **What's Next:**
-Execute Phase 14 Plan 03 - SSE Routes implementation. Need to properly implement GET /api/v1/events endpoint with @fastify/sse v0.4.0 API. Currently events.ts exists but is untracked and has errors (reply.sse undefined issue).
+Phase 15 - Atomic Task Claiming. Implement optimistic locking with version field, BEGIN IMMEDIATE transactions, POST /api/v1/tasks/:id/claim endpoint, and conflict resolution.
 
 **Context for Next Session:**
-- EventBus complete with service integration (plans 01 & 02 done)
-- TaskService emits: task.created, task.updated, task.deleted, task.status_changed
-- ProjectService emits: project.created, project.updated, project.deleted
-- SSEManager exists from plan 14-03 but SSE route incomplete
-- Phase 14 remaining: Plans 03 (SSE Route), 04 (unknown - may be duplicate)
-- Known issue: events.test.ts failing due to incomplete SSE route implementation
-- Bug fixed: @fastify/sse v0.4.0 API usage (reply.sse.send instead of reply.sse())
+- Phase 14 complete: EventBus, service emissions, SSE endpoint, MCP resource all operational
+- EventBus emits task.created/updated/deleted/status_changed and project.created/updated/deleted
+- SSEManager provides connection registry, filtering, heartbeat, and Last-Event-ID replay
+- MCP resource events://stream provides SSE endpoint discovery documentation
+- task.claimed event type defined but not yet emitted (Phase 15 responsibility)
+- 443 tests passing across full suite
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
