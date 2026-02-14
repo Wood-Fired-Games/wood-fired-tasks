@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-14T16:10:11Z
+**Last Updated:** 2026-02-14T16:32:39Z
 
 ## Project Reference
 
@@ -11,16 +11,16 @@
 ## Current Position
 
 **Milestone:** v1.3 Multi-Agent Coordination
-**Phase:** 15 - Atomic Claim Protocol (COMPLETE)
-**Plan:** 03 (3/3 plans complete)
-**Status:** Phase 15 COMPLETE - Ready for Phase 16 (Workflow Automation)
+**Phase:** 16 - Workflow Automation
+**Plan:** 01 (1/3 plans complete)
+**Status:** Executing Phase 16 plans
 
 **Progress Bar:**
 ```
 v1.0 ████████████████████ 100% (6/6 phases complete)
 v1.1 ████████████████████ 100% (4/4 phases complete)
 v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ██████████████░░░░░░  58% (2/3 phases, 7/12 plans complete)
+v1.3 ████████████████░░░░  67% (2/3 phases, 8/12 plans complete)
 ```
 
 ## Performance Metrics
@@ -33,8 +33,8 @@ v1.3 ██████████████░░░░░░  58% (2/3 phas
 **Current Milestone:**
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 7/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE)
-- Tests: 493 passing (0 failing)
+- Plans: 8/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE, Phase 16: 1/3)
+- Tests: 500 passing (0 failing)
 
 ## Accumulated Context
 
@@ -58,6 +58,8 @@ v1.3 ██████████████░░░░░░  58% (2/3 phas
 | Reuse TaskResponse for claim (no new CLI type) | Claim returns updated task, identical to TaskResponse shape | 15-03 |
 | MCP claim_task validates assignee z.string().min(1).max(100) | Catch invalid assignee at tool level before hitting service | 15-03 |
 | Max cascade depth = 5 levels | Prevent infinite loops from circular task hierarchies | 16 |
+| Cascade depth counts auto-completions only | Intermediate open->in_progress transitions should not consume depth budget | 16-01 |
+| Two-step transition for open parents | open cannot go directly to done; workflow handles open->in_progress->done | 16-01 |
 
 ### Open Questions
 
@@ -75,6 +77,7 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### Recent Completions
 
+- [x] Phase 16 Plan 01 complete (2026-02-14) — WorkflowEngine parent auto-complete with cascade depth (248s, 7 new tests, 500 total)
 - [x] Phase 15 VERIFIED (2026-02-14) — 5/5 success criteria passed, 20-agent concurrency test added (493 total passing)
 - [x] Phase 15 Plan 03 complete (2026-02-14) — MCP claim_task tool + CLI tasks claim command (227s, 13 new tests, 492 total)
 - [x] Phase 15 Plan 02 complete (2026-02-14) — REST claim endpoint with idempotency + auto-release (277s, 26 new tests, 479 total)
@@ -91,20 +94,19 @@ None (roadmap approved, awaiting plan-phase execution).
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 15 Plan 03 (MCP & CLI Claim Interfaces) and Phase 15 overall. Added claim_task MCP tool (6 tests) and tasks claim CLI command (7 tests) completing interface parity for atomic claim across REST, MCP, and CLI. 492 total tests passing, zero TypeScript errors.
+Completed Phase 16 Plan 01 (WorkflowEngine Parent Auto-Complete) via TDD. Created WorkflowEngine class that subscribes to task.status_changed events and auto-completes parent tasks when all children reach done status. Cascade depth tracked and enforced at max 5 levels. 500 total tests passing, zero TypeScript errors.
 
 **What's Next:**
-Phase 16 - Workflow Automation (event-driven task automation and cascade operations).
+Phase 16 Plan 02 (next workflow automation plan).
 
 **Context for Next Session:**
-- Phase 15 (Atomic Claim Protocol) COMPLETE: all 3 plans shipped
-- Full claim stack: TaskRepo.claimTask (CAS) -> TaskService.claimTask -> REST POST /claim -> MCP claim_task tool -> CLI tasks claim command
-- claim_task MCP tool accepts task_id (int) + assignee (string), returns task or MCP error
-- tasks claim CLI: `tasks claim <id> --assignee <name> [--idempotency-key <key>] [--json]`
-- claimTask() API client function supports idempotency key passthrough
-- IdempotencyService + ClaimReleaseService handle deduplication and stale claim sweep
-- 26 MCP tools registered (8 task, 5 project, 7 dependency, 5 comment, 1 health)
-- 492 tests passing across full suite
+- Phase 16 Plan 01 COMPLETE: WorkflowEngine with parent auto-complete
+- WorkflowEngine subscribes to EventBus 'task.status_changed' events
+- Auto-completes parent when ALL children are 'done', with two-step open->in_progress->done transition
+- Cascade depth limited to 5 levels (prevents infinite recursion)
+- Workflow-triggered events carry metadata.source === 'workflow'
+- TaskService.updateTask accepts optional source parameter ('user' | 'workflow', default 'user')
+- 500 tests passing across full suite (7 new workflow engine tests)
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
