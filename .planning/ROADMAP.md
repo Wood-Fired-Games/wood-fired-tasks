@@ -83,6 +83,13 @@ Plans:
 
 **Requirements:** CLM-01, CLM-02, CLM-03, CLM-04, CLM-05
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — Core claim protocol with TDD (migration, CAS repository, service logic, event emission)
+- [ ] 15-02-PLAN.md — REST endpoint with idempotency and auto-release (POST /claim, X-Idempotency-Key, stale claim sweep)
+- [ ] 15-03-PLAN.md — Interface parity (claim_task MCP tool, tasks claim CLI command)
+
 **Success Criteria:**
 1. Agent atomically claims unassigned task via POST /api/v1/tasks/:id/claim (MCP: claim_task, CLI: tasks claim), transitioning assignee and status in single operation
 2. Twenty agents simultaneously claim same task: exactly one succeeds with 200 OK, nineteen fail gracefully with 409 Conflict "already claimed" error (no SQLITE_BUSY crashes)
@@ -127,7 +134,7 @@ Plans:
 | 12. Skill File Authoring | v1.2 | 4/4 | Complete | 2026-02-14 |
 | 13. Cross-Platform Installer | v1.2 | 2/2 | Complete | 2026-02-14 |
 | 14. SSE Event Infrastructure | v1.3 | 0/4 | Pending | - |
-| 15. Atomic Claim Protocol | v1.3 | 0/? | Pending | - |
+| 15. Atomic Claim Protocol | v1.3 | 0/3 | Pending | - |
 | 16. Workflow Automation | v1.3 | 0/? | Pending | - |
 
 ---
