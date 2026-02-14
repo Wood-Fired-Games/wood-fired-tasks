@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3';
 import { ITaskRepository, IDependencyRepository } from '../repositories/interfaces.js';
 import { TaskService } from './task.service.js';
 import { EventBus } from '../events/event-bus.js';
@@ -20,17 +21,26 @@ import type { TaskEvent } from '../events/types.js';
  * - Workflow-triggered updates carry source: 'workflow' attribution.
  * - Parents in 'blocked' or 'closed' status are skipped (invalid transition to 'done').
  * - Cascade depth counts actual auto-completions and auto-unblocks, not intermediate transitions.
+ *
+ * Transaction atomicity (SC-5):
+ * - The entire cascade chain is wrapped in a single SQLite transaction at depth 0.
+ * - If any cascade operation fails, all changes roll back (crash safety).
+ * - Nested db.transaction() calls from TaskRepository.update become savepoints.
+ * - Cascade errors are tracked internally and re-thrown to trigger rollback,
+ *   since EventBus wraps handlers in try/catch (error isolation).
  */
 export class WorkflowEngine {
   private cascadeDepth = 0;
   private static readonly MAX_CASCADE_DEPTH = 5;
   private unsubscribes: Array<() => void> = [];
+  private cascadeError: Error | null = null;
 
   constructor(
     private readonly taskService: TaskService,
     private readonly taskRepo: ITaskRepository,
     private readonly dependencyRepo: IDependencyRepository,
-    private readonly eventBus: EventBus<any>
+    private readonly eventBus: EventBus<any>,
+    private readonly db: Database.Database
   ) {}
 
   /**
@@ -59,8 +69,42 @@ export class WorkflowEngine {
    * Two workflow automations:
    * 1. Parent auto-complete: when all children are done, auto-complete the parent
    * 2. Dependency auto-unblock: when a blocker completes, unblock dependent tasks
+   *
+   * At depth 0 (entry point), the entire cascade is wrapped in a single SQLite
+   * transaction for atomicity. Nested calls (depth > 0) run inside the same
+   * transaction via savepoints.
    */
   private handleStatusChanged(event: TaskEvent): void {
+    if (this.cascadeDepth === 0) {
+      // Entry point — wrap entire cascade in one transaction
+      try {
+        const cascadeTx = this.db.transaction(() => {
+          this.processCascade(event);
+          // If any nested cascade operation set an error, throw to trigger rollback
+          if (this.cascadeError) {
+            const err = this.cascadeError;
+            this.cascadeError = null;
+            throw err;
+          }
+        });
+        cascadeTx();
+      } catch (error) {
+        // Transaction rolled back — log but don't throw
+        // (this handler is called from EventBus which has its own try/catch)
+        this.cascadeError = null;
+        console.error('WorkflowEngine: cascade rolled back due to error:', error);
+      }
+    } else {
+      // Already inside a transaction (recursive call from EventBus)
+      this.processCascade(event);
+    }
+  }
+
+  /**
+   * Process cascade logic for a status change event.
+   * Called within a transaction context (either outer or nested).
+   */
+  private processCascade(event: TaskEvent): void {
     try {
       const task = event.data;
 
@@ -74,14 +118,20 @@ export class WorkflowEngine {
         return;
       }
 
+      // If a previous cascade operation failed, skip further processing
+      if (this.cascadeError) {
+        return;
+      }
+
       // --- Parent auto-complete ---
       this.handleParentAutoComplete(task);
 
       // --- Dependency auto-unblock ---
       this.handleDependencyAutoUnblock(task);
     } catch (error) {
-      // Log but don't throw -- workflow failures should not crash event handling
-      console.error('WorkflowEngine error during handleStatusChanged:', error);
+      // Track cascade error for outer transaction rollback
+      this.cascadeError = error as Error;
+      console.error('WorkflowEngine error during processCascade:', error);
     }
   }
 
