@@ -231,11 +231,12 @@ Set via `DB_PATH` environment variable. Defaults to `./data/tasks.db`.
 
 ### Migrations
 
-Three migration files in `src/db/migrations/`:
+Four migration files in `src/db/migrations/`:
 
-1. `001_initial_schema.sql` - Creates projects, tasks, task_tags, dependencies, comments tables
-2. `002_add_indexes.sql` - Adds performance indexes
-3. `003_add_constraints.sql` - Adds foreign key constraints and checks
+1. `001-initial-schema.ts` - Creates projects, tasks, task_tags, dependencies, comments tables
+2. `002-task-hierarchy-and-dependencies.ts` - Task hierarchy and dependency tracking
+3. `003-comments-and-estimates.ts` - Comments and time estimates
+4. `004-claim-protocol.ts` - Version field, claimed_at, idempotency_keys table
 
 Migrations run automatically on server start. To run manually:
 
@@ -263,7 +264,7 @@ All connections use the same schema and WAL mode.
 npm test
 ```
 
-Runs the full test suite with Vitest (386 tests across 36 files).
+Runs the full test suite with Vitest (513 tests across 47 files).
 
 ### Watch Mode
 
@@ -278,9 +279,12 @@ Runs tests in watch mode for active development.
 Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
-- API route integration tests (all 19 endpoints)
-- MCP tool tests (all 16 tools)
-- CLI command tests (key commands)
+- API route integration tests (all 20 authenticated endpoints + health)
+- MCP tool tests (all 20 tools)
+- CLI command tests
+- Event system tests (EventBus, SSEManager, events API)
+- Claim protocol tests (including 20-agent concurrency)
+- Workflow engine tests (auto-complete, auto-unblock, cascade depth)
 - Skill file validation tests
 - E2E regression tests
 

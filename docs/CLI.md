@@ -658,6 +658,67 @@ Total: 2 subtasks
 tasks subtask-list 42 --json
 ```
 
+## Claim Command
+
+### tasks claim \<id\>
+
+Atomically claim an unassigned task. Sets the assignee and transitions status to `in_progress` in a single atomic operation.
+
+**Examples:**
+
+```bash
+# Claim task 42
+tasks claim 42 --assignee "agent-1"
+
+# Claim with idempotency key for retry safety
+tasks claim 42 --assignee "agent-1" --idempotency-key "claim-42-agent-1"
+```
+
+**Options:**
+
+| Option | Short | Type | Description |
+|--------|-------|------|-------------|
+| --assignee | -a | string | Agent/person claiming the task (required) |
+| --idempotency-key | | string | Unique key for retry safety (24h TTL) |
+
+**Output:**
+
+```
+Task #42 claimed by agent-1
+
+Title: Implement authentication
+Status: in_progress
+Priority: high
+Project: 1
+Assignee: agent-1
+```
+
+**JSON output:**
+
+```bash
+tasks claim 42 --assignee "agent-1" --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "task": {
+      "id": 42,
+      "title": "Implement authentication",
+      "status": "in_progress",
+      "assignee": "agent-1",
+      "version": 2,
+      "claimed_at": "2026-02-14T12:00:00.000Z"
+    }
+  }
+}
+```
+
+**Error handling:**
+
+If the task is already claimed or not in a claimable state, the command exits with code 1 and displays the conflict message.
+
 ## Health Command
 
 ### tasks health
