@@ -5,15 +5,19 @@ import {
   validatorCompiler,
   ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import fastifySSE, { SSEPluginOptions } from '@fastify/sse';
 import { createApp, App } from '../index.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
 import { CommentService } from '../services/comment.service.js';
+import { SSEManager } from '../events/sse-manager.js';
+import { eventBus } from '../events/event-bus.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
 import commentRoutes from './routes/comments/index.js';
+import eventsRoute from './routes/events.js';
 import healthRoutes from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
 import { registerSwagger } from './plugins/swagger.js';
@@ -26,6 +30,7 @@ declare module 'fastify' {
     dependencyService: DependencyService;
     commentService: CommentService;
     db: Database.Database;
+    sseManager: SSEManager;
   }
 }
 
@@ -65,11 +70,30 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
 
+  // Create and decorate SSEManager
+  const sseManager = new SSEManager();
+  server.decorate('sseManager', sseManager);
+
+  // Wire EventBus to SSEManager - subscribe to each event type explicitly
+  eventBus.subscribe('task.created', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('task.updated', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('task.deleted', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('task.status_changed', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('task.claimed', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('project.created', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event));
+  eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event));
+
   // Set custom error handler (must be set before routes)
   server.setErrorHandler(errorHandler);
 
   // Register Swagger/OpenAPI documentation (must be before routes to capture schemas)
   await registerSwagger(server);
+
+  // Register @fastify/sse plugin (must be before routes that use SSE)
+  await server.register(fastifySSE as any, {
+    heartbeatInterval: 30000,
+  } as SSEPluginOptions);
 
   // Register public health check route (no auth required)
   await server.register(healthRoutes, { prefix: '/health' });
@@ -120,6 +144,9 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
       // Register comment routes (nested under tasks)
       await api.register(commentRoutes, { prefix: '/tasks' });
+
+      // Register events route
+      await api.register(eventsRoute, { prefix: '/events' });
     },
     { prefix: '/api/v1' }
   );
