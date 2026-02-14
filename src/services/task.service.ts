@@ -2,6 +2,7 @@ import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.
 import { Task, VALID_STATUS_TRANSITIONS } from '../types/task.js';
 import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
+import { eventBus } from '../events/event-bus.js';
 
 /**
  * TaskService - handles task business logic, validation, and status lifecycle
@@ -53,10 +54,20 @@ export class TaskService {
     }
 
     // Create task with status forced to 'open'
-    return this.taskRepo.create(
+    const task = this.taskRepo.create(
       { ...result.data, status: 'open' },
       result.data.tags
     );
+
+    // Emit task.created event after successful database operation
+    eventBus.emit('task.created', {
+      eventType: 'task.created',
+      timestamp: new Date().toISOString(),
+      data: task,
+      metadata: { source: 'user' }
+    });
+
+    return task;
   }
 
   /**
@@ -119,9 +130,10 @@ export class TaskService {
     }
 
     // Validate status transition if status is being changed
-    if (result.data.status && result.data.status !== existing.status) {
+    const statusChanged = result.data.status && result.data.status !== existing.status;
+    if (statusChanged) {
       const validTargets = VALID_STATUS_TRANSITIONS[existing.status];
-      if (!validTargets.includes(result.data.status)) {
+      if (!validTargets.includes(result.data.status!)) {
         throw new BusinessError(
           `Invalid status transition from '${existing.status}' to '${result.data.status}'. Valid transitions: ${validTargets.join(', ')}`
         );
@@ -129,7 +141,31 @@ export class TaskService {
     }
 
     // Update task
-    return this.taskRepo.update(id, result.data);
+    const updatedTask = this.taskRepo.update(id, result.data);
+
+    // Emit task.updated event after successful database operation
+    eventBus.emit('task.updated', {
+      eventType: 'task.updated',
+      timestamp: new Date().toISOString(),
+      data: updatedTask,
+      metadata: { source: 'user' }
+    });
+
+    // If status changed, also emit task.status_changed event
+    if (statusChanged) {
+      eventBus.emit('task.status_changed', {
+        eventType: 'task.status_changed',
+        timestamp: new Date().toISOString(),
+        data: updatedTask,
+        metadata: {
+          source: 'user',
+          from: existing.status,
+          to: result.data.status!
+        } as any // Metadata can include additional fields beyond the base type
+      });
+    }
+
+    return updatedTask;
   }
 
   /**
@@ -141,6 +177,14 @@ export class TaskService {
     if (!existing) {
       throw new NotFoundError('Task', id);
     }
+
+    // Emit task.deleted event BEFORE deletion so consumers can still query related entities
+    eventBus.emit('task.deleted', {
+      eventType: 'task.deleted',
+      timestamp: new Date().toISOString(),
+      data: existing,
+      metadata: { source: 'user' }
+    });
 
     this.taskRepo.delete(id);
   }

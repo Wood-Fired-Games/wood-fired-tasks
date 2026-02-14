@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { TaskService } from '../task.service.js';
 import { ProjectService } from '../project.service.js';
 import { ValidationError, BusinessError, NotFoundError } from '../errors.js';
+import { eventBus } from '../../events/event-bus.js';
 import type { App } from '../../index.js';
 
 describe('TaskService', () => {
@@ -740,6 +741,199 @@ describe('TaskService', () => {
 
       const result = db.pragma('journal_mode', { simple: true }) as string;
       expect(result).toBe('memory'); // In-memory databases use 'memory' journal mode, not WAL
+    });
+  });
+
+  describe('event emissions', () => {
+    it('createTask emits task.created event after successful operation', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      const task = taskService.createTask({
+        title: 'Test Task',
+        project_id: testProjectId,
+        created_by: 'user',
+        tags: ['test'],
+      });
+
+      expect(emitSpy).toHaveBeenCalledWith('task.created', {
+        eventType: 'task.created',
+        timestamp: expect.any(String),
+        data: task,
+        metadata: { source: 'user' }
+      });
+
+      emitSpy.mockRestore();
+    });
+
+    it('createTask does NOT emit event when validation fails', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        taskService.createTask({
+          project_id: testProjectId,
+          // missing required title
+        })
+      ).toThrow(ValidationError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('createTask does NOT emit event when project does not exist', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        taskService.createTask({
+          title: 'Test',
+          project_id: 999,
+          created_by: 'user',
+        })
+      ).toThrow(BusinessError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateTask emits task.updated event after successful operation', () => {
+      const task = taskService.createTask({
+        title: 'Original',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      const updated = taskService.updateTask(task.id, { title: 'Updated' });
+
+      expect(emitSpy).toHaveBeenCalledWith('task.updated', {
+        eventType: 'task.updated',
+        timestamp: expect.any(String),
+        data: updated,
+        metadata: { source: 'user' }
+      });
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateTask emits both task.updated and task.status_changed when status changes', () => {
+      const task = taskService.createTask({
+        title: 'Test',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      const updated = taskService.updateTask(task.id, { status: 'in_progress' });
+
+      expect(emitSpy).toHaveBeenCalledWith('task.updated', {
+        eventType: 'task.updated',
+        timestamp: expect.any(String),
+        data: updated,
+        metadata: { source: 'user' }
+      });
+
+      expect(emitSpy).toHaveBeenCalledWith('task.status_changed', {
+        eventType: 'task.status_changed',
+        timestamp: expect.any(String),
+        data: updated,
+        metadata: {
+          source: 'user',
+          from: 'open',
+          to: 'in_progress'
+        }
+      });
+
+      expect(emitSpy).toHaveBeenCalledTimes(2);
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateTask does NOT emit status_changed when status is not changed', () => {
+      const task = taskService.createTask({
+        title: 'Test',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      taskService.updateTask(task.id, { title: 'Updated Title' });
+
+      expect(emitSpy).toHaveBeenCalledWith('task.updated', expect.any(Object));
+      expect(emitSpy).not.toHaveBeenCalledWith('task.status_changed', expect.any(Object));
+      expect(emitSpy).toHaveBeenCalledTimes(1);
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateTask does NOT emit events when task not found', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        taskService.updateTask(999, { title: 'Updated' })
+      ).toThrow(NotFoundError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateTask does NOT emit events when status transition invalid', () => {
+      const task = taskService.createTask({
+        title: 'Test',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        taskService.updateTask(task.id, { status: 'done' })
+      ).toThrow(BusinessError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('deleteTask emits task.deleted event BEFORE deletion', () => {
+      const task = taskService.createTask({
+        title: 'To Delete',
+        project_id: testProjectId,
+        created_by: 'user',
+        tags: ['test'],
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      taskService.deleteTask(task.id);
+
+      expect(emitSpy).toHaveBeenCalledWith('task.deleted', {
+        eventType: 'task.deleted',
+        timestamp: expect.any(String),
+        data: task,
+        metadata: { source: 'user' }
+      });
+
+      // Verify task is actually deleted
+      expect(() => taskService.getTask(task.id)).toThrow(NotFoundError);
+
+      emitSpy.mockRestore();
+    });
+
+    it('deleteTask does NOT emit event when task not found', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        taskService.deleteTask(999)
+      ).toThrow(NotFoundError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
     });
   });
 });
