@@ -2,6 +2,7 @@ import { IProjectRepository } from '../repositories/interfaces.js';
 import { Project } from '../types/task.js';
 import { CreateProjectSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
+import { eventBus } from '../events/event-bus.js';
 
 /**
  * ProjectService - handles project business logic and validation
@@ -34,7 +35,17 @@ export class ProjectService {
     }
 
     // Create project
-    return this.projectRepo.create(result.data);
+    const project = this.projectRepo.create(result.data);
+
+    // Emit project.created event after successful database operation
+    eventBus.emit('project.created', {
+      eventType: 'project.created',
+      timestamp: new Date().toISOString(),
+      data: project,
+      metadata: { source: 'user' }
+    });
+
+    return project;
   }
 
   /**
@@ -88,7 +99,17 @@ export class ProjectService {
     }
 
     // Update project
-    return this.projectRepo.update(id, result.data);
+    const updatedProject = this.projectRepo.update(id, result.data);
+
+    // Emit project.updated event after successful database operation
+    eventBus.emit('project.updated', {
+      eventType: 'project.updated',
+      timestamp: new Date().toISOString(),
+      data: updatedProject,
+      metadata: { source: 'user' }
+    });
+
+    return updatedProject;
   }
 
   /**
@@ -100,6 +121,14 @@ export class ProjectService {
     if (!existing) {
       throw new NotFoundError('Project', id);
     }
+
+    // Emit project.deleted event BEFORE deletion so consumers can still query related entities
+    eventBus.emit('project.deleted', {
+      eventType: 'project.deleted',
+      timestamp: new Date().toISOString(),
+      data: existing,
+      metadata: { source: 'user' }
+    });
 
     this.projectRepo.delete(id);
   }

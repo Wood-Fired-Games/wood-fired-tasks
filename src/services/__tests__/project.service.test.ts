@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { ProjectRepository } from '../../repositories/project.repository.js';
 import { ProjectService } from '../project.service.js';
 import { ValidationError, BusinessError, NotFoundError } from '../errors.js';
+import { eventBus } from '../../events/event-bus.js';
 import type Database from 'better-sqlite3';
 
 describe('ProjectService', () => {
@@ -155,6 +156,138 @@ describe('ProjectService', () => {
 
     it('throws NotFoundError when project does not exist', () => {
       expect(() => projectService.deleteProject(999)).toThrow(NotFoundError);
+    });
+  });
+
+  describe('event emissions', () => {
+    it('createProject emits project.created event after successful operation', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      const project = projectService.createProject({
+        name: 'Test Project',
+        description: 'Test description',
+      });
+
+      expect(emitSpy).toHaveBeenCalledWith('project.created', {
+        eventType: 'project.created',
+        timestamp: expect.any(String),
+        data: project,
+        metadata: { source: 'user' }
+      });
+
+      emitSpy.mockRestore();
+    });
+
+    it('createProject does NOT emit event when validation fails', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        projectService.createProject({
+          name: '', // empty name fails validation
+        })
+      ).toThrow(ValidationError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('createProject does NOT emit event when duplicate name exists', () => {
+      projectService.createProject({ name: 'Duplicate' });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        projectService.createProject({ name: 'Duplicate' })
+      ).toThrow(BusinessError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateProject emits project.updated event after successful operation', () => {
+      const project = projectService.createProject({
+        name: 'Original',
+        description: 'Original description',
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      const updated = projectService.updateProject(project.id, {
+        name: 'Updated',
+      });
+
+      expect(emitSpy).toHaveBeenCalledWith('project.updated', {
+        eventType: 'project.updated',
+        timestamp: expect.any(String),
+        data: updated,
+        metadata: { source: 'user' }
+      });
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateProject does NOT emit event when project not found', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        projectService.updateProject(999, { name: 'Updated' })
+      ).toThrow(NotFoundError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('updateProject does NOT emit event when updating to duplicate name', () => {
+      projectService.createProject({ name: 'Existing' });
+      const project = projectService.createProject({ name: 'Another' });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        projectService.updateProject(project.id, { name: 'Existing' })
+      ).toThrow(BusinessError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
+    });
+
+    it('deleteProject emits project.deleted event BEFORE deletion', () => {
+      const project = projectService.createProject({
+        name: 'To Delete',
+        description: 'Will be deleted',
+      });
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      projectService.deleteProject(project.id);
+
+      expect(emitSpy).toHaveBeenCalledWith('project.deleted', {
+        eventType: 'project.deleted',
+        timestamp: expect.any(String),
+        data: project,
+        metadata: { source: 'user' }
+      });
+
+      // Verify project is actually deleted
+      expect(() => projectService.getProject(project.id)).toThrow(NotFoundError);
+
+      emitSpy.mockRestore();
+    });
+
+    it('deleteProject does NOT emit event when project not found', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expect(() =>
+        projectService.deleteProject(999)
+      ).toThrow(NotFoundError);
+
+      expect(emitSpy).not.toHaveBeenCalled();
+
+      emitSpy.mockRestore();
     });
   });
 });
