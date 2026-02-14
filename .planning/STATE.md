@@ -64,12 +64,14 @@ None.
 |------------|----------------|-------|-------|
 | 11-01 | 2.4 | 2 | 2 |
 | Phase 12-skill-file-authoring P04 | 0.7 | 1 tasks | 1 files |
+| Phase 12 P01 | 1.4 | 3 tasks | 3 files |
+| Phase 12 P03 | 1.4 | 3 tasks | 3 files |
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T01:02:20Z
+**Last session:** 2026-02-14T01:04:32.069Z
 
-**Stopped at:** Completed 12-04-PLAN.md
+**Stopped at:** Completed 12-03-PLAN.md
 
 **Next session should:**
 1. Begin Phase 13 (Installer) - final phase of v1.2
