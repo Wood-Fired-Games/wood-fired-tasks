@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { TaskService } from '../task.service.js';
+import { DependencyService } from '../dependency.service.js';
 import { ProjectService } from '../project.service.js';
 import { WorkflowEngine } from '../workflow-engine.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
+import { DependencyRepository } from '../../repositories/dependency.repository.js';
 import { eventBus } from '../../events/event-bus.js';
 import type { App } from '../../index.js';
 import type { Task } from '../../types/task.js';
@@ -12,16 +14,20 @@ import type { TaskEvent } from '../../events/types.js';
 describe('WorkflowEngine', () => {
   let app: App;
   let taskService: TaskService;
+  let dependencyService: DependencyService;
   let projectService: ProjectService;
   let taskRepo: TaskRepository;
+  let dependencyRepo: DependencyRepository;
   let engine: WorkflowEngine;
   let testProjectId: number;
 
   beforeEach(async () => {
     app = await createTestApp();
     taskService = app.taskService;
+    dependencyService = app.dependencyService;
     projectService = app.projectService;
     taskRepo = new TaskRepository(app.db);
+    dependencyRepo = new DependencyRepository(app.db);
 
     const project = projectService.createProject({
       name: 'Workflow Test Project',
@@ -67,7 +73,7 @@ describe('WorkflowEngine', () => {
       const child2 = createTask('Child 2', parent.id);
       const child3 = createTask('Child 3', parent.id);
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Mark child 1 done -- parent should NOT auto-complete yet
@@ -91,7 +97,7 @@ describe('WorkflowEngine', () => {
       const child2 = createTask('Child 2', parent.id);
       const child3 = createTask('Child 3', parent.id);
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Mark 2 children done
@@ -117,7 +123,7 @@ describe('WorkflowEngine', () => {
       const child1 = createTask('Child 1', parent.id);
       const child2 = createTask('Child 2', parent.id);
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Mark both children done to trigger parent auto-complete
@@ -142,7 +148,7 @@ describe('WorkflowEngine', () => {
       const parent = createTask('Parent', grandparent.id);
       const child = createTask('Child', parent.id);
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Mark leaf child done
@@ -166,7 +172,7 @@ describe('WorkflowEngine', () => {
         levels[i] = createTask(`Level ${i}`, levels[i - 1].id);
       }
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Mark the leaf (level 6) as done
@@ -196,7 +202,7 @@ describe('WorkflowEngine', () => {
     it('handles status change for parentless task without errors', () => {
       const task = createTask('Orphan Task');
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Should not throw
@@ -213,7 +219,7 @@ describe('WorkflowEngine', () => {
       const child1 = createTask('Child 1', parent.id);
       const child2 = createTask('Child 2', parent.id);
 
-      engine = new WorkflowEngine(taskService, taskRepo, eventBus);
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
       engine.start();
 
       // Stop the engine
@@ -225,6 +231,132 @@ describe('WorkflowEngine', () => {
 
       // Parent should NOT be auto-completed (engine stopped)
       expect(taskService.getTask(parent.id).status).not.toBe('done');
+    });
+  });
+
+  describe('dependency auto-unblock', () => {
+    it('completing blocker unblocks blocked task', () => {
+      const taskA = createTask('Task A');
+      const taskB = createTask('Task B');
+
+      // A blocks B
+      dependencyService.addDependency({ task_id: taskA.id, blocks_task_id: taskB.id });
+
+      // Set B to blocked
+      taskService.updateTask(taskB.id, { status: 'blocked' });
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
+      engine.start();
+
+      // Mark A as done
+      markDone(taskA.id);
+
+      // B should be auto-unblocked to 'open'
+      expect(taskService.getTask(taskB.id).status).toBe('open');
+    });
+
+    it('multiple blockers: only unblocks when ALL done', () => {
+      const taskA = createTask('Task A');
+      const taskB = createTask('Task B');
+      const taskC = createTask('Task C');
+
+      // A blocks C, B blocks C
+      dependencyService.addDependency({ task_id: taskA.id, blocks_task_id: taskC.id });
+      dependencyService.addDependency({ task_id: taskB.id, blocks_task_id: taskC.id });
+
+      // Set C to blocked
+      taskService.updateTask(taskC.id, { status: 'blocked' });
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
+      engine.start();
+
+      // Mark A as done -- C should still be blocked (B not done)
+      markDone(taskA.id);
+      expect(taskService.getTask(taskC.id).status).toBe('blocked');
+
+      // Mark B as done -- NOW C should be unblocked
+      markDone(taskB.id);
+      expect(taskService.getTask(taskC.id).status).toBe('open');
+    });
+
+    it('source attribution: auto-unblock carries source workflow', () => {
+      const receivedEvents: TaskEvent[] = [];
+      const unsub = eventBus.subscribe('task.status_changed', (event: TaskEvent) => {
+        receivedEvents.push(event);
+      });
+
+      const taskA = createTask('Task A');
+      const taskB = createTask('Task B');
+
+      // A blocks B
+      dependencyService.addDependency({ task_id: taskA.id, blocks_task_id: taskB.id });
+
+      // Set B to blocked
+      taskService.updateTask(taskB.id, { status: 'blocked' });
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
+      engine.start();
+
+      // Mark A as done to trigger auto-unblock of B
+      markDone(taskA.id);
+
+      // Find the status_changed event for B transitioning to 'open'
+      const unblockEvent = receivedEvents.find(
+        (e) => e.data.id === taskB.id && (e.metadata as any).to === 'open'
+      );
+
+      expect(unblockEvent).toBeDefined();
+      expect(unblockEvent!.metadata.source).toBe('workflow');
+
+      unsub();
+    });
+
+    it('combined cascade: unblock does NOT falsely trigger parent completion', () => {
+      // Parent P with children C1 (done) and C2 (blocked)
+      const parentP = createTask('Parent P');
+      const childC1 = createTask('Child C1', parentP.id);
+      const childC2 = createTask('Child C2', parentP.id);
+
+      // External task X blocks C2
+      const taskX = createTask('Task X');
+      dependencyService.addDependency({ task_id: taskX.id, blocks_task_id: childC2.id });
+
+      // Set C2 to blocked
+      taskService.updateTask(childC2.id, { status: 'blocked' });
+
+      // Mark C1 as done (before engine starts)
+      markDone(childC1.id);
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
+      engine.start();
+
+      // Mark X as done -- should auto-unblock C2 (blocked -> open)
+      markDone(taskX.id);
+
+      // C2 should be 'open' (auto-unblocked), not 'done'
+      expect(taskService.getTask(childC2.id).status).toBe('open');
+
+      // P should NOT be auto-completed (C2 is 'open', not 'done')
+      expect(taskService.getTask(parentP.id).status).not.toBe('done');
+    });
+
+    it('no-op for non-blocked tasks: dependency resolves but task not blocked', () => {
+      const taskA = createTask('Task A');
+      const taskB = createTask('Task B');
+
+      // A blocks B
+      dependencyService.addDependency({ task_id: taskA.id, blocks_task_id: taskB.id });
+
+      // B stays in 'open' status (NOT blocked)
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus);
+      engine.start();
+
+      // Mark A as done
+      markDone(taskA.id);
+
+      // B should still be 'open' -- no change, no error
+      expect(taskService.getTask(taskB.id).status).toBe('open');
     });
   });
 });
