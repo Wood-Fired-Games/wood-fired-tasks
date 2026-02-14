@@ -77,9 +77,7 @@ None (roadmap approved, awaiting plan-phase execution).
 
 ### TODOs
 
-- [ ] Validate connection cleanup strategy prevents memory leaks (1000 connect/disconnect cycles)
-- [ ] Measure WAL checkpoint timing under SSE load to confirm 10-50ms post-commit delay suffices
-- [ ] Audit prepared statement reuse for async safety before Phase 15 claim concurrency tests
+None.
 
 ### Recent Completions
 
