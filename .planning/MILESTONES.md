@@ -63,3 +63,24 @@
 
 ---
 
+
+## v1.3 Multi-Agent Coordination (Shipped: 2026-02-14)
+
+**Phases completed:** 3 phases (14-16), 10 plans
+
+**Key accomplishments:**
+- Real-time event streaming via SSE (GET /api/v1/events) with EventBus, filtering, heartbeat, and Last-Event-ID replay
+- Atomic task claiming with CAS + BEGIN IMMEDIATE, 20-agent concurrency verified, zero SQLITE_BUSY errors
+- Idempotent claim deduplication via X-Idempotency-Key header with 24h TTL
+- Automatic stale claim release after 30 minutes of inactivity
+- Workflow automation: parent auto-complete and dependency auto-unblock with cascade depth limiting (max 5) and transaction atomicity
+- Full interface parity: all v1.3 features exposed via REST, MCP tools, and CLI with workflow source attribution
+
+**Stats:**
+- 38 files changed, 4,425 insertions
+- 513 tests passing (47 test files)
+- 29 commits across 10 plans
+- Git range: a556fd3..621d817
+
+---
+

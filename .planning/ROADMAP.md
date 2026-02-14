@@ -5,7 +5,7 @@
 - ✅ **v1.0 MVP** - Phases 1-6 (shipped 2026-02-13)
 - ✅ **v1.1 Interface Parity & CLI Polish** - Phases 7-10 (shipped 2026-02-13)
 - ✅ **v1.2 Claude Code Skills & Installer** - Phases 11-13 (shipped 2026-02-14)
-- 🚧 **v1.3 Multi-Agent Coordination** - Phases 14-16 (active)
+- ✅ **v1.3 Multi-Agent Coordination** - Phases 14-16 (shipped 2026-02-14)
 
 ## Phases
 
@@ -46,80 +46,16 @@ See: [milestones/v1.2-ROADMAP.md](./milestones/v1.2-ROADMAP.md) for full details
 
 </details>
 
----
+<details>
+<summary>✅ v1.3 Multi-Agent Coordination (Phases 14-16) - SHIPPED 2026-02-14</summary>
 
-## 🚧 v1.3 Multi-Agent Coordination (Phases 14-16)
+- [x] Phase 14: SSE Event Infrastructure (4/4 plans) -- completed 2026-02-14
+- [x] Phase 15: Atomic Claim Protocol (3/3 plans) -- completed 2026-02-14
+- [x] Phase 16: Workflow Automation (3/3 plans) -- completed 2026-02-14
 
-### Phase 14: SSE Event Infrastructure
+See: [milestones/v1.3-ROADMAP.md](./milestones/v1.3-ROADMAP.md) for full details.
 
-**Goal:** Agents receive real-time task change notifications via Server-Sent Events, eliminating polling and enabling instant coordination.
-
-**Dependencies:** None (foundation phase)
-
-**Requirements:** EVT-01, EVT-02, EVT-03, EVT-04, EVT-05, EVT-06, EVT-07
-
-**Plans:** 4 plans
-
-Plans:
-- [x] 14-01-PLAN.md — EventBus implementation with TDD (type-safe pub/sub foundation)
-- [x] 14-02-PLAN.md — Service event emissions (TaskService and ProjectService emit domain events)
-- [x] 14-03-PLAN.md — SSE endpoint infrastructure (SSEManager, filtering, heartbeat, reconnection)
-- [x] 14-04-PLAN.md — MCP integration and verification (events resource + human testing)
-
-**Success Criteria:**
-1. Agent subscribes to GET /api/v1/events and receives real-time task lifecycle events (created, updated, deleted, claimed, status_changed) with <100ms latency
-2. Agent filters event stream by project ID and event type, receiving only relevant events (verified by subscribing to Project A, creating task in Project B, confirming no event received)
-3. Agent disconnects for 30 seconds, reconnects with Last-Event-ID header, and resumes stream with zero missed events
-4. Agent queries API immediately after receiving task.created event and successfully retrieves task (no 404 race conditions)
-5. Server maintains 1000 concurrent SSE connections for 10 minutes with flat memory usage (no connection registry leaks)
-
----
-
-### Phase 15: Atomic Claim Protocol
-
-**Goal:** Multiple agents safely compete for tasks using atomic claim operations with optimistic locking, preventing race conditions and stuck assignments.
-
-**Dependencies:** Phase 14 (EventBus for task.claimed events)
-
-**Requirements:** CLM-01, CLM-02, CLM-03, CLM-04, CLM-05
-
-**Plans:** 3 plans
-
-Plans:
-- [x] 15-01-PLAN.md — Core claim protocol with TDD (migration, CAS repository, service logic, event emission)
-- [x] 15-02-PLAN.md — REST endpoint with idempotency and auto-release (POST /claim, X-Idempotency-Key, stale claim sweep)
-- [x] 15-03-PLAN.md — Interface parity (claim_task MCP tool, tasks claim CLI command)
-
-**Success Criteria:**
-1. Agent atomically claims unassigned task via POST /api/v1/tasks/:id/claim (MCP: claim_task, CLI: tasks claim), transitioning assignee and status in single operation
-2. Twenty agents simultaneously claim same task: exactly one succeeds with 200 OK, nineteen fail gracefully with 409 Conflict "already claimed" error (no SQLITE_BUSY crashes)
-3. Agent duplicates claim request with same X-Idempotency-Key, receives 200 OK with cached result and no duplicate side effects
-4. Claimed task with no activity (no updates, comments, status changes) auto-releases after 30 minutes, transitioning assignee to NULL and status back to open
-5. Workflow-triggered claim (via automation rule) emits task.claimed event with source: workflow metadata, distinguishable from user-initiated claims
-
----
-
-### Phase 16: Workflow Automation
-
-**Goal:** Task state changes trigger automated workflows (parent auto-complete, dependency cascade), reducing manual coordination overhead while preventing infinite loops.
-
-**Dependencies:** Phase 14 (EventBus for triggering workflows), Phase 15 (version field for atomic cascades)
-
-**Requirements:** WFL-01, WFL-02, WFL-03, WFL-04, WFL-05
-
-**Plans:** 3 plans
-
-Plans:
-- [x] 16-01-PLAN.md — WorkflowEngine core with TDD (parent auto-complete, cascade depth, source attribution)
-- [x] 16-02-PLAN.md — Dependency auto-unblock and server integration (unblock logic, App/server wiring, SSE verification)
-- [x] 16-03-PLAN.md — Transaction atomicity, edge cases, and human verification (crash safety, edge cases, end-to-end testing)
-
-**Success Criteria:**
-1. When all child tasks of parent transition to done, parent automatically transitions to done without manual intervention (verified by marking 3/3 subtasks complete, observing parent update)
-2. When blocking dependency transitions to done, blocked task automatically transitions from blocked to open (verified by completing Task A which blocks Task B, observing Task B unblock)
-3. Workflow-triggered state changes appear in SSE event stream with source: workflow attribution, distinguishable from user actions
-4. Circular task hierarchy (Task A → Task B → Task C → Task A) detected before execution, preventing infinite cascade loops (max cascade depth = 5 levels enforced)
-5. Server crash mid-workflow either completes ALL cascading updates atomically or rolls back entirely (no partial state: integration test kills process during parent auto-complete, verifies child statuses match parent post-restart)
+</details>
 
 ---
 
@@ -145,4 +81,4 @@ Plans:
 | 16. Workflow Automation | v1.3 | 3/3 | Complete | 2026-02-14 |
 
 ---
-*Last updated: 2026-02-14 for v1.3 Multi-Agent Coordination*
+*Last updated: 2026-02-14 after v1.3 Multi-Agent Coordination shipped*

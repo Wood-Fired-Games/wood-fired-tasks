@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A centralized task tracking service for Wood Fired Games running as a persistent service on a local Ubuntu Linux machine. It provides a REST API (19 endpoints), MCP server (25 tools), and CLI (19 commands) for managing work items across all projects. LLM agents interact via REST or MCP; Stuart interacts via CLI. All three interfaces have full feature parity. Curated Claude Code skills provide workflow-driven slash commands, and cross-platform installers automate setup.
+A centralized task tracking service for Wood Fired Games running as a persistent service on a local Ubuntu Linux machine. It provides a REST API (20 endpoints), MCP server (26 tools), and CLI (20 commands) for managing work items across all projects. LLM agents interact via REST or MCP; Stuart interacts via CLI. All three interfaces have full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation. Curated Claude Code skills provide workflow-driven slash commands, and cross-platform installers automate setup.
 
 ## Core Value
 
@@ -32,15 +32,15 @@ Any agent on the local network can reliably create, find, and update work items 
 - 10 curated Claude Code skills for task workflows (/tasks: namespace) — v1.2
 - Cross-platform installers: Bash (Linux/macOS) and PowerShell (Windows) — v1.2
 - Installer config merge preserves existing MCP servers and backs up config — v1.2
+- Server-Sent Events (SSE) endpoint for real-time task change notifications with filtering — v1.3
+- Atomic task claim protocol with CAS + optimistic locking, 20-agent concurrency verified — v1.3
+- Workflow automation: parent auto-complete and dependency auto-unblock with cascade depth limiting — v1.3
+- Idempotent claim deduplication and auto-release of stale claims (30-min timeout) — v1.3
+- Event stream, claim protocol, and workflows exposed via all interfaces (REST, MCP, CLI) — v1.3
 
 ### Active
 
-<!-- v1.3: Multi-Agent Coordination -->
-- [ ] Server-Sent Events (SSE) endpoint for real-time task change notifications
-- [ ] Configurable event filtering (by project, assignee, status, event type)
-- [ ] Workflow automation rules (parent auto-complete, dependency auto-unblock)
-- [ ] Atomic task claim protocol (verify + assign + transition in one operation)
-- [ ] Event stream, workflow rules, and claim protocol exposed via all interfaces (REST, MCP, CLI)
+(No active requirements — next milestone not yet planned)
 
 ### Out of Scope
 
@@ -54,23 +54,30 @@ Any agent on the local network can reliably create, find, and update work items 
 - Agent registry / capability matching — validate coordination model first, registry is v1.4+
 - WebSocket transport — SSE is simpler and sufficient for push notifications
 - Task templates / batch creation — existing MCP skills handle creation patterns
+- Complex workflow DSL — predefined patterns sufficient, not Turing-complete scripts
+- Distributed consensus (Paxos/Raft) — optimistic locking sufficient for LAN
 
 ## Context
 
-Shipped v1.2 with 386 tests passing across 36 test files. Zero TypeScript errors.
+Shipped v1.3 with 513 tests passing across 47 test files. Zero TypeScript errors.
 
-Tech stack: Node.js, Fastify, better-sqlite3, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4.
+Tech stack: Node.js, Fastify, better-sqlite3, @fastify/sse, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4.
 
 Primary consumers are LLM agents (Claude Code and others) running on the local network.
 Stuart is the sole human user, interacting via the `tasks` CLI.
 The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 
 Interface inventory:
-- REST API: 19 endpoints (tasks CRUD, projects CRUD, dependencies, comments, subtasks, health)
-- MCP Server: 25 tools (same coverage as REST)
-- CLI: 19 commands (same coverage as REST + interactive prompts)
+- REST API: 20 endpoints (tasks CRUD + claim, projects CRUD, dependencies, comments, subtasks, events, health)
+- MCP Server: 26 tools (same coverage as REST) + events://stream resource
+- CLI: 20 commands (same coverage as REST + interactive prompts)
 - Claude Code Skills: 10 workflow skills (/tasks: namespace)
 - Installers: install.sh (Linux/macOS), install.ps1 (Windows)
+
+Real-time infrastructure:
+- EventBus: type-safe pub/sub with native EventEmitter (8 event types)
+- SSEManager: connection registry with filtering, heartbeat, Last-Event-ID replay
+- WorkflowEngine: parent auto-complete, dependency auto-unblock, cascade depth limiting
 
 Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 
@@ -99,15 +106,13 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | Dual stdio verification | Static grep guards + runtime spawn tests catch protocol violations | Good — prevents future regressions at test-time and runtime |
 | API key in MCP env section | MCP servers don't inherit shell profile variables | Good — installer writes to mcpServers.env, not .bashrc |
 | ConvertTo-Json -Depth 10 | PowerShell defaults to depth 2, truncating nested MCP config | Good — prevents silent data loss in installer |
-
-## Current Milestone: v1.3 Multi-Agent Coordination
-
-**Goal:** Enable AI-driven multi-agent task orchestration with real-time event streaming, workflow automation, and atomic task claiming.
-
-**Target features:**
-- Server-Sent Events (SSE) for real-time push notifications of task changes
-- Workflow automation rules (parent auto-complete, dependency auto-unblock)
-- Atomic claim protocol for race-free task assignment
+| @fastify/sse over WebSocket | Official Fastify plugin, simpler server-to-agent push | Good — SSE sufficient for notification streaming |
+| Native EventEmitter for EventBus | Zero deps, TypeScript generics, follows existing patterns | Good — type-safe pub/sub with error isolation |
+| CAS + BEGIN IMMEDIATE for claims | Optimistic locking prevents SQLITE_BUSY, clear conflict errors | Good — 20 concurrent claims verified, exactly 1 winner |
+| MCP resource (not tool) for SSE | SSE streams are long-lived; resource provides discovery docs | Good — agents discover endpoint via events://stream |
+| Event-driven workflow triggers | Decouple automation from SSE, EventBus enables composition | Good — WorkflowEngine subscribes to EventBus, clean separation |
+| Max cascade depth = 5 | Prevents infinite loops from circular task hierarchies | Good — depth tracked per cascade chain |
+| Transaction wrapping for cascades | SQLite transaction ensures atomic rollback on error | Good — no partial state on crash |
 
 ---
-*Last updated: 2026-02-14 after v1.3 milestone started*
+*Last updated: 2026-02-14 after v1.3 Multi-Agent Coordination shipped*
