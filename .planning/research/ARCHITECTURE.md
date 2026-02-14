@@ -1,582 +1,895 @@
-# Architecture Research: CLI/MCP Parity Integration
+# Architecture Research: Claude Code Skills & Installer
 
-**Domain:** Task tracking CLI/MCP extension
+**Domain:** Claude Code Skills + Cross-Platform Installer
 **Researched:** 2026-02-13
 **Confidence:** HIGH
 
 ## Integration Context
 
-Wood Fired Bugs has a well-established layered architecture:
+Wood Fired Bugs v1.2 adds Claude Code skills (teaching Claude how to use the task tracking system) and a cross-platform installer. This builds on the existing v1.1 architecture:
 
 ```
+Existing v1.1:
 ┌─────────────────────────────────────────────────────────────┐
 │                   Client Interfaces Layer                    │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                   │
 │  │   CLI    │  │   REST   │  │   MCP    │                   │
-│  │  (HTTP)  │  │   API    │  │ (Direct) │                   │
+│  │  (HTTP)  │  │   API    │  │ (stdio)  │                   │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘                   │
-│       │ HTTP        │             │                          │
+│       │ HTTP        │             │ Direct                   │
 ├───────┴─────────────┴─────────────┴──────────────────────────┤
 │                     Service Layer                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
 │  │   Task   │  │ Project  │  │Dependency│  │ Comment  │     │
 │  │ Service  │  │ Service  │  │ Service  │  │ Service  │     │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
-│       │             │              │             │           │
-├───────┴─────────────┴──────────────┴─────────────┴───────────┤
-│                   Repository Layer                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-│  │   Task   │  │ Project  │  │Dependency│  │ Comment  │     │
-│  │   Repo   │  │   Repo   │  │   Repo   │  │   Repo   │     │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
-│       │             │              │             │           │
 ├───────┴─────────────┴──────────────┴─────────────┴───────────┤
 │                     Database Layer                            │
 │  ┌─────────────────────────────────────────────────────┐     │
-│  │              SQLite (better-sqlite3)                 │     │
+│  │         SQLite (better-sqlite3) + Systemd           │     │
 │  └─────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key architectural decisions:**
-- **CLI → REST → Service**: CLI is HTTP client, decoupled from backend
-- **MCP → Service**: MCP directly calls services (no HTTP overhead)
-- **Shared schemas**: Zod schemas shared between REST and MCP
-- **Separate types**: CLI has its own type definitions (decoupled)
-
-## New Components for v1.1
-
-### CLI Command Structure
-
-**Location:** `src/cli/commands/`
-
-**Current state:**
-- create.ts (task creation)
-- list.ts (task listing)
-- update.ts (task updates)
-
-**New structure needed:**
+v1.2 adds skills and installer that integrate with this architecture:
 
 ```
-src/cli/commands/
-├── tasks/
-│   ├── create.ts          # Existing: tasks create
-│   ├── list.ts            # Existing: tasks list
-│   ├── update.ts          # Existing: tasks update
-│   ├── get.ts             # NEW: tasks get <id>
-│   └── delete.ts          # NEW: tasks delete <id>
-├── projects/
-│   ├── create.ts          # NEW: tasks project create
-│   ├── list.ts            # NEW: tasks project list
-│   ├── get.ts             # NEW: tasks project get <id>
-│   ├── update.ts          # NEW: tasks project update <id>
-│   └── delete.ts          # NEW: tasks project delete <id>
-├── dependencies/
-│   ├── add.ts             # NEW: tasks dep add <task-id> <blocks-id>
-│   ├── list.ts            # NEW: tasks dep list <task-id>
-│   └── remove.ts          # NEW: tasks dep remove <task-id> <blocks-id>
-└── comments/
-    ├── add.ts             # NEW: tasks comment add <task-id>
-    ├── list.ts            # NEW: tasks comment list <task-id>
-    └── delete.ts          # NEW: tasks comment delete <comment-id>
+New v1.2 Components:
+┌─────────────────────────────────────────────────────────────┐
+│                   Claude Code (User's Machine)               │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              ~/.claude/commands/tasks/               │    │
+│  │  ┌──────────────┐  ┌──────────────┐                 │    │
+│  │  │  create.md   │  │  list.md     │  (10 skills)    │    │
+│  │  │  update.md   │  │  project.md  │                 │    │
+│  │  └──────────────┘  └──────────────┘                 │    │
+│  └─────────────────────────────────────────────────────┘    │
+│           │                                                   │
+│           │ References MCP tools via tool names              │
+│           ↓                                                   │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │          ~/.claude.json (MCP Config)                 │    │
+│  │  {                                                   │    │
+│  │    "mcpServers": {                                   │    │
+│  │      "wood-fired-bugs": {                            │    │
+│  │        "command": "node",                            │    │
+│  │        "args": ["/abs/path/to/dist/mcp/index.js"],  │    │
+│  │        "env": {                                      │    │
+│  │          "WOOD_FIRED_BUGS_API_KEY": "..."           │    │
+│  │        }                                             │    │
+│  │      }                                               │    │
+│  │    }                                                 │    │
+│  │  }                                                   │    │
+│  └─────────────────────────────────────────────────────┘    │
+│           │                                                   │
+│           │ Calls MCP server (stdio transport)               │
+│           ↓                                                   │
+└───────────┼───────────────────────────────────────────────────┘
+            │
+            │ stdio (JSON-RPC)
+            ↓
+┌─────────────────────────────────────────────────────────────┐
+│            Wood Fired Bugs MCP Server (Server Machine)       │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              dist/mcp/index.js                       │    │
+│  │  (25 MCP tools: tasks, projects, deps, comments)    │    │
+│  └────────────────────┬────────────────────────────────┘    │
+│                       │                                      │
+│                       ↓                                      │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              Service Layer (Direct)                  │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Rationale for folder structure:**
-- Each resource type gets its own folder
-- Commands are organized by noun (resource) then verb (action)
-- Mirrors REST API organization (`/api/v1/projects`, `/api/v1/tasks/:id/comments`)
-- Enables better file organization as CLI grows
+**Key architectural facts:**
 
-### CLI Entry Point Changes
+1. **Skills live on user's machine**: `~/.claude/commands/tasks/` (user-level) or project `.claude/commands/tasks/` (project-level)
+2. **Skills reference MCP tools by name**: `mcp__wood-fired-bugs__create_task`, not direct calls
+3. **MCP server configured globally**: `~/.claude.json` for cross-project availability
+4. **Auth via environment variable**: `WOOD_FIRED_BUGS_API_KEY` set in MCP server env
+5. **Installer handles setup**: Copies skills, configures MCP, sets env vars, tests connectivity
 
-**File:** `src/cli/bin/tasks.ts`
+**Sources:**
+- [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills)
+- [Claude Code MCP Configuration](https://code.claude.com/docs/en/mcp)
+- [MCP Skills Comparison](https://claude.com/blog/skills-explained)
 
-**Current:**
-```typescript
-program.addCommand(createCommand);
-program.addCommand(listCommand);
-program.addCommand(updateCommand);
+## Recommended Project Structure
+
+### Existing Structure (v1.1)
+
+```
+src/
+├── api/                # REST API (Fastify)
+├── cli/                # CLI commands (Commander.js)
+├── db/                 # Database + migrations
+├── mcp/                # MCP server + tools
+│   ├── index.ts        # stdio entry point
+│   ├── server.ts       # createMcpServer factory
+│   └── tools/          # Tool registration files
+│       ├── task-tools.ts
+│       ├── project-tools.ts
+│       ├── dependency-tools.ts
+│       ├── comment-tools.ts
+│       └── health-tools.ts
+├── repositories/       # Data access layer
+├── schemas/            # Zod schemas
+├── services/           # Business logic
+├── types/              # TypeScript types
+└── utils/              # Utilities
 ```
 
-**New pattern (Commander.js subcommands):**
-```typescript
-// Top-level commands (backwards compatible)
-program.addCommand(createCommand);    // tasks create
-program.addCommand(listCommand);      // tasks list
-program.addCommand(updateCommand);    // tasks update
+### New v1.2 Additions
 
-// Resource group commands
-const projectCommand = new Command('project')
-  .description('Manage projects');
-projectCommand.addCommand(createProjectCommand);
-projectCommand.addCommand(listProjectsCommand);
-// ... more project commands
-program.addCommand(projectCommand);
+```
+skills/                      # NEW: Claude Code skills (markdown)
+├── create.md                # /tasks:create - Create tasks
+├── list.md                  # /tasks:list - List/filter tasks
+├── update.md                # /tasks:update - Update tasks
+├── get.md                   # /tasks:get - Get task details
+├── delete.md                # /tasks:delete - Delete tasks
+├── project.md               # /tasks:project - Manage projects
+├── dependency.md            # /tasks:dependency - Manage dependencies
+├── comment.md               # /tasks:comment - Manage comments
+├── subtask.md               # /tasks:subtask - Subtask operations
+└── health.md                # /tasks:health - System health
 
-const depCommand = new Command('dep')
-  .description('Manage task dependencies')
-  .alias('dependency');
-depCommand.addCommand(addDependencyCommand);
-// ... more dependency commands
-program.addCommand(depCommand);
+install/                     # NEW: Installer scripts
+├── install.sh               # Bash installer (Linux/macOS)
+├── install.ps1              # PowerShell installer (Windows)
+└── README.md                # Installation instructions
 
-const commentCommand = new Command('comment')
-  .description('Manage task comments');
-commentCommand.addCommand(addCommentCommand);
-// ... more comment commands
-program.addCommand(commentCommand);
+dist/                        # Build output (existing)
+└── mcp/                     # Compiled MCP server
+    └── index.js             # Entry point for MCP server
+
+package.json                 # Update with install scripts
 ```
 
-**Source:** [Commander.js nested subcommands pattern](https://maxschmitt.me/posts/nested-subcommands-commander-node-js)
+**Rationale:**
 
-### Global Options Pattern
+- **`skills/` at root**: Skills are user-facing documentation, not source code. Keep separate from `src/`.
+- **`install/` at root**: Installer is distribution artifact, not source. Parallel to `deploy/`.
+- **Skill naming convention**: `{verb}.md` for single operations, `{noun}.md` for resource groups (project.md, dependency.md).
+- **Namespace**: `/tasks:*` prevents collision with other Claude Code skills or built-in commands.
 
-**Challenge:** Add `--json` flag to all commands for machine-readable output
+**Sources:**
+- [Agent Skills Standard](https://agentskills.io)
+- [Claude Code Skills Directory Structure](https://code.claude.com/docs/en/skills)
 
-**Solution (Commander.js global options):**
+## Standard Architecture
 
-```typescript
-// src/cli/bin/tasks.ts
-program
-  .name('tasks')
-  .description('Wood Fired Bugs - Task management CLI')
-  .version('1.0.0')
-  .option('--json', 'Output results as JSON', false);  // Global option
+### Skills Architecture
 
-// Commands can access via program.opts()
-// or inherit automatically through subcommands
+#### Skill File Format
+
+Every skill is a standalone markdown file with YAML frontmatter:
+
+```markdown
+---
+name: create
+description: Create a new task with title, description, priority, status. Use when user wants to add a task to the tracking system. Supports subtask creation.
+---
+
+# Create Task
+
+Creates a new task in the Wood Fired Bugs tracking system.
+
+## When to Use
+
+- User says "create task", "add task", "new task"
+- User provides task details (title required)
+- Creating subtasks under existing tasks
+
+## MCP Tools Used
+
+- `mcp__wood-fired-bugs__create_task`: Main task creation
+- `mcp__wood-fired-bugs__list_projects`: Get available projects
+
+## Procedure
+
+1. **Gather Information**
+   - Title (required)
+   - Description (optional)
+   - Priority (low/medium/high/urgent, default: medium)
+   - Status (todo/in_progress/done/blocked, default: todo)
+   - Project ID (optional)
+   - Parent task ID for subtasks (optional)
+
+2. **Call MCP Tool**
+   ```
+   Use mcp__wood-fired-bugs__create_task with parameters
+   ```
+
+3. **Confirm Result**
+   - Report task ID and title
+   - Show task URL if available
+   - Mention next steps (assign, add dependencies, etc.)
+
+## Examples
+
+**Simple task:**
+> "Create task: Fix login bug"
+
+**Detailed task:**
+> "Create high priority task: Implement OAuth with description: Add Google and GitHub OAuth providers, status: in_progress"
+
+**Subtask:**
+> "Create subtask under task 42: Write unit tests"
 ```
 
-**Alternative solution (per-command):** Add `.option('--json', 'Output as JSON')` to each command individually.
+**Key components:**
 
-**Recommendation:** Global option at program level, then each command checks `program.parent?.opts().json` to determine output format.
+- **Frontmatter**: `name` (becomes `/tasks:create`), `description` (when Claude auto-invokes)
+- **Procedure**: Step-by-step instructions for Claude
+- **MCP tool references**: By full name `mcp__wood-fired-bugs__create_task`
+- **Examples**: Shows expected usage patterns
 
-**Source:** [Commander.js global options discussion](https://github.com/tj/commander.js/issues/476)
+**Sources:**
+- [Skill Format Documentation](https://code.claude.com/docs/en/skills)
+- [Agent Skills Standard](https://github.com/anthropics/skills)
 
-### API Client Extensions
+#### MCP Tool Discovery
 
-**Location:** `src/cli/api/client.ts`
+Skills **reference** MCP tools but don't call them directly. The flow:
 
-**Current functions:**
-- createTask()
-- listTasks()
-- getTask()
-- updateTask()
-
-**New functions needed:**
-
-```typescript
-// Projects
-export async function createProject(data: CreateProjectInput): Promise<ProjectResponse>
-export async function listProjects(): Promise<ProjectResponse[]>
-export async function getProject(id: number): Promise<ProjectResponse>
-export async function updateProject(id: number, data: UpdateProjectInput): Promise<ProjectResponse>
-export async function deleteProject(id: number): Promise<void>
-
-// Dependencies (nested under tasks)
-export async function addDependency(taskId: number, blocksTaskId: number): Promise<DependencyResponse>
-export async function listDependencies(taskId: number): Promise<DependencyListResponse>
-export async function removeDependency(taskId: number, blocksTaskId: number): Promise<void>
-
-// Comments (nested under tasks)
-export async function addComment(taskId: number, data: CreateCommentInput): Promise<CommentResponse>
-export async function listComments(taskId: number): Promise<CommentResponse[]>
-export async function deleteComment(commentId: number): Promise<void>
+```
+1. User: "Create a high priority task for fixing login"
+   ↓
+2. Claude Code: Matches skill description → loads /tasks:create skill
+   ↓
+3. Skill instructions: "Use mcp__wood-fired-bugs__create_task with..."
+   ↓
+4. Claude Code: Calls MCP tool mcp__wood-fired-bugs__create_task
+   ↓
+5. MCP Server: Validates, executes via service layer
+   ↓
+6. Response: Task created, returns structured data
+   ↓
+7. Skill instructions: "Report task ID and title"
+   ↓
+8. Claude Code: Formats response to user
 ```
 
-**Pattern follows existing conventions:**
-- Returns typed responses
-- Throws ApiClientError on failure
-- Uses apiRequest() helper with 10s timeout
-- Maps to REST endpoints: `/api/v1/projects`, `/api/v1/tasks/:id/comments`, etc.
+**Important:** Skills are **instructions** not **code**. They teach Claude the workflow, Claude Code handles tool invocation.
 
-### CLI Type Definitions
-
-**Location:** `src/cli/api/types.ts`
-
-**Current types:**
-- TaskResponse
-- ProjectResponse (already exists)
-- CreateTaskInput
-- UpdateTaskInput
-- TaskFilters
-- ApiErrorResponse
-
-**New types needed:**
-
-```typescript
-// Project types (CreateProjectInput might exist, verify)
-export interface CreateProjectInput {
-  name: string;
-  description?: string;
-}
-
-export interface UpdateProjectInput {
-  name?: string;
-  description?: string | null;
-}
-
-// Dependency types
-export interface DependencyResponse {
-  id: number;
-  task_id: number;
-  blocks_task_id: number;
-  created_at: string;
-}
-
-export interface DependencyListResponse {
-  blocks: DependencyResponse[];      // Tasks this task blocks
-  blocked_by: DependencyResponse[];  // Tasks blocking this task
-}
-
-// Comment types
-export interface CommentResponse {
-  id: number;
-  task_id: number;
-  author: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCommentInput {
-  author: string;
-  content: string;
-}
+**Tool naming convention:**
+```
+mcp__<server-name>__<tool-name>
+    │       │            └── Tool name from server.registerTool('create_task', ...)
+    │       └──────────────── MCP server name from ~/.claude.json
+    └──────────────────────── MCP namespace prefix
 ```
 
-**Rationale:** CLI types mirror REST API responses but remain decoupled from server types. This allows CLI to evolve independently.
+**For wood-fired-bugs:**
+- Server name: `wood-fired-bugs` (from `~/.claude.json` config)
+- Tool names: `create_task`, `list_tasks`, `update_task`, etc.
+- Full names: `mcp__wood-fired-bugs__create_task`, `mcp__wood-fired-bugs__list_tasks`
 
-### Output Formatters
+**Sources:**
+- [MCP Tool Configuration](https://code.claude.com/docs/en/mcp)
+- [Skills vs MCP Explanation](https://claude.com/blog/skills-explained)
 
-**Location:** `src/cli/output/formatters.ts`
+### MCP Server Configuration
 
-**Current formatters:**
-- formatStatus(status: string): string
-- formatPriority(priority: string): string
-- formatTaskTable(tasks: TaskResponse[]): string
-- formatTaskDetail(task: TaskResponse): string
+#### Global Configuration File
 
-**New formatters needed:**
+Claude Code uses `~/.claude.json` for user-level MCP server configuration:
 
-```typescript
-// Project formatters
-export function formatProjectTable(projects: ProjectResponse[]): string
-export function formatProjectDetail(project: ProjectResponse): string
-
-// Dependency formatters
-export function formatDependencyTree(deps: DependencyListResponse): string
-export function formatDependencyList(deps: DependencyResponse[]): string
-
-// Comment formatters
-export function formatCommentList(comments: CommentResponse[]): string
-export function formatCommentDetail(comment: CommentResponse): string
-
-// JSON formatter (global)
-export function formatJson(data: unknown): string {
-  return JSON.stringify(data, null, 2);
-}
-```
-
-**Pattern:** Each resource gets table and detail formatters. Use `cli-table3` for tables, chalk for colors.
-
-**Source:** [CLI best practices for --json flag](https://github.com/lirantal/nodejs-cli-apps-best-practices)
-
-### MCP Tool Structure
-
-**Location:** `src/mcp/tools/`
-
-**Current files:**
-- task-tools.ts (6 tools: create, get, update, list, delete, get_subtasks)
-- dependency-tools.ts (3 tools: add, remove, get_dependencies)
-- comment-tools.ts (3 tools: add, get_comments, delete)
-
-**New file needed:**
-- project-tools.ts (5 tools: create, get, update, list, delete)
-
-**Registration pattern:**
-
-```typescript
-// src/mcp/tools/project-tools.ts
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ProjectService } from '../../services/project.service.js';
-import { CreateProjectSchema } from '../../schemas/task.schema.js';
-import { z } from 'zod';
-import { convertToMcpError } from '../errors.js';
-
-export function registerProjectTools(
-  server: McpServer,
-  projectService: ProjectService
-): void {
-  server.registerTool(
-    'create_project',
-    {
-      description: 'Create a new project',
-      inputSchema: CreateProjectSchema,
-    },
-    async (args) => {
-      try {
-        const project = projectService.createProject(args);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Project created: "${project.name}" (ID: ${project.id})`,
-            },
-          ],
-          structuredContent: project as unknown as { [x: string]: unknown },
-        };
-      } catch (error) {
-        throw convertToMcpError(error);
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["/absolute/path/to/wood-fired-bugs/dist/mcp/index.js"],
+      "env": {
+        "WOOD_FIRED_BUGS_API_KEY": "generated-api-key-here",
+        "DB_PATH": "/absolute/path/to/wood-fired-bugs/data/tasks.db"
       }
     }
-  );
-
-  // Additional tools: get_project, update_project, list_projects, delete_project
+  }
 }
 ```
 
-**Then update:** `src/mcp/server.ts`
+**Critical details:**
 
-```typescript
-import { registerProjectTools } from './tools/project-tools.js';
+- **Absolute paths required**: Relative paths fail (Claude Code doesn't know working directory)
+- **Server name**: `wood-fired-bugs` becomes the MCP namespace
+- **Command**: `node` (must be in PATH) or absolute path to node binary
+- **Args**: Path to compiled `dist/mcp/index.js` (not TypeScript source)
+- **Environment variables**: Set per-server, isolated from global environment
 
-export function createMcpServer(
-  taskService: TaskService,
-  projectService: ProjectService,
-  dependencyService: DependencyService,
-  commentService: CommentService
-): McpServer {
-  const server = new McpServer({
-    name: 'wood-fired-bugs',
-    version: '1.0.0',
-  });
+**Platform differences:**
 
-  // Register all tools
-  registerTaskTools(server, taskService, projectService);
-  registerProjectTools(server, projectService);  // NEW
-  registerDependencyTools(server, dependencyService);
-  registerCommentTools(server, commentService);
+| Platform | Config Location |
+|----------|----------------|
+| macOS | `~/.claude.json` |
+| Linux | `~/.claude.json` |
+| WSL | `~/.claude.json` |
+| Windows | `%USERPROFILE%\.claude.json` |
 
-  return server;
+**Alternative: Project-level configuration**
+
+For team sharing, use `.mcp.json` in project root (checked into git):
+
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["${PROJECT_ROOT}/dist/mcp/index.js"],
+      "env": {
+        "WOOD_FIRED_BUGS_API_KEY": "${WOOD_FIRED_BUGS_API_KEY}",
+        "DB_PATH": "${PROJECT_ROOT}/data/tasks.db"
+      }
+    }
+  }
 }
 ```
 
-**Pattern:** One tool file per resource, registerXxxTools() function, shares Zod schemas from `src/schemas/`.
+**Variable expansion:**
+- `${PROJECT_ROOT}`: Expands to project directory
+- `${VAR}`: Expands to environment variable
+- `${VAR:-default}`: Expands to VAR or default if unset
+
+**Recommendation for v1.2:** Use global `~/.claude.json` to make skills available across all projects. Add `.mcp.json` example to repository for contributors.
+
+**Sources:**
+- [MCP Installation Scopes](https://code.claude.com/docs/en/mcp#mcp-installation-scopes)
+- [Environment Variable Expansion](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcpjson)
+
+### Installer Architecture
+
+#### Cross-Platform Requirements
+
+The installer must work on:
+
+1. **Linux** (primary): Ubuntu/Debian (systemd-based)
+2. **macOS**: Homebrew environment, zsh shell
+3. **Windows**: PowerShell 5.1+ or PowerShell Core 7+
+
+**Architecture decision:** Two separate installer scripts instead of unified cross-platform.
+
+**Rationale:**
+- Bash and PowerShell have fundamentally different ecosystems
+- Separate scripts are simpler to maintain than conditional logic
+- Users already know which script to run for their platform
+- Enables platform-specific optimizations
+
+**Sources:**
+- [Cross-Platform PowerShell Guide](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
+- [Tips for Cross-Platform PowerShell](https://powershell.org/2019/02/tips-for-writing-cross-platform-powershell-code/)
+
+#### Bash Installer (`install.sh`)
+
+**Supported platforms:** Linux (Ubuntu 20.04+), macOS (10.15+), WSL2
+
+**Installation steps:**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 1. Detect platform
+OS="$(uname -s)"
+case "${OS}" in
+    Linux*)     PLATFORM=linux;;
+    Darwin*)    PLATFORM=macos;;
+    *)          echo "Unsupported OS: ${OS}"; exit 1;;
+esac
+
+# 2. Verify dependencies
+command -v node >/dev/null 2>&1 || { echo "Node.js required"; exit 1; }
+command -v npm >/dev/null 2>&1 || { echo "npm required"; exit 1; }
+
+# 3. Determine installation directory (prefer absolute)
+INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 4. Build the project
+echo "Building Wood Fired Bugs..."
+npm install
+npm run build
+
+# 5. Create skills directory
+SKILLS_DIR="${HOME}/.claude/commands/tasks"
+mkdir -p "${SKILLS_DIR}"
+
+# 6. Copy skill files
+echo "Installing Claude Code skills..."
+cp -f "${INSTALL_DIR}/skills/"*.md "${SKILLS_DIR}/"
+
+# 7. Generate API key
+API_KEY="$(openssl rand -hex 32)"
+
+# 8. Configure MCP server in ~/.claude.json
+CLAUDE_CONFIG="${HOME}/.claude.json"
+MCP_INDEX="${INSTALL_DIR}/dist/mcp/index.js"
+DB_PATH="${INSTALL_DIR}/data/tasks.db"
+
+# Create or update ~/.claude.json
+if [[ -f "${CLAUDE_CONFIG}" ]]; then
+    # Merge with existing config (use jq if available)
+    echo "Updating existing ~/.claude.json..."
+    # Implementation: Use jq to merge or manual backup + write
+else
+    echo "Creating ~/.claude.json..."
+    cat > "${CLAUDE_CONFIG}" <<EOF
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["${MCP_INDEX}"],
+      "env": {
+        "WOOD_FIRED_BUGS_API_KEY": "${API_KEY}",
+        "DB_PATH": "${DB_PATH}"
+      }
+    }
+  }
+}
+EOF
+fi
+
+# 9. Test MCP server
+echo "Testing MCP server..."
+echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node "${MCP_INDEX}"
+
+# 10. Save API key to .env (for CLI/API access)
+ENV_FILE="${INSTALL_DIR}/.env"
+if grep -q "WOOD_FIRED_BUGS_API_KEY" "${ENV_FILE}" 2>/dev/null; then
+    sed -i.bak "s/WOOD_FIRED_BUGS_API_KEY=.*/WOOD_FIRED_BUGS_API_KEY=${API_KEY}/" "${ENV_FILE}"
+else
+    echo "WOOD_FIRED_BUGS_API_KEY=${API_KEY}" >> "${ENV_FILE}"
+fi
+
+echo ""
+echo "✓ Installation complete!"
+echo ""
+echo "Skills installed to: ${SKILLS_DIR}"
+echo "MCP server configured in: ${CLAUDE_CONFIG}"
+echo "API key saved to: ${ENV_FILE}"
+echo ""
+echo "Next steps:"
+echo "  1. Restart Claude Code"
+echo "  2. Try: /tasks:create Create my first task"
+echo "  3. Or just ask Claude: Create a high priority task for user testing"
+```
+
+**Key patterns:**
+
+- **Error handling**: `set -euo pipefail` stops on first error
+- **Dependency checks**: `command -v` verifies tools exist
+- **Absolute paths**: `$(cd "$(dirname "$0")" && pwd)` resolves script directory
+- **Directory creation**: `mkdir -p` creates parent directories, no error if exists
+- **File copying**: `cp -f` overwrites existing skills
+- **API key generation**: `openssl rand -hex 32` creates 64-char hex string
+- **JSON manipulation**: Use `jq` if available, otherwise write entire file
+- **Testing**: Send JSON-RPC message to verify MCP server responds
+
+**Sources:**
+- [Bash Installer Best Practices](https://www.baeldung.com/linux/create-destination-directory)
+- [Chmod +x Command](https://www.warp.dev/terminus/chmod-x)
+
+#### PowerShell Installer (`install.ps1`)
+
+**Supported platforms:** Windows 10+, PowerShell 5.1 or PowerShell Core 7+
+
+**Installation steps:**
+
+```powershell
+#Requires -Version 5.1
+$ErrorActionPreference = "Stop"
+
+# 1. Verify dependencies
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Error "Node.js is required. Install from https://nodejs.org/"
+    exit 1
+}
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Error "npm is required. Install Node.js from https://nodejs.org/"
+    exit 1
+}
+
+# 2. Determine installation directory (absolute path)
+$InstallDir = Split-Path -Parent $PSCommandPath
+
+# 3. Build the project
+Write-Host "Building Wood Fired Bugs..." -ForegroundColor Green
+Set-Location $InstallDir
+npm install
+npm run build
+
+# 4. Create skills directory
+$SkillsDir = Join-Path $env:USERPROFILE ".claude\commands\tasks"
+New-Item -ItemType Directory -Force -Path $SkillsDir | Out-Null
+
+# 5. Copy skill files
+Write-Host "Installing Claude Code skills..." -ForegroundColor Green
+Copy-Item -Path (Join-Path $InstallDir "skills\*.md") -Destination $SkillsDir -Force
+
+# 6. Generate API key
+$ApiKey = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+
+# 7. Configure MCP server in %USERPROFILE%\.claude.json
+$ClaudeConfig = Join-Path $env:USERPROFILE ".claude.json"
+$McpIndex = Join-Path $InstallDir "dist\mcp\index.js"
+$DbPath = Join-Path $InstallDir "data\tasks.db"
+
+# Create or update .claude.json
+if (Test-Path $ClaudeConfig) {
+    Write-Host "Updating existing .claude.json..." -ForegroundColor Yellow
+    # Implementation: Parse JSON, merge, write back
+    # For simplicity, backup and overwrite (or use ConvertFrom-Json/ConvertTo-Json)
+} else {
+    Write-Host "Creating .claude.json..." -ForegroundColor Green
+    $Config = @{
+        mcpServers = @{
+            "wood-fired-bugs" = @{
+                command = "node"
+                args = @($McpIndex)
+                env = @{
+                    WOOD_FIRED_BUGS_API_KEY = $ApiKey
+                    DB_PATH = $DbPath
+                }
+            }
+        }
+    }
+    $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ClaudeConfig -Encoding UTF8
+}
+
+# 8. Test MCP server
+Write-Host "Testing MCP server..." -ForegroundColor Green
+$TestRequest = '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+$TestRequest | node $McpIndex
+
+# 9. Save API key to .env
+$EnvFile = Join-Path $InstallDir ".env"
+if (Test-Path $EnvFile) {
+    $EnvContent = Get-Content $EnvFile
+    $EnvContent = $EnvContent -replace 'WOOD_FIRED_BUGS_API_KEY=.*', "WOOD_FIRED_BUGS_API_KEY=$ApiKey"
+    $EnvContent | Set-Content $EnvFile
+} else {
+    "WOOD_FIRED_BUGS_API_KEY=$ApiKey" | Set-Content $EnvFile
+}
+
+Write-Host ""
+Write-Host "✓ Installation complete!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Skills installed to: $SkillsDir"
+Write-Host "MCP server configured in: $ClaudeConfig"
+Write-Host "API key saved to: $EnvFile"
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "  1. Restart Claude Code"
+Write-Host "  2. Try: /tasks:create Create my first task"
+Write-Host "  3. Or just ask Claude: Create a high priority task for user testing"
+```
+
+**Key patterns:**
+
+- **Requirements check**: `#Requires -Version 5.1` enforces minimum PowerShell version
+- **Error handling**: `$ErrorActionPreference = "Stop"` stops on first error
+- **Path handling**: `Join-Path` for cross-platform path construction (handles backslashes)
+- **Directory creation**: `New-Item -ItemType Directory -Force` creates if missing
+- **File copying**: `Copy-Item -Force` overwrites existing skills
+- **API key generation**: `Get-Random` + hex formatting
+- **JSON handling**: `ConvertTo-Json` / `ConvertFrom-Json` for .claude.json
+- **Testing**: Pipe JSON to node process
+
+**PowerShell gotchas:**
+
+- **Encoding**: Use `-Encoding UTF8` when writing JSON to avoid BOM
+- **Depth**: `ConvertTo-Json -Depth 10` prevents truncation of nested objects
+- **Paths**: PowerShell uses backslashes on Windows, use `Join-Path` for portability
+- **Execution policy**: User may need to run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+**Sources:**
+- [PowerShell Environment Variables](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables)
+- [PowerShell Copy-Item Guide](https://petri.com/powershell-copy-item-to-copy-files/)
+- [PowerShell Cross-Platform Tips](https://jdhitsolutions.com/blog/scripting/7361/powershell-7-cross-platform-scripting-tips-and-traps/)
 
 ## Architectural Patterns
 
-### Pattern 1: Command File Structure
+### Pattern 1: Skill-MCP Separation
 
-**What:** Each CLI command is a separate file exporting a Commander.js Command instance.
+**What:** Skills contain instructions for Claude, MCP tools implement the actual operations. Skills **reference** tools by name, not call them directly.
 
-**When to use:** Always, for all new commands.
+**When to use:** Always, for all Claude Code integrations.
 
 **Example:**
-```typescript
-// src/cli/commands/projects/create.ts
-import { Command } from 'commander';
-import { createProject } from '../../api/client.js';
-import { formatProjectDetail } from '../../output/formatters.js';
-import { handleError } from '../../output/error-handler.js';
-import chalk from 'chalk';
-import type { CreateProjectInput } from '../../api/types.js';
 
-export const createProjectCommand = new Command('create')
-  .description('Create a new project')
-  .requiredOption('-n, --name <name>', 'Project name')
-  .option('-d, --description <text>', 'Project description')
-  .action(async (options) => {
-    try {
-      const input: CreateProjectInput = {
-        name: options.name,
-      };
-      if (options.description) {
-        input.description = options.description;
-      }
+```markdown
+<!-- skills/create.md -->
+---
+name: create
+description: Create a new task in the tracking system
+---
 
-      const project = await createProject(input);
+## Procedure
 
-      // Check for global --json flag
-      const parentOpts = this.parent?.opts();
-      if (parentOpts?.json) {
-        console.log(JSON.stringify(project, null, 2));
-        return;
-      }
-
-      console.log(chalk.green('Project created successfully'));
-      console.log('');
-      console.log(formatProjectDetail(project));
-    } catch (error) {
-      handleError(error);
-    }
-  });
+1. Ask user for task title (required)
+2. Call `mcp__wood-fired-bugs__create_task` with:
+   - title: <user input>
+   - priority: medium (unless user specifies)
+   - status: todo
+3. Report task ID and confirmation
 ```
 
 **Trade-offs:**
-- Pro: Clean separation, easy to test, follows existing pattern
-- Pro: Commander.js automatically inherits options from parent
-- Con: More files, but organized by folder
 
-### Pattern 2: JSON Output Handling
+- **Pro:** Clear separation of concerns (instructions vs implementation)
+- **Pro:** Skills can evolve independently from MCP server
+- **Pro:** Users can edit skills without touching code
+- **Con:** Requires both skill file and MCP tool to work
+- **Con:** Tool names must stay synchronized
 
-**What:** Commands check for global `--json` flag and output raw JSON instead of formatted text.
+### Pattern 2: Namespace Prefix for Skills
 
-**When to use:** All commands that return data.
+**What:** Use `/tasks:*` namespace for all skills to avoid collision with built-in commands or other plugins.
+
+**When to use:** Always, for any project distributing Claude Code skills.
 
 **Example:**
-```typescript
-.action(async (options) => {
-  try {
-    const result = await someApiCall();
 
-    // Check global --json flag from parent program
-    if (this.parent?.opts().json) {
-      console.log(JSON.stringify(result, null, 2));
-      return;
+```markdown
+---
+name: create          # Becomes /tasks:create (with namespace)
+description: ...
+---
+```
+
+**Namespace is set by installation directory:**
+
+```
+~/.claude/commands/tasks/create.md    → /tasks:create
+~/.claude/commands/git/commit.md      → /git:commit
+~/.claude/commands/test/run.md        → /test:run
+```
+
+**Trade-offs:**
+
+- **Pro:** Prevents name collisions (`/create` too generic, `/tasks:create` specific)
+- **Pro:** User can discover all task-related commands with `/tasks:`
+- **Pro:** Multiple projects can coexist (tasks, git, docker, etc.)
+- **Con:** Slightly longer command names
+- **Con:** Users must know namespace (but autocomplete helps)
+
+**Alternative considered:** No namespace (skills at `~/.claude/commands/`).
+
+**Rejected because:** Too likely to conflict with other skills. `/create` could mean create task, create file, create PR, etc.
+
+### Pattern 3: Global MCP Server Configuration
+
+**What:** Configure MCP server in `~/.claude.json` (user-level) instead of project `.mcp.json`.
+
+**When to use:** When users need access to the service across multiple projects.
+
+**Example:**
+
+```json
+// ~/.claude.json (global)
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["/absolute/path/to/dist/mcp/index.js"],
+      "env": { "WOOD_FIRED_BUGS_API_KEY": "..." }
     }
-
-    // Otherwise, use formatted output
-    console.log(formatSomeTable(result));
-  } catch (error) {
-    handleError(error);
   }
-});
+}
 ```
 
-**Trade-offs:**
-- Pro: Machine-readable output for scripting
-- Pro: Industry standard (npm, git, gh all support --json)
-- Con: Requires checking flag in every command action
+**Alternative: Project-level configuration**
 
-**Source:** [CLI best practices: enable JSON output](https://github.com/lirantal/nodejs-cli-apps-best-practices)
-
-### Pattern 3: MCP Tool Registration
-
-**What:** Group related MCP tools in separate files with `registerXxxTools()` function.
-
-**When to use:** When adding 3+ tools for a new resource type.
-
-**Example:**
-```typescript
-// src/mcp/tools/project-tools.ts
-export function registerProjectTools(
-  server: McpServer,
-  projectService: ProjectService
-): void {
-  server.registerTool('create_project', { ... }, async (args) => { ... });
-  server.registerTool('get_project', { ... }, async (args) => { ... });
-  server.registerTool('list_projects', { ... }, async (args) => { ... });
-  server.registerTool('update_project', { ... }, async (args) => { ... });
-  server.registerTool('delete_project', { ... }, async (args) => { ... });
+```json
+// .mcp.json (project root, checked into git)
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["${PROJECT_ROOT}/dist/mcp/index.js"],
+      "env": { "WOOD_FIRED_BUGS_API_KEY": "${WOOD_FIRED_BUGS_API_KEY}" }
+    }
+  }
 }
 ```
 
 **Trade-offs:**
-- Pro: Mirrors existing pattern (task-tools.ts, dependency-tools.ts, comment-tools.ts)
-- Pro: Clean separation of concerns
-- Con: None, this is the established pattern
 
-### Pattern 4: Interactive Prompts (Future)
+| Approach | Pros | Cons |
+|----------|------|------|
+| Global (`~/.claude.json`) | Available everywhere, survives project deletion, single API key | Requires absolute paths, not shareable with team |
+| Project (`.mcp.json`) | Shareable via git, relative paths with `${PROJECT_ROOT}` | Each project needs configuration, API key in env |
 
-**What:** For complex inputs, use interactive prompts instead of many flags.
+**Recommendation for v1.2:** Global configuration. Wood Fired Bugs is a network-wide service (like GitHub or Slack), not project-specific. Users want access everywhere.
 
-**When to use:** When command requires 5+ inputs or conditional logic.
+**Future consideration:** Support both. Installer creates global config, repository includes `.mcp.json` example for contributors.
 
-**Library recommendation:** `enquirer` (preferred) or `@inquirer/prompts`
+### Pattern 4: Installer Tests MCP Connectivity
 
-**Example (future use):**
-```typescript
-import { prompt } from 'enquirer';
+**What:** Installer sends a test JSON-RPC request to MCP server before completing.
 
-export const createTaskInteractive = new Command('create-interactive')
-  .description('Create a task with interactive prompts')
-  .action(async () => {
-    try {
-      const answers = await prompt([
-        { type: 'input', name: 'title', message: 'Task title:' },
-        { type: 'select', name: 'priority', message: 'Priority:', choices: ['low', 'medium', 'high', 'urgent'] },
-        // ... more prompts
-      ]);
+**When to use:** Always, for any MCP server installer.
 
-      const task = await createTask(answers);
-      console.log(formatTaskDetail(task));
-    } catch (error) {
-      handleError(error);
-    }
-  });
+**Example:**
+
+```bash
+# Send tools/list request to verify server responds
+echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/mcp/index.js
+```
+
+**Expected response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {"name": "create_task", "description": "..."},
+      {"name": "list_tasks", "description": "..."}
+      // ... 25 tools
+    ]
+  }
+}
 ```
 
 **Trade-offs:**
-- Pro: Better UX for complex inputs
-- Pro: Enquirer is lightweight (~4ms load time)
-- Con: Not needed for v1.1 (all commands have simple inputs)
-- Con: Requires new dependency
 
-**Source:** [Enquirer vs Inquirer comparison](https://npm-compare.com/enquirer,inquirer,prompt,prompt-sync,prompts,readline-sync)
+- **Pro:** Catches configuration errors before user tries skills
+- **Pro:** Verifies node path, file permissions, database access
+- **Pro:** Immediate feedback (fails fast)
+- **Con:** Requires database to exist (installer should create if missing)
+- **Con:** May fail if environment variables not set (check before test)
 
-**Recommendation:** Defer interactive prompts until v1.2+. Current flag-based approach is sufficient.
+**Implementation note:** Installer should create `data/tasks.db` if missing (run migrations) before testing MCP server.
+
+### Pattern 5: Auto-Generated API Keys
+
+**What:** Installer generates unique API key instead of asking user to create one.
+
+**When to use:** When API key is for single-user access (not shared).
+
+**Example:**
+
+```bash
+# Bash
+API_KEY="$(openssl rand -hex 32)"
+
+# PowerShell
+$ApiKey = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })
+```
+
+**Trade-offs:**
+
+- **Pro:** Zero user friction (no manual key creation)
+- **Pro:** Cryptographically secure (64 hex chars = 256 bits)
+- **Pro:** Unique per installation
+- **Con:** User can't choose memorable key (but not needed for MCP auth)
+- **Con:** Must save to both `.env` (for server) and `~/.claude.json` (for MCP)
+
+**Alternative:** Ask user to provide API key.
+
+**Rejected because:** MCP tools authenticate via environment variable, user never sees it. Auto-generation is simpler.
 
 ## Data Flow
 
-### CLI Request Flow
+### Skill Invocation Flow
 
 ```
-User Command
+User Request
     ↓
-Commander.js Parser
+Claude Code: Parse intent
     ↓
-Command Action Handler
+Match skill description → Load /tasks:create skill
     ↓
-API Client Function (HTTP fetch)
+Skill instructions: "Use mcp__wood-fired-bugs__create_task"
     ↓
-REST API Endpoint (Fastify)
+Claude Code: Locate MCP server "wood-fired-bugs" in ~/.claude.json
     ↓
-Service Layer (Zod validation)
+Spawn MCP server: node dist/mcp/index.js (stdio)
     ↓
-Repository Layer (SQL queries)
+MCP Server: Initialize database, services
     ↓
-SQLite Database
+Claude Code: Send JSON-RPC request to stdio
     ↓
-Repository → Service → API → HTTP Response
+    {"jsonrpc":"2.0","method":"tools/call","params":{
+      "name":"create_task",
+      "arguments":{"title":"Fix login bug","priority":"high"}
+    }}
     ↓
-API Client (parse JSON)
+MCP Server: Route to task-tools.ts registerTool('create_task')
     ↓
-Format Output (table or JSON)
+Tool handler: Validate with Zod schema
     ↓
-Console Output
+TaskService.createTask(validated)
+    ↓
+TaskRepository: INSERT INTO tasks
+    ↓
+SQLite: Write to database
+    ↓
+TaskRepository → TaskService → Tool handler
+    ↓
+MCP Server: Format response
+    ↓
+    {"jsonrpc":"2.0","id":1,"result":{
+      "content":[{"type":"text","text":"Task created: Fix login bug (ID: 42)"}],
+      "structuredContent":{"id":42,"title":"Fix login bug",...}
+    }}
+    ↓
+Claude Code: Parse response
+    ↓
+Skill instructions: "Report task ID and confirmation"
+    ↓
+Claude: "I've created task #42: Fix login bug"
+    ↓
+User sees result
 ```
 
-### MCP Request Flow
+### Installer Flow (Bash)
 
 ```
-MCP Client (Claude, etc.)
+User runs: ./install/install.sh
     ↓
-MCP Server (stdio transport)
+Detect platform (Linux/macOS/WSL)
     ↓
-Tool Handler (registerTool)
+Verify dependencies (node, npm, openssl)
     ↓
-Service Layer (Zod validation)
+Build project (npm install && npm run build)
     ↓
-Repository Layer (SQL queries)
+Create ~/.claude/commands/tasks/ directory
     ↓
-SQLite Database
+Copy skills/*.md → ~/.claude/commands/tasks/
     ↓
-Repository → Service → Tool Response
+Generate API key (openssl rand -hex 32)
     ↓
-MCP Client
+Check if ~/.claude.json exists
+    ↓
+    If exists: Backup + merge (use jq if available)
+    If not: Create new file
+    ↓
+Write MCP server config to ~/.claude.json
+    ↓
+    {
+      "mcpServers": {
+        "wood-fired-bugs": {
+          "command": "node",
+          "args": ["/absolute/path/dist/mcp/index.js"],
+          "env": {"WOOD_FIRED_BUGS_API_KEY":"..."}
+        }
+      }
+    }
+    ↓
+Test MCP server (echo JSON | node dist/mcp/index.js)
+    ↓
+    Success: Server responds with tool list
+    Failure: Show error, rollback config
+    ↓
+Save API key to .env file (for CLI/REST API)
+    ↓
+Print success message + next steps
+    ↓
+User restarts Claude Code
+    ↓
+Skills available at /tasks:*
 ```
 
-### Key Differences
+### Key Data Interactions
 
-| Aspect | CLI | MCP |
-|--------|-----|-----|
-| Transport | HTTP (fetch) | stdio (process communication) |
-| Service access | Via REST API | Direct function calls |
-| Type safety | CLI types (decoupled) | Service types (shared schemas) |
-| Validation | REST API validates | Service validates |
-| Error handling | ApiClientError + HTTP codes | convertToMcpError() |
-| Output format | Formatted text or JSON | Structured MCP response |
+**Skill → MCP Tool:**
+- Skills reference tools by name: `mcp__wood-fired-bugs__create_task`
+- Claude Code resolves tool → MCP server from `~/.claude.json`
+- No direct coupling (skill doesn't know tool implementation)
+
+**MCP Server → Services:**
+- MCP tools call service methods directly (no REST API)
+- Same service layer as CLI and REST API (shared business logic)
+- Zod schemas validate input before service call
+
+**Installer → Configuration:**
+- Installer writes to `~/.claude.json` (MCP config)
+- Installer writes to `.env` (API key for REST/CLI)
+- Both use same API key (single source of truth)
 
 ## Integration Points
 
@@ -584,258 +897,463 @@ MCP Client
 
 | Component | Type | Location | Purpose |
 |-----------|------|----------|---------|
-| Project commands | CLI | `src/cli/commands/projects/*.ts` | Project CRUD operations |
-| Dependency commands | CLI | `src/cli/commands/dependencies/*.ts` | Dependency management |
-| Comment commands | CLI | `src/cli/commands/comments/*.ts` | Comment management |
-| Task commands (new) | CLI | `src/cli/commands/tasks/*.ts` | Additional task operations (get, delete) |
-| Project tools | MCP | `src/mcp/tools/project-tools.ts` | MCP project tools |
-| API client extensions | Shared | `src/cli/api/client.ts` | HTTP client functions |
-| Type definitions | CLI | `src/cli/api/types.ts` | CLI type interfaces |
-| Formatters | CLI | `src/cli/output/formatters.ts` | Output formatting |
-| Main program | CLI | `src/cli/bin/tasks.ts` | Command registration |
-| MCP server | MCP | `src/mcp/server.ts` | Tool registration |
+| Skill files (10) | Markdown | `skills/*.md` | Claude instructions for task operations |
+| Bash installer | Script | `install/install.sh` | Linux/macOS installation |
+| PowerShell installer | Script | `install/install.ps1` | Windows installation |
+| Install README | Docs | `install/README.md` | Installation instructions |
+| MCP config template | JSON | `install/mcp-config.example.json` | Example for manual setup |
 
 ### Modified Components
 
 | Component | Change | Reason |
 |-----------|--------|--------|
-| `src/cli/bin/tasks.ts` | Add subcommand groups (project, dep, comment) | Organize commands by resource |
-| `src/cli/bin/tasks.ts` | Add global `--json` option | Machine-readable output |
-| `src/mcp/server.ts` | Import and register project tools | Enable MCP project operations |
-| `src/cli/api/client.ts` | Add 12+ new API functions | Support new CLI commands |
-| `src/cli/api/types.ts` | Add dependency and comment types | Type safety for new features |
-| `src/cli/output/formatters.ts` | Add formatters for projects, deps, comments | Consistent output formatting |
+| `package.json` | Add `"postinstall": "echo Run install/install.sh"` | Remind users to run installer |
+| `package.json` | Add `"scripts": {"install:skills": "./install/install.sh"}` | Convenient install command |
+| `.gitignore` | Add `~/.claude.json` to example | Don't commit user configs |
+| `README.md` | Add "Installation" section | Document installer usage |
 
 ### No Changes Needed
 
 These components work as-is:
 
-- `src/services/` - Already implements all operations
-- `src/repositories/` - Already has all data access
-- `src/schemas/` - Already defines all Zod schemas
-- `src/api/routes/` - Already exposes all REST endpoints
-- `src/db/` - Database layer complete
-- `src/cli/config/env.ts` - Environment config sufficient
-- `src/cli/output/error-handler.ts` - Error handling sufficient
+- `src/mcp/` — MCP server already implements 25 tools
+- `src/services/` — Business logic complete
+- `src/db/` — Database schema supports all operations
+- MCP server entry point (`dist/mcp/index.js`) — Already stdio-compatible
+
+### External Dependencies
+
+| Dependency | Version | Purpose | Installer Validates |
+|------------|---------|---------|---------------------|
+| Node.js | 18+ | Run MCP server | Yes (`node --version`) |
+| npm | 8+ | Build project | Yes (`npm --version`) |
+| openssl | Any | Generate API keys (Bash) | Optional (fallback to /dev/urandom) |
+| PowerShell | 5.1+ | Run installer (Windows) | Yes (`#Requires -Version 5.1`) |
+
+**Optional dependencies:**
+
+- `jq` (Bash): Merge existing `~/.claude.json` instead of overwrite
+- `git` (both): Check project version, show install location
 
 ## Build Order
 
-Recommended implementation sequence:
+Recommended implementation sequence for v1.2:
 
-### Phase 1: Foundation (Build first)
-1. Add new types to `src/cli/api/types.ts`
-2. Add new API client functions to `src/cli/api/client.ts`
-3. Add new formatters to `src/cli/output/formatters.ts`
+### Phase 1: Skill Files (Build first)
 
-### Phase 2: CLI Commands (Build second)
-4. Create command folder structure (`src/cli/commands/projects/`, etc.)
-5. Move existing commands to `src/cli/commands/tasks/`
-6. Implement project commands
-7. Implement dependency commands
-8. Implement comment commands
-9. Implement additional task commands (get, delete)
+1. Create `skills/` directory at project root
+2. Write 10 skill markdown files:
+   - `create.md` — Create tasks
+   - `list.md` — List/filter tasks
+   - `update.md` — Update tasks
+   - `get.md` — Get task details
+   - `delete.md` — Delete tasks
+   - `project.md` — Project management (create, list, update, delete)
+   - `dependency.md` — Dependency management (add, remove, list)
+   - `comment.md` — Comment operations (add, list, delete)
+   - `subtask.md` — Subtask operations (create, list)
+   - `health.md` — System health check
 
-### Phase 3: Integration (Build third)
-10. Update `src/cli/bin/tasks.ts` with subcommand groups
-11. Add global `--json` option handling
+**Template for each skill:**
 
-### Phase 4: MCP Tools (Build fourth)
-12. Create `src/mcp/tools/project-tools.ts`
-13. Update `src/mcp/server.ts` to register project tools
+```markdown
+---
+name: <verb>
+description: <when to use> <what it does> <key capabilities>
+---
 
-### Phase 5: Testing (Build last)
-14. Test all CLI commands with formatted output
-15. Test all CLI commands with `--json` output
-16. Test all MCP tools
-17. Update documentation
+# <Title>
+
+<Brief description>
+
+## When to Use
+
+- <Trigger phrase 1>
+- <Trigger phrase 2>
+
+## MCP Tools Used
+
+- `mcp__wood-fired-bugs__<tool_name>`: <purpose>
+
+## Procedure
+
+1. <Step 1>
+2. <Step 2>
+3. <Step 3>
+
+## Examples
+
+**<Scenario>:**
+> "<User request>"
+```
+
+### Phase 2: Bash Installer (Build second)
+
+3. Create `install/` directory
+4. Write `install/install.sh`:
+   - Platform detection (Linux, macOS, WSL)
+   - Dependency verification (node, npm)
+   - Project build (npm install && npm run build)
+   - Skills installation (copy to `~/.claude/commands/tasks/`)
+   - API key generation
+   - MCP configuration (`~/.claude.json`)
+   - Connectivity test
+   - .env file update
+   - Success message
+5. Test on Linux (Ubuntu 20.04, 22.04, 24.04)
+6. Test on macOS (Intel and Apple Silicon)
+7. Test on WSL2
+
+### Phase 3: PowerShell Installer (Build third)
+
+8. Write `install/install.ps1`:
+   - Dependency verification (node, npm)
+   - Project build
+   - Skills installation (copy to `%USERPROFILE%\.claude\commands\tasks\`)
+   - API key generation (PowerShell method)
+   - MCP configuration (`%USERPROFILE%\.claude.json`)
+   - Connectivity test
+   - .env file update
+   - Success message
+9. Test on Windows 10 (PowerShell 5.1)
+10. Test on Windows 11 (PowerShell 7)
+
+### Phase 4: Documentation (Build fourth)
+
+11. Write `install/README.md`:
+    - Prerequisites (Node.js 18+, Claude Code)
+    - Installation steps (Linux/macOS vs Windows)
+    - Verification steps
+    - Troubleshooting
+    - Manual installation instructions
+12. Update project `README.md`:
+    - Add "Installation" section
+    - Link to `install/README.md`
+    - Add "Usage with Claude Code" section
+13. Create `install/mcp-config.example.json`:
+    - Template for manual setup
+    - Placeholders for paths and API key
+
+### Phase 5: Testing & Validation (Build last)
+
+14. End-to-end testing:
+    - Run installer on each platform
+    - Restart Claude Code
+    - Test each skill (`/tasks:create`, `/tasks:list`, etc.)
+    - Test manual MCP server start
+    - Test API key authentication
+15. Edge case testing:
+    - Install with existing `~/.claude.json`
+    - Install with existing skills directory
+    - Install without Claude Code installed (should work, verify later)
+    - Reinstall (update scenario)
+16. Documentation review:
+    - Verify all commands are correct
+    - Test copy-paste instructions
+    - Check troubleshooting steps
 
 **Rationale for ordering:**
-- Foundation first: API client and types needed by all commands
-- Commands second: Core functionality
-- Integration third: Ties commands together
-- MCP fourth: Independent from CLI, can be done in parallel
-- Testing last: Validates everything works together
+
+- Skills first: Define the interface, informs installer requirements
+- Bash second: Primary platform (Linux servers), most users
+- PowerShell third: Smaller user base, can learn from Bash installer
+- Documentation fourth: Describes working system
+- Testing last: Validates all components together
 
 **Dependencies:**
-- Phases 1-3 are sequential (each depends on previous)
-- Phase 4 (MCP) can be done in parallel with Phase 2-3
-- Phase 5 requires all previous phases
+
+- Phase 1 (Skills): No dependencies
+- Phase 2 (Bash): Depends on skills existing
+- Phase 3 (PowerShell): Can be parallel with Phase 2 (same requirements)
+- Phase 4 (Docs): Depends on installers working
+- Phase 5 (Testing): Depends on all previous phases
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Direct Service Access from CLI
+### Anti-Pattern 1: Skills Execute MCP Tools Directly
 
-**What people do:** Import service classes into CLI commands for direct calls.
-
-**Why it's wrong:**
-- Breaks the architectural boundary (CLI should be HTTP client)
-- Creates tight coupling between CLI and server
-- Requires database connection in CLI process
-- Makes CLI unusable if server changes implementation
-
-**Do this instead:** Always call REST API via `src/cli/api/client.ts`. Let the server handle all business logic.
-
-### Anti-Pattern 2: Duplicate Validation Logic
-
-**What people do:** Add Zod validation or business logic in CLI commands.
+**What people do:** Try to include MCP tool calls in skill frontmatter or use special syntax.
 
 **Why it's wrong:**
-- Duplicates validation that exists in services
-- CLI validation can get out of sync with server
-- Harder to maintain (two places to update)
 
-**Do this instead:** Let CLI commands be thin wrappers. Pass user input to API client, let server validate.
+- Skills are markdown instructions, not executable code
+- Claude Code resolves tool names and handles invocation
+- Skills guide Claude's reasoning, they don't call tools
+
+**Do this instead:** Reference tools by name in procedure section, let Claude Code invoke them.
 
 **Example (wrong):**
-```typescript
-// DON'T DO THIS
-.action(async (options) => {
-  // Validating in CLI
-  const schema = z.object({ name: z.string().min(1) });
-  const validated = schema.parse(options);  // ❌ Duplicate validation
-  await createProject(validated);
-});
+
+```markdown
+---
+name: create
+execute: mcp__wood-fired-bugs__create_task  # ❌ No "execute" field
+---
 ```
 
 **Example (correct):**
-```typescript
-// DO THIS
-.action(async (options) => {
-  // Just pass through, let server validate
-  await createProject({ name: options.name });  // ✅ Server validates
-});
+
+```markdown
+---
+name: create
+description: Create tasks
+---
+
+## Procedure
+
+1. Use `mcp__wood-fired-bugs__create_task` with parameters  # ✅ Reference in instructions
 ```
 
-### Anti-Pattern 3: Adding MCP Tools to Existing Tool Files
+### Anti-Pattern 2: Relative Paths in MCP Configuration
 
-**What people do:** Add all new tools to `task-tools.ts` instead of creating `project-tools.ts`.
+**What people do:** Use relative paths in `~/.claude.json`.
 
-**Why it's wrong:**
-- Violates single responsibility principle
-- Makes files large and hard to navigate
-- Doesn't scale as project grows
-
-**Do this instead:** Create separate tool files per resource type (`project-tools.ts`, `dependency-tools.ts`, etc.).
-
-### Anti-Pattern 4: Hardcoded Output Formatting
-
-**What people do:** Put formatting logic directly in command action handlers.
-
-**Why it's wrong:**
-- Duplicates formatting across commands
-- Hard to change output style consistently
-- Mixing concerns (command logic + presentation)
-
-**Do this instead:** Extract all formatting to `src/cli/output/formatters.ts`. Commands call formatters.
-
-**Example (wrong):**
-```typescript
-// DON'T DO THIS
-.action(async () => {
-  const projects = await listProjects();
-  // ❌ Formatting in action handler
-  projects.forEach(p => console.log(`${p.id}: ${p.name}`));
-});
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["./dist/mcp/index.js"]  // ❌ Relative path
+    }
+  }
+}
 ```
 
-**Example (correct):**
-```typescript
-// DO THIS
-.action(async () => {
-  const projects = await listProjects();
-  // ✅ Use formatter
-  console.log(formatProjectTable(projects));
-});
+**Why it's wrong:**
+
+- Claude Code doesn't know working directory (could be anywhere)
+- MCP server fails to start ("Cannot find module")
+- Hard to debug (no error message about path)
+
+**Do this instead:** Always use absolute paths.
+
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["/home/user/wood-fired-bugs/dist/mcp/index.js"]  // ✅ Absolute
+    }
+  }
+}
 ```
 
-### Anti-Pattern 5: Git-Style Subcommand Executables
+**Or use `${PROJECT_ROOT}` in `.mcp.json`:**
 
-**What people do:** Use Commander's git-style subcommands (separate executables).
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": ["${PROJECT_ROOT}/dist/mcp/index.js"]  // ✅ Variable expansion
+    }
+  }
+}
+```
+
+### Anti-Pattern 3: Skills Without Namespace
+
+**What people do:** Install skills at `~/.claude/commands/` root.
+
+```
+~/.claude/commands/
+├── create.md         # ❌ Global namespace
+├── list.md           # ❌ Conflicts with other tools
+└── update.md         # ❌ Too generic
+```
 
 **Why it's wrong:**
-- Adds complexity (multiple entry points)
-- Harder to share code between commands
-- TypeScript build becomes more complex
-- Not needed for this project size
 
-**Do this instead:** Use action handlers with `.addCommand()` for all subcommands.
+- Name collisions (`/create` could mean create task, create file, create PR)
+- Hard to discover related skills
+- Can't distinguish origin (which project provides this skill?)
 
-**Source:** [Commander.js subcommand documentation](https://github.com/tj/commander.js)
+**Do this instead:** Use subdirectory for namespace.
+
+```
+~/.claude/commands/
+└── tasks/            # ✅ Namespace prefix
+    ├── create.md     # Becomes /tasks:create
+    ├── list.md       # Becomes /tasks:list
+    └── update.md     # Becomes /tasks:update
+```
+
+### Anti-Pattern 4: Installer Overwrites User Configuration
+
+**What people do:** Installer writes `~/.claude.json` without checking existing content.
+
+```bash
+# ❌ WRONG: Destroys existing MCP servers
+cat > ~/.claude.json <<EOF
+{
+  "mcpServers": {
+    "wood-fired-bugs": { ... }
+  }
+}
+EOF
+```
+
+**Why it's wrong:**
+
+- User loses other MCP server configurations
+- Can't reinstall without backing up manually
+- Violates principle of least surprise
+
+**Do this instead:** Merge with existing configuration.
+
+```bash
+# ✅ CORRECT: Preserve existing servers
+if [[ -f ~/.claude.json ]]; then
+    # Backup
+    cp ~/.claude.json ~/.claude.json.backup
+
+    # Merge (use jq if available)
+    jq '.mcpServers."wood-fired-bugs" = {<config>}' ~/.claude.json > /tmp/claude.json
+    mv /tmp/claude.json ~/.claude.json
+else
+    # Create new
+    cat > ~/.claude.json <<EOF
+    {
+      "mcpServers": {
+        "wood-fired-bugs": { ... }
+      }
+    }
+    EOF
+fi
+```
+
+**Alternative:** Always backup, show user where backup is.
+
+### Anti-Pattern 5: No Installer Validation
+
+**What people do:** Assume installation worked, don't test MCP server.
+
+**Why it's wrong:**
+
+- User tries skill, MCP server fails silently
+- Hard to debug (user doesn't know what went wrong)
+- Poor user experience (feels broken)
+
+**Do this instead:** Test MCP server before completing.
+
+```bash
+# Test MCP server responds
+echo "Testing MCP server..."
+RESPONSE=$(echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node dist/mcp/index.js)
+
+if echo "$RESPONSE" | grep -q '"result"'; then
+    echo "✓ MCP server is working"
+else
+    echo "✗ MCP server failed to respond"
+    echo "Response: $RESPONSE"
+    exit 1
+fi
+```
+
+**Validation checklist:**
+
+- [ ] Node.js installed and in PATH
+- [ ] npm installed and in PATH
+- [ ] Project builds successfully
+- [ ] Skills directory created
+- [ ] Skill files copied
+- [ ] `~/.claude.json` exists and is valid JSON
+- [ ] MCP server responds to test request
+- [ ] API key saved to `.env`
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| Current (v1.1) | Monorepo with shared code. CLI commands in folders by resource. Single `tasks` binary. |
-| v1.2-v2.0 | Add interactive prompts (enquirer) for complex commands. Add config file support (.tasksrc). Add command aliases. |
-| v2.0+ | Consider splitting CLI into separate package. Add plugin system for custom commands. Add shell completions (bash, zsh). |
+| 1-10 users (v1.2) | Single MCP server, global `~/.claude.json`, 10 skills. Manual installation. |
+| 10-100 users | Add auto-updater (check GitHub releases), team `.mcp.json` example, skill discovery (list available skills). |
+| 100+ users | MCP server as HTTP endpoint (not stdio), centralized API key management, skill marketplace/registry, installer via package manager (Homebrew, Scoop). |
 
 ### Scaling Priorities
 
-1. **First bottleneck:** Too many top-level commands.
-   - **Fix:** Use subcommand groups (already planned: `tasks project create`)
+1. **First bottleneck:** Manual installation per user.
+   - **Fix:** Package as npm global (`npm install -g wood-fired-bugs-skills`), auto-runs installer.
 
-2. **Second bottleneck:** Inconsistent output formats across commands.
-   - **Fix:** Centralize formatters (already designed: `src/cli/output/formatters.ts`)
+2. **Second bottleneck:** API key distribution/rotation.
+   - **Fix:** OAuth integration or API key server (fetch key from central service).
 
-3. **Third bottleneck:** Complex multi-step operations requiring many flags.
-   - **Fix:** Add interactive prompts with enquirer (defer to v1.2+)
+3. **Third bottleneck:** Skill updates (user doesn't know when new skills available).
+   - **Fix:** Auto-update checker (compare local skills with GitHub repository).
 
-## Files to Create
+4. **Fourth bottleneck:** MCP server performance (stdio has latency).
+   - **Fix:** HTTP transport instead of stdio (MCP supports SSE, WebSocket).
 
-### CLI Commands (15 new files)
-
-```
-src/cli/commands/tasks/get.ts
-src/cli/commands/tasks/delete.ts
-src/cli/commands/projects/create.ts
-src/cli/commands/projects/list.ts
-src/cli/commands/projects/get.ts
-src/cli/commands/projects/update.ts
-src/cli/commands/projects/delete.ts
-src/cli/commands/dependencies/add.ts
-src/cli/commands/dependencies/list.ts
-src/cli/commands/dependencies/remove.ts
-src/cli/commands/comments/add.ts
-src/cli/commands/comments/list.ts
-src/cli/commands/comments/delete.ts
-```
-
-### MCP Tools (1 new file)
-
-```
-src/mcp/tools/project-tools.ts
-```
-
-### No New Folders
-
-All new files fit into existing folder structure. Just reorganize `src/cli/commands/` into subfolders.
+**v1.2 focus:** Single-user installation, stdio transport. Defer scaling to v1.3+.
 
 ## Verification Checklist
 
-Before marking integration complete:
+Before marking v1.2 complete:
 
-- [ ] All CLI commands use api-client.ts (no direct service access)
-- [ ] All CLI commands support `--json` flag
-- [ ] All CLI types decoupled from server types
-- [ ] All MCP tools follow registerXxxTools() pattern
-- [ ] All formatters extracted to formatters.ts
-- [ ] All REST endpoints have corresponding CLI commands
-- [ ] All REST endpoints have corresponding MCP tools
-- [ ] Command organization mirrors REST API structure
-- [ ] No duplicate validation logic in CLI
-- [ ] Error handling consistent across all commands
+**Skills:**
+- [ ] 10 skill files created in `skills/` directory
+- [ ] Each skill has YAML frontmatter (name, description)
+- [ ] Each skill references correct MCP tools by full name
+- [ ] Skills use `/tasks:*` namespace
+- [ ] Skill descriptions are comprehensive (when to use + what it does)
+
+**Installers:**
+- [ ] `install/install.sh` exists and is executable (`chmod +x`)
+- [ ] `install/install.ps1` exists
+- [ ] Both installers validate dependencies (node, npm)
+- [ ] Both installers build project (`npm install && npm run build`)
+- [ ] Both installers copy skills to correct directory
+- [ ] Both installers generate unique API key
+- [ ] Both installers configure MCP server in `~/.claude.json`
+- [ ] Both installers test MCP server connectivity
+- [ ] Both installers save API key to `.env`
+
+**Documentation:**
+- [ ] `install/README.md` exists with prerequisites and steps
+- [ ] Project `README.md` updated with "Installation" section
+- [ ] `install/mcp-config.example.json` exists for manual setup
+
+**Testing:**
+- [ ] Installer tested on Linux (Ubuntu 20.04, 22.04, 24.04)
+- [ ] Installer tested on macOS (Intel and Apple Silicon)
+- [ ] Installer tested on Windows 10 + 11 (PowerShell 5.1 and 7)
+- [ ] Skills tested in Claude Code (`/tasks:create`, `/tasks:list`, etc.)
+- [ ] MCP server responds to manual test (`echo JSON | node dist/mcp/index.js`)
+- [ ] Reinstall scenario tested (existing `~/.claude.json` preserved)
+
+**Integration:**
+- [ ] Skills reference all 25 MCP tools
+- [ ] No orphaned MCP tools (every tool referenced by at least one skill)
+- [ ] Namespace `/tasks:*` doesn't conflict with built-in commands
+- [ ] API key works for REST API, CLI, and MCP server
 
 ## Sources
 
-- [Commander.js nested subcommands](https://maxschmitt.me/posts/nested-subcommands-commander-node-js)
-- [Commander.js official repository](https://github.com/tj/commander.js)
-- [Commander.js global options discussion](https://github.com/tj/commander.js/issues/476)
-- [CLI architecture patterns](https://clig.dev/)
-- [Node.js CLI best practices](https://github.com/lirantal/nodejs-cli-apps-best-practices)
-- [Enquirer vs Inquirer comparison](https://npm-compare.com/enquirer,inquirer,prompt,prompt-sync,prompts,readline-sync)
-- [CLI --json flag best practices](https://devcenter.heroku.com/articles/cli-style-guide)
+**Claude Code Documentation:**
+- [Extend Claude with Skills](https://code.claude.com/docs/en/skills)
+- [Connect Claude Code to MCP](https://code.claude.com/docs/en/mcp)
+- [MCP Installation Scopes](https://code.claude.com/docs/en/mcp#mcp-installation-scopes)
+- [Skills vs MCP Comparison](https://claude.com/blog/skills-explained)
+
+**Agent Skills Standard:**
+- [GitHub: anthropics/skills](https://github.com/anthropics/skills)
+- [Agent Skills Official Site](https://agentskills.io)
+
+**Cross-Platform Scripting:**
+- [PowerShell Beyond Windows Guide](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
+- [Cross-Platform PowerShell Tips](https://powershell.org/2019/02/tips-for-writing-cross-platform-powershell-code/)
+- [PowerShell Cross-Platform Traps](https://jdhitsolutions.com/blog/scripting/7361/powershell-7-cross-platform-scripting-tips-and-traps/)
+
+**Installation Scripting:**
+- [Bash: Copy and Create Destination Directory](https://www.baeldung.com/linux/create-destination-directory)
+- [Bash: Chmod +x Command](https://www.warp.dev/terminus/chmod-x)
+- [PowerShell: Environment Variables](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables)
+- [PowerShell: Copy-Item Guide](https://petri.com/powershell-copy-item-to-copy-files/)
+
+**MCP Configuration:**
+- [Configuring MCP Tools in Claude Code](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code)
+- [Understanding Claude Code Full Stack](https://alexop.dev/posts/understanding-claude-code-full-stack/)
 
 ---
-*Architecture research for: Wood Fired Bugs CLI/MCP Parity Integration*
+*Architecture research for: Wood Fired Bugs v1.2 - Claude Code Skills & Installer*
 *Researched: 2026-02-13*
+*Confidence: HIGH*

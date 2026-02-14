@@ -1,478 +1,392 @@
-# Pitfalls Research: CLI/MCP Parity Expansion
+# Pitfalls Research: Claude Code Skills & Cross-Platform Installer
 
-**Domain:** Adding full CLI/MCP parity to existing task tracking service
-**Context:** Subsequent milestone - expanding from 3 CLI commands to 18+, 12 MCP tools to 19+
+**Domain:** Adding Claude Code skills and cross-platform installer to existing MCP-enabled task tracking service
+**Context:** Subsequent milestone v1.2 - Adding skill files that reference MCP tools + Bash/PowerShell installer
 **Researched:** 2026-02-13
 **Confidence:** HIGH
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, breaking changes, or major integration failures when scaling interfaces.
+Mistakes that cause skill invocation failures, broken MCP connections, or installer failures on target platforms.
 
-### Pitfall 1: --json Flag Breaking Interactive Prompts
+### Pitfall 1: Using Unqualified MCP Tool Names in Skills
 
 **What goes wrong:**
-Adding `--json` output flag to all CLI commands without properly handling interactive prompts. When users run `tasks create --json`, the command prompts for missing required fields (interactively reading from stdin), but these prompts corrupt the JSON output stream. Scripts parsing JSON receive mixed plaintext prompts and JSON, causing parse failures.
+Skill markdown files reference MCP tools with simple names like `create_task` or `list_tasks`, but Claude Code requires fully qualified tool names with the prefix `mcp__plugin_<plugin-name>_<server-name>__<tool-name>`. When skills use unqualified names, Claude cannot find the tools even though the MCP server is correctly configured and connected. Skills fail with "tool not found" errors despite the server showing all tools available via `/mcp`.
 
 **Why it happens:**
-Interactive prompts are added to improve CLI UX for humans, but developers forget that `--json` mode targets machine consumption. The code checks `if (!options.title)` and calls `readline.question()`, writing prompt to stdout even when `--json` is active. All stdout writes (prompts, progress, debug messages) intermix with JSON output.
+The MCP server defines tools with simple names (`create_task`, `get_task`, etc.) in its implementation. Developers write skill markdown referencing these same simple names, assuming Claude Code will auto-resolve them. However, Claude Code's MCP integration namespaces all tools to prevent collisions when multiple MCP servers are configured. A tool named `create_task` in server `wood-fired-bugs` becomes `mcp__plugin_tasks_wood-fired-bugs__create_task`. Documentation often shows simple tool names in examples, leading developers to copy the pattern without understanding the qualification requirement.
 
 **Consequences:**
-- Shell scripts fail with "unexpected token" when parsing JSON output
-- CI/CD pipelines break when commands expect non-interactive execution
-- `--json` flag becomes unreliable, defeating its purpose
-- Mixed content on stdout: `"Enter task title: {"id": 123, ...`
-- Inconsistent behavior: sometimes prompts, sometimes fails silently
-- Users must remember to pass `--non-interactive` alongside `--json`
+- Skills invoke but fail immediately with "tool not found"
+- Error messages don't clearly indicate the qualification issue
+- Developers waste time debugging MCP server configuration thinking it's not connected
+- Users see "cannot complete action" without understanding the root cause
+- Skills work in testing with simplified configs but fail in production with multiple MCP servers
+- Skill must be completely rewritten with corrected tool names
 
 **Prevention:**
-- Detect TTY vs. non-TTY stdin before prompting: `if (!process.stdin.isTTY) { throw error }`
-- Auto-disable prompts when `--json` flag is present
-- All prompts must write to stderr, not stdout (even in non-JSON mode)
-- Fail fast with clear error if required fields missing in non-interactive mode
-- Add `--non-interactive` flag that forces error-on-missing-fields behavior
-- Test each command with `echo | tasks command --json` to verify no prompts leak
-- Document: JSON mode always implies non-interactive mode
+- **ALWAYS** use fully qualified tool names in skill markdown: `mcp__plugin_tasks_wood-fired-bugs__create_task`
+- Run `/mcp` command before writing skills to see exact tool names Claude Code expects
+- Document tool naming convention in skill authoring guide: `mcp__plugin_<plugin>_<server>__<tool>`
+- Use consistent naming: if server is `wood-fired-bugs`, plugin should be `tasks` for `mcp__plugin_tasks_wood-fired-bugs__*`
+- Test skills in environment with multiple MCP servers to verify qualification works
+- Add tool name reference section to each skill documenting the exact names used
+- In installer, document that users can run `/mcp` to verify tool names after installation
 
 **Detection:**
-- Run `echo | tasks create --json` and check if output is valid JSON
-- Search codebase for `readline`, `prompt`, `inquirer` imports without TTY checks
-- Test logs show "invalid JSON" errors when piping output to `jq`
-- CI pipeline failures when shell scripts parse command output
-- Manual testing works, automated testing fails
+- Skills trigger but immediately fail with tool invocation errors
+- `/mcp` command shows tools available but skill can't use them
+- Error logs show "tool not found: create_task" when tool exists as `mcp__plugin_tasks_wood-fired-bugs__create_task`
+- Skills work in minimal test environment but fail with additional MCP servers installed
+- Claude Code prompts for tool approval but using wrong tool name
 
 **Phase to address:**
-Phase 1 (Core CLI Infrastructure) - Interactive prompt design must respect output mode from the start. Retrofitting is complex.
+Phase 9 (Skill Authoring) - Tool names must be correctly qualified from the start. Incorrect names require rewriting all skill markdown.
+
+**Sources:**
+- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills)
+- [Using MCP Tools in Commands and Agents - Plugin Dev Reference](https://github.com/anthropics/claude-plugins-official/plugins/plugin-dev/skills/mcp-integration/references/tool-usage.md)
+- [The Pulumi Blog on Claude Skills](https://www.pulumi.com/blog/top-8-claude-skills-devops-2026/)
 
 ---
 
-### Pitfall 2: Global Options Not Inherited by Subcommands
+### Pitfall 2: Writing MCP Server Logs to stdout Instead of stderr
 
 **What goes wrong:**
-Adding global options like `--json`, `--quiet`, `--api-url` to the root program, but these options don't propagate to subcommands. Users run `tasks --json list` expecting JSON output, but the `list` subcommand doesn't receive the `--json` flag, outputting plain text tables instead. Each of 18 commands needs separate flag handling.
+The MCP server uses stdio transport and writes debug logs, info messages, or console.log() output to stdout. The stdio transport reserves stdout exclusively for JSON-RPC protocol messages (one per line, no embedded newlines). Any non-protocol output corrupts the message stream, causing -32000 "Connection closed" or "Unexpected token" parsing errors. Claude Code cannot connect to the MCP server even though the server starts successfully.
 
 **Why it happens:**
-Commander.js uses `.command()` which automatically copies inherited settings **only at creation time**. If global options are added to the root program after subcommands are registered, those options never reach subcommands. Using `.addCommand()` doesn't copy settings at all unless `.copyInheritedSettings()` is called explicitly. Developers assume flags "just work" globally but need manual propagation.
+Developers add `console.log()` debugging during development or use logging libraries with default stdout output. The MCP SDK documentation mentions stderr but doesn't enforce it, and console.log() is the default Node.js debugging habit. The server runs fine in isolation (stdio transport doesn't complain locally), but when Claude Code connects, any stdout pollution breaks JSON-RPC parsing. The error appears as a connection failure, not a logging issue, so developers troubleshoot the wrong problem.
 
 **Consequences:**
-- Users must repeat flags per command: `tasks list --json` instead of `tasks --json list`
-- Inconsistent behavior across commands (some inherit, some don't)
-- Frustrating UX: global options don't work globally
-- Documentation becomes complex explaining which flags work where
-- Code duplication: every command redeclares same options
-- Difficult to add new global option later (requires touching all commands)
+- MCP server appears in Claude Code settings but shows "disconnected" or "error"
+- `-32000 Connection closed` error without clear indication of cause
+- Intermittent connection issues when logs happen to coincide with message traffic
+- "Unexpected token" JSON parsing errors when log lines arrive mid-message
+- Debug logs intended to help troubleshooting are the actual cause of failure
+- Server works in testing (without Claude Code client) but fails in production
 
 **Prevention:**
-- Add global options to root program **before** registering subcommands
-- Use `.command()` for automatic inheritance (not `.addCommand()`)
-- If using `.addCommand()`, call `.copyInheritedSettings()` explicitly for each
-- Access global options via `.optsWithGlobals()` in action handlers
-- Test global option propagation: verify `tasks --json list` works, not just `tasks list --json`
-- Document: "Global flags must appear before command: `tasks --json list`"
-- Create shared option factory function to ensure consistency
+- **NEVER** use `console.log()` in MCP servers using stdio transport
+- **ALWAYS** use `console.error()` for all logging (debug, info, error, everything)
+- Configure Pino or other logging libraries to write to stderr: `pino({ dest: process.stderr })`
+- Set environment variable in installer to disable debug logging in production: `NODE_ENV=production`
+- Validate stdio protocol compliance: stdout must contain ONLY JSON-RPC messages (one per line)
+- Add comment in server code: `// CRITICAL: stdio transport - ALL logs must use console.error() not console.log()`
+- Test connection with logging enabled to verify stderr routing
 
 **Detection:**
-- Run `tasks --json list` and verify JSON output (not plain text)
-- Code review shows `.addCommand()` without `.copyInheritedSettings()`
-- Help output shows global options but they don't affect subcommands
-- Users report flags "not working" when placed before command name
-- Test suite doesn't cover global flag positioning
+- Run `node dist/mcp/index.js` and verify output is ONLY JSON-RPC (no plaintext logs)
+- `-32000` or parsing errors in Claude Code MCP connection
+- Server process runs but Claude Code shows "disconnected"
+- Logs appear on stdout when running server standalone
+- Search codebase for `console.log` in MCP server code
+- Grep for `pino()` without `dest: process.stderr` configuration
 
 **Phase to address:**
-Phase 1 (Core CLI Infrastructure) - Global option architecture must be designed correctly upfront. Changing later requires modifying all commands.
+Phase 8 (MCP Server Verification) - Must be fixed before skills can reference tools. Existing v1.1 server may already have this issue if console.log() was used during development.
+
+**Sources:**
+- [STDIO Transport - MCP Framework](https://mcp-framework.com/docs/Transports/stdio-transport/)
+- [Debugging Model Context Protocol Servers](https://www.mcpevals.io/blog/debugging-mcp-servers-tips-and-best-practices)
+- [MCP Server Troubleshooting Guide 2025](https://www.mcpstack.org/learn/mcp-server-troubleshooting-guide-2025)
 
 ---
 
-### Pitfall 3: Async Action Handlers with .parse() Instead of .parseAsync()
+### Pitfall 3: MCP Server Path in config.json Using Relative or Wrong Paths
 
 **What goes wrong:**
-Scaling from 3 to 18 commands means more async handlers (database queries, API calls). Using `.parse()` instead of `.parseAsync()` causes Node.js to exit before async handlers complete. Commands appear to succeed but database writes never commit, API calls never return, and users see no output or partial results.
+The Claude Code MCP configuration in `~/.claude/config.json` specifies the command to start the MCP server with a path like `"command": "node"` and `"args": ["dist/mcp/index.js"]`. Relative paths resolve from Claude Code's working directory (not the project directory), causing "command not found" or "module not found" errors. The server appears configured but never starts, showing as "disconnected" with no helpful error message.
 
 **Why it happens:**
-Commander.js supports async action handlers, but `.parse()` doesn't wait for promises. The CLI script calls `.parse(process.argv)`, action handler returns a promise, but Node.js exits immediately because `.parse()` returns synchronously. No error appears - the process exits with code 0 while async work is still pending. This works accidentally in synchronous commands (v1.0's 3 simple commands) but breaks when adding database/network operations.
+Installer scripts copy skill files and configure MCP server without understanding where Claude Code will execute the command. Using `"command": "node dist/mcp/index.js"` works when testing from project root but fails when Claude Code runs it from a different working directory. npm-installed binaries (`tasks` CLI) work because they're in PATH, but project-relative paths don't. Developers test by manually running the command from the correct directory and it works, missing the real-world execution context.
 
 **Consequences:**
-- Commands exit before completing database writes
-- Transactions started but never committed
-- API responses never returned to user
-- Silent failures: no error message, just incomplete execution
-- Works in development with artificial delays, fails in production
-- Difficult to debug: logs show handler started but not completed
+- MCP server shows "disconnected" or "error" in Claude Code
+- No clear error message about path resolution failure
+- Works for developer who set it up, fails for other users
+- Different behavior on different machines based on Claude Code installation location
+- Skills can't invoke tools because server never connected
+- Users manually starting server works, automatic startup fails
 
 **Prevention:**
-- Always use `.parseAsync()` instead of `.parse()` if any handlers are async
-- Wrap `.parseAsync()` in try/catch to handle rejections properly
-- Set `process.exitCode = 1` on error, don't call `process.exit()` directly
-- Add top-level error handler: `.parseAsync().catch(err => { console.error(err); process.exitCode = 1; })`
-- Test with timeouts to verify completion: run command, verify database changes committed
-- Add ESLint rule or code review checklist to flag `.parse()` usage
-- Document: "All CLI commands must use .parseAsync() for consistency"
+- **ALWAYS** use absolute paths in MCP server configuration
+- Installer must compute absolute path: `"args": ["/home/user/wood-fired-bugs/dist/mcp/index.js"]`
+- For npm-installed packages, use `npx` with package name: `"command": "npx"`, `"args": ["wood-fired-bugs-mcp"]`
+- Alternative: use `$HOME` environment variable expansion if Claude Code supports it
+- Test configuration by running from different working directories
+- Installer should detect project path and write absolute path to config
+- Document in README: "MCP config uses absolute paths to ensure Claude Code can start server from any location"
 
 **Detection:**
-- Commands exit immediately without showing expected output
-- Database writes don't persist despite successful exit code
-- Adding `await sleep(100)` at end of handler "fixes" the issue
-- Code shows `.parse(process.argv)` instead of `.parseAsync(process.argv)`
-- Integration tests fail intermittently due to timing issues
+- Claude Code shows MCP server as configured but "disconnected"
+- Running the command from project root works, from elsewhere fails
+- Error logs show "Cannot find module" or "ENOENT: no such file or directory"
+- `config.json` contains relative paths in command or args
+- Manual testing works, automated startup fails
 
 **Phase to address:**
-Phase 1 (Core CLI Infrastructure) - Must be correct from the start for all commands. Subtle bug that's hard to catch in testing.
+Phase 10 (Installer Script) - Installer must write correct absolute paths. Relative paths discovered during testing won't work for end users.
+
+**Sources:**
+- [Configuring MCP Tools in Claude Code - Scott Spence](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code)
+- [Claude Code CLI Best Practices](https://notes.muthu.co/2026/02/claude-code-cli-best-practices-checklist/)
 
 ---
 
-### Pitfall 4: Inconsistent Error Handling Between CLI and MCP
+### Pitfall 4: Shell Profile Detection - Writing to Wrong RC File
 
 **What goes wrong:**
-CLI commands and MCP tools use different error handling approaches. CLI throws exceptions that crash the process with stack traces. MCP tools return `isError: true` in responses. When adding 15 new CLI commands with same logic as MCP tools, error handling diverges. Users see inconsistent error messages, stack traces leak internal details, and automation breaks on unexpected output formats.
+The installer script writes `export WOOD_FIRED_BUGS_API_KEY="..."` to `~/.bashrc` on Linux, but the user's default shell is zsh (which reads `~/.zshrc`) or fish (which reads `~/.config/fish/config.fish`). The environment variable is configured in bash profile but never loaded in the actual shell the user runs. Skills fail with "unauthorized" or "API key not set" errors despite the installer claiming successful setup.
 
 **Why it happens:**
-CLI and MCP evolved separately. CLI uses `throw new Error()` or `handleError(error)` that prints to stderr. MCP uses structured error responses: `{ isError: true, content: [{type: 'text', text: error.message}] }`. When reusing service layer code across both interfaces, errors propagate differently. CLI developers add `console.error()` calls, MCP developers add `try/catch` with structured responses. Codebase splits into two error handling patterns.
+Installer scripts assume bash as default shell and blindly write to `~/.bashrc`. On macOS since Catalina (2019) and many modern Linux distros, zsh is the default shell. Some developers use fish. Each shell has different profile file locations and syntax. Detecting the current shell requires checking `$SHELL` environment variable, but this might not match the shell that will actually source the environment variable later. Testing on developer's machine (bash user) succeeds, fails for zsh/fish users.
 
 **Consequences:**
-- Same operation produces different error formats via CLI vs. MCP
-- CLI error messages change unexpectedly when service layer throws different error types
-- Stack traces expose internal paths, database structure, API keys in logs
-- MCP errors are clean, CLI errors are verbose and scary
-- Automation scripts must handle multiple error output formats
-- Difficult to maintain: fixing error message requires changes in multiple places
+- Environment variable never loaded despite installer success message
+- MCP tools fail with "unauthorized" or authentication errors
+- Works for developer, fails for users with different shells
+- Different behavior on macOS (zsh) vs Linux (bash/zsh/fish)
+- Users must manually add export to correct shell profile
+- Installer claims success but setup is incomplete
 
 **Prevention:**
-- Create shared error type hierarchy: `TaskNotFoundError`, `ValidationError`, `DatabaseError`
-- Implement central error formatter: `formatError(error, format: 'cli' | 'mcp' | 'json')`
-- CLI handler wraps all errors: `catch (e) { console.error(formatError(e, 'cli')); process.exitCode = 1; }`
-- MCP handler wraps all errors: `catch (e) { return { isError: true, content: formatError(e, 'mcp') }; }`
-- Service layer throws typed errors, never logs directly (no console.log/error)
-- JSON mode uses structured error format: `{ success: false, error: { code, message, details } }`
-- Test error scenarios across all interfaces to verify consistency
+- Detect shell with `$SHELL` environment variable: `echo $SHELL` returns `/bin/zsh`, `/bin/bash`, `/usr/bin/fish`
+- Write to appropriate profile for detected shell:
+  - **bash**: `~/.bashrc` (Linux) or `~/.bash_profile` (macOS login shell)
+  - **zsh**: `~/.zshrc` (both macOS and Linux)
+  - **fish**: `~/.config/fish/config.fish` (syntax: `set -Ux WOOD_FIRED_BUGS_API_KEY "value"`)
+- Fallback: if shell unknown, write to `~/.profile` (sourced by most shells) and warn user
+- Better approach: prompt user which shell they use instead of auto-detecting
+- For fish, use `set -Ux` (universal export) instead of `export` syntax
+- Remind user to reload shell: `source ~/.zshrc` or restart terminal
+- Test installer on virtual machines with different shells (bash, zsh, fish)
 
 **Detection:**
-- Same error produces different messages via CLI and MCP
-- Grep codebase for `console.error` shows usage in service layer
-- Stack traces appear in CLI output but not in structured errors
-- Error handling tests only cover one interface, not both
-- Users report confusing error messages that don't match documentation
+- Run `echo $WOOD_FIRED_BUGS_API_KEY` in fresh terminal and value is empty
+- Installer modified `~/.bashrc` but `echo $SHELL` shows `/bin/zsh`
+- MCP tools fail with authentication errors after "successful" installation
+- Environment variable present when running `bash` manually but not in default shell
+- Skills work after manual `export` but not in fresh terminal sessions
 
 **Phase to address:**
-Phase 1 (Core CLI Infrastructure) and Phase 2 (MCP Tool Expansion) - Error handling architecture must be unified before scaling both interfaces.
+Phase 10 (Installer Script) - Critical for Linux installer. Must handle bash, zsh, and fish. Wrong detection = broken installation for entire user segment.
+
+**Sources:**
+- [Moving to zsh, part 2: Configuration Files](https://scriptingosx.com/2019/06/moving-to-zsh-part-2-configuration-files/)
+- [fish shell Tutorial](https://fishshell.com/docs/current/tutorial.html)
+- [nvm profile detection issue](https://github.com/nvm-sh/nvm/issues/1837)
 
 ---
 
-### Pitfall 5: Stdout Contamination in JSON Mode
+### Pitfall 5: Windows PowerShell Execution Policy Blocking Installer
 
 **What goes wrong:**
-Adding `--json` flag to 18 commands requires auditing all output paths. Progress indicators (`console.log('Creating task...')`), debug messages (`console.log('Query:', sql)`), and success messages (`console.log('Task created successfully')`) all write to stdout, breaking JSON parsability. A single stray `console.log()` corrupts the entire output stream.
+The Windows installer is a `.ps1` PowerShell script that users download and attempt to run with `.\install.ps1`. PowerShell's default execution policy (often `Restricted` or `RemoteSigned`) prevents running scripts that aren't signed, showing "cannot be loaded because running scripts is disabled on this system." The installer doesn't run at all, leaving users stuck without guidance on how to proceed.
 
 **Why it happens:**
-Developers add helpful messages during development: status updates, confirmations, debug output. These go to stdout by default. When `--json` flag is added later, these messages remain. Code has dozens of `console.log()` scattered throughout. Each new command adds more. No enforcement mechanism prevents stdout writes in JSON mode.
+PowerShell has security policies that block script execution by default on many Windows installations, especially corporate environments. Developers test on their own machines where execution policy is already `Unrestricted` or they run PowerShell as administrator (changing the policy globally). End users don't have admin rights or don't know how to change execution policy. The error message mentions execution policy but doesn't explain how to fix it. Users abandon installation.
 
 **Consequences:**
-- JSON output contains plaintext messages: `Creating task...{"id": 123}`
-- Shell scripts fail to parse output with `jq`: "invalid JSON"
-- Intermittent failures: depends on which code path executes
-- Works for simple cases, breaks when errors occur or edge cases trigger
-- Testing with `jq` catches some but not all contamination
-- Every new feature risks introducing new stdout writes
+- Installer completely blocked on default Windows configurations
+- Error message is cryptic for non-PowerShell users
+- Users don't know whether to run as admin, change policy, or use different method
+- Corporate Windows machines often can't change execution policy (IT-enforced)
+- Installer works on developer machine but fails for real users
+- No graceful fallback or alternative installation method
 
 **Prevention:**
-- Create output abstraction: `output.info()`, `output.success()`, `output.data()` instead of `console.log()`
-- Output class checks `--json` flag: writes to stderr for messages, stdout only for JSON data
-- Single point of JSON writing: `output.json(data)` at end of command handler
-- Lint rule: prohibit `console.log` in CLI command files (enforce output abstraction)
-- All informational messages to stderr: `console.error('Creating task...')` even in non-JSON mode
-- Test each command: `tasks command --json | jq` must parse without errors
-- Code review checklist: verify no direct stdout writes in command handlers
+- **Document** execution policy requirement prominently in README: "Windows users must run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`"
+- Provide alternative installation method: manual steps without script
+- Include batch file (`.bat`) wrapper that bypasses policy: `powershell -ExecutionPolicy Bypass -File .\install.ps1`
+- Better: single-line installation: `powershell -ExecutionPolicy Bypass -Command "& {$(irm install.ps1)}"`
+- Detect policy in script and provide helpful error: "Run: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`"
+- Document admin rights NOT required (use `-Scope CurrentUser` not `-Scope LocalMachine`)
+- Test on fresh Windows VM with default execution policy
+- Provide video walkthrough for Windows installation with policy change
 
 **Detection:**
-- Run command with `--json | jq` and get parse error
-- Search codebase for `console.log` in CLI command files
-- Test logs show "unexpected token" when parsing JSON output
-- Integration tests fail when validating JSON structure
-- Manual testing works, but piping to `jq` fails
+- Running `.\install.ps1` produces "scripts is disabled on this system" error
+- `Get-ExecutionPolicy` returns `Restricted` or `AllSigned`
+- Installer works on dev machine but fails for test users
+- Corporate Windows machines consistently reject installer
+- Users report "can't run PowerShell script"
 
 **Phase to address:**
-Phase 1 (Core CLI Infrastructure) - Output abstraction must be established before adding 15 new commands. Retrofitting is expensive.
+Phase 10 (Installer Script) - Windows installer must document or work around execution policy. Critical for Windows adoption.
+
+**Sources:**
+- [PowerShell Execution Policy - Microsoft Learn](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies)
+- [PowerShell Beyond Windows: Cross-Platform Guide](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
 
 ---
 
-### Pitfall 6: MCP Tool Name Explosion Without Convention
+### Pitfall 6: Environment Variables Not Persisting After Installer Runs
 
 **What goes wrong:**
-Growing from 12 to 19+ MCP tools without naming conventions creates discovery chaos. Tools named inconsistently: `createTask`, `get_task`, `task-update`, `delete-task-by-id`, `listAllTasksWithFilters`. LLM agents cannot predict tool names. Developers can't find existing tools. Similar tools duplicate functionality with different names.
+The installer script sets `export WOOD_FIRED_BUGS_API_KEY="..."` in the shell profile (`~/.zshrc` or `~/.bashrc`), shows "Installation complete! Environment variable configured," but when the user runs skills in Claude Code, the MCP server can't access the environment variable and reports "API key not set." The variable works in new terminal sessions but not in the Claude Code environment where MCP server actually runs.
 
 **Why it happens:**
-No naming standard established with initial 12 tools. Different developers add tools over time with personal preferences. Some follow REST conventions (`GET /tasks` → `getTasks`), others use CRUD verbs (`createTask`), others use descriptive names (`listAllTasksWithFilters`). MCP spec allows 64 characters with underscores, dashes, dots, slashes - developers use all variations.
+Claude Code's MCP server process inherits environment from the Claude Code application, not from the user's shell profile. On macOS, GUI applications don't source shell profiles (`~/.zshrc`), so environment variables set there aren't available. On Linux, it depends on how Claude Code was launched (terminal vs. application menu). The installer modifies shell profile successfully, new terminal sessions load it, but Claude Code launched from GUI doesn't see it. Users verify with `echo $WOOD_FIRED_BUGS_API_KEY` in terminal (works) and assume it's configured, but Claude Code process doesn't have it.
 
 **Consequences:**
-- LLM agents guess tool names incorrectly, wasting tokens on tool list inspection
-- Difficult to discover what operations are available
-- Similar functionality duplicated under different names: `getTask` vs. `task_get` vs. `fetchTaskById`
-- Documentation nightmare: must explain naming variations
-- Refactoring blocked by inconsistent naming (cannot batch rename)
-- New developers confused about which naming style to follow
+- MCP tools fail with "unauthorized" despite variable being "configured"
+- Works in terminal testing, fails in actual Claude Code usage
+- Different behavior on macOS vs Linux vs Windows
+- Variable present in shell, absent in Claude Code MCP server process
+- Users frustrated by inconsistent environment variable behavior
+- Installer claims success but setup doesn't work where it matters
 
 **Prevention:**
-- Establish naming convention before tool proliferation: `{resource}_{action}` (e.g., `task_create`, `task_list`, `comment_add`)
-- Use snake_case consistently (most common MCP pattern based on research)
-- Group by resource first: `task_*`, `project_*`, `comment_*`, `dependency_*`
-- Action verbs from standard set: create, get, list, update, delete, add, remove
-- Avoid IDs in names: `task_get` (takes ID param) not `getTaskById`
-- Document convention in `MCP_TOOL_NAMING.md` with examples
-- Rename existing 12 tools to match convention before adding new ones
-- Code review checklist: verify new tool follows naming convention
+- **macOS**: Document that GUI apps don't source shell profiles; recommend setting in `~/.MacOSX/environment.plist` (deprecated) or use LaunchAgent to set globally
+- **Better for all platforms**: Configure environment variable in MCP server's config.json directly:
+  ```json
+  {
+    "mcpServers": {
+      "wood-fired-bugs": {
+        "command": "node",
+        "args": ["/path/to/dist/mcp/index.js"],
+        "env": {
+          "WOOD_FIRED_BUGS_API_KEY": "actual-key-value"
+        }
+      }
+    }
+  }
+  ```
+- Installer should write API key to MCP config `env` section, not rely on shell profile
+- Still write to shell profile for CLI usage (terminal commands), but MCP config is critical
+- Test by launching Claude Code from GUI (not terminal) and verify MCP server has variable
+- Document: "Environment variables in shell profile work for terminal, MCP config for Claude Code"
 
 **Detection:**
-- Tool list shows mixed naming styles: camelCase, snake_case, kebab-case
-- Similar operations have different name patterns
-- Tool descriptions explain what name means (indicates unclear naming)
-- Grep shows `registerTool` calls with inconsistent name formats
-- LLM chat logs show failed tool call attempts with wrong names
+- Run `/mcp` in Claude Code and check if server shows "connected" or "auth error"
+- MCP server logs show "WOOD_FIRED_BUGS_API_KEY is undefined"
+- `echo $WOOD_FIRED_BUGS_API_KEY` in terminal works, but skills fail with auth error
+- Restarting terminal loads variable, restarting Claude Code doesn't help
+- Works when Claude Code launched from terminal, fails when launched from dock/menu
 
 **Phase to address:**
-Phase 2 (MCP Tool Expansion) - Naming convention must be established and existing tools renamed before adding 7+ new tools.
+Phase 10 (Installer Script) - Critical for MCP server authentication. Shell profile configuration is insufficient; must write to MCP config's `env` section.
+
+**Sources:**
+- [Managing API key environment variables in Claude Code](https://support.claude.com/en/articles/12304248-managing-api-key-environment-variables-in-claude-code)
+- [Common Mistakes with .env Files](https://medium.com/byte-of-knowledge/common-mistakes-developers-make-with-env-files-1dbd72272eba)
 
 ---
 
-### Pitfall 7: Missing Schema Validation Causes Cryptic MCP Errors
+### Pitfall 7: Cross-Platform Path Separators in Installer
 
 **What goes wrong:**
-Adding 7 new MCP tools with complex parameters. Forgetting to add proper Zod schema validation for all fields. LLM passes invalid arguments (wrong type, missing required field, extra field). Tool fails with JavaScript error deep in service layer: "Cannot read property 'id' of undefined". Error message doesn't explain what was wrong with input parameters.
+The installer script constructs file paths using hardcoded `/` (forward slash) separators, which work on Linux and macOS but fail on Windows where paths use `\` (backslash). PowerShell commands like `Copy-Item "$HOME/.claude/commands/tasks/log-bug.md"` fail with "path not found" because PowerShell interprets forward slashes differently in some contexts. Paths get mangled, files end up in wrong locations, or operations fail completely.
 
 **Why it happens:**
-Zod schemas define both validation and TypeScript types. Developers copy existing tool registration, update description and logic, but forget to update schema. Schema copied from different tool has wrong required fields. MCP SDK's default validation mode is flexible, allowing extra fields. Service layer expects certain shape, receives different shape. Errors appear at usage point, not validation point.
+Bash and PowerShell handle path separators differently. While PowerShell often accepts forward slashes, certain operations (especially with `Copy-Item`, file system cmdlets) expect native backslashes or fail silently. Developers write `$HOME/.claude/commands` in Bash and `$env:USERPROFILE/.claude/commands` in PowerShell assuming equivalence, but path construction differs. Hardcoding separators seems simpler than using platform-specific path joining, but breaks cross-platform compatibility.
 
 **Consequences:**
-- Cryptic errors: "Cannot read property 'x' of undefined" instead of "Missing required field: x"
-- LLM receives unhelpful feedback, cannot self-correct
-- Debugging requires reading stack traces to find parameter issue
-- Same tool call fails intermittently based on which fields LLM includes
-- No clear contract between tool schema and implementation expectations
-- Wasted tokens as LLM retries with guessed parameter variations
+- Windows installer creates directories with wrong separators: `C:\Users\Name\.claude/commands`
+- Files copied to incorrect locations or fail with "path not found"
+- Different behavior on Windows vs. Linux for "identical" installer
+- Installer appears to succeed but files are misplaced
+- Skills not found by Claude Code because directory structure is wrong
+- Difficult to debug because paths look correct in some contexts
 
 **Prevention:**
-- Every tool registration includes complete Zod schema with `.strict()` modifier
-- Schema validation catches: wrong types, missing required fields, extra fields, invalid enums
-- Use schema composition for common patterns: `TaskIdSchema`, `PaginationSchema`
-- Error messages from schema failures are descriptive: Zod provides path and expected type
-- Test each tool with invalid inputs: missing fields, wrong types, extra fields
-- MCP SDK configured for strict validation: `inputSchema: TaskSchema.strict()`
-- Code review checklist: verify schema matches service layer function signature
-- Generate TypeScript types from Zod schemas to ensure consistency
+- **PowerShell**: Use `Join-Path` cmdlet instead of string concatenation:
+  ```powershell
+  $skillDir = Join-Path $env:USERPROFILE ".claude" "commands" "tasks"
+  ```
+- **Bash**: Use forward slashes (native on Linux/macOS), no special handling needed:
+  ```bash
+  skill_dir="$HOME/.claude/commands/tasks"
+  ```
+- Don't assume `/` works everywhere; PowerShell prefers `\` for native cmdlets
+- Test installer on actual Windows (not WSL) to verify path handling
+- Use PowerShell's `[System.IO.Path]::Combine()` for guaranteed correct separators
+- Avoid mixing `cmd.exe` path conventions with PowerShell paths
 
 **Detection:**
-- MCP tool errors mention undefined properties or type mismatches
-- Error messages don't clearly identify which parameter was invalid
-- Same tool call works with some parameter combinations, fails with others
-- Schema shows `.passthrough()` or no `.strict()` modifier
-- Test coverage missing for invalid parameter scenarios
+- Windows installation creates `.claude/commands` as single directory name instead of nested path
+- Files end up in `C:\Users\Name\.claude` instead of `C:\Users\Name\.claude\commands\tasks`
+- `Test-Path` checks fail on Windows but work on Linux
+- Skills not detected by Claude Code on Windows installation
+- Manual path inspection shows forward slashes in Windows registry or filesystem
 
 **Phase to address:**
-Phase 2 (MCP Tool Expansion) - Schema validation must be comprehensive before deploying to LLM agents. Poor validation creates frustrating debugging cycles.
+Phase 10 (Installer Script) - Windows installer must use PowerShell path cmdlets. Linux installer can use standard forward slashes.
 
----
-
-### Pitfall 8: Commander Option CamelCase/kebab-case Confusion
-
-**What goes wrong:**
-Adding 15+ CLI commands with many options. Developer defines option `--created-by <name>` but tries to access via `options.created-by` in action handler. JavaScript throws syntax error or returns undefined. Different commands use different access patterns: some use camelCase, some try kebab-case, some use bracket notation `options['created-by']`.
-
-**Why it happens:**
-Commander.js automatically normalizes kebab-case flags to camelCase properties. `--template-engine` becomes `options.templateEngine`. Developers don't realize this, try to access with original flag name. Works sometimes when flag has no hyphens (`--title` → `options.title`), fails with multi-word flags. Copy-paste code from different sources shows different access patterns.
-
-**Consequences:**
-- Options are undefined despite user passing them: `--due-date 2026-12-31` but `options.due-date` is undefined
-- Inconsistent access patterns across commands confuse maintenance
-- Intermittent bugs: works for single-word flags, fails for multi-word flags
-- Error messages unhelpful: "undefined is not a valid date"
-- TypeScript types don't prevent the error (using wrong key)
-
-**Prevention:**
-- Document Commander's automatic normalization in development guide
-- Always access multi-word options via camelCase: `options.createdBy` not `options.created-by`
-- Use TypeScript with properly typed `.opts()` return value
-- Add ESLint rule to detect bracket notation with kebab-case strings: `options['created-by']`
-- Code review checklist: verify option access uses camelCase
-- Test option parsing: verify all flags accessible via correct property name
-- Consider using single-word flags to avoid confusion: `--creator` instead of `--created-by`
-
-**Detection:**
-- Options passed by user but show as undefined in handler
-- Code shows `options['created-by']` or `options.created_by` access patterns
-- Error messages indicate missing data despite CLI showing option was passed
-- Different commands access options inconsistently
-- TypeScript doesn't catch access errors (using `any` or incorrect typing)
-
-**Phase to address:**
-Phase 1 (Core CLI Infrastructure) - Understanding Commander's normalization is critical before scaling to 18 commands with many options.
-
----
-
-### Pitfall 9: No Test Coverage for --json Output Validation
-
-**What goes wrong:**
-Adding `--json` flag to all commands but testing only table/text output format. JSON output is manually tested ("looks good"), but no automated tests validate JSON structure, schema, or parseability. When refactoring, JSON output breaks but tests pass. Users discover broken JSON output in production.
-
-**Why it happens:**
-Existing tests focus on happy path: "does command execute without error?" JSON output testing requires additional assertions: parse JSON, validate schema, check specific fields. Developers assume "if the data is correct, JSON will be correct too." Snapshot testing captures output, but doesn't validate JSON structure. Tests don't pipe output to JSON parser.
-
-**Consequences:**
-- JSON output breaks silently during refactoring
-- Shell scripts fail in production while test suite passes
-- Invalid JSON structure ships: missing fields, wrong types, extra fields
-- No contract enforcement for JSON output schema
-- Manual testing required for every change
-- CI doesn't catch JSON-specific regressions
-
-**Prevention:**
-- Every command test includes JSON mode variant: `describe('--json output', ...)`
-- Assert JSON parseability: `expect(() => JSON.parse(output)).not.toThrow()`
-- Validate JSON schema: define expected shape with Zod, validate output against it
-- Test specific fields exist and have correct types: `expect(json.id).toBeTypeOf('number')`
-- Use external validation: run `echo output | jq .id` in integration test
-- Test error cases in JSON mode: errors should produce valid JSON with error structure
-- Snapshot test JSON structure, not raw output (to catch unintended changes)
-- Add coverage requirement: all commands must have JSON output tests
-
-**Detection:**
-- Test suite shows no assertions on JSON structure
-- Commands have `--json` flag but tests don't use it
-- JSON parsing failures in production logs but tests pass
-- Manual testing required before release to verify JSON output
-- Test files have no `JSON.parse()` or schema validation calls
-
-**Phase to address:**
-Phase 1 (Core CLI Infrastructure) - JSON testing patterns must be established before adding 15 new commands. Retrofitting tests is expensive.
-
----
-
-### Pitfall 10: MCP Tool Proliferation Without Categorization
-
-**What goes wrong:**
-Growing to 19+ tools without logical grouping. MCP protocol returns flat list of 19 tools to LLM. Agent must inspect every tool's description to find relevant ones. Long tool descriptions needed to differentiate similar tools. Token waste on tool discovery. LLM chooses wrong tool because descriptions are similar.
-
-**Why it happens:**
-MCP protocol supports tags and categories, but developers focus on functionality, not discovery UX. All tools registered at same level. Tool descriptions become verbose trying to explain when to use each tool. No metadata to help LLM filter relevant tools. Assumption that "LLM is smart enough to figure it out."
-
-**Consequences:**
-- LLM must read all 19 tool descriptions to find relevant one
-- Token waste: hundreds of tokens listing tools before every operation
-- Wrong tool selected when descriptions are ambiguous
-- Tool descriptions become paragraphs trying to differentiate
-- Cannot efficiently answer "what task operations are available?"
-- Adding more tools makes problem exponentially worse
-
-**Prevention:**
-- Group tools by resource: task operations, project operations, comment operations, dependency operations
-- Use consistent tool prefixes for discovery: `task_*`, `project_*`, `comment_*`
-- Implement tool tags if MCP SDK supports: `tags: ['task', 'read']` vs. `tags: ['task', 'write']`
-- Consider separate MCP servers by domain (task server, project server) if tool count exceeds 25
-- Tool descriptions: one sentence explaining action, not when to use it
-- Provide separate "tool guide" resource for LLM to read when planning workflow
-- Optimize tool discovery with consistent naming that LLMs can pattern-match
-- Monitor LLM token usage for tool listing vs. actual work
-
-**Detection:**
-- Tool list endpoint returns 19+ tools in flat list
-- Tool descriptions longer than one sentence
-- LLM chat logs show entire tool list repeated before each operation
-- Similar tools with confusing descriptions: hard to choose correct one
-- Token usage analysis shows high overhead for tool discovery
-- MCP inspector shows tools without categorization metadata
-
-**Phase to address:**
-Phase 2 (MCP Tool Expansion) - Tool organization strategy must be designed before reaching 19+ tools. Reorganizing later is breaking change for LLM workflows.
+**Sources:**
+- [PowerShell on Linux: Windows Script Compatibility](https://windowsforum.com/threads/powershell-on-linux-3-practical-paths-to-windows-script-compatibility.400301/)
+- [PowerShell differences on non-Windows platforms](https://learn.microsoft.com/en-us/powershell/scripting/whats-new/unix-support)
 
 ---
 
 ## Technical Debt Patterns
 
-Shortcuts that seem reasonable but create long-term problems when scaling interfaces.
+Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Skipping --json testing | Faster test writing, smaller test suite | JSON output breaks silently, production failures | Never when adding machine-readable output |
-| Manual output formatting in each command | Simple, no abstraction needed | Inconsistent formats, can't add --quiet globally | Only for MVP with 2-3 commands, not 18+ |
-| Reusing service types in CLI | No type duplication, faster development | Breaking changes to internal types break CLI, tight coupling | Never - CLI types are API contract |
-| Copy-pasting tool registration | Fast initial implementation | Inconsistent error handling, schema drift | Only acceptable if followed by refactor before phase complete |
-| Console.log for all output | Works for simple cases | Cannot add --json flag later without rewrite | Never when JSON output is planned |
-| Single error message format | Simpler error handling | Cannot distinguish user errors from bugs, poor UX | Acceptable for MVP, must refactor before scale |
-| Global shared CLI state | Easy to pass options around | Untestable, race conditions, breaks parallel testing | Never - use dependency injection |
-| No MCP tool versioning | Simpler deployment | Cannot deploy breaking changes without coordination | Acceptable for single-agent deployment only |
-
----
+| Hardcoding `mcp__plugin_tasks_wood-fired-bugs__` prefix in skills | Faster skill authoring, no need to look up full names | If server name changes, all skills break; harder to test with different MCP configs | Never - always use correct full names from start |
+| Using console.log() for debugging MCP server | Quick debugging during development | Breaks stdio transport when deployed; -32000 errors in production | Only in isolated test scripts, never in server code |
+| Copying skill examples without testing MCP tool names | Fast skill prototyping based on examples | Skills reference wrong tool names and fail at runtime | Only in draft phase; must verify before commit |
+| Installer assumes bash on Linux | Simpler installer logic, no shell detection | Fails for zsh/fish users (large user segment on modern distros) | Only if documenting "bash only" limitation clearly |
+| Shell profile for all env vars | Standard pattern, works for CLI tools | GUI-launched apps (Claude Code) don't source profiles | Acceptable for CLI-only tools; must use MCP config `env` for Claude Code |
+| Relative paths in MCP config | Shorter, more readable config | Breaks when Claude Code runs from different directory | Never - always use absolute paths in production config |
 
 ## Integration Gotchas
 
-Common mistakes when connecting CLI, MCP, and service layer.
+Common mistakes when integrating Claude Code skills with existing MCP server.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| CLI → Service Layer | Passing Commander options directly to service | Transform to service input types, validate at boundary |
-| MCP → Service Layer | Passing Zod-validated args directly | Transform to service input types (MCP args ≠ service types) |
-| CLI --json mode | Writing JSON with console.log() | Use single JSON.stringify() at end, validate with JSON.parse() |
-| MCP error responses | Throwing exceptions | Return `{ isError: true, content: [...] }` with structured error |
-| CLI exit codes | Calling process.exit() directly | Set process.exitCode, let process exit naturally |
-| Shared validation logic | Duplicating Zod schemas | Define schemas in shared package, reuse across CLI/MCP/REST |
-| API client in CLI | Hardcoded localhost URL | Read from env var with fallback, support custom --api-url flag |
-| MCP stdio transport | Logging to stdout | Configure all loggers to stderr exclusively, test with MCP inspector |
+| MCP tool references in skills | Using simple tool names (`create_task`) from server implementation | Use fully qualified names from `/mcp` command output (`mcp__plugin_tasks_wood-fired-bugs__create_task`) |
+| Skill directory structure | Creating flat `.md` files in `~/.claude/commands/` | Skills require directory with `SKILL.md` entrypoint; slash commands can be flat `.md` |
+| allowed-tools in skill frontmatter | Listing tools without full qualification | Must use full MCP tool names: `mcp__plugin_tasks_wood-fired-bugs__*` for wildcards |
+| API key configuration | Only setting in shell profile | Must set in MCP server config's `env` section for GUI-launched Claude Code |
+| Testing skills locally | Testing with MCP server run manually in terminal | Must test with server auto-started by Claude Code config to catch environment issues |
+| Installer verification | Checking if files copied and profile modified | Must test actual skill invocation in Claude Code after installation |
 
----
+## Security Mistakes
 
-## Performance Traps
+Domain-specific security issues beyond general security practices.
 
-Patterns that work at small scale but fail with 18+ commands or 19+ tools.
-
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Loading all commands eagerly | Slow CLI startup (500ms+) | Lazy-load command modules, register on first use | >15 commands with heavy imports |
-| No command result caching | Repeated API calls for same data | Cache results for duration of command execution | Commands with multiple service calls |
-| Synchronous schema validation | Tool registration takes seconds | Use pre-compiled schemas, avoid re-validation | >20 tools with complex schemas |
-| Table formatting with full dataset | Memory exhaustion, slow output | Stream table rows, paginate at CLI level | >1000 rows in table output |
-| Full tool list in every MCP response | High token usage, slow responses | Client-side tool caching, incremental discovery | >25 tools |
-| No CLI output buffering | Slow terminal rendering | Buffer output, flush once at end | Commands outputting >1000 lines |
-| MCP tool schema re-validation | High latency per tool call | Validate once at registration, cache validated schemas | >50 tool calls/second |
-| Rebuilding table formatters | CPU waste, memory leaks | Reuse formatter instances across commands | Commands called in loops |
-
----
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Hardcoding API key in skill markdown | API key leaked in skill files, committed to git | Use environment variable reference only; installer sets actual key in user's environment |
+| Writing API key to shell profile with 644 permissions | Key readable by all users on shared machine | Installer should create or verify restrictive permissions (600) on profile files |
+| Including API key in MCP config JSON with default permissions | Key exposed in `~/.claude/config.json` readable by other processes | Set file permissions to 600 after writing; document security implication |
+| Skill examples showing real API keys | Users copy-paste examples with keys into their own configs | Always use placeholder `YOUR_API_KEY_HERE` in examples and documentation |
+| No validation of API key format in installer | Installer accepts any string, user enters invalid key | Validate API key format (pattern match) and optionally test connectivity before writing |
+| API key transmitted in MCP protocol | Key visible in process arguments or logs | Pass via environment variable, never as command-line argument |
 
 ## UX Pitfalls
 
-Common user experience mistakes when scaling CLI and MCP interfaces.
+Common user experience mistakes when adding skills and installer.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Inconsistent flag names | --due-date in one command, --due in another, confusing muscle memory | Standardize flag names across all commands, document in style guide |
-| No command aliases | Must type full command names, verbose for common operations | Add aliases: `tasks create` → `tasks new`, `tasks list` → `tasks ls` |
-| Missing --help for flags | Users don't know what values are valid | Every flag includes description and example in --help output |
-| Error without suggestion | "Invalid priority" without showing valid values | Include valid options in error: "Invalid priority 'urgent'. Valid: low, medium, high" |
-| --json output without --pretty | Unreadable single-line JSON | Add --pretty flag for human-readable JSON with indentation |
-| Silent truncation | Tables truncate without indication | Show truncation indicator: "... and 47 more rows (use --limit to show more)" |
-| MCP tool names not discoverable | LLM must read all descriptions to find right tool | Use consistent naming pattern LLM can predict: {resource}_{action} |
-| No progress indication | Long operations appear frozen | Show progress for operations >2 seconds, respect --quiet flag |
-| Inconsistent date formats | Confusion parsing dates, timezone issues | ISO 8601 everywhere: 2026-02-13T15:30:00Z |
-| Generic error codes | Cannot programmatically handle specific errors | Use specific exit codes: 1=general error, 2=invalid input, 3=not found |
-
----
+| Error message: "tool not found: create_task" | User thinks MCP server not configured correctly | Detect unqualified tool name and suggest full name: "Did you mean mcp__plugin_tasks_wood-fired-bugs__create_task?" |
+| Installer completes but skills don't work | User assumes installation successful, wastes time debugging | Installer runs connectivity test at end: verify MCP server can be reached and responds |
+| No feedback during skill execution | User doesn't know if skill is working or stuck | Skills should log progress: "Searching tasks...", "Found 5 results", "Creating task..." |
+| Generic error when MCP server unreachable | User doesn't know if server is down, misconfigured, or network issue | Check specific failure: "MCP server not running. Start with: tasks serve" or "API key missing" |
+| Installer assumes user knows shell | Users confused by "reload your shell" instruction | Provide explicit command: "Run: source ~/.zshrc (or restart terminal)" |
+| Skills fail silently when API key wrong | User thinks service is down | Validate API key before MCP tool calls; provide clear auth error message |
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear complete but are missing critical pieces when scaling CLI/MCP.
+Things that appear complete but are missing critical pieces.
 
-- [ ] **--json flag added**: Often missing stderr/stdout separation - verify prompts/messages go to stderr, only JSON to stdout
-- [ ] **Global options**: Often missing inheritance setup - verify `tasks --json list` works, not just `tasks list --json`
-- [ ] **Interactive prompts**: Often missing TTY detection - verify `echo | tasks create --json` fails with clear error, doesn't hang
-- [ ] **Async handlers**: Often missing .parseAsync() - verify commands complete before exit, database writes committed
-- [ ] **Error handling**: Often missing consistent formatting - verify CLI and MCP return similar errors for same failure
-- [ ] **MCP tool schemas**: Often missing .strict() validation - verify extra/invalid fields rejected with clear errors
-- [ ] **Option access**: Often missing camelCase normalization - verify multi-word flags accessible via correct property name
-- [ ] **JSON test coverage**: Often missing schema validation - verify tests parse JSON and assert on structure, not just snapshot
-- [ ] **MCP tool naming**: Often missing convention adherence - verify all tools follow {resource}_{action} pattern
-- [ ] **Output abstraction**: Often missing centralized output handling - verify no direct console.log in command handlers
-- [ ] **Exit codes**: Often missing process.exitCode setting - verify commands set exitCode, don't call process.exit()
-- [ ] **MCP logging**: Often missing stderr configuration - verify MCP server passes inspector test with no stdout pollution
-- [ ] **Commander parsing**: Often missing error handling - verify .parseAsync() wrapped in try/catch with proper error output
-- [ ] **Flag consistency**: Often missing standardization - verify similar flags named identically across commands
-
----
+- [ ] **Skill markdown created:** Often missing actual testing with `/skill-name` invocation in Claude Code
+- [ ] **MCP config added:** Often missing `env` section with API key (relies on shell profile which doesn't work for GUI apps)
+- [ ] **Installer writes to shell profile:** Often missing verification that correct shell detected (bash vs zsh vs fish)
+- [ ] **Installer shows "success":** Often missing actual connectivity test (MCP server ping or health check)
+- [ ] **Tool names in skills:** Often missing fully qualified names (uses simple names that fail at runtime)
+- [ ] **Windows installer tested:** Often missing test on actual Windows (developer uses WSL which is Linux)
+- [ ] **MCP server logging:** Often missing stderr routing (console.log() used, breaks stdio transport)
+- [ ] **Cross-platform paths:** Often missing PowerShell path cmdlets (hardcoded `/` separators fail on Windows)
+- [ ] **Skill documentation:** Often missing MCP tool list showing full qualified names for reference
+- [ ] **Installer rollback:** Often missing cleanup on failure (leaves partial config, corrupted profile)
 
 ## Recovery Strategies
 
@@ -480,18 +394,13 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| --json with prompts | LOW | Add TTY detection and --json auto-disables prompts, test with piping |
-| Global options not inherited | MEDIUM | Refactor to add global options before subcommands, call .copyInheritedSettings() |
-| .parse() instead of .parseAsync() | LOW | Replace .parse() with .parseAsync(), wrap in try/catch, verify async completion |
-| Inconsistent error handling | MEDIUM | Extract error formatting layer, refactor CLI and MCP to use shared formatter |
-| Stdout contamination | LOW-MEDIUM | Create output abstraction, replace all console.log with output.info(), test with jq |
-| MCP tool naming chaos | HIGH | Define convention, rename all existing tools (breaking change), update documentation |
-| Missing schema validation | LOW | Add .strict() to schemas, add tests with invalid inputs, verify error messages clear |
-| CamelCase confusion | LOW | Fix option access to use camelCase, add TypeScript types to prevent recurrence |
-| No JSON test coverage | MEDIUM | Write JSON tests for all commands, validate parseability and schema |
-| Tool proliferation | MEDIUM-HIGH | Reorganize tools by resource, consider splitting into multiple MCP servers |
-
----
+| Unqualified tool names in skills | LOW | 1. Run `/mcp` to get correct names. 2. Find-replace in all skill .md files. 3. Test each skill. (1-2 hours for 10 skills) |
+| stdout logging in MCP server | LOW | 1. Replace console.log() with console.error(). 2. Rebuild. 3. Restart Claude Code to reconnect. (15 minutes) |
+| Wrong shell profile detection | MEDIUM | 1. Provide manual instructions for all shells. 2. Users run shell-specific setup. 3. Update installer with detection. (2-4 hours dev + user support) |
+| Relative paths in MCP config | LOW | 1. Update config.json with absolute paths. 2. Restart Claude Code. 3. Document absolute path requirement. (30 minutes) |
+| Environment variable not in Claude Code | MEDIUM | 1. Add `env` section to MCP config. 2. Users re-run installer or manual edit. 3. Restart Claude Code. (1 hour + user re-setup) |
+| Windows execution policy blocks installer | LOW | 1. Document policy change or bypass. 2. Provide alternative manual installation steps. 3. Create .bat wrapper. (1 hour) |
+| Path separator issues on Windows | MEDIUM | 1. Rewrite PowerShell installer with Join-Path. 2. Users re-run installer (overwrites incorrect paths). 3. Test on Windows VM. (2-3 hours) |
 
 ## Pitfall-to-Phase Mapping
 
@@ -499,65 +408,63 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| --json prompts conflict | Phase 1: CLI Infrastructure | Test `echo \| tasks create --json` fails fast, `tasks create --json --title X` succeeds |
-| Global option inheritance | Phase 1: CLI Infrastructure | Test `tasks --json list` produces JSON, verify all global flags work before command |
-| .parse vs .parseAsync | Phase 1: CLI Infrastructure | All commands use .parseAsync, integration tests verify async completion |
-| Error handling divergence | Phase 1: CLI Infrastructure | Same error produces consistent message via CLI --json and MCP tool |
-| Stdout contamination | Phase 1: CLI Infrastructure | All commands with --json pass `\| jq` test, no stdout pollution |
-| MCP tool naming | Phase 2: MCP Expansion | All tools follow {resource}_{action} convention, documented in naming guide |
-| Schema validation | Phase 2: MCP Expansion | All tools reject invalid inputs with Zod errors, tests cover invalid cases |
-| CamelCase confusion | Phase 1: CLI Infrastructure | Options accessed via camelCase, TypeScript types enforce correct access |
-| JSON test coverage | Phase 1: CLI Infrastructure | All commands have JSON tests, CI fails if JSON output invalid |
-| Tool proliferation | Phase 2: MCP Expansion | Tools organized by resource, discovery UX tested with token usage metrics |
+| Unqualified MCP tool names | Phase 9 (Skill Authoring) | Run each skill and verify tools invoke successfully; check skill .md files for `mcp__plugin_` prefix |
+| stdout logging | Phase 8 (MCP Server Verification) | Run MCP server standalone; verify stdout contains ONLY JSON-RPC (no text logs); test Claude Code connection |
+| MCP config paths | Phase 10 (Installer Script) | Install on fresh VM; verify config.json contains absolute paths; test MCP server auto-starts |
+| Shell profile detection | Phase 10 (Installer Script) | Test installer on bash, zsh, fish; verify correct profile modified; run `echo $VAR` in fresh shell |
+| Windows execution policy | Phase 10 (Installer Script) | Test on Windows with default Restricted policy; verify error message or bypass documented |
+| Environment variable in Claude Code | Phase 10 (Installer Script) | Launch Claude Code from GUI (not terminal); verify MCP server has env var; test skill auth |
+| Path separators on Windows | Phase 10 (Installer Script) | Run Windows installer; verify paths use backslashes; check files created in correct nested structure |
 
----
+## Phase-Specific Research Flags
+
+Phases likely to need deeper research based on findings.
+
+| Phase | Research Flag | Why |
+|-------|---------------|-----|
+| Phase 8 (MCP Server Verification) | Deeper research needed | Verify existing v1.1 server doesn't use console.log(); test stdio transport compliance; may need refactoring |
+| Phase 9 (Skill Authoring) | Standard patterns available | MCP tool usage well-documented in plugin-dev examples; follow established patterns with verified tool names |
+| Phase 10 (Installer - Linux) | Moderate research needed | Shell detection logic for bash/zsh/fish; environment variable persistence across shells; testing on multiple distros |
+| Phase 10 (Installer - Windows) | Deeper research needed | PowerShell execution policy handling; path separator issues; environment variable for GUI apps; testing on Windows |
+| Phase 11 (Integration Testing) | Standard testing approaches | Verify skills invoke correctly; MCP server connects; installer produces working setup; E2E testing skills in Claude Code |
 
 ## Sources
 
-### Commander.js Best Practices
-- [The Definitive Guide to Commander.js | Better Stack Community](https://betterstack.com/community/guides/scaling-nodejs/commander-explained/)
-- [GitHub - tj/commander.js: node.js command-line interfaces made easy](https://github.com/tj/commander.js)
-- [What is the best practice for organising large commander tool? · Issue #983](https://github.com/tj/commander.js/issues/983)
-- [Async typescript functions as actions · Issue #806](https://github.com/tj/commander.js/issues/806)
-- [Options shared by a root command and its subCommands · Issue #1426](https://github.com/tj/commander.js/issues/1426)
+### Claude Code Skills & MCP Integration
+- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills)
+- [The Pulumi Blog - Claude Skills for DevOps](https://www.pulumi.com/blog/top-8-claude-skills-devops-2026/)
+- [Claude Code Evolution: MCP, Commands, Agents & Skills](https://claude-world.com/articles/claude-code-evolution/)
+- [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
+- [Inside Claude Code Skills: Structure and Invocation](https://mikhail.io/2025/10/claude-code-skills/)
+- [Claude Skills vs Slash Commands 2026](https://yingtu.ai/blog/claude-code-skills-vs-slash-commands)
 
-### CLI --json Output Best Practices
-- [Flag deprecation warning should be send to stderr not stdout · Issue #5674](https://github.com/cli/cli/issues/5674)
-- [BUG --json outputs errors to stdout instead of stderr · Issue #2150](https://github.com/npm/cli/issues/2150)
-- [Deprecated warning message part of stdout instead of stderr · Issue #1896](https://github.com/forcedotcom/cli/issues/1896)
-- [Command Line Interface Guidelines](https://clig.dev/)
-- [Terraform validate - machine-readable JSON output](https://developer.hashicorp.com/terraform/cli/commands/validate)
+### MCP Server Configuration & Transport
+- [STDIO Transport - MCP Framework](https://mcp-framework.com/docs/Transports/stdio-transport/)
+- [Debugging MCP Servers: Tips and Best Practices](https://www.mcpevals.io/blog/debugging-mcp-servers-tips-and-best-practices)
+- [MCP Server Troubleshooting Guide 2025](https://www.mcpstack.org/learn/mcp-server-troubleshooting-guide-2025)
+- [Configuring MCP Tools in Claude Code - Scott Spence](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code)
+- [Claude Code CLI Best Practices Checklist](https://notes.muthu.co/2026/02/claude-code-cli-best-practices-checklist/)
 
-### MCP SDK and Tool Design
-- [Specification - Model Context Protocol](https://modelcontextprotocol.io/specification/2025-11-25)
-- [Tools - Model Context Protocol](https://modelcontextprotocol.info/docs/concepts/tools/)
-- [Error Handling in MCP Servers - Best Practices Guide](https://mcpcat.io/guides/error-handling-custom-mcp-servers/)
-- [Add Custom Tools to TypeScript MCP Servers](https://mcpcat.io/guides/adding-custom-tools-mcp-server-typescript/)
-- [MCP Best Practices: Architecture & Implementation Guide](https://modelcontextprotocol.info/docs/best-practices/)
+### Cross-Platform Installer & Environment Variables
+- [PowerShell Beyond Windows: Cross-Platform Guide](https://medium.com/@josephsims1/powershell-beyond-windows-a-cross-platform-guide-2f6d6de473dd)
+- [Installing PowerShell on Linux in 2026](https://thelinuxcode.com/installing-powershell-on-linux-in-2026-a-practical-opinionated-walkthrough/)
+- [PowerShell differences on non-Windows platforms](https://learn.microsoft.com/en-us/powershell/scripting/whats-new/unix-support)
+- [Variables in any environment](https://cgjennings.ca/articles/environment-variables/)
+- [Managing API key environment variables in Claude Code](https://support.claude.com/en/articles/12304248-managing-api-key-environment-variables-in-claude-code)
 
-### MCP Tool Naming Conventions
-- [MCP Server Naming Conventions](https://zazencodes.com/blog/mcp-server-naming-conventions)
-- [SEP-986: Specify Format for Tool Names · Issue #986](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986)
-- [Tool Naming Convention - ShotGrid MCP Server](https://pipeline-f26f1c83.mintlify.app/guides/tool-naming-convention)
+### Shell Profile Configuration
+- [Moving to zsh, part 2: Configuration Files](https://scriptingosx.com/2019/06/moving-to-zsh-part-2-configuration-files/)
+- [fish shell Tutorial](https://fishshell.com/docs/current/tutorial.html)
+- [Shell Profile Detection Issue - nvm](https://github.com/nvm-sh/nvm/issues/1837)
+- [Bash and Zsh Profile Files](https://ss64.com/mac/syntax-profile.html)
+- [Startup scripts of Bash and Zsh](https://tanguy.ortolo.eu/blog/article25/shrc)
 
-### MCP Testing and Validation
-- [MCP inspector - Visual testing tool for MCP servers](https://github.com/modelcontextprotocol/inspector)
-- [Unit Testing MCP Servers - Complete Testing Guide](https://mcpcat.io/guides/writing-unit-tests-mcp-servers/)
-- [MCP Tool Input Validation Testing](https://mcpcat.io/guides/validation-tests-tool-inputs/)
-- [MCP JSON Schema Validation: Tools & Best Practices 2025](https://www.byteplus.com/en/topic/542256)
-
-### CLI Testing Strategy
-- [Testing in CI/CD: Unit, Integration, E2E Automation](https://dasroot.net/posts/2026/01/testing-ci-cd-unit-integration-e2e-automation/)
-- [Integration tests on Node.js CLI: Part 4 — Mocking Services](https://medium.com/@zorrodg/%EF%B8%8F-integration-tests-on-node-js-cli-part-4-mocking-services-b6fba2d9d01b)
-- [Unit and Integration Testing | anthropics/claude-code-sdk-python](https://deepwiki.com/anthropics/claude-code-sdk-python/5.1-unit-and-integration-testing)
-
-### Terminal Compatibility
-- [GitHub - chalk/chalk: Terminal string styling done right](https://github.com/chalk/chalk)
-- [fix: Replace colors with chalk to fix infinite loop · Pull Request #250](https://github.com/cli-table/cli-table3/pull/250)
-- [BUG Background color bleed in terminal from chalk usage · Issue #1341](https://github.com/anthropics/claude-code/issues/1341)
+### Security & Best Practices
+- [API Key Best Practices](https://support.claude.com/en/articles/9767949-api-key-best-practices-keeping-your-keys-safe-and-secure)
+- [Common Mistakes with .env Files](https://medium.com/byte-of-knowledge/common-mistakes-developers-make-with-env-files-1dbd72272eba)
+- [8 tips for securely using API keys](https://blog.streamlit.io/8-tips-for-securely-using-api-keys/)
 
 ---
-
-*Pitfalls research for: Wood Fired Bugs v1.1 - CLI/MCP Parity Expansion*
-*Context: Scaling from 3 CLI commands to 18+, 12 MCP tools to 19+*
+*Pitfalls research for: Wood Fired Bugs v1.2 - Claude Code Skills & Installer*
 *Researched: 2026-02-13*
+*Confidence: HIGH - Based on official documentation, community best practices, and cross-platform compatibility research*

@@ -1,266 +1,172 @@
 # Project Research Summary
 
-**Project:** Wood Fired Bugs - CLI/MCP Interface Parity Expansion
-**Domain:** Task Management System Interface Extension
+**Project:** Wood Fired Bugs v1.2 - Claude Code Skills & Cross-Platform Installer
+**Domain:** Developer Tools - AI Agent Integration & Installation Automation
 **Researched:** 2026-02-13
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Wood Fired Bugs is a mature task tracking service with a well-architected REST API, MCP server, and CLI. The v1.1 milestone aims to achieve full CLI/MCP parity with all REST endpoints, expanding from 3 CLI commands to 18+ and 12 MCP tools to 19+. The research reveals that the existing architecture is sound and well-suited for this expansion - layered service design with clean separation between interfaces, shared Zod schemas, and proper abstraction boundaries.
+Wood Fired Bugs v1.2 extends the existing MCP-enabled task tracking service with Claude Code skills (teaching Claude how to use the system) and cross-platform installers for Linux and Windows. Research shows this is a straightforward integration: skills are markdown files with YAML frontmatter that reference MCP tools by fully qualified names, and installers are platform-specific scripts (Bash/PowerShell) that copy skills and configure the MCP server in Claude Code's config file.
 
-The recommended approach is straightforward: extend the existing patterns rather than redesign. The CLI should remain an HTTP client calling the REST API (never direct service access), MCP tools should continue calling services directly, and all new commands/tools should follow established naming conventions. The stack is production-ready: Node.js 22 LTS, TypeScript 5.7+, Fastify 5.x for REST, Commander.js 14.x for CLI, and MCP TypeScript SDK 1.x. The only additions needed are @clack/prompts for interactive CLI experiences when required fields are missing.
+The recommended approach uses no new npm dependencies. Skills live in `~/.claude/skills/tasks/` and reference existing MCP tools with the prefix `mcp__wood-fired-bugs__`. The installer generates a unique API key, writes it to both the MCP server's `env` configuration and the project `.env` file, tests connectivity, and confirms success. The Linux installer uses Bash with jq for JSON merging; the Windows installer uses PowerShell 7+ with native JSON cmdlets.
 
-Key risks center on maintaining consistency while scaling: ensuring all 18 commands support `--json` output without stdout contamination, establishing global option inheritance before adding subcommands, and enforcing MCP tool naming conventions (snake_case, resource_action pattern) before proliferation. The research identifies 10 critical pitfalls with clear prevention strategies, most of which must be addressed in Phase 1 (CLI Infrastructure) to avoid expensive retrofitting.
+The critical risks are all related to incorrect configuration: using unqualified tool names in skills (causes "tool not found" errors), writing MCP server logs to stdout instead of stderr (breaks stdio transport), and setting environment variables only in shell profiles (doesn't work for GUI-launched Claude Code). All risks are preventable with careful attention to MCP protocol requirements and cross-platform environment variable handling, specifically using the MCP config's `env` section for API key rather than relying on shell profiles.
 
 ## Key Findings
 
 ### Recommended Stack
 
-All core technologies are already in place and production-ready. Research confirms the current stack is optimal for this milestone with minimal additions needed.
+The stack requires zero new dependencies beyond what's already in Wood Fired Bugs v1.1. Skills are markdown files, MCP configuration is JSON, and installers use platform-native scripting.
 
 **Core technologies:**
-- **Node.js 22 LTS + TypeScript 5.7+**: Runtime environment - current LTS with native SQLite support, stable for production services
-- **Fastify 5.7.4**: REST API framework - already implemented, 2.7x faster than Express with built-in schema validation
-- **better-sqlite3 12.6.2**: SQLite driver - already implemented, 5-10x faster than alternatives, synchronous API perfect for local services
-- **Commander.js 14.0.3**: CLI framework - already implemented, zero dependencies, clean subcommand syntax, 12M weekly downloads
-- **MCP TypeScript SDK 1.x**: MCP server - already implemented, production-ready official SDK with Zod integration
-- **@clack/prompts 1.0.1**: Interactive CLI prompts - NEW addition for missing required fields, 80% smaller than alternatives, beautiful UX
+- **Markdown + YAML frontmatter** (skills) — Official Claude Code skill format, no execution runtime needed
+- **JSON** (MCP config) — Claude Desktop's native configuration at `~/.config/Claude/claude_desktop_config.json` (Linux) or equivalent platform locations
+- **Bash 4.0+** (Linux installer) — Universal on Linux/macOS, handles symlinks and directory creation with jq for JSON merging
+- **PowerShell 7.0+** (Windows installer) — Microsoft's cross-platform shell with native JSON manipulation via `ConvertFrom-Json`/`ConvertTo-Json`
+- **Node.js** (existing) — Already required for MCP server runtime via `@modelcontextprotocol/sdk`, no version change needed
 
-**No changes needed:** The existing stack handles everything required. The only addition is @clack/prompts for enhanced CLI UX when users forget required fields.
+**Critical version note:** PowerShell 7+ is NOT the same as Windows PowerShell 5.1. Scripts must target 7+ for cross-platform compatibility and modern JSON handling.
 
 ### Expected Features
 
-The research identifies clear feature priorities based on CLI/MCP interface parity goals and industry standards.
+Research identified 10 table stakes features and 10 differentiators, with clear anti-features to avoid.
 
 **Must have (table stakes):**
-- **CLI: --json output flag** - Essential for scripting, piping to jq, agent consumption; standard in git/docker/gh
-- **CLI: Subcommand organization** - Industry standard pattern (gh pr create, docker container ls) for scalable command structure
-- **CLI: Interactive prompts for missing fields** - Improves human UX while respecting non-interactive mode for scripts
-- **CLI: Delete confirmation prompts** - Prevent accidental data loss (standard practice: rm -i, git branch -D)
-- **MCP: snake_case tool naming** - MCP standard, enables LLM tool name prediction
-- **MCP: Consistent parameter naming** - Same concepts use same names across tools (task_id everywhere, not mixed with id)
-- **MCP: Project CRUD tools (5 tools)** - Closes parity gap with REST API
+- Basic workflow skills (create, list, update, show, delete tasks) — Users invoke these repeatedly
+- MCP server auto-configuration — Manual JSON editing is unacceptable friction
+- Environment variable setup for API key — Standard security practice, not hardcoded
+- Connectivity test post-install — Validates installation worked before user tries skills
+- Cross-platform support (Linux + Windows) — Developers use both platforms
+- Skill namespace (`/tasks:*` commands) — Prevents collision with other skills
+- Status transition skills (pick-up, done, blocked) — Common lifecycle operations
+- Search and comment skills — Essential for collaborative task tracking
+- Project context skill — Multi-project systems need project-level views
 
-**Should have (competitive advantage):**
-- **CLI: Smart defaults from context** - Infer project_id from .wfb-project file in current directory
-- **CLI: Suggest corrections on typos** - "Did you mean 'tasks list'?" for better UX
-- **MCP: Rich error context** - Include error_code and validation_failures array in structured errors
-- **CLI: --format flag** - Support table/plain/json for different consumption modes
+**Should have (competitive):**
+- Skills use MCP tools exclusively (no REST) — Native Claude Code integration, leverages MCP's structured content
+- Installer validates existing MCP config — Preserves other servers, prevents config corruption
+- Installer backup before modification — Rollback if something breaks
+- Health check integrated into installer — Validates service running and MCP tools accessible
+- Skill argument templating — Power users can invoke `/tasks:show-task 123` instead of being prompted
+- Interactive prompts for missing fields — Casual users prefer guidance
 
 **Defer (v2+):**
-- **CLI: Batch operations** - `tasks update --status done --ids 1,2,3` (wait for user demand)
-- **CLI: Config file support** - ~/.wfbrc for default flags (wait for repeated requests)
-- **CLI: Shell completions** - Bash/zsh tab completion (polish feature, not critical)
-- **MCP: Batch tool execution** - Single tool that takes array of operations (wait for performance issues)
+- Batch operation skills — Wait for user feedback on need
+- Custom workflow templates — Wait to see what workflows users actually want
+- Plugin marketplace submission — After validating manual install works
+- Docker Compose integration — Current assumption is service already running
 
 ### Architecture Approach
 
-Wood Fired Bugs uses a clean layered architecture that's ideal for interface expansion: CLI → HTTP → REST API → Service Layer → Repository Layer → SQLite. The CLI is intentionally decoupled as an HTTP client, while MCP calls services directly for performance. This separation allows each interface to evolve independently.
+The architecture builds on v1.1's existing MCP server without changes. Skills live on the user's machine and reference MCP tools by name. The installer handles all setup: skill file copying, MCP configuration, environment variables, and connectivity testing.
 
 **Major components:**
-1. **CLI Commands** - Organized in folders by resource (tasks/, projects/, dependencies/, comments/), each command is a separate file exporting Commander.js Command instance, all call REST API via client.ts
-2. **API Client** - HTTP client functions in src/cli/api/client.ts, provides typed interfaces to REST endpoints, handles errors with ApiClientError, 10s timeout for all requests
-3. **MCP Tools** - Grouped by resource in separate files (task-tools.ts, project-tools.ts, etc.), each file exports registerXxxTools() function, shares Zod schemas from src/schemas/
-4. **Output Formatters** - Centralized in src/cli/output/formatters.ts, separates presentation from logic, supports table/detail views, handles color coding consistently
-5. **Service Layer** - Already implements all operations, shared by REST API and MCP, validates with Zod schemas, no changes needed for v1.1
-6. **Repository Layer** - Already has all data access methods, no changes needed for v1.1
+1. **Skill files (10 markdown files)** — Instructions for Claude; reference MCP tools like `mcp__wood-fired-bugs__create_task`
+2. **MCP server configuration** — Global `~/.claude.json` or `~/.config/Claude/claude_desktop_config.json` with absolute paths and API key in `env` section
+3. **Cross-platform installers** — Separate Bash (Linux) and PowerShell (Windows) scripts with platform detection, dependency verification, build steps, config merging, and connectivity testing
+4. **Integration with existing MCP server** — No changes to v1.1 server; skills invoke 25 existing tools through Claude Code's MCP integration
 
-**Build order:** Foundation (types, API client, formatters) → CLI Commands → Integration (subcommands, global options) → MCP Tools → Testing. Phases 1-3 are sequential, Phase 4 (MCP) can parallel Phase 2-3.
+**Key architectural facts:**
+- Skills are static files, not executable code — Claude Code interprets them
+- MCP tool names are fully qualified: `mcp__wood-fired-bugs__<tool_name>`
+- MCP server configured globally for cross-project availability
+- API key must be in MCP config's `env` section, not just shell profile (GUI apps don't source profiles)
+- Absolute paths required in MCP config (Claude Code working directory unknown)
 
 ### Critical Pitfalls
 
-Research identified 10 critical pitfalls specific to scaling CLI/MCP interfaces. Top 5 by impact:
+1. **Using unqualified MCP tool names in skills** — Skills must reference `mcp__wood-fired-bugs__create_task`, not just `create_task`. Unqualified names cause "tool not found" errors. Prevention: Always run `/mcp` command first to see exact tool names Claude Code expects, document naming convention in skill authoring guide.
 
-1. **--json flag breaking interactive prompts** - Interactive prompts corrupt JSON output stream when users run `tasks create --json`. Prevention: Detect TTY vs. non-TTY, auto-disable prompts when --json is present, all prompts write to stderr not stdout, fail fast with clear error if required fields missing in non-interactive mode. Address in Phase 1.
+2. **Writing MCP server logs to stdout instead of stderr** — Stdio transport reserves stdout exclusively for JSON-RPC messages. Any `console.log()` output corrupts the stream, causing -32000 connection errors. Prevention: Use `console.error()` for ALL logging, configure Pino to write to stderr, validate stdout contains ONLY JSON-RPC.
 
-2. **Global options not inherited by subcommands** - Commander.js doesn't automatically propagate global options like --json to subcommands unless configured correctly. Prevention: Add global options to root program before registering subcommands, use .command() for automatic inheritance or call .copyInheritedSettings() with .addCommand(), access via .optsWithGlobals() in handlers. Address in Phase 1.
+3. **MCP server path using relative paths** — Relative paths in `~/.claude.json` resolve from Claude Code's working directory (not project directory), causing "module not found" errors. Prevention: Installer must compute and write absolute paths like `/home/user/wood-fired-bugs/dist/mcp/index.js`.
 
-3. **Async action handlers with .parse() instead of .parseAsync()** - Using .parse() causes Node.js to exit before async handlers complete, resulting in uncommitted database writes and no output. Prevention: Always use .parseAsync(), wrap in try/catch, set process.exitCode not process.exit(), add top-level error handler. Address in Phase 1.
+4. **Shell profile detection writing to wrong RC file** — Installer writing to `~/.bashrc` when user's shell is zsh (reads `~/.zshrc`) or fish (reads `~/.config/fish/config.fish`) means environment variable never loads. Prevention: Detect shell via `$SHELL`, write to appropriate profile, use fish-specific syntax for fish.
 
-4. **Stdout contamination in JSON mode** - Progress messages, debug output, and console.log() statements write to stdout, breaking JSON parseability. Prevention: Create output abstraction (output.info(), output.json()), write messages to stderr, single JSON.stringify() at end, test each command with `| jq`. Address in Phase 1.
-
-5. **MCP tool name explosion without convention** - Growing to 19+ tools without naming standard creates discovery chaos for LLM agents. Prevention: Establish snake_case convention (resource_action pattern) before expansion, rename existing 12 tools to match, document in naming guide, enforce in code review. Address in Phase 2.
-
-**Pattern:** All top pitfalls require architectural decisions in early phases. Retrofitting is expensive and breaks existing usage.
+5. **Environment variables not persisting in Claude Code** — Shell profile environment variables work in terminal but not for GUI-launched Claude Code (doesn't source profiles). Prevention: Write API key to MCP config's `env` section, not just shell profile. This is the definitive location for MCP server environment.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure mirrors the existing roadmap with validation from technical findings:
+Based on research, suggested 3-phase structure with clear separation of verification, authoring, and installation:
 
-### Phase 1: Core CLI Infrastructure
-**Rationale:** Foundation must be correct before adding 15+ commands. Output abstraction, global option handling, and async patterns affect every command. Building these correctly from the start avoids expensive retrofitting.
+### Phase 8: MCP Server Verification & Cleanup
+**Rationale:** Must verify existing v1.1 MCP server doesn't have stdio transport violations before writing skills. Research identified stdout logging as critical pitfall causing -32000 errors.
+**Delivers:** MCP server confirmed stdio-compliant (no console.log), logs routed to stderr, connectivity test passing.
+**Addresses:** Pitfall 2 (stdout logging), prerequisite for skill invocation.
+**Avoids:** Building skills that reference broken MCP server; discovering transport issues after skill authoring complete.
 
-**Delivers:**
-- Output abstraction layer (separates stdout for data, stderr for messages)
-- Global --json flag with proper inheritance to all commands
-- .parseAsync() pattern for all async handlers
-- Interactive prompt system with TTY detection and --no-input flag
-- Enhanced error handling with consistent formatting
+### Phase 9: Skill File Authoring
+**Rationale:** Skills can be written once MCP server verified. Skills are static markdown, no code changes needed. Must use verified tool names from `/mcp` command output.
+**Delivers:** 10 skill markdown files in `skills/` directory with correct tool names, namespace, examples, and procedures.
+**Addresses:** Table stakes features (create, list, update, show, delete, project, dependency, comment, subtask, health), namespace prefix (`/tasks:*`), argument templating.
+**Avoids:** Pitfall 1 (unqualified tool names) by using full names from start; Pitfall "skills without namespace" by installing to `tasks/` subdirectory.
+**Uses:** Markdown format from STACK.md, skill structure from ARCHITECTURE.md (frontmatter + procedure + examples).
 
-**Addresses (from FEATURES.md):**
-- CLI: --json output flag (table stakes)
-- CLI: Interactive prompts for missing fields (table stakes)
-- CLI: Error messages to stderr (table stakes)
-
-**Avoids (from PITFALLS.md):**
-- Pitfall 1: --json breaking prompts (critical)
-- Pitfall 2: Global options not inherited (critical)
-- Pitfall 3: Async handlers incomplete (critical)
-- Pitfall 5: Stdout contamination (critical)
-
-**Research flag:** Standard patterns, skip research-phase. Commander.js and @clack/prompts well-documented.
-
-### Phase 2: CLI Command Expansion
-**Rationale:** With infrastructure in place, can safely add 15 new commands following established patterns. Folder organization by resource enables parallel development and clear code navigation.
-
-**Delivers:**
-- Project CRUD commands (5 commands)
-- Dependency management commands (3 commands)
-- Comment management commands (3 commands)
-- Additional task commands: get, delete (2 commands)
-- Subcommand grouping (tasks project create, tasks dep add, etc.)
-
-**Addresses (from FEATURES.md):**
-- CLI: Subcommand organization (table stakes)
-- CLI: Delete confirmation prompts (table stakes)
-- All REST endpoint parity
-
-**Uses (from STACK.md):**
-- Commander.js subcommand patterns
-- @clack/prompts for interactive flows
-- Existing API client extensions
-
-**Implements (from ARCHITECTURE.md):**
-- Command folder structure (tasks/, projects/, dependencies/, comments/)
-- API client extensions (12+ new functions)
-- Output formatters (project, dependency, comment tables)
-
-**Avoids (from PITFALLS.md):**
-- Pitfall 8: Commander camelCase/kebab-case confusion (via TypeScript types)
-- Pitfall 9: No JSON test coverage (via test pattern establishment)
-
-**Research flag:** Standard patterns, skip research-phase. Established CLI patterns.
-
-### Phase 3: MCP Tool Expansion
-**Rationale:** Can proceed in parallel with Phase 2 since MCP and CLI are independent interfaces. Must establish naming convention before adding 7+ new tools to avoid discovery chaos.
-
-**Delivers:**
-- Project CRUD MCP tools (5 tools: create_project, get_project, list_projects, update_project, delete_project)
-- Health check tool (check_health)
-- List subtasks tool (list_subtasks for consistency)
-- Updated tool registration in MCP server
-
-**Addresses (from FEATURES.md):**
-- MCP: Project CRUD tools (table stakes)
-- MCP: Health check tool (table stakes)
-- Complete MCP parity with REST endpoints
-
-**Uses (from STACK.md):**
-- MCP TypeScript SDK 1.x
-- Shared Zod schemas from src/schemas/
-
-**Implements (from ARCHITECTURE.md):**
-- project-tools.ts file with registerProjectTools() function
-- Tool naming convention: {resource}_{action} snake_case pattern
-- Structured error responses via convertToMcpError()
-
-**Avoids (from PITFALLS.md):**
-- Pitfall 6: MCP tool name explosion (via convention enforcement)
-- Pitfall 7: Missing schema validation (via .strict() Zod schemas)
-- Pitfall 10: Tool proliferation without categorization (via consistent prefixes)
-
-**Research flag:** Standard patterns, skip research-phase. MCP SDK well-documented, existing tool patterns established.
-
-### Phase 4: Testing & Documentation
-**Rationale:** Comprehensive testing validates all interfaces work correctly and consistently. JSON output testing particularly important since it's machine-consumed.
-
-**Delivers:**
-- JSON output tests for all 18 CLI commands
-- MCP tool tests for all 19 tools
-- Integration tests for CLI → REST → Service flow
-- MCP inspector validation (no stdout pollution)
-- Updated documentation for new commands/tools
-
-**Avoids (from PITFALLS.md):**
-- Pitfall 9: No JSON test coverage (via dedicated test suite)
-- Verification checklist ensures all architectural boundaries respected
-
-**Research flag:** Standard patterns, skip research-phase. Testing patterns established in existing codebase.
+### Phase 10: Cross-Platform Installer Scripts
+**Rationale:** Skills exist but users can't use them without installation. Installer complexity high due to cross-platform requirements, MCP config merging, and environment variable handling.
+**Delivers:** Bash installer (Linux/macOS), PowerShell installer (Windows), both with dependency verification, config merging, API key generation, connectivity testing.
+**Addresses:** Table stakes features (MCP auto-configuration, env var setup, connectivity test, backup & rollback), differentiators (config validation, health check).
+**Avoids:** Pitfall 3 (relative paths) by computing absolute paths; Pitfall 4 (shell detection) by checking `$SHELL`; Pitfall 5 (execution policy) by documenting bypass; Pitfall 6 (env var persistence) by writing to MCP config `env` section.
+**Uses:** Bash/PowerShell from STACK.md, installer architecture from ARCHITECTURE.md (detect, verify, build, copy, configure, test).
 
 ### Phase Ordering Rationale
 
-- **Phase 1 first:** Infrastructure patterns affect all subsequent commands. Global options, output abstraction, and async handling must be correct before scaling to 18 commands. Retrofitting these is expensive and breaks existing usage.
+- **Phase 8 first:** Can't test skills against broken MCP server. Verification is prerequisite.
+- **Phase 9 second:** Skills require verified MCP server but are independent of installer. Can test manually before automation exists.
+- **Phase 10 last:** Installer automates what was tested manually in Phase 9. Can validate against working skills.
 
-- **Phases 2 & 3 parallel:** CLI and MCP are independent interfaces. Can develop simultaneously once Phase 1 infrastructure is ready. Both follow established patterns (CLI commands, MCP tools) with clear templates.
+**Dependency chain:** MCP verification → Skill authoring → Installer automation
 
-- **Phase 4 last:** Testing validates integration across all components. Cannot fully test until all commands/tools are implemented.
-
-- **Dependencies:** Phase 1 → (Phase 2 || Phase 3) → Phase 4. Sequential execution for infrastructure, parallel for interface expansion, final testing.
-
-**Architecture alignment:** Phase structure matches the existing layered architecture. Each phase respects the architectural boundaries: CLI commands stay as HTTP clients, MCP tools call services directly, no duplicate validation logic, centralized formatters.
-
-**Pitfall mitigation:** This ordering addresses 9 of 10 critical pitfalls before they can manifest. Phase 1 handles the 5 most severe architectural pitfalls. Phase 2 and 3 address naming and testing gaps.
+**Parallel work opportunity:** None. Each phase depends on previous completion for testing.
 
 ### Research Flags
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (CLI Infrastructure):** Commander.js and @clack/prompts have excellent documentation, existing error-handler.ts provides pattern
-- **Phase 2 (CLI Command Expansion):** Existing create.ts, list.ts, update.ts provide clear templates for new commands
-- **Phase 3 (MCP Tool Expansion):** Existing task-tools.ts, dependency-tools.ts, comment-tools.ts provide clear templates for project-tools.ts
-- **Phase 4 (Testing & Documentation):** Standard testing patterns, no novel integration challenges
+Phases likely needing deeper research during planning:
+- **Phase 8 (MCP Server Verification):** Deeper research needed — Must audit existing v1.1 server for console.log() usage, verify stdio transport compliance, may need refactoring if violations found. Research showed this is common mistake.
+- **Phase 10 (Windows Installer):** Deeper research needed — PowerShell execution policy handling, path separator issues, environment variable for GUI apps, testing on actual Windows (not WSL). More complex than Linux installer.
 
-**No phases need deeper research:** All work extends existing patterns with well-documented libraries. Research has already identified pitfalls and prevention strategies.
+Phases with standard patterns (skip research-phase):
+- **Phase 9 (Skill Authoring):** Standard patterns available — MCP tool usage well-documented in official skills repo and plugin-dev examples. Follow established markdown format with verified tool names.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All core technologies verified via official docs, version compatibility confirmed, existing implementation proven |
-| Features | HIGH | Feature priorities based on CLI best practices (clig.dev), competitor analysis (gh, taskwarrior), and MCP specification |
-| Architecture | HIGH | Existing codebase analysis reveals clean layered design, extension points clear, no architectural changes needed |
-| Pitfalls | HIGH | 10 critical pitfalls identified from Commander.js issues, MCP SDK docs, CLI best practices guides, all with prevention strategies |
+| Stack | HIGH | Official Claude Code docs, established MCP SDK, standard shell scripting. No new dependencies to evaluate. |
+| Features | HIGH | Clear differentiation from research: table stakes (10 core skills + installer), competitive (validation + health check), anti-features (GUI, auto-update, REST fallback). |
+| Architecture | HIGH | Builds on working v1.1 MCP server. Skill format and MCP integration documented in official sources. Standard installer patterns. |
+| Pitfalls | HIGH | All 7 critical pitfalls documented in official troubleshooting guides and community best practices. Prevention strategies verified. |
 
 **Overall confidence:** HIGH
 
-All research areas are grounded in official documentation, established best practices, or existing codebase analysis. No speculative recommendations. The existing architecture is sound and well-suited for this expansion.
-
 ### Gaps to Address
 
-**No significant gaps identified.** The research is comprehensive for the v1.1 milestone scope. Minor validation items:
+- **MCP server tool name verification:** Must run `/mcp` command in Claude Code to capture exact tool names before writing skills. Research showed naming convention but need to verify actual output format.
+- **Shell profile syntax for fish:** Research identified fish uses `set -Ux` instead of `export`, but installer may need to test actual fish configuration to verify syntax.
+- **Windows PowerShell version detection:** Need to verify how installer detects PowerShell 5.1 vs 7+ and warns users if version insufficient. Research showed `#Requires -Version 7.0` directive but fallback behavior unclear.
+- **Existing v1.1 server audit:** Must verify if current MCP server uses console.log() anywhere. Research flagged this as common mistake but unknown if present in this codebase.
 
-- **@clack/prompts integration:** While library is well-documented (v1.0.1, Jan 2026), test interactive prompt flow with TTY detection and Ctrl+C handling before committing to implementation pattern
-- **Commander.js global option inheritance:** Test `tasks --json list` vs `tasks list --json` early in Phase 1 to verify .optsWithGlobals() behavior matches research expectations
-- **MCP tool naming convention:** Confirm snake_case preference aligns with LLM agent expectations (research shows this is MCP community standard, but validate with actual Claude usage)
-
-All gaps are validation items, not knowledge gaps. Existing research provides clear implementation guidance.
+These gaps are minor and resolvable during phase execution through testing and verification, not blockers.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [Fastify Official Documentation](https://fastify.dev/benchmarks/) - Performance benchmarks, v5 features, plugin architecture
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Official repository, v1.x production status, tool registration patterns
-- [Commander.js Official Repository](https://github.com/tj/commander.js) - Subcommand documentation, global options, async handlers
-- [Model Context Protocol Specification (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25) - Tool naming format, schema validation requirements
-- [Node.js SQLite Module](https://nodejs.org/api/sqlite.html) - Native support status in v22.5.0+
-- [TypeScript 5.7+ Documentation](https://www.typescriptlang.org/docs/) - Native Node.js execution, module resolution
-- [@clack/prompts npm](https://www.npmjs.com/package/@clack/prompts) - Version 1.0.1 verified, API documentation, bundle size
+- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills) — Skill format, frontmatter, tool references
+- [Connect to local MCP servers - Model Context Protocol](https://modelcontextprotocol.io/docs/develop/connect-local-servers) — MCP configuration, env section, absolute paths
+- [STDIO Transport - MCP Framework](https://mcp-framework.com/docs/Transports/stdio-transport/) — stdout/stderr requirements, JSON-RPC protocol
+- [GitHub - anthropics/skills](https://github.com/anthropics/skills) — Official skill examples, tool naming patterns
+- [GitHub - PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) — PowerShell 7 cross-platform features
 
 ### Secondary (MEDIUM confidence)
-- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/) - Industry best practices for --json output, error handling, interactivity
-- [The Definitive Guide to Commander.js](https://betterstack.com/community/guides/scaling-nodejs/commander-explained/) - Patterns and best practices
-- [Commander.js GitHub Issues](https://github.com/tj/commander.js/issues) - Issue #476 (global options), #806 (async actions), #983 (organization), #1426 (option sharing)
-- [MCP Best Practices Guide](https://modelcontextprotocol.info/docs/best-practices/) - Architecture and implementation patterns
-- [MCP Error Handling Guide](https://mcpcat.io/guides/error-handling-custom-mcp-servers/) - Structured error response patterns
-- [SEP-986: Tool Name Format](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986) - Tool naming specification discussion
-- [MCP Server Naming Conventions](https://zazencodes.com/blog/mcp-server-naming-conventions) - Community standards for snake_case
-- [GitHub CLI Manual](https://cli.github.com/manual/) - Competitor analysis for subcommand patterns
-- [Taskwarrior Documentation](https://taskwarrior.org/docs/) - Competitor analysis for CLI UX patterns
-- [Node.js CLI Best Practices](https://github.com/lirantal/nodejs-cli-apps-best-practices) - JSON output, error handling, testing
-- Existing codebase analysis - src/cli/, src/mcp/, src/services/, src/api/
+- [PowerShell 7 Cross-Platform Scripting Tips and Traps](https://jdhitsolutions.com/blog/scripting/7361/powershell-7-cross-platform-scripting-tips-and-traps/) — Path handling, cmdlet usage
+- [Configuring MCP Tools in Claude Code - Scott Spence](https://scottspence.com/posts/configuring-mcp-tools-in-claude-code) — Config file locations, examples
+- [MCP Server Troubleshooting Guide 2025](https://www.mcpstack.org/learn/mcp-server-troubleshooting-guide-2025) — Common pitfalls, error codes
+- [Moving to zsh, part 2: Configuration Files](https://scriptingosx.com/2019/06/moving-to-zsh-part-2-configuration-files/) — Shell profile detection
 
 ### Tertiary (LOW confidence)
-- [npm-compare: Interactive prompts](https://npm-compare.com/enquirer,inquirer,prompts,readline-sync) - @clack/prompts selected based on bundle size and UX, but comparison data from older sources
+- [Claude Skills and CLAUDE.md: a practical 2026 guide](https://www.gend.co/blog/claude-skills-claude-md-guide) — Community guide, supplemental examples
+- [Ultimate Guide to Claude MCP Servers & Setup | 2026](https://generect.com/blog/claude-mcp/) — Community tutorial, installation patterns
 
 ---
 *Research completed: 2026-02-13*

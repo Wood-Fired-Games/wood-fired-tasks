@@ -1,410 +1,306 @@
 # Stack Research
 
-**Domain:** Task Tracking Service (REST API + MCP Server + CLI)
-**Researched:** 2026-02-13 (Updated for Phase 06-02: CLI Parity & Polish)
+**Domain:** Claude Code Skills & Cross-Platform Installer
+**Researched:** 2026-02-13
 **Confidence:** HIGH
 
 ## Recommended Stack
 
-### Core Technologies
+### Claude Code Skills (No New Dependencies)
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Node.js | 22 LTS | Runtime environment | Current LTS with native SQLite support (v22.5.0+), stable for production services. v22 is the recommended LTS version for 2025-2026. |
-| TypeScript | 5.7+ | Type-safe development | Industry standard for Node.js services. Version 5.7+ adds native Node.js TypeScript execution support with proper module resolution. |
-| Fastify | 5.7.4 | REST API framework | 2.7x faster than Express (45k vs 15k RPS), built-in schema validation, native TypeScript support, HTTP/2 ready. Modern architecture with plugin system. |
-| better-sqlite3 | 12.6.2 | SQLite driver | 5-10x faster than node-sqlite3, synchronous API perfect for local services, most mature SQLite library for Node.js. Handles tens of thousands of tasks efficiently. |
-| MCP TypeScript SDK | 1.x (latest) | MCP server implementation | Official SDK from Model Context Protocol team. v1.x is production-ready with optional middleware for Express/Hono/Node.js HTTP. v2 coming Q1 2026. |
-| Commander | 14.0.3 | CLI framework | Zero dependencies, clean syntax for Git-style subcommands, 12M weekly downloads. Perfect for `tasks project create` style commands. Supports command grouping natively. |
-| Zod | 3.x | Schema validation | TypeScript-first with automatic type inference, required by MCP SDK, zero dependencies. Keeps types and validation in sync. |
+| Markdown | N/A | Skill file format | Official Claude Code skill format — YAML frontmatter + markdown content |
+| YAML | N/A | Skill metadata | Standard frontmatter format for Claude Code skills |
+| Bash | N/A | Dynamic context injection | `!`command`` syntax for live data insertion into skills |
 
-### Supporting Libraries
+**Rationale:** Claude Code skills are markdown files with YAML frontmatter. No npm dependencies needed — they're static files that Claude Code reads directly from `~/.claude/commands/tasks/` or `~/.claude/skills/tasks/`. The existing MCP tools become available to skills through Claude's tool invocation system.
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| Pino | 9.x | Structured logging | Fast (5x faster than Winston), JSON output, low overhead. Perfect for production services. |
-| dotenvx | latest | Environment configuration | Next-gen .env management with encryption, multi-environment support, cross-platform. Successor to dotenv. |
-| tsx | latest | TypeScript execution | 5-10x faster than ts-node for development, uses esbuild, integrated watch mode. Development only. |
-| Vitest | latest | Testing framework | Modern, fast, Vite-based. Better TypeScript support than Jest, compatible API for easy migration. |
-| ESLint | 9.x | Linting | Flat config system (2025 standard), TypeScript support via @typescript-eslint plugins. |
-| Prettier | 3.x | Code formatting | Industry standard formatter, integrates with ESLint via eslint-config-prettier. |
+### MCP Server Configuration (No New Dependencies)
 
-### CLI Enhancement Libraries (Phase 06-02)
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| JSON | N/A | MCP config format | Claude Desktop's native configuration format at `~/.config/Claude/claude_desktop_config.json` |
+| Node.js | Existing | MCP server runtime | Already used for Wood Fired Bugs MCP server via @modelcontextprotocol/sdk |
+| npx | Comes with Node | Server launcher | Standard launcher in Claude Desktop configs |
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| @clack/prompts | ^1.0.1 | Interactive CLI prompts | When required fields are missing from CLI commands. 80% smaller than alternatives, beautiful UX, full TypeScript/ESM support. |
-| chalk | 4.1.2 | Terminal colors | Already in use. v4 for CJS/ESM compatibility. Used for status/priority color-coding. |
-| cli-table3 | 0.6.5 | Table formatting | Already in use. Mature (19M+ weekly downloads), supports colors, word wrap, column sizing. |
+**Rationale:** MCP configuration uses JSON at a well-defined location. The Wood Fired Bugs MCP server is already built with @modelcontextprotocol/sdk v1.26.0 — no version changes needed. Configuration just registers the server with Claude Desktop.
 
-### Development Tools
+### Cross-Platform Installer Scripts
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| pnpm | Package manager | 70% disk space savings vs npm, fastest install times, monorepo-ready. Recommended for 2025. |
-| @tsconfig/node22 | TypeScript config base | Pre-configured tsconfig optimized for Node.js 22 with ESM support. |
-| systemd | Service management | Built into Ubuntu, more reliable than PM2 for single-service deployments, journalctl integration. |
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Bash | 4.0+ | Linux installer | Universal on Linux/macOS, handles symlinks, directory creation, config merging |
+| PowerShell | 7.0+ | Windows installer | Cross-platform PowerShell 7+ available on Windows 10/11, handles JSON manipulation |
+| jq | Latest | JSON config merging (Linux) | Industry standard for JSON manipulation in shell scripts |
+| Node.js | Existing | JSON parsing fallback | Already required for MCP server, can parse/merge JSON if jq unavailable |
+
+**Rationale:**
+- **Bash** is the standard for Linux scripting, pre-installed on all modern Linux distributions and macOS
+- **PowerShell 7+** is Microsoft's official cross-platform shell, recommended over older PowerShell 5.1 for better cross-platform compatibility
+- **jq** is the de facto standard for JSON manipulation in Bash, widely available via package managers
+- **Node.js** provides a fallback for JSON operations if jq is unavailable
 
 ## Installation
 
+**No new npm dependencies required.** The existing stack handles everything:
+
 ```bash
-# Initialize project with pnpm
-pnpm init
-
-# Core runtime dependencies
-pnpm add fastify better-sqlite3 @modelcontextprotocol/sdk commander zod pino @dotenvx/dotenvx
-
-# MCP middleware (choose based on integration pattern)
-pnpm add @modelcontextprotocol/node  # For standalone MCP server
-
-# CLI enhancement dependencies (Phase 06-02)
-pnpm add @clack/prompts chalk@4 cli-table3
-
-# Development dependencies
-pnpm add -D typescript @types/node @types/better-sqlite3
-pnpm add -D tsx vitest @vitest/ui
-pnpm add -D eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
-pnpm add -D prettier eslint-config-prettier eslint-plugin-prettier
-pnpm add -D @tsconfig/node22
-
-# Optional: Drizzle ORM if not using raw SQL
-pnpm add drizzle-orm
-pnpm add -D drizzle-kit
+# Already installed in package.json
+@modelcontextprotocol/sdk  # MCP server SDK
+commander                   # CLI framework (not needed for skills, but for installer CLI)
+chalk                       # Terminal colors (for installer feedback)
 ```
+
+**System dependencies for installers:**
+
+```bash
+# Linux (Ubuntu/Debian)
+sudo apt-get install jq  # Optional but recommended for JSON merging
+
+# Windows
+# PowerShell 7+ recommended (https://github.com/PowerShell/PowerShell)
+# Ships with Windows 10/11, or install via:
+winget install --id Microsoft.PowerShell --source winget
+```
+
+## Stack Patterns by Feature
+
+### Claude Code Skills
+
+**File Structure:**
+```
+~/.claude/commands/tasks/     # Legacy location (still works)
+~/.claude/skills/tasks/       # Recommended location
+  ├── SKILL.md                # Required: Main skill file
+  ├── templates/              # Optional: Templates for skill output
+  ├── examples/               # Optional: Example outputs
+  └── scripts/                # Optional: Helper scripts
+```
+
+**SKILL.md Format:**
+```markdown
+---
+name: skill-name
+description: What this skill does and when to use it
+disable-model-invocation: true  # Optional: prevent auto-invocation
+user-invocable: false           # Optional: hide from menu
+allowed-tools: Read, Grep       # Optional: restrict tools
+---
+
+# Skill Instructions
+
+Your instructions for Claude...
+
+$ARGUMENTS or $0, $1, $2 for positional arguments
+${CLAUDE_SESSION_ID} for session ID
+
+!`command` for dynamic context injection
+```
+
+**Discovery Hierarchy:**
+1. Enterprise (managed settings)
+2. Personal (`~/.claude/skills/`)
+3. Project (`.claude/skills/`)
+4. Plugins
+
+When names collide, higher priority wins. Skills take precedence over `.claude/commands/` files.
+
+### MCP Server Configuration
+
+**Config File Location:**
+```bash
+# Linux
+~/.config/Claude/claude_desktop_config.json
+
+# macOS
+~/Library/Application Support/Claude/claude_desktop_config.json
+
+# Windows
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+**Config Format:**
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/wood-fired-bugs/dist/mcp/index.js"
+      ],
+      "env": {
+        "WOOD_FIRED_BUGS_API_KEY": "your-api-key-here",
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+**Configuration Fields:**
+- `command`: Executable to run (node, npx, python, etc.)
+- `args`: Array of arguments (use absolute paths)
+- `env`: Environment variables (credentials, config)
+
+**Best Practices:**
+- Use absolute paths for reliability
+- Store credentials in `env` block
+- Server name becomes the identifier in Claude Desktop
+- Restart Claude Desktop after config changes
+
+### Cross-Platform Installer Scripts
+
+**Bash Pattern (Linux):**
+```bash
+#!/usr/bin/env bash
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Detect paths
+CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/Claude"
+CLAUDE_COMMANDS_DIR="$HOME/.claude/commands/tasks"
+CLAUDE_SKILLS_DIR="$HOME/.claude/skills/tasks"
+
+# Create directories
+mkdir -p "$CLAUDE_CONFIG_DIR"
+mkdir -p "$CLAUDE_SKILLS_DIR"
+
+# Copy skill files
+cp -r ./skills/* "$CLAUDE_SKILLS_DIR/"
+
+# Merge MCP config using jq
+if command -v jq &> /dev/null; then
+  jq -s '.[0] * .[1]' \
+    "$CLAUDE_CONFIG_DIR/claude_desktop_config.json" \
+    ./config/mcp-server-config.json \
+    > "$CLAUDE_CONFIG_DIR/claude_desktop_config.json.tmp"
+  mv "$CLAUDE_CONFIG_DIR/claude_desktop_config.json.tmp" \
+     "$CLAUDE_CONFIG_DIR/claude_desktop_config.json"
+else
+  # Fallback: use Node.js
+  node ./scripts/merge-config.js
+fi
+
+# Set executable permissions
+chmod +x "$CLAUDE_SKILLS_DIR/"**/*.sh 2>/dev/null || true
+
+echo "✓ Installation complete"
+echo "  Skills installed to: $CLAUDE_SKILLS_DIR"
+echo "  MCP server configured at: $CLAUDE_CONFIG_DIR/claude_desktop_config.json"
+echo ""
+echo "⚠ Restart Claude Desktop to load changes"
+```
+
+**PowerShell Pattern (Windows):**
+```powershell
+#!/usr/bin/env pwsh
+#Requires -Version 7.0
+
+$ErrorActionPreference = "Stop"
+
+# Detect paths (cross-platform PowerShell 7+ syntax)
+$ClaudeConfigDir = if ($IsWindows) {
+    "$env:APPDATA\Claude"
+} else {
+    "$HOME/.config/Claude"
+}
+
+$ClaudeSkillsDir = "$HOME\.claude\skills\tasks"
+
+# Create directories
+New-Item -ItemType Directory -Force -Path $ClaudeConfigDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ClaudeSkillsDir | Out-Null
+
+# Copy skill files
+Copy-Item -Recurse -Force ".\skills\*" $ClaudeSkillsDir
+
+# Merge MCP config using PowerShell
+$configPath = Join-Path $ClaudeConfigDir "claude_desktop_config.json"
+$newConfig = Get-Content ".\config\mcp-server-config.json" | ConvertFrom-Json
+
+if (Test-Path $configPath) {
+    $existingConfig = Get-Content $configPath | ConvertFrom-Json
+    # Merge mcpServers objects
+    $existingConfig.mcpServers.PSObject.Properties | ForEach-Object {
+        $newConfig.mcpServers | Add-Member -NotePropertyName $_.Name -NotePropertyValue $_.Value -Force
+    }
+}
+
+$newConfig | ConvertTo-Json -Depth 10 | Set-Content $configPath
+
+Write-Host "✓ Installation complete" -ForegroundColor Green
+Write-Host "  Skills installed to: $ClaudeSkillsDir"
+Write-Host "  MCP server configured at: $configPath"
+Write-Host ""
+Write-Host "⚠ Restart Claude Desktop to load changes" -ForegroundColor Yellow
+```
+
+**Key Cross-Platform Considerations:**
+- Use `[IO.Path]::PathSeparator` for path separators (`;` on Windows, `:` on Unix)
+- Check `$IsWindows`, `$IsLinux`, `$IsMacOS` for platform-specific logic
+- Avoid aliases (use `Copy-Item` not `cp`, `Get-ChildItem` not `ls`)
+- Use forward slashes in paths where possible (PowerShell handles both)
+- Test on actual target platforms — cross-platform doesn't mean write-once-run-anywhere
 
 ## Alternatives Considered
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Runtime | Node.js 22 | Bun, Deno | Node.js has mature ecosystem, native SQLite support, and better-sqlite3 compatibility. Bun/Deno lack MCP SDK maturity. |
-| API Framework | Fastify | Express | Express is 2.7x slower, lacks modern features (HTTP/2, native TypeScript), larger ecosystem but Fastify plugins cover needs. |
-| SQLite Driver | better-sqlite3 | node:sqlite, sqlite3 | node:sqlite is experimental (v1.1 stability). better-sqlite3 is proven, faster, and production-ready. |
-| ORM | Raw SQL/Drizzle | Prisma | Prisma 90% larger bundle, requires generation step, slower for SQLite. Drizzle is SQL-first with zero-overhead TypeScript. |
-| CLI Framework | Commander | Yargs | Commander has zero deps vs Yargs' 16. Commander's syntax cleaner for Git-style subcommands. Yargs better for complex validation but overkill here. |
-| TS Execution | tsx | ts-node | tsx 5-10x faster compilation via esbuild, better watch mode, same compatibility. ts-node slower due to tsc. |
-| Logger | Pino | Winston | Pino 5x faster, smaller bundle, structured JSON. Winston more customizable but unnecessary complexity. |
-| Validation | Zod | Joi | Zod TypeScript-native with type inference, required by MCP SDK. Joi JavaScript-first with less type safety. |
-| Package Manager | pnpm | npm, Yarn | pnpm 70% disk savings, fastest installs, monorepo-ready. npm bundled but slower/wasteful. Yarn PnP complex. |
-| Interactive Prompts | @clack/prompts | @inquirer/prompts, prompts | @clack/prompts is 80% smaller, simpler API, better UX, actively developed (v1.0.1 Jan 2026). Inquirer heavier, prompts less polished. |
-| Table Formatting | cli-table3 | table, console-table-printer | cli-table3 already integrated, 19M+ weekly downloads, feature-complete. No benefit to switching. |
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| Markdown skills in `~/.claude/` | Python/Node.js plugins | When skills need complex runtime logic or external dependencies |
+| JSON config merging | Manual user config | For single-user setups where automation isn't needed |
+| Bash (Linux) | Python installer | When Python is already required by the project |
+| PowerShell 7+ (Windows) | Batch scripts (.bat) | Never — batch scripts are legacy, PowerShell is the modern standard |
+| jq (JSON parsing) | Node.js scripts | When Node.js is already required (fallback in this project) |
+| `~/.claude/skills/` | `~/.claude/commands/` | Never for new projects — skills are the recommended approach |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| PM2 | Unnecessary complexity for single-service deployment. Adds another layer vs native systemd. | systemd with service file |
-| dotenv (classic) | Author recommends dotenvx for encryption, multi-env, better debugging. | @dotenvx/dotenvx |
-| node:sqlite | Still experimental (v1.1 stability), synchronous-only API may block future async patterns. | better-sqlite3 |
-| Express | 2.7x slower, missing modern features (HTTP/2, schema validation), stagnant development. | Fastify |
-| Jest | Slower than Vitest, requires more config for TypeScript/ESM, duplicates Vite pipeline. | Vitest |
-| ts-node | 5-10x slower compilation, poor watch mode, uses tsc instead of fast transpilers. | tsx |
-| @inquirer/prompts | Heavier bundle (~1MB vs 235kB), more complex API than @clack/prompts | @clack/prompts |
-| prompts (npm) | Less polished UX, no built-in cancellation handling | @clack/prompts |
-| enquirer | More mature but heavier, development slowed | @clack/prompts |
-| readline/readline-sync | Low-level, requires manual UX work | @clack/prompts |
-| table (npm) | Similar to cli-table3 but less popular (15M vs 19M downloads) | Keep cli-table3 |
-
-## Stack Patterns by Variant
-
-**For MCP Server Integration:**
-- Use `@modelcontextprotocol/node` middleware if MCP runs as separate endpoint
-- MCP SDK requires Zod for schema validation (already in dependencies)
-- Fastify plugin pattern allows clean separation of REST vs MCP routes
-
-**For SQLite Schema Management:**
-- Option 1: Raw SQL migrations (simple, direct, no dependencies)
-- Option 2: Drizzle Kit for migrations (TypeScript schemas, type-safe queries, minimal overhead)
-- Avoid Prisma: 90% larger bundle, slower SQLite performance, generation step friction
-
-**For Service Deployment:**
-- systemd service file for process management (native Linux, reliable restart policies)
-- Environment variables via dotenvx with encrypted .env files
-- Logs via journalctl (automatic with systemd, Pino JSON output integrates cleanly)
-
-**For Development Workflow:**
-- tsx for fast TypeScript execution with watch mode
-- Vitest for testing (faster than Jest, better TypeScript support)
-- ESLint flat config (2025 standard) + Prettier for code quality
-
-**For CLI Interactive Prompts (Phase 06-02):**
-- Use @clack/prompts for missing required fields
-- Pattern: Only prompt when CLI options are undefined
-- Group related prompts with `p.group()` for better UX
-- Handle Ctrl+C gracefully with `onCancel` handler
-
-**For CLI JSON Output (Phase 06-02):**
-- Add `--json` option to all commands
-- Use `console.log(JSON.stringify(data, null, 2))` for JSON output
-- Keep formatted table output as default (better human UX)
-- Standard CLI pattern used by git, docker, kubectl
-
-**For CLI Subcommand Organization (Phase 06-02):**
-- Group by feature: `project`, `dependency`, `comment`, `subtask`, `estimate`
-- Use Commander's `.addCommand()` for modular subcommand files
-- Pattern: `tasks project create`, `tasks dependency add`, etc.
-- Follows git-style conventions (git commit, git branch, etc.)
-
-## Implementation Patterns (CLI Enhancement)
-
-### 1. Interactive Prompts with @clack/prompts
-
-```typescript
-import * as p from '@clack/prompts';
-
-async function createTaskInteractive(options: Partial<CreateTaskOptions>) {
-  const result = await p.group(
-    {
-      title: () => options.title
-        ? Promise.resolve(options.title)
-        : p.text({
-            message: 'Task title:',
-            validate(value) {
-              if (value.length === 0) return 'Title is required';
-            }
-          }),
-      priority: () => options.priority
-        ? Promise.resolve(options.priority)
-        : p.select({
-            message: 'Priority:',
-            options: [
-              { value: 'urgent', label: 'Urgent' },
-              { value: 'high', label: 'High' },
-              { value: 'medium', label: 'Medium' },
-              { value: 'low', label: 'Low' },
-            ],
-            initialValue: 'medium',
-          }),
-    },
-    {
-      onCancel: () => {
-        p.cancel('Operation cancelled');
-        process.exit(0);
-      },
-    }
-  );
-
-  return result;
-}
-```
-
-**Why this pattern:**
-- Only prompts for missing fields (CLI options take precedence)
-- Validates input before proceeding
-- Handles Ctrl+C gracefully
-- Groups related prompts together for better UX
-
-### 2. JSON Output Flag
-
-```typescript
-// In command definition
-command
-  .option('--json', 'Output JSON instead of formatted tables')
-  .action(async (options) => {
-    const data = await fetchData();
-
-    if (options.json) {
-      console.log(JSON.stringify(data, null, 2));
-    } else {
-      console.log(formatAsTable(data));
-    }
-  });
-```
-
-**Why this pattern:**
-- Standard CLI convention (used by git, docker, kubectl, etc.)
-- `console.log()` is fine for JSON output (automatic newline is expected)
-- Use `JSON.stringify(data, null, 2)` for human-readable JSON
-- Use `JSON.stringify(data)` for machine-readable (compact) JSON
-
-### 3. Subcommand Organization
-
-```typescript
-// src/cli/commands/project/index.ts
-const projectCommand = new Command('project')
-  .description('Manage projects');
-
-projectCommand.addCommand(createProjectCommand);
-projectCommand.addCommand(listProjectsCommand);
-projectCommand.addCommand(updateProjectCommand);
-
-export { projectCommand };
-
-// src/cli/bin/tasks.ts
-program.addCommand(projectCommand);
-program.addCommand(dependencyCommand);
-program.addCommand(commentCommand);
-program.addCommand(subtaskCommand);
-program.addCommand(estimateCommand);
-```
-
-**Why this pattern:**
-- Modular: Each feature area has its own directory
-- Scalable: Easy to add new commands without modifying main file
-- Discoverable: `tasks project --help` shows project-specific commands
-- Follows git-style CLI conventions (git commit, git branch, etc.)
-
-### 4. Enhanced Table Formatting
-
-```typescript
-import Table from 'cli-table3';
-import chalk from 'chalk';
-
-const table = new Table({
-  head: [
-    chalk.bold('ID'),
-    chalk.bold('Title'),
-    chalk.bold('Status'),
-    chalk.bold('Priority'),
-  ],
-  style: {
-    head: [], // Disable default colors (use chalk instead)
-    border: ['gray'],
-  },
-  colWidths: [6, 50, 12, 10], // Fixed widths for consistency
-  wordWrap: true,
-});
-```
-
-**Why this pattern:**
-- cli-table3 already supports everything needed
-- Better column width configuration improves readability
-- Consistent with existing codebase
+| `.claude/commands/` for new projects | Legacy location, skills have more features (supporting files, frontmatter controls) | `~/.claude/skills/` |
+| PowerShell 5.1 aliases in scripts | Platform-specific, non-portable | Full cmdlet names (`Copy-Item` not `cp`) |
+| Hardcoded paths in installers | Breaks on different systems | Environment variables, path detection |
+| Relative paths in MCP config | Claude Desktop may launch from different working directories | Absolute paths |
+| Git-committing `claude_desktop_config.json` | Contains user credentials, system-specific paths | Provide template/example config |
+| npm dependencies for skills | Skills are markdown files, not Node.js modules | Use dynamic context injection (`!`command``) |
+| Remote MCP servers for local tools | Adds network latency, auth complexity | Local stdio MCP servers |
 
 ## Version Compatibility
 
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| Fastify 5.x | Node.js 20+ | Requires Node.js 20 or above (our 22 LTS is compatible) |
-| better-sqlite3 12.x | Node.js 18-22 | Native bindings require build tools on first install |
-| MCP SDK 1.x | Zod 3+ | MCP SDK has peer dependency on Zod for schema validation |
-| Vitest | Node.js 18+ | Works with native Node.js test runner or standalone |
-| @tsconfig/node22 | TypeScript 5.5+ | Optimized for Node.js 22 with module: "NodeNext" |
-| pnpm 9.x | Node.js 18.12+ | Recommended Node.js version for package manager |
-| @clack/prompts 1.x | Node.js ESM | Full TypeScript support, ESM-first distribution |
-| chalk 4.x | Commander.js 14.x | v4 works with both CJS and ESM |
-| cli-table3 0.6.x | chalk 4.x | Accepts pre-colored strings from chalk |
+| Package | Version | Compatible With | Notes |
+|---------|---------|-----------------|-------|
+| @modelcontextprotocol/sdk | 1.26.0 | Claude Desktop 0.7+ | Existing version works, no upgrade needed |
+| Node.js | 18+ | MCP SDK 1.x | Already installed (required for better-sqlite3) |
+| PowerShell | 7.0+ | Windows 10/11, Linux, macOS | Required for cross-platform PowerShell features |
+| Bash | 4.0+ | All modern Linux/macOS | Universal, no compatibility concerns |
+| jq | 1.5+ | JSON config merging | Optional but recommended for Bash installer |
+| Claude Desktop | 0.7+ | MCP Protocol 2024-11-05 | Check via Claude menu → "Check for Updates..." |
 
-## TypeScript Configuration
-
-```json
-{
-  "extends": "@tsconfig/node22/tsconfig.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
-}
-```
-
-## ESLint + Prettier Configuration
-
-**Install:**
-```bash
-pnpm add -D eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin prettier eslint-config-prettier eslint-plugin-prettier
-```
-
-**eslint.config.js (Flat Config - 2025 Standard):**
-```javascript
-import tsPlugin from '@typescript-eslint/eslint-plugin';
-import tsParser from '@typescript-eslint/parser';
-import prettierConfig from 'eslint-config-prettier';
-
-export default [
-  {
-    ignores: ['dist/', 'node_modules/', '**/*.d.ts', 'coverage/']
-  },
-  {
-    files: ['**/*.ts'],
-    languageOptions: {
-      parser: tsParser,
-      parserOptions: {
-        project: './tsconfig.json'
-      }
-    },
-    plugins: {
-      '@typescript-eslint': tsPlugin
-    },
-    rules: {
-      ...tsPlugin.configs.recommended.rules,
-      ...prettierConfig.rules
-    }
-  }
-];
-```
-
-## Systemd Service Configuration
-
-**/etc/systemd/system/wood-fired-bugs.service:**
-```ini
-[Unit]
-Description=Wood Fired Bugs Task Tracking Service
-After=network.target
-
-[Service]
-Type=simple
-User=wfb
-WorkingDirectory=/opt/wood-fired-bugs
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /opt/wood-fired-bugs/dist/index.js
-Restart=on-failure
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=wfb
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**Enable and start:**
-```bash
-sudo systemctl enable wood-fired-bugs
-sudo systemctl start wood-fired-bugs
-sudo journalctl -u wood-fired-bugs -f  # Follow logs
-```
+**Critical Compatibility Notes:**
+- Claude Code skills format is stable as of 2026 — YAML frontmatter + markdown content
+- MCP config schema is stable — `command`, `args`, `env` structure unchanged
+- PowerShell 7+ is NOT the same as Windows PowerShell 5.1 — scripts must target 7+ for cross-platform
+- Skills discovery is hierarchical — enterprise > personal > project > plugins
 
 ## Sources
 
-### High Confidence (Official Documentation)
-- [Fastify Official](https://fastify.dev/benchmarks/) - Performance benchmarks, v5 features
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) - v1.x production status, v2 timeline
-- [Node.js SQLite Module](https://nodejs.org/api/sqlite.html) - Experimental status, v22.5.0+ availability
-- [TypeScript TSConfig](https://www.typescriptlang.org/tsconfig/) - Configuration reference
-- [better-sqlite3 GitHub](https://github.com/WiseLibs/better-sqlite3) - Performance claims, usage patterns
-- [Commander.js GitHub](https://github.com/tj/commander.js) - Official repository, subcommand documentation (HIGH confidence)
-- [@clack/prompts npm](https://www.npmjs.com/package/@clack/prompts) - Version 1.0.1 (verified 2026-02-13) (MEDIUM confidence)
+### Claude Code Skills
+- [Extend Claude with skills - Claude Code Docs](https://code.claude.com/docs/en/skills) — MEDIUM confidence (official docs)
+- [GitHub - anthropics/skills](https://github.com/anthropics/skills) — MEDIUM confidence (official examples)
+- [Claude Skills and CLAUDE.md: a practical 2026 guide](https://www.gend.co/blog/claude-skills-claude-md-guide) — LOW confidence (community guide)
+- [Inside Claude Code Skills: Structure, prompts, invocation](https://mikhail.io/2025/10/claude-code-skills/) — LOW confidence (blog post)
 
-### Medium Confidence (Verified comparisons, recent 2025 articles)
-- [Express or Fastify in 2025](https://medium.com/codetodeploy/express-or-fastify-in-2025-whats-the-right-node-js-framework-for-you-6ea247141a86)
-- [Fastify vs Express Performance](https://betterstack.com/community/guides/scaling-nodejs/fastify-express/)
-- [Pino vs Winston Comparison](https://betterstack.com/community/comparisons/pino-vs-winston/)
-- [Zod vs Joi Validation](https://betterstack.com/community/guides/scaling-nodejs/joi-vs-zod/)
-- [Commander vs Yargs](https://medium.com/@sohail_saifi/command-line-argument-parsing-yargs-vs-commander-and-why-you-should-care-e9c8dac1fcc5)
-- [tsx vs ts-node](https://betterstack.com/community/guides/scaling-nodejs/tsx-vs-ts-node/)
-- [Vitest vs Jest 2025](https://medium.com/@ruverd/jest-vs-vitest-which-test-runner-should-you-use-in-2025-5c85e4f2bda9)
-- [pnpm vs npm vs Yarn 2025](https://medium.com/@djantchengamo/npm-yarn-or-pnpm-in-2025-which-package-manager-should-you-choose-d1a351810fd4)
-- [dotenvx Next Generation](https://dotenvx.com/blog/2024/06/24/dotenvx-next-generation-config-management.html)
-- [systemd Node.js Best Practices](https://www.cloudbees.com/blog/running-node-js-linux-systemd)
-- [Drizzle vs Prisma SQLite](https://www.bytebase.com/blog/drizzle-vs-prisma/)
-- [Node.js 2025 TypeScript Setup](https://medium.com/@gabrieldrouin/node-js-2025-guide-how-to-setup-express-js-with-typescript-eslint-and-prettier-b342cd21c30d)
-- [Deeply nested subcommands in Node CLIs with Commander.js](https://maxschmitt.me/posts/nested-subcommands-commander-node-js) - Subcommand organization patterns
-- [Building Command-Line Interfaces Made Easy with Clack](https://www.jamesperkins.dev/post/cli-with-clack) - @clack/prompts examples
-- [cli-table3 vs alternatives comparison](https://npm-compare.com/ascii-table,blessed,cli-table,cli-table3,table) - Download statistics and feature comparison
-- [The Definitive Guide to Commander.js](https://betterstack.com/community/guides/scaling-nodejs/commander-explained/) - Best practices and patterns
-- [Console.log vs process.stdout](https://www.geeksforgeeks.org/difference-between-process-stdout-write-and-console-log-in-node-js/) - JSON output best practices
+### MCP Configuration
+- [Connect to local MCP servers - Model Context Protocol](https://modelcontextprotocol.io/docs/develop/connect-local-servers) — HIGH confidence (official docs)
+- [Getting Started with Local MCP Servers on Claude Desktop](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) — HIGH confidence (official support)
+- [Ultimate Guide to Claude MCP Servers & Setup | 2026](https://generect.com/blog/claude-mcp/) — LOW confidence (community guide)
 
-### Low Confidence (WebSearch only, older data)
-- [inquirer vs prompts comparison](https://npm-compare.com/enquirer,inquirer,prompts,readline-sync) - Interactive prompt library comparison (based on older data)
+### Cross-Platform Scripting
+- [PowerShell 7 Cross-Platform Scripting Tips and Traps](https://jdhitsolutions.com/blog/scripting/7361/powershell-7-cross-platform-scripting-tips-and-traps/) — MEDIUM confidence (expert blog)
+- [Tips for Writing Cross-Platform PowerShell Code](https://powershell.org/2019/02/tips-for-writing-cross-platform-powershell-code/) — MEDIUM confidence (community org)
+- [GitHub - PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) — HIGH confidence (official repo)
+- [Installing PowerShell on Linux in 2026](https://thelinuxcode.com/installing-powershell-on-linux-in-2026-a-practical-opinionated-walkthrough/) — MEDIUM confidence (current guide)
 
 ---
-*Stack research for: Wood Fired Bugs Task Tracking Service*
+*Stack research for: Claude Code Skills & Installer*
 *Researched: 2026-02-13*
-*Updated for Phase 06-02: CLI Parity & Polish*
-*Overall confidence: HIGH - All core technologies verified via official docs or recent 2025-2026 sources*
