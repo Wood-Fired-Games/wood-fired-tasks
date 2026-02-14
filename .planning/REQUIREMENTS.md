@@ -69,29 +69,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EVT-01 | - | Pending |
-| EVT-02 | - | Pending |
-| EVT-03 | - | Pending |
-| EVT-04 | - | Pending |
-| EVT-05 | - | Pending |
-| EVT-06 | - | Pending |
-| EVT-07 | - | Pending |
-| CLM-01 | - | Pending |
-| CLM-02 | - | Pending |
-| CLM-03 | - | Pending |
-| CLM-04 | - | Pending |
-| CLM-05 | - | Pending |
-| WFL-01 | - | Pending |
-| WFL-02 | - | Pending |
-| WFL-03 | - | Pending |
-| WFL-04 | - | Pending |
-| WFL-05 | - | Pending |
+| EVT-01 | Phase 14 | Pending |
+| EVT-02 | Phase 14 | Pending |
+| EVT-03 | Phase 14 | Pending |
+| EVT-04 | Phase 14 | Pending |
+| EVT-05 | Phase 14 | Pending |
+| EVT-06 | Phase 14 | Pending |
+| EVT-07 | Phase 14 | Pending |
+| CLM-01 | Phase 15 | Pending |
+| CLM-02 | Phase 15 | Pending |
+| CLM-03 | Phase 15 | Pending |
+| CLM-04 | Phase 15 | Pending |
+| CLM-05 | Phase 15 | Pending |
+| WFL-01 | Phase 16 | Pending |
+| WFL-02 | Phase 16 | Pending |
+| WFL-03 | Phase 16 | Pending |
+| WFL-04 | Phase 16 | Pending |
+| WFL-05 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17 (awaiting roadmap)
+- Mapped to phases: 17/17 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation*
