@@ -46,12 +46,13 @@ export async function createApp(dbPath?: string): Promise<App> {
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
 
-  // Create and start WorkflowEngine
+  // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(
     taskService,
     taskRepo,
     dependencyRepo,
-    eventBus
+    eventBus,
+    db
   );
   workflowEngine.start();
 
