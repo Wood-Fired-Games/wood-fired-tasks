@@ -165,6 +165,39 @@ describe('POST /api/v1/tasks/:id/claim', () => {
     expect(body.status).toBe('in_progress');
   });
 
+  it('exactly one of 20 concurrent claims succeeds with 200, rest get 409', async () => {
+    const task = createOpenTask('20-Agent Race');
+
+    // Fire 20 concurrent claim requests
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        server.inject({
+          method: 'POST',
+          url: `/api/v1/tasks/${task.id}/claim`,
+          headers,
+          payload: { assignee: `agent-${i}` },
+        })
+      )
+    );
+
+    const successes = results.filter((r) => r.statusCode === 200);
+    const conflicts = results.filter((r) => r.statusCode === 409);
+
+    // Exactly one wins, nineteen lose
+    expect(successes).toHaveLength(1);
+    expect(conflicts).toHaveLength(19);
+
+    // No SQLITE_BUSY or 500 errors
+    const errors = results.filter((r) => r.statusCode >= 500);
+    expect(errors).toHaveLength(0);
+
+    // Winner has correct state
+    const winner = JSON.parse(successes[0].body);
+    expect(winner.status).toBe('in_progress');
+    expect(winner.assignee).toBeTruthy();
+    expect(winner.claimed_at).toBeTruthy();
+  });
+
   it('returns 401 without X-API-Key header', async () => {
     const task = createOpenTask('Auth Required');
 
