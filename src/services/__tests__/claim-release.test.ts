@@ -101,6 +101,40 @@ describe('ClaimReleaseService', () => {
       const stale = service.findStaleClaims();
       expect(stale).toEqual([]);
     });
+
+    it('does NOT return done tasks even if claimed_at is stale', () => {
+      // Create a task that was claimed 40 min ago, then completed (done)
+      // but assignee/claimed_at were NOT cleared (the real-world scenario)
+      db.prepare(
+        `INSERT INTO tasks (
+          title, status, priority, project_id, assignee, created_by,
+          claimed_at, created_at, updated_at, version
+        ) VALUES (
+          'Completed Task', 'done', 'medium', ?, 'agent-1', 'creator',
+          datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
+          datetime('now', '-35 minutes'), 3
+        )`
+      ).run(projectId);
+
+      const stale = service.findStaleClaims();
+      expect(stale).toEqual([]);
+    });
+
+    it('does NOT return closed tasks even if claimed_at is stale', () => {
+      db.prepare(
+        `INSERT INTO tasks (
+          title, status, priority, project_id, assignee, created_by,
+          claimed_at, created_at, updated_at, version
+        ) VALUES (
+          'Closed Task', 'closed', 'medium', ?, 'agent-1', 'creator',
+          datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
+          datetime('now', '-35 minutes'), 4
+        )`
+      ).run(projectId);
+
+      const stale = service.findStaleClaims();
+      expect(stale).toEqual([]);
+    });
   });
 
   describe('releaseClaim', () => {
@@ -126,6 +160,26 @@ describe('ClaimReleaseService', () => {
 
       const released = service.releaseClaim(1);
       expect(released).toBe(false);
+    });
+
+    it('returns false for done tasks (defense-in-depth status guard)', () => {
+      db.prepare(
+        `INSERT INTO tasks (
+          title, status, priority, project_id, assignee, created_by,
+          claimed_at, created_at, updated_at, version
+        ) VALUES (
+          'Done Task', 'done', 'medium', ?, 'agent-1', 'creator',
+          datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
+          datetime('now', '-35 minutes'), 3
+        )`
+      ).run(projectId);
+
+      const released = service.releaseClaim(1);
+      expect(released).toBe(false);
+
+      // Verify status was NOT changed
+      const task = db.prepare('SELECT status FROM tasks WHERE id = 1').get() as any;
+      expect(task.status).toBe('done');
     });
   });
 
@@ -177,6 +231,31 @@ describe('ClaimReleaseService', () => {
 
       const released = service.sweep();
       expect(released).toBe(0);
+    });
+
+    it('does NOT release done tasks during sweep (end-to-end regression)', () => {
+      // Mix of stale in_progress (should release) and stale done (should NOT release)
+      createClaimedTask({ title: 'Stale In Progress', claimedMinutesAgo: 35, assignee: 'agent-1' });
+
+      // Manually create a done task with stale claim data
+      db.prepare(
+        `INSERT INTO tasks (
+          title, status, priority, project_id, assignee, created_by,
+          claimed_at, created_at, updated_at, version
+        ) VALUES (
+          'Stale But Done', 'done', 'medium', ?, 'agent-2', 'creator',
+          datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
+          datetime('now', '-35 minutes'), 3
+        )`
+      ).run(projectId);
+
+      const released = service.sweep();
+      expect(released).toBe(1); // Only the in_progress task
+
+      // Verify done task was NOT touched
+      const doneTask = db.prepare('SELECT * FROM tasks WHERE title = ?').get('Stale But Done') as any;
+      expect(doneTask.status).toBe('done');
+      expect(doneTask.assignee).toBe('agent-2');
     });
   });
 

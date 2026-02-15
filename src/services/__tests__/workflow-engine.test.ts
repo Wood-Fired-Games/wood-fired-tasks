@@ -4,6 +4,7 @@ import { TaskService } from '../task.service.js';
 import { DependencyService } from '../dependency.service.js';
 import { ProjectService } from '../project.service.js';
 import { WorkflowEngine } from '../workflow-engine.js';
+import { ClaimReleaseService } from '../claim-release.service.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { DependencyRepository } from '../../repositories/dependency.repository.js';
 import { eventBus } from '../../events/event-bus.js';
@@ -606,6 +607,39 @@ describe('WorkflowEngine', () => {
       }).not.toThrow();
 
       expect(taskService.getTask(emptyParent.id).status).toBe('done');
+    });
+  });
+
+  describe('regression: completed tasks immune to stale claim sweep', () => {
+    it('task completed via workflow auto-complete is not reverted by claim release', () => {
+      // This tests the full lifecycle:
+      // 1. Agent claims task (in_progress + assignee + claimed_at)
+      // 2. Agent completes task (done, but assignee/claimed_at persist)
+      // 3. Stale claim sweep runs but should NOT touch done task
+
+      const parent = createTask('Parent Task');
+      const child = createTask('Child Task', parent.id);
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
+      engine.start();
+
+      // Simulate agent claiming child task
+      taskService.claimTask(child.id, 'test-agent');
+
+      // Agent marks child done (triggers parent auto-complete)
+      taskService.updateTask(child.id, { status: 'done' });
+
+      expect(taskService.getTask(child.id).status).toBe('done');
+      expect(taskService.getTask(parent.id).status).toBe('done');
+
+      // Now simulate stale claim sweep (with 0 minute timeout so everything is "stale")
+      const claimService = new ClaimReleaseService(db, 0);
+      const released = claimService.sweep();
+
+      // Nothing should be released -- both tasks are done
+      expect(released).toBe(0);
+      expect(taskService.getTask(child.id).status).toBe('done');
+      expect(taskService.getTask(parent.id).status).toBe('done');
     });
   });
 });
