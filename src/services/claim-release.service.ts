@@ -28,6 +28,7 @@ export class ClaimReleaseService {
       `SELECT id, assignee, claimed_at FROM tasks
        WHERE assignee IS NOT NULL
          AND claimed_at IS NOT NULL
+         AND status = 'in_progress'
          AND claimed_at <= datetime('now', ?)
          AND updated_at <= datetime('now', ?)`
     ).all(cutoff, cutoff) as Array<{ id: number; assignee: string; claimed_at: string }>;
@@ -42,7 +43,7 @@ export class ClaimReleaseService {
       `UPDATE tasks
        SET assignee = NULL, status = 'open', claimed_at = NULL,
            version = version + 1, updated_at = datetime('now')
-       WHERE id = ? AND assignee IS NOT NULL`
+       WHERE id = ? AND assignee IS NOT NULL AND status = 'in_progress'`
     ).run(taskId);
     return info.changes > 0;
   }
