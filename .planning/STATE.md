@@ -107,19 +107,17 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Completed Phase 16 Plan 03 (Transaction Atomicity + Edge Cases). Added db.transaction() wrapping for atomic cascade rollback and 6 edge case tests. Phase 16 COMPLETE. All v1.3 plans executed.
+Quick Task 4: Fixed stale claim sweep reverting done/closed tasks to open. Added `AND status = 'in_progress'` to both findStaleClaims() and releaseClaim() SQL queries. Deployed to production, verified fix against running service. 518 tests passing.
 
 **What's Next:**
 v1.3 milestone closure / human verification of end-to-end workflow automation.
 
 **Context for Next Session:**
-- Phase 16 Plan 03 COMPLETE: Transaction atomicity + edge case tests
-- All 12/12 v1.3 plans executed across 3 phases (14, 15, 16)
-- WorkflowEngine cascade operations are now atomic (db.transaction wrapping)
-- CascadeError tracking ensures errors propagate through EventBus error isolation
-- 20 workflow engine tests, 513 total tests passing
-- Zero TypeScript errors, zero regressions
-- v1.3 milestone ready for closure pending human verification
+- Quick Task 4 COMPLETE: Stale claim sweep bug fixed and deployed
+- ClaimReleaseService now only sweeps in_progress tasks
+- 5 new regression tests, 518 total tests passing
+- Fix deployed to /opt/wood-fired-bugs and service restarted
+- All changes pushed to origin/main
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
