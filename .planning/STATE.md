@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-14T16:45:59Z
+**Last Updated:** 2026-02-15T00:30:00Z
 
 ## Project Reference
 
@@ -34,7 +34,7 @@ v1.3 ████████████████████ 100% (3/3 phas
 - Phases: 3 (14-16)
 - Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
 - Plans: 12/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE, Phase 16: 3/3 COMPLETE)
-- Tests: 513 passing (0 failing)
+- Tests: 518 passing (0 failing)
 
 ## Accumulated Context
 
@@ -78,6 +78,12 @@ None (roadmap approved, awaiting plan-phase execution).
 ### TODOs
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 4 | Investigate and fix tasks losing state - completed tasks reverting to open | 2026-02-15 | 9d07d27 | [4-investigate-and-fix-tasks-losing-state-c](./quick/4-investigate-and-fix-tasks-losing-state-c/) |
 
 ### Recent Completions
 
