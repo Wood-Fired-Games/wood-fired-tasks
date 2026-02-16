@@ -1,79 +1,49 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-15T00:30:00Z
+**Last Updated:** 2026-02-16
 
 ## Project Reference
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** v1.3 Multi-Agent Coordination — Enable AI-driven multi-agent task orchestration with real-time event streaming, workflow automation, and atomic task claiming.
+**Current Focus:** Planning next milestone
 
 ## Current Position
 
-**Milestone:** v1.3 Multi-Agent Coordination
-**Phase:** 16 - Workflow Automation
-**Plan:** 03 (3/3 plans complete)
-**Status:** v1.3 milestone complete
+**Milestone:** v1.3 Multi-Agent Coordination — COMPLETE
+**Status:** Between milestones
 
 **Progress Bar:**
 ```
-v1.0 ████████████████████ 100% (6/6 phases complete)
-v1.1 ████████████████████ 100% (4/4 phases complete)
-v1.2 ████████████████████ 100% (3/3 phases complete)
-v1.3 ████████████████████ 100% (3/3 phases, 12/12 plans complete)
+v1.0 ████████████████████ 100% (6/6 phases, 13 plans) — shipped 2026-02-13
+v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
+v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
+v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
 ```
 
 ## Performance Metrics
 
-**Previous Milestones:**
-- v1.0 MVP: 6 phases, 13 plans, shipped 2026-02-13 (386 tests passing)
-- v1.1 Interface Parity & CLI Polish: 4 phases, 10 plans, shipped 2026-02-13 (same day)
-- v1.2 Claude Code Skills & Installer: 3 phases, 7 plans, shipped 2026-02-14
+**All Milestones:**
+- v1.0 MVP: 6 phases, 13 plans, shipped 2026-02-13 (386 tests)
+- v1.1 Interface Parity & CLI Polish: 4 phases, 10 plans, shipped 2026-02-13 (357 tests)
+- v1.2 Claude Code Skills & Installer: 3 phases, 7 plans, shipped 2026-02-14 (386 tests)
+- v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 
-**Current Milestone:**
-- Phases: 3 (14-16)
-- Requirements: 17 total (EVT: 7, CLM: 5, WFL: 5)
-- Plans: 12/12 completed (Phase 14: 4/4 COMPLETE, Phase 15: 3/3 COMPLETE, Phase 16: 3/3 COMPLETE)
-- Tests: 518 passing (0 failing)
+**Current:** 518 tests passing (47 test files), 19,618 LOC TypeScript, 127 files
 
 ## Accumulated Context
 
 ### Key Decisions
 
-| Decision | Rationale | Phase |
-|----------|-----------|-------|
-| @fastify/sse over WebSocket | Official Fastify plugin, simpler server→agent push, sufficient for notifications | 14 |
-| Native EventEmitter over external pub/sub | Zero dependencies, TypeScript generics since @types/node July 2024, follows existing patterns | 14 |
-| Wrap handlers in try/catch for error isolation | Prevents one subscriber from crashing EventBus or blocking other subscribers | 14-01 |
-| Define task.claimed type but defer emission to Phase 15 | Type safety now, implementation when atomic claim endpoint exists | 14-01 |
-| MCP resource (not tool) for SSE discovery | SSE streams are long-lived connections; resource provides discovery docs, not streaming | 14-04 |
-| Optimistic locking with version field | Better for LAN latency + SQLite WAL mode than pessimistic row locks | 15 |
-| BEGIN IMMEDIATE for claims | Acquire write lock early, avoid transaction upgrade SQLITE_BUSY | 15 |
-| CAS with version column for atomic claim | Prevents double-claim without row locks, clear error messages | 15-01 |
-| Service pre-validates before CAS attempt | Returns clear errors for status/assignee conflicts before hitting DB | 15-01 |
-| Idempotency keys in SQLite with 24h TTL | Simple approach, no external cache needed, periodic cleanup | 15-02 |
-| Stale detection via claimed_at AND updated_at | Activity on task resets staleness clock, prevents false release | 15-02 |
-| BusinessError maps to 409 for claim conflicts | Clearer HTTP semantics for concurrent claim operations | 15-02 |
-| Event-driven workflow triggers | Decouple SSE from automation, EventBus enables parallel development | 16 |
-| Reuse TaskResponse for claim (no new CLI type) | Claim returns updated task, identical to TaskResponse shape | 15-03 |
-| MCP claim_task validates assignee z.string().min(1).max(100) | Catch invalid assignee at tool level before hitting service | 15-03 |
-| Max cascade depth = 5 levels | Prevent infinite loops from circular task hierarchies | 16 |
-| Cascade depth counts auto-completions only | Intermediate open->in_progress transitions should not consume depth budget | 16-01 |
-| Two-step transition for open parents | open cannot go directly to done; workflow handles open->in_progress->done | 16-01 |
-| Stop app WorkflowEngine in test beforeEach | createApp auto-starts engine; tests creating their own need isolation | 16-02 |
-| Auto-unblock participates in cascade depth | Unblock emits events that could trigger further workflow; depth prevents loops | 16-02 |
-| Auto-unblock only for blocked status tasks | Tasks in other statuses should not be modified when dependency resolves | 16-02 |
-| Wrap cascade at depth 0 in db.transaction() | Atomic rollback for crash safety; nested repo calls become savepoints | 16-03 |
-| Track cascadeError internally for EventBus bypass | EventBus wraps handlers in try/catch; internal tracking ensures rollback | 16-03 |
-| Add db as 5th WorkflowEngine constructor param | Minimal API change; db already available at all construction sites | 16-03 |
+See `.planning/PROJECT.md` Key Decisions table for full history.
 
 ### Open Questions
 
-None (research completed, all architectural decisions made).
+None.
 
 ### Blockers
 
-None (roadmap approved, awaiting plan-phase execution).
+None.
 
 ### TODOs
 
@@ -87,37 +57,25 @@ None.
 
 ### Recent Completions
 
-- [x] Phase 16 Plan 03 complete (2026-02-14) — Transaction atomicity + edge case tests (242s, 6 new tests, 513 total)
-- [x] Phase 16 COMPLETE (2026-02-14) — All 3 plans executed, 5/5 WFL requirements satisfied
-- [x] Phase 16 Plan 02 complete (2026-02-14) — Dependency auto-unblock + app lifecycle wiring (233s, 7 new tests, 507 total)
-- [x] Phase 16 Plan 01 complete (2026-02-14) — WorkflowEngine parent auto-complete with cascade depth (248s, 7 new tests, 500 total)
-- [x] Phase 15 VERIFIED (2026-02-14) — 5/5 success criteria passed, 20-agent concurrency test added (493 total passing)
-- [x] Phase 15 Plan 03 complete (2026-02-14) — MCP claim_task tool + CLI tasks claim command (227s, 13 new tests, 492 total)
-- [x] Phase 15 Plan 02 complete (2026-02-14) — REST claim endpoint with idempotency + auto-release (277s, 26 new tests, 479 total)
-- [x] Phase 15 Plan 01 complete (2026-02-14) — Atomic claim core with CAS + BEGIN IMMEDIATE (206s, 10 new tests, 453 total)
-- [x] Phase 14 COMPLETE (2026-02-14) — SSE Event Infrastructure fully operational (4 plans, 56 tests, 443 total passing)
-- [x] Phase 14 Plan 04 complete (2026-02-14) — MCP events resource for SSE stream discovery (141s, 9 new tests)
-- [x] Phase 14 Plan 03 complete (2026-02-14) — SSE endpoint with connection management (787s, 22 new tests)
-- [x] Phase 14 Plan 02 complete (2026-02-14) — Service integration with EventBus (399s, 17 new tests)
-- [x] Phase 14 Plan 01 complete (2026-02-14) — EventBus foundation with TDD (127s, 8 tests)
-- [x] v1.3 milestone research completed (2026-02-14) — identified 10 critical pitfalls with prevention strategies
-- [x] v1.3 roadmap created (2026-02-14) — 3 phases covering 17 requirements with 100% coverage
-- [x] Requirement traceability mapped (2026-02-14) — EVT→14, CLM→15, WFL→16
+- [x] v1.3 milestone archived (2026-02-16)
+- [x] Quick Task 4: Fixed stale claim sweep bug (2026-02-15) — 5 new regression tests, 518 total
+- [x] v1.3 Multi-Agent Coordination shipped (2026-02-14) — 3 phases, 12 plans, 17/17 requirements
 
 ## Session Continuity
 
 **What Just Happened:**
-Quick Task 4: Fixed stale claim sweep reverting done/closed tasks to open. Added `AND status = 'in_progress'` to both findStaleClaims() and releaseClaim() SQL queries. Deployed to production, verified fix against running service. 518 tests passing.
+Completed v1.3 milestone archival. Audit passed (17/17 requirements, 3/3 phases, 8/8 integrations, 4/4 E2E flows). PROJECT.md updated, STATE.md cleaned up for next milestone.
 
 **What's Next:**
-v1.3 milestone closure / human verification of end-to-end workflow automation.
+`/gsd:new-milestone` to plan v1.4 or next version.
 
 **Context for Next Session:**
-- Quick Task 4 COMPLETE: Stale claim sweep bug fixed and deployed
-- ClaimReleaseService now only sweeps in_progress tasks
-- 5 new regression tests, 518 total tests passing
-- Fix deployed to /opt/wood-fired-bugs and service restarted
-- All changes pushed to origin/main
+- v1.3 COMPLETE and archived to .planning/milestones/
+- 518 tests passing, zero TypeScript errors
+- Quick Task 4 bugfix deployed to production
+- Git tag v1.3 exists
+- REQUIREMENTS.md deleted (fresh one for next milestone)
+- Ready for `/gsd:new-milestone`
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
