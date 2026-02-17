@@ -253,3 +253,350 @@ npm install @fastify/sse
 ---
 *Stack research for: Wood Fired Bugs multi-agent coordination*
 *Researched: 2026-02-14*
+
+---
+
+# Stack Research — Hardening & Polish Milestone
+
+**Domain:** Node.js/TypeScript REST API with SQLite (Hardening Phase)
+**Researched:** 2026-02-17
+**Confidence:** HIGH
+
+## Executive Summary
+
+For a hardening/polish milestone on the existing Node.js/TypeScript/Fastify/SQLite service, this research recommends focused additions in five areas: error handling standardization, performance profiling, testing depth (mutation + property-based), local metrics collection, and logging enhancement. All recommendations prioritize lightweight, local-appropriate tools over heavy APM services.
+
+The existing stack (Fastify v5, better-sqlite3, Vitest) is solid and requires only targeted additions, not replacements.
+
+---
+
+## Recommended Stack Additions
+
+### 1. Error Handling Improvements
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `@fastify/sensible` | ^6.0.4 | HTTP error constructors + utilities | Provides standard HTTP error responses, reply decorators (`reply.notFound()`), and async/await wrapper (`fastify.to()`) |
+| `@fastify/error` | ^4.2.0 | Custom error factory | Used internally by Fastify; create custom error constructors with codes, message interpolation, and cause chaining |
+
+**Rationale:** `@fastify/sensible` gives you battle-tested HTTP error handling with minimal configuration. `@fastify/error` is essential for creating domain-specific errors that integrate cleanly with Fastify's error handling lifecycle. Both are official Fastify packages with 4.9M+ weekly downloads combined.
+
+**Integration with existing Fastify:**
+
+```typescript
+import sensible from '@fastify/sensible';
+import { fastify } from 'fastify';
+
+const app = fastify();
+await app.register(sensible);
+
+// Now available:
+// - reply.notFound(), reply.badRequest(), etc.
+// - fastify.httpErrors.createError()
+// - fastify.to(promise) for async/await error handling
+```
+
+---
+
+### 2. Performance Profiling Tools
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `0x` | ^6.0.0 | Quick flamegraph generation | Single-command CPU profiling (`0x server.js`); 76K+ weekly downloads; minimal overhead |
+| `clinic` | ^13.0.0 | Comprehensive profiling suite | NearForm's suite: Doctor (health check), Flame (CPU), Bubbleprof (async), HeapProfiler (memory) |
+
+**Rationale:** `0x` is the fastest path to actionable CPU insights. `clinic` provides depth when you need holistic analysis. Both use native V8 profiling, avoiding instrumentation overhead.
+
+**When to use each:**
+- **0x**: Quick CPU hotspot identification, CI performance regression checks
+- **Clinic Doctor**: Event loop lag, memory leaks, general health check
+- **Clinic Flame**: Deep CPU analysis when 0x shows a hotspot
+- **Clinic HeapProfiler**: Memory leak investigation
+
+**Example integration:**
+
+```json
+// package.json scripts
+{
+  "profile:cpu": "0x -- node dist/api/start.js",
+  "profile:health": "clinic doctor -- node dist/api/start.js",
+  "profile:heap": "clinic heapprofiler -- node dist/api/start.js"
+}
+```
+
+---
+
+### 3. Testing Improvements
+
+#### Mutation Testing
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `@stryker-mutator/core` | ^9.5.1 | Mutation testing | Verifies test quality by mutating code; Vitest v4 support added in v9.4.0; fixtures support in v9.5.1 |
+| `@stryker-mutator/vitest-runner` | ^9.5.1 | Vitest integration | Official runner; incremental mode for faster iterations |
+
+**Rationale:** With 518 existing tests, mutation testing validates that tests actually catch bugs, not just exercise code. Stryker v9.x has full Vitest v4 compatibility and incremental analysis for reasonable CI times.
+
+**Configuration:**
+
+```json
+// stryker.config.json
+{
+  "testRunner": "vitest",
+  "reporters": ["html", "clear-text", "progress"],
+  "concurrency": 4,
+  "incremental": true,
+  "mutate": ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/*.spec.ts"],
+  "coverageAnalysis": "perTest"
+}
+```
+
+#### Property-Based Testing
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `fast-check` | ^4.5.3 | Property-based testing | Generates hundreds of test cases automatically; finds edge cases; auto-shrinks failures; 8.4M weekly downloads |
+
+**Rationale:** Complements example-based tests by proving invariants hold across generated inputs. Excellent for testing parsers, validators, and business logic with complex input spaces.
+
+**Example:**
+
+```typescript
+import fc from 'fast-check';
+import { test, expect } from 'vitest';
+
+test('task status transitions are valid', () => {
+  fc.assert(
+    fc.property(
+      fc.oneof(fc.constant('open'), fc.constant('in_progress'), fc.constant('done')),
+      fc.oneof(fc.constant('open'), fc.constant('in_progress'), fc.constant('done')),
+      (from, to) => {
+        // Property: cannot transition from done to open
+        if (from === 'done') {
+          expect(() => transitionStatus(from, to)).toThrow();
+        }
+      }
+    )
+  );
+});
+```
+
+#### Coverage Tooling
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `@vitest/coverage-v8` | ^4.0.18 | Native V8 coverage | Vitest's recommended coverage provider; uses V8's built-in coverage (c8 deprecated) |
+
+**Rationale:** Vitest has deprecated `@vitest/coverage-c8` in favor of `@vitest/coverage-v8`. Use the v8 provider for accurate, low-overhead coverage with your existing Vitest setup.
+
+---
+
+### 4. Monitoring & Metrics (Local/LAN-Appropriate)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `prom-client` | ^15.1.3 | Prometheus metrics | 4.5M weekly downloads; exposes Node.js internals + custom metrics on `/metrics` endpoint; zero external dependencies |
+
+**Rationale:** For a local LAN service, skip heavy APM (DataDog, NewRelic). `prom-client` exposes metrics in Prometheus format that can be scraped by local Grafana or Prometheus instances. It collects default Node.js metrics (memory, CPU, event loop, GC) automatically.
+
+**Integration with Fastify:**
+
+```typescript
+import promClient from 'prom-client';
+
+// Collect default Node.js metrics
+promClient.collectDefaultMetrics();
+
+// Register metrics endpoint
+app.get('/metrics', async (req, reply) => {
+  reply.header('Content-Type', promClient.register.contentType);
+  return promClient.register.metrics();
+});
+
+// Custom application metrics
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5]
+});
+
+// Hook into Fastify lifecycle
+app.addHook('onResponse', async (request, reply) => {
+  httpRequestDuration.observe(
+    {
+      method: request.method,
+      route: request.routerPath,
+      status_code: reply.statusCode.toString()
+    },
+    reply.getResponseTime() / 1000
+  );
+});
+```
+
+---
+
+### 5. Logging Enhancements
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `pino` | ^9.6.0 | Structured logging | Fastify's built-in logger; 5-10x faster than Winston; structured JSON output; zero-cost log levels |
+
+**Rationale:** Fastify already uses `pino` internally. For a hardening milestone, ensure proper log levels, redaction of sensitive fields, and child loggers for request correlation. No new dependency needed.
+
+**Enhancement strategy:**
+
+```typescript
+// Configure redaction for sensitive fields
+const app = fastify({
+  logger: {
+    level: process.env.LOG_LEVEL || 'info',
+    redact: {
+      paths: ['req.headers.authorization', 'req.headers.cookie', 'password', 'token'],
+      remove: true
+    }
+  }
+});
+
+// Child loggers for request context
+app.addHook('onRequest', async (request) => {
+  request.log = request.log.child({ requestId: generateId() });
+});
+```
+
+---
+
+### 6. Code Quality & Security
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `knip` | ^5.44.0 | Unused dependency detection | Modern replacement for archived `depcheck`; TypeScript-native; monorepo support |
+| `npm audit` | Built-in | Security vulnerability scanning | Native npm capability; runs in CI |
+
+**Rationale:** `depcheck` was archived in June 2025. `knip` is the actively maintained successor with better TypeScript support. Use `npm audit` in CI for security scanning.
+
+**Integration:**
+
+```json
+// package.json scripts
+{
+  "lint:deps": "knip",
+  "audit": "npm audit",
+  "audit:fix": "npm audit fix"
+}
+```
+
+---
+
+## Installation Commands
+
+```bash
+# Error handling
+npm install @fastify/sensible@^6.0.4 @fastify/error@^4.2.0
+
+# Performance profiling (dev dependencies)
+npm install -D 0x@^6.0.0 clinic@^13.0.0
+
+# Testing improvements (dev dependencies)
+npm install -D @stryker-mutator/core@^9.5.1 @stryker-mutator/vitest-runner@^9.5.1
+npm install -D fast-check@^4.5.3
+npm install -D @vitest/coverage-v8@^4.0.18
+
+# Monitoring
+npm install prom-client@^15.1.3
+
+# Code quality (dev dependencies)
+npm install -D knip@^5.44.0
+```
+
+---
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | When to Use Alternative |
+|----------|-------------|-------------|------------------------|
+| Error handling | `@fastify/sensible` | `fastify-http-errors-enhanced` | Need custom error response formatting beyond HTTP standards |
+| Profiling | `0x` + `clinic` | `@platformatic/flame` | Want WebGL flamegraphs or production-safe signal-based profiling |
+| Mutation testing | Stryker | None (Stryker is standard) | N/A |
+| Property testing | `fast-check` | `jsverify` | `jsverify` has smaller bundle but less active maintenance |
+| Metrics | `prom-client` | `prometheus-gc-stats` | Only need GC metrics; want smaller dependency |
+| Coverage | `@vitest/coverage-v8` | `c8` directly | Not using Vitest; need standalone coverage tool |
+
+---
+
+## What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| DataDog/NewRelic APM agents | Heavy external dependencies; overkill for LAN service | `prom-client` + local Grafana |
+| Winston logging | Redundant with pino; slower | Enhance pino configuration |
+| `depcheck` | Archived June 2025; no longer maintained | `knip` |
+| `nyc` for coverage | Deprecated; V8 native coverage is standard | `@vitest/coverage-v8` |
+| Full ESLint overhaul | Project has zero TypeScript errors; diminishing returns | Focus on runtime quality (tests, profiling) |
+
+---
+
+## Version Compatibility Matrix
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `@fastify/sensible@^6.0.4` | `fastify@^5.x` | Already using Fastify v5.7.4 |
+| `@stryker-mutator/*@^9.5.1` | `vitest@^4.x` | Already using Vitest v4.0.18 |
+| `prom-client@^15.1.3` | Node.js >= 16 | Using modern Node.js |
+| `fast-check@^4.5.3` | TypeScript >= 5.0 | Already using TypeScript v5.9.3 |
+| `clinic@^13.0.0` | Node.js >= 16 | Dropped Node 14 support in v13 |
+
+---
+
+## Integration Points with Existing Stack
+
+### Fastify Integration
+- `@fastify/sensible` and `@fastify/error` register as standard Fastify plugins
+- `prom-client` metrics endpoint follows Fastify patterns
+- Pino logging enhancements use existing Fastify logger instance
+
+### SQLite/better-sqlite3 Integration
+- No additional dependencies needed for SQLite testing
+- In-memory `:memory:` databases for tests already supported
+
+### MCP Server Integration
+- Error handling from `@fastify/error` can be reused for MCP error responses
+- Structured logging applies to both REST API and MCP server
+
+### Vitest Integration
+- Stryker configured for Vitest runner
+- `fast-check` integrates via standard test assertions
+- Coverage via `@vitest/coverage-v8`
+
+---
+
+## Phase Ordering Recommendation
+
+Based on stack dependencies:
+
+1. **Error handling** (`@fastify/sensible`, `@fastify/error`) - Foundation for other improvements
+2. **Logging enhancements** (Pino configuration) - Enables better observability
+3. **Monitoring** (`prom-client`) - Baseline metrics before optimization
+4. **Performance profiling** (`0x`, `clinic`) - Now you can measure improvements
+5. **Testing improvements** (Stryker, fast-check) - Validate quality after foundation is solid
+6. **Code quality** (`knip`, audit) - Final polish
+
+---
+
+## Sources
+
+- [Fastify Sensible NPM](https://www.npmjs.com/package/@fastify/sensible) - v6.0.4, 289.7K weekly downloads
+- [Fastify Error NPM](https://www.npmjs.com/package/@fastify/error) - v4.2.0, 4.9M weekly downloads
+- [Stryker Releases](https://github.com/stryker-mutator/stryker-js/releases) - v9.5.1 with Vitest fixtures support
+- [fast-check NPM](https://www.npmjs.com/package/fast-check) - v4.5.3, 8.4M weekly downloads
+- [prom-client NPM](https://www.npmjs.com/package/prom-client) - v15.1.3, 4.5M weekly downloads
+- [0x NPM](https://www.npmjs.com/package/0x) - v6.0.0, 76.5K weekly downloads
+- [clinic NPM](https://www.npmjs.com/package/clinic) - v13.0.0
+- [c8 NPM](https://www.npmjs.com/package/c8) - v10.1.3
+- [Knip](https://knip.dev) - Modern replacement for depcheck
+- [depcheck GitHub](https://github.com/depcheck/depcheck) - Archived June 2025
+
+---
+
+*Stack research for: Wood Fired Bugs hardening & polish milestone*
+*Researched: 2026-02-17*

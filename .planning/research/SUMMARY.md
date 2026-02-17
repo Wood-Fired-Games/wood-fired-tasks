@@ -1,323 +1,244 @@
 # Project Research Summary
 
-**Project:** Wood Fired Bugs — Multi-Agent Coordination Features
-**Domain:** Real-time multi-agent task coordination (SSE streaming, workflow automation, atomic claiming)
-**Researched:** 2026-02-14
+**Project:** Wood Fired Bugs - Task Tracking Service
+**Domain:** Local Node.js/SQLite service hardening and polish milestone (v1.3+)
+**Researched:** 2026-02-17
 **Confidence:** HIGH
 
 ## Executive Summary
 
-This milestone adds real-time multi-agent coordination to the existing Wood Fired Bugs task management system. Research shows that for LLM agents running on a LAN coordinating via Fastify + SQLite, the winning approach is **minimal new dependencies** with native Node.js patterns. The critical insight: the existing stack already provides 90% of what's needed — only `@fastify/sse` is required as a new dependency. Workflow automation uses native EventEmitter with TypeScript generics (zero dependencies), and atomic task claiming leverages SQLite's existing WAL mode transactions with `BEGIN IMMEDIATE` for write lock acquisition.
+This research covers the hardening and polish phase for an existing task tracking service built on Fastify, SQLite (better-sqlite3), and native EventEmitter. The service is a single-user, local-first application running as a systemd-managed Node.js service with 518 passing tests. The key insight from this research is that **local service hardening is fundamentally different from cloud service hardening** — the focus must be on data safety, graceful restarts, and clear error messages rather than horizontal scaling, distributed tracing, or multi-region deployments.
 
-The recommended architecture follows an event-driven pattern where services emit domain events after successful state changes, decoupling real-time notifications (SSE) from workflow automation. This allows multiple agents to coordinate without polling while maintaining SQLite's transactional guarantees. The key architectural decision is using **optimistic locking with version fields** for task claiming rather than distributed locking, which is appropriate for LAN latency and SQLite's performance characteristics.
+The recommended approach is to add **minimal, high-value hardening** that enhances the existing architecture without over-engineering. This means focused additions in five areas: error handling standardization with `@fastify/sensible`, optional performance profiling with `0x` and `clinic`, testing depth through mutation testing (Stryker) and property-based testing (fast-check), local-appropriate metrics collection via `prom-client`, and logging enhancement using Pino's built-in capabilities. The existing stack is already well-architected — the hardening phase should build upon these foundations rather than replace them.
 
-The primary risks are **connection lifecycle management** (SSE memory leaks from uncleaned connections), **transaction visibility races** (events broadcast before WAL checkpoint makes data visible), and **workflow cascade atomicity** (parent/child updates in separate transactions creating inconsistent state). All are preventable with disciplined implementation: connection cleanup on all exit paths, small post-commit delays or embedded event payloads, and transactional boundaries around multi-step workflows. The research identified 10 critical pitfalls with concrete prevention strategies, all mapped to specific roadmap phases.
+The primary risks identified are **over-engineering** and **observability overhead**. Research shows that applying cloud-native patterns (Kubernetes-style health probes, OpenTelemetry auto-instrumentation, circuit breakers) to a local SQLite service adds complexity without benefit and can degrade performance. The mitigation strategy is to follow the principle of **layered enhancement, not replacement** — wrapping existing components through decorator patterns and using official Fastify plugins rather than custom implementations.
 
 ## Key Findings
 
-### Recommended Stack
+### Recommended Stack Additions
 
-The existing Fastify 5.7.4 + better-sqlite3 12.6.2 stack is **already optimized** for multi-agent coordination. Only one new production dependency is needed: `@fastify/sse` for Server-Sent Events. This official Fastify plugin provides native async iterator support, TypeScript types, backpressure handling, and Last-Event-ID replay with automatic connection lifecycle management.
+The existing stack (Fastify v5.7.4, better-sqlite3 v12.6.2, Vitest v4.0.18) requires only targeted additions, not replacements. All new dependencies are official Fastify packages or well-established tools with high weekly download counts.
 
-Workflow automation requires **no new dependencies** — native Node.js EventEmitter with TypeScript generics (available since @types/node July 2024) provides type-safe event emission with zero runtime overhead. For atomic task claiming, the existing better-sqlite3 configuration (WAL mode enabled, 5-second busy timeout, `db.transaction()` pattern already in use) provides everything needed. The key is using `BEGIN IMMEDIATE` transactions for claim operations to acquire the write lock early and fail fast under contention.
+**Core additions for hardening:**
+- **`@fastify/sensible@^6.0.4`** (289.7K weekly downloads): HTTP error constructors and reply decorators (`reply.notFound()`, `reply.badRequest()`) — provides battle-tested HTTP error handling with minimal configuration
+- **`@fastify/error@^4.2.0`** (4.9M weekly downloads): Custom error factory with codes, message interpolation, and cause chaining — integrates cleanly with Fastify's error handling lifecycle
+- **`0x@^6.0.0`** (76.5K weekly downloads): Single-command CPU flamegraph generation — fastest path to actionable CPU insights for local profiling
+- **`clinic@^13.0.0`**: NearForm's comprehensive profiling suite (Doctor, Flame, Bubbleprof, HeapProfiler) — for holistic analysis when 0x shows hotspots
+- **`@stryker-mutator/core@^9.5.1`**: Mutation testing with Vitest v4 support — validates that 518 existing tests actually catch bugs, not just exercise code
+- **`fast-check@^4.5.3`** (8.4M weekly downloads): Property-based testing for finding edge cases through generated inputs — complements example-based tests
+- **`prom-client@^15.1.3`** (4.5M weekly downloads): Prometheus metrics for local/LAN-appropriate monitoring — exposes Node.js internals + custom metrics without external APM dependencies
+- **`@vitest/coverage-v8@^4.0.18`**: Native V8 coverage provider — Vitest's recommended replacement for deprecated c8
+- **`knip@^5.44.0`**: Modern replacement for archived `depcheck` — detects unused dependencies with better TypeScript support
 
-**Core technologies:**
-- **`@fastify/sse` v0.4.0**: Server-Sent Events streaming — official Fastify plugin with clean Fastify 5.x integration, handles connection cleanup automatically
-- **Native EventEmitter with TypeScript generics**: Workflow automation pub/sub — zero dependencies, compile-time type safety, follows existing service pattern
-- **better-sqlite3 transactions with BEGIN IMMEDIATE**: Atomic claim protocol — existing WAL mode + version field for optimistic locking, no row-level locks needed
-
-**Integration simplicity:**
-- SSE registration: 2 lines in server.ts (`import` + `await server.register(fastifySSE)`)
-- Event emission: Services extend `EventEmitter<TaskEvents>` and call `this.emit('task.updated', event)` after successful updates
-- Atomic claiming: Add `version` column, implement `claimTask()` repository method using existing `db.transaction()` pattern with version check in WHERE clause
+**What NOT to add:** DataDog/NewRelic APM agents (overkill for LAN service), Winston logging (redundant with Pino), `depcheck` (archived June 2025), circuit breaker libraries (inappropriate for local SQLite), Redis cache layer (SQLite is already fast for local load).
 
 ### Expected Features
 
-Research identified a clear hierarchy of features: 6 table-stakes features for MVP (without these, multi-agent coordination feels broken), 5 competitive differentiators for v1.x (add value once core proven), and 4 v2+ features (nice-to-have, wait for usage patterns).
+**Table Stakes (Must-Have Reliability):**
+- Structured JSON logging with `NODE_ENV=production` handling — users expect correlatable logs for debugging
+- Health check endpoint with DB connectivity check (`SELECT 1`) — systemd needs to verify service health
+- Graceful shutdown with `forceCloseConnections: 'idle'` — SIGTERM should close connections cleanly
+- Connection timeouts (`connectionTimeout`, `requestTimeout`, `keepAliveTimeout`) — prevent hung requests
+- Database backup command using `VACUUM INTO` or `.backup()` API — single SQLite file needs periodic backup
+- Exit code standards (0/1/2 per sysexits.h) — scripts need to detect success/failure
+- Configuration validation at startup — fail fast on missing/bad env vars (`API_KEYS`, `DB_PATH`, `PORT`)
+- WAL mode maintenance — periodic `PRAGMA wal_checkpoint(TRUNCATE)` to prevent WAL file bloat
+- Process resource limits via systemd (`MemoryMax`, `CPUQuota`) — prevent runaway memory from affecting system
 
-**Must have (table stakes):**
-- **SSE Basic Event Streaming** — agents expect real-time updates without polling in 2026; eliminates 90% of API load from status checks
-- **Event Filtering by Project** — agents working on Project A don't want Project B noise; prevents cognitive overload and thundering herd
-- **Atomic Task Claiming** — two agents claiming same task = race condition disaster; critical for multi-agent reliability
-- **Claim Timeout/Auto-Release** — agent claims task then crashes = stuck forever; 30-minute TTL prevents "zombie" assignments
-- **Status Transition Triggers** — foundation for workflow automation; emit events when task moves open→in_progress→done
-- **Dependency Cascade Updates** — when task completes, auto-unblock dependents; removes manual coordination overhead
+**Differentiators (Polish That Improves Experience):**
+- **`tasks doctor` command** — self-service diagnostics (highest priority differentiator)
+- Request ID propagation across API/CLI/MCP layers — makes debugging multi-agent issues tractable
+- Event replay buffer (last 100 events in-memory) — SSE resilience for disconnected clients
+- CLI progress indicators for operations > 2s — immediate UX improvement for long operations
+- Colored CLI output consistency — visual scanning of task lists is faster
+- Task statistics command (`tasks stats`) — productivity metrics and insights
+- Database integrity check command (`tasks db-check`) — proactive corruption detection
+- Shell completions for bash/zsh — power user convenience
 
-**Should have (competitive):**
-- **Event Type Filtering** — subscribe to `task.updated` but not `task.created`; reduces bandwidth by 40-60%
-- **Event Replay from Last-Event-ID** — new agent gets history since checkpoint; EventSource spec supports this, server must buffer events
-- **Conditional Workflow Rules** — "if task urgent + unassigned, notify team"; requires validation that simple cascades work first
-- **Optimistic Locking with Retry** — fast-path assumes no conflict, handles collision gracefully; add after confirming pessimistic locking handles load
-- **Connection Backpressure Handling** — disconnect slow consumers before memory exhaustion; needed when scaling to 100+ agents
+**Anti-Features (Over-Engineering for Local Service):**
+- Rate limiting — single human + trusted agents; connection limits sufficient
+- Authentication frameworks beyond simple API keys — JWT/OAuth2 overkill for local service
+- Circuit breakers — no external dependencies to fail; Fastify timeout handling sufficient
+- Distributed tracing — single process; logs with request IDs sufficient
+- Prometheus metrics server with continuous scraping — log-based metrics sufficient
+- Database replication — single node; daily backups sufficient
+- RBAC / per-user permissions — single user system
+- Complex secrets management — `.env` file + systemd credentials sufficient
+- Horizontal scaling patterns — single machine service
 
-**Defer (v2+):**
-- **Load-Aware Task Distribution** — requires agent workload tracking and adaptive scheduling; complex heuristic, wait for bottleneck data
-- **Skill-Based Agent Routing** — agents declare capabilities, tasks route accordingly; need product-market fit first
-- **Workflow Undo/Rollback** — safety net but requires event sourcing architecture; major refactor, not essential for coordination
-- **Multi-Stream Multiplexing over HTTP/2** — optimization for >100 concurrent agents; premature for initial deployment
+### Architecture Integration
 
-**Anti-features identified (avoid):**
-- **WebSocket bidirectional streams** — overkill for server→agent notifications; use SSE for events + REST for commands
-- **Complex workflow DSL** — 78% of teams over-automate, debugging distributed workflows is nightmare; use predefined patterns, not Turing-complete scripts
-- **Distributed consensus for claims** — Paxos/Raft adds latency; overkill for single SQLite instance; optimistic locking sufficient for LAN
-- **Persistent task queues (Redis/RabbitMQ)** — complexity explosion for single-server system; atomic DB updates + SSE notification suffices
+The recommended hardening approach follows the **Decorator Pattern** — wrap or extend existing components rather than replace them. All hardening is additive; existing flows remain unchanged.
 
-### Architecture Approach
+**Major components and integration points:**
+1. **Rate Limiting Layer** — Fastify plugin registration (`@fastify/rate-limit`) with 100 req/min limit per API key; provides global protection against accidental abuse
+2. **Health Check Enhancement** — Extend existing `/health` route with component status (DB, EventBus, disk space); keep lightweight (`SELECT 1` only, not `PRAGMA integrity_check`)
+3. **Load Shedding** — Fastify plugin (`@fastify/under-pressure`) for automatic 503 responses when overloaded (event loop delay > 1s, heap > 512MB)
+4. **Enhanced Graceful Shutdown** — Extend existing `onClose` hook with idempotency guard, log flush, and WAL checkpoint; keep simple (no complex signal handling)
+5. **EventBus Reliability** — Add handler timeout protection, error stats, and health check method; isolated error handling prevents subscriber crashes
+6. **SQLite Connection Resilience** — New `withRetry()` wrapper utility with exponential backoff for `SQLITE_BUSY` errors; transactions use existing `BEGIN IMMEDIATE` pattern
+7. **Metrics Collection Layer** — In-memory metrics service with optional Prometheus export; aggregate in memory, flush periodically (not per-request)
+8. **Structured Logging Enhancement** — Fastify hooks for request ID propagation; Pino redaction for sensitive fields; child loggers for request correlation
 
-The recommended architecture extends the existing 3-layer pattern (REST API → Service Layer → Repository Layer → SQLite) with event-driven infrastructure. Services emit domain events **after** successful transaction commits, decoupling state changes from side effects (SSE broadcasts, workflow automation). This follows the **Event Sourcing Lite** pattern: events provide observability and enable multiple listeners without modifying core business logic.
-
-Three new subsystems integrate cleanly with existing layers: (1) **EventBus** (typed EventEmitter) coordinates between services and consumers, (2) **SSEManager** maintains client connection registry and broadcasts events to subscribed agents, (3) **WorkflowEngine** matches events to declarative rules and executes actions via service layer callbacks. All three consume events from the same EventBus, enabling parallel evolution (add SSE first, workflows later, or vice versa).
-
-The atomic claim protocol uses **optimistic locking with version field** rather than pessimistic row locks. Add `version INTEGER` column to tasks table, increment on every update, and use CAS (compare-and-swap) semantics: `UPDATE tasks SET assignee = ?, version = version + 1 WHERE id = ? AND assignee IS NULL AND version = ?`. This works with SQLite WAL mode's concurrent read model and fails fast when claims conflict. Transaction uses `BEGIN IMMEDIATE` to acquire write lock early, avoiding upgrade-related `SQLITE_BUSY` errors.
-
-**Major components:**
-1. **EventBus** (`src/events/event-bus.ts`) — TypeScript EventEmitter wrapper with typed event map; services inject this and emit after state changes; decouples producers from consumers
-2. **SSEManager** (`src/sse/sse-manager.ts`) — Maintains Map<connectionId, reply.sse> of active clients; subscribes to EventBus; broadcasts events with filtering (by project_id, event type); handles cleanup on connection close/error/timeout
-3. **WorkflowEngine** (`src/workflows/workflow-engine.ts`) — Rule registry matching event patterns to actions; subscribes to EventBus; executes actions via ActionExecutor wrapper; prevents infinite loops with source metadata tracking
-4. **TaskRepository.claimTask()** — Atomic CAS-style UPDATE with version check; returns null if claim fails (already claimed or version changed); emits `task.claimed` event on success
-5. **SSE Route** (`src/api/routes/events.ts`) — Fastify endpoint with `{ sse: true }` config; accepts filter query params (project_id, event types); bridges EventBus to SSE async generator
-
-**Build order (dependency-driven):**
-1. EventBus Foundation (prerequisite for SSE + Workflows) — create typed EventEmitter, modify services to inject and emit events
-2. SSE Event Streaming (depends on EventBus) — register plugin, create SSEManager + route, subscribe to EventBus
-3. Atomic Claim Protocol (independent, parallel with SSE) — add version column migration, implement claimTask() with version check, add REST endpoint
-4. Workflow Automation (depends on EventBus, can use SSE for debugging) — create WorkflowEngine, register rules, subscribe to EventBus with loop prevention
+**Data flow (with hardening):**
+```
+Client -> [RateLimit] -> [UnderPressure] -> Route -> [Metrics] -> Service -> [Resilience] -> Repository -> SQLite
+   ↓         ↓              ↓
+[Logging] [Logging]   [HealthCheck]
+```
 
 ### Critical Pitfalls
 
-Research identified 10 critical pitfalls with concrete prevention strategies. Top 5 by severity and phase urgency:
+**1. Over-Engineering Health Checks for Local Service**
+Implementing Kubernetes-style liveness/readiness probes causes restart loops and flapping states. The current `/health` endpoint doing `SELECT 1` is sufficient. **Avoid:** separate `/live` and `/ready` endpoints, `PRAGMA integrity_check` in health, automatic restarts on health failure. **Instead:** Single lightweight endpoint, cache result for 5 seconds if polled frequently, log and alert rather than restart.
 
-1. **SSE Connection Memory Leaks from Uncleaned Client Registry** — Node.js HTTP close events don't fire reliably with proxies/abrupt disconnects; clients remain in registry indefinitely; memory grows unbounded. **Avoid:** Track clients in Map with cleanup on `request.socket.on('close')`, `request.socket.on('error')`, and `reply.raw.on('close')`; implement 30s heartbeat to detect stale connections; add 10-minute max connection timeout; use `@fastify/sse` v7+ which handles cleanup automatically. **Phase 1 critical.**
+**2. Monitoring That Hurts Performance**
+OpenTelemetry or detailed Prometheus metrics can add 10-30% overhead to a local service. Default auto-instrumentation includes filesystem and HTTP instrumentation that's overkill. **Avoid:** Per-request metrics, continuous telemetry, `instrumentation-fs` auto-instrumentation. **Instead:** Start with structured logs, aggregate metrics in memory with 60-second flush, disable auto-instrumentation, enable detailed tracing only when `DEBUG_PERF=1`.
 
-2. **Transaction Upgrade SQLITE_BUSY Despite Busy Timeout** — SQLite returns immediate SQLITE_BUSY when upgrading read transaction to write if another connection holds write lock, ignoring busy_timeout config; `db.transaction()` defaults to `BEGIN DEFERRED` (read-only, upgrades on first write). **Avoid:** Use `BEGIN IMMEDIATE` for all write transactions to acquire lock early; implement 3-retry exponential backoff (50ms → 200ms → 800ms) for unavoidable SQLITE_BUSY; add application-level optimistic locking with version field. **Phase 2 critical.**
+**3. SQLite WAL Over-Tuning**
+Applying high-throughput web service recommendations (`mmap_size = 1GB`, `cache_size = 256MB`, `wal_autocheckpoint = 4000`) causes memory bloat and checkpoint latency spikes. **Avoid:** Increasing cache_size unless proven needed, manual checkpoint tuning, `synchronous = FULL`. **Instead:** Current config (`journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 5000`) is optimal; monitor WAL size and investigate if >100MB rather than tuning.
 
-3. **Cascading Workflow Updates Outside Transaction Boundaries** — Task A completes → workflow marks parent Task B in_progress → server crashes between updates → inconsistent state. Workflow hooks execute AFTER initiating transaction commits, so cascades happen in separate transactions. **Avoid:** Execute ALL cascading updates in SAME transaction as trigger; implement saga pattern with compensation actions; use event outbox table (write state + events atomically, process in background); make hooks idempotent. **Phase 3 critical.**
+**4. Excessive Logging in Production Mode**
+Fastify's default `info` level logging with SSE heartbeats (30-second pings) creates GBs of log files. **Avoid:** Logging every request at INFO for local service, unbounded log growth, SSE ping noise in logs. **Instead:** Use `LOG_LEVEL=warn` for local production, filter SSE heartbeat events, implement log rotation, sample successful requests (1%) vs errors (100%).
 
-4. **SSE Event Broadcast Race with Transaction Visibility** — Service commits transaction → broadcasts event → agents query API → get 404 because WAL not checkpointed yet. SQLite snapshot isolation means readers see database state as of transaction start, not latest commit. **Avoid:** Include full entity data in event payload (avoids race entirely) OR add 10-50ms delay after commit before broadcasting OR use `PRAGMA wal_checkpoint(TRUNCATE)` for critical writes (performance cost). **Phase 1 critical.**
+**5. Complex Graceful Shutdown for Local Service**
+Kubernetes-style graceful shutdown (30-second timeouts, connection draining, complex signal handling) adds 500 lines of code and still hangs. SQLite is file-based (no connection pool), SSE connections are local. **Avoid:** Complex signal handlers, connection draining, 30-second timeouts, shutdown libraries. **Instead:** Current `onClose` hook (close SSE, clear intervals, close DB) is sufficient; let OS clean up on SIGKILL if needed.
 
-5. **Workflow Hook Infinite Loop from Self-Triggering** — Hook triggers on status change → updates parent → parent update triggers hook → updates parent's parent → infinite recursion. No execution context tracking prevents automation from triggering itself. **Avoid:** Add source metadata to events (`source: 'user' | 'workflow'`); hooks ignore events with `source: 'workflow'`; implement max cascade depth (5 levels); track update chain `[task1 → task2 → task3]` and detect cycles; add circuit breaker (disable hooks if >100 updates/sec). **Phase 3 critical.**
+**6. SSE Connection Monitoring Overhead**
+Adding per-connection metrics and detailed heartbeat logging causes event loop to spend more time updating metrics than broadcasting events. **Avoid:** Per-connection metadata, metrics in heartbeat callback, logging every connect/disconnect at INFO. **Instead:** Connection count only via `this.connections.size`, lazy metrics calculation, empty `ping` events, DEBUG-only connection logging.
 
-**Additional critical pitfalls:**
-- **HTTP/1.1 Six-Connection SSE Limit** — browsers limit 6 concurrent EventSource per domain; 8+ agents on same machine = hung connections. Solution: multiplex all events over single SSE connection, filter client-side.
-- **Missing Last-Event-ID Resume** — agents miss events during 30s disconnect, operate on stale state. Solution: assign sequential IDs to events, buffer last 1000 events or 5-minute window, replay from Last-Event-ID header.
-- **Non-Idempotent Workflow Actions** — network timeout during claim → client retries → claim succeeds twice → duplicate events. Solution: accept `X-Idempotency-Key` header, store processed keys in DB with 24hr TTL.
-- **Prepared Statement Reuse Across Concurrent Transactions** — class-level prepared statements not thread-safe; concurrent requests interleave parameter binding → data corruption. Solution: create statements inline for async code or use only within `db.transaction()` synchronous blocks.
-- **SSE Event Payload Size Exceeds Buffer Limits** — task with 500 comments triggers 2MB event → exceeds Node.js buffer → connection drops. Solution: limit payloads to 64KB, send lightweight events with IDs (client fetches full data if needed).
+**7. Idempotency Service Over-Engineering**
+The existing SQLite-backed idempotency with hourly cleanup is atomic and sufficient. Adding Redis "for performance" adds failure modes. **Avoid:** Distributed caching, complex TTL management, "clock skew" handling. **Instead:** Keep current `idempotency_keys` table, simple 24-hour TTL, monitor table size (alert if >10k rows).
+
+**8. Circuit Breakers for Local Dependencies**
+Circuit breakers make sense for external HTTP services, not in-process SQLite or EventBus. They add complexity and false positives. **Avoid:** Circuit breaker libraries, "half-open" states for local resources. **Instead:** Direct error handling, retry with exponential backoff for `SQLITE_BUSY`, fail fast for real errors.
 
 ## Implications for Roadmap
 
-Based on research, recommended phase structure follows **dependency order** (EventBus → SSE/Claims → Workflows) with **pitfall prevention built into each phase**. The architecture allows parallel development of SSE and Claims (both depend only on EventBus), followed by Workflows which benefits from SSE for debugging.
+Based on research, suggested phase structure for hardening:
 
-### Phase 1: SSE Event Infrastructure
-**Rationale:** Foundation for real-time coordination; EventBus enables both SSE and workflows; SSE eliminates polling before adding complex workflows; most table-stakes features (event streaming, filtering, reconnection) belong here.
+### Phase 1: Core Reliability Fundamentals
+**Rationale:** Foundation must be solid before adding observability; these prevent data loss and enable debugging
+**Delivers:** Error handling standardization, health checks, graceful shutdown tuning, config validation, WAL maintenance
+**Addresses (from FEATURES.md):** Structured JSON logging, health check endpoint, graceful shutdown, connection timeouts, exit codes, config validation, WAL checkpoint
+**Uses (from STACK.md):** `@fastify/sensible`, `@fastify/error`, existing Pino configuration
+**Avoids (from PITFALLS.md):** Over-engineered health checks (keep `SELECT 1` only), complex graceful shutdown (enhance existing hook, don't replace)
+**Research flags:** Standard patterns — skip additional research
 
-**Delivers:**
-- EventBus with typed event definitions
-- Services emit events after state changes (task.updated, task.created, dependency.added, comment.added)
-- SSE endpoint with @fastify/sse plugin
-- SSEManager with connection registry, cleanup on all exit paths
-- Event filtering by project_id and event type
-- Last-Event-ID event buffering and replay (1000 events or 5-minute window)
-- Heartbeat/ping mechanism (30s intervals)
-- Connection timeout (10min max)
-- Single-connection multiplexing (all event types on one stream)
+### Phase 2: Database Reliability
+**Rationale:** Data layer hardening protects against the most critical failure mode (data loss)
+**Delivers:** SQLite resilience wrapper, backup command, integrity check command, idempotency verification
+**Addresses (from FEATURES.md):** Database backup command, database integrity check, WAL mode maintenance
+**Uses (from STACK.md):** Native better-sqlite3 transactions, `VACUUM INTO` / `.backup()` API
+**Avoids (from PITFALLS.md):** WAL over-tuning (keep current config), idempotency over-engineering (SQLite is sufficient)
+**Research flags:** Standard SQLite patterns — skip additional research
 
-**Addresses features:**
-- SSE Basic Event Streaming (table stakes)
-- Event Filtering by Project (table stakes)
-- Event Type Filtering (competitive)
-- Event Replay from Last-Event-ID (competitive)
-- SSE Automatic Reconnection (table stakes)
+### Phase 3: API Protection
+**Rationale:** Protect against accidental abuse and resource exhaustion after fundamentals are solid
+**Delivers:** Rate limiting, load shedding (under-pressure), connection limits
+**Addresses (from FEATURES.md):** Connection timeouts (already in Phase 1), process resource limits
+**Uses (from STACK.md):** `@fastify/rate-limit`, `@fastify/under-pressure`
+**Avoids (from PITFALLS.md):** Circuit breakers for local resources
+**Research flags:** Plugin configuration may need tuning based on actual load — light research recommended
 
-**Avoids pitfalls:**
-- **Pitfall #1 (SSE Memory Leaks):** Connection cleanup on close/error/timeout; heartbeat detection; use @fastify/sse plugin
-- **Pitfall #4 (Event Broadcast Race):** Include entity snapshots in event payloads OR add 10-50ms post-commit delay
-- **Pitfall #5 (HTTP/1.1 Connection Limit):** Single-connection multiplexing with client-side filtering; document HTTP/2 recommendation
-- **Pitfall #6 (Missing Last-Event-ID):** Implement event buffering and replay from start
-- **Pitfall #10 (Payload Size):** Enforce 64KB payload limit; paginate large collections
+### Phase 4: Observability
+**Rationale:** Understanding system behavior requires baseline metrics and structured logging; doing this after protection ensures observability doesn't hurt performance
+**Delivers:** Request ID propagation, metrics service, structured logging enhancement, `tasks doctor` command
+**Addresses (from FEATURES.md):** Request ID propagation, diagnostic command (`tasks doctor`), event replay buffer
+**Uses (from STACK.md):** `prom-client` for local metrics, Pino configuration
+**Avoids (from PITFALLS.md):** Monitoring overhead (aggregate in memory, flush periodically), SSE connection monitoring overhead
+**Research flags:** Prometheus integration may need environment-specific research if user wants external scraping
 
-**Success criteria:**
-- 1000 connect/disconnect cycles with flat memory usage
-- 10 concurrent clients on localhost all receive events (no 6-connection limit hit)
-- 30-second disconnect followed by reconnect shows 0 missed events
-- Entity queryable immediately after receiving creation event (no 404s)
+### Phase 5: Testing Depth
+**Rationale:** Validate quality after foundation is solid; mutation testing is slow and should run on mature codebase
+**Delivers:** Mutation testing (Stryker), property-based testing (fast-check), coverage reporting (v8)
+**Uses (from STACK.md):** `@stryker-mutator/core`, `@stryker-mutator/vitest-runner`, `fast-check`, `@vitest/coverage-v8`
+**Research flags:** Mutation testing configuration may need iteration — light research recommended
 
-### Phase 2: Atomic Claim Protocol
-**Rationale:** Can develop in parallel with Phase 1 (only depends on EventBus); critical for multi-agent reliability; simpler than workflows (single-operation atomicity vs. multi-step cascades); enables testing of optimistic locking pattern before complex automation.
+### Phase 6: UX Polish
+**Rationale:** Daily-use improvements are lowest priority for hardening but complete the milestone
+**Delivers:** CLI progress indicators, colored output consistency, task statistics, shell completions
+**Addresses (from FEATURES.md):** CLI progress indicators, colored CLI output, task statistics, shell completions
+**Avoids (from PITFALLS.md):** N/A — these are safe presentation-layer changes
+**Research flags:** Standard CLI patterns — skip additional research
 
-**Delivers:**
-- Migration: add `version INTEGER DEFAULT 1` to tasks table
-- TaskRepository.claimTask(taskId, agent) with CAS-style UPDATE
-- TaskRepository.update() increments version on all changes
-- TaskService.claimTask() business logic (validation, authorization)
-- REST endpoint: POST /api/v1/tasks/:id/claim with idempotency key support
-- MCP tool: claim_task for agent access
-- Emit `task.claimed` event on successful claim
-- Claim timeout mechanism: background job checks claim_timestamp, auto-releases after 30min
-- Exponential backoff retry logic for SQLITE_BUSY (3 retries: 50ms, 200ms, 800ms)
-
-**Addresses features:**
-- Atomic Task Claiming (table stakes)
-- Claim Timeout/Auto-Release (table stakes)
-- Optimistic Locking with Retry (competitive)
-
-**Avoids pitfalls:**
-- **Pitfall #2 (Transaction Upgrade SQLITE_BUSY):** Use BEGIN IMMEDIATE for claim transactions; implement retry with backoff
-- **Pitfall #8 (Non-Idempotent Actions):** Accept X-Idempotency-Key header; store processed keys with 24hr TTL
-- **Pitfall #9 (Prepared Statement Concurrency):** Audit statement reuse; ensure claimTask() creates statements inline or within db.transaction()
-
-**Success criteria:**
-- 20 agents simultaneously claim same task: >95% fail gracefully with "already claimed" error (not SQLITE_BUSY crash)
-- Duplicate claim request (same idempotency key) returns 200 + cached result with no side effects
-- 100 parallel task claims to different tasks: 0 data corruption (verify assignee/version consistency)
-- Task auto-releases 30 minutes after claim with no activity
-
-### Phase 3: Workflow Automation Core
-**Rationale:** Depends on EventBus from Phase 1; benefits from SSE for debugging workflow execution; requires sophisticated transaction boundary design informed by pitfall research; includes dependency cascades (table stakes feature).
-
-**Delivers:**
-- WorkflowEngine with rule matching and execution
-- WorkflowRule interface: trigger (EventMatcher) + action (Action)
-- ActionExecutor wrapper for safe service calls (error handling, timeout, circuit breaker)
-- Default rules: dependency cascade (task done → unblock dependents), status transition triggers
-- Event source metadata: events tagged with `source: 'user' | 'workflow'`
-- Loop prevention: hooks ignore `source: 'workflow'` events; max cascade depth = 5
-- Transaction boundaries: execute cascading updates in SAME transaction as trigger OR use event outbox pattern
-- Workflow execution logging: audit trail for all automated actions
-
-**Addresses features:**
-- Status Transition Triggers (table stakes)
-- Dependency Cascade Updates (table stakes)
-- Conditional Workflow Rules (competitive, basic patterns only)
-
-**Avoids pitfalls:**
-- **Pitfall #3 (Cascading Updates Outside Transactions):** Execute multi-step workflows in single transaction; implement event outbox for async actions
-- **Pitfall #7 (Infinite Loop):** Source metadata tracking; cascade depth limit; cycle detection in task graph
-- **Pitfall #8 (Non-Idempotent Actions):** Make workflow actions idempotent; check current state before applying changes
-
-**Success criteria:**
-- Task A completes → parent Task B status updates → both changes visible atomically (integration test kills server mid-workflow, verifies rollback or completion)
-- Circular task hierarchy detected before execution (fuzzing test with random task graphs)
-- Workflow-triggered update doesn't trigger same workflow again (verify max 1 cascade level for self-referential rules)
-- Automation actions appear in audit log with source attribution
+### Phase 7: Infrastructure Hardening
+**Rationale:** System-level protection is least urgent for trusted local use but completes hardening
+**Delivers:** systemd hardening options, resource limits, backup automation, retention policy
+**Addresses (from FEATURES.md):** Process resource limits, database backup automation
+**Avoids (from PITFALLS.md):** N/A — systemd changes are well-documented
+**Research flags:** systemd unit testing requires staging VM — medium research recommended
 
 ### Phase Ordering Rationale
 
-**Dependency chain:**
-- EventBus must come first (prerequisite for SSE, Claims, Workflows)
-- SSE and Claims can be parallel (both depend only on EventBus, no interdependency)
-- Workflows must come last (depends on EventBus; benefits from SSE for debugging; requires most sophisticated transaction handling)
+The order follows **dependency chains** identified in architecture research:
+1. Core reliability must come first — everything else depends on stable error handling and health checks
+2. Database reliability is next — protects against data loss, enables safe experimentation in later phases
+3. API protection follows — protects against abuse but requires healthy service to protect
+4. Observability comes after protection — ensures monitoring doesn't hurt performance and has stable baseline to measure
+5. Testing depth follows — mutation testing on unstable codebase produces noisy results
+6. UX polish is last — presentation layer changes don't affect system reliability
+7. Infrastructure hardening is final — least critical for single-user local service
 
-**Risk mitigation:**
-- Phase 1 addresses 50% of critical pitfalls (connection leaks, broadcast races, connection limits, missed events, payload size) before adding complex logic
-- Phase 2 validates optimistic locking + version field pattern in isolation (simpler to debug than workflows)
-- Phase 3 inherits battle-tested EventBus and SSE infrastructure, reducing variables when debugging cascade atomicity
-
-**User value incremental:**
-- Phase 1 delivers immediate value: agents stop polling, see real-time updates
-- Phase 2 enables multi-agent collaboration: agents safely compete for tasks
-- Phase 3 reduces manual coordination: dependency unblocking happens automatically
-
-**Architecture validation:**
-- Phase 1 proves event-driven pattern works before adding workflows
-- Phase 2 stress-tests SQLite concurrency before cascading updates
-- Phase 3 builds on proven primitives (events, transactions, locking)
+**Risk mitigation:** This ordering avoids the pitfall of "monitoring a broken system" — by the time observability is added, the service is already reliable. It also ensures that if earlier phases run long, the critical hardening (Phases 1-2) is already complete.
 
 ### Research Flags
 
-**Phases likely needing deeper research during planning:**
-- **None** — All three phases covered by project-level research. The domain (SSE + SQLite + workflow automation) has well-documented patterns, official documentation, and production references. Research covered architecture (component integration), stack (specific libraries + versions), features (table stakes vs. competitive), and pitfalls (10 critical issues with prevention strategies).
+Phases likely needing deeper research during planning:
+- **Phase 3 (API Protection):** Rate limit thresholds need tuning based on actual usage patterns; `@fastify/rate-limit` configuration may need iteration
+- **Phase 4 (Observability):** If Prometheus export is desired for external scraping, integration details need validation; in-memory metrics are standard
+- **Phase 7 (Infrastructure):** systemd unit testing requires VM or container setup; hard to test in dev environment
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (SSE Infrastructure):** Official @fastify/sse plugin documentation covers all integration points; EventSource spec defines Last-Event-ID; SSE best practices well-established (heartbeat, cleanup, multiplexing)
-- **Phase 2 (Atomic Claims):** SQLite BEGIN IMMEDIATE + optimistic locking pattern documented in official SQLite docs; better-sqlite3 transaction examples in GitHub issues; idempotency key pattern standard in REST API design
-- **Phase 3 (Workflows):** Event-driven workflow automation covered by Node.js EventEmitter docs; transaction boundary patterns in SQLite atomic commit docs; loop prevention strategies from workflow engine research
-
-**When to trigger /gsd:research-phase:**
-- If implementation reveals undocumented behavior (e.g., SQLite WAL checkpoint timing under specific load patterns)
-- If integration with external systems required (currently none planned)
-- If performance characteristics don't match research predictions (need profiling + optimization research)
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (Core Reliability):** Well-documented Fastify patterns, official plugins
+- **Phase 2 (Database Reliability):** SQLite WAL behavior is well-understood, standard patterns
+- **Phase 5 (Testing):** Stryker and fast-check have clear Vitest integration docs
+- **Phase 6 (UX Polish):** Established CLI patterns, low technical risk
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All recommended libraries verified with official docs + npm; @fastify/sse is official Fastify plugin; native EventEmitter documented by Node.js; better-sqlite3 transaction patterns confirmed in repo examples |
-| Features | MEDIUM-HIGH | Table stakes features validated against 2026 SSE best practices, EDA trends, and multi-agent coordination research; competitive features align with EventSource spec + workflow automation patterns; anti-features identified from 78% automation complexity research |
-| Architecture | HIGH | Event-driven pattern documented in official Fastify hooks guide; optimistic locking verified in SQLite atomic commit docs; event sourcing lite pattern proven in production implementations; component boundaries follow existing service layer pattern |
-| Pitfalls | HIGH | All 10 pitfalls verified with official documentation (SQLite WAL isolation, transaction upgrade SQLITE_BUSY, SSE connection limits) + recent production war stories (memory leaks, infinite loops, race conditions) |
+| Stack | HIGH | All recommendations verified with official Fastify documentation, npm download statistics, and version compatibility matrices |
+| Features | HIGH | Feature categorization (table stakes vs differentiators vs anti-features) based on local service constraints analysis; aligns with systemd and SSE best practices |
+| Architecture | HIGH | Integration patterns use official Fastify plugins; decorator pattern is standard for hardening; dependency chains are logical |
+| Pitfalls | HIGH | All 8 critical pitfalls verified with multiple sources (official docs, community best practices, SQLite documentation); many are known anti-patterns |
 
 **Overall confidence:** HIGH
 
-Research covered all critical dimensions with primary sources (official documentation, GitHub repositories, npm package pages) and validated with secondary sources (recent blog posts from 2025-2026, production case studies). The stack recommendations align with existing project architecture (no framework changes), minimizing risk. Pitfall research drew from SQLite official docs and real-world SSE/workflow implementation experience.
-
 ### Gaps to Address
 
-Minor gaps to validate during implementation (not blockers for planning):
-
-- **SQLite WAL checkpoint timing under sustained SSE load:** Research indicates 10-50ms post-commit delay should suffice, but actual timing depends on write frequency. Plan to measure with load testing in Phase 1; adjust delay or switch to embedded entity payloads if 404s observed.
-
-- **Better-sqlite3 prepared statement behavior with concurrent async service calls:** Documentation says not thread-safe, but Node.js is single-threaded; actual risk is event loop interleaving. Plan to audit all repository statement reuse in Phase 2; prefer inline statement creation for safety until concurrency tests confirm safety.
-
-- **EventBus memory overhead with 1000-event buffer for Last-Event-ID replay:** Research suggests 5-minute sliding window sufficient, but memory usage depends on event payload size. Plan to implement configurable buffer size (1000 events OR 10MB, whichever reached first) with monitoring in Phase 1.
-
-- **Workflow cascade transaction size limits:** SQLite has no explicit transaction size limit, but large cascades (updating 100+ dependents) may hit memory or lock contention issues. Plan to implement batch processing (update 50 dependents per transaction, commit, repeat) if cascades exceed 20 tasks in Phase 3.
-
-All gaps have mitigation strategies and don't block roadmap creation. Flagging for validation during implementation and potential refinement in phase plans.
+1. **MCP stderr handling:** Current implementation may have Windows issues with heavy stderr; need timeout handling validation during Phase 1
+2. **Event buffer sizing:** How many events to buffer for replay? Memory constraints need validation during Phase 4
+3. **Backup restoration:** How to restore from backup needs documentation; not just backup strategy
+4. **Rate limit thresholds:** 100 req/min is a starting point; actual usage patterns may require adjustment during Phase 3
+5. **Prometheus export:** Decision needed on whether local Grafana/Prometheus is desired or if log-based metrics are sufficient
 
 ## Sources
 
 ### Primary (HIGH confidence)
-
-**Stack:**
-- [@fastify/sse npm package](https://www.npmjs.com/package/@fastify/sse) — Official plugin, v0.4.0 features, installation, Fastify 5.x compatibility
-- [GitHub - fastify/sse](https://github.com/fastify/sse) — Source code, examples, connection lifecycle handling
-- [SQLite WAL Mode](https://sqlite.org/wal.html) — Write-Ahead Logging mechanics, concurrent read/write behavior
-- [SQLite Atomic Commit](https://sqlite.org/atomiccommit.html) — Transaction guarantees, BEGIN IMMEDIATE vs DEFERRED
-- [SQLite Isolation In SQLite](https://sqlite.org/isolation.html) — Snapshot isolation, transaction visibility
-- [Node.js EventEmitter](https://nodejs.org/docs/latest/api/events.html) — Native EventEmitter API
-- [TypeScript EventEmitter Generics](https://github.com/DefinitelyTyped/DefinitelyTyped/discussions/55298) — Native typing since @types/node July 2024
-
-**Features:**
-- [Server-Sent Events: A Comprehensive Guide](https://medium.com/@moali314/server-sent-events-a-comprehensive-guide-e4b15d147577) — Best practices, Last-Event-ID, reconnection patterns
-- [Agentic AI Orchestration in 2026](https://onereach.ai/blog/agentic-ai-orchestration-enterprise-workflow-automation/) — 65% reduction in manual approvals, autonomous agent trends
-- [Event-Driven Architecture (EDA): A Complete Introduction](https://www.confluent.io/learn/event-driven-architecture/) — 72% adoption rate, async task execution, event sourcing
-- [Using Server-Sent Events - MDN](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) — EventSource spec, browser limits
-
-**Architecture:**
-- [Event-Based Architectures in JavaScript: A Handbook](https://www.freecodecamp.org/news/event-based-architectures-in-javascript-a-handbook-for-devs/) — EventEmitter patterns, hook systems
-- [Fastify Hooks Documentation](https://fastify.dev/docs/latest/Reference/Hooks/) — Lifecycle, plugin registration, decorators
-- [Optimistic Locking: Concurrency Control with Version Column](https://medium.com/@sumit-s/optimistic-locking-concurrency-control-with-a-version-column-2e3db2a8120d) — CAS pattern, version field implementation
-
-**Pitfalls:**
-- [What to do about SQLITE_BUSY errors despite timeout](https://berthub.eu/articles/posts/a-brief-post-on-sqlite3-database-locked-despite-timeout/) — Transaction upgrade immediate SQLITE_BUSY
-- [EventSource 6-connection limit (Chromium bug #275955)](https://bugs.chromium.org/p/chromium/issues/detail?id=275955) — HTTP/1.1 browser limits
-- [Avoid Fastify reply.raw and reply.hijack](https://lirantal.com/blog/avoid-fastify-reply-raw-and-reply-hijack-despite-being-a-powerful-http-streams-tool) — Connection cleanup pitfalls
-- [Idempotent Consumer Pattern](https://microservices.io/patterns/communication-style/idempotent-consumer.html) — Deduplication strategies
+- [@fastify/sensible NPM](https://www.npmjs.com/package/@fastify/sensible) — v6.0.4, 289.7K weekly downloads
+- [@fastify/error NPM](https://www.npmjs.com/package/@fastify/error) — v4.2.0, 4.9M weekly downloads
+- [Stryker Releases](https://github.com/stryker-mutator/stryker-js/releases) — v9.5.1 with Vitest fixtures support
+- [fast-check NPM](https://www.npmjs.com/package/fast-check) — v4.5.3, 8.4M weekly downloads
+- [prom-client NPM](https://www.npmjs.com/package/prom-client) — v15.1.3, 4.5M weekly downloads
+- [0x NPM](https://www.npmjs.com/package/0x) — v6.0.0, 76.5K weekly downloads
+- [SQLite WAL Documentation](https://sqlite.org/wal.html) — Official WAL mode guidance
+- [systemd.exec(5) Manual](https://man7.org/linux/man-pages/man5/systemd.exec.5.html) — Security hardening options
+- [Fastify Server Configuration Reference](https://fastify.io/docs/latest/Reference/Server/) — Timeout, connection options
 
 ### Secondary (MEDIUM confidence)
+- [Stop Running node index.js in Production - 2025 Guide](https://www.beyondthesemicolon.com/stop-running-node-index-js-in-production-a-2025-ready-field-guide/) — Simple deployment patterns for local services
+- [SQLite in Production with WAL](https://medium.com/@victoriadotdev/sqlite-in-production-with-wal-be89e169a606) — WAL mode best practices
+- [Sandboxing systemd Services](https://ejaaskel.dev/sandboxing-systemd-services/) — Practical hardening guide
+- [Server-Sent Events: A Practical Guide](https://tigerabrodi.blog/server-sent-events-a-practical-guide-for-the-real-world) — Production patterns
+- [Node.js CLI Best Practices](https://openjsf.org/blog/node-js-command-line-interface-applications-best-practices-a-guide) — OpenJS Foundation guide
 
-**Stack Integration:**
-- [Efficient Event Streaming with Fastify](https://nearform.com/insights/efficient-event-streaming-mastering-pub-sub-with-fastify-and-dragonfly/) — Backpressure handling, production patterns
-- [Make Node.js EventEmitter Type-Safe](https://typescript.tv/hands-on/make-nodejs-eventemitter-type-safe/) — TypeScript generics implementation
-- [SQLite for Modern Apps 2026](https://thelinuxcode.com/sqlite-for-modern-apps-a-practical-first-look-2026/) — WAL mode best practices
-
-**Features & Patterns:**
-- [The 2026 Guide to Agentic Workflow Architectures](https://www.stack-ai.com/blog/the-2026-guide-to-agentic-workflow-architectures) — Decision-oriented workflows, human-in-loop patterns
-- [7 Essential Patterns in Event-Driven Architecture](https://talent500.com/blog/event-driven-architecture-essential-patterns/) — Transactional outbox, saga pattern
-- [Decentralized Adaptive Task Allocation for Multi-Agent Systems](https://www.nature.com/articles/s41598-025-21709-9) — Nature 2025, FIFO + priority allocation, partial observability
-
-**Pitfalls & Anti-Patterns:**
-- [Make.com AI Agents: Patterns and Pitfalls](https://www.taskfoundry.com/2025/08/make-ai-agents-patterns-pitfalls-automation.html) — Infinite loops, 78% complexity increase
-- [The AI Workflow Integration Paradox](https://swisscognitive.ch/2026/01/06/the-ai-workflow-integration-paradox-more-automation-tools-less-productivity/) — 85% say multiple automated tasks increase complexity
-- [Managing Back-Pressure in Event-Driven Architectures](https://medium.com/@mokarchi/managing-back-pressure-in-event-driven-architectures-fe370aa82df1) — Circuit breakers, bounded buffers
-
-### Tertiary (LOW confidence, flagged for validation)
-
-- [Experimental Workflow Engine Design in Node.js](https://betterprogramming.pub/experiment-design-of-workflow-engine-in-nodejs-72da8bb68734) — EventEmitter-based hooks (implementation example, not production reference)
-- [How to Create Agent Coordination](https://oneuptime.com/blog/post/2026-01-30-agent-coordination/view) — High-level patterns (lacks SQLite-specific details)
-- [Reliable Workflow Automation Platforms](https://www.stacksync.com/blog/reliable-workflow-automation-platforms-for-real-time-enterprise-sync) — Generic best practices (not Node.js/SQLite specific)
+### Tertiary (LOW confidence / Validation needed)
+- [OpenTelemetry Fastify Monitoring](https://oneuptime.com/blog/post/2026-02-06-monitor-fastify-applications-opentelemetry/view) — Observability trends (2026 date, needs validation)
+- [Dynatrace Observability Predictions 2026](https://www.dynatrace.com/news/blog/six-observability-predictions-for-2026/) — When observability helps vs hurts
 
 ---
-*Research completed: 2026-02-14*
+*Research completed: 2026-02-17*
 *Ready for roadmap: yes*
+*Next step: Requirements definition for Phase 1 (Core Reliability)*
