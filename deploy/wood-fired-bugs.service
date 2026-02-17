@@ -15,18 +15,59 @@ Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=15s
 
-# Security hardening
+# ── Resource Limits (INFR-01) ──────────────────────────────
+# Prevent runaway memory consumption (Node.js + SQLite service)
+MemoryMax=512M
+# Limit to one CPU core to avoid starving other services
+CPUQuota=100%
+# Limit spawnable tasks/threads (Node.js is single-threaded but may fork)
+TasksMax=50
+
+# ── Security Hardening (INFR-02) ──────────────────────────
+# Filesystem protection
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
-NoNewPrivileges=yes
 ReadWritePaths=/opt/wood-fired-bugs/data /opt/wood-fired-bugs/backups
 
-# Graceful shutdown
+# Device and kernel protection
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+
+# Privilege restriction
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+# Network restriction (only TCP/UDP/Unix sockets needed)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Namespace and scheduling restriction
+RestrictNamespaces=yes
+RestrictRealtime=yes
+
+# System call filtering (allowlist safe syscalls for service operation)
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+# NOTE: MemoryDenyWriteExecute=no is intentionally omitted (default=no).
+# Node.js V8 JIT compiler requires write+execute memory pages.
+# Enabling this would cause V8 to crash at runtime.
+
+# NOTE: DynamicUser is NOT used because SQLite requires stable
+# file ownership across service restarts for /opt/wood-fired-bugs/data/tasks.db.
+
+# ── Graceful Shutdown ──────────────────────────────────────
 KillMode=mixed
 KillSignal=SIGTERM
 
-# Logging to journald
+# ── Logging ────────────────────────────────────────────────
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wood-fired-bugs
