@@ -11,10 +11,10 @@
 ## Current Position
 
 **Milestone:** v1.4 Hardening and Polish — IN PROGRESS
-**Phase:** 19
-**Phase Name:** Observability
-**Plan:** 02 complete (both plans done)
-**Status:** Milestone complete
+**Phase:** 20 (next)
+**Phase Name:** Testing Depth
+**Plan:** —
+**Status:** Ready to plan
 
 **Progress Bar:**
 ```
