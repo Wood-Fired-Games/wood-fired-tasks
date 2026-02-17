@@ -25,6 +25,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Stryker mutation testing reports
+reports/
+.stryker-tmp/
+
 # Environment
 .env
 .env.local
