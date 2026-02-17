@@ -11,7 +11,7 @@
 ## Phases
 
 - [ ] **Phase 17: Core Reliability Fundamentals** - Service reliability, health checks, graceful shutdown, logging
-- [ ] **Phase 18: Database & Status Model** - Backup command, backlogged status lifecycle
+- [x] **Phase 18: Database & Status Model** - Backup command, backlogged status lifecycle (completed 2026-02-17)
 - [ ] **Phase 19: Observability** - Doctor command, request IDs, stats, integrity checks
 - [ ] **Phase 20: Testing Depth** - Mutation testing, property testing, unused deps detection
 - [ ] **Phase 21: UX Polish** - Progress indicators, colored output, shell completions
@@ -67,7 +67,7 @@ Wave 3: 17-04 (tests) — depends on 17-01, 17-02, 17-03
 4. Authorized users can transition backlogged tasks to "open" status
 5. Status lifecycle correctly includes backlogged -> open -> in_progress -> done -> closed
 
-**Plans:** 2 plans in 1 wave
+**Plans:** 2/2 plans complete
 
 **Plan List:**
 - [ ] **18-01-PLAN.md** — SQLite backup CLI command (RELI-05)
@@ -152,7 +152,7 @@ Wave 1: 18-01 (backup command), 18-02 (backlogged status) — parallel
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 17. Core Reliability | 0/4 | Not started | - |
-| 18. Database & Status | 0/2 | Planned | - |
+| 18. Database & Status | 0/2 | Complete    | 2026-02-17 |
 | 19. Observability | 0/TBD | Not started | - |
 | 20. Testing Depth | 0/TBD | Not started | - |
 | 21. UX Polish | 0/TBD | Not started | - |
