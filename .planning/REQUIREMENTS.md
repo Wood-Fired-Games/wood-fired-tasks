@@ -65,35 +65,35 @@ Hardening and polish milestone — improving reliability, observability, and use
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RELI-01 | TBD | Pending |
-| RELI-02 | TBD | Pending |
-| RELI-03 | TBD | Pending |
-| RELI-04 | TBD | Pending |
-| RELI-05 | TBD | Pending |
-| RELI-06 | TBD | Pending |
-| RELI-07 | TBD | Pending |
-| RELI-08 | TBD | Pending |
-| OBSV-01 | TBD | Pending |
-| OBSV-02 | TBD | Pending |
-| OBSV-03 | TBD | Pending |
-| OBSV-04 | TBD | Pending |
-| OBSV-05 | TBD | Pending |
-| UXPL-01 | TBD | Pending |
-| UXPL-02 | TBD | Pending |
-| UXPL-03 | TBD | Pending |
-| DATA-01 | TBD | Pending |
-| DATA-02 | TBD | Pending |
-| DATA-03 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
-| TEST-03 | TBD | Pending |
-| INFR-01 | TBD | Pending |
-| INFR-02 | TBD | Pending |
+| RELI-01 | Phase 17 | Pending |
+| RELI-02 | Phase 17 | Pending |
+| RELI-03 | Phase 17 | Pending |
+| RELI-04 | Phase 17 | Pending |
+| RELI-05 | Phase 18 | Pending |
+| RELI-06 | Phase 17 | Pending |
+| RELI-07 | Phase 17 | Pending |
+| RELI-08 | Phase 17 | Pending |
+| OBSV-01 | Phase 19 | Pending |
+| OBSV-02 | Phase 19 | Pending |
+| OBSV-03 | Phase 19 | Pending |
+| OBSV-04 | Phase 19 | Pending |
+| OBSV-05 | Phase 19 | Pending |
+| UXPL-01 | Phase 21 | Pending |
+| UXPL-02 | Phase 21 | Pending |
+| UXPL-03 | Phase 21 | Pending |
+| DATA-01 | Phase 18 | Pending |
+| DATA-02 | Phase 18 | Pending |
+| DATA-03 | Phase 18 | Pending |
+| TEST-01 | Phase 20 | Pending |
+| TEST-02 | Phase 20 | Pending |
+| TEST-03 | Phase 20 | Pending |
+| INFR-01 | Phase 22 | Pending |
+| INFR-02 | Phase 22 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 23 total
-- Mapped to phases: 0
-- Unmapped: 23
+- Mapped to phases: 23
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-17*
