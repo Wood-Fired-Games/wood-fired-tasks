@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-17 (Phase 19-02 complete)
+**Last Updated:** 2026-02-17 (Phase 20 complete)
 
 ## Project Reference
 
@@ -11,8 +11,8 @@
 ## Current Position
 
 **Milestone:** v1.4 Hardening and Polish — IN PROGRESS
-**Phase:** 20 (next)
-**Phase Name:** Testing Depth
+**Phase:** 21 (next)
+**Phase Name:** UX Polish
 **Plan:** —
 **Status:** Ready to plan
 
@@ -22,7 +22,7 @@ v1.0 ████████████████████ 100% (6/6 phas
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
-v1.4 ████████████░░░░░░░░  50% (phases 17-19 complete, 3/6 phases remaining)
+v1.4 █████████████████░░░  67% (phases 17-20 complete, 2/6 phases remaining)
 ```
 
 ## Performance Metrics
@@ -33,7 +33,7 @@ v1.4 ████████████░░░░░░░░  50% (phases 1
 - v1.2 Claude Code Skills & Installer: 3 phases, 7 plans, shipped 2026-02-14 (386 tests)
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 
-**Current:** 598 tests passing (52 test files), 19,618+ LOC TypeScript, 127+ files
+**Current:** 607 tests passing (54 test files), 19,618+ LOC TypeScript, 127+ files
 
 | Phase | Plan | Duration | Tasks | Files | Date |
 |-------|------|----------|-------|-------|------|
@@ -41,6 +41,9 @@ v1.4 ████████████░░░░░░░░  50% (phases 1
 | 18-database-status-model | 02 | 4 min | 2 | 5 | 2026-02-17 |
 | 19-observability | 01 | 2 min | 3 | 4 | 2026-02-17 |
 | 19-observability | 02 | 2 min | 2 | 5 | 2026-02-17 |
+| 20-testing-depth | 01 | 3 min | 2 | 4 | 2026-02-17 |
+| 20-testing-depth | 02 | 3 min | 2 | 2 | 2026-02-17 |
+| 20-testing-depth | 03 | 19 min | 1 | 4 | 2026-02-17 |
 
 **v1.4 Targets:**
 - 6 phases planned (17-22)
@@ -62,6 +65,10 @@ v1.4 ████████████░░░░░░░░  50% (phases 1
 - Phase 19-02: `requestIdHeader: false` prevents callers from injecting arbitrary request IDs into Fastify logs (security hardening)
 - Phase 19-02: Module-level `_lastRequestId` in CLI client exposes request ID without breaking 20+ existing caller signatures
 - Phase 19-02: SSE buffer at 100 (not 1000) per OBSV-03 requirement; traceId logging on only 5 key MCP tools to control blast radius
+- Phase 20-01: Removed @fastify/cors and fastify-plugin as genuinely unused dependencies (confirmed via grep)
+- Phase 20-01: pino-pretty excluded in knip — convention-loaded by pino, not statically importable
+- Phase 20-03: `vitest.related: false` in Stryker — integration tests use createTestApp() factory pattern; related:true would miss them
+- Phase 20-03: `thresholds.break: null` — no break threshold on initial run; baseline at 75.88% covered
 
 See `.planning/PROJECT.md` Key Decisions table for full history.
 
@@ -78,7 +85,7 @@ None.
 1. ~~Phase 17: Core Reliability Fundamentals~~ — COMPLETE (4 plans, shipped 2026-02-17)
 2. ~~Phase 18: Database & Status Model~~ — COMPLETE (backup command + backlogged status, 2026-02-17)
 3. ~~Phase 19: Observability~~ — COMPLETE (doctor command OBSV-01, request IDs OBSV-02, SSE buffer OBSV-03, 2026-02-17)
-4. Phase 20: Testing Depth — mutation testing, property testing, unused deps
+4. ~~Phase 20: Testing Depth~~ — COMPLETE (3 plans: knip+CI, property tests, Stryker mutation testing, 2026-02-17)
 5. Phase 21: UX Polish — progress indicators, colored output, shell completions
 6. Phase 22: Infrastructure Hardening — systemd limits, security hardening
 
@@ -90,6 +97,7 @@ None.
 
 ### Recent Completions
 
+- [x] Phase 20 complete (2026-02-17) — 3 plans: knip unused deps + CI (TEST-03), fast-check property tests (TEST-02), Stryker mutation testing (TEST-01). 607 tests, 75.88% mutation score baseline.
 - [x] Phase 19-02: request ID propagation — UUID X-Request-ID on REST, traceId on 5 MCP tools, SSE buffer at 100, CLI client captures request IDs (2026-02-17)
 - [x] Phase 19-01: `tasks doctor`, `tasks stats`, `tasks db-check` — offline diagnostics via direct SQLite, statfs, configSchema.safeParse (2026-02-17)
 - [x] Phase 18-02: backlogged status — migration 005, type updates, magenta formatter, 28 new tests (2026-02-17)
@@ -103,17 +111,18 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Phase 19 complete and verified (5/5 must-haves passed). Both plans executed in parallel, 7 commits total. Transition to Phase 20.
+Phase 20 complete and verified (4/4 success criteria passed). 3 plans executed across 2 waves, 6 commits. Knip+CI, fast-check property tests, Stryker mutation testing all operational.
 
 **What's Next:**
-Plan and execute Phase 20: Testing Depth — mutation testing with Stryker, property testing with fast-check, unused deps detection with knip.
+Plan and execute Phase 21: UX Polish — progress indicators, colored output, shell completions.
 
 **Context for Next Session:**
-- v1.4 progress: 3/6 phases complete (17, 18, 19), 50% milestone
-- Phase 19 delivered: doctor/stats/db-check commands (OBSV-01, OBSV-04, OBSV-05), request ID propagation (OBSV-02), SSE buffer at 100 (OBSV-03)
-- 598 tests passing across 52 test files
-- Next: Phase 20 (TEST-01 mutation testing, TEST-02 property testing, TEST-03 unused deps)
-- Last activity: 2026-02-17 — Phase 19 verified and transitioned
+- v1.4 progress: 4/6 phases complete (17, 18, 19, 20), 67% milestone
+- Phase 20 delivered: knip + GitHub Actions CI (TEST-03), 9 property tests with @fast-check/vitest (TEST-02), Stryker mutation testing with 75.88% covered score (TEST-01)
+- 607 tests passing across 54 test files
+- Removed 2 unused deps (@fastify/cors, fastify-plugin)
+- Next: Phase 21 (UXPL-01 progress indicators, UXPL-02 colored output, UXPL-03 shell completions)
+- Last activity: 2026-02-17 — Phase 20 verified and transitioning
 
 ---
 *State tracking started: 2026-02-14 for v1.3*

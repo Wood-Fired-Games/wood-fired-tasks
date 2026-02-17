@@ -13,7 +13,7 @@
 - [ ] **Phase 17: Core Reliability Fundamentals** - Service reliability, health checks, graceful shutdown, logging
 - [x] **Phase 18: Database & Status Model** - Backup command, backlogged status lifecycle (completed 2026-02-17)
 - [x] **Phase 19: Observability** - Doctor command, request IDs, stats, integrity checks (completed 2026-02-17)
-- [ ] **Phase 20: Testing Depth** - Mutation testing, property testing, unused deps detection
+- [x] **Phase 20: Testing Depth** - Mutation testing, property testing, unused deps detection (completed 2026-02-17)
 - [ ] **Phase 21: UX Polish** - Progress indicators, colored output, shell completions
 - [ ] **Phase 22: Infrastructure Hardening** - systemd resource limits, security hardening
 
@@ -120,7 +120,7 @@ Wave 1: 19-01 (CLI diagnostics), 19-02 (request IDs + SSE buffer) — parallel
 3. Unused dependency detection with knip runs in CI and reports findings
 4. CI fails if unused dependencies are detected (or explicit exclusions documented)
 
-**Plans:** 3 plans in 2 waves
+**Plans:** 3/3 plans complete
 
 **Plan List:**
 - [ ] **20-01-PLAN.md** — Unused dependency detection with knip and GitHub Actions CI (TEST-03)
@@ -174,7 +174,7 @@ Wave 2: 20-03 (Stryker mutation testing) — depends on 20-01
 | 17. Core Reliability | 0/4 | Not started | - |
 | 18. Database & Status | 0/2 | Complete    | 2026-02-17 |
 | 19. Observability | 0/2 | Complete    | 2026-02-17 |
-| 20. Testing Depth | 0/TBD | Not started | - |
+| 20. Testing Depth | 3/3 | Complete    | 2026-02-17 |
 | 21. UX Polish | 0/TBD | Not started | - |
 | 22. Infrastructure | 0/TBD | Not started | - |
 

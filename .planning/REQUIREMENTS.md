@@ -40,9 +40,9 @@ Hardening and polish milestone — improving reliability, observability, and use
 
 ### Testing & Quality
 
-- [ ] **TEST-01**: Mutation testing with Stryker validates test suite effectiveness
-- [ ] **TEST-02**: Property-based testing with fast-check supplements example-based tests
-- [ ] **TEST-03**: Unused dependency detection with knip integrated into CI
+- [x] **TEST-01**: Mutation testing with Stryker validates test suite effectiveness
+- [x] **TEST-02**: Property-based testing with fast-check supplements example-based tests
+- [x] **TEST-03**: Unused dependency detection with knip integrated into CI
 
 ### Infrastructure
 
@@ -84,9 +84,9 @@ Hardening and polish milestone — improving reliability, observability, and use
 | DATA-01 | Phase 18 | Pending |
 | DATA-02 | Phase 18 | Pending |
 | DATA-03 | Phase 18 | Pending |
-| TEST-01 | Phase 20 | Pending |
-| TEST-02 | Phase 20 | Pending |
-| TEST-03 | Phase 20 | Pending |
+| TEST-01 | Phase 20 | Complete |
+| TEST-02 | Phase 20 | Complete |
+| TEST-03 | Phase 20 | Complete |
 | INFR-01 | Phase 22 | Pending |
 | INFR-02 | Phase 22 | Pending |
 
