@@ -21,6 +21,9 @@ import { subtaskListCommand } from '../commands/subtask-list.js';
 import { healthCommand } from '../commands/health.js';
 import { claimCommand } from '../commands/claim.js';
 import { backupCommand } from '../commands/backup.js';
+import { doctorCommand } from '../commands/doctor.js';
+import { statsCommand } from '../commands/stats.js';
+import { dbCheckCommand } from '../commands/db-check.js';
 
 // Configure CLI program
 program
@@ -70,6 +73,11 @@ program.addCommand(healthCommand);
 
 // Register backup command
 program.addCommand(backupCommand);
+
+// Register diagnostic commands
+program.addCommand(doctorCommand);
+program.addCommand(statsCommand);
+program.addCommand(dbCheckCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
