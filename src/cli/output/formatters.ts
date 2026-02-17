@@ -72,6 +72,8 @@ export function formatStatus(status: string): string {
       return chalk.gray(status);
     case 'blocked':
       return chalk.red(status);
+    case 'backlogged':
+      return chalk.magenta(status);
     default:
       return chalk.white(status);
   }
