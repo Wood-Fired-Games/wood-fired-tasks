@@ -1,5 +1,5 @@
 // Task status and priority enums
-export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked'] as const;
+export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged'] as const;
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
 export type TaskStatus = typeof TASK_STATUSES[number];
@@ -7,11 +7,12 @@ export type TaskPriority = typeof TASK_PRIORITIES[number];
 
 // Valid status transitions map
 export const VALID_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  open: ['in_progress', 'blocked', 'closed'],
+  open: ['in_progress', 'blocked', 'closed', 'backlogged'],
   in_progress: ['done', 'blocked', 'open'],
   blocked: ['open', 'in_progress'],
   done: ['closed', 'open'],
   closed: ['open'],
+  backlogged: ['open'],
 };
 
 // Core interfaces
