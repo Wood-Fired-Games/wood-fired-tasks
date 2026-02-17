@@ -39,6 +39,7 @@ v1.4 ████████████░░░░░░░░  50% (phases 1
 |-------|------|----------|-------|-------|------|
 | 18-database-status-model | 01 | 2 min | 2 | 3 | 2026-02-17 |
 | 18-database-status-model | 02 | 4 min | 2 | 5 | 2026-02-17 |
+| 19-observability | 01 | 2 min | 3 | 4 | 2026-02-17 |
 | 19-observability | 02 | 2 min | 2 | 5 | 2026-02-17 |
 
 **v1.4 Targets:**
@@ -56,6 +57,8 @@ v1.4 ████████████░░░░░░░░  50% (phases 1
 - Phase 18-01: CLI-direct-DB pattern is a legitimate exception for data-safety operations that bypass REST API
 - Phase 18-02: backlogged -> open is the ONLY valid transition from backlogged; cannot go directly to in_progress/done/closed/blocked — enforces explicit triage promotion
 - Phase 18-02: SQLite table rebuild pattern required for CHECK constraint changes: foreign_keys=OFF, create new, copy, drop FTS triggers, drop old table, rename, recreate indexes + triggers
+- Phase 19-01: Use `configSchema.safeParse` (not `loadConfig`/`config`) in doctor.ts — loadConfig calls process.exit(78) on failure, unusable for diagnostic reporting
+- Phase 19-01: Use `promisify(statfs)` from `'fs'` (not `fs/promises`) for disk space — direct, no child_process exec needed
 - Phase 19-02: `requestIdHeader: false` prevents callers from injecting arbitrary request IDs into Fastify logs (security hardening)
 - Phase 19-02: Module-level `_lastRequestId` in CLI client exposes request ID without breaking 20+ existing caller signatures
 - Phase 19-02: SSE buffer at 100 (not 1000) per OBSV-03 requirement; traceId logging on only 5 key MCP tools to control blast radius
@@ -88,6 +91,7 @@ None.
 ### Recent Completions
 
 - [x] Phase 19-02: request ID propagation — UUID X-Request-ID on REST, traceId on 5 MCP tools, SSE buffer at 100, CLI client captures request IDs (2026-02-17)
+- [x] Phase 19-01: `tasks doctor`, `tasks stats`, `tasks db-check` — offline diagnostics via direct SQLite, statfs, configSchema.safeParse (2026-02-17)
 - [x] Phase 18-02: backlogged status — migration 005, type updates, magenta formatter, 28 new tests (2026-02-17)
 - [x] Phase 18-01: `tasks backup` command — better-sqlite3 backup API, readonly, 8 tests (2026-02-17)
 - [x] Phase 17 complete (2026-02-17) — 4 plans: structured logging, health checks, graceful shutdown, config validation, exit codes, WAL maintenance
