@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/index.ts",
+    "src/api/start.ts",
+    "src/cli/bin/tasks.ts",
+    "src/mcp/index.ts",
+    "src/db/migrate.ts"
+  ],
+  "project": ["src/**/*.ts"],
+  "ignoreDependencies": [
+    "pino-pretty"
+  ]
+}
