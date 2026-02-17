@@ -18,17 +18,28 @@ import type {
 
 /**
  * Custom error class for API client errors.
- * Includes HTTP status code and parsed API error response.
+ * Includes HTTP status code, parsed API error response, and optional request ID for tracing.
  */
 export class ApiClientError extends Error {
+  public requestId?: string;
   constructor(
     message: string,
     public statusCode: number,
-    public apiError: ApiErrorResponse
+    public apiError: ApiErrorResponse,
+    requestId?: string
   ) {
     super(message);
     this.name = 'ApiClientError';
+    this.requestId = requestId;
   }
+}
+
+/** Stores the request ID from the most recent API call */
+let _lastRequestId: string | undefined;
+
+/** Get the request ID from the most recent API call */
+export function getLastRequestId(): string | undefined {
+  return _lastRequestId;
 }
 
 /**
@@ -59,6 +70,10 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
       },
     });
 
+    // Extract request ID from response for tracing
+    const requestId = response.headers.get('x-request-id') || undefined;
+    _lastRequestId = requestId;
+
     // Handle non-OK responses
     if (!response.ok) {
       let errorBody: ApiErrorResponse;
@@ -74,7 +89,8 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
       throw new ApiClientError(
         errorBody.message || `Request failed with status ${response.status}`,
         response.status,
-        errorBody
+        errorBody,
+        requestId
       );
     }
 
