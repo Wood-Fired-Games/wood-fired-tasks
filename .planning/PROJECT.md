@@ -82,13 +82,13 @@ The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 Interface inventory:
 - REST API: 20 endpoints (tasks CRUD + claim, projects CRUD, dependencies, comments, subtasks, events, health)
 - MCP Server: 20 tools (same coverage as REST) + events://stream resource
-- CLI: 21 commands (same coverage as REST + interactive prompts + backup)
+- CLI: 24 commands (same coverage as REST + interactive prompts + backup + doctor/stats/db-check)
 - Claude Code Skills: 10 workflow skills (/tasks: namespace)
 - Installers: install.sh (Linux/macOS), install.ps1 (Windows)
 
 Real-time infrastructure:
 - EventBus: type-safe pub/sub with native EventEmitter (8 event types)
-- SSEManager: connection registry with filtering, heartbeat, Last-Event-ID replay
+- SSEManager: connection registry with filtering, heartbeat, Last-Event-ID replay (100-event buffer)
 - WorkflowEngine: parent auto-complete, dependency auto-unblock, cascade depth limiting
 
 Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
@@ -128,6 +128,11 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | db.backup() over VACUUM INTO | Online Backup API is WAL-safe for hot backups while server runs | Good — readonly connection avoids write lock conflicts |
 | Backlogged → open only transition | Enforces triage workflow: must explicitly promote before agents can claim | Good — existing claimTask guard (status === 'open') handles exclusion automatically |
 | SQLite table rebuild for CHECK changes | ALTER TABLE cannot modify CHECK constraints; standard rebuild pattern | Good — migration 005 preserves data and recreates FTS triggers |
+| configSchema.safeParse for CLI diagnostics | loadConfig() calls process.exit(78) on failure; safeParse enables reporting | Good — doctor command reports config issues instead of crashing |
+| requestIdHeader: false | Prevent callers from injecting arbitrary request IDs into Fastify logs | Good — security hardening with no usability cost |
+| Module-level _lastRequestId in CLI client | Expose request ID without breaking 20+ existing caller signatures | Good — getLastRequestId() available for debugging, zero API changes |
+| SSE buffer 100 (not 1000) | Right-sized per OBSV-03 requirement; ~44KB memory at 100 events | Good — 5-min TTL still applies as secondary constraint |
+| traceId on 5 key MCP tools only | Blast radius control; full coverage deferred to future hardening | Good — covers create/update/list/claim task + check_health |
 
 ---
-*Last updated: 2026-02-17 after Phase 18*
+*Last updated: 2026-02-17 after Phase 19*
