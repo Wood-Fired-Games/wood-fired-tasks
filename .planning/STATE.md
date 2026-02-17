@@ -13,8 +13,8 @@
 **Milestone:** v1.4 Hardening and Polish — IN PROGRESS
 **Phase:** 18 (in progress)
 **Phase Name:** Database & Status Model
-**Plan:** 18-01 complete (1/2 plans done)
-**Status:** In progress
+**Plan:** 18-02 complete (2/2 plans done) — Phase 18 COMPLETE
+**Status:** Phase complete, ready for Phase 19
 
 **Progress Bar:**
 ```
@@ -22,7 +22,7 @@ v1.0 ████████████████████ 100% (6/6 phas
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
-v1.4 ████░░░░░░░░░░░░░░░░  17% (phase 17 complete, phase 18 in progress)
+v1.4 ████████░░░░░░░░░░░░  33% (phases 17-18 complete, 4/6 phases remaining)
 ```
 
 ## Performance Metrics
@@ -33,11 +33,12 @@ v1.4 ████░░░░░░░░░░░░░░░░  17% (phase 17
 - v1.2 Claude Code Skills & Installer: 3 phases, 7 plans, shipped 2026-02-14 (386 tests)
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 
-**Current:** 586 tests passing (51 test files), 19,618+ LOC TypeScript, 127+ files
+**Current:** 598 tests passing (52 test files), 19,618+ LOC TypeScript, 127+ files
 
 | Phase | Plan | Duration | Tasks | Files | Date |
 |-------|------|----------|-------|-------|------|
 | 18-database-status-model | 01 | 2 min | 2 | 3 | 2026-02-17 |
+| 18-database-status-model | 02 | 4 min | 2 | 5 | 2026-02-17 |
 
 **v1.4 Targets:**
 - 6 phases planned (17-22)
@@ -52,6 +53,8 @@ v1.4 ████░░░░░░░░░░░░░░░░  17% (phase 17
 - Phase 18-01: `db.backup()` not `VACUUM INTO` — backup API is safe for WAL-mode hot backups while server is running
 - Phase 18-01: Open source DB readonly to guarantee no write lock conflict with the running API server
 - Phase 18-01: CLI-direct-DB pattern is a legitimate exception for data-safety operations that bypass REST API
+- Phase 18-02: backlogged -> open is the ONLY valid transition from backlogged; cannot go directly to in_progress/done/closed/blocked — enforces explicit triage promotion
+- Phase 18-02: SQLite table rebuild pattern required for CHECK constraint changes: foreign_keys=OFF, create new, copy, drop FTS triggers, drop old table, rename, recreate indexes + triggers
 
 See `.planning/PROJECT.md` Key Decisions table for full history.
 
@@ -66,7 +69,7 @@ None.
 ### TODOs
 
 1. ~~Phase 17: Core Reliability Fundamentals~~ — COMPLETE (4 plans, shipped 2026-02-17)
-2. Phase 18: Database & Status Model — ~~backup command~~ DONE, backlogged status remaining
+2. ~~Phase 18: Database & Status Model~~ — COMPLETE (backup command + backlogged status, 2026-02-17)
 3. Phase 19: Observability — doctor command, request IDs, event replay, stats, db-check
 4. Phase 20: Testing Depth — mutation testing, property testing, unused deps
 5. Phase 21: UX Polish — progress indicators, colored output, shell completions
@@ -80,6 +83,7 @@ None.
 
 ### Recent Completions
 
+- [x] Phase 18-02: backlogged status — migration 005, type updates, magenta formatter, 28 new tests (2026-02-17)
 - [x] Phase 18-01: `tasks backup` command — better-sqlite3 backup API, readonly, 8 tests (2026-02-17)
 - [x] Phase 17 complete (2026-02-17) — 4 plans: structured logging, health checks, graceful shutdown, config validation, exit codes, WAL maintenance
 - [x] v1.3 milestone archived (2026-02-16)
@@ -90,16 +94,16 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Executed Phase 18 Plan 01: `tasks backup` CLI command using better-sqlite3 Online Backup API. Opens source DB readonly, auto-creates directories, supports JSON mode. 8 tests, 586 total passing.
+Executed Phase 18 Plan 02: backlogged status implementation. Added 'backlogged' to TASK_STATUSES and VALID_STATUS_TRANSITIONS, created migration 005 (SQLite table rebuild), added magenta formatter, and wrote 28 new tests. 598 tests now passing.
 
 **What's Next:**
-Execute Phase 18 Plan 02: Add `backlogged` task status to the data model.
+Execute Phase 19: Observability — doctor command, request IDs, event replay, stats, db-check.
 
 **Context for Next Session:**
-- Phase 18-01 complete: `tasks backup` command working
-- Next: Phase 18-02 — backlogged status (new status value in task schema)
-- 586 tests passing (up from 518 pre-v1.4)
-- Last activity: 2026-02-17 — Phase 18-01 complete
+- Phase 18 complete: backup command + backlogged status both shipped
+- Requirements DATA-01, DATA-02, DATA-03 complete
+- 598 tests passing (up from 518 pre-v1.4)
+- Last activity: 2026-02-17 — Phase 18 complete
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
