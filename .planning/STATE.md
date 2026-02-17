@@ -11,10 +11,10 @@
 ## Current Position
 
 **Milestone:** v1.4 Hardening and Polish — IN PROGRESS
-**Phase:** 18 (in progress)
-**Phase Name:** Database & Status Model
-**Plan:** 18-02 complete (2/2 plans done) — Phase 18 COMPLETE
-**Status:** Milestone complete
+**Phase:** 19 (next)
+**Phase Name:** Observability
+**Plan:** —
+**Status:** Ready to plan
 
 **Progress Bar:**
 ```
@@ -94,15 +94,16 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Executed Phase 18 Plan 02: backlogged status implementation. Added 'backlogged' to TASK_STATUSES and VALID_STATUS_TRANSITIONS, created migration 005 (SQLite table rebuild), added magenta formatter, and wrote 28 new tests. 598 tests now passing.
+Phase 18 complete — both plans executed, verified, roadmap updated. `tasks backup` command and backlogged status lifecycle shipped. 598 tests passing.
 
 **What's Next:**
-Execute Phase 19: Observability — doctor command, request IDs, event replay, stats, db-check.
+Plan and execute Phase 19: Observability — doctor command, request IDs, event replay, stats, db-check.
 
 **Context for Next Session:**
-- Phase 18 complete: backup command + backlogged status both shipped
-- Requirements DATA-01, DATA-02, DATA-03 complete
-- 598 tests passing (up from 518 pre-v1.4)
+- v1.4 progress: 2/6 phases complete (17, 18)
+- Phase 18: backup command (RELI-05) + backlogged status (DATA-01, DATA-02, DATA-03)
+- 598 tests passing across 52 test files
+- Next: Phase 19 (OBSV-01 through OBSV-05)
 - Last activity: 2026-02-17 — Phase 18 complete
 
 ---

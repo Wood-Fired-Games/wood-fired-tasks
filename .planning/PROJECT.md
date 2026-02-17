@@ -21,7 +21,7 @@ Any agent on the local network can reliably create, find, and update work items 
 - Task relationships: parent/child subtasks, dependency tracking with cycle detection — v1.0
 - Rich metadata: tags/labels, due dates, time estimates, comments with author/timestamp — v1.0
 - Multi-project support with project CRUD — v1.0
-- Full task lifecycle with enforced status transitions: open -> in_progress -> done -> closed, with blocked state — v1.0
+- Full task lifecycle with enforced status transitions: open -> in_progress -> done -> closed, with blocked and backlogged states — v1.0+v1.4
 - MCP server exposes tools for all REST API endpoints (20 tools: tasks, projects, deps, comments, subtasks, claim, health) — v1.1+v1.3
 - CLI supports all REST API operations (19 commands: tasks, projects, deps, comments, subtasks, health) — v1.1
 - CLI `--json` flag on all commands for machine-readable output with consistent envelope format — v1.1
@@ -52,8 +52,7 @@ Any agent on the local network can reliably create, find, and update work items 
 
 ### Active
 
-- [ ] Add "Backlogged" task status for tracking tasks agents cannot claim
-- (Additional requirements to be defined)
+- (See REQUIREMENTS.md for full v1.4 requirement list — 23 requirements across 6 phases)
 
 ### Out of Scope
 
@@ -72,8 +71,7 @@ Any agent on the local network can reliably create, find, and update work items 
 
 ## Context
 
-Shipped v1.3 with 518 tests passing across 47 test files. Zero TypeScript errors.
-19,618 lines of TypeScript across 127 files.
+Shipped v1.3 with 518 tests. v1.4 in progress — 598 tests passing across 52 test files. Zero TypeScript errors.
 
 Tech stack: Node.js, Fastify, better-sqlite3, @fastify/sse, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4.
 
@@ -84,7 +82,7 @@ The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 Interface inventory:
 - REST API: 20 endpoints (tasks CRUD + claim, projects CRUD, dependencies, comments, subtasks, events, health)
 - MCP Server: 20 tools (same coverage as REST) + events://stream resource
-- CLI: 20 commands (same coverage as REST + interactive prompts)
+- CLI: 21 commands (same coverage as REST + interactive prompts + backup)
 - Claude Code Skills: 10 workflow skills (/tasks: namespace)
 - Installers: install.sh (Linux/macOS), install.ps1 (Windows)
 
@@ -127,6 +125,9 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | Event-driven workflow triggers | Decouple automation from SSE, EventBus enables composition | Good — WorkflowEngine subscribes to EventBus, clean separation |
 | Max cascade depth = 5 | Prevents infinite loops from circular task hierarchies | Good — depth tracked per cascade chain |
 | Transaction wrapping for cascades | SQLite transaction ensures atomic rollback on error | Good — no partial state on crash |
+| db.backup() over VACUUM INTO | Online Backup API is WAL-safe for hot backups while server runs | Good — readonly connection avoids write lock conflicts |
+| Backlogged → open only transition | Enforces triage workflow: must explicitly promote before agents can claim | Good — existing claimTask guard (status === 'open') handles exclusion automatically |
+| SQLite table rebuild for CHECK changes | ALTER TABLE cannot modify CHECK constraints; standard rebuild pattern | Good — migration 005 preserves data and recreates FTS triggers |
 
 ---
-*Last updated: 2026-02-17 after starting v1.4 Hardening and Polish*
+*Last updated: 2026-02-17 after Phase 18*
