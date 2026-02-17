@@ -84,3 +84,25 @@
 
 ---
 
+
+## v1.4 Hardening and Polish (Shipped: 2026-02-17)
+
+**Phases completed:** 6 phases (17-22), 15 plans
+
+**Key accomplishments:**
+- Structured JSON logging, /health endpoint, graceful shutdown, config validation, exit codes, WAL maintenance (Phase 17)
+- SQLite hot backup command (`tasks backup`) and backlogged task status lifecycle with triage workflow (Phase 18)
+- Self-service diagnostics (`tasks doctor`, `tasks stats`, `tasks db-check`), request ID propagation, SSE replay buffer (Phase 19)
+- Mutation testing with Stryker (75.88% baseline), property-based tests with fast-check, knip unused dep detection + GitHub Actions CI (Phase 20)
+- Progress spinners (@clack/prompts), consistent colored output across 24 commands with NO_COLOR support, bash/zsh shell completions (Phase 21)
+- systemd resource limits (MemoryMax=512M, CPUQuota=100%, TasksMax=50) and 19 security hardening directives (Phase 22)
+
+**Stats:**
+- 24,425 lines of TypeScript across 130+ files
+- 636 tests passing (57 test files)
+- 123 files changed, 15,152 insertions
+- Mutation testing baseline: 75.88% covered mutation score
+- Git range: 8cc10d3..d3d4110
+
+---
+
