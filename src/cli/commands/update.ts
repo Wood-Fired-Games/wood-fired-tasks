@@ -1,9 +1,8 @@
 import { Command } from 'commander';
-import { updateTask } from '../api/client.js';
-import { formatTaskDetail } from '../output/formatters.js';
+import { updateTask, withApiSpinner } from '../api/client.js';
+import { formatTaskDetail, colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import chalk from 'chalk';
 import type { UpdateTaskInput } from '../api/types.js';
 
 const VALID_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked'];
@@ -24,7 +23,7 @@ export const updateCommand = new Command('update')
       // Parse and validate task ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -32,7 +31,7 @@ export const updateCommand = new Command('update')
       // Validate status if provided
       if (options.status && !VALID_STATUSES.includes(options.status)) {
         console.error(
-          chalk.red(
+          colorError(
             `Invalid status: ${options.status}. Valid options: ${VALID_STATUSES.join(', ')}`
           )
         );
@@ -43,7 +42,7 @@ export const updateCommand = new Command('update')
       // Validate priority if provided
       if (options.priority && !VALID_PRIORITIES.includes(options.priority)) {
         console.error(
-          chalk.red(
+          colorError(
             `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
           )
         );
@@ -78,13 +77,13 @@ export const updateCommand = new Command('update')
 
       // Check if any updates were specified
       if (Object.keys(updates).length === 0) {
-        console.log(chalk.yellow('No updates specified. Use --help to see available options.'));
+        console.log(colorWarn('No updates specified. Use --help to see available options.'));
         process.exitCode = 1;
         return;
       }
 
       // Call API
-      const task = await updateTask(id, updates);
+      const task = await withApiSpinner('Updating task...', () => updateTask(id, updates));
 
       // Check if JSON mode (global flag from program)
       const program = updateCommand.parent;
@@ -97,7 +96,7 @@ export const updateCommand = new Command('update')
         jsonOutput({ task }, { id: task.id });
       } else {
         // Terminal mode: formatted output
-        console.log(chalk.green(`Task #${task.id} updated successfully`));
+        console.log(colorSuccess(`Task #${task.id} updated successfully`));
         console.log('');
         console.log(formatTaskDetail(task));
       }

@@ -24,6 +24,7 @@ import { backupCommand } from '../commands/backup.js';
 import { doctorCommand } from '../commands/doctor.js';
 import { statsCommand } from '../commands/stats.js';
 import { dbCheckCommand } from '../commands/db-check.js';
+import { completionsCommand } from '../commands/completions.js';
 
 // Configure CLI program
 program
@@ -78,6 +79,9 @@ program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
 program.addCommand(statsCommand);
 program.addCommand(dbCheckCommand);
+
+// Register completions command
+program.addCommand(completionsCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);

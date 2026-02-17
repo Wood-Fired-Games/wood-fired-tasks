@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { withSpinner } from '../output/spinner.js';
 import type {
   TaskResponse,
   CreateTaskInput,
@@ -335,4 +336,17 @@ export async function claimTask(
  */
 export async function checkHealth(): Promise<HealthResponse> {
   return apiRequest<HealthResponse>('/health');
+}
+
+// ── Spinner-wrapped API calls ───────────────────────────────
+
+/**
+ * Wrap an API call with a spinner.
+ * The spinner description should match the operation (e.g., "Fetching tasks...").
+ */
+export async function withApiSpinner<T>(
+  message: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  return withSpinner(message, fn);
 }

@@ -1,10 +1,9 @@
 import { Command } from 'commander';
-import { createTask } from '../api/client.js';
-import { formatTaskDetail } from '../output/formatters.js';
+import { createTask, withApiSpinner } from '../api/client.js';
+import { formatTaskDetail, colorSuccess, colorError } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { promptForMissing } from '../prompts/interactive.js';
-import chalk from 'chalk';
 import type { CreateTaskInput } from '../api/types.js';
 
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -37,7 +36,7 @@ export const createCommand = new Command('create')
         if (isJsonMode) {
           process.stderr.write('Invalid project ID: must be a number\n');
         } else {
-          console.error(chalk.red('Invalid project ID: must be a number'));
+          console.error(colorError('Invalid project ID: must be a number'));
         }
         process.exitCode = 1;
         return;
@@ -51,7 +50,7 @@ export const createCommand = new Command('create')
           );
         } else {
           console.error(
-            chalk.red(
+            colorError(
               `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
             )
           );
@@ -84,7 +83,7 @@ export const createCommand = new Command('create')
       }
 
       // Create task via API
-      const task = await createTask(input);
+      const task = await withApiSpinner('Creating task...', () => createTask(input));
 
       // Display success
       if (isJsonMode) {
@@ -92,7 +91,7 @@ export const createCommand = new Command('create')
         jsonOutput({ task }, { id: task.id });
       } else {
         // Terminal mode: formatted output
-        console.log(chalk.green('Task created successfully'));
+        console.log(colorSuccess('Task created successfully'));
         console.log('');
         console.log(formatTaskDetail(task));
       }

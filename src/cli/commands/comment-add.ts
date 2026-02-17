@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { addComment } from '../api/client.js';
+import { colorError, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { promptForMissing } from '../prompts/interactive.js';
-import chalk from 'chalk';
 
 export const commentAddCommand = new Command('comment-add')
   .description('Add a comment to a task')
@@ -15,7 +15,7 @@ export const commentAddCommand = new Command('comment-add')
       // Parse and validate task ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -39,7 +39,7 @@ export const commentAddCommand = new Command('comment-add')
       if (isJsonMode) {
         jsonOutput({ comment });
       } else {
-        console.log(chalk.green(`Comment added to task ${id}`));
+        console.log(colorSuccess(`Comment added to task ${id}`));
       }
     } catch (error) {
       handleError(error);

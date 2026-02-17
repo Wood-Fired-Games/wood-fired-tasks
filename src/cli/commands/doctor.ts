@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { statfs } from 'fs';
 import { promisify } from 'util';
 import { dirname } from 'path';
-import chalk from 'chalk';
+import { colorSuccess, colorError, colorWarn } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
 import { configSchema } from '../../config/env.js';
@@ -118,18 +118,18 @@ export const doctorCommand = new Command('doctor')
       });
     } else {
       const dbLabel = dbStatus === 'PASS'
-        ? chalk.green('[PASS]')
-        : chalk.red('[FAIL]');
+        ? colorSuccess('[PASS]')
+        : colorError('[FAIL]');
 
       const diskLabel = diskStatus === 'PASS'
-        ? chalk.green('[PASS]')
+        ? colorSuccess('[PASS]')
         : diskStatus === 'WARN'
-          ? chalk.yellow('[WARN]')
-          : chalk.red('[FAIL]');
+          ? colorWarn('[WARN]')
+          : colorError('[FAIL]');
 
       const configLabel = configStatus === 'PASS'
-        ? chalk.green('[PASS]')
-        : chalk.red('[FAIL]');
+        ? colorSuccess('[PASS]')
+        : colorError('[FAIL]');
 
       console.log(`Database:  ${dbLabel} ${dbMessage}`);
 

@@ -1,9 +1,8 @@
 import { Command } from 'commander';
-import { claimTask } from '../api/client.js';
-import { formatTaskDetail } from '../output/formatters.js';
+import { claimTask, withApiSpinner } from '../api/client.js';
+import { formatTaskDetail, colorError, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import chalk from 'chalk';
 
 export const claimCommand = new Command('claim')
   .description('Claim an unassigned task (atomic operation)')
@@ -14,12 +13,14 @@ export const claimCommand = new Command('claim')
     try {
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
 
-      const task = await claimTask(id, options.assignee, options.idempotencyKey);
+      const task = await withApiSpinner('Claiming task...', () =>
+        claimTask(id, options.assignee, options.idempotencyKey)
+      );
 
       // Check if JSON mode
       const program = claimCommand.parent;
@@ -29,7 +30,7 @@ export const claimCommand = new Command('claim')
       if (isJsonMode) {
         jsonOutput({ task }, { id: task.id, assignee: task.assignee });
       } else {
-        console.log(chalk.green(`Task #${task.id} claimed by ${task.assignee}`));
+        console.log(colorSuccess(`Task #${task.id} claimed by ${task.assignee}`));
         console.log('');
         console.log(formatTaskDetail(task));
       }

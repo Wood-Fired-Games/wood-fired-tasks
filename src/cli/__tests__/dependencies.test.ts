@@ -30,9 +30,22 @@ vi.mock('../output/json-output.js', () => ({
   jsonOutput: vi.fn(),
 }));
 
+// Mock the spinner module (used by withApiSpinner in client.js)
+vi.mock('../output/spinner.js', () => ({
+  withSpinner: vi.fn((_msg: string, fn: () => Promise<unknown>) => fn()),
+  shouldShowSpinner: vi.fn(() => false),
+}));
+
 // Mock the formatters module
 vi.mock('../output/formatters.js', () => ({
   formatDependencyList: vi.fn((deps) => `Blocks: ${deps.blocks.length}, Blocked by: ${deps.blocked_by.length}`),
+  colorSuccess: vi.fn((text: string) => text),
+  colorError: vi.fn((text: string) => text),
+  colorWarn: vi.fn((text: string) => text),
+  colorInfo: vi.fn((text: string) => text),
+  colorBold: vi.fn((text: string) => text),
+  isJsonMode: vi.fn(() => false),
+  shouldUseColor: vi.fn(() => false),
 }));
 
 const mockDependency = {

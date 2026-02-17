@@ -1,9 +1,8 @@
 import { Command } from 'commander';
 import { getDependencies } from '../api/client.js';
-import { formatDependencyList } from '../output/formatters.js';
+import { formatDependencyList, colorError } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import chalk from 'chalk';
 
 export const depListCommand = new Command('dep-list')
   .description('List dependencies for a task')
@@ -13,7 +12,7 @@ export const depListCommand = new Command('dep-list')
       // Parse and validate task ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }

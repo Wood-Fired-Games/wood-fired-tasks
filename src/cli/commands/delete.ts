@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { deleteTask, getTask } from '../api/client.js';
+import { colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { confirmAction } from '../prompts/interactive.js';
-import chalk from 'chalk';
 
 export const deleteCommand = new Command('delete')
   .description('Delete a task by ID')
@@ -13,7 +13,7 @@ export const deleteCommand = new Command('delete')
       // Parse and validate task ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -38,7 +38,7 @@ export const deleteCommand = new Command('delete')
           jsonOutput({}, { message: 'Deletion cancelled' });
         } else {
           // Terminal mode: info message
-          console.log(chalk.yellow('Deletion cancelled'));
+          console.log(colorWarn('Deletion cancelled'));
         }
         return;
       }
@@ -52,7 +52,7 @@ export const deleteCommand = new Command('delete')
         jsonOutput({}, { message: `Task ${id} deleted` });
       } else {
         // Terminal mode: success message
-        console.log(chalk.green(`Task #${id} deleted successfully`));
+        console.log(colorSuccess(`Task #${id} deleted successfully`));
       }
     } catch (error) {
       handleError(error);

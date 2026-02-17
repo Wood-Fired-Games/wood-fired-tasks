@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { deleteComment } from '../api/client.js';
+import { colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { confirmAction } from '../prompts/interactive.js';
-import chalk from 'chalk';
 
 export const commentDeleteCommand = new Command('comment-delete')
   .description('Delete a comment by ID')
@@ -14,7 +14,7 @@ export const commentDeleteCommand = new Command('comment-delete')
       // Parse and validate task ID
       const taskId = parseInt(taskIdStr, 10);
       if (isNaN(taskId)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -22,7 +22,7 @@ export const commentDeleteCommand = new Command('comment-delete')
       // Parse and validate comment ID
       const commentId = parseInt(commentIdStr, 10);
       if (isNaN(commentId)) {
-        console.error(chalk.red('Invalid comment ID: must be a number'));
+        console.error(colorError('Invalid comment ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -42,7 +42,7 @@ export const commentDeleteCommand = new Command('comment-delete')
         if (isJsonMode) {
           jsonOutput({}, { message: 'Deletion cancelled' });
         } else {
-          console.log(chalk.yellow('Deletion cancelled'));
+          console.log(colorWarn('Deletion cancelled'));
         }
         return;
       }
@@ -54,7 +54,7 @@ export const commentDeleteCommand = new Command('comment-delete')
       if (isJsonMode) {
         jsonOutput({}, { message: `Comment ${commentId} deleted` });
       } else {
-        console.log(chalk.green(`Comment ${commentId} deleted successfully`));
+        console.log(colorSuccess(`Comment ${commentId} deleted successfully`));
       }
     } catch (error) {
       handleError(error);

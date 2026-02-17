@@ -1,10 +1,9 @@
 import { Command } from 'commander';
 import { createProject } from '../api/client.js';
-import { formatProjectDetail } from '../output/formatters.js';
+import { formatProjectDetail, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { promptForMissing } from '../prompts/interactive.js';
-import chalk from 'chalk';
 import type { CreateProjectInput } from '../api/types.js';
 
 export const projectCreateCommand = new Command('project-create')
@@ -39,7 +38,7 @@ export const projectCreateCommand = new Command('project-create')
         jsonOutput({ project }, { id: project.id });
       } else {
         // Terminal mode: formatted output
-        console.log(chalk.green('Project created successfully'));
+        console.log(colorSuccess('Project created successfully'));
         console.log('');
         console.log(formatProjectDetail(project));
       }

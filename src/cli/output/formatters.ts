@@ -37,6 +37,36 @@ export function shouldUseColor(): boolean {
 }
 
 /**
+ * Semantic color functions that respect NO_COLOR and --json mode.
+ * Use these instead of direct chalk calls in command files.
+ */
+
+/** Format success messages (e.g., "Task created successfully") */
+export function colorSuccess(text: string): string {
+  return shouldUseColor() ? chalk.green(text) : text;
+}
+
+/** Format error messages (e.g., "Invalid task ID") */
+export function colorError(text: string): string {
+  return shouldUseColor() ? chalk.red(text) : text;
+}
+
+/** Format warning messages (e.g., "No updates specified") */
+export function colorWarn(text: string): string {
+  return shouldUseColor() ? chalk.yellow(text) : text;
+}
+
+/** Format informational/hint messages (e.g., "3 subtask(s) found") */
+export function colorInfo(text: string): string {
+  return shouldUseColor() ? chalk.gray(text) : text;
+}
+
+/** Format bold text (e.g., headers, labels) */
+export function colorBold(text: string): string {
+  return shouldUseColor() ? chalk.bold(text) : text;
+}
+
+/**
  * Strip ANSI color codes from text if in JSON mode.
  *
  * @param text - Text that may contain ANSI codes

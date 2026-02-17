@@ -1,9 +1,8 @@
 import { Command } from 'commander';
 import { getProject } from '../api/client.js';
-import { formatProjectDetail } from '../output/formatters.js';
+import { formatProjectDetail, colorError } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import chalk from 'chalk';
 
 export const projectShowCommand = new Command('project-show')
   .description('Show project details by ID')
@@ -13,7 +12,7 @@ export const projectShowCommand = new Command('project-show')
       // Parse and validate project ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid project ID: must be a number'));
+        console.error(colorError('Invalid project ID: must be a number'));
         process.exitCode = 1;
         return;
       }
