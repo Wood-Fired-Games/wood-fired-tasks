@@ -67,7 +67,16 @@ Wave 3: 17-04 (tests) — depends on 17-01, 17-02, 17-03
 4. Authorized users can transition backlogged tasks to "open" status
 5. Status lifecycle correctly includes backlogged -> open -> in_progress -> done -> closed
 
-**Plans:** TBD
+**Plans:** 2 plans in 1 wave
+
+**Plan List:**
+- [ ] **18-01-PLAN.md** — SQLite backup CLI command (RELI-05)
+- [ ] **18-02-PLAN.md** — Backlogged status lifecycle, migration, and tests (DATA-01, DATA-02, DATA-03)
+
+**Wave Structure:**
+```
+Wave 1: 18-01 (backup command), 18-02 (backlogged status) — parallel
+```
 
 ---
 
@@ -142,8 +151,8 @@ Wave 3: 17-04 (tests) — depends on 17-01, 17-02, 17-03
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. Core Reliability | 0/TBD | Not started | - |
-| 18. Database & Status | 0/TBD | Not started | - |
+| 17. Core Reliability | 0/4 | Not started | - |
+| 18. Database & Status | 0/2 | Planned | - |
 | 19. Observability | 0/TBD | Not started | - |
 | 20. Testing Depth | 0/TBD | Not started | - |
 | 21. UX Polish | 0/TBD | Not started | - |
@@ -222,4 +231,4 @@ Per REQUIREMENTS.md, these are explicitly excluded from v1.4:
 ---
 
 *Last updated: 2026-02-17*
-*Next step: /gsd:plan-phase 17*
+*Next step: /gsd:execute-phase 18*
