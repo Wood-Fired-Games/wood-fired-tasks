@@ -71,7 +71,7 @@ Any agent on the local network can reliably create, find, and update work items 
 
 ## Context
 
-Shipped v1.3 with 518 tests. v1.4 in progress — 598 tests passing across 52 test files. Zero TypeScript errors.
+Shipped v1.3 with 518 tests. v1.4 in progress — 607 tests passing across 54 test files. Zero TypeScript errors. Mutation testing baseline: 75.88% covered mutation score.
 
 Tech stack: Node.js, Fastify, better-sqlite3, @fastify/sse, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4.
 
@@ -133,6 +133,10 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | Module-level _lastRequestId in CLI client | Expose request ID without breaking 20+ existing caller signatures | Good — getLastRequestId() available for debugging, zero API changes |
 | SSE buffer 100 (not 1000) | Right-sized per OBSV-03 requirement; ~44KB memory at 100 events | Good — 5-min TTL still applies as secondary constraint |
 | traceId on 5 key MCP tools only | Blast radius control; full coverage deferred to future hardening | Good — covers create/update/list/claim task + check_health |
+| Removed @fastify/cors and fastify-plugin | knip detected as unused; grep confirmed zero imports in src/ | Good — cleaner dependency tree, faster installs |
+| vitest.related: false for Stryker | Integration tests use createTestApp() factory; related:true misses them | Good — accurate mutation scores with full test execution |
+| thresholds.break: null for initial run | Baseline score unknown; set threshold after observing results | Good — 75.88% covered established as baseline |
+| @stryker-mutator/api in knip ignore | JSDoc type import not statically traceable by knip | Good — false positive resolved with documented exclusion |
 
 ---
-*Last updated: 2026-02-17 after Phase 19*
+*Last updated: 2026-02-17 after Phase 20*
