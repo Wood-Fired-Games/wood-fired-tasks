@@ -17,7 +17,8 @@
     "cli": "tsx src/cli/bin/tasks.ts",
     "mcp:start": "node dist/mcp/index.js",
     "mcp:dev": "tsx src/mcp/index.ts",
-    "lint:deps": "knip --dependencies"
+    "lint:deps": "knip --dependencies",
+    "test:mutation": "stryker run"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +41,9 @@
   },
   "devDependencies": {
     "@fast-check/vitest": "^0.2.4",
+    "@stryker-mutator/core": "^9.5.1",
+    "@stryker-mutator/typescript-checker": "^9.5.1",
+    "@stryker-mutator/vitest-runner": "^9.5.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.2.3",
     "knip": "^5.83.1",

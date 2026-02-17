@@ -9,6 +9,7 @@
   ],
   "project": ["src/**/*.ts"],
   "ignoreDependencies": [
-    "pino-pretty"
+    "pino-pretty",
+    "@stryker-mutator/api"
   ]
 }
