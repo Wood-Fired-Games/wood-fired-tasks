@@ -3,6 +3,7 @@ import { TaskService } from '../../services/task.service.js';
 import { ProjectService } from '../../services/project.service.js';
 import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema } from '../../schemas/task.schema.js';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 import { convertToMcpError } from '../errors.js';
 
 /**
@@ -29,8 +30,11 @@ export function registerTaskTools(
       inputSchema: CreateTaskSchema,
     },
     async (args) => {
+      const traceId = randomUUID();
+      console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'start', timestamp: new Date().toISOString() }));
       try {
         const task = taskService.createTask(args);
+        console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'success' }));
         return {
           content: [
             {
@@ -41,6 +45,7 @@ export function registerTaskTools(
           structuredContent: task as unknown as { [x: string]: unknown },
         };
       } catch (error) {
+        console.error(JSON.stringify({ level: 'error', traceId, tool: 'create_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
         throw convertToMcpError(error);
       }
     }
@@ -103,8 +108,11 @@ export function registerTaskTools(
       }),
     },
     async (args) => {
+      const traceId = randomUUID();
+      console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'start', timestamp: new Date().toISOString() }));
       try {
         const task = taskService.updateTask(args.id, args.updates);
+        console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'success' }));
         return {
           content: [
             {
@@ -115,6 +123,7 @@ export function registerTaskTools(
           structuredContent: task as unknown as { [x: string]: unknown },
         };
       } catch (error) {
+        console.error(JSON.stringify({ level: 'error', traceId, tool: 'update_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
         throw convertToMcpError(error);
       }
     }
@@ -129,10 +138,13 @@ export function registerTaskTools(
       inputSchema: TaskFiltersSchema,
     },
     async (args) => {
+      const traceId = randomUUID();
+      console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'start', timestamp: new Date().toISOString() }));
       try {
         const tasks = taskService.listTasks(args);
 
         if (tasks.length === 0) {
+          console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
           return {
             content: [
               {
@@ -151,6 +163,7 @@ export function registerTaskTools(
           );
         });
 
+        console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
         return {
           content: [
             {
@@ -161,6 +174,7 @@ export function registerTaskTools(
           structuredContent: { tasks } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
+        console.error(JSON.stringify({ level: 'error', traceId, tool: 'list_tasks', event: 'error', error: error instanceof Error ? error.message : String(error) }));
         throw convertToMcpError(error);
       }
     }
@@ -204,8 +218,11 @@ export function registerTaskTools(
       }),
     },
     async (args) => {
+      const traceId = randomUUID();
+      console.error(JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'start', timestamp: new Date().toISOString() }));
       try {
         const task = taskService.claimTask(args.task_id, args.assignee);
+        console.error(JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'success' }));
         return {
           content: [
             {
@@ -216,6 +233,7 @@ export function registerTaskTools(
           structuredContent: task as unknown as { [x: string]: unknown },
         };
       } catch (error) {
+        console.error(JSON.stringify({ level: 'error', traceId, tool: 'claim_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
         throw convertToMcpError(error);
       }
     }
