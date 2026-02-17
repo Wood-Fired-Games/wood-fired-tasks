@@ -120,7 +120,18 @@ Wave 1: 19-01 (CLI diagnostics), 19-02 (request IDs + SSE buffer) — parallel
 3. Unused dependency detection with knip runs in CI and reports findings
 4. CI fails if unused dependencies are detected (or explicit exclusions documented)
 
-**Plans:** TBD
+**Plans:** 3 plans in 2 waves
+
+**Plan List:**
+- [ ] **20-01-PLAN.md** — Unused dependency detection with knip and GitHub Actions CI (TEST-03)
+- [ ] **20-02-PLAN.md** — Property-based testing with fast-check for CycleDetector and status transitions (TEST-02)
+- [ ] **20-03-PLAN.md** — Mutation testing with Stryker, Vitest runner, and TypeScript checker (TEST-01)
+
+**Wave Structure:**
+```
+Wave 1: 20-01 (knip + CI), 20-02 (fast-check property tests) — parallel
+Wave 2: 20-03 (Stryker mutation testing) — depends on 20-01
+```
 
 ---
 
