@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-16
+**Last Updated:** 2026-02-17
 
 ## Project Reference
 
@@ -10,8 +10,10 @@
 
 ## Current Position
 
-**Milestone:** v1.3 Multi-Agent Coordination — COMPLETE
-**Status:** Between milestones
+**Milestone:** v1.4 Hardening and Polish — DEFINING REQUIREMENTS
+**Phase:** Not started
+**Plan:** —
+**Status:** Defining requirements
 
 **Progress Bar:**
 ```
@@ -19,6 +21,7 @@ v1.0 ████████████████████ 100% (6/6 phas
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
+v1.4 ○○○○○○○○○○○○○○○○○○○○   0% (defining requirements)
 ```
 
 ## Performance Metrics
@@ -64,18 +67,16 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Completed v1.3 milestone archival. Audit passed (17/17 requirements, 3/3 phases, 8/8 integrations, 4/4 E2E flows). PROJECT.md updated, STATE.md cleaned up for next milestone.
+Started milestone v1.4 Hardening and Polish. PROJECT.md updated with new milestone goals.
 
 **What's Next:**
-`/gsd:new-milestone` to plan v1.4 or next version.
+Define requirements for v1.4, then create roadmap.
 
 **Context for Next Session:**
-- v1.3 COMPLETE and archived to .planning/milestones/
-- 518 tests passing, zero TypeScript errors
-- Quick Task 4 bugfix deployed to production
-- Git tag v1.3 exists
-- REQUIREMENTS.md deleted (fresh one for next milestone)
-- Ready for `/gsd:new-milestone`
+- v1.4 milestone initialized
+- Defining requirements in progress
+- Last activity: 2026-02-17 — Milestone v1.4 started
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
+*Milestone v1.4 started: 2026-02-17*

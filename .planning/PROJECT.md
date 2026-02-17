@@ -38,9 +38,22 @@ Any agent on the local network can reliably create, find, and update work items 
 - Idempotent claim deduplication and auto-release of stale claims (30-min timeout) — v1.3
 - Event stream, claim protocol, and workflows exposed via all interfaces (REST, MCP, CLI) — v1.3
 
+## Current Milestone: v1.4 Hardening and Polish
+
+**Goal:** Improve system reliability, code quality, and user experience through bug fixes, performance improvements, and interface refinements.
+
+**Target features:**
+- Bug fixes and stability improvements
+- Performance optimizations
+- Code refactoring and technical debt reduction
+- Interface polish and UX refinements
+- Documentation improvements
+- Testing coverage expansion
+
 ### Active
 
-(No active requirements — next milestone not yet planned)
+- [ ] Add "Backlogged" task status for tracking tasks agents cannot claim
+- (Additional requirements to be defined)
 
 ### Out of Scope
 
@@ -116,4 +129,4 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | Transaction wrapping for cascades | SQLite transaction ensures atomic rollback on error | Good — no partial state on crash |
 
 ---
-*Last updated: 2026-02-16 after v1.3 milestone completion*
+*Last updated: 2026-02-17 after starting v1.4 Hardening and Polish*
