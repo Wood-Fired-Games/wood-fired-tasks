@@ -20,6 +20,7 @@ import { subtaskCreateCommand } from '../commands/subtask-create.js';
 import { subtaskListCommand } from '../commands/subtask-list.js';
 import { healthCommand } from '../commands/health.js';
 import { claimCommand } from '../commands/claim.js';
+import { backupCommand } from '../commands/backup.js';
 
 // Configure CLI program
 program
@@ -66,6 +67,9 @@ program.addCommand(claimCommand);
 
 // Register health command
 program.addCommand(healthCommand);
+
+// Register backup command
+program.addCommand(backupCommand);
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);
