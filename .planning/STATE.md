@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-17
+**Last Updated:** 2026-02-17 (Phase 19-02 complete)
 
 ## Project Reference
 
@@ -11,10 +11,10 @@
 ## Current Position
 
 **Milestone:** v1.4 Hardening and Polish — IN PROGRESS
-**Phase:** 19 (next)
+**Phase:** 19
 **Phase Name:** Observability
-**Plan:** —
-**Status:** Ready to plan
+**Plan:** 02 complete (both plans done)
+**Status:** Phase 19 complete — ready for Phase 20
 
 **Progress Bar:**
 ```
@@ -22,7 +22,7 @@ v1.0 ████████████████████ 100% (6/6 phas
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
-v1.4 ████████░░░░░░░░░░░░  33% (phases 17-18 complete, 4/6 phases remaining)
+v1.4 ████████████░░░░░░░░  50% (phases 17-19 complete, 3/6 phases remaining)
 ```
 
 ## Performance Metrics
@@ -39,6 +39,7 @@ v1.4 ████████░░░░░░░░░░░░  33% (phases 1
 |-------|------|----------|-------|-------|------|
 | 18-database-status-model | 01 | 2 min | 2 | 3 | 2026-02-17 |
 | 18-database-status-model | 02 | 4 min | 2 | 5 | 2026-02-17 |
+| 19-observability | 02 | 2 min | 2 | 5 | 2026-02-17 |
 
 **v1.4 Targets:**
 - 6 phases planned (17-22)
@@ -55,6 +56,9 @@ v1.4 ████████░░░░░░░░░░░░  33% (phases 1
 - Phase 18-01: CLI-direct-DB pattern is a legitimate exception for data-safety operations that bypass REST API
 - Phase 18-02: backlogged -> open is the ONLY valid transition from backlogged; cannot go directly to in_progress/done/closed/blocked — enforces explicit triage promotion
 - Phase 18-02: SQLite table rebuild pattern required for CHECK constraint changes: foreign_keys=OFF, create new, copy, drop FTS triggers, drop old table, rename, recreate indexes + triggers
+- Phase 19-02: `requestIdHeader: false` prevents callers from injecting arbitrary request IDs into Fastify logs (security hardening)
+- Phase 19-02: Module-level `_lastRequestId` in CLI client exposes request ID without breaking 20+ existing caller signatures
+- Phase 19-02: SSE buffer at 100 (not 1000) per OBSV-03 requirement; traceId logging on only 5 key MCP tools to control blast radius
 
 See `.planning/PROJECT.md` Key Decisions table for full history.
 
@@ -70,7 +74,7 @@ None.
 
 1. ~~Phase 17: Core Reliability Fundamentals~~ — COMPLETE (4 plans, shipped 2026-02-17)
 2. ~~Phase 18: Database & Status Model~~ — COMPLETE (backup command + backlogged status, 2026-02-17)
-3. Phase 19: Observability — doctor command, request IDs, event replay, stats, db-check
+3. ~~Phase 19: Observability~~ — COMPLETE (doctor command OBSV-01, request IDs OBSV-02, SSE buffer OBSV-03, 2026-02-17)
 4. Phase 20: Testing Depth — mutation testing, property testing, unused deps
 5. Phase 21: UX Polish — progress indicators, colored output, shell completions
 6. Phase 22: Infrastructure Hardening — systemd limits, security hardening
@@ -83,6 +87,7 @@ None.
 
 ### Recent Completions
 
+- [x] Phase 19-02: request ID propagation — UUID X-Request-ID on REST, traceId on 5 MCP tools, SSE buffer at 100, CLI client captures request IDs (2026-02-17)
 - [x] Phase 18-02: backlogged status — migration 005, type updates, magenta formatter, 28 new tests (2026-02-17)
 - [x] Phase 18-01: `tasks backup` command — better-sqlite3 backup API, readonly, 8 tests (2026-02-17)
 - [x] Phase 17 complete (2026-02-17) — 4 plans: structured logging, health checks, graceful shutdown, config validation, exit codes, WAL maintenance
@@ -94,17 +99,17 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Phase 18 complete — both plans executed, verified, roadmap updated. `tasks backup` command and backlogged status lifecycle shipped. 598 tests passing.
+Phase 19-02 complete — request ID propagation shipped. UUID v4 X-Request-ID on all REST responses, traceId logging on 5 key MCP tools, SSE buffer at 100 events, CLI client captures request IDs. 598 tests passing.
 
 **What's Next:**
-Plan and execute Phase 19: Observability — doctor command, request IDs, event replay, stats, db-check.
+Phase 19 is now complete (both plans done). Move to Phase 20: Testing Depth — mutation testing, property testing, unused deps.
 
 **Context for Next Session:**
-- v1.4 progress: 2/6 phases complete (17, 18)
-- Phase 18: backup command (RELI-05) + backlogged status (DATA-01, DATA-02, DATA-03)
+- v1.4 progress: 3/6 phases complete (17, 18, 19)
+- Phase 19: doctor command (OBSV-01) + request ID propagation (OBSV-02, OBSV-03)
 - 598 tests passing across 52 test files
-- Next: Phase 19 (OBSV-01 through OBSV-05)
-- Last activity: 2026-02-17 — Phase 18 complete
+- Next: Phase 20 (mutation testing, property testing, unused deps)
+- Last activity: 2026-02-17 — Phase 19-02 complete
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
