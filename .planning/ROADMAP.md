@@ -12,7 +12,7 @@
 
 - [ ] **Phase 17: Core Reliability Fundamentals** - Service reliability, health checks, graceful shutdown, logging
 - [x] **Phase 18: Database & Status Model** - Backup command, backlogged status lifecycle (completed 2026-02-17)
-- [ ] **Phase 19: Observability** - Doctor command, request IDs, stats, integrity checks
+- [x] **Phase 19: Observability** - Doctor command, request IDs, stats, integrity checks (completed 2026-02-17)
 - [ ] **Phase 20: Testing Depth** - Mutation testing, property testing, unused deps detection
 - [ ] **Phase 21: UX Polish** - Progress indicators, colored output, shell completions
 - [ ] **Phase 22: Infrastructure Hardening** - systemd resource limits, security hardening
@@ -94,7 +94,7 @@ Wave 1: 18-01 (backup command), 18-02 (backlogged status) — parallel
 4. User can run `tasks stats` and see task counts by status, recent activity, agent productivity
 5. User can run `tasks db-check` and see PRAGMA integrity_check results
 
-**Plans:** 2 plans in 1 wave
+**Plans:** 2/2 plans complete
 
 **Plan List:**
 - [ ] **19-01-PLAN.md** — CLI diagnostic commands: doctor, stats, db-check (OBSV-01, OBSV-04, OBSV-05)
@@ -162,7 +162,7 @@ Wave 1: 19-01 (CLI diagnostics), 19-02 (request IDs + SSE buffer) — parallel
 |-------|----------------|--------|-----------|
 | 17. Core Reliability | 0/4 | Not started | - |
 | 18. Database & Status | 0/2 | Complete    | 2026-02-17 |
-| 19. Observability | 0/2 | Not started | - |
+| 19. Observability | 0/2 | Complete    | 2026-02-17 |
 | 20. Testing Depth | 0/TBD | Not started | - |
 | 21. UX Polish | 0/TBD | Not started | - |
 | 22. Infrastructure | 0/TBD | Not started | - |
