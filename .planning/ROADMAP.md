@@ -147,7 +147,18 @@ Wave 2: 20-03 (Stryker mutation testing) — depends on 20-01
 2. All CLI commands produce consistent colored output respecting NO_COLOR environment variable
 3. Shell completions work for bash and zsh (tab completion for commands, flags, and task IDs)
 
-**Plans:** TBD
+**Plans:** 3 plans in 2 waves
+
+**Plan List:**
+- [ ] **21-01-PLAN.md** — Progress indicators with @clack/prompts spinner (UXPL-01)
+- [ ] **21-02-PLAN.md** — Color consistency audit and standardization (UXPL-02)
+- [ ] **21-03-PLAN.md** — Shell completions for bash and zsh (UXPL-03)
+
+**Wave Structure:**
+```
+Wave 1: 21-01 (spinner/progress), 21-02 (color audit) — parallel
+Wave 2: 21-03 (shell completions) — depends on 21-02
+```
 
 ---
 
