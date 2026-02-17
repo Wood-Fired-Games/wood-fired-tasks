@@ -10,12 +10,12 @@
 
 ## Phases
 
-- [ ] **Phase 17: Core Reliability Fundamentals** - Service reliability, health checks, graceful shutdown, logging
+- [x] **Phase 17: Core Reliability Fundamentals** - Service reliability, health checks, graceful shutdown, logging (completed 2026-02-17)
 - [x] **Phase 18: Database & Status Model** - Backup command, backlogged status lifecycle (completed 2026-02-17)
 - [x] **Phase 19: Observability** - Doctor command, request IDs, stats, integrity checks (completed 2026-02-17)
 - [x] **Phase 20: Testing Depth** - Mutation testing, property testing, unused deps detection (completed 2026-02-17)
-- [ ] **Phase 21: UX Polish** - Progress indicators, colored output, shell completions
-- [ ] **Phase 22: Infrastructure Hardening** - systemd resource limits, security hardening
+- [x] **Phase 21: UX Polish** - Progress indicators, colored output, shell completions (completed 2026-02-17)
+- [x] **Phase 22: Infrastructure Hardening** - systemd resource limits, security hardening (completed 2026-02-17)
 
 ---
 
@@ -36,13 +36,13 @@
 5. Service returns sysexits.h standard exit codes (0=success, 1=general error, 2=misuse) for script integration
 6. WAL file size stays bounded due to periodic checkpoint (not growing unbounded)
 
-**Plans:** 4 plans in 3 waves
+**Plans:** 4/4 plans complete
 
 **Plan List:**
-- [ ] **17-01-PLAN.md** — Configuration validation and structured logging (RELI-01, RELI-06)
-- [ ] **17-02-PLAN.md** — Health check endpoint and connection timeouts (RELI-02, RELI-04)
-- [ ] **17-03-PLAN.md** — Graceful shutdown and WAL checkpointing (RELI-03, RELI-07, RELI-08)
-- [ ] **17-04-PLAN.md** — Tests for reliability features (TDD plan)
+- [x] **17-01-PLAN.md** — Configuration validation and structured logging (RELI-01, RELI-06)
+- [x] **17-02-PLAN.md** — Health check endpoint and connection timeouts (RELI-02, RELI-04)
+- [x] **17-03-PLAN.md** — Graceful shutdown and WAL checkpointing (RELI-03, RELI-07, RELI-08)
+- [x] **17-04-PLAN.md** — Tests for reliability features (TDD plan)
 
 **Wave Structure:**
 ```
@@ -70,8 +70,8 @@ Wave 3: 17-04 (tests) — depends on 17-01, 17-02, 17-03
 **Plans:** 2/2 plans complete
 
 **Plan List:**
-- [ ] **18-01-PLAN.md** — SQLite backup CLI command (RELI-05)
-- [ ] **18-02-PLAN.md** — Backlogged status lifecycle, migration, and tests (DATA-01, DATA-02, DATA-03)
+- [x] **18-01-PLAN.md** — SQLite backup CLI command (RELI-05)
+- [x] **18-02-PLAN.md** — Backlogged status lifecycle, migration, and tests (DATA-01, DATA-02, DATA-03)
 
 **Wave Structure:**
 ```
@@ -97,8 +97,8 @@ Wave 1: 18-01 (backup command), 18-02 (backlogged status) — parallel
 **Plans:** 2/2 plans complete
 
 **Plan List:**
-- [ ] **19-01-PLAN.md** — CLI diagnostic commands: doctor, stats, db-check (OBSV-01, OBSV-04, OBSV-05)
-- [ ] **19-02-PLAN.md** — Request ID propagation and SSE buffer reduction (OBSV-02, OBSV-03)
+- [x] **19-01-PLAN.md** — CLI diagnostic commands: doctor, stats, db-check (OBSV-01, OBSV-04, OBSV-05)
+- [x] **19-02-PLAN.md** — Request ID propagation and SSE buffer reduction (OBSV-02, OBSV-03)
 
 **Wave Structure:**
 ```
@@ -123,9 +123,9 @@ Wave 1: 19-01 (CLI diagnostics), 19-02 (request IDs + SSE buffer) — parallel
 **Plans:** 3/3 plans complete
 
 **Plan List:**
-- [ ] **20-01-PLAN.md** — Unused dependency detection with knip and GitHub Actions CI (TEST-03)
-- [ ] **20-02-PLAN.md** — Property-based testing with fast-check for CycleDetector and status transitions (TEST-02)
-- [ ] **20-03-PLAN.md** — Mutation testing with Stryker, Vitest runner, and TypeScript checker (TEST-01)
+- [x] **20-01-PLAN.md** — Unused dependency detection with knip and GitHub Actions CI (TEST-03)
+- [x] **20-02-PLAN.md** — Property-based testing with fast-check for CycleDetector and status transitions (TEST-02)
+- [x] **20-03-PLAN.md** — Mutation testing with Stryker, Vitest runner, and TypeScript checker (TEST-01)
 
 **Wave Structure:**
 ```
@@ -147,12 +147,12 @@ Wave 2: 20-03 (Stryker mutation testing) — depends on 20-01
 2. All CLI commands produce consistent colored output respecting NO_COLOR environment variable
 3. Shell completions work for bash and zsh (tab completion for commands, flags, and task IDs)
 
-**Plans:** 3 plans in 2 waves
+**Plans:** 3/3 plans complete
 
 **Plan List:**
-- [ ] **21-01-PLAN.md** — Progress indicators with @clack/prompts spinner (UXPL-01)
-- [ ] **21-02-PLAN.md** — Color consistency audit and standardization (UXPL-02)
-- [ ] **21-03-PLAN.md** — Shell completions for bash and zsh (UXPL-03)
+- [x] **21-01-PLAN.md** — Progress indicators with @clack/prompts spinner (UXPL-01)
+- [x] **21-02-PLAN.md** — Color consistency audit and standardization (UXPL-02)
+- [x] **21-03-PLAN.md** — Shell completions for bash and zsh (UXPL-03)
 
 **Wave Structure:**
 ```
@@ -174,7 +174,10 @@ Wave 2: 21-03 (shell completions) — depends on 21-02
 2. systemd security hardening options applied (DynamicUser, ProtectSystem, etc.)
 3. Service starts and runs correctly with hardened systemd configuration
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
+
+**Plan List:**
+- [x] **22-01-PLAN.md** — Resource limits and security hardening (INFR-01, INFR-02)
 
 ---
 
@@ -182,12 +185,12 @@ Wave 2: 21-03 (shell completions) — depends on 21-02
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 17. Core Reliability | 0/4 | Not started | - |
-| 18. Database & Status | 0/2 | Complete    | 2026-02-17 |
-| 19. Observability | 0/2 | Complete    | 2026-02-17 |
+| 17. Core Reliability | 4/4 | Complete    | 2026-02-17 |
+| 18. Database & Status | 2/2 | Complete    | 2026-02-17 |
+| 19. Observability | 2/2 | Complete    | 2026-02-17 |
 | 20. Testing Depth | 3/3 | Complete    | 2026-02-17 |
-| 21. UX Polish | 0/TBD | Not started | - |
-| 22. Infrastructure | 0/TBD | Not started | - |
+| 21. UX Polish | 3/3 | Complete    | 2026-02-17 |
+| 22. Infrastructure | 1/1 | Complete    | 2026-02-17 |
 
 ---
 
@@ -262,4 +265,4 @@ Per REQUIREMENTS.md, these are explicitly excluded from v1.4:
 ---
 
 *Last updated: 2026-02-17*
-*Next step: /gsd:execute-phase 19*
+*Next step: /gsd:complete-milestone (all 6 phases complete)*

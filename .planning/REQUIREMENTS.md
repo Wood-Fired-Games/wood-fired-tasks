@@ -13,30 +13,30 @@ Hardening and polish milestone — improving reliability, observability, and use
 - [x] **RELI-02**: Health check endpoint (`GET /health`) verifies DB connectivity with `SELECT 1` and reports component status
 - [x] **RELI-03**: Graceful shutdown closes idle connections with `forceCloseConnections: 'idle'` and performs WAL checkpoint
 - [x] **RELI-04**: Connection timeouts configured (`connectionTimeout`, `requestTimeout`, `keepAliveTimeout`) to prevent hung requests
-- [ ] **RELI-05**: CLI `tasks backup` command creates SQLite backup using `VACUUM INTO` or `.backup()` API
+- [x] **RELI-05**: CLI `tasks backup` command creates SQLite backup using `VACUUM INTO` or `.backup()` API
 - [x] **RELI-06**: Configuration validation at startup fails fast on missing/bad environment variables with clear error messages
 - [x] **RELI-07**: Periodic WAL checkpoint prevents WAL file bloat (automatic or via scheduled task)
 - [x] **RELI-08**: Exit codes follow sysexits.h standard (0=success, 1=general error, 2=misuse) for script integration
 
 ### Observability
 
-- [ ] **OBSV-01**: `tasks doctor` command performs self-service diagnostics (DB connectivity, disk space, config validity)
-- [ ] **OBSV-02**: Request ID propagated across REST API, MCP, and CLI layers for traceability
-- [ ] **OBSV-03**: Event replay buffer (last 100 events in-memory) enables SSE resilience for disconnected clients
-- [ ] **OBSV-04**: `tasks stats` command displays task statistics (counts by status, recent activity, agent productivity)
-- [ ] **OBSV-05**: `tasks db-check` command runs `PRAGMA integrity_check` for proactive corruption detection
+- [x] **OBSV-01**: `tasks doctor` command performs self-service diagnostics (DB connectivity, disk space, config validity)
+- [x] **OBSV-02**: Request ID propagated across REST API, MCP, and CLI layers for traceability
+- [x] **OBSV-03**: Event replay buffer (last 100 events in-memory) enables SSE resilience for disconnected clients
+- [x] **OBSV-04**: `tasks stats` command displays task statistics (counts by status, recent activity, agent productivity)
+- [x] **OBSV-05**: `tasks db-check` command runs `PRAGMA integrity_check` for proactive corruption detection
 
 ### UX Polish
 
-- [ ] **UXPL-01**: CLI progress indicators display for operations taking longer than 2 seconds
-- [ ] **UXPL-02**: Colored CLI output is consistent across all commands with `NO_COLOR` support
-- [ ] **UXPL-03**: Shell completions provided for bash and zsh
+- [x] **UXPL-01**: CLI progress indicators display for operations taking longer than 2 seconds
+- [x] **UXPL-02**: Colored CLI output is consistent across all commands with `NO_COLOR` support
+- [x] **UXPL-03**: Shell completions provided for bash and zsh
 
 ### Data Model
 
-- [ ] **DATA-01**: New task status "backlogged" added to status lifecycle
-- [ ] **DATA-02**: Backlogged tasks are excluded from agent claim operations (agents cannot claim backlogged tasks)
-- [ ] **DATA-03**: Backlogged tasks can be transitioned to open by authorized users
+- [x] **DATA-01**: New task status "backlogged" added to status lifecycle
+- [x] **DATA-02**: Backlogged tasks are excluded from agent claim operations (agents cannot claim backlogged tasks)
+- [x] **DATA-03**: Backlogged tasks can be transitioned to open by authorized users
 
 ### Testing & Quality
 
@@ -46,8 +46,8 @@ Hardening and polish milestone — improving reliability, observability, and use
 
 ### Infrastructure
 
-- [ ] **INFR-01**: systemd service unit includes resource limits (`MemoryMax`, `CPUQuota`)
-- [ ] **INFR-02**: systemd security hardening options applied (`DynamicUser`, `ProtectSystem`, etc.)
+- [x] **INFR-01**: systemd service unit includes resource limits (`MemoryMax`, `CPUQuota`)
+- [x] **INFR-02**: systemd security hardening options applied (`DynamicUser`, `ProtectSystem`, etc.)
 
 ## Out of Scope
 
@@ -69,26 +69,26 @@ Hardening and polish milestone — improving reliability, observability, and use
 | RELI-02 | Phase 17 | Complete |
 | RELI-03 | Phase 17 | Complete |
 | RELI-04 | Phase 17 | Complete |
-| RELI-05 | Phase 18 | Pending |
+| RELI-05 | Phase 18 | Complete |
 | RELI-06 | Phase 17 | Complete |
 | RELI-07 | Phase 17 | Complete |
 | RELI-08 | Phase 17 | Complete |
-| OBSV-01 | Phase 19 | Pending |
-| OBSV-02 | Phase 19 | Pending |
-| OBSV-03 | Phase 19 | Pending |
-| OBSV-04 | Phase 19 | Pending |
-| OBSV-05 | Phase 19 | Pending |
-| UXPL-01 | Phase 21 | Pending |
-| UXPL-02 | Phase 21 | Pending |
-| UXPL-03 | Phase 21 | Pending |
-| DATA-01 | Phase 18 | Pending |
-| DATA-02 | Phase 18 | Pending |
-| DATA-03 | Phase 18 | Pending |
+| OBSV-01 | Phase 19 | Complete |
+| OBSV-02 | Phase 19 | Complete |
+| OBSV-03 | Phase 19 | Complete |
+| OBSV-04 | Phase 19 | Complete |
+| OBSV-05 | Phase 19 | Complete |
+| UXPL-01 | Phase 21 | Complete |
+| UXPL-02 | Phase 21 | Complete |
+| UXPL-03 | Phase 21 | Complete |
+| DATA-01 | Phase 18 | Complete |
+| DATA-02 | Phase 18 | Complete |
+| DATA-03 | Phase 18 | Complete |
 | TEST-01 | Phase 20 | Complete |
 | TEST-02 | Phase 20 | Complete |
 | TEST-03 | Phase 20 | Complete |
-| INFR-01 | Phase 22 | Pending |
-| INFR-02 | Phase 22 | Pending |
+| INFR-01 | Phase 22 | Complete |
+| INFR-02 | Phase 22 | Complete |
 
 **Coverage:**
 - v1.4 requirements: 23 total
@@ -97,4 +97,4 @@ Hardening and polish milestone — improving reliability, observability, and use
 
 ---
 *Requirements defined: 2026-02-17*
-*Last updated: 2026-02-17*
+*Last updated: 2026-02-17 — all 23/23 requirements complete*

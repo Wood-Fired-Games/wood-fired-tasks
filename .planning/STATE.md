@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-17 (Phase 20 complete)
+**Last Updated:** 2026-02-17 (Phase 22 complete — v1.4 milestone complete)
 
 ## Project Reference
 
@@ -11,10 +11,10 @@
 ## Current Position
 
 **Milestone:** v1.4 Hardening and Polish — IN PROGRESS
-**Phase:** 21 (next)
-**Phase Name:** UX Polish
-**Plan:** —
-**Status:** Ready to plan
+**Phase:** 22 (complete)
+**Phase Name:** Infrastructure Hardening
+**Plan:** 1/1 complete
+**Status:** MILESTONE COMPLETE
 
 **Progress Bar:**
 ```
@@ -22,7 +22,7 @@ v1.0 ████████████████████ 100% (6/6 phas
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
-v1.4 █████████████████░░░  67% (phases 17-20 complete, 2/6 phases remaining)
+v1.4 ████████████████████ 100% (6/6 phases complete, 14 plans) — milestone complete 2026-02-17
 ```
 
 ## Performance Metrics
@@ -33,7 +33,7 @@ v1.4 █████████████████░░░  67% (phases 1
 - v1.2 Claude Code Skills & Installer: 3 phases, 7 plans, shipped 2026-02-14 (386 tests)
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 
-**Current:** 607 tests passing (54 test files), 19,618+ LOC TypeScript, 127+ files
+**Current:** 636 tests passing (57 test files), 19,618+ LOC TypeScript, 130+ files
 
 | Phase | Plan | Duration | Tasks | Files | Date |
 |-------|------|----------|-------|-------|------|
@@ -44,12 +44,16 @@ v1.4 █████████████████░░░  67% (phases 1
 | 20-testing-depth | 01 | 3 min | 2 | 4 | 2026-02-17 |
 | 20-testing-depth | 02 | 3 min | 2 | 2 | 2026-02-17 |
 | 20-testing-depth | 03 | 19 min | 1 | 4 | 2026-02-17 |
+| 21-ux-polish | 01 | 3 min | 2 | 8 | 2026-02-17 |
+| 21-ux-polish | 02 | 5 min | 2 | 35 | 2026-02-17 |
+| 21-ux-polish | 03 | 2 min | 2 | 3 | 2026-02-17 |
+| 22-infrastructure-hardening | 01 | 2 min | 2 | 1 | 2026-02-17 |
 
-**v1.4 Targets:**
-- 6 phases planned (17-22)
-- 23 requirements to implement
-- Maintain 500+ passing tests
-- Add mutation testing coverage
+**v1.4 Results:**
+- 6/6 phases complete (17-22), 14 plans executed
+- 23/23 requirements implemented
+- 636 tests passing (57 test files) -- target was 500+
+- Mutation testing at 75.88% baseline
 
 ## Accumulated Context
 
@@ -69,6 +73,10 @@ v1.4 █████████████████░░░  67% (phases 1
 - Phase 20-01: pino-pretty excluded in knip — convention-loaded by pino, not statically importable
 - Phase 20-03: `vitest.related: false` in Stryker — integration tests use createTestApp() factory pattern; related:true would miss them
 - Phase 20-03: `thresholds.break: null` — no break threshold on initial run; baseline at 75.88% covered
+- Phase 21-01: `withSpinner` uses 500ms delay (not 2s) — fast enough to feel responsive, avoids flash on instant ops
+- Phase 21-01: Spinner is presentation concern in commands, not request concern in apiRequest — each command knows its user-facing description
+- Phase 21-02: All 24 CLI commands use colorSuccess/colorError/colorWarn/colorInfo from formatters.ts — zero direct chalk imports in commands
+- Phase 21-03: Static completion scripts (not dynamic) — avoids API calls during tab completion
 
 See `.planning/PROJECT.md` Key Decisions table for full history.
 
@@ -86,8 +94,8 @@ None.
 2. ~~Phase 18: Database & Status Model~~ — COMPLETE (backup command + backlogged status, 2026-02-17)
 3. ~~Phase 19: Observability~~ — COMPLETE (doctor command OBSV-01, request IDs OBSV-02, SSE buffer OBSV-03, 2026-02-17)
 4. ~~Phase 20: Testing Depth~~ — COMPLETE (3 plans: knip+CI, property tests, Stryker mutation testing, 2026-02-17)
-5. Phase 21: UX Polish — progress indicators, colored output, shell completions
-6. Phase 22: Infrastructure Hardening — systemd limits, security hardening
+5. ~~Phase 21: UX Polish~~ — COMPLETE (spinner, color audit, shell completions, 2026-02-17)
+6. ~~Phase 22: Infrastructure Hardening~~ — COMPLETE (systemd resource limits + 19 security directives, 2026-02-17)
 
 ### Quick Tasks Completed
 
@@ -97,6 +105,8 @@ None.
 
 ### Recent Completions
 
+- [x] Phase 22 complete (2026-02-17) — 1 plan: systemd resource limits (MemoryMax=512M, CPUQuota=100%, TasksMax=50) + 19 security directives (INFR-01, INFR-02). v1.4 MILESTONE COMPLETE.
+- [x] Phase 21 complete (2026-02-17) — 3 plans: @clack/prompts spinner (UXPL-01), color consistency audit of 24 commands (UXPL-02), bash/zsh shell completions (UXPL-03). 636 tests.
 - [x] Phase 20 complete (2026-02-17) — 3 plans: knip unused deps + CI (TEST-03), fast-check property tests (TEST-02), Stryker mutation testing (TEST-01). 607 tests, 75.88% mutation score baseline.
 - [x] Phase 19-02: request ID propagation — UUID X-Request-ID on REST, traceId on 5 MCP tools, SSE buffer at 100, CLI client captures request IDs (2026-02-17)
 - [x] Phase 19-01: `tasks doctor`, `tasks stats`, `tasks db-check` — offline diagnostics via direct SQLite, statfs, configSchema.safeParse (2026-02-17)
@@ -111,18 +121,17 @@ None.
 ## Session Continuity
 
 **What Just Happened:**
-Phase 20 complete and verified (4/4 success criteria passed). 3 plans executed across 2 waves, 6 commits. Knip+CI, fast-check property tests, Stryker mutation testing all operational.
+Phase 22 complete and verified. v1.4 Hardening and Polish milestone is COMPLETE. All 6 phases (17-22) executed, 23/23 requirements implemented, 636 tests passing.
 
 **What's Next:**
-Plan and execute Phase 21: UX Polish — progress indicators, colored output, shell completions.
+Run `/gsd:complete-milestone` to archive v1.4 and prepare for next version.
 
 **Context for Next Session:**
-- v1.4 progress: 4/6 phases complete (17, 18, 19, 20), 67% milestone
-- Phase 20 delivered: knip + GitHub Actions CI (TEST-03), 9 property tests with @fast-check/vitest (TEST-02), Stryker mutation testing with 75.88% covered score (TEST-01)
-- 607 tests passing across 54 test files
-- Removed 2 unused deps (@fastify/cors, fastify-plugin)
-- Next: Phase 21 (UXPL-01 progress indicators, UXPL-02 colored output, UXPL-03 shell completions)
-- Last activity: 2026-02-17 — Phase 20 verified and transitioning
+- v1.4: 6/6 phases complete (17-22), 14 plans executed, 23/23 requirements
+- Phase 22 delivered: systemd MemoryMax=512M, CPUQuota=100%, TasksMax=50, 19 security directives
+- 636 tests passing across 57 test files
+- All planning documents updated and consistent
+- Last activity: 2026-02-17 — Phase 22 verified, milestone complete
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
