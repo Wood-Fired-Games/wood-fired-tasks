@@ -17,6 +17,8 @@ export class SSEManager {
   private eventBuffer: Array<{ id: number; event: EventPayload<unknown> }> = [];
   private nextEventId = 1;
   private heartbeatInterval?: NodeJS.Timeout;
+  private createdAt = Date.now();
+  private totalEventsSent = 0;
 
   constructor(
     private readonly maxBufferSize = 1000,
@@ -98,6 +100,7 @@ export class SSEManager {
       })
       .then(() => {
         conn.lastEventId = eventId;
+        this.totalEventsSent++;
       })
       .catch(() => {
         // Connection likely closed, remove it
@@ -156,5 +159,23 @@ export class SSEManager {
     }
     this.connections.clear();
     this.eventBuffer = [];
+  }
+
+  /**
+   * Check if SSE manager is healthy (has active heartbeat)
+   */
+  isHealthy(): boolean {
+    return this.heartbeatInterval !== undefined;
+  }
+
+  /**
+   * Get SSE manager statistics for health monitoring
+   */
+  getStats(): { clientCount: number; uptime: number; totalEventsSent: number } {
+    return {
+      clientCount: this.connections.size,
+      uptime: Date.now() - this.createdAt,
+      totalEventsSent: this.totalEventsSent,
+    };
   }
 }

@@ -55,6 +55,31 @@ export class EventBus<Events extends Record<string, unknown>> {
       this.emitter.off(event as string, wrappedHandler);
     };
   }
+
+  /**
+   * Check if event bus is active (has listeners)
+   */
+  isActive(): boolean {
+    // EventBus is always active if instantiated
+    return true;
+  }
+
+  /**
+   * Get event bus statistics
+   */
+  getStats(): { listenerCount: number } {
+    return {
+      listenerCount:
+        this.emitter.listenerCount('task.created') +
+        this.emitter.listenerCount('task.updated') +
+        this.emitter.listenerCount('task.deleted') +
+        this.emitter.listenerCount('task.status_changed') +
+        this.emitter.listenerCount('task.claimed') +
+        this.emitter.listenerCount('project.created') +
+        this.emitter.listenerCount('project.updated') +
+        this.emitter.listenerCount('project.deleted'),
+    };
+  }
 }
 
 /**

@@ -36,7 +36,20 @@
 5. Service returns sysexits.h standard exit codes (0=success, 1=general error, 2=misuse) for script integration
 6. WAL file size stays bounded due to periodic checkpoint (not growing unbounded)
 
-**Plans:** TBD
+**Plans:** 4 plans in 3 waves
+
+**Plan List:**
+- [ ] **17-01-PLAN.md** — Configuration validation and structured logging (RELI-01, RELI-06)
+- [ ] **17-02-PLAN.md** — Health check endpoint and connection timeouts (RELI-02, RELI-04)
+- [ ] **17-03-PLAN.md** — Graceful shutdown and WAL checkpointing (RELI-03, RELI-07, RELI-08)
+- [ ] **17-04-PLAN.md** — Tests for reliability features (TDD plan)
+
+**Wave Structure:**
+```
+Wave 1: 17-01 (config/logging), 17-02 (health/timeouts) — parallel
+Wave 2: 17-03 (shutdown/WAL) — depends on 17-01
+Wave 3: 17-04 (tests) — depends on 17-01, 17-02, 17-03
+```
 
 ---
 
