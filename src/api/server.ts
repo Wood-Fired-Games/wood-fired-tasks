@@ -1,4 +1,5 @@
 import Fastify, { FastifyInstance } from 'fastify';
+import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import {
   serializerCompiler,
@@ -55,6 +56,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     requestTimeout: config.REQUEST_TIMEOUT, // Maximum time for entire request (1 min)
     keepAliveTimeout: config.KEEP_ALIVE_TIMEOUT, // Time to keep idle connections alive (10 sec)
     forceCloseConnections: 'idle', // Close idle connections on shutdown (requires Node >= 18.2.0)
+    genReqId: () => randomUUID(), // UUID v4 request IDs for end-to-end tracing
+    requestIdHeader: false, // Security: do not trust caller-supplied request IDs
     logger: {
       name: 'wood-fired-bugs',
       level: config.LOG_LEVEL,
@@ -87,6 +90,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // Set Zod validator and serializer
   server.setValidatorCompiler(validatorCompiler);
   server.setSerializerCompiler(serializerCompiler);
+
+  // Stamp X-Request-ID on every response for client-side tracing
+  server.addHook('onSend', async (request, reply) => {
+    reply.header('X-Request-ID', request.id);
+  });
 
   // Decorate server with Phase 1 services
   server.decorate('taskService', app.taskService);

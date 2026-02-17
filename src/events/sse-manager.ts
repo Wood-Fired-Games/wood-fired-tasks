@@ -21,7 +21,7 @@ export class SSEManager {
   private totalEventsSent = 0;
 
   constructor(
-    private readonly maxBufferSize = 1000,
+    private readonly maxBufferSize = 100,
     private readonly bufferTtlMs = 5 * 60 * 1000, // 5 minutes
     private readonly heartbeatIntervalMs = 30000, // 30 seconds
     private readonly maxConnectionAgeMs = 10 * 60 * 1000 // 10 minutes
