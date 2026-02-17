@@ -7,6 +7,7 @@ import {
 } from 'fastify-type-provider-zod';
 import fastifySSE, { SSEPluginOptions } from '@fastify/sse';
 import { createApp, App } from '../index.js';
+import { config } from '../config/env.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
@@ -49,11 +50,32 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
   // Create Fastify instance with logger
   const server = Fastify({
+    // Timeout configurations to prevent hung requests
+    connectionTimeout: config.CONNECTION_TIMEOUT, // Socket inactivity timeout (2 min)
+    requestTimeout: config.REQUEST_TIMEOUT, // Maximum time for entire request (1 min)
+    keepAliveTimeout: config.KEEP_ALIVE_TIMEOUT, // Time to keep idle connections alive (10 sec)
+    forceCloseConnections: 'idle', // Close idle connections on shutdown (requires Node >= 18.2.0)
     logger: {
       name: 'wood-fired-bugs',
-      level: process.env.LOG_LEVEL || 'info',
+      level: config.LOG_LEVEL,
+      // Redact sensitive fields in production
+      redact:
+        config.NODE_ENV === 'production'
+          ? {
+              paths: [
+                'req.headers.authorization',
+                'req.headers.cookie',
+                'req.headers["x-api-key"]',
+                '*.password',
+                '*.secret',
+                '*.apiKey',
+                '*.token',
+              ],
+              censor: '[REDACTED]',
+            }
+          : undefined,
       transport:
-        process.env.NODE_ENV === 'development'
+        config.NODE_ENV === 'development'
           ? {
               target: 'pino-pretty',
               options: { colorize: true },

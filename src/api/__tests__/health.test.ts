@@ -85,4 +85,113 @@ describe('Health Check', () => {
     expect(typeof body.version).toBe('string');
     expect(body.version).toBe('1.0.0');
   });
+
+  describe('Component Status Checks', () => {
+    it('should include database check in response', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.checks).toBeDefined();
+      expect(body.checks.database).toBeDefined();
+      expect(['ok', 'failed']).toContain(body.checks.database);
+    });
+
+    it('should include eventBus check in response', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.checks).toBeDefined();
+      expect(body.checks.eventBus).toBeDefined();
+      expect(['ok', 'degraded', 'unknown']).toContain(body.checks.eventBus);
+    });
+
+    it('should include sseManager check in response', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.checks).toBeDefined();
+      expect(body.checks.sseManager).toBeDefined();
+      expect(['ok', 'degraded', 'unknown']).toContain(body.checks.sseManager);
+    });
+
+    it('should include stats in response when available', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.stats).toBeDefined();
+      expect(body.stats.eventBus).toBeDefined();
+      expect(body.stats.sseManager).toBeDefined();
+    });
+
+    it('should have eventBus.stats with listenerCount', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.stats.eventBus.listenerCount).toBeDefined();
+      expect(typeof body.stats.eventBus.listenerCount).toBe('number');
+      expect(body.stats.eventBus.listenerCount).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should have sseManager.stats with clientCount', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.stats.sseManager.clientCount).toBeDefined();
+      expect(typeof body.stats.sseManager.clientCount).toBe('number');
+      expect(body.stats.sseManager.clientCount).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should have sseManager.stats with uptime', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.stats.sseManager.uptime).toBeDefined();
+      expect(typeof body.stats.sseManager.uptime).toBe('number');
+      expect(body.stats.sseManager.uptime).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('Health Status Scenarios', () => {
+    it('should return status healthy when database is ok', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.status).toBe('healthy');
+    });
+
+    it('should have database check as ok when healthy', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health',
+      });
+
+      const body = JSON.parse(response.payload);
+      expect(body.checks.database).toBe('ok');
+    });
+  });
 });
