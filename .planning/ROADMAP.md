@@ -94,7 +94,16 @@ Wave 1: 18-01 (backup command), 18-02 (backlogged status) — parallel
 4. User can run `tasks stats` and see task counts by status, recent activity, agent productivity
 5. User can run `tasks db-check` and see PRAGMA integrity_check results
 
-**Plans:** TBD
+**Plans:** 2 plans in 1 wave
+
+**Plan List:**
+- [ ] **19-01-PLAN.md** — CLI diagnostic commands: doctor, stats, db-check (OBSV-01, OBSV-04, OBSV-05)
+- [ ] **19-02-PLAN.md** — Request ID propagation and SSE buffer reduction (OBSV-02, OBSV-03)
+
+**Wave Structure:**
+```
+Wave 1: 19-01 (CLI diagnostics), 19-02 (request IDs + SSE buffer) — parallel
+```
 
 ---
 
@@ -153,7 +162,7 @@ Wave 1: 18-01 (backup command), 18-02 (backlogged status) — parallel
 |-------|----------------|--------|-----------|
 | 17. Core Reliability | 0/4 | Not started | - |
 | 18. Database & Status | 0/2 | Complete    | 2026-02-17 |
-| 19. Observability | 0/TBD | Not started | - |
+| 19. Observability | 0/2 | Not started | - |
 | 20. Testing Depth | 0/TBD | Not started | - |
 | 21. UX Polish | 0/TBD | Not started | - |
 | 22. Infrastructure | 0/TBD | Not started | - |
@@ -231,4 +240,4 @@ Per REQUIREMENTS.md, these are explicitly excluded from v1.4:
 ---
 
 *Last updated: 2026-02-17*
-*Next step: /gsd:execute-phase 18*
+*Next step: /gsd:execute-phase 19*
