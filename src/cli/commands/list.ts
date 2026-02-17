@@ -1,9 +1,8 @@
 import { Command } from 'commander';
-import { listTasks } from '../api/client.js';
-import { formatTaskTable } from '../output/formatters.js';
+import { listTasks, withApiSpinner } from '../api/client.js';
+import { formatTaskTable, colorError, colorWarn, colorInfo } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput, messageOutput } from '../output/json-output.js';
-import chalk from 'chalk';
 import type { TaskFilters } from '../api/types.js';
 
 const VALID_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked'];
@@ -22,7 +21,7 @@ export const listCommand = new Command('list')
       // Validate status if provided
       if (options.status && !VALID_STATUSES.includes(options.status)) {
         console.error(
-          chalk.red(
+          colorError(
             `Invalid status: ${options.status}. Valid options: ${VALID_STATUSES.join(', ')}`
           )
         );
@@ -32,7 +31,7 @@ export const listCommand = new Command('list')
 
       // Validate project ID if provided
       if (options.project !== undefined && isNaN(options.project)) {
-        console.error(chalk.red('Invalid project ID: must be a number'));
+        console.error(colorError('Invalid project ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -64,7 +63,9 @@ export const listCommand = new Command('list')
       }
 
       // Call API
-      const tasks = await listTasks(Object.keys(filters).length > 0 ? filters : undefined);
+      const tasks = await withApiSpinner('Fetching tasks...', () =>
+        listTasks(Object.keys(filters).length > 0 ? filters : undefined)
+      );
 
       // Check if JSON mode (global flag from program)
       const program = listCommand.parent;
@@ -78,12 +79,12 @@ export const listCommand = new Command('list')
       } else {
         // Terminal mode: formatted output
         if (tasks.length === 0) {
-          console.log(chalk.yellow('No tasks found'));
+          console.log(colorWarn('No tasks found'));
           return;
         }
 
         console.log(formatTaskTable(tasks));
-        console.log(chalk.gray(`\n${tasks.length} task(s) found`));
+        console.log(colorInfo(`\n${tasks.length} task(s) found`));
       }
     } catch (error) {
       handleError(error);

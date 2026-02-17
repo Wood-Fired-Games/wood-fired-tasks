@@ -1,9 +1,8 @@
 import { Command } from 'commander';
 import { updateProject } from '../api/client.js';
-import { formatProjectDetail } from '../output/formatters.js';
+import { formatProjectDetail, colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import chalk from 'chalk';
 import type { UpdateProjectInput } from '../api/types.js';
 
 export const projectUpdateCommand = new Command('project-update')
@@ -16,7 +15,7 @@ export const projectUpdateCommand = new Command('project-update')
       // Parse and validate project ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid project ID: must be a number'));
+        console.error(colorError('Invalid project ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -33,7 +32,7 @@ export const projectUpdateCommand = new Command('project-update')
 
       // Check if any updates were specified
       if (Object.keys(updates).length === 0) {
-        console.log(chalk.yellow('No updates specified. Use --help to see available options.'));
+        console.log(colorWarn('No updates specified. Use --help to see available options.'));
         process.exitCode = 1;
         return;
       }
@@ -52,7 +51,7 @@ export const projectUpdateCommand = new Command('project-update')
         jsonOutput({ project }, { id: project.id });
       } else {
         // Terminal mode: formatted output
-        console.log(chalk.green(`Project #${project.id} updated successfully`));
+        console.log(colorSuccess(`Project #${project.id} updated successfully`));
         console.log('');
         console.log(formatProjectDetail(project));
       }

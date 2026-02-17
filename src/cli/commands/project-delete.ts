@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { deleteProject, getProject } from '../api/client.js';
+import { colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { confirmAction } from '../prompts/interactive.js';
-import chalk from 'chalk';
 
 export const projectDeleteCommand = new Command('project-delete')
   .description('Delete a project by ID')
@@ -13,7 +13,7 @@ export const projectDeleteCommand = new Command('project-delete')
       // Parse and validate project ID
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid project ID: must be a number'));
+        console.error(colorError('Invalid project ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -38,7 +38,7 @@ export const projectDeleteCommand = new Command('project-delete')
           jsonOutput({}, { message: 'Deletion cancelled' });
         } else {
           // Terminal mode: info message
-          console.log(chalk.yellow('Deletion cancelled'));
+          console.log(colorWarn('Deletion cancelled'));
         }
         return;
       }
@@ -52,7 +52,7 @@ export const projectDeleteCommand = new Command('project-delete')
         jsonOutput({}, { message: `Project ${id} deleted` });
       } else {
         // Terminal mode: success message
-        console.log(chalk.green(`Project #${id} deleted successfully`));
+        console.log(colorSuccess(`Project #${id} deleted successfully`));
       }
     } catch (error) {
       handleError(error);

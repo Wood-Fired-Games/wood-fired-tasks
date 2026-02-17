@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import Database from 'better-sqlite3';
-import chalk from 'chalk';
+import { colorBold } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
 
@@ -93,7 +93,7 @@ export const statsCommand = new Command('stats')
         String(total).length
       );
 
-      console.log(chalk.bold('Task Counts by Status:'));
+      console.log(colorBold('Task Counts by Status:'));
       for (const row of statusRows) {
         const paddedCount = String(row.count).padStart(maxCountWidth);
         console.log(`  ${row.status.padEnd(12)} ${paddedCount}`);
@@ -101,12 +101,12 @@ export const statsCommand = new Command('stats')
       console.log(`  ${'Total'.padEnd(12)} ${String(total).padStart(maxCountWidth)}`);
 
       console.log('');
-      console.log(chalk.bold('Recent Activity (24h):'));
+      console.log(colorBold('Recent Activity (24h):'));
       console.log(`  Created:  ${created}`);
       console.log(`  Updated:  ${updated}`);
 
       console.log('');
-      console.log(chalk.bold('Agent Productivity (7 days):'));
+      console.log(colorBold('Agent Productivity (7 days):'));
       if (agentRows.length === 0) {
         console.log('  No agent activity in the last 7 days.');
       } else {

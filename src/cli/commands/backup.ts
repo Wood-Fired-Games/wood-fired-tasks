@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import Database from 'better-sqlite3';
 import { resolve, dirname } from 'path';
 import { existsSync, mkdirSync, statSync } from 'fs';
-import chalk from 'chalk';
+import { colorError, colorSuccess } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
 
@@ -29,7 +29,7 @@ export const backupCommand = new Command('backup')
 
     // Verify source database exists before attempting backup
     if (!existsSync(dbPath)) {
-      console.error(chalk.red(`Database not found at ${dbPath}`));
+      console.error(colorError(`Database not found at ${dbPath}`));
       process.exitCode = 1;
       return;
     }
@@ -56,7 +56,7 @@ export const backupCommand = new Command('backup')
         jsonOutput({ path: destPath, size, source: dbPath });
       } else {
         console.log(
-          chalk.green(`Backup created successfully`) +
+          colorSuccess(`Backup created successfully`) +
           `\n  Path:   ${destPath}` +
           `\n  Size:   ${formatSize(size)}` +
           `\n  Source: ${dbPath}`
@@ -64,9 +64,9 @@ export const backupCommand = new Command('backup')
       }
     } catch (error) {
       if (error instanceof Error) {
-        console.error(chalk.red(`Backup failed: ${error.message}`));
+        console.error(colorError(`Backup failed: ${error.message}`));
       } else {
-        console.error(chalk.red('Backup failed: unknown error'));
+        console.error(colorError('Backup failed: unknown error'));
       }
       process.exitCode = 1;
     } finally {

@@ -31,6 +31,12 @@ vi.mock('../output/json-output.js', () => ({
   jsonOutput: vi.fn(),
 }));
 
+// Mock the spinner module (used by withApiSpinner in client.js)
+vi.mock('../output/spinner.js', () => ({
+  withSpinner: vi.fn((_msg: string, fn: () => Promise<unknown>) => fn()),
+  shouldShowSpinner: vi.fn(() => false),
+}));
+
 // Mock the formatters module
 vi.mock('../output/formatters.js', () => ({
   formatCommentList: vi.fn((comments) =>
@@ -38,6 +44,13 @@ vi.mock('../output/formatters.js', () => ({
       ? 'No comments'
       : comments.map((c: { author: string; content: string }) => `${c.author}: ${c.content}`).join('\n')
   ),
+  colorSuccess: vi.fn((text: string) => text),
+  colorError: vi.fn((text: string) => text),
+  colorWarn: vi.fn((text: string) => text),
+  colorInfo: vi.fn((text: string) => text),
+  colorBold: vi.fn((text: string) => text),
+  isJsonMode: vi.fn(() => false),
+  shouldUseColor: vi.fn(() => false),
 }));
 
 const mockComment = {

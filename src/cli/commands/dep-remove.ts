@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { removeDependency } from '../api/client.js';
+import { colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { confirmAction } from '../prompts/interactive.js';
-import chalk from 'chalk';
 
 export const depRemoveCommand = new Command('dep-remove')
   .description('Remove dependency (task <id> no longer blocks task <blocks-id>)')
@@ -14,14 +14,14 @@ export const depRemoveCommand = new Command('dep-remove')
       // Parse and validate task IDs
       const id = parseInt(idStr, 10);
       if (isNaN(id)) {
-        console.error(chalk.red('Invalid task ID: must be a number'));
+        console.error(colorError('Invalid task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
 
       const blocksId = parseInt(blocksIdStr, 10);
       if (isNaN(blocksId)) {
-        console.error(chalk.red('Invalid blocks-id: must be a number'));
+        console.error(colorError('Invalid blocks-id: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -41,7 +41,7 @@ export const depRemoveCommand = new Command('dep-remove')
         if (isJsonMode) {
           jsonOutput({}, { message: 'Removal cancelled' });
         } else {
-          console.log(chalk.yellow('Removal cancelled'));
+          console.log(colorWarn('Removal cancelled'));
         }
         return;
       }
@@ -53,7 +53,7 @@ export const depRemoveCommand = new Command('dep-remove')
       if (isJsonMode) {
         jsonOutput({}, { message: `Dependency removed: Task ${id} no longer blocks Task ${blocksId}` });
       } else {
-        console.log(chalk.green(`Dependency removed: Task ${id} no longer blocks Task ${blocksId}`));
+        console.log(colorSuccess(`Dependency removed: Task ${id} no longer blocks Task ${blocksId}`));
       }
     } catch (error) {
       handleError(error);

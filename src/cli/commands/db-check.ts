@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import Database from 'better-sqlite3';
-import chalk from 'chalk';
+import { colorSuccess, colorError } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
 
@@ -52,9 +52,9 @@ export const dbCheckCommand = new Command('db-check')
 
       // --- Normal text output ---
       if (passed) {
-        console.log(`Integrity:  ${chalk.green('PASSED')}`);
+        console.log(`Integrity:  ${colorSuccess('PASSED')}`);
       } else {
-        console.log(`Integrity:  ${chalk.red('FAILED')}`);
+        console.log(`Integrity:  ${colorError('FAILED')}`);
         console.log('Issues:');
         for (const row of integrityResults) {
           console.log(`  - ${row.integrity_check}`);

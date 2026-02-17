@@ -1,10 +1,9 @@
 import { Command } from 'commander';
 import { createSubtask, getTask } from '../api/client.js';
-import { formatTaskDetail } from '../output/formatters.js';
+import { formatTaskDetail, colorError, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { promptForMissing } from '../prompts/interactive.js';
-import chalk from 'chalk';
 import type { CreateTaskInput } from '../api/types.js';
 
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -25,7 +24,7 @@ export const subtaskCreateCommand = new Command('subtask-create')
       // Parse and validate parent task ID
       const parentId = parseInt(parentIdStr, 10);
       if (isNaN(parentId)) {
-        console.error(chalk.red('Invalid parent task ID: must be a number'));
+        console.error(colorError('Invalid parent task ID: must be a number'));
         process.exitCode = 1;
         return;
       }
@@ -50,7 +49,7 @@ export const subtaskCreateCommand = new Command('subtask-create')
           );
         } else {
           console.error(
-            chalk.red(
+            colorError(
               `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
             )
           );
@@ -89,7 +88,7 @@ export const subtaskCreateCommand = new Command('subtask-create')
       if (isJsonMode) {
         jsonOutput({ task }, { id: task.id, parent_task_id: parentId });
       } else {
-        console.log(chalk.green(`Subtask created under task #${parentId}`));
+        console.log(colorSuccess(`Subtask created under task #${parentId}`));
         console.log('');
         console.log(formatTaskDetail(task));
       }

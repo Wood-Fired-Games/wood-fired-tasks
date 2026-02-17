@@ -31,6 +31,17 @@ vi.mock('fs', async (importOriginal) => {
 // Mock the env module (side-effect only — just needs to load without error)
 vi.mock('../config/env.js', () => ({}));
 
+// Mock the formatters module
+vi.mock('../output/formatters.js', () => ({
+  colorSuccess: vi.fn((text: string) => text),
+  colorError: vi.fn((text: string) => text),
+  colorWarn: vi.fn((text: string) => text),
+  colorInfo: vi.fn((text: string) => text),
+  colorBold: vi.fn((text: string) => text),
+  isJsonMode: vi.fn(() => false),
+  shouldUseColor: vi.fn(() => false),
+}));
+
 // Mock the json-output module
 vi.mock('../output/json-output.js', () => ({
   jsonOutput: vi.fn(),

@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { checkHealth } from '../api/client.js';
+import { checkHealth, withApiSpinner } from '../api/client.js';
 import { formatHealthStatus } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
@@ -14,7 +14,7 @@ export const healthCommand = new Command('health')
       const isJsonMode = globalOpts.json || false;
 
       // Check health via API
-      const health = await checkHealth();
+      const health = await withApiSpinner('Checking health...', () => checkHealth());
 
       // Display results
       if (isJsonMode) {
