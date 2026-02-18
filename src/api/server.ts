@@ -16,6 +16,7 @@ import { CommentService } from '../services/comment.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { ClaimReleaseService } from '../services/claim-release.service.js';
+import { SlackService } from '../services/slack.service.js';
 import { eventBus } from '../events/event-bus.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
@@ -130,12 +131,20 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     idempotencyService.cleanup();
   }, 60 * 60 * 1000);
 
+  // Create SlackService (no-op if Slack tokens absent)
+  const slackService = new SlackService(
+    config.SLACK_BOT_TOKEN,
+    config.SLACK_APP_TOKEN,
+    server.log
+  );
+
   // Cleanup on server close
   server.addHook('onClose', async () => {
     clearInterval(idempotencyCleanupInterval);
     claimReleaseService.stop();
     sseManager.shutdown();
     app.workflowEngine.stop();
+    await slackService.stop();
   });
 
   // Set custom error handler (must be set before routes)
@@ -204,6 +213,9 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     },
     { prefix: '/api/v1' }
   );
+
+  // Start Slack connection (no-op if tokens absent, must be after onClose hook registration)
+  await slackService.start();
 
   return { server, app };
 }
