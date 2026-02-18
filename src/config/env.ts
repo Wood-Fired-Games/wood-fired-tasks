@@ -61,7 +61,15 @@ export const configSchema = z.object({
   REQUEST_TIMEOUT: z.string().min(1).default('60000').transform(Number),
   KEEP_ALIVE_TIMEOUT: z.string().min(1).default('10000').transform(Number),
   WAL_CHECKPOINT_INTERVAL_MS: z.string().min(1).default('900000').transform(Number),
-});
+  SLACK_BOT_TOKEN: z.string().optional(),
+  SLACK_APP_TOKEN: z.string().optional(),
+}).refine(
+  (d) => (!d.SLACK_BOT_TOKEN && !d.SLACK_APP_TOKEN) || (!!d.SLACK_BOT_TOKEN && !!d.SLACK_APP_TOKEN),
+  {
+    message: 'Both SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together, or neither should be set',
+    path: ['SLACK_APP_TOKEN'],
+  }
+);
 
 /**
  * Inferred configuration type from schema
