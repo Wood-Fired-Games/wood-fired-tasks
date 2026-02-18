@@ -1,218 +1,325 @@
-# Pitfalls Research: Hardening Phase
+# Pitfalls Research: Slack Integration
 
-**Domain:** Local Node.js/SQLite service hardening
-**Context:** Subsequent milestone - adding hardening to existing system (518 tests passing)
+**Domain:** Adding Slack slash commands, Socket Mode, and bot notifications to existing Node.js/Fastify service
+**Context:** Subsequent milestone — Wood Fired Bugs v1.5. Existing: Fastify, EventBus, SQLite, better-sqlite3, 636 tests.
 **Researched:** 2026-02-17
-**Confidence:** HIGH
+**Confidence:** HIGH (all critical pitfalls verified with official Slack docs + bolt-js GitHub issues)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Over-Engineering Health Checks for Local Service
+### Pitfall 1: Calling ack() After Async Work Instead of Before
 
 **What goes wrong:**
-Implementing Kubernetes-style liveness/readiness/startup probes for a local single-user service. The health check hits the database on every request, adds complex failure thresholds, and includes dependency checks that cause restart loops when SQLite is briefly busy. A local service that should be "always up" starts flapping between healthy/unhealthy states due to overly sensitive checks.
+The slash command handler awaits a database query or service call before calling `ack()`. Slack's 3-second deadline passes. Users see "operation_timeout" error in Slack. The command appears to fail even though the work completed successfully. With 24 slash commands this is easy to repeat across the entire handler surface.
 
 **Why it happens:**
-Developers apply cloud-native patterns without considering the local context. Kubernetes tutorials show sophisticated health check patterns, but a local service on a single machine doesn't face the same failure modes (network partitions, pod eviction, rolling deploys). The current `/health` endpoint already does `SELECT 1` on every check—sufficient for a local service.
+Developers write handlers in natural "do work, then respond" order. The handler pattern looks like other async middleware—you do work then send a response. The key difference is that `ack()` is not the response: it is purely the receipt acknowledgment, and the actual response goes through `respond()` using the `response_url`. The work can continue after `ack()` returns.
 
 **How to avoid:**
-1. **Single endpoint**: Keep one `/health` endpoint, not separate `/live` and `/ready`
-2. **Lightweight check**: `SELECT 1` is sufficient—don't run `PRAGMA integrity_check` or count rows
-3. **No automatic restarts**: Local service shouldn't self-restart on health failure—log and alert instead
-4. **Skip dependency checks**: Don't check SSE connections or background jobs in health—check process health only
-5. **Background caching**: If health is polled frequently (>1 req/sec), cache result for 5 seconds
+Call `ack()` as the very first statement in every slash command handler, before any async operation. Then perform all service calls, database queries, and business logic. Use `respond()` for the actual message back to the user.
+
+```typescript
+// WRONG — ack() after await
+app.command('/tasks-list', async ({ ack, respond, command }) => {
+  const tasks = await taskService.listTasks(...); // timeout if >3s
+  await ack();
+  await respond({ text: formatTaskList(tasks) });
+});
+
+// CORRECT — ack() first, always
+app.command('/tasks-list', async ({ ack, respond, command }) => {
+  await ack(); // acknowledge immediately
+  const tasks = await taskService.listTasks(...); // safe, no deadline
+  await respond({ text: formatTaskList(tasks) });
+});
+```
+
+Note: `processBeforeResponse: true` (for AWS Lambda / FaaS) changes this behavior and should NOT be set for a long-running Node.js process. Verify this option is absent from the Bolt App constructor.
 
 **Warning signs:**
-- Health check takes >50ms (should be <5ms for `SELECT 1`)
-- Service restarts during SQLite-heavy operations (migrations, bulk imports)
-- Logs show health check failures during normal operation
-- Health endpoint returns 503 when the service is actually functional
+- Users see "This slash command's response URL has expired or the app did not respond in time" in Slack
+- bolt-js logs show `operation_timeout` events
+- Tests pass locally but commands fail in Slack when the database is slow
+- Any handler has `await` before `await ack()`
 
 **Phase to address:**
-Hardening Phase 1 (Health & Monitoring) - Design health checks for local context, not cloud deployment.
+Slash Command Foundation phase — enforce ack-first pattern as a review checklist item for all 24 command handlers. Add a lint rule or comment convention flagging violations.
 
 ---
 
-### Pitfall 2: Monitoring That Hurts Performance
+### Pitfall 2: Socket Mode Runs Two Independent Event Loops (Bolt vs. Fastify)
 
 **What goes wrong:**
-Adding OpenTelemetry, Prometheus metrics, or detailed performance profiling that adds 10-30% overhead to a local service. The service was fast (Fastify's ~46k req/sec baseline) but now feels sluggish. SQLite query tracing adds per-query overhead. Memory usage grows from telemetry buffers. The "observability" makes the system less responsive than before.
+Bolt's default initialization creates its own HTTP server on port 3000 (via ExpressReceiver) alongside the existing Fastify server on port 3001. They are two separate event listeners. In Socket Mode this manifests differently: Bolt creates a `SocketModeReceiver` that handles all WebSocket communication but if you also pass a custom `receiver:` to the constructor with `socketMode: true`, Bolt silently discards the custom receiver (bolt-js issue #834). Routes defined on that receiver become unreachable with no error.
 
 **Why it happens:**
-2025-2026 observability guides recommend 10% sampling for production, but local services don't need continuous telemetry. Default OpenTelemetry instrumentation includes filesystem and HTTP auto-instrumentation that's overkill for a single-user app. Developers add metrics "just in case" without considering the cost per query.
+Bolt was designed around Express. Socket Mode changed how the receiver works, but the behavior of silently dropping custom receivers when `socketMode: true` persisted until it was partially fixed. Developers expect to be able to register Slack slash-command routes on the Fastify server like any other route.
 
 **How to avoid:**
-1. **Start with logs**: Structured logging (Pino) is sufficient for local debugging—add metrics only if logs prove insufficient
-2. **Disable auto-instrumentation**: Explicitly disable `@opentelemetry/instrumentation-fs` and similar—adds overhead with no value
-3. **SQLite profiling off by default**: Use `PRAGMA query_only = ON` for read-only analysis sessions, not production
-4. **Metric aggregation, not per-request**: Aggregate metrics in memory, flush every 60 seconds—not per-request
-5. **Conditional instrumentation**: Only enable detailed tracing when `DEBUG_PERF=1` env var is set
+Use Socket Mode as the primary transport (no HTTP receiver needed for Slack events — the WebSocket handles everything). Do not pass a custom Fastify receiver when `socketMode: true`. The Bolt `App` instance is a standalone component that communicates via WebSocket outbound; it does not need to listen on a port for slash commands.
+
+```typescript
+// CORRECT for Socket Mode — no receiver needed
+const slackApp = new App({
+  token: process.env.SLACK_BOT_TOKEN,
+  appToken: process.env.SLACK_APP_TOKEN,
+  socketMode: true,
+  // DO NOT pass receiver: here
+});
+
+// Fastify server is completely separate — no conflict
+await fastify.listen({ port: 3001 });
+await slackApp.start(); // connects WebSocket, no port binding
+```
+
+The two "loops" coexist safely: Fastify owns HTTP, Bolt owns the WebSocket to Slack. They share the same Node.js process and can share service instances.
 
 **Warning signs:**
-- Request latency increases by >5ms after adding monitoring
-- Memory usage grows continuously (telemetry buffer leak)
-- CPU usage spikes during "idle" periods (background metric flushing)
-- SQLite `busy_timeout` errors increase (monitoring queries competing with app queries)
+- Bolt attempts to start a server on port 3000 when your Fastify server is on 3001
+- Custom Fastify routes registered via a Bolt receiver are unreachable (404)
+- No error thrown when passing `receiver:` alongside `socketMode: true` (older bolt-js versions)
+- Bolt logs show "Listening on port 3000" — it should show WebSocket connection logs, not port binding
 
 **Phase to address:**
-Hardening Phase 1 (Health & Monitoring) - Implement monitoring that can be disabled, not monitoring that's always on.
+Socket Mode Infrastructure phase — the startup wiring (index.ts or createApp) is where this gets decided. Validate by checking that Fastify starts on 3001 and Bolt logs show WebSocket URL, not HTTP port.
 
 ---
 
-### Pitfall 3: SQLite WAL Over-Tuning
+### Pitfall 3: too_many_websockets Errors From Stale Connections on Service Restart
 
 **What goes wrong:**
-Applying 2025 "production SQLite" recommendations to a local service: `PRAGMA mmap_size = 1GB`, `PRAGMA cache_size = 256MB`, aggressive checkpointing. The service that worked fine now uses excessive memory, checkpointing causes latency spikes, and WAL file grows unbounded because of the event buffer keeping read transactions open. "Hardening" made the database less reliable.
+Every time the service restarts (during development or after a crash), `slackApp.start()` opens a new WebSocket connection. Previous connections from before the restart are still registered against the app-level token from Slack's side until they time out (~30 minutes). With frequent restarts Socket Mode reports `disconnect reason: too_many_websockets`. The limit is 10 concurrent connections per app. Events start distributing randomly across all connections (round-robin), causing event loss and duplicate processing.
 
 **Why it happens:**
-SQLite hardening guides target high-throughput web services, not local single-user apps. The current config (WAL mode, 5s busy timeout, NORMAL synchronous) is already optimal for this use case. Adding `wal_autocheckpoint = 4000` without understanding the access pattern causes problems.
+The app-level token keeps WebSocket connections alive server-side even after the client disconnects uncleanly (crash, kill -9, nodemon restart). Socket Mode's reconnection logic may also open additional connections during its own retry attempts, compounding the problem.
 
 **How to avoid:**
-1. **Keep defaults for local service**: Current `journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 5000` are sufficient
-2. **Don't increase cache_size unless proven needed**: Default 2MB cache is fine for local queries
-3. **Let auto-checkpoint work**: Default 1000 pages is fine—don't increase to 4000 unless profiling shows checkpoint overhead
-4. **Monitor WAL size**: If `-wal` file grows >100MB, investigate (likely uncommitted transactions, not config issue)
-5. **Keep synchronous = NORMAL**: Don't use FULL (fsync every transaction)—adds latency for minimal durability benefit on local machine
+1. In development, avoid rapid service restarts (use `--watch` with Node.js 22 native watch mode rather than nodemon, which reduces restart frequency).
+2. Call `await slackApp.stop()` in Fastify's `onClose` hook before process exit to close the WebSocket cleanly.
+3. If `too_many_websockets` occurs, revoke and regenerate the app-level token in the Slack console — this resets all connections.
+4. Do not run multiple instances of the service locally (systemd + development terminal simultaneously).
+
+```typescript
+// Register cleanup so Bolt closes WebSocket on graceful shutdown
+fastify.addHook('onClose', async () => {
+  await slackApp.stop();
+});
+```
 
 **Warning signs:**
-- `.db-wal` file grows to 500MB+ between checkpoints
-- Write latency spikes to 50ms+ (checkpoint pauses)
-- Memory usage jumps by 100MB+ after "optimizing" SQLite
-- `SQLITE_BUSY` errors during checkpointing
+- bolt-js logs: `Received "disconnect" (reason: too_many_websockets) message`
+- Commands work for the first connection but randomly stop responding after several restarts
+- Slack delivers some events but not others (round-robin distribution across stale + active connections)
+- `too_many_websockets` in logs within seconds of a fresh restart
 
 **Phase to address:**
-Hardening Phase 2 (Database Reliability) - Verify current config is optimal before changing; measure before tuning.
+Socket Mode Infrastructure phase — add `slackApp.stop()` to the existing graceful shutdown hook at the same time as `slackApp.start()` is added.
 
 ---
 
-### Pitfall 4: Excessive Logging in Production Mode
+### Pitfall 4: Signing Secret Verification Fails Due to Raw Body Consumption
 
 **What goes wrong:**
-Fastify's default Pino logging is configured for `info` level in production, which logs every request. For a local service with SSE connections (30-second heartbeats), logs fill with ping/pong noise. The log file grows to GBs, making it hard to find actual issues. Developers disable logging entirely, losing visibility into real errors.
+If Slack were ever sending HTTP requests (e.g., during development testing with forwarded requests or if Socket Mode is disabled temporarily), the `x-slack-signature` verification fails because the request body was already consumed by Fastify's JSON parser before Bolt's signature check reads it. This produces `slack_bolt_receiver_authenticity_error` and all events are rejected with 401. Even in full Socket Mode this is a concern for any HTTP-based health or OAuth endpoints Bolt might serve.
 
 **Why it happens:**
-Fastify defaults to logging all requests at `info` level. The SSE heartbeat at 30 seconds creates 120 log entries/hour per connection just for pings. Pino is fast (50k logs/sec) but still generates I/O. No log rotation means unbounded growth.
+HMAC-SHA256 signature verification requires the raw, unparsed request body as a string. Fastify (and Express) body parsers deserialize JSON before middleware runs, giving Bolt a parsed object instead of the raw bytes. The computed signature mismatches because the input differs.
 
 **How to avoid:**
-1. **Reduce log level for local**: Use `LOG_LEVEL=warn` for local production mode—only log errors and warnings
-2. **Exclude heartbeat noise**: Filter out SSE ping events from logs (they're noise)
-3. **Log rotation**: Use `pino-roll` or external rotation (logrotate) to prevent unbounded growth
-4. **Request sampling**: Log 1% of successful requests, 100% of errors
-5. **Structured logs only in production**: Disable `pino-pretty` in production (already done), but also consider disabling request logging entirely for local service
+In Socket Mode, Bolt does not receive HTTP requests for slash commands — this removes the primary risk. However, if any HTTP-mode testing is done:
+- Configure Fastify to preserve the raw body on `/slack/events` routes.
+- Ensure Bolt's receiver reads from the raw buffer, not the parsed JSON.
+- Never forward already-parsed bodies to Bolt.
+- Verify with a real 5-minute timestamp window — reject replayed requests.
+
+For the production Socket Mode path: sign verification happens Slack-side over the WebSocket TLS channel, so this pitfall is substantially reduced. Still document it so the team doesn't accidentally add an HTTP receiver later.
 
 **Warning signs:**
-- Log file grows >100MB/day
-- `tail -f` shows mostly SSE heartbeat noise
-- Disk fills up from logs
-- Performance degrades under high event volume (logging overhead)
+- `slack_bolt_receiver_authenticity_error` in logs
+- All slash commands return 401 or are silently rejected
+- Signature mismatch despite correct signing secret in `.env`
+- Intermittent failures that correlate with body parse timing
 
 **Phase to address:**
-Hardening Phase 1 (Health & Monitoring) - Configure logging for local service scale, not web-scale.
+Socket Mode Infrastructure phase — use Socket Mode exclusively, avoiding HTTP receivers, to sidestep this entirely.
 
 ---
 
-### Pitfall 5: Complex Graceful Shutdown for Local Service
+### Pitfall 5: Bot Cannot Post to Channel Because It Was Never Invited
 
 **What goes wrong:**
-Implementing Kubernetes-style graceful shutdown (SIGTERM handling, connection draining, 30-second timeout) for a local service. The shutdown handler adds 500 lines of code, 3 new dependencies, and still occasionally hangs. Users press Ctrl+C and wait 10 seconds for shutdown instead of immediate exit. The complexity creates new bugs (shutdown hangs, cleanup failures).
+The notification system calls `client.chat.postMessage({ channel: '#bugs-channel', ... })` and receives `not_in_channel` error. The bot was authorized (correct scopes, valid token) but was never added as a member of the target channel. Notifications silently fail or throw uncaught errors. Users see no notifications even though subscriptions exist in SQLite.
 
 **Why it happens:**
-Graceful shutdown guides target orchestrated containers where SIGKILL arrives after 30 seconds. A local service on a developer's machine doesn't need this—SQLite is file-based (no connection pool to drain), SSE connections are local (not user traffic), and the worst case is a 5-second `busy_timeout`. The current cleanup in `onClose` hook is sufficient.
+Developers test with DMs (where the bot is always a participant) but forget that `chat.postMessage` to a channel requires the bot to be an explicit channel member — unless the `chat:write.public` scope is added. The scope `chat:write` alone is insufficient for channels the bot has not joined.
 
 **How to avoid:**
-1. **Simple is better**: Current implementation (close SSE connections, clear intervals, close DB) is sufficient
-2. **No complex signal handling**: Fastify's `onClose` hook handles normal shutdown; OS will clean up on SIGKILL if needed
-3. **Skip connection draining**: For local service, just close SSE connections immediately—no need to wait for in-flight requests
-4. **Timeout only for SQLite**: Only complex case is waiting for `busy_timeout`—but that's handled by better-sqlite3 already
-5. **Exit on second Ctrl+C**: If shutdown hangs, let user Ctrl+C again to force exit (Node.js default behavior)
+Two options:
+1. **Add `chat:write.public` scope** to the bot's OAuth scopes in the Slack app config. This allows posting to any public channel without joining. This is the right choice for a single-workspace internal tool.
+2. **Require `/invite @wood-fired-bugs`** during channel subscription setup and emit a clear error message if the bot is not in the channel when `chat.postMessage` fails.
+
+Option 1 is simpler and more reliable. Document the required scopes explicitly in the setup guide.
 
 **Warning signs:**
-- Shutdown takes >5 seconds consistently
-- Shutdown handler is >200 lines of code
-- Tests for shutdown are flaky (timing-dependent)
-- Service hangs on exit occasionally (cleanup deadlock)
+- `not_in_channel` errors in logs when posting notifications
+- Notifications work in DMs but fail in channels
+- Channel subscription record exists in SQLite but no messages are sent
+- `channel_not_found` errors for private channels (bot not invited, channel appears not to exist)
 
 **Phase to address:**
-Hardening Phase 3 (Operational Hardening) - Keep shutdown simple; verify current `onClose` hook handles edge cases.
+Bot Notification phase — add `chat:write.public` scope to the app manifest and verify during subscription registration.
 
 ---
 
-### Pitfall 6: SSE Connection Monitoring Overhead
+### Pitfall 6: Using Slack Display Names as Assignee Identifiers (Not User IDs)
 
 **What goes wrong:**
-Adding per-connection metrics, detailed heartbeat logging, and connection lifecycle tracking to SSEManager. The event loop spends more time updating metrics than broadcasting events. Memory usage grows from connection metadata. The 30-second heartbeat now includes expensive operations (database checks, metrics flushing).
+The system stores `profile.display_name` as the task assignee when a user runs `/tasks-assign @username`. Display names are not unique in Slack — two users can have the same display name. Display names change when users update their profile. A user renamed `"Stuart"` to `"Stuart W"` breaks all tasks assigned to the old name. The lookup from user ID to display name requires an API call on every display.
 
 **Why it happens:**
-SSEManager already has proper lifecycle management (cleanup on close/error, max connection age, event buffering). Adding "monitoring" on top duplicates work. Connection count is already available via `this.connections.size`—no need for separate metrics. Heartbeat should be lightweight (empty ping), not an opportunity for health checks.
+Display names are human-readable and seem like the obvious choice. The `@mention` in a slash command looks like a username. Developers store what they see rather than the underlying user ID.
 
 **How to avoid:**
-1. **Don't monitor what's already managed**: SSEManager already tracks connections—don't duplicate
-2. **Heartbeat stays lightweight**: Send empty `ping` event, don't run diagnostics
-3. **Lazy metrics**: Only calculate connection count when `/health` requests it, not continuously
-4. **No per-connection logging**: Don't log every connect/disconnect at INFO level—DEBUG only
-5. **Reuse existing cleanup**: Current `reply.raw.on('close')` and `reply.raw.on('error')` handlers are sufficient
+Store Slack user IDs (format: `U012AB3CD`) as the canonical assignee identifier everywhere — in SQLite, in task records, in all service layer logic. Resolve user IDs to display names only at presentation time. Cache the ID-to-name mapping in memory (or SQLite) with a TTL of 1 hour, refreshing via `users.info` on cache miss.
+
+```
+task.assignee = "U012AB3CD"          // stored in DB — stable
+display: resolve("U012AB3CD") → "Stuart W"  // resolved at render time
+```
+
+Slack's own documentation explicitly states: "Your apps should really no longer be concerned with usernames or the name field. Reference user IDs instead."
 
 **Warning signs:**
-- Heartbeat interval callback takes >1ms (should be <0.1ms)
-- Memory usage scales with connection count (per-connection metadata)
-- Event broadcast latency increases with connection count (not just network time)
-- Logs show connection metrics updates more frequently than actual events
+- `assignee` column in tasks table contains strings like `"stuart"` or `"Stuart W"` (not `U012AB3CD`)
+- `/tasks-mine` command returns different results after a user renames themselves
+- Two users share a display name and get each other's tasks
+- Display name lookup fails for deactivated users (their `users.info` still returns but with a deactivated flag)
 
 **Phase to address:**
-Hardening Phase 2 (SSE Reliability) - Verify SSEManager is already robust; don't add monitoring that hurts performance.
+Slash Command Foundation phase — define the data model before writing any command handlers. If the existing `assignee` field in tasks already stores strings, the migration strategy must be documented.
 
 ---
 
-### Pitfall 7: Idempotency Service Over-Engineering
+### Pitfall 7: Rate Limit Exhaustion From Unbatched users.info Calls
 
 **What goes wrong:**
-The IdempotencyService is already implemented with database-backed storage and hourly cleanup. "Hardening" adds distributed caching, Redis fallback, or complex TTL management. For a local service, this adds dependencies and failure modes. The SQLite-backed idempotency is already atomic and sufficient.
+Every time a task list is displayed in Slack (e.g., `/tasks-list` returns 20 tasks), the handler calls `users.info` once per task to resolve assignee names. With 20 tasks, that's 20 API calls. `users.info` is a Tier 3 method (50+ per minute). A channel with active agents running frequent `/tasks-list` commands exhausts the rate limit within minutes. The Slack Web API returns HTTP 429, bolt-js retries with backoff, and commands hang until the quota resets. Users experience multi-second or multi-minute delays.
 
 **Why it happens:**
-Idempotency guides target distributed systems where nodes don't share state. A local service has one database—SQLite idempotency table is already consistent. Adding Redis "for performance" adds a dependency that can fail. Complex TTL logic adds bugs.
+Individual item rendering feels natural. Developers don't realize that a single command can fan out to many API calls. `users.info` rate limits are per-app-per-workspace — all commands share the same quota.
 
 **How to avoid:**
-1. **SQLite is sufficient**: Current `idempotency_keys` table with hourly cleanup is optimal for local service
-2. **Don't add caching**: No need for Redis/memcached—SQLite is the cache
-3. **Simple TTL**: Current cleanup removes entries >24 hours old—sufficient
-4. **No distributed concerns**: Ignore "clock skew" issues—they don't apply to single-machine
-5. **Monitor table size only**: Alert if `idempotency_keys` grows >10k rows (shouldn't with hourly cleanup)
+Implement a user display name cache in memory (or SQLite) keyed by user ID with a 1-hour TTL. Populate it lazily on first lookup. For bulk task lists, deduplicate user IDs before calling `users.info` — a list of 20 tasks might only have 3 unique assignees.
+
+```typescript
+class SlackUserCache {
+  private cache = new Map<string, { name: string; expiresAt: number }>();
+  async getDisplayName(userId: string): Promise<string> {
+    const cached = this.cache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.name;
+    const user = await slackClient.users.info({ user: userId });
+    const name = user.user?.profile?.display_name || user.user?.real_name || userId;
+    this.cache.set(userId, { name, expiresAt: Date.now() + 3600_000 });
+    return name;
+  }
+}
+```
 
 **Warning signs:**
-- IdempotencyService has >500 lines of code
-- Added Redis dependency "for idempotency"
-- Cleanup logic is complex (priority queues, exponential backoff)
-- Idempotency checks take >10ms (should be <1ms with index)
+- Commands that return long task lists are slow or time out
+- bolt-js logs show `RateLimitedError` or `retryAfter` events
+- `/tasks-list` works fine with 3 tasks but hangs with 30 tasks
+- Memory usage grows unbounded if cache has no TTL or size limit
 
 **Phase to address:**
-Hardening Phase 2 (API Reliability) - Keep IdempotencyService simple; verify cleanup is working.
+Slack Notification / Display Name Resolution phase — build the cache before implementing any command that renders task lists with assignees. Set a max cache size (e.g., 500 entries) to prevent memory growth.
 
 ---
 
-### Pitfall 8: Adding "Circuit Breakers" for Local Dependencies
+### Pitfall 8: Channel Subscription Table Missing Index on channel_id
 
 **What goes wrong:**
-Implementing circuit breaker patterns for SQLite, SSE, and EventBus "to prevent cascade failures." The circuit breaker adds complexity (half-open states, failure thresholds, timeouts) and false positives. SQLite is file-based—it doesn't "go down" like a network service. Circuit opens unnecessarily during heavy load, causing more failures than it prevents.
+The notification fan-out queries `SELECT * FROM slack_channel_subscriptions WHERE event_type = ?` to find which channels should receive a given event. Without an index on `(event_type)` or `(channel_id, event_type)`, this becomes a full table scan. With 50 subscriptions across 10 channels this is trivial, but the query runs on every task update event. The EventBus fires `task.updated` on every task save — including bulk imports and workflow automation cascades. Notification queries start showing up in slow-query logs.
 
 **Why it happens:**
-Microservices resilience patterns are applied to in-process components. Circuit breakers make sense for external HTTP services (payment gateways, third-party APIs), not for local SQLite or in-memory event bus. The "failures" are likely just SQLite busy errors that retry would handle.
+SQLite tables are created without indexes by default. A small number of subscriptions makes the missing index invisible during development. The interaction with the EventBus-driven notification loop (which fires synchronously in the event loop) means slow queries block event processing.
 
 **How to avoid:**
-1. **No circuit breakers for local resources**: SQLite, EventBus, SSEManager are in-process—use direct error handling
-2. **Retry for SQLITE_BUSY**: Use existing `busy_timeout` and application-level retry, not circuit breaker
-3. **Fail fast for real errors**: If SQLite is corrupted, circuit breaker won't help—fail fast and alert
-4. **Monitor, don't prevent**: Track SQLite busy errors in logs—if >1% of requests, investigate, don't add circuit breaker
+Add `CREATE INDEX IF NOT EXISTS idx_subscriptions_event_type ON slack_channel_subscriptions(event_type)` in the migration that creates the subscriptions table. Also index `(active, event_type)` if subscriptions can be disabled without being deleted.
 
 **Warning signs:**
-- Circuit breaker library added as dependency
-- "Half-open" state logic in local service
-- Circuit opens during normal operation (heavy batch import)
-- Error messages mention "circuit breaker" instead of actual error
+- `tasks doctor` shows slow queries on the subscriptions table
+- Notification delivery slows during bulk task imports (many events firing)
+- EXPLAIN QUERY PLAN shows "SCAN" instead of "SEARCH" on subscriptions queries
+- Event loop lag increases during workflow automation cascades
 
 **Phase to address:**
-Hardening Phase 3 (Resilience) - Don't apply microservice patterns to monolithic local service.
+Slack Subscription Persistence phase — add indexes in the same migration as the table creation, never as a follow-up.
+
+---
+
+### Pitfall 9: EventBus Subscriber Error Kills Notification Delivery Silently
+
+**What goes wrong:**
+The Slack notification subscriber registers on the EventBus with a handler that calls `client.chat.postMessage(...)`. If `postMessage` throws (network blip, not_in_channel, rate limit), the EventBus's try/catch wrapper catches the error and logs it — but the notification is lost silently. The EventBus was designed to isolate subscriber errors to prevent crashes, but this means failed notifications are not retried and the user never knows a notification was dropped.
+
+**Why it happens:**
+The existing `EventBus.subscribe()` wraps handlers in try/catch (see `event-bus.ts` line 42-49). This is correct for SSE — a failed SSE broadcast should not crash the service. But for Slack notifications, "failed silently" means an important alert was dropped. The same isolation that protects SSE becomes a hidden failure mode for Slack.
+
+**How to avoid:**
+Implement retry logic inside the Slack notification subscriber itself, before the error reaches the EventBus wrapper. Use exponential backoff for transient errors (network, rate limits) and log + dead-letter permanent failures (`not_in_channel`, invalid channel).
+
+```typescript
+// Wrap with retry INSIDE the subscriber — don't rely on EventBus to retry
+eventBus.subscribe('task.updated', async (event) => {
+  await withRetry(
+    () => notifySlackChannels(event),
+    { maxAttempts: 3, backoff: 'exponential' }
+  );
+});
+```
+
+Do not use `async` handlers in the current EventBus (it is synchronous — `handler: (payload) => void`). Either make the EventBus support async handlers, or fire-and-forget with internal error handling.
+
+**Warning signs:**
+- Slack notifications sometimes don't arrive but no errors appear in logs
+- "Error in event handler" log lines appear during Slack API rate limiting
+- bot-js retry events visible in Slack SDK debug logs but notifications never deliver
+- Notifications work during testing (no errors) but drop under load
+
+**Phase to address:**
+Slack Notification Integration phase — design the subscriber error handling before wiring it to the EventBus. Also evaluate whether the EventBus needs to support async handlers for this milestone.
+
+---
+
+### Pitfall 10: Slash Commands Registered With Wrong Pattern — Bolt Receives Nothing
+
+**What goes wrong:**
+A command is registered in the Slack App Dashboard (e.g., `/tasks-list`) but the Bolt handler pattern doesn't match (e.g., `app.command('/tasks_list', ...)` with underscore vs. dash). Slack sends the command over the WebSocket, Bolt receives it, finds no matching handler, and returns a generic "dispatch_failed" to Slack. Users see "An error occurred" with no detail. With 24 commands this is easy to get wrong for several of them.
+
+**Why it happens:**
+The command name in the Slack Dashboard and the string in `app.command(...)` must match exactly, including slashes, dashes, and underscores. There is no automatic normalization. With 24 commands, one typo in either place silently breaks that command.
+
+**How to avoid:**
+Maintain a single source of truth: a `SLACK_COMMANDS` constant array listing all command names. Register commands in Bolt by iterating this array. Keep the Slack Dashboard configuration aligned with this array. Add an integration test that verifies each registered command name matches a registered handler.
+
+```typescript
+export const SLACK_COMMANDS = [
+  '/tasks-list', '/tasks-create', '/tasks-view', '/tasks-assign',
+  // ... all 24 commands
+] as const;
+```
+
+**Warning signs:**
+- Slack shows "dispatch_failed" or "An error occurred" for specific commands but not others
+- bolt-js does not log any handler execution for a command that was invoked
+- The Slack Dashboard shows a command configured but `app.command()` uses a different string
+- "Did you mean?" style confusion between dashes and underscores in command names
+
+**Phase to address:**
+Slash Command Foundation phase — define the command registry before registering any handlers.
 
 ---
 
@@ -222,61 +329,94 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Disable all logging for performance | Faster, cleaner console | No visibility into errors | Never—use WARN level instead of OFF |
-| Increase `busy_timeout` to 60s | Fewer SQLITE_BUSY errors | Stalled requests, poor UX | Never—keep 5s, add retry |
-| Skip backup strategy "because it's local" | Less code | Data loss on disk failure | Never—implement SQLite backup |
-| Add Prometheus metrics "for future" | Looks professional | Memory overhead, complexity | Never—add when needed, not before |
-| Use `synchronous = OFF` for speed | 2x faster writes | Corruption on power loss | Never—keep NORMAL |
-| Complex health check thresholds | Catches edge cases | Flapping, false positives | Never—keep simple pass/fail |
+| Store `display_name` instead of user ID as assignee | Readable in DB | Breaks on rename, not unique, migration required | Never |
+| Skip user display name caching (always call `users.info`) | Simpler code | Rate limit exhaustion at scale, slow command responses | Never |
+| Hardcode Slack tokens in source or config files | Fast setup | Token exposure in git, security incident, rotation required | Never |
+| Add `processBeforeResponse: true` for a long-running service | Matches FaaS docs | ack() timeout on any slow command | Never |
+| Use `app.command('*', ...)` catch-all for unhandled commands | Avoids dispatch_failed | Swallows all routing errors, hides configuration bugs | Never for production |
+| Skip per-channel subscription validation on subscribe | Simpler setup | Notifications silently fail for invalid channel IDs | Only in MVP with clear TODO |
+| Sync Slack notification calls in EventBus handler | Simpler code | Blocks event loop during API calls | Never |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when hardening Fastify + SQLite + SSE.
+Common mistakes when connecting Slack to the existing Fastify/EventBus/SQLite service.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Fastify + Pino | Logging every request at INFO | Set `LOG_LEVEL=warn`, exclude SSE heartbeats |
-| Fastify + Health | Separate `/live` and `/ready` endpoints | Single `/health` with `SELECT 1` check |
-| SQLite + WAL | Setting `wal_autocheckpoint = 4000` for "performance" | Keep default 1000; monitor WAL size first |
-| SQLite + Monitoring | Enabling `stmt_scanstatus` for all queries | Profile only slow queries (>100ms), not all |
-| SSE + Metrics | Per-connection metrics tracking | Connection count only; no per-connection metadata |
-| SSE + Heartbeat | Adding health checks to heartbeat | Keep heartbeat empty—use for liveness only |
-| Graceful Shutdown | 30-second timeout with connection draining | Immediate close for local service; OS handles rest |
-| Idempotency + Cache | Adding Redis for "performance" | SQLite is sufficient; no external dependencies |
+| Bolt + Socket Mode | Passing `receiver:` alongside `socketMode: true` | Omit receiver; Bolt manages WebSocket internally |
+| Bolt + Fastify | Running both on the same port | Fastify owns HTTP (3001); Bolt WebSocket is outbound only |
+| EventBus + Slack | Async Slack API calls in sync EventBus handler | Fire-and-forget with internal retry; do not block |
+| Slash command + DB | `await taskService...` before `await ack()` | Always `await ack()` first |
+| Notification + Channel | `chat.postMessage` without `chat:write.public` scope | Add `chat:write.public` for single-workspace internal tool |
+| Assignee + Slack | Storing `display_name` as assignee | Store user ID (`U012AB3CD`), resolve name at display time |
+| Shutdown + WebSocket | Not stopping Bolt on process exit | Add `slackApp.stop()` to Fastify `onClose` hook |
+| App token + Restarts | Process crashes leave stale WebSocket connections | Clean stop on shutdown; revoke/rotate token if `too_many_websockets` |
+| better-sqlite3 + Async | Calling async Slack APIs inside SQLite transactions | Never await async I/O inside `db.transaction()` |
 
 ---
 
 ## Performance Traps
 
-Patterns that hurt performance when adding hardening.
+Patterns that work at small scale but degrade as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| OpenTelemetry auto-instrumentation | 20% latency increase | Disable fs/http auto-instrumentation; manual spans only | Any request volume |
-| Per-request metrics | CPU spikes, memory growth | Aggregate in memory; flush every 60s | >100 req/sec |
-| SQLite query logging | 10x slower queries | Log only slow queries (>100ms) | Any write volume |
-| SSE connection metadata | Memory grows with connections | Store only ID and reply object | >100 connections |
-| Health check DB query | Latency spikes during checks | `SELECT 1` only; cache for 5s | Health polled >1/sec |
-| Log file without rotation | Disk full | Use logrotate or `pino-roll` | >1 day runtime |
-| Synchronous logging | Event loop blocking | Use async transport; don't `sync: true` | High log volume |
-| Complex shutdown | Hangs, timeouts | Fastify `onClose` hook only; no custom signals | Any restart |
+| N calls to `users.info` per task list | Commands slow, rate limit errors | In-memory user ID cache with 1h TTL | >10 tasks with assignees per command invocation |
+| Unbounded user cache | Memory grows as workspace grows | LRU cap at 500 entries | Workspace > 500 members |
+| Sync notification in EventBus handler | Event loop lag during task events | Async fire-and-forget with internal retry | Any moderate event volume |
+| Full table scan on subscriptions | Slow notifications during bulk events | Index on `(event_type)` at creation time | >20 subscriptions |
+| `conversations.list` for channel validation | Slow subscription setup | Cache channel list locally; Tier 2 (20/min) | Repeated validation calls |
+| Posting notification for every EventBus event | Rate limit exhaustion on workflow cascades | Debounce/deduplicate events per task per second | Workflow with >5 cascade events |
+
+---
+
+## Security Mistakes
+
+Domain-specific security issues for Slack integration.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Logging bot token or signing secret | Token exposure in log files, rotation required | Never log `SLACK_BOT_TOKEN` or `SLACK_SIGNING_SECRET`; use structured logging redaction |
+| Storing tokens in `.env` committed to git | Token exposure in repo history | Add `.env` to `.gitignore` before first commit; use `dotenv` for local dev only |
+| Not validating that slash command user is workspace member | Any HTTP client can forge commands | In Socket Mode, Slack validates all commands before delivery — no custom validation needed |
+| Trusting `user_id` in slash command payload | Could be spoofed in HTTP mode | In Socket Mode, Slack authenticates the WebSocket — payload is trustworthy |
+| Using `chat:write` without `chat:write.public` and trying to post to unjoined channels | Silent notification failure | Add `chat:write.public` for internal tool or require bot invite |
+| Not rotating tokens after exposure | Ongoing compromise window | Treat tokens like passwords; document rotation procedure |
+| Exposing signing secret through error messages | Client can forge signatures | Never echo config values in error responses |
+
+---
+
+## UX Pitfalls
+
+Common user experience mistakes in Slack bot design.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Long ephemeral response for task lists | Wall of unformatted text | Use Slack Block Kit with sections; paginate at 10 tasks |
+| No acknowledgment visible while work runs | User thinks command failed; runs it again | ack() with a short "Working..." text if operation may take >1s |
+| Bot posts notifications to wrong channel | Noise in unrelated channels | Validate channel ID at subscription time, not at notification time |
+| Notification for every task update (no filtering) | Notification spam | Filter by event_type in subscription; allow `status_changed` vs. `all` |
+| Error messages expose internal details | Security + confusion | Return user-friendly messages; log detailed errors server-side |
+| Commands with ambiguous names | Users can't discover commands | Follow Slack's slash command naming guide; use `/tasks-` prefix consistently |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear hardened but are missing critical pieces.
+Things that appear complete but are missing critical pieces.
 
-- [ ] **Health Check:** Verifies DB with `SELECT 1`, not `PRAGMA integrity_check` (too slow) or `SELECT COUNT(*)` (unnecessary)
-- [ ] **Logging:** Has level configuration (`LOG_LEVEL` env), not just on/off
-- [ ] **SQLite:** WAL mode enabled, `synchronous = NORMAL`, `busy_timeout = 5000` (current config is correct)
-- [ ] **Backup:** Has automated SQLite backup strategy (copy + verify), not just "we'll restore from git"
-- [ ] **SSE:** Connection cleanup on close/error (already implemented), not just timeout
-- [ ] **Idempotency:** Has cleanup (hourly), not just insertion
-- [ ] **Shutdown:** Fastify `onClose` hook closes DB and SSE (already implemented), not complex signal handling
-- [ ] **Monitoring:** Can be disabled without code changes, not always-on
+- [ ] **Slash commands:** Every handler has `await ack()` as first statement — verify with grep/AST
+- [ ] **Socket Mode:** Bolt logs WebSocket connection URL, NOT "Listening on port 3000"
+- [ ] **Shutdown:** `slackApp.stop()` is registered in Fastify `onClose` hook alongside existing cleanup
+- [ ] **Bot scopes:** `chat:write.public` is in the Slack app manifest for channel posting
+- [ ] **Assignee storage:** `slack_subscriptions` and task assignee fields store user IDs (`U...`), not display names
+- [ ] **User cache:** `users.info` is never called more than once per unique user ID per hour
+- [ ] **Subscription index:** `slack_channel_subscriptions` migration includes index on `event_type`
+- [ ] **Token safety:** `.env` is in `.gitignore`; tokens are not logged at any level
+- [ ] **Tokens distinguished:** `SLACK_APP_TOKEN` (`xapp-...`) is distinct from `SLACK_BOT_TOKEN` (`xoxb-...`)
+- [ ] **Command registry:** All 24 command names match exactly between Slack Dashboard and `app.command()` calls
 
 ---
 
@@ -286,89 +426,89 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Monitoring overhead | LOW | Disable telemetry via env var; restart; redesign |
-| Health check flapping | LOW | Simplify to `SELECT 1` only; redeploy |
-| WAL file too large | LOW | Run `PRAGMA wal_checkpoint(TRUNCATE)`; investigate uncommitted transactions |
-| Log disk full | LOW | Rotate/truncate logs; configure rotation; restart |
-| Complex shutdown hangs | MEDIUM | Kill process (SQLite is safe); simplify shutdown code; redeploy |
-| Circuit breaker false positives | LOW | Remove circuit breaker; use retry logic; redeploy |
-| SSE monitoring overhead | LOW | Disable per-connection metrics; restart |
+| `operation_timeout` on commands | LOW | Find handler, move `ack()` to first line, redeploy |
+| `too_many_websockets` | LOW | Revoke and regenerate app-level token in Slack Dashboard; restart service |
+| Wrong assignee type (display name stored) | HIGH | Migration to convert stored names to user IDs via `users.lookupByEmail` or manual mapping |
+| Token committed to git | HIGH | Immediately revoke token in Slack Dashboard; rotate; purge from git history; audit access |
+| Bot not in channel (silent notification failure) | LOW | Add `chat:write.public` scope; reauth app; or invite bot manually |
+| User cache unbounded | LOW | Add LRU cap; restart service to clear |
+| Missing subscription index | MEDIUM | Add index migration; run against production DB; verify with EXPLAIN QUERY PLAN |
+| Notification lost silently (EventBus catches error) | MEDIUM | Add retry wrapper in subscriber; review and replay missed notifications from event logs |
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
-How hardening phases should address these pitfalls.
+How Slack integration phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Over-engineered health checks | Phase 1: Health & Monitoring | Health check returns in <5ms; no restarts during normal ops |
-| Monitoring overhead | Phase 1: Health & Monitoring | Latency unchanged after adding monitoring; can disable via env |
-| SQLite WAL over-tuning | Phase 2: Database Reliability | WAL file <100MB; checkpoint latency <10ms |
-| Excessive logging | Phase 1: Health & Monitoring | Log file <10MB/day; INFO level shows only real events |
-| Complex graceful shutdown | Phase 3: Operational Hardening | Shutdown completes in <2s; no custom signal handlers |
-| SSE monitoring overhead | Phase 2: SSE Reliability | Heartbeat <0.1ms; no per-connection metadata |
-| Idempotency over-engineering | Phase 2: API Reliability | IdempotencyService <200 lines; no external dependencies |
-| Circuit breakers for local | Phase 3: Resilience | No circuit breaker library in dependencies |
+| ack() after async work | Slash Command Foundation | grep for any `await` before `await ack()` in command handlers |
+| Bolt + Fastify port conflict | Socket Mode Infrastructure | Service starts without port conflict; Bolt logs WebSocket URL |
+| too_many_websockets on restart | Socket Mode Infrastructure | `slackApp.stop()` present in `onClose`; clean restart leaves no stale connections |
+| Signing secret / raw body issue | Socket Mode Infrastructure | Using Socket Mode exclusively; no HTTP receiver configured |
+| Bot not in channel | Bot Notification setup | `chat:write.public` in app manifest; test post to unjoined channel succeeds |
+| Display name as assignee | Slash Command Foundation | `assignee` values in test DB are `U...` format |
+| Rate limit from unbatched user lookups | Display Name Resolution phase | Task list with 20 items triggers ≤3 `users.info` calls |
+| Missing subscription index | Slack Subscription Persistence | EXPLAIN QUERY PLAN shows SEARCH not SCAN on event_type |
+| Silent notification failure | Slack Notification Integration | Simulate `not_in_channel` error; verify retry attempts and error is logged |
+| Command name mismatch | Slash Command Foundation | Integration test that maps `SLACK_COMMANDS` array against registered handlers |
 
 ---
 
-## Key Insight: Local Service ≠ Cloud Service
+## Key Insight: Socket Mode Removes Most HTTP Attack Surface
 
-This is a **local service** for a single human user + agents. It is NOT:
-- A distributed microservice
-- A multi-tenant SaaS application
-- A high-availability production cluster
+Using Socket Mode (no public URL) eliminates the largest class of Slack integration problems:
+- No request signature verification failures from body parser interference
+- No need to expose a public endpoint (no ngrok, no port forwarding, no firewall rules)
+- No replay attacks (Slack authenticates the WebSocket channel)
+- No incorrect `x-slack-request-timestamp` clock skew issues
 
-Hardening should focus on:
-1. **Data safety** (SQLite backup, WAL mode)
-2. **Developer experience** (fast startup, clear logs, simple restart)
-3. **Observability without overhead** (structured logs, optional metrics)
+The primary risks shift to:
+1. **WebSocket lifecycle management** (disconnect handling, stale connections, clean shutdown)
+2. **Application-level correctness** (ack() timing, command name matching)
+3. **Data model decisions** (user ID storage, subscription schema)
+4. **Rate limit discipline** (user info caching, event debouncing)
 
-NOT on:
-- Kubernetes-style health probes
-- Distributed tracing
-- Circuit breakers
-- Connection pooling
-- Horizontal scaling patterns
-
-The current implementation is already well-architected for this use case. Hardening should enhance, not over-engineer.
+These are all manageable with discipline rather than infrastructure.
 
 ---
 
 ## Sources
 
-### Node.js Hardening & Over-Engineering
-- [Node.js Security Baseline 2026](https://medium.com/@Modexa/node-js-security-baseline-defaults-you-should-expect-in-2026-05bf18c093fb) - Context-aware security principles
-- [The Overcorrection Phenomenon](https://lrhachedev.medium.com/the-overcorrection-phenomenon-2935eb202181) - How hardening reduces reliability
-- [Stop Running node index.js in Production](https://www.beyondthesemicolon.com/stop-running-node-index-js-in-production-a-2025-ready-field-guide/) - Simple deployment patterns
-- [Node.js Security Hardening](https://toolstac.com/tool/node.js/security-hardening) - Realistic security assessment
+### Slack Bolt and Socket Mode
+- [Using Socket Mode — Slack Official Docs](https://docs.slack.dev/apis/events-api/using-socket-mode/)
+- [Socket Mode reliability issues — bolt-js #1151](https://github.com/slackapi/bolt-js/issues/1151)
+- [Custom receiver discarded with socketMode — bolt-js #834](https://github.com/slackapi/bolt-js/issues/834)
+- [too_many_websockets error — bolt-js #2238](https://github.com/slackapi/bolt-js/issues/2238)
+- [WebSocket disconnection handling — node-slack-sdk #1243](https://github.com/slackapi/node-slack-sdk/issues/1243)
+- [Bolt + Fastify integration gist by @seratch](https://gist.github.com/seratch/2b97e752645e83322a1066a9c24e2a20)
 
-### Fastify & Pino Performance
-- [Pino Logger Guide 2026](https://signoz.io/guides/pino-logger/) - Performance benchmarks
-- [Fastify Logging Documentation](https://fastify.io/docs/v5.4.x/Reference/Logging/) - Official guidance
-- [Production Logging with Pino](https://www.dash0.com/guides/logging-in-node-js-with-pino) - Best practices
+### Slash Commands and ack() Deadline
+- [Implementing slash commands — Slack Official](https://api.slack.com/interactivity/slash-commands)
+- [Acknowledging requests — Bolt for JavaScript Docs](https://docs.slack.dev/tools/bolt-js/concepts/acknowledge/)
+- [operation_timeout after immediate ack — bolt-js #1548](https://github.com/slackapi/bolt-js/issues/1548)
+- [operation_timeout — bolt-js #1727](https://github.com/slackapi/bolt-js/issues/1727)
 
-### Health Checks & Graceful Shutdown
-- [Node.js Health Checks 2026](https://oneuptime.com/blog/post/2026-01-06-nodejs-health-checks-kubernetes/view) - Kubernetes vs local service
-- [Graceful Shutdown Handler 2026](https://oneuptime.com/blog/post/2026-01-06-nodejs-graceful-shutdown-handler/view) - Signal handling patterns
-- [Kubernetes Health Probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) - When NOT to apply these patterns
-- [Node.js Health Check Mistakes](https://article.arunangshudas.com/6-common-mistakes-in-node-js-health-check-implementations-852c62365065) - Common anti-patterns
+### Security and Token Management
+- [Verifying requests from Slack — Official](https://docs.slack.dev/authentication/verifying-requests-from-slack/)
+- [Security best practices — Slack Official](https://api.slack.com/authentication/best-practices)
+- [Slack bot token remediation — GitGuardian](https://www.gitguardian.com/remediation/slack-bot-token)
 
-### SQLite Hardening
-- [SQLite WAL Documentation](https://sqlite.org/wal.html) - Official WAL mode guidance
-- [SQLite Profiling](https://sqlite.org/profile.html) - When to use (rarely)
-- [Sophisticated Simplicity of Modern SQLite](https://shivekkhurana.com/blog/sqlite-in-production/) - 2025 SQLite best practices
-- [SQLite Forum: Monitoring](https://www.sqliteforum.com/p/monitoring-and-debugging-sqlite-in) - Profiling overhead discussion
+### Rate Limits
+- [Rate limits — Slack Developer Docs](https://docs.slack.dev/apis/web-api/rate-limits/)
+- [Rate limit changes for non-Marketplace apps, May 2025](https://docs.slack.dev/changelog/2025/05/29/rate-limit-changes-for-non-marketplace-apps/) — internal apps unaffected
+- [Best way to maintain users/channels cache — node-slack-sdk #1345](https://github.com/slackapi/node-slack-sdk/issues/1345)
 
-### Observability Anti-Patterns
-- [Top Microservices Anti-Patterns 2025](https://www.geeksforgeeks.org/blogs/microservice-anti-patterns/) - Ignoring observability vs over-observability
-- [Architectural Anti-Patterns](https://arxiv.org/html/2602.07147v2) - Student research on monitoring mistakes
-- [Fastify Monitoring with OpenTelemetry](https://oneuptime.com/blog/post/2026-02-06-monitor-fastify-applications-opentelemetry/view) - Performance overhead details
-- [Dynatrace Observability Predictions 2026](https://www.dynatrace.com/news/blog/six-observability-predictions-for-2026/) - When observability helps vs hurts
+### Channel Membership and Scopes
+- [chat.postMessage — Slack Official](https://docs.slack.dev/reference/methods/chat.postMessage/)
+- [Troubleshooting channel_not_found — Knock](https://knock.app/blog/troubleshooting-channel-not-found-in-slack-incoming-webhooks)
+
+### Display Names and User IDs
+- [The one about usernames — Slack Changelog 2017](https://docs.slack.dev/changelog/2017-09-the-one-about-usernames/) — "don't use display_name as identifier"
 
 ---
 
-*Pitfalls research for: Wood Fired Bugs hardening milestone*
+*Pitfalls research for: Wood Fired Bugs v1.5 Slack Integration*
 *Researched: 2026-02-17*
-*Confidence: HIGH - All pitfalls verified with official sources + community best practices*
+*Confidence: HIGH — All critical pitfalls verified with official Slack documentation and bolt-js GitHub issues*

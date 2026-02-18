@@ -1,295 +1,379 @@
-# Feature Research: Multi-Agent Coordination
+# Feature Research: Slack Integration
 
-**Domain:** Multi-agent task coordination (SSE events, workflow automation, atomic claiming)
-**Researched:** 2026-02-14
-**Confidence:** MEDIUM-HIGH
+**Domain:** Slack slash commands, bot notifications, per-channel subscriptions for task tracking
+**Researched:** 2026-02-17
+**Confidence:** HIGH (Slack official docs verified; patterns confirmed across multiple authoritative sources)
+
+---
+
+## Context: What Already Exists
+
+This is a SUBSEQUENT MILESTONE. The following are already built and must not be re-planned:
+
+- **24 CLI commands** covering the full task/project lifecycle
+- **REST API** (Fastify 5.x) with full CRUD for tasks, projects, comments, dependencies
+- **EventBus** (Node.js EventEmitter, typed) emitting 8 event types:
+  - `task.created`, `task.updated`, `task.deleted`, `task.status_changed`, `task.claimed`
+  - `project.created`, `project.updated`, `project.deleted`
+- **Task fields**: id, title, description, status (6 values), priority (4 values), project_id, assignee, created_by, due_date, tags, version, claimed_at
+- **Service layer**: TaskService, ProjectService, CommentService, DependencyService, ClaimReleaseService
+
+The Slack integration is purely an **additional interface** to these existing capabilities.
+
+---
+
+## Slack Platform Mechanics (Required Understanding)
+
+### Slash Command Request/Response Flow
+
+1. User types `/bug list` in a Slack channel
+2. Slack sends HTTP POST to your app's request URL within 3 seconds (or socket message in Socket Mode)
+3. App **must ack within 3 seconds** — return HTTP 200 (empty or with immediate response body)
+4. For slow operations: ack immediately (empty 200), then use `response_url` webhook to send follow-up
+5. Commands receive: `command`, `text`, `user_id`, `channel_id`, `response_url`, `trigger_id`, `team_id`
+
+**Critical constraint**: The `text` field is the entire string after the command as a single parameter. Subcommand routing (e.g., `/bug list`, `/bug create`) must be parsed by the app.
+
+### Response Visibility
+- **Ephemeral** (default): Only visible to the invoking user. Use for confirmations, query results, errors.
+- **In-channel**: Visible to everyone. Use sparingly — only for team-relevant announcements.
+- **Modals**: Pop-up dialog for multi-field input (triggered via `trigger_id`).
+
+### Request Signing (Security)
+All Slack HTTP requests include `X-Slack-Request-Timestamp` and `X-Slack-Signature` headers. Verification:
+1. Reject if timestamp is more than 5 minutes old (replay attack prevention)
+2. Compute HMAC-SHA256 of `v0:{timestamp}:{raw_body}` using signing secret
+3. Compare to `X-Slack-Signature` using constant-time comparison
+
+### Socket Mode vs HTTP Mode
+For a LAN-only service (no public internet endpoint):
+- **Socket Mode is the right choice** — connects via WebSocket to Slack, no need for public HTTPS endpoint
+- Bolt.js handles Socket Mode natively with `@slack/bolt` + `@slack/socket-mode`
+- HTTP mode requires a publicly accessible URL (ngrok tunnel for dev, reverse proxy for prod)
+
+### User Identity
+- Slash commands provide `user_id` (e.g., `U012AB3CD`) — this is the Slack user's stable identifier
+- Display name retrieved via `users.info` API → `profile.display_name` field
+- **Slack recommends using user_id as primary key**, not display_name (display_name is mutable)
+- For `created_by`/`assignee` fields in tasks: store display_name as a human-readable string (acceptable for a single-workspace custom app where user names are known and stable)
+- User mention format in mrkdwn: `<@U012AB3CD>` (renders as clickable @mention)
+
+### Block Kit for Formatting
+Blocks compose notifications and slash command responses:
+- **Header block**: Large title text (plain_text only)
+- **Section block**: Primary content area with optional fields grid; supports mrkdwn
+- **Divider block**: Visual separator
+- **Context block**: Small supplementary text (timestamps, IDs, etc.)
+- **Actions block**: Buttons and interactive elements
+
+mrkdwn user mention: `<@USERID>`, bold: `*text*`, italic: `_text_`, link: `<url|text>`
+
+---
 
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)
 
-Features agents/users assume exist for real-time coordination. Missing these = coordination feels broken.
+Features a Slack bot for task tracking must have. Missing these = bot feels broken or half-built.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **SSE: Basic event streaming** | Real-time updates are expected in 2026 task systems; polling is outdated | MEDIUM | HTTP/2 reduces connection limits; requires keep-alive, heartbeat |
-| **SSE: Event filtering by task/project** | Agents don't want all events, only relevant ones | MEDIUM | Prevents thundering herd; requires subscription metadata |
-| **SSE: Automatic reconnection** | Network failures happen; manual reconnect is unacceptable | LOW | EventSource provides this free; need Last-Event-ID support |
-| **SSE: Connection lifecycle management** | Idle connections waste resources | MEDIUM | Requires heartbeat, timeout detection, graceful disconnect |
-| **Workflow: Status transition triggers** | When task moves open→in_progress, something should happen | MEDIUM | Already have valid transitions; add hook points |
-| **Workflow: Dependency cascade updates** | When task is done, unblock dependents automatically | MEDIUM | Have dependency graph; need to detect and update blocked tasks |
-| **Claiming: Atomic assignment** | Two agents claiming same task = race condition disaster | HIGH | Requires database transaction or optimistic locking |
-| **Claiming: Fair distribution** | First-come-first-served prevents starvation | MEDIUM | FIFO queue or timestamp-based ordering |
-| **Claiming: Claim timeout/expiry** | Agent claims task then crashes = task stuck forever | MEDIUM | TTL on claims with automatic release; agent heartbeat |
+| Feature | Why Expected | Complexity | Existing Hook |
+|---------|--------------|------------|---------------|
+| **Slash command: list tasks** | Core discovery — "show me what's open" | LOW | `GET /api/v1/tasks` |
+| **Slash command: create task** | Core creation path in Slack | MEDIUM | `POST /api/v1/tasks` |
+| **Slash command: show task** | Look up a task by ID | LOW | `GET /api/v1/tasks/:id` |
+| **Slash command: update task status** | Most frequent mutation — status changes | MEDIUM | `PATCH /api/v1/tasks/:id` |
+| **Slash command: claim task** | Assign yourself to a task | LOW | `POST /api/v1/tasks/:id/claim` |
+| **Slack user as assignee/creator** | Identity from Slack — no manual name entry | MEDIUM | `users.info` API → display_name |
+| **Ephemeral responses for queries** | Query results visible only to requester | LOW | `respond({ response_type: 'ephemeral' })` |
+| **Bot notification: task created** | Teams want to know when work is added | LOW | EventBus `task.created` |
+| **Bot notification: task status changed** | Progress visibility is the main value | LOW | EventBus `task.status_changed` |
+| **Bot notification: task claimed** | Assignee visibility prevents conflicts | LOW | EventBus `task.claimed` |
+| **Per-channel subscription: enable/disable** | Channels have different concerns (not all want all noise) | MEDIUM | New `slack_subscriptions` table |
+| **Request signature verification** | Security baseline — prevent spoofed requests | MEDIUM | HMAC-SHA256 middleware |
+| **Help command** | All task bots need discoverability | LOW | Static Block Kit response |
+| **Slash command: ack + deferred response** | 3-second limit requires async pattern for slow queries | MEDIUM | `ack()` then `respond()` via response_url |
+| **Block Kit formatting for task cards** | Plain text responses look unpolished; users expect rich cards | MEDIUM | Block Kit section/header/context blocks |
+| **Error responses (ephemeral, actionable)** | Users need feedback when commands fail | LOW | Ephemeral error messages |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set Wood Fired Bugs apart for LLM agent coordination. Not required, but valuable.
+Features beyond baseline that add meaningful value for this specific use case (small team, LAN-hosted, agentic workflow).
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **SSE: Event type categorization** | Agents subscribe to task.updated vs task.created separately | LOW | Standard SSE event field; efficient filtering |
-| **SSE: Backpressure handling** | Slow agent doesn't crash server under high load | HIGH | Bounded buffers, circuit breakers, explicit disconnect on overload |
-| **SSE: Multi-stream multiplexing** | Agent gets project A and B updates on one connection | MEDIUM | Reduces connection count; HTTP/2 makes this efficient |
-| **Workflow: Conditional rules engine** | "If task priority=urgent AND assignee empty, notify team" | HIGH | Rule DSL, evaluation engine, extensibility point |
-| **Workflow: Batch operations** | "Mark all done subtasks as closed" in one atomic action | MEDIUM | Reduces chatter; requires transaction batching |
-| **Workflow: Undo/rollback** | Bad automation can be reverted | HIGH | Event sourcing or change log required |
-| **Claiming: Load-aware distribution** | Agents with fewer active tasks get priority | HIGH | Requires agent workload tracking; adaptive scheduling |
-| **Claiming: Skill-based routing** | Tasks tagged "backend" go to agents that can handle them | MEDIUM | Agent capability declaration + matching algorithm |
-| **Claiming: Optimistic locking with retry** | Fast path assumes no conflict; handles collision gracefully | MEDIUM | Version field on tasks; retry with exponential backoff |
-| **Event replay from checkpoint** | New agent connects, gets history since last_event_id | MEDIUM | EventSource supports this; need server-side event log retention |
+| **Slash command: filter list** | `/bug list --status open --project 2` — same power as CLI | MEDIUM | Parse text as sub-arguments; reuse existing filter logic |
+| **Per-channel subscription: event type filter** | Channel #backend gets only backend project events; #urgent gets only high/urgent priority | MEDIUM | Additional columns on `slack_subscriptions` table |
+| **Slash command: comment on task** | Add context without leaving Slack | LOW | `POST /api/v1/tasks/:id/comments` |
+| **@mention assignee in notifications** | `<@U123>` in task claimed/assigned notifications — Slack notifies them directly | LOW | Requires user_id→slack_id mapping |
+| **Slash command: assign task to another user** | Delegate work without CLI | LOW | `PATCH /api/v1/tasks/:id` with assignee |
+| **Bot notification: task updated** | Configurable — teams can opt-in to change stream | LOW | EventBus `task.updated` |
+| **Subscribe command in-channel** | `/bug subscribe` to configure current channel without admin UI | MEDIUM | Writes to `slack_subscriptions` table |
+| **Unsubscribe command** | `/bug unsubscribe` to remove channel from notifications | LOW | Deletes from `slack_subscriptions` table |
+| **Slash command: project list** | Discover project IDs from Slack (needed for filtering) | LOW | `GET /api/v1/projects` |
+| **Notification: include task URL** | Link back to task detail in notification card | LOW | Format task ID as `<http://host/tasks/123|#123>` |
+| **Priority emoji indicators** | `🔴 urgent`, `🟠 high`, `🟡 medium`, `🟢 low` in Block Kit cards | LOW | Static mapping, visual at-a-glance priority |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem good but create problems in multi-agent systems.
+Features that seem like natural asks but should be explicitly avoided.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **WebSocket bidirectional streams** | "More flexible than SSE" | Overkill for server→agent updates; increases complexity; firewall unfriendly | Use SSE for events + REST API for commands |
-| **Real-time everything** | "Agents need instant updates on all changes" | Creates thundering herd; overloads network; most changes aren't urgent | Event filtering by relevance; configurable polling fallback for non-critical |
-| **Complex workflow DSL** | "Turing-complete automation language" | 78% of teams over-automate; debugging distributed workflows is nightmare | Predefined trigger→action patterns; extensible via hooks not scripts |
-| **Distributed consensus for claims** | "Perfectly consistent across all nodes" | Adds latency; requires Paxos/Raft; overkill for single SQLite instance | Optimistic locking with retry; claims expire automatically |
-| **Eager automation of broken processes** | "AI will clean up our messy workflows" | Automates chaos faster; 85% say combining broken tasks makes it worse | Fix workflow definitions first; automate only well-defined patterns |
-| **Persistent task queues** | "Never lose a task assignment" | Adds Redis/RabbitMQ dependency; complexity explosion for single-server system | Atomic DB updates + SSE notification; if agent crashes, task auto-releases |
-| **Agent-to-agent direct messaging** | "Agents should coordinate peer-to-peer" | Requires service discovery; network topology; breaks audit trail | All coordination via task system; central log of all actions |
-| **Automatic retry on all failures** | "Make it resilient" | Retrying bad data/logic wastes cycles; can cause cascading failures | Classify errors (transient vs fatal); retry with backoff only for transient |
+| **One slash command per operation** | "Clean API" — `/bug-list`, `/bug-create`, etc. | Slack app configuration overhead; each command must be registered in Slack app manifest; harder to install; namespace pollution | Single `/bug` command with subcommand routing in text (`/bug list`, `/bug create`) |
+| **In-channel responses for queries** | "Everyone should see task lists" | Creates channel noise for every lookup; ephemeral queries are the Slack UX standard | Ephemeral for query results; in-channel only for explicit team announcements |
+| **Notification for every task.updated event** | "Full visibility" | High-frequency noise; `task.updated` fires on every field change including minor ones | Subscribe to specific event types per channel; default to status changes only |
+| **Interactive buttons on every notification** | "Quickly claim/close from notification" | Slack interactive components require handler infrastructure, callback IDs, state management; significant additional complexity | Phase 1: informational notifications; interactive buttons are Phase 2+ |
+| **Modals for task creation** | "Better UX than text commands" | Modal form requires `trigger_id`, separate view submission handler, state management; complex for 24 operations | Simple text command with named args: `/bug create --title "Fix login" --project 1` |
+| **Real-time notification for all 8 event types by default** | "Maximum visibility" | Notification fatigue destroys bot adoption; teams mute bots that spam | Default subscribe to 3 events (created, status_changed, claimed); let teams opt-in to others |
+| **Storing Slack user tokens** | "User-level permissions for each action" | Multi-token management is complex; single workspace custom app only needs bot token | Bot token only; single workspace installation; user identity from slash command payload |
+| **Slack as source of truth for tasks** | "Create in Slack, sync to system" | Bidirectional sync creates conflicts; Slack is a notification surface, not a database | Slack calls REST API; system is always authoritative |
+| **Channel-level slash command permissions** | "Only admins can create tasks from Slack" | Adds ACL complexity; overkill for internal custom app | Trust all workspace members; Slack workspace membership is already the permission boundary |
+
+---
 
 ## Feature Dependencies
 
 ```
-[Atomic Claiming]
-    └──requires──> [Task assignee field] (exists)
-    └──requires──> [Transaction support] (SQLite provides)
-    └──enhances──> [SSE Event Stream] (emit task.claimed events)
+[Socket Mode / HTTP Endpoint]
+    └──required by──> ALL slash command handlers
+    └──required by──> ALL notification delivery
+    └──required by──> Request signature verification
 
-[SSE Event Stream]
-    └──requires──> [HTTP server] (exists - Express)
-    └──requires──> [Event source data] (task CRUD already emits)
-    └──enhances──> [Workflow Automation] (automation results trigger events)
+[Request Signature Verification]
+    └──required by──> All slash command endpoints (security baseline)
 
-[Workflow Automation]
-    └──requires──> [Task status lifecycle] (exists)
-    └──requires──> [Dependency graph] (exists)
-    └──requires──> [SSE Event Stream] (to notify about cascades)
-    └──enhances──> [Atomic Claiming] (auto-assign based on rules)
+[Slack user → display_name resolution]
+    └──requires──> users.info Slack API call
+    └──required by──> Slash command: create task (created_by field)
+    └──required by──> Slash command: claim task (assignee field)
+    └──required by──> @mention assignee in notifications
 
-[Event Filtering]
-    └──requires──> [SSE Event Stream]
-    └──requires──> [Connection metadata] (track what client wants)
+[slack_subscriptions table]
+    └──required by──> Per-channel event subscription
+    └──required by──> Subscribe/unsubscribe commands
+    └──required by──> Bot notification routing
 
-[Claim Timeout/Expiry]
-    └──requires──> [Atomic Claiming]
-    └──requires──> [Background job scheduler] (check for expired claims)
+[EventBus subscription]
+    └──requires──> slack_subscriptions table (to know which channels)
+    └──requires──> Slack bot token (to post messages)
+    └──required by──> All bot notifications
 
-[Backpressure Handling]
-    └──requires──> [SSE Event Stream]
-    └──requires──> [Connection monitoring] (detect slow consumers)
+[Slash command: list tasks]
+    └──requires──> Socket Mode / HTTP Endpoint
+    └──requires──> Ack + deferred response pattern (list may exceed 3s)
+    └──requires──> Block Kit task card formatter
+
+[Slash command: create task]
+    └──requires──> Socket Mode / HTTP Endpoint
+    └──requires──> Slack user → display_name resolution
+
+[Slash command: claim task]
+    └──requires──> Socket Mode / HTTP Endpoint
+    └──requires──> Slack user → display_name resolution
+
+[Block Kit task card formatter]
+    └──enhances──> All slash command responses
+    └──enhances──> All bot notifications
+    └──no external deps (pure formatting logic)
+
+[Subscribe/unsubscribe commands]
+    └──requires──> slack_subscriptions table
+    └──requires──> Socket Mode / HTTP Endpoint
 ```
 
 ### Dependency Notes
 
-- **Atomic Claiming requires Task assignee + Transactions:** Already have assignee field; SQLite transactions available. Need to add claim_timestamp and claimed_by version tracking.
-- **SSE Event Stream requires HTTP server:** Express already running. Add GET /api/v1/events endpoint with Server-Sent Events headers.
-- **Workflow Automation requires Status lifecycle + Dependencies:** Both exist. Add trigger points after status updates and dependency resolution.
-- **Event Filtering enhances SSE:** Prevents overwhelming agents with irrelevant events. Requires storing subscription preferences per connection.
-- **Claim Timeout requires Background scheduler:** Need periodic check (every 30s?) to release stale claims. Simple setInterval works for single-process server.
-- **Backpressure Handling prevents cascading failures:** Connection.getBackpressure() pattern; disconnect slow clients before memory exhaustion.
+- **Socket Mode vs HTTP first decision**: All features depend on this. Socket Mode eliminates ngrok/public-URL complexity for LAN deployment. Commit to Socket Mode early.
+- **`slack_subscriptions` table is the configuration backbone**: Notifications without it would post to a hardcoded channel. Per-channel configuration requires this table before notification features can ship.
+- **EventBus already exists**: The existing `eventBus` singleton in `src/events/event-bus.ts` is the integration point for notifications. The Slack bot subscribes to event types and fans out to subscribed channels.
+- **Deferred response pattern must be implemented first**: The `ack()` + `respond()` split is required for any operation that may exceed 3 seconds (list queries with filters, create with validation). Implement this pattern once as a utility.
+- **Block Kit formatter is a cross-cutting concern**: Build it early; all features benefit from consistent task card formatting.
+
+---
 
 ## MVP Definition
 
-### Launch With (Multi-Agent Coordination v1)
+### Launch With (v1.5 Slack MVP)
 
-Minimum viable product for real-time agent coordination.
+Minimum viable Slack interface — proves the integration works end-to-end.
 
-- [ ] **SSE Basic Event Stream** — Agents can subscribe to task changes without polling; reduces API load by 90%
-- [ ] **Event Filtering by Project** — Agents working on Project A don't see Project B noise; prevents cognitive overload
-- [ ] **Atomic Task Claiming** — Prevents race conditions when 2+ agents try to claim same task; critical for reliability
-- [ ] **Claim Timeout** — Tasks auto-release after 30min of inactivity; prevents "zombie" assignments blocking work
-- [ ] **Status Transition Triggers** — When task goes done→closed, emit event; foundation for automation
-- [ ] **Dependency Cascade** — When task completes, auto-unblock dependents; removes manual coordination overhead
+- [ ] **Socket Mode setup + request verification** — Foundational; without this nothing else works
+- [ ] **`/bug help`** — Discoverability; tells users what commands exist
+- [ ] **`/bug list`** — Most-used query; validates read path end-to-end
+- [ ] **`/bug show <id>`** — Task lookup by ID; validates Block Kit formatting
+- [ ] **`/bug create --title "..." --project <id>`** — Core write path; validates Slack user identity flow
+- [ ] **`/bug claim <id>`** — Self-assign; validates claim protocol works from Slack
+- [ ] **`/bug update <id> --status <status>`** — Status change; validates update path
+- [ ] **Block Kit task card formatter** — Shared formatting; needed by list, show, notifications
+- [ ] **Bot notification: task.created** — Validates outbound notification pipeline
+- [ ] **Bot notification: task.status_changed** — Most valuable notification type
+- [ ] **`slack_subscriptions` table** — Required for notification routing
+- [ ] **`/bug subscribe` and `/bug unsubscribe`** — Channel admin commands; required to configure notifications
 
-### Add After Validation (v1.x)
+### Add After Validation (v1.5.x)
 
-Features to add once core coordination is working.
-
-- [ ] **Event Type Filtering** — Subscribe to task.updated but not task.created; reduces bandwidth
-- [ ] **Conditional Workflow Rules** — "If task urgent + unassigned, notify team"; requires validation that simple cascades work first
-- [ ] **Optimistic Locking** — Fast-path for claims; add after confirming pessimistic locking handles load
-- [ ] **Event Replay** — New agent gets last 100 events; nice-to-have after core streaming proven
-- [ ] **Connection Backpressure** — Disconnect slow consumers; add when scaling reveals need
+- [ ] **`/bug list --status <s> --project <p>`** — Full filter support; add once basic list works
+- [ ] **`/bug comment add <id> <text>`** — Add comments from Slack
+- [ ] **`/bug assign <id> @user`** — Assign to another user (requires user ID from @mention parsing)
+- [ ] **`/bug projects`** — List projects so users know which IDs exist
+- [ ] **Bot notification: task.claimed** — Add once task.created/status_changed proven
+- [ ] **Per-channel event type filter** — Fine-grained subscription control
+- [ ] **Priority emoji indicators** — Visual polish on Block Kit cards
+- [ ] **@mention assignee in notifications** — Requires user_id↔display_name cache
 
 ### Future Consideration (v2+)
 
-Features to defer until multi-agent usage patterns are clear.
+- [ ] **Interactive buttons on notifications** — Claim/close from notification; requires interactive component infrastructure
+- [ ] **Modal-based task creation** — Better UX for multi-field creation; high complexity
+- [ ] **Scheduled digests** — Daily summary of open tasks per channel
+- [ ] **Due date reminder notifications** — Proactive alerts for approaching deadlines
+- [ ] **Search command** — `/bug search "login fix"` — full-text search from Slack
 
-- [ ] **Load-Aware Distribution** — Requires tracking agent workload; complex heuristic; wait for data on bottlenecks
-- [ ] **Skill-Based Routing** — Agents declare capabilities; tasks route accordingly; need product-market fit first
-- [ ] **Workflow Undo/Rollback** — Nice safety net but requires event sourcing architecture; major refactor
-- [ ] **Multi-Stream Multiplexing** — HTTP/2 optimization; only needed at scale (>100 concurrent agents)
+---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority | Existing Data Model Support |
-|---------|------------|---------------------|----------|----------------------------|
-| SSE Basic Event Stream | HIGH (eliminates polling) | MEDIUM (Express SSE route) | P1 | No DB changes needed |
-| Atomic Task Claiming | HIGH (prevents conflicts) | MEDIUM (transaction + version field) | P1 | Add claim_timestamp, claim_version |
-| Event Filtering by Project | HIGH (reduces noise) | LOW (check project_id filter) | P1 | Uses existing project_id field |
-| Claim Timeout | HIGH (prevents stuck tasks) | MEDIUM (background job) | P1 | Uses claim_timestamp field |
-| Status Transition Triggers | MEDIUM (enables automation) | LOW (hook after updateTask) | P1 | Uses existing status field |
-| Dependency Cascade | HIGH (removes manual work) | MEDIUM (graph traversal) | P1 | Uses existing task_dependencies table |
-| Event Type Filtering | MEDIUM (bandwidth savings) | LOW (SSE event field) | P2 | No DB changes needed |
-| Conditional Workflow Rules | MEDIUM (flexibility) | HIGH (rule engine) | P2 | New workflow_rules table |
-| Optimistic Locking | MEDIUM (performance) | MEDIUM (retry logic) | P2 | Uses claim_version field |
-| Event Replay | LOW (nice UX) | MEDIUM (event log storage) | P2 | New event_log table |
-| Backpressure Handling | MEDIUM (stability) | HIGH (monitoring + circuit breaker) | P2 | No DB changes needed |
-| Load-Aware Distribution | LOW (optimization) | HIGH (workload tracking) | P3 | New agent_workload table |
-| Skill-Based Routing | LOW (advanced matching) | HIGH (capability matching) | P3 | New agent_capabilities table |
-| Workflow Undo/Rollback | LOW (safety net) | HIGH (event sourcing refactor) | P3 | Requires full event sourcing |
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| Socket Mode + request verification | HIGH | MEDIUM | P1 |
+| `/bug help` | HIGH | LOW | P1 |
+| `/bug list` | HIGH | LOW | P1 |
+| `/bug show <id>` | HIGH | LOW | P1 |
+| `/bug create` | HIGH | MEDIUM | P1 |
+| `/bug claim <id>` | HIGH | LOW | P1 |
+| `/bug update <id>` | HIGH | LOW | P1 |
+| Block Kit task card formatter | HIGH | MEDIUM | P1 |
+| `slack_subscriptions` table | HIGH | LOW | P1 |
+| `/bug subscribe` / `/bug unsubscribe` | HIGH | LOW | P1 |
+| Bot notification: task.created | HIGH | LOW | P1 |
+| Bot notification: task.status_changed | HIGH | LOW | P1 |
+| `/bug list` with filters | MEDIUM | MEDIUM | P2 |
+| `/bug comment add` | MEDIUM | LOW | P2 |
+| Bot notification: task.claimed | MEDIUM | LOW | P2 |
+| Per-channel event type filter | MEDIUM | MEDIUM | P2 |
+| Priority emoji indicators | LOW | LOW | P2 |
+| @mention assignee in notifications | MEDIUM | MEDIUM | P2 |
+| `/bug assign <id> @user` | MEDIUM | MEDIUM | P2 |
+| `/bug projects` | LOW | LOW | P2 |
+| Interactive notification buttons | HIGH | HIGH | P3 |
+| Modal task creation | MEDIUM | HIGH | P3 |
+| Scheduled digests | LOW | HIGH | P3 |
 
 **Priority key:**
-- P1: Must have for launch — solves core coordination pain points
-- P2: Should have — adds value once core is proven
-- P3: Nice to have — future optimization or advanced use case
+- P1: Required for launch — core Slack interface functional
+- P2: High value, add once core is proven stable
+- P3: Future — requires architectural additions not in scope for v1.5
 
-## Data Model Impact
+---
 
-### Required Changes for P1 Features
+## New Data Model Requirements
 
-**tasks table additions:**
+The only new persistent data needed for Slack integration is channel subscription configuration.
+
+### `slack_subscriptions` table
+
 ```sql
-ALTER TABLE tasks ADD COLUMN claim_timestamp TEXT;
-ALTER TABLE tasks ADD COLUMN claim_version INTEGER DEFAULT 0;
-```
-
-**New tables:**
-```sql
--- Event log for replay (optional for P1, required for P2 event replay)
-CREATE TABLE event_log (
+CREATE TABLE slack_subscriptions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_type TEXT NOT NULL,
-  task_id INTEGER REFERENCES tasks(id),
-  project_id INTEGER,
-  payload TEXT, -- JSON
-  created_at TEXT DEFAULT (datetime('now'))
+  channel_id TEXT NOT NULL,          -- Slack channel ID (C-prefixed)
+  channel_name TEXT,                  -- For display purposes only (mutable, not a key)
+  event_types TEXT NOT NULL,          -- JSON array: ["task.created","task.status_changed"]
+  project_ids TEXT,                   -- JSON array of project IDs to filter, NULL = all projects
+  min_priority TEXT,                  -- Minimum priority threshold: low|medium|high|urgent (NULL = all)
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(channel_id)                  -- One subscription record per channel
 );
-CREATE INDEX idx_event_log_task ON event_log(task_id, created_at);
-CREATE INDEX idx_event_log_project ON event_log(project_id, created_at);
 ```
 
-### Dependencies on Existing Schema
+No changes needed to existing `tasks`, `projects`, `comments`, or `task_dependencies` tables.
 
-| Feature | Existing Field/Table | How Used |
-|---------|---------------------|----------|
-| Event Filtering | tasks.project_id | Filter events by project subscription |
-| Atomic Claiming | tasks.assignee | Store who claimed the task |
-| Claim Timeout | tasks.claim_timestamp | Check if claim expired |
-| Dependency Cascade | task_dependencies.blocks_task_id | Find dependents to unblock |
-| Status Triggers | tasks.status | Detect transitions for automation |
-| SSE Routing | tasks.id, projects.id | Route events to interested subscribers |
+### Optional: `slack_users` cache table
 
-## Coordination Patterns Analysis
+For mapping Slack `user_id` to `display_name` without calling the API on every command:
 
-### 2026 Trends from Research
+```sql
+CREATE TABLE slack_users (
+  slack_user_id TEXT PRIMARY KEY,    -- Slack user ID (U-prefixed)
+  display_name TEXT NOT NULL,
+  cached_at TEXT DEFAULT (datetime('now'))
+);
+```
 
-**Agentic AI Orchestration:**
-- 65% reduction in manual approvals with autonomous agents (UiPath research)
-- Systems shift from rule-based to decision-oriented workflows
-- Memory, retries, observability, and human-in-the-loop are table stakes
+This is optional for MVP (can call `users.info` on each command) but reduces Slack API calls for active users.
 
-**Event-Driven Architecture:**
-- 72% of global organizations use EDA for apps/systems/processes
-- Async task execution, event sourcing, saga pattern, event aggregation are standard
-- Transactional outbox pattern addresses dual-write problem (DB + event notification)
+---
 
-**Distributed Task Claiming:**
-- Decentralized two-layer architecture for partial observability (Nature 2025 research)
-- FIFO + priority-based allocation prevents starvation
-- Reinforcement learning for adaptive scheduling emerging but complex
+## EventBus Integration Pattern
 
-**SSE Best Practices:**
-- Heartbeat every few seconds keeps connection alive
-- Exponential backoff on reconnect prevents load spikes
-- EventSource auto-sends Last-Event-ID header for replay
-- Browser limit: 6 concurrent SSE connections per domain (HTTP/1.1); HTTP/2 defaults to 100
+The Slack notification layer subscribes to the existing eventBus. No changes to EventBus or services.
 
-**Common Pitfalls:**
-- 78% say complex workflow patterns make automation harder
-- 85% say combining multiple automated tasks increases complexity
-- Over-automation before fixing processes accelerates chaos
-- Thundering herd on SSE query invalidation when thousands refetch simultaneously
+```typescript
+// New: src/slack/notifications.ts
+import { eventBus } from '../events/event-bus.js';
+import { SlackNotifier } from './notifier.js';
 
-### Recommended Implementation Approach
+export function registerSlackNotifications(notifier: SlackNotifier) {
+  // Subscribe to events the notifier cares about
+  eventBus.subscribe('task.created', (event) => {
+    notifier.notifyChannels('task.created', event);
+  });
 
-**Phase 1: Foundation (P1 Features)**
-1. Add SSE endpoint with basic event types (task.created, task.updated, task.deleted)
-2. Implement atomic claiming with optimistic locking (version field)
-3. Add claim timeout background job (30min expiry, configurable)
-4. Implement dependency cascade on task completion
-5. Add event filtering by project_id in SSE subscription
+  eventBus.subscribe('task.status_changed', (event) => {
+    notifier.notifyChannels('task.status_changed', event);
+  });
 
-**Phase 2: Refinement (P2 Features)**
-1. Add event type filtering (subscribe to specific event types)
-2. Implement event replay from Last-Event-ID
-3. Add conditional workflow rules for common patterns
-4. Implement backpressure detection and graceful degradation
+  eventBus.subscribe('task.claimed', (event) => {
+    notifier.notifyChannels('task.claimed', event);
+  });
+}
+```
 
-**Phase 3: Optimization (P3 Features)**
-1. Load-aware task distribution based on agent workload
-2. Skill-based routing with capability matching
-3. Event sourcing for full workflow undo/replay
+The `SlackNotifier.notifyChannels()` method:
+1. Queries `slack_subscriptions` for channels subscribed to this event type
+2. Applies project_id and priority filters if configured
+3. Calls `chat.postMessage` for each matching channel with Block Kit card
+
+---
 
 ## Competitor Feature Analysis
 
-| Feature | Temporal Workflow | Celery + Redis | Apache Airflow | Our Approach |
-|---------|-------------------|----------------|----------------|--------------|
-| Event Streaming | gRPC streaming | Redis pub/sub | REST polling | SSE (simpler, HTTP-native) |
-| Task Claiming | At-most-once semantics | LPOP atomic | Executor assigns | Optimistic lock on SQLite |
-| Workflow Rules | Code-based workflow definitions | Chaining via apply_async | DAG definitions | Simple trigger→action hooks (v1), rules engine (v2) |
-| Dependency Handling | Parent-child workflow | Manual chaining | Task dependencies in DAG | Existing dependency graph + auto-cascade |
-| Retry Logic | Exponential backoff built-in | retry with countdown param | retry in operators | Per-feature basis (claim retry, SSE reconnect) |
-| State Persistence | Durable execution log | Redis or DB backend | Metadata DB (Postgres) | SQLite (existing), add event_log for replay |
-| Agent Coordination | Worker pools | Celery workers | Executor workers | Agents subscribe via SSE, claim via API |
+| Feature | Jira for Slack | Linear (native) | GitHub for Slack | Our Approach |
+|---------|----------------|-----------------|------------------|--------------|
+| Command style | `/jira` + subcommands | Native shortcuts | `/github` + subcommands | `/bug` + subcommands |
+| Channel subscribe | `/jira connect` per channel | Per-channel notifications | `/github subscribe` | `/bug subscribe` |
+| Event types | issue.created, updated, commented | issue, PR, cycle events | PR, issue, push events | task.created, status_changed, claimed |
+| Create from Slack | Modal form | Modal | Issue form | Text command (modal is P3) |
+| Assignee mentions | @mention in card | @mention in DM | @mention in card | @mention with `<@USERID>` mrkdwn |
+| Filtering | By project, issue type, priority | By team, label | By repo, label | By project_id, min_priority |
+| Auth model | OAuth per user | OAuth per workspace | OAuth per org | Bot token, single workspace |
 
-**Key Differentiator for Wood Fired Bugs:**
-- Designed for **LLM agents on LAN**, not distributed microservices
-- **Single-process simplicity** (SQLite + Express) vs complex infrastructure (Redis, message queues)
-- **SSE over HTTP** instead of specialized protocols (gRPC, AMQP)
-- **Optimistic locking** sufficient for LAN latency; no need for distributed consensus
+**Key differentiator for Wood Fired Bugs:** This is an internal custom app with direct EventBus access. Jira/Linear integrations poll external APIs or use webhooks; ours subscribes directly to the in-process EventBus with zero latency and no polling overhead. Notifications fire at the moment of change.
+
+---
 
 ## Sources
 
-**SSE Event Streaming:**
-- [Why Server-Sent Events (SSE) are ideal for Real-Time Updates](https://talent500.com/blog/server-sent-events-real-time-updates/)
-- [Server-Sent Events: A Practical Guide for the Real World](https://tigerabrodi.blog/server-sent-events-a-practical-guide-for-the-real-world)
-- [Pushing real-time updates to clients with Server-Sent Events (SSEs)](https://rednafi.com/python/server-sent-events/)
-- [Using server-sent events - MDN Web Docs](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
-- [Server-Sent Events (SSE) in .NET: Key Concepts, Patterns, and Real-Time Use Cases](https://medium.com/@ashwinbalasubramaniam92/server-sent-events-in-dotnet-real-time-streaming-7836e24ae23d)
+**Slack Official Documentation:**
+- [Implementing slash commands](https://docs.slack.dev/interactivity/implementing-slash-commands/) — Request flow, 3-second limit, response types
+- [Verifying requests from Slack](https://docs.slack.dev/authentication/verifying-requests-from-slack/) — HMAC-SHA256 signing, 5-minute replay window
+- [Formatting message text](https://docs.slack.dev/messaging/formatting-message-text/) — mrkdwn syntax, user mentions `<@USERID>`, links
+- [Block Kit blocks reference](https://docs.slack.dev/reference/block-kit/blocks/) — Available block types
+- [Comparing HTTP & Socket Mode](https://docs.slack.dev/apis/events-api/comparing-http-socket-mode/) — Mode selection rationale
+- [users.info method](https://docs.slack.dev/reference/methods/users.info/) — Display name retrieval
+- [Slack changelog: farewell to usernames](https://docs.slack.dev/changelog/2017-09-the-one-about-usernames/) — Use user_id not display_name as key
+- [Interaction guidelines](https://api.slack.com/start/planning/guidelines) — Ephemeral vs in-channel, modal use cases
 
-**Workflow Automation:**
-- [Agentic AI Orchestration in 2026: Automating Workflows at Scale](https://onereach.ai/blog/agentic-ai-orchestration-enterprise-workflow-automation/)
-- [7 AI Workflow Automation Trends in 2026: IT Leader Guide](https://kissflow.com/workflow/7-workflow-automation-trends-every-it-leader-must-watch-in-2025/)
-- [The 2026 Guide to Agentic Workflow Architectures](https://www.stack-ai.com/blog/the-2026-guide-to-agentic-workflow-architectures)
-- [Event-Driven Architecture (EDA): A Complete Introduction](https://www.confluent.io/learn/event-driven-architecture/)
-- [7 Essential Patterns in Event-Driven Architecture Today](https://talent500.com/blog/event-driven-architecture-essential-patterns/)
+**Bolt.js:**
+- [@slack/bolt on npm](https://www.npmjs.com/package/@slack/bolt) — Version 4.6.0, TypeScript support, slash command patterns
+- [bolt-js GitHub](https://github.com/slackapi/bolt-js) — Socket Mode, ack+respond pattern
 
-**Atomic Task Claiming:**
-- [The Art of Staying in Sync: How Distributed Systems Avoid Race Conditions](https://medium.com/@alexglushenkov/the-art-of-staying-in-sync-how-distributed-systems-avoid-race-conditions-f59b58817e02)
-- [Handling Race Condition in Distributed System - GeeksforGeeks](https://www.geeksforgeeks.org/computer-networks/handling-race-condition-in-distributed-system/)
-- [Distributed Locking and Race Condition Prevention](https://dzone.com/articles/distributed-locking-and-race-condition-prevention)
-- [Exactly-Once Task Processing in Distributed Systems with Redis](https://medium.com/@ramachandrankrish/exactly-once-task-processing-in-distributed-systems-with-redis-preventing-race-conditions-across-009edf8f8a5a)
-- [Pessimistic vs Optimistic Locking](https://newsletter.systemdesigncodex.com/p/pessimistic-vs-optimistic-locking)
-
-**Fair Task Distribution:**
-- [Decentralized adaptive task allocation for dynamic multi-agent systems](https://www.nature.com/articles/s41598-025-21709-9) (Nature Scientific Reports 2025)
-- [How to Create Agent Coordination](https://oneuptime.com/blog/post/2026-01-30-agent-coordination/view)
-
-**Anti-Patterns and Pitfalls:**
-- [The AI Workflow Integration Paradox: More Automation Tools = Less Productivity](https://swisscognitive.ch/2026/01/06/the-ai-workflow-integration-paradox-more-automation-tools-less-productivity/)
-- [6 Workflow Automation Mistakes That Could Derail Your Success](https://www.rpatech.ai/blogs/workflow-automation-mistakes/)
-- [Messaging anti-patterns in event-driven architecture](https://www.ben-morris.com/event-driven-architecture-and-message-design-anti-patterns-and-pitfalls/)
-- [Managing Back-Pressure in Event-Driven Architectures](https://medium.com/@mokarchi/managing-back-pressure-in-event-driven-architectures-fe370aa82df1)
+**Real-world Integration Patterns:**
+- [Jira for Slack channel notifications](https://support.atlassian.com/jira-software-cloud/docs/use-jira-cloud-for-slack/) — Channel subscribe model
+- [Slack UX challenges (Cloverpop)](https://www.cloverpop.com/blog/six-ux-challenges-when-building-slack-apps-and-how-we-fixed-them) — Anti-pattern validation
+- [Interaction guidelines for Slack apps](https://api.slack.com/start/planning/guidelines) — Official UX guidance
 
 ---
-*Feature research for: Multi-Agent Coordination (SSE, Workflow, Claiming)*
-*Researched: 2026-02-14*
-*Confidence: MEDIUM-HIGH (Context from web search; official docs verified for SSE/EDA patterns; LOW confidence on load balancing algorithms pending implementation testing)*
+*Feature research for: Wood Fired Bugs — Slack Integration (v1.5)*
+*Researched: 2026-02-17*
+*Confidence: HIGH — Core Slack mechanics verified against official Slack Developer Docs; @slack/bolt version confirmed from npm/GitHub; EventBus integration assessed from direct codebase inspection*

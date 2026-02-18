@@ -600,3 +600,299 @@ Based on stack dependencies:
 
 *Stack research for: Wood Fired Bugs hardening & polish milestone*
 *Researched: 2026-02-17*
+
+---
+
+# Stack Research — Slack Integration Milestone
+
+**Domain:** Slack bot integration (Socket Mode, slash commands, Block Kit, per-channel notifications)
+**Researched:** 2026-02-17
+**Confidence:** HIGH
+
+## Executive Summary
+
+Adding Slack as a fourth interface to the existing task tracking service requires exactly **two new production dependencies**: `@slack/bolt` (the Slack framework) and `@slack/types` (Block Kit TypeScript types). No HTTP server changes are needed — the Slack app runs as a separate in-process module that connects to Slack via an outbound WebSocket (Socket Mode), meaning no public URL, no reverse proxy, no Fastify route additions.
+
+The existing EventBus (`src/events/event-bus.ts`) is the integration point for bot notifications: the Slack module subscribes to domain events and calls `chat.postMessage` for subscribed channels. Per-channel subscriptions are stored in the existing SQLite database with a new migration. The existing service layer handles all task operations, so slash commands simply call into the same `TaskService`, `ProjectService`, etc. that the CLI and MCP server use.
+
+The key ESM compatibility concern is resolved by Slack's official starter template, which confirms `@slack/bolt` v4.6 works with `"type": "module"` and `"module": "nodenext"` tsconfig — the same pattern this project uses (`"module": "Node16"`).
+
+---
+
+## New Dependencies Required
+
+### Core Slack Framework
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `@slack/bolt` | ^4.6.0 | Slack app framework (Socket Mode, slash commands, event handling) | Official Slack framework. Handles WebSocket lifecycle, reconnection, ack() timeouts, and middleware. v4.6 adds extended ack timeouts. Bundles `@slack/web-api` and `@slack/socket-mode` — no separate installs needed. |
+| `@slack/types` | ^2.20.0 | TypeScript types for Block Kit blocks/elements | Official type definitions published 4 hours ago (as of research date). Provides compile-time safety when constructing Block Kit JSON. Included as a bundled dependency inside `@slack/bolt` but needed as a direct dev dep for type imports in consuming code. |
+
+### No Other New Dependencies Needed
+
+| Capability | How Provided |
+|------------|-------------|
+| WebSocket connection to Slack | Bundled inside `@slack/bolt` via `@slack/socket-mode` |
+| Web API calls (chat.postMessage) | Bundled inside `@slack/bolt` via `@slack/web-api` |
+| Block Kit JSON construction | Write typed JSON directly using `@slack/types`; no builder library needed |
+| Per-channel subscription storage | Existing SQLite + new umzug migration |
+| Domain event triggers for notifications | Existing `eventBus` singleton from `src/events/event-bus.ts` |
+| Command parsing and routing | Bolt's `app.command()` handles slash command dispatch |
+| Environment variables | Existing `dotenv` (already in dependencies) |
+
+---
+
+## Bundled Packages (No Separate Install)
+
+`@slack/bolt` bundles these — they are available as transitive dependencies:
+
+| Package | Version (bundled) | What it provides |
+|---------|-------------------|-----------------|
+| `@slack/web-api` | ^7.14.1 | `WebClient` for `chat.postMessage`, `chat.update`, etc. |
+| `@slack/socket-mode` | ^2.0.5 | `SocketModeReceiver`, WebSocket lifecycle, reconnection |
+| `@slack/logger` | ^4.0.0 | Structured logging for Slack SDK internals |
+
+---
+
+## Installation
+
+```bash
+# Production dependency: the entire Slack integration
+npm install @slack/bolt@^4.6.0
+
+# Dev dependency: Block Kit TypeScript types for type-safe JSON construction
+npm install -D @slack/types@^2.20.0
+```
+
+---
+
+## ESM Compatibility
+
+**The project uses `"type": "module"` (ESM) and `"module": "Node16"` tsconfig.**
+
+`@slack/bolt` is a CJS-only package (no `"type"` field in its `package.json`, no `exports` field, `main: "./dist/index.js"`). However, ESM projects can import CJS packages via the default import with `Node16`/`NodeNext` module resolution.
+
+**Confirmation (HIGH confidence):** The official Slack bolt-ts-starter-template uses `"type": "module"` + `"module": "nodenext"` tsconfig with `@slack/bolt@^4.6.0`. This is the blessed approach from Slack's own team. `Node16` and `nodenext` are equivalent for this purpose — both allow ESM-to-CJS default imports.
+
+**Import pattern that works in this ESM project:**
+
+```typescript
+// src/slack/app.ts
+import { App } from '@slack/bolt';  // Works: ESM importing CJS default
+```
+
+**No tsconfig changes needed.** The existing `"module": "Node16"` handles CJS interop correctly.
+
+---
+
+## Architecture Integration Points
+
+### 1. Slash Commands → Service Layer
+
+Bolt's `app.command('/tasks', handler)` receives the slash command and routes to the existing service layer. No REST API calls — direct TypeScript imports.
+
+```typescript
+// src/slack/handlers/commands/tasks-list.ts
+import { TaskService } from '../../../services/task.service.js';
+
+export function registerTasksCommand(app: App, taskService: TaskService) {
+  app.command('/tasks', async ({ command, ack, respond }) => {
+    await ack();
+    const tasks = taskService.list({ status: 'open' });
+    await respond({
+      blocks: buildTaskListBlocks(tasks),
+      text: `${tasks.length} open tasks`,  // Fallback for accessibility
+    });
+  });
+}
+```
+
+**Why direct service calls instead of REST API calls:** Same process, same service layer. No network hop, no auth tokens, simpler error handling, and consistent with how CLI uses services directly.
+
+### 2. Notifications → EventBus Subscription
+
+The Slack notification manager subscribes to the existing `eventBus` singleton and calls `chat.postMessage` for all channels subscribed to that event type.
+
+```typescript
+// src/slack/notifications.ts
+import { eventBus } from '../events/event-bus.js';
+import { SlackSubscriptionRepository } from './repositories/subscription.repository.js';
+
+export function startNotificationListener(
+  client: WebClient,
+  subscriptionRepo: SlackSubscriptionRepository
+) {
+  eventBus.subscribe('task.status_changed', async (event) => {
+    const channels = subscriptionRepo.getChannelsForEvent('task.status_changed');
+    for (const channelId of channels) {
+      await client.chat.postMessage({
+        channel: channelId,
+        blocks: buildStatusChangeBlocks(event.data),
+        text: `Task "${event.data.title}" status changed to ${event.data.status}`,
+      });
+    }
+  });
+}
+```
+
+### 3. Per-Channel Subscriptions → SQLite
+
+A new migration adds a `slack_subscriptions` table. A dedicated `SlackSubscriptionRepository` (following the existing repository pattern) handles CRUD. Slash commands like `/tasks-notify on task.status_changed` call this repository.
+
+**Schema:**
+```sql
+CREATE TABLE slack_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(channel_id, event_type)
+);
+```
+
+### 4. Process Lifecycle
+
+The Slack app starts alongside the Fastify server. Both are started from the same entrypoint (`src/api/start.ts` or a new `src/start.ts`). `app.start()` on a Socket Mode Bolt app does not open an HTTP port — it only opens an outbound WebSocket to Slack's servers.
+
+```typescript
+// src/api/start.ts (or new entrypoint)
+const fastifyServer = buildServer();
+const slackApp = buildSlackApp();
+
+await Promise.all([
+  fastifyServer.listen({ port: 3000 }),
+  slackApp.start(),  // No port — WebSocket only
+]);
+```
+
+---
+
+## Required Slack App Configuration
+
+These are workspace-level configuration items, not code dependencies:
+
+### Bot Token Scopes (OAuth & Permissions)
+| Scope | Why Needed |
+|-------|-----------|
+| `commands` | Register and receive slash commands |
+| `chat:write` | Post messages to channels the bot has joined |
+| `chat:write.public` | Post messages to public channels without joining first |
+| `channels:read` | Read channel list for subscription management |
+
+### App-Level Token Scopes
+| Scope | Why Needed |
+|-------|-----------|
+| `connections:write` | Open WebSocket connections (required for Socket Mode) |
+
+### Socket Mode
+Enable in the Slack app dashboard: **Settings → Socket Mode → Enable Socket Mode**
+
+### Environment Variables
+```
+SLACK_BOT_TOKEN=xoxb-...      # Bot user OAuth token
+SLACK_APP_TOKEN=xapp-...      # App-level token for Socket Mode
+SLACK_SIGNING_SECRET=...      # For payload verification (optional in Socket Mode, but recommended)
+```
+
+---
+
+## Block Kit Approach
+
+Write Block Kit JSON directly using `@slack/types` for type safety. Do NOT use a Block Kit builder library.
+
+**Why no builder library:**
+- `slack-block-builder` last published December 2021 — over 3 years stale, does not support Slack blocks added since 2022
+- `jsx-slack` adds JSX transform dependency; unnecessary complexity for a LAN service
+- Block Kit JSON is simple; typed JSON with `@slack/types` provides IDE autocomplete and compile-time checks
+- Official Slack examples all use raw JSON
+
+**Pattern:**
+```typescript
+import type { Block, KnownBlock } from '@slack/types';
+
+function buildTaskBlocks(task: Task): (KnownBlock | Block)[] {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*${task.title}*\nStatus: ${task.status}`,
+      },
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `ID: ${task.id} | Project: ${task.projectId ?? 'none'}`,
+        },
+      ],
+    },
+  ];
+}
+```
+
+---
+
+## What NOT to Use
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `slack-block-builder` | Last published Dec 2021; missing 3+ years of new Block Kit blocks | Raw JSON + `@slack/types` |
+| `jsx-slack` | JSX transform adds build complexity; overkill for a LAN service | Raw JSON + `@slack/types` |
+| `@slack/web-api` as direct dependency | Already bundled inside `@slack/bolt`; installing separately risks version conflicts | Access via `bolt`'s built-in client |
+| `@slack/socket-mode` as direct dependency | Bundled inside `@slack/bolt`; SocketModeReceiver is available through Bolt | Access via Bolt's socketMode option |
+| HTTP mode (no socketMode) | Requires public URL and reverse proxy; this is a LAN service | Socket Mode (outbound WebSocket only) |
+| Separate Slack process | Adds IPC complexity; services are already in same process | Same process via direct service imports |
+| Express-based Bolt receiver | Project uses Fastify; Socket Mode has no HTTP dependency anyway | `socketMode: true` in Bolt App constructor |
+| `@types/express` as dependency | Bolt v4.2.1 made `@types/express` optional; Socket Mode doesn't use Express | Not needed — Bolt will not complain |
+
+---
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Slack framework | `@slack/bolt` | `@slack/web-api` + `@slack/socket-mode` directly | Bolt handles ack() timing, middleware, error handling; raw SDK requires rebuilding all of this |
+| Slack framework | `@slack/bolt` | `slack` (community package) | Community-maintained, not Slack's official SDK |
+| Block Kit construction | Raw JSON + `@slack/types` | `slack-block-builder` | Stale (3+ years); missing modern blocks |
+| Block Kit construction | Raw JSON + `@slack/types` | `jsx-slack` | JSX transform adds build complexity |
+| Subscription storage | SQLite + existing umzug | Separate config file (JSON/YAML) | SQLite is already the persistence layer; SQL gives query flexibility |
+
+---
+
+## Version Compatibility Matrix
+
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `@slack/bolt@^4.6.0` | Node.js >= 18 | Project runs Node.js 22; well within requirement |
+| `@slack/bolt@^4.6.0` | TypeScript ^5.x | Project uses TypeScript 5.9.3 |
+| `@slack/bolt@^4.6.0` | `"type": "module"` + `"module": "Node16"` | Confirmed by official bolt-ts-starter-template |
+| `@slack/types@^2.20.0` | `@slack/bolt@^4.6.0` | `@slack/types` is a dependency of bolt; versions aligned |
+| `@slack/bolt@^4.6.0` | `dotenv@^17.x` | Environment variable loading already in place |
+
+---
+
+## Sources
+
+### High Confidence (Official Docs + Official Repositories)
+- [bolt-js GitHub package.json](https://github.com/slackapi/bolt-js/blob/main/package.json) — Confirmed CJS-only, v4.6.0, dependencies list
+- [bolt-ts-starter-template package.json](https://raw.githubusercontent.com/slack-samples/bolt-ts-starter-template/main/package.json) — Confirmed `"type": "module"` + `@slack/bolt@^4.6.0` compatibility
+- [bolt-ts-starter-template tsconfig.json](https://raw.githubusercontent.com/slack-samples/bolt-ts-starter-template/main/tsconfig.json) — Confirmed `"module": "nodenext"` with ESM
+- [Bolt JS Getting Started](https://docs.slack.dev/tools/bolt-js/getting-started) — Socket Mode tokens and configuration
+- [Socket Mode Docs](https://docs.slack.dev/apis/events-api/using-socket-mode/) — Required tokens, scopes, limitations (max 10 WebSocket connections)
+- [Bolt JS Reference](https://docs.slack.dev/tools/bolt-js/reference/) — `app.command()`, `socketMode: true` configuration
+
+### Medium Confidence (Official but indirect)
+- [@slack/types npm](https://www.npmjs.com/package/@slack/types) — v2.20.0, published 4 hours before research, actively maintained
+- [Bolt v3→v4 Migration Guide](https://github.com/slackapi/bolt-js/wiki/Bolt-v3-%E2%80%90--v4-Migration-Guide) — Breaking changes: dropped Node 14/16, web-api v6→v7, socket-mode v1→v2
+- [Slack Scopes Reference](https://docs.slack.dev/reference/scopes/) — `chat:write`, `chat:write.public`, `commands`, `connections:write`
+
+### Low Confidence (Not individually verified, consistent with other sources)
+- `slack-block-builder` last published Dec 2021 — from GitHub releases page; treat builder as unmaintained
+- Socket Mode limitation of 10 WebSocket connections — from official Socket Mode docs; non-issue for single-workspace LAN deployment
+
+---
+
+*Stack research for: Wood Fired Bugs Slack integration milestone*
+*Researched: 2026-02-17*
