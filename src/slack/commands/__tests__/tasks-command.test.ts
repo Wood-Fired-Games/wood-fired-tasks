@@ -69,6 +69,17 @@ function makeMockDependency(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeMockProject(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 5,
+    name: 'Wood Fired Games',
+    description: 'Main game project',
+    created_at: '2026-02-18T00:00:00Z',
+    updated_at: '2026-02-18T00:00:00Z',
+    ...overrides,
+  };
+}
+
 function makeMockServices(): Services {
   return {
     taskService: {
@@ -79,20 +90,26 @@ function makeMockServices(): Services {
       deleteTask: vi.fn().mockReturnValue(undefined),
       claimTask: vi.fn().mockReturnValue(makeMockTask({ assignee: 'Stuart', claimed_at: '2026-02-18T00:00:00Z' })),
       getSubtasks: vi.fn().mockReturnValue([]),
-      countTasks: vi.fn().mockReturnValue(0),
+      countTasks: vi.fn().mockReturnValue(42),
       searchTasks: vi.fn().mockReturnValue([]),
     } as unknown as Services['taskService'],
-    projectService: {} as Services['projectService'],
+    projectService: {
+      listProjects: vi.fn().mockReturnValue([]),
+      getProject: vi.fn().mockReturnValue(makeMockProject()),
+      createProject: vi.fn().mockReturnValue(makeMockProject()),
+      updateProject: vi.fn().mockReturnValue(makeMockProject()),
+      deleteProject: vi.fn().mockReturnValue(undefined),
+    } as unknown as Services['projectService'],
     dependencyService: {
       getBlockedBy: vi.fn().mockReturnValue([]),
       getBlockers: vi.fn().mockReturnValue([]),
-      addDependency: vi.fn(),
-      removeDependency: vi.fn(),
+      addDependency: vi.fn().mockReturnValue(makeMockDependency()),
+      removeDependency: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['dependencyService'],
     commentService: {
       getComments: vi.fn().mockResolvedValue([]),
-      addComment: vi.fn(),
-      deleteComment: vi.fn(),
+      addComment: vi.fn().mockReturnValue({ id: 7, task_id: 42, author: 'Stuart', content: 'Test', created_at: '2026-02-18T00:00:00Z', updated_at: null }),
+      deleteComment: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['commentService'],
   };
 }
@@ -579,6 +596,547 @@ describe('registerTasksCommand', () => {
       const blockText = respondArg.blocks[0]?.text?.text ?? '';
       expect(blockText).toContain(':x:');
       expect(blockText).toContain('required');
+    });
+  });
+
+  // ── project tests ──────────────────────────────────────────────────────────
+
+  describe('/tasks project-list', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls projectService.listProjects and responds with blocks', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('project-list');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.projectService.listProjects).toHaveBeenCalledOnce();
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      expect(respondArg.response_type).toBe('ephemeral');
+      expect(Array.isArray(respondArg.blocks)).toBe(true);
+    });
+
+    it('responds with header block when projects exist', async () => {
+      const projects = [makeMockProject({ id: 1, name: 'Alpha' }), makeMockProject({ id: 2, name: 'Beta' })];
+      vi.mocked(services.projectService.listProjects).mockReturnValue(projects);
+      const handler = getHandler(app);
+      const handlerArgs = makeHandlerArgs('project-list');
+      await handler(handlerArgs);
+
+      // formatProjectList returns a header block for non-empty list
+      const respondArg = handlerArgs.respond.mock.calls[0]![0] as { blocks: Array<{ type: string }> };
+      expect(respondArg.blocks[0]?.type).toBe('header');
+    });
+  });
+
+  describe('/tasks project-show', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls projectService.getProject(5) and responds with detail blocks', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('project-show 5');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.projectService.getProject).toHaveBeenCalledWith(5);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      expect(respondArg.response_type).toBe('ephemeral');
+    });
+
+    it('responds with error when no id provided', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('project-show');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('required');
+    });
+  });
+
+  describe('/tasks project-create', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls projectService.createProject with name "My Project" and responds', async () => {
+      const handler = getHandler(app);
+      // No shell quoting — command.text is split on whitespace by parseArgs
+      // Use a single-word description to avoid splitting issues
+      const args = makeHandlerArgs('project-create My Project --description ADesc');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.projectService.createProject).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'My Project' })
+      );
+      expect(args.respond).toHaveBeenCalledOnce();
+    });
+
+    it('responds with error when no name provided', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('project-create');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('name required');
+    });
+  });
+
+  describe('/tasks project-update', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls projectService.updateProject(5, { name: "NewName" })', async () => {
+      const handler = getHandler(app);
+      // No shell quoting — flag values are single tokens after whitespace split
+      const args = makeHandlerArgs('project-update 5 --name NewName');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.projectService.updateProject).toHaveBeenCalledWith(5, { name: 'NewName' });
+      expect(args.respond).toHaveBeenCalledOnce();
+    });
+
+    it('responds with error when no update fields provided', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('project-update 5');
+      await handler(args);
+
+      expect(services.projectService.updateProject).not.toHaveBeenCalled();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+    });
+  });
+
+  describe('/tasks project-delete', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls projectService.deleteProject(5) and responds with confirmation', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('project-delete 5');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.projectService.deleteProject).toHaveBeenCalledWith(5);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('5');
+      expect(respondArg.blocks[0]?.text?.text).toContain('deleted');
+    });
+  });
+
+  // ── dependency tests ────────────────────────────────────────────────────────
+
+  describe('/tasks dep-add', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls dependencyService.addDependency({ task_id: 10, blocks_task_id: 20 }) and confirms', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('dep-add 10 20');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.dependencyService.addDependency).toHaveBeenCalledWith({ task_id: 10, blocks_task_id: 20 });
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('10');
+      expect(respondArg.blocks[0]?.text?.text).toContain('20');
+    });
+
+    it('responds with error when second id is missing', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('dep-add 10');
+      await handler(args);
+
+      expect(services.dependencyService.addDependency).not.toHaveBeenCalled();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+    });
+  });
+
+  describe('/tasks dep-list', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls getBlockedBy(10) and getBlockers(10) and responds with dependency info', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('dep-list 10');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.dependencyService.getBlockedBy).toHaveBeenCalledWith(10);
+      expect(services.dependencyService.getBlockers).toHaveBeenCalledWith(10);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('Task #10');
+    });
+  });
+
+  describe('/tasks dep-remove', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls removeDependency(10, 20) and responds with confirmation', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('dep-remove 10 20');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.dependencyService.removeDependency).toHaveBeenCalledWith(10, 20);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('no longer blocks');
+    });
+  });
+
+  // ── comment tests ───────────────────────────────────────────────────────────
+
+  describe('/tasks comment-add', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls identityCache.resolve then commentService.addComment with multi-word content', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('comment-add 42 This is a great comment');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
+      expect(services.commentService.addComment).toHaveBeenCalledWith(
+        expect.objectContaining({ task_id: 42, content: 'This is a great comment', author: 'Stuart' })
+      );
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
+    });
+
+    it('responds with error when no content provided', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('comment-add 42');
+      await handler(args);
+
+      expect(services.commentService.addComment).not.toHaveBeenCalled();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('required');
+    });
+  });
+
+  describe('/tasks comment-list', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls commentService.getComments(42) and responds with comment blocks', async () => {
+      const comments = [makeMockComment({ id: 1, content: 'Great work!' })];
+      vi.mocked(services.commentService.getComments).mockResolvedValue(comments);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('comment-list 42');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.commentService.getComments).toHaveBeenCalledWith(42);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ type: string; text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.type).toBe('header');
+      const hasCommentContent = respondArg.blocks.some((b) => b.text?.text?.includes('Great work!'));
+      expect(hasCommentContent).toBe(true);
+    });
+
+    it('responds with _No comments._ when task has no comments', async () => {
+      vi.mocked(services.commentService.getComments).mockResolvedValue([]);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('comment-list 42');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('No comments');
+    });
+  });
+
+  describe('/tasks comment-delete', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls commentService.deleteComment(7) and responds with confirmation', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('comment-delete 42 7');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.commentService.deleteComment).toHaveBeenCalledWith(7);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('7');
+    });
+  });
+
+  // ── subtask tests ───────────────────────────────────────────────────────────
+
+  describe('/tasks subtask-create', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls taskService.createTask with parent_task_id: 10 when subtask-create 10 Fix sub issue --project 3', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subtask-create 10 Fix sub issue --project 3');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
+      expect(services.taskService.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ parent_task_id: 10, title: 'Fix sub issue', project_id: 3 })
+      );
+      expect(args.respond).toHaveBeenCalledOnce();
+    });
+
+    it('responds with error when --project flag is missing', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subtask-create 10 Fix sub issue');
+      await handler(args);
+
+      expect(services.taskService.createTask).not.toHaveBeenCalled();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('Project ID required');
+    });
+  });
+
+  describe('/tasks subtask-list', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls taskService.getSubtasks(10) and responds with task list blocks', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subtask-list 10');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.taskService.getSubtasks).toHaveBeenCalledWith(10);
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      expect(respondArg.response_type).toBe('ephemeral');
+    });
+  });
+
+  // ── health test ─────────────────────────────────────────────────────────────
+
+  describe('/tasks health', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('calls taskService.countTasks and responds with healthy message', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('health');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(services.taskService.countTasks).toHaveBeenCalledOnce();
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('healthy');
+      expect(respondArg.blocks[0]?.text?.text).toContain('42');
+    });
+
+    it('responds with failure message when countTasks throws', async () => {
+      vi.mocked(services.taskService.countTasks).mockImplementation(() => { throw new Error('DB offline'); });
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('health');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
+      expect(respondArg.blocks[0]?.text?.text).toContain('failed');
+    });
+  });
+
+  // ── CLI-only stub tests ─────────────────────────────────────────────────────
+
+  describe('CLI-only stub commands', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    it('/tasks backup responds with CLI-only informational message', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('backup');
+      await handler(args);
+
+      expect(args.respond).toHaveBeenCalledOnce();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
+      expect(respondArg.blocks[0]?.text?.text).toContain('backup');
+    });
+
+    it('/tasks doctor responds with CLI-only informational message', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('doctor');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
+      expect(respondArg.blocks[0]?.text?.text).toContain('doctor');
+    });
+
+    it('/tasks completions responds with CLI-only informational message', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('completions');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
+      expect(respondArg.blocks[0]?.text?.text).toContain('completions');
+    });
+
+    it('/tasks stats responds with CLI-only informational message', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('stats');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
+    });
+
+    it('/tasks db-check responds with CLI-only informational message', async () => {
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('db-check');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
     });
   });
 
