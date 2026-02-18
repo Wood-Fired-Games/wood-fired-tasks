@@ -64,38 +64,38 @@ Slack integration milestone — adding Slack as a fourth interface with slash co
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SLCK-01 | TBD | Pending |
-| SLCK-02 | TBD | Pending |
-| SLCK-03 | TBD | Pending |
-| SLCK-04 | TBD | Pending |
-| SCMD-01 | TBD | Pending |
-| SCMD-02 | TBD | Pending |
-| SCMD-03 | TBD | Pending |
-| SCMD-04 | TBD | Pending |
-| SCMD-05 | TBD | Pending |
-| SCMD-06 | TBD | Pending |
-| SCMD-07 | TBD | Pending |
-| SCMD-08 | TBD | Pending |
-| SCMD-09 | TBD | Pending |
-| SCMD-10 | TBD | Pending |
-| BKIT-01 | TBD | Pending |
-| BKIT-02 | TBD | Pending |
-| BKIT-03 | TBD | Pending |
-| BKIT-04 | TBD | Pending |
-| NTFY-01 | TBD | Pending |
-| NTFY-02 | TBD | Pending |
-| NTFY-03 | TBD | Pending |
-| NTFY-04 | TBD | Pending |
-| NTFY-05 | TBD | Pending |
-| UIDENT-01 | TBD | Pending |
-| UIDENT-02 | TBD | Pending |
-| UIDENT-03 | TBD | Pending |
+| SLCK-01 | Phase 23 | Pending |
+| SLCK-02 | Phase 23 | Pending |
+| SLCK-03 | Phase 23 | Pending |
+| SLCK-04 | Phase 23 | Pending |
+| NTFY-04 | Phase 23 | Pending |
+| BKIT-01 | Phase 24 | Pending |
+| BKIT-02 | Phase 24 | Pending |
+| BKIT-03 | Phase 24 | Pending |
+| BKIT-04 | Phase 24 | Pending |
+| UIDENT-01 | Phase 24 | Pending |
+| UIDENT-02 | Phase 24 | Pending |
+| UIDENT-03 | Phase 24 | Pending |
+| SCMD-01 | Phase 25 | Pending |
+| SCMD-02 | Phase 25 | Pending |
+| SCMD-03 | Phase 25 | Pending |
+| SCMD-04 | Phase 25 | Pending |
+| SCMD-05 | Phase 25 | Pending |
+| SCMD-06 | Phase 25 | Pending |
+| SCMD-07 | Phase 25 | Pending |
+| SCMD-08 | Phase 25 | Pending |
+| SCMD-09 | Phase 25 | Pending |
+| SCMD-10 | Phase 25 | Pending |
+| NTFY-01 | Phase 26 | Pending |
+| NTFY-02 | Phase 26 | Pending |
+| NTFY-03 | Phase 26 | Pending |
+| NTFY-05 | Phase 26 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 26 total
-- Mapped to phases: 0
-- Unmapped: 26
+- Mapped to phases: 26
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-17*
-*Last updated: 2026-02-17*
+*Last updated: 2026-02-17 — traceability mapped to phases 23-26*
