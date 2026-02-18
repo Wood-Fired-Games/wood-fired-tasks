@@ -48,9 +48,22 @@ Any agent on the local network can reliably create, find, and update work items 
 - ✓ Progress spinners, consistent colored output, bash/zsh shell completions — v1.4
 - ✓ systemd resource limits and 19-directive security hardening — v1.4
 
+## Current Milestone: v1.5 Slack Integration
+
+**Goal:** Add Slack as a fourth interface with slash commands for all operations, bot notifications with per-channel subscriptions, and configurable event routing.
+
+**Target features:**
+- Slack app with Socket Mode (no public URL needed for LAN service)
+- Slash commands mapping to all 24 CLI operations with full parity
+- Bot presence posting notifications to channels
+- Per-channel subscription to projects, statuses, and event types
+- Block Kit formatting for rich slash command responses
+- Slack display names used as-is for assignee/created_by fields
+- Single workspace custom app (no OAuth distribution)
+
 ### Active
 
-(None — next milestone requirements TBD via `/gsd:new-milestone`)
+- (See REQUIREMENTS.md for full v1.5 requirement list)
 
 ### Out of Scope
 
@@ -155,4 +168,4 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | DynamicUser NOT used | SQLite needs stable file ownership for WAL/journal | ✓ Good — service runs as dedicated user with ReadWritePaths |
 
 ---
-*Last updated: 2026-02-17 after v1.4 milestone*
+*Last updated: 2026-02-17 after v1.5 milestone started*

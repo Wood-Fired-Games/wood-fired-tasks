@@ -8,13 +8,14 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** Planning next milestone
+**Current Focus:** v1.5 Slack Integration — Slack slash commands, bot notifications, per-channel subscriptions
 
 ## Current Position
 
-**Milestone:** v1.4 Hardening and Polish — SHIPPED
-**Next Milestone:** TBD — run `/gsd:new-milestone`
-**Status:** Between milestones
+**Milestone:** v1.5 Slack Integration — IN PROGRESS
+**Phase:** Not started (defining requirements)
+**Status:** Defining requirements
+**Last activity:** 2026-02-17 — Milestone v1.5 started
 
 **Progress Bar:**
 ```
