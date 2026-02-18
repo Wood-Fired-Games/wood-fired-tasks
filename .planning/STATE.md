@@ -15,7 +15,7 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
 **Phase:** 24 of 26 (Block Kit Formatters & User Identity) — IN PROGRESS
 **Plan:** 3 of 3 in Phase 24 — Plan 01 complete (all plans done)
-**Status:** Phase 24 complete — all formatters and UserIdentityCache implemented
+**Status:** Milestone complete
 **Last activity:** 2026-02-18 — Plan 24-01 complete (formatTaskList, formatTaskDetail, formatTaskNotification)
 
 **Progress:**
