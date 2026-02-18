@@ -19,6 +19,8 @@ describe('Configuration Validation', () => {
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.KEEP_ALIVE_TIMEOUT;
     delete process.env.WAL_CHECKPOINT_INTERVAL_MS;
+    delete process.env.SLACK_BOT_TOKEN;
+    delete process.env.SLACK_APP_TOKEN;
   });
 
   afterEach(() => {
@@ -258,6 +260,75 @@ describe('Configuration Validation', () => {
 
     it('should define CONFIG_ERROR as 78', () => {
       expect(CliExitCodes.CONFIG_ERROR).toBe(78);
+    });
+  });
+
+  describe('Slack token validation', () => {
+    it('should accept config with both Slack tokens absent', () => {
+      process.env.API_KEYS = 'test-key';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.SLACK_BOT_TOKEN).toBeUndefined();
+        expect(result.data.SLACK_APP_TOKEN).toBeUndefined();
+      }
+    });
+
+    it('should accept config with both Slack tokens present', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SLACK_BOT_TOKEN = 'xoxb-test';
+      process.env.SLACK_APP_TOKEN = 'xapp-test';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.SLACK_BOT_TOKEN).toBe('xoxb-test');
+        expect(result.data.SLACK_APP_TOKEN).toBe('xapp-test');
+      }
+    });
+
+    it('should reject config with only SLACK_BOT_TOKEN', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SLACK_BOT_TOKEN = 'xoxb-test';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const errorMessages = result.error.issues.map((i) => i.message).join(' ');
+        expect(errorMessages).toContain('SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together');
+      }
+    });
+
+    it('should reject config with only SLACK_APP_TOKEN', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SLACK_APP_TOKEN = 'xapp-test';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const slackError = result.error.issues.find(
+          (issue) => issue.path[0] === 'SLACK_APP_TOKEN'
+        );
+        expect(slackError).toBeDefined();
+      }
+    });
+
+    it('should include SLACK tokens in Config type', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SLACK_BOT_TOKEN = 'xoxb-verify';
+      process.env.SLACK_APP_TOKEN = 'xapp-verify';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.SLACK_BOT_TOKEN).toBe('xoxb-verify');
+      }
     });
   });
 });
