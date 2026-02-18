@@ -104,8 +104,8 @@ Plans:
 
 Plans:
 - [ ] 24-01-PLAN.md — Task formatters (formatTaskList, formatTaskDetail, formatTaskNotification) with TDD
-- [ ] 24-02-PLAN.md — Project formatters (formatProjectList, formatProjectDetail) with TDD
-- [ ] 24-03-PLAN.md — UserIdentityCache (Slack user ID to display name resolution with TTL cache) with TDD
+- [x] 24-02-PLAN.md — Project formatters (formatProjectList, formatProjectDetail) with TDD — completed 2026-02-18
+- [x] 24-03-PLAN.md — UserIdentityCache (Slack user ID to display name resolution with TTL cache) with TDD — completed 2026-02-18
 
 ### Phase 25: Slash Command Handlers
 **Goal**: Every CLI operation is accessible from Slack via `/tasks <subcommand>`, all handlers acknowledge within 3 seconds, and error responses are informative
@@ -148,10 +148,10 @@ Plans:
 | 14-16 | v1.3      | 12/12          | Complete | 2026-02-14 |
 | 17-22 | v1.4      | 15/15          | Complete | 2026-02-17 |
 | 23. Socket Mode Infrastructure | 2/2 | Complete    | 2026-02-18 | - |
-| 24. Block Kit Formatters & User Identity | 1/3 | In Progress|  | - |
+| 24. Block Kit Formatters & User Identity | 2/3 | In Progress|  | - |
 | 25. Slash Command Handlers | v1.5 | 0/TBD | Not started | - |
 | 26. Notification Pipeline | v1.5 | 0/TBD | Not started | - |
 
 ---
 
-*Last updated: 2026-02-18 — Phase 23 Plan 01 complete (config schema + migration 006)*
+*Last updated: 2026-02-18 — Phase 24 Plan 02 complete (formatProjectList and formatProjectDetail)*

@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-18 — Plan 24-03 complete
+**Last Updated:** 2026-02-18 — Plan 24-02 complete
 
 ## Project Reference
 
@@ -8,18 +8,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** v1.5 Slack Integration — Phase 24 in progress (Plan 03 of 3 complete)
+**Current Focus:** v1.5 Slack Integration — Phase 24 in progress (Plan 02 of 3 complete)
 
 ## Current Position
 
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
 **Phase:** 24 of 26 (Block Kit Formatters & User Identity) — IN PROGRESS
-**Plan:** 3 of 3 in Phase 24 — Plan 03 complete
-**Status:** Plan 24-03 complete — UserIdentityCache implemented
-**Last activity:** 2026-02-18 — Plan 24-03 complete (UserIdentityCache with TTL caching)
+**Plan:** 2 of 3 in Phase 24 — Plan 02 complete
+**Status:** Plan 24-02 complete — project formatters implemented
+**Last activity:** 2026-02-18 — Plan 24-02 complete (formatProjectList and formatProjectDetail)
 
 **Progress:**
-```
+[██████████] 100%
 v1.0 ████████████████████ 100% (6/6 phases, 13 plans) — shipped 2026-02-13
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
@@ -37,13 +37,14 @@ v1.5 █████░░░░░░░░░░░░░░░  25% (1/4 phas
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 - v1.4 Hardening and Polish: 6 phases, 15 plans, shipped 2026-02-17 (636 tests)
 
-**Current:** 677 tests passing (62 test files), 24,500+ LOC TypeScript, 134+ files
+**Current:** 734 tests passing (62 test files), 24,500+ LOC TypeScript, 136+ files
 
 **Phase 23 metrics:**
 - Plan 23-01: 3 min, 2 tasks, 4 files, 15 tests added
 - Plan 23-02: 2 min, 2 tasks, 5 files, 14 tests added
 
 **Phase 24 metrics (in progress):**
+- Plan 24-02: 5 min, 2 tasks, 2 files, 14 tests added
 - Plan 24-03: 2 min, 2 tasks, 2 files, 12 tests added
 
 ## Accumulated Context
@@ -71,6 +72,9 @@ Recent decisions for v1.5 work:
 - UserIdentityCache takes WebClient not SlackService — dependency inversion enables unit testing with plain mock object, no vi.mock() needed
 - ERROR_TTL_MS = 30,000ms hardcoded constant in UserIdentityCache — brief cache on error prevents API hammering; not configurable
 - No logger parameter in UserIdentityCache — self-contained; Phase 25 handlers log context before calling resolve()
+- truncate(text, N) produces N total chars (N-3 content + '...'), not N content chars + '...'
+- formatProjectDetail fields: exactly 4 items (ID, Description, Created, Updated) — task count not included, caller responsibility
+- DividerBlock between list items via index check (i < length-1), not after last item
 
 ### Open Questions
 
@@ -92,17 +96,17 @@ Also add `users:read` scope and reinstall app (required for UserIdentityCache.re
 ## Session Continuity
 
 **What Just Happened:**
-Plan 24-03 complete. Created UserIdentityCache class in src/slack/user-identity.ts with resolve() and clear() methods. TTL-based in-memory Map cache (5 min default), fallback chain (display_name -> real_name -> name -> userId), graceful error handling with 30s error TTL. 12 new unit tests using vi.useFakeTimers() for TTL tests, 677 total.
+Plan 24-02 complete. Created formatProjectList and formatProjectDetail pure functions in src/slack/formatters/project-formatter.ts. 14 unit tests all passing. 734 total tests across 62 test files.
 
 **What's Next:**
-Phase 24 Plans 24-01 and 24-02: Block Kit task formatter and project formatter (RED-phase tests already written, need GREEN implementation)
+Plan 24-01: Task formatter (RED tests already committed as 9fe964f — task-formatter.ts GREEN implementation exists as untracked file src/slack/task-formatter.ts but needs to be committed). Phase 24 then complete.
 
 **Context for Next Session:**
-- UserIdentityCache ready: new UserIdentityCache(app.client) — construct once, pass to Phase 25 handlers
-- Usage pattern: `await cache.resolve(command.user_id)` before writing assignee/created_by to DB
-- Plans 24-01 and 24-02 have failing tests already written — need implementation (task-formatter.ts, project-formatter.ts)
-- `users:read` scope must be added to Slack app dashboard before UserIdentityCache can be tested at runtime
-- Phase 24 complete after Plans 24-01 and 24-02 implement formatters
+- Project formatter ready: formatProjectList(projects) and formatProjectDetail(project) in src/slack/formatters/project-formatter.ts
+- Task formatter GREEN implementation exists (src/slack/task-formatter.ts) but is not yet committed — Plan 24-01 executor needs to commit it
+- UserIdentityCache ready in src/slack/user-identity.ts (Plan 24-03 complete)
+- All three formatters use consistent Block Kit conventions (HeaderBlock + SectionBlock.fields)
+- Phase 24 complete after Plan 24-01 commits task-formatter.ts GREEN implementation
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
