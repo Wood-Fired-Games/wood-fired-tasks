@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatProjectList, formatProjectDetail } from '../../project-formatter.js';
-import type { Project } from '../../../../types/task.js';
+import { formatProjectList, formatProjectDetail } from '../project-formatter.js';
+import type { Project } from '../../../types/task.js';
 
 // ---------------------------------------------------------------------------
 // Test data factory
@@ -77,8 +77,9 @@ describe('formatProjectList', () => {
     const projects = [makeProject({ description: longDesc })];
     const blocks = formatProjectList(projects);
     const section = blocks[1] as { type: string; text: { type: string; text: string } };
-    expect(section.text.text).toContain('A'.repeat(100) + '...');
-    expect(section.text.text).not.toContain('A'.repeat(101));
+    // truncate(text, 100) = 97 content chars + '...' = 100 chars total
+    expect(section.text.text).toContain('A'.repeat(97) + '...');
+    expect(section.text.text).not.toContain('A'.repeat(98));
   });
 
   it('does NOT add a divider after the last project', () => {
@@ -178,9 +179,10 @@ describe('formatProjectDetail', () => {
       type: string;
       fields: Array<{ type: string; text: string }>;
     };
-    const descField = fieldsSection.fields.find((f) => f.text.includes('D'.repeat(200)));
+    // truncate(text, 200) = 197 content chars + '...' = 200 chars total
+    const descField = fieldsSection.fields.find((f) => f.text.includes('D'.repeat(197)));
     expect(descField).toBeDefined();
-    expect(descField!.text).toContain('D'.repeat(200) + '...');
+    expect(descField!.text).toContain('D'.repeat(197) + '...');
   });
 
   it('all fields in SectionBlock use mrkdwn type', () => {
