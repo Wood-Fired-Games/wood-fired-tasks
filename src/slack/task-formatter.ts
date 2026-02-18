@@ -163,7 +163,7 @@ export function formatTaskDetail(task: Task & { tags: string[] }): KnownBlock[] 
  * Includes: event label, actor, task id/title with status emoji, priority,
  * assignee, and a /tasks show <id> command reference.
  */
-export function formatTaskNotification(event: TaskEvent): KnownBlock[] {
+export function formatTaskNotification(event: TaskEvent, projectName?: string): KnownBlock[] {
   const { data: task, eventType, metadata } = event;
   const emoji = STATUS_EMOJI[task.status] ?? '❓';
   const actor = metadata.actor ?? 'system';
@@ -174,6 +174,7 @@ export function formatTaskNotification(event: TaskEvent): KnownBlock[] {
   const text = [
     `*${label}* by ${actor}`,
     `${emoji} *#${task.id} ${task.title}*`,
+    ...(projectName ? [`_${projectName}_`] : []),
     `${priority} · ${assignee}`,
     `\`/tasks show ${task.id}\``,
   ].join('\n');
