@@ -29,6 +29,7 @@
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@slack/bolt": "^4.6.0",
     "better-sqlite3": "^12.6.2",
     "chalk": "^4.1.2",
     "cli-table3": "^0.6.5",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@fast-check/vitest": "^0.2.4",
+    "@slack/types": "^2.20.0",
     "@stryker-mutator/core": "^9.5.1",
     "@stryker-mutator/typescript-checker": "^9.5.1",
     "@stryker-mutator/vitest-runner": "^9.5.1",
