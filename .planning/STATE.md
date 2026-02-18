@@ -13,10 +13,10 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
-**Phase:** 23 of 26 (Socket Mode Infrastructure) — ready to plan
-**Plan:** 0 of TBD in Phase 23
-**Status:** Ready to plan
-**Last activity:** 2026-02-17 — Roadmap created, phases 23-26 defined
+**Phase:** 23 of 26 (Socket Mode Infrastructure) — in progress
+**Plan:** 1 of TBD in Phase 23 — Plan 01 complete
+**Status:** In progress
+**Last activity:** 2026-02-18 — Plan 23-01 complete (config schema + migration 006)
 
 **Progress:**
 ```
@@ -37,7 +37,7 @@ v1.5 ░░░░░░░░░░░░░░░░░░░░   0% (0/4 phas
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 - v1.4 Hardening and Polish: 6 phases, 15 plans, shipped 2026-02-17 (636 tests)
 
-**Current:** 636 tests passing (57 test files), 24,425 LOC TypeScript, 130+ files
+**Current:** 651 tests passing (58 test files), 24,425 LOC TypeScript, 130+ files
 
 ## Accumulated Context
 
@@ -54,6 +54,9 @@ Recent decisions for v1.5 work:
 - `ack()` must be first statement in every slash command handler — 3-second deadline is for ack only
 - Fire-and-forget async in SlackNotifier — synchronous EventBus must not be blocked by Slack API calls
 - `chat:write.public` scope — simpler than requiring bot channel membership for internal tool
+- Refine path set to SLACK_APP_TOKEN (dependent field) so validation error targets the missing token
+- slack_channel_subscriptions uses ON DELETE CASCADE — subscriptions are meaningless without their project
+- Three separate single-column indexes on slack_channel_subscriptions rather than compound index
 
 ### Open Questions
 
@@ -73,15 +76,16 @@ Socket Mode must be enabled. Slash command `/tasks` must be registered.
 ## Session Continuity
 
 **What Just Happened:**
-v1.5 Slack Integration roadmap created. 26 requirements mapped across 4 phases (23-26). Phase 23 is ready to plan.
+Plan 23-01 complete. Added SLACK_BOT_TOKEN and SLACK_APP_TOKEN optional fields to Zod configSchema with both-or-neither .refine(). Created migration 006 for slack_channel_subscriptions table. 15 new tests, 651 total.
 
 **What's Next:**
-Run `/gsd:plan-phase 23` to plan Socket Mode Infrastructure.
+Run next plan in Phase 23 (Plan 02: SlackService).
 
 **Context for Next Session:**
+- Config foundation ready: SLACK_BOT_TOKEN and SLACK_APP_TOKEN in configSchema as string | undefined
+- Migration 006 in place: slack_channel_subscriptions with UNIQUE(channel_id, project_id, event_type), cascade FK, 3 indexes
 - 4 phases defined: 23 (infrastructure+migration), 24 (formatters+identity), 25 (slash commands), 26 (notifications)
 - Phases 25 and 26 both depend on 24 but are independent of each other
-- Research flags resolved: all phases can proceed without additional research-phase investigation
 - Slack app dashboard setup is a manual prerequisite before Phase 23 runtime testing
 
 ---

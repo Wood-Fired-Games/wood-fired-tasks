@@ -87,7 +87,7 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 23-01-PLAN.md — Config schema (Slack tokens with both-or-neither validation) and migration 006 (slack_channel_subscriptions)
+- [x] 23-01-PLAN.md — Config schema (Slack tokens with both-or-neither validation) and migration 006 (slack_channel_subscriptions) — completed 2026-02-18
 - [ ] 23-02-PLAN.md — SlackService class, @slack/bolt install, Fastify server integration with onClose hook
 
 ### Phase 24: Block Kit Formatters & User Identity
@@ -145,11 +145,11 @@ Plans:
 | 11-13 | v1.2      | 7/7            | Complete | 2026-02-14 |
 | 14-16 | v1.3      | 12/12          | Complete | 2026-02-14 |
 | 17-22 | v1.4      | 15/15          | Complete | 2026-02-17 |
-| 23. Socket Mode Infrastructure | v1.5 | 0/2 | Not started | - |
+| 23. Socket Mode Infrastructure | v1.5 | 1/2 | In progress | - |
 | 24. Block Kit Formatters & User Identity | v1.5 | 0/TBD | Not started | - |
 | 25. Slash Command Handlers | v1.5 | 0/TBD | Not started | - |
 | 26. Notification Pipeline | v1.5 | 0/TBD | Not started | - |
 
 ---
 
-*Last updated: 2026-02-17 — v1.5 Slack Integration roadmap created*
+*Last updated: 2026-02-18 — Phase 23 Plan 01 complete (config schema + migration 006)*
