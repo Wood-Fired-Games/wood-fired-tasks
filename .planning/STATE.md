@@ -15,7 +15,7 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
 **Phase:** 25 of 26 (Slash Command Handlers) — COMPLETE
 **Plan:** 3 of 3 in Phase 25 — All plans complete
-**Status:** In progress — Phase 26 next
+**Status:** Milestone complete
 **Last activity:** 2026-02-18 — Plan 25-03 complete (all 20 remaining subcommand handlers: project/dep/comment/subtask/health/CLI-only stubs, 28 tests, 801 total tests)
 
 **Progress:**
