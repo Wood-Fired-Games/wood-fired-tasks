@@ -5,6 +5,7 @@ import type { ProjectService } from '../../services/project.service.js';
 import type { DependencyService } from '../../services/dependency.service.js';
 import type { CommentService } from '../../services/comment.service.js';
 import type { UserIdentityCache } from '../user-identity.js';
+import type { SlackChannelSubscriptionRepository } from '../repositories/channel-subscription.repository.js';
 import { NotFoundError, ValidationError, BusinessError } from '../../services/errors.js';
 import { formatTaskList, formatTaskDetail } from '../task-formatter.js';
 import { formatProjectList, formatProjectDetail } from '../formatters/project-formatter.js';
@@ -166,6 +167,18 @@ const HELP_BLOCKS: KnownBlock[] = [
         '`/tasks comment-delete <task-id> <comment-id>`',
         '`/tasks subtask-create <parent-id> <title>`',
         '`/tasks subtask-list <parent-id>`',
+      ].join('\n'),
+    },
+  },
+  { type: 'divider' },
+  {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: [
+        '*Notification commands*',
+        '`/tasks subscribe --project <id> [--events task.created,task.status_changed]`',
+        '`/tasks unsubscribe [--project <id>]`',
       ].join('\n'),
     },
   },
@@ -743,6 +756,112 @@ async function handleCliOnly(respond: RespondFn, subcommand: string): Promise<vo
   );
 }
 
+// ---------------------------------------------------------------------------
+// Notification subscription handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleSubscribe — /tasks subscribe --project <id> [--events task.created,task.status_changed]
+ */
+async function handleSubscribe(
+  respond: RespondFn,
+  services: Services,
+  subscriptionRepo: SlackChannelSubscriptionRepository | undefined,
+  command: SlashCommand,
+  args: string[]
+): Promise<void> {
+  if (!subscriptionRepo) {
+    await respondError(respond, 'Slack notifications not configured.');
+    return;
+  }
+
+  const { flags } = parseArgs(args);
+  const projectIdStr = flags['project'];
+  if (!projectIdStr) {
+    await respondError(
+      respond,
+      'Missing required flag: `--project <id>`',
+      'Usage: `/tasks subscribe --project 3 [--events task.created,task.status_changed]`'
+    );
+    return;
+  }
+
+  const projectId = parseInt(projectIdStr, 10);
+  if (isNaN(projectId)) {
+    await respondError(respond, `Invalid project ID: \`${projectIdStr}\``);
+    return;
+  }
+
+  // Validate project exists
+  try {
+    services.projectService.getProject(projectId);
+  } catch {
+    await respondError(respond, `Project \`${projectId}\` not found.`);
+    return;
+  }
+
+  // Parse event types — default to task.created + task.status_changed
+  const DEFAULT_EVENTS = ['task.created', 'task.status_changed'];
+  const eventsStr = flags['events'];
+  const eventTypes = eventsStr ? eventsStr.split(',').map(e => e.trim()) : DEFAULT_EVENTS;
+
+  subscriptionRepo.subscribe(command.channel_id, projectId, eventTypes);
+
+  // Show confirmation
+  const project = services.projectService.getProject(projectId);
+  await respondBlocks(respond, [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:bell: Subscribed this channel to *${project.name}* events: ${eventTypes.map(e => '`' + e + '`').join(', ')}`,
+      },
+    } as KnownBlock,
+  ], `Subscribed to ${project.name} events`);
+}
+
+/**
+ * handleUnsubscribe — /tasks unsubscribe [--project <id>]
+ */
+async function handleUnsubscribe(
+  respond: RespondFn,
+  subscriptionRepo: SlackChannelSubscriptionRepository | undefined,
+  command: SlashCommand,
+  args: string[]
+): Promise<void> {
+  if (!subscriptionRepo) {
+    await respondError(respond, 'Slack notifications not configured.');
+    return;
+  }
+
+  const { flags } = parseArgs(args);
+  const projectIdStr = flags['project'];
+  const projectId = projectIdStr ? parseInt(projectIdStr, 10) : undefined;
+
+  if (projectIdStr && isNaN(projectId!)) {
+    await respondError(respond, `Invalid project ID: \`${projectIdStr}\``);
+    return;
+  }
+
+  const removed = subscriptionRepo.unsubscribe(command.channel_id, projectId);
+
+  if (removed === 0) {
+    await respondError(respond, 'No subscriptions found for this channel.');
+    return;
+  }
+
+  const scope = projectId ? `project \`${projectId}\`` : 'all projects';
+  await respondBlocks(respond, [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:no_bell: Unsubscribed this channel from ${scope} (${removed} subscription${removed !== 1 ? 's' : ''} removed).`,
+      },
+    } as KnownBlock,
+  ], `Unsubscribed from ${scope}`);
+}
+
 /**
  * registerTasksCommand — registers the /tasks slash command on the Bolt App.
  *
@@ -760,7 +879,8 @@ async function handleCliOnly(respond: RespondFn, subcommand: string): Promise<vo
 export function registerTasksCommand(
   app: App,
   services: Services,
-  identityCache: UserIdentityCache
+  identityCache: UserIdentityCache,
+  subscriptionRepo?: SlackChannelSubscriptionRepository
 ): void {
   app.command('/tasks', async ({ ack, respond, command }: { ack: () => Promise<void>; respond: RespondFn; command: SlashCommand }) => {
     // FIRST: ack() — must complete within 3 seconds of Slack delivering the event.
@@ -851,6 +971,14 @@ export function registerTasksCommand(
         case 'db-check':
         case 'completions':
           await handleCliOnly(respond, subcommand);
+          break;
+
+        // ── Notification subscription commands ────────────────────────────────
+        case 'subscribe':
+          await handleSubscribe(respond, services, subscriptionRepo, command, args);
+          break;
+        case 'unsubscribe':
+          await handleUnsubscribe(respond, subscriptionRepo, command, args);
           break;
 
         // ── Help ───────────────────────────────────────────────────────────────
