@@ -118,10 +118,12 @@ Plans:
   4. `/tasks claim <id>` claims a task using the Slack user's resolved display name as the assignee, confirmed by the response card
   5. Project, dependency, comment, and subtask subcommands are available and produce Block Kit responses with the same information as their CLI equivalents
   6. Any invalid subcommand, missing argument, or service error returns a Block Kit error message with the specific problem and a corrective usage hint
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 25-01: TBD
+- [ ] 25-01-PLAN.md — Command router, help handler, error utilities, parseArgs, server.ts wiring
+- [ ] 25-02-PLAN.md — Task subcommand handlers (list, show, create, update, delete, claim) with UIDENT-03
+- [ ] 25-03-PLAN.md — Project, dependency, comment, subtask, health, and CLI-only stub handlers
 
 ### Phase 26: Notification Pipeline
 **Goal**: Task events trigger bot messages to subscribed Slack channels, and users can manage per-channel subscriptions via slash commands
