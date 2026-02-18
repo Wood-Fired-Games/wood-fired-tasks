@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-18 — Plan 26-01 complete
+**Last Updated:** 2026-02-18 — Plan 26-02 complete (Phase 26 complete, v1.5 Slack Integration SHIPPED)
 
 ## Project Reference
 
@@ -8,15 +8,15 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** v1.5 Slack Integration — Phase 26 IN PROGRESS (Plan 01 complete, Plan 02 next)
+**Current Focus:** v1.5 Slack Integration — COMPLETE (all 4 phases, all plans shipped)
 
 ## Current Position
 
-**Milestone:** v1.5 Slack Integration — IN PROGRESS
-**Phase:** 26 of 26 (Notification Pipeline) — IN PROGRESS
-**Plan:** 1 of 2 in Phase 26
-**Status:** Executing
-**Last activity:** 2026-02-18 — Plan 26-01 complete (SlackChannelSubscriptionRepository, subscribe/unsubscribe commands, formatTaskNotification projectName, 24 new tests, 825 total)
+**Milestone:** v1.5 Slack Integration — COMPLETE
+**Phase:** 26 of 26 (Notification Pipeline) — COMPLETE
+**Plan:** 2 of 2 in Phase 26
+**Status:** Complete
+**Last activity:** 2026-02-18 — Plan 26-02 complete (SlackNotifier EventBus subscriber, server.ts wiring, 14 new tests, 839 total)
 
 **Progress:**
 [██████████] 100%
@@ -25,7 +25,7 @@ v1.1 ████████████████████ 100% (4/4 phas
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
 v1.4 ████████████████████ 100% (6/6 phases, 15 plans) — shipped 2026-02-17
-v1.5 ██████████░░░░░░░░░░  50% (3/4 phases partial, 4/TBD plans) — in progress
+v1.5 ████████████████████ 100% (4/4 phases, 8 plans) — shipped 2026-02-18
 ```
 
 ## Performance Metrics
@@ -37,7 +37,7 @@ v1.5 ██████████░░░░░░░░░░  50% (3/4 phas
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 - v1.4 Hardening and Polish: 6 phases, 15 plans, shipped 2026-02-17 (636 tests)
 
-**Current:** 825 tests passing (64 test files), 25,000+ LOC TypeScript, 140+ files
+**Current:** 839 tests passing (65 test files), 25,500+ LOC TypeScript, 140+ files
 
 **Phase 23 metrics:**
 - Plan 23-01: 3 min, 2 tasks, 4 files, 15 tests added
@@ -53,8 +53,9 @@ v1.5 ██████████░░░░░░░░░░  50% (3/4 phas
 - Plan 25-02: 4 min, 2 tasks, 2 files, 21 tests added
 - Plan 25-03: 4 min, 2 tasks, 2 files, 28 tests added
 
-**Phase 26 metrics (in progress):**
+**Phase 26 metrics (complete):**
 - Plan 26-01: 4 min, 2 tasks, 6 files, 24 tests added
+- Plan 26-02: 5 min, 2 tasks, 3 files, 14 tests added
 
 ## Accumulated Context
 
@@ -98,6 +99,9 @@ Recent decisions for v1.5 work:
 - registerTasksCommand 4th param (subscriptionRepo) is optional — no breaking change until Plan 02 wires it
 - Default subscription events are task.created + task.status_changed — most useful for team awareness
 - subscribe/unsubscribe handlers gracefully degrade when subscriptionRepo is undefined — responds "not configured"
+- NotifierLogger minimal interface instead of pino Logger — avoids FastifyBaseLogger/pino type mismatch, dependency inversion
+- PERMANENT_ERRORS Set for O(1) lookup — not_in_channel, channel_not_found, invalid_auth, token_revoked fail fast without retry
+- Additive onClose hook for slackNotifier.stop() — Fastify executes all onClose hooks, notifier stop is synchronous
 
 ### Open Questions
 
@@ -119,17 +123,17 @@ Also add `users:read` scope and reinstall app (required for UserIdentityCache.re
 ## Session Continuity
 
 **What Just Happened:**
-Plan 26-01 complete. Built SlackChannelSubscriptionRepository (subscribe, unsubscribe, findSubscribedChannels, findByChannel), added /tasks subscribe and /tasks unsubscribe command handlers, enhanced formatTaskNotification with optional projectName, updated HELP_BLOCKS. 24 new tests, 825 total.
+Plan 26-02 complete. Built SlackNotifier (EventBus subscriber with fire-and-forget .catch(), per-channel error isolation via Promise.allSettled, transient retry with exponential backoff, permanent error fast-fail). Wired SlackChannelSubscriptionRepository and SlackNotifier into server.ts with start/stop lifecycle. 14 new tests, 839 total. Phase 26 and v1.5 Slack Integration milestone COMPLETE.
 
 **What's Next:**
-Plan 26-02: SlackNotifier — EventBus listener that posts Block Kit notifications to subscribed channels on task events.
+v1.5 Slack Integration is fully shipped. All 4 phases complete (23-SlackService, 24-Formatters, 25-CommandHandlers, 26-NotificationPipeline).
 
 **Context for Next Session:**
-- SlackChannelSubscriptionRepository at src/slack/repositories/channel-subscription.repository.ts — findSubscribedChannels(projectId, eventType) is the hot path
-- formatTaskNotification(event, projectName?) at src/slack/task-formatter.ts — caller resolves project name
-- registerTasksCommand accepts optional 4th param subscriptionRepo — Plan 02 wires it in server.ts
-- HELP_BLOCKS already includes subscribe/unsubscribe commands
-- subscribe/unsubscribe handlers degrade gracefully when subscriptionRepo is undefined
+- Full notification pipeline: task event -> EventBus -> SlackNotifier -> subscriptionRepo.findSubscribedChannels -> formatTaskNotification -> chat.postMessage per channel
+- SlackNotifier at src/slack/notifier.ts — subscribes to 5 task events, fire-and-forget async
+- server.ts wires everything: subscriptionRepo to registerTasksCommand (4th param) and to SlackNotifier
+- 839 tests passing across 65 test files
+- Pre-existing tsc type mismatch: FastifyBaseLogger vs pino Logger in SlackService constructor (runtime OK, type-only issue)
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
