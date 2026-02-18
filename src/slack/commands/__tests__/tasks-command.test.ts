@@ -38,7 +38,7 @@ function makeMockIdentityCache() {
   return {
     resolve: vi.fn().mockResolvedValue('Test User'),
     clear: vi.fn(),
-  };
+  } as unknown as InstanceType<typeof import('../../../slack/user-identity.js').UserIdentityCache>;
 }
 
 type HandlerArgs = {
