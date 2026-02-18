@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-18 — Plan 24-02 complete
+**Last Updated:** 2026-02-18 — Plan 24-01 complete
 
 ## Project Reference
 
@@ -8,15 +8,15 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** v1.5 Slack Integration — Phase 24 in progress (Plan 02 of 3 complete)
+**Current Focus:** v1.5 Slack Integration — Phase 24 in progress (all 3 plans complete)
 
 ## Current Position
 
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
 **Phase:** 24 of 26 (Block Kit Formatters & User Identity) — IN PROGRESS
-**Plan:** 2 of 3 in Phase 24 — Plan 02 complete
-**Status:** Plan 24-02 complete — project formatters implemented
-**Last activity:** 2026-02-18 — Plan 24-02 complete (formatProjectList and formatProjectDetail)
+**Plan:** 3 of 3 in Phase 24 — Plan 01 complete (all plans done)
+**Status:** Phase 24 complete — all formatters and UserIdentityCache implemented
+**Last activity:** 2026-02-18 — Plan 24-01 complete (formatTaskList, formatTaskDetail, formatTaskNotification)
 
 **Progress:**
 [██████████] 100%
@@ -43,7 +43,8 @@ v1.5 █████░░░░░░░░░░░░░░░  25% (1/4 phas
 - Plan 23-01: 3 min, 2 tasks, 4 files, 15 tests added
 - Plan 23-02: 2 min, 2 tasks, 5 files, 14 tests added
 
-**Phase 24 metrics (in progress):**
+**Phase 24 metrics (complete):**
+- Plan 24-01: 5 min, 2 tasks, 2 files, 43 tests added
 - Plan 24-02: 5 min, 2 tasks, 2 files, 14 tests added
 - Plan 24-03: 2 min, 2 tasks, 2 files, 12 tests added
 
@@ -75,6 +76,9 @@ Recent decisions for v1.5 work:
 - truncate(text, N) produces N total chars (N-3 content + '...'), not N content chars + '...'
 - formatProjectDetail fields: exactly 4 items (ID, Description, Created, Updated) — task count not included, caller responsibility
 - DividerBlock between list items via index check (i < length-1), not after last item
+- Title truncation boundary: title.length > 150 triggers truncation (not > 147) — 150-char title passes through untouched
+- STATUS_EMOJI and PRIORITY_INDICATOR exported from task-formatter.ts for reuse by project-formatter
+- toEndWith is not a Vitest matcher — use toMatch(/pattern/) for string suffix assertions
 
 ### Open Questions
 
@@ -96,17 +100,18 @@ Also add `users:read` scope and reinstall app (required for UserIdentityCache.re
 ## Session Continuity
 
 **What Just Happened:**
-Plan 24-02 complete. Created formatProjectList and formatProjectDetail pure functions in src/slack/formatters/project-formatter.ts. 14 unit tests all passing. 734 total tests across 62 test files.
+Plan 24-01 complete. Implemented formatTaskList, formatTaskDetail, formatTaskNotification as pure Block Kit formatter functions in src/slack/task-formatter.ts. 43 unit tests all passing. 734 total tests across 62 test files. Phase 24 now fully complete.
 
 **What's Next:**
-Plan 24-01: Task formatter (RED tests already committed as 9fe964f — task-formatter.ts GREEN implementation exists as untracked file src/slack/task-formatter.ts but needs to be committed). Phase 24 then complete.
+Phase 25: Slash Commands — register /tasks slash command handlers with Bolt, call task formatter functions, use UserIdentityCache for identity resolution.
 
 **Context for Next Session:**
-- Project formatter ready: formatProjectList(projects) and formatProjectDetail(project) in src/slack/formatters/project-formatter.ts
-- Task formatter GREEN implementation exists (src/slack/task-formatter.ts) but is not yet committed — Plan 24-01 executor needs to commit it
+- Task formatter ready: formatTaskList, formatTaskDetail, formatTaskNotification in src/slack/task-formatter.ts
+- Project formatter ready: formatProjectList, formatProjectDetail in src/slack/formatters/project-formatter.ts
 - UserIdentityCache ready in src/slack/user-identity.ts (Plan 24-03 complete)
-- All three formatters use consistent Block Kit conventions (HeaderBlock + SectionBlock.fields)
-- Phase 24 complete after Plan 24-01 commits task-formatter.ts GREEN implementation
+- STATUS_EMOJI and PRIORITY_INDICATOR exported from task-formatter for cross-formatter reuse
+- All formatters return KnownBlock[] — Phase 25 handlers call them and pass result to chat.postMessage blocks
+- Slack app dashboard setup remains a manual prerequisite before any runtime Slack testing
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
