@@ -135,6 +135,7 @@ function makeHandlerArgs(text: string): HandlerArgs {
       text,
       user_id: 'U0123ABC',
       user_name: 'testuser',
+      channel_id: 'C123',
       response_url: 'https://hooks.slack.com/response-url',
       command: '/tasks',
     },
@@ -1137,6 +1138,187 @@ describe('registerTasksCommand', () => {
 
       const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
       expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
+    });
+  });
+
+  // ── subscribe / unsubscribe tests ──────────────────────────────────────────
+
+  describe('subscribe / unsubscribe', () => {
+    function makeMockSubscriptionRepo() {
+      return {
+        subscribe: vi.fn(),
+        unsubscribe: vi.fn(() => 1),
+        findSubscribedChannels: vi.fn(() => []),
+        findByChannel: vi.fn(() => []),
+      };
+    }
+
+    it('subscribe --project 3 calls subscriptionRepo.subscribe and responds with :bell:', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, ['task.created', 'task.status_changed']);
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':bell:');
+    });
+
+    it('subscribe without --project responds with error "Missing required flag"', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('Missing required flag');
+    });
+
+    it('subscribe --project 999 with project not found responds with error', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      vi.mocked(services.projectService.getProject).mockImplementation(() => { throw new Error('Not found'); });
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 999');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('not found');
+    });
+
+    it('subscribe --project abc responds with error "Invalid project ID"', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project abc');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('Invalid project ID');
+    });
+
+    it('subscribe --project 3 --events task.created calls subscribe with only task.created', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3 --events task.created');
+      await handler(args);
+
+      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, ['task.created']);
+    });
+
+    it('subscribe when subscriptionRepo is undefined responds with "not configured"', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('not configured');
+    });
+
+    it('unsubscribe --project 3 calls subscriptionRepo.unsubscribe and responds with :no_bell:', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('unsubscribe --project 3');
+      await handler(args);
+
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(subRepo.unsubscribe).toHaveBeenCalledWith('C123', 3);
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain(':no_bell:');
+    });
+
+    it('unsubscribe with no flags calls subscriptionRepo.unsubscribe with undefined projectId', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('unsubscribe');
+      await handler(args);
+
+      expect(subRepo.unsubscribe).toHaveBeenCalledWith('C123', undefined);
+    });
+
+    it('unsubscribe when repo returns 0 responds with error "No subscriptions found"', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      subRepo.unsubscribe.mockReturnValue(0);
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('unsubscribe');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('No subscriptions found');
+    });
+
+    it('unsubscribe when subscriptionRepo is undefined responds with "not configured"', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('unsubscribe');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('not configured');
+    });
+
+    it('HELP_BLOCKS includes subscribe and unsubscribe commands', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('help');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const allText = respondArg.blocks.map((b) => b.text?.text ?? '').join('\n');
+      expect(allText).toContain('subscribe');
+      expect(allText).toContain('unsubscribe');
     });
   });
 
