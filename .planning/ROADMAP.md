@@ -7,7 +7,7 @@
 - ✅ **v1.2 Claude Code Skills & Installer** — Phases 11-13 (shipped 2026-02-14)
 - ✅ **v1.3 Multi-Agent Coordination** — Phases 14-16 (shipped 2026-02-14)
 - ✅ **v1.4 Hardening and Polish** — Phases 17-22 (shipped 2026-02-17)
-- 🚧 **v1.5 Slack Integration** — Phases 23-26 (in progress)
+- ✅ **v1.5 Slack Integration** — Phases 23-26 (shipped 2026-02-18)
 
 ## Phases
 
@@ -63,14 +63,14 @@
 
 </details>
 
-### v1.5 Slack Integration (In Progress)
+### ✅ v1.5 Slack Integration — SHIPPED 2026-02-18
 
 **Milestone Goal:** Add Slack as a fourth interface with slash commands for all 24 CLI operations, bot notifications with per-channel subscriptions, Block Kit formatting, and Slack user identity resolution.
 
-- [x] **Phase 23: Socket Mode Infrastructure** (2 plans) — Bolt app, DB migration, config schema, graceful shutdown, optional feature flag (completed 2026-02-18)
-- [x] **Phase 24: Block Kit Formatters & User Identity** — Pure formatter functions for tasks/projects/notifications, user ID cache (completed 2026-02-18)
-- [x] **Phase 25: Slash Command Handlers** — All 24 CLI operations via `/tasks`, ack-first pattern, error responses (completed 2026-02-18)
-- [ ] **Phase 26: Notification Pipeline** — EventBus-to-Slack subscriber, per-channel routing, subscribe/unsubscribe commands
+- [x] **Phase 23: Socket Mode Infrastructure** (2/2 plans) — Bolt app, DB migration, config schema, graceful shutdown, optional feature flag (completed 2026-02-18)
+- [x] **Phase 24: Block Kit Formatters & User Identity** (3/3 plans) — Pure formatter functions for tasks/projects/notifications, user ID cache (completed 2026-02-18)
+- [x] **Phase 25: Slash Command Handlers** (3/3 plans) — All 24 CLI operations via `/tasks`, ack-first pattern, error responses (completed 2026-02-18)
+- [x] **Phase 26: Notification Pipeline** (2/2 plans) — EventBus-to-Slack subscriber, per-channel routing, subscribe/unsubscribe commands (completed 2026-02-18)
 
 ## Phase Details
 
@@ -138,8 +138,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 26-01-PLAN.md — Subscription repository, subscribe/unsubscribe command handlers, formatTaskNotification project name enhancement
-- [ ] 26-02-PLAN.md — SlackNotifier EventBus subscriber with retry and error isolation, server.ts wiring
+- [x] 26-01-PLAN.md — Subscription repository, subscribe/unsubscribe command handlers, formatTaskNotification project name enhancement — completed 2026-02-18
+- [x] 26-02-PLAN.md — SlackNotifier EventBus subscriber with retry and error isolation, server.ts wiring — completed 2026-02-18
 
 ## Progress
 
@@ -153,8 +153,8 @@ Plans:
 | 23. Socket Mode Infrastructure | 2/2 | Complete    | 2026-02-18 | - |
 | 24. Block Kit Formatters & User Identity | 3/3 | Complete    | 2026-02-18 | - |
 | 25. Slash Command Handlers | 3/3 | Complete    | 2026-02-18 | - |
-| 26. Notification Pipeline | v1.5 | 0/2 | Not started | - |
+| 26. Notification Pipeline | v1.5 | 2/2 | Complete | 2026-02-18 |
 
 ---
 
-*Last updated: 2026-02-18 — Phase 26 plans created (2 plans in 2 waves)*
+*Last updated: 2026-02-18 — Phase 26 complete, v1.5 Slack Integration shipped*
