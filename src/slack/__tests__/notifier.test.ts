@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import type { WebClient } from '@slack/web-api';
-import type { Logger } from 'pino';
 import type { TaskEvent } from '../../events/types.js';
 import type { SlackChannelSubscriptionRepository } from '../repositories/channel-subscription.repository.js';
 import type { ProjectService } from '../../services/project.service.js';
@@ -10,7 +9,7 @@ import type { ProjectService } from '../../services/project.service.js';
 // ---------------------------------------------------------------------------
 
 const subscribedHandlers: Array<{ event: string; handler: (payload: unknown) => void }> = [];
-const mockUnsubscribeFns: Array<vi.Mock> = [];
+const mockUnsubscribeFns: Array<Mock> = [];
 
 vi.mock('../../events/event-bus.js', () => ({
   eventBus: {
@@ -67,12 +66,12 @@ function makeMockProjectService(): ProjectService {
   } as unknown as ProjectService;
 }
 
-function makeMockLogger(): Logger {
+function makeMockLogger() {
   return {
     error: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-  } as unknown as Logger;
+  };
 }
 
 function makeTaskEvent(overrides: Record<string, unknown> = {}): TaskEvent {
@@ -122,7 +121,7 @@ describe('SlackNotifier', () => {
   let client: WebClient;
   let subscriptionRepo: SlackChannelSubscriptionRepository;
   let projectService: ProjectService;
-  let logger: Logger;
+  let logger: ReturnType<typeof makeMockLogger>;
   let notifier: SlackNotifier;
 
   beforeEach(() => {
