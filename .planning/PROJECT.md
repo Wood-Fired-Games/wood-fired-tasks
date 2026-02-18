@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A centralized task tracking service for Wood Fired Games running as a persistent service on a local Ubuntu Linux machine. It provides a REST API (20 endpoints), MCP server (20 tools), and CLI (24 commands) for managing work items across all projects. LLM agents interact via REST or MCP; Stuart interacts via CLI. All three interfaces have full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation. Curated Claude Code skills provide workflow-driven slash commands, and cross-platform installers automate setup. The service includes self-service diagnostics, structured logging, graceful lifecycle management, and hardened systemd deployment.
+A centralized task tracking service for Wood Fired Games running as a persistent service on a local Ubuntu Linux machine. It provides a REST API (20 endpoints), MCP server (20 tools), CLI (24 commands), and Slack integration (26 slash subcommands + bot notifications) for managing work items across all projects. LLM agents interact via REST or MCP; Stuart interacts via CLI or Slack. All four interfaces have full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation. Slack bot notifications deliver task events to subscribed channels with per-project and per-event-type filtering. Curated Claude Code skills provide workflow-driven slash commands, and cross-platform installers automate setup. The service includes self-service diagnostics, structured logging, graceful lifecycle management, and hardened systemd deployment.
 
 ## Core Value
 
@@ -37,37 +37,30 @@ Any agent on the local network can reliably create, find, and update work items 
 - Workflow automation: parent auto-complete and dependency auto-unblock with cascade depth limiting — v1.3
 - Idempotent claim deduplication and auto-release of stale claims (30-min timeout) — v1.3
 - Event stream, claim protocol, and workflows exposed via all interfaces (REST, MCP, CLI) — v1.3
-- ✓ Structured JSON logging with Pino redaction, health check endpoint, graceful shutdown, config validation — v1.4
-- ✓ SQLite hot backup command (`tasks backup`) with online backup API — v1.4
-- ✓ Backlogged task status with triage workflow (backlogged -> open only) — v1.4
-- ✓ Self-service diagnostics: `tasks doctor`, `tasks stats`, `tasks db-check` — v1.4
-- ✓ Request ID propagation across REST, MCP, and CLI layers — v1.4
-- ✓ SSE replay buffer (100 events) for client reconnection resilience — v1.4
-- ✓ Mutation testing with Stryker (75.88% baseline), property-based tests with fast-check — v1.4
-- ✓ Unused dependency detection with knip, GitHub Actions CI pipeline — v1.4
-- ✓ Progress spinners, consistent colored output, bash/zsh shell completions — v1.4
-- ✓ systemd resource limits and 19-directive security hardening — v1.4
-
-## Current Milestone: v1.5 Slack Integration
-
-**Goal:** Add Slack as a fourth interface with slash commands for all operations, bot notifications with per-channel subscriptions, and configurable event routing.
-
-**Target features:**
-- Slack app with Socket Mode (no public URL needed for LAN service)
-- Slash commands mapping to all 24 CLI operations with full parity
-- Bot presence posting notifications to channels
-- Per-channel subscription to projects, statuses, and event types
-- Block Kit formatting for rich slash command responses
-- Slack display names used as-is for assignee/created_by fields
-- Single workspace custom app (no OAuth distribution)
+- Structured JSON logging with Pino redaction, health check endpoint, graceful shutdown, config validation — v1.4
+- SQLite hot backup command (`tasks backup`) with online backup API — v1.4
+- Backlogged task status with triage workflow (backlogged -> open only) — v1.4
+- Self-service diagnostics: `tasks doctor`, `tasks stats`, `tasks db-check` — v1.4
+- Request ID propagation across REST, MCP, and CLI layers — v1.4
+- SSE replay buffer (100 events) for client reconnection resilience — v1.4
+- Mutation testing with Stryker (75.88% baseline), property-based tests with fast-check — v1.4
+- Unused dependency detection with knip, GitHub Actions CI pipeline — v1.4
+- Progress spinners, consistent colored output, bash/zsh shell completions — v1.4
+- systemd resource limits and 19-directive security hardening — v1.4
+- Slack app connects via Socket Mode with optional feature flag (token-absent no-op) — v1.5
+- All 26 `/tasks` slash subcommands with ack-first pattern achieving full CLI parity from Slack — v1.5
+- Block Kit formatters for tasks, projects, and notifications with status emoji and priority indicators — v1.5
+- Slack user identity resolution with TTL-cached display name lookup for create/claim handlers — v1.5
+- Per-channel notification subscriptions with project and event type filters — v1.5
+- EventBus-driven SlackNotifier with per-channel error isolation and transient retry — v1.5
 
 ### Active
 
-- (See REQUIREMENTS.md for full v1.5 requirement list)
+- (No active requirements — planning next milestone)
 
 ### Out of Scope
 
-- Web UI — agents and CLI are the interfaces for now
+- Web UI — agents, CLI, and Slack are the interfaces for now
 - Mobile app — local network service only
 - Cloud hosting — runs on local Ubuntu machine only
 - User accounts / multi-user auth — API key auth is sufficient for single operator + agents
@@ -86,21 +79,26 @@ Any agent on the local network can reliably create, find, and update work items 
 - Database replication — single node; daily backups sufficient
 - RBAC / per-user permissions — single user system
 - JWT/OAuth2 authentication — API key auth sufficient for local service
+- Multi-workspace Slack OAuth distribution — single workspace custom app sufficient
+- Slack interactive buttons/modals — slash commands sufficient for v1.5
+- Slack thread-based conversations — bot posts top-level messages
+- Slack @mention in notifications — requires full team member mapping
 
 ## Context
 
-Shipped v1.4 with 636 tests across 57 test files. 24,425 lines of TypeScript across 130+ files. Zero TypeScript errors. Mutation testing baseline: 75.88% covered mutation score. GitHub Actions CI active.
+Shipped v1.5 with 839 tests across 65 test files. ~27,607 lines of TypeScript across 160+ files. Pre-existing TypeScript type-only error: FastifyBaseLogger vs pino Logger in SlackService constructor (runtime OK). Mutation testing baseline: 75.88% covered mutation score. GitHub Actions CI active.
 
-Tech stack: Node.js 22, Fastify, better-sqlite3, @fastify/sse, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4, Stryker, fast-check, knip.
+Tech stack: Node.js 22, Fastify, better-sqlite3, @fastify/sse, @slack/bolt, @slack/types, MCP SDK, Commander.js, @clack/prompts, Zod, Pino, chalk v4, Stryker, fast-check, knip.
 
 Primary consumers are LLM agents (Claude Code and others) running on the local network.
-Stuart is the sole human user, interacting via the `tasks` CLI.
+Stuart is the sole human user, interacting via the `tasks` CLI and Slack `/tasks` commands.
 The machine is an Ubuntu Linux box (6.8.0-100-generic) that stays on.
 
 Interface inventory:
 - REST API: 20 endpoints (tasks CRUD + claim, projects CRUD, dependencies, comments, subtasks, events, health)
 - MCP Server: 20 tools (same coverage as REST) + events://stream resource
 - CLI: 24 commands (same coverage as REST + interactive prompts + backup + doctor/stats/db-check + completions)
+- Slack: 26 `/tasks` subcommands (full CLI parity) + bot notifications with per-channel subscriptions
 - Claude Code Skills: 10 workflow skills (/tasks: namespace)
 - Installers: install.sh (Linux/macOS), install.ps1 (Windows)
 
@@ -108,6 +106,7 @@ Real-time infrastructure:
 - EventBus: type-safe pub/sub with native EventEmitter (8 event types)
 - SSEManager: connection registry with filtering, heartbeat, Last-Event-ID replay (100-event buffer)
 - WorkflowEngine: parent auto-complete, dependency auto-unblock, cascade depth limiting
+- SlackNotifier: EventBus subscriber with per-channel posting, error isolation, and retry
 
 Reliability infrastructure:
 - Structured JSON logging (Pino) with sensitive field redaction
@@ -166,6 +165,12 @@ Documentation: README.md, docs/API.md, docs/CLI.md, docs/MCP.md, docs/SETUP.md
 | Static shell completion scripts | Avoids API calls during tab completion; bash + zsh | ✓ Good — 25 commands, 6 statuses, 4 priorities covered |
 | MemoryDenyWriteExecute NOT enabled | V8 JIT requires W+X pages; incompatible with this directive | ✓ Good — documented in service file |
 | DynamicUser NOT used | SQLite needs stable file ownership for WAL/journal | ✓ Good — service runs as dedicated user with ReadWritePaths |
+| @slack/bolt Socket Mode over HTTP | Eliminates public URL requirement; fits LAN deployment | ✓ Good — outbound WebSocket, no inbound ports |
+| Slack feature optional via token absence | Both-or-neither .refine() on config schema | ✓ Good — service starts normally without Slack tokens |
+| SlackNotifier fire-and-forget async | Synchronous EventBus handler chains .catch() on async work | ✓ Good — SSEManager and WorkflowEngine unaffected by Slack API latency |
+| Promise.allSettled for per-channel posting | One channel failure cannot block others | ✓ Good — tested with mixed success/failure scenarios |
+| UserIdentityCache takes WebClient | Dependency inversion enables testing without Bolt App mock | ✓ Good — plain mock object sufficient for all 12 tests |
+| Default subscription: task.created + task.status_changed | Most useful for team awareness without notification noise | ✓ Good — validated with live Slack testing |
 
 ---
-*Last updated: 2026-02-17 after v1.5 milestone started*
+*Last updated: 2026-02-18 after v1.5 milestone*

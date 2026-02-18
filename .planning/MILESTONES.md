@@ -106,3 +106,25 @@
 
 ---
 
+
+## v1.5 Slack Integration (Shipped: 2026-02-18)
+
+**Phases completed:** 4 phases (23-26), 10 plans, 20 tasks
+
+**Key accomplishments:**
+- Socket Mode infrastructure with `@slack/bolt`, token-absent feature flag, graceful Fastify lifecycle integration, and `slack_channel_subscriptions` migration
+- Pure Block Kit formatter functions producing typed `KnownBlock[]` for tasks, projects, and notifications with consistent emoji/priority/truncation conventions
+- TTL-cached Slack user identity resolution (display name fallback chain, 5-min cache, 30s error cache) integrated into create/claim handlers
+- All 26 `/tasks` subcommands with ack-first pattern achieving full CLI parity from Slack
+- EventBus-driven notification pipeline with per-channel subscription routing, fire-and-forget async, `Promise.allSettled` error isolation, and transient retry with exponential backoff
+- End-to-end Slack integration tested live: task creation and status change notifications delivered to subscribed channels
+
+**Stats:**
+- 48 files changed, 11,202 insertions (27,607 total LOC TypeScript)
+- 839 tests passing (65 test files)
+- 203 new tests added across 10 plans
+- 15 feat commits across 4 phases
+- Git range: v1.4..bfa2dff
+
+---
+

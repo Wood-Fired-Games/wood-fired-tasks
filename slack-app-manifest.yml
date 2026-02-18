@@ -1,0 +1,28 @@
+_metadata:
+  major_version: 1
+display_information:
+  name: Wood Fired Bugs
+  description: Task tracker for Wood Fired Games
+  background_color: "#d94f00"
+features:
+  bot_user:
+    display_name: Wood Fired Bugs
+    always_online: true
+  slash_commands:
+    - command: /tasks
+      description: Manage tasks and projects
+      usage_hint: "[help | list | show <id> | create <title> | claim <id> | subscribe --project <id>]"
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+      - commands
+      - channels:read
+      - users:read
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  is_hosted: false
+  token_rotation_enabled: false
