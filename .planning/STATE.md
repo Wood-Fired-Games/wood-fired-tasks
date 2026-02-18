@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-18 — Plan 25-01 complete
+**Last Updated:** 2026-02-18 — Plan 25-03 complete
 
 ## Project Reference
 
@@ -8,18 +8,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** v1.5 Slack Integration — Phase 25 in progress (Plan 01 of 3 complete)
+**Current Focus:** v1.5 Slack Integration — Phase 25 COMPLETE (all 3 plans done), Phase 26 next
 
 ## Current Position
 
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
-**Phase:** 25 of 26 (Slash Command Handlers) — IN PROGRESS
-**Plan:** 1 of 3 in Phase 25 — Plan 01 complete
-**Status:** In progress
-**Last activity:** 2026-02-18 — Plan 25-01 complete (registerTasksCommand router skeleton, parseArgs, respondBlocks, respondError, formatServiceError, server.ts wiring, 18 tests)
+**Phase:** 25 of 26 (Slash Command Handlers) — COMPLETE
+**Plan:** 3 of 3 in Phase 25 — All plans complete
+**Status:** In progress — Phase 26 next
+**Last activity:** 2026-02-18 — Plan 25-03 complete (all 20 remaining subcommand handlers: project/dep/comment/subtask/health/CLI-only stubs, 28 tests, 801 total tests)
 
 **Progress:**
-[██████████] 96%
+[██████████] 100%
 v1.0 ████████████████████ 100% (6/6 phases, 13 plans) — shipped 2026-02-13
 v1.1 ████████████████████ 100% (4/4 phases, 10 plans) — shipped 2026-02-13
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
@@ -37,7 +37,7 @@ v1.5 ███████░░░░░░░░░░░░░  38% (2/4 phas
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 - v1.4 Hardening and Polish: 6 phases, 15 plans, shipped 2026-02-17 (636 tests)
 
-**Current:** 752 tests passing (63 test files), 24,500+ LOC TypeScript, 138+ files
+**Current:** 801 tests passing (63 test files), 24,500+ LOC TypeScript, 138+ files
 
 **Phase 23 metrics:**
 - Plan 23-01: 3 min, 2 tasks, 4 files, 15 tests added
@@ -48,8 +48,10 @@ v1.5 ███████░░░░░░░░░░░░░  38% (2/4 phas
 - Plan 24-02: 5 min, 2 tasks, 2 files, 14 tests added
 - Plan 24-03: 2 min, 2 tasks, 2 files, 12 tests added
 
-**Phase 25 metrics (in progress):**
+**Phase 25 metrics (complete):**
 - Plan 25-01: 4 min, 2 tasks, 3 files, 18 tests added
+- Plan 25-02: 4 min, 2 tasks, 2 files, 21 tests added
+- Plan 25-03: 4 min, 2 tasks, 2 files, 28 tests added
 
 ## Accumulated Context
 
@@ -85,6 +87,10 @@ Recent decisions for v1.5 work:
 - Subcommand stubs use respondError('Not yet implemented') — gives useful feedback while Plans 02/03 fill in real implementations
 - Use 'as unknown as UserIdentityCache' in test mocks — concrete class private fields (cache, client, ttlMs) cannot be satisfied by plain objects
 - void services / void identityCache markers in stub phase — removed as Plans 02/03 implement the actual calls
+- handleCliOnly uses fall-through switch cases for 5 CLI-only stubs — one shared function, no duplication
+- handleHealth uses try/catch around countTasks only — any exception marks health as failed, no per-service probes
+- CLI-only stubs respond with :information_source: not :x: — informational not error condition
+- parseArgs has no shell quoting — flag values are single whitespace-split tokens; test inputs must use single-token values
 
 ### Open Questions
 
@@ -106,18 +112,16 @@ Also add `users:read` scope and reinstall app (required for UserIdentityCache.re
 ## Session Continuity
 
 **What Just Happened:**
-Plan 25-01 complete. Created registerTasksCommand router skeleton in src/slack/commands/tasks-command.ts with all 26 subcommand stubs, help handler, parseArgs, respondBlocks/respondError, formatServiceError utilities, and HELP_BLOCKS constant. Wired into server.ts after slackService.start() with UserIdentityCache constructed once. 18 unit tests added, 752 total tests across 63 test files.
+Phase 25 Plans 01-03 all complete. Plan 25-03 implemented all 20 remaining /tasks subcommand handlers (5 project, 3 dep, 3 comment, 2 subtask, 1 health, 5 CLI-only stubs) and 28 unit tests. Zero stubs remain in tasks-command.ts. 801 total tests passing across 63 test files.
 
 **What's Next:**
-Phase 25 Plan 02: Implement task subcommand handlers (list, show, create, update, delete, claim) filling in the router stubs.
+Phase 26: Slack notifications — SlackNotifier that emits Block Kit messages to subscribed channels on task events.
 
 **Context for Next Session:**
-- Router skeleton ready in src/slack/commands/tasks-command.ts — Plans 02/03 fill in the switch case stubs
-- parseArgs, respondBlocks, respondError, formatServiceError all exported and unit-tested — import them in Plans 02/03
-- UserIdentityCache now wired in production (server.ts) — UIDENT-03 gap closed at infrastructure level
-- void services / void identityCache markers at top of handler to be removed as Plans 02/03 implement actual calls
-- All formatters ready: formatTaskList, formatTaskDetail in task-formatter.ts; formatProjectList, formatProjectDetail in formatters/project-formatter.ts
-- STATUS_EMOJI and PRIORITY_INDICATOR exported from task-formatter.ts for cross-formatter reuse
+- All 26 /tasks subcommands have real implementations — full CLI parity achieved via Slack
+- tasks-command.ts is the complete slash command handler; Phase 26 builds SlackNotifier separately
+- UIDENT-03 pattern used in 4 handlers (create, claim, comment-add, subtask-create) — resolves display name before service call
+- parseArgs splits on whitespace only (no shell quoting) — relevant for future subcommand extensions
 - Slack app dashboard setup remains a manual prerequisite before any runtime Slack testing
 
 ---
