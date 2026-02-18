@@ -173,7 +173,7 @@ describe('formatTaskDetail', () => {
     const blocks = formatTaskDetail(makeTask({ title: longTitle }));
     const header = blocks[0] as HeaderBlock;
     expect(header.text.text).toHaveLength(150);
-    expect(header.text.text).toEndWith('...');
+    expect(header.text.text).toMatch(/\.\.\.$/);
     expect(header.text.text).toBe('A'.repeat(147) + '...');
   });
 
@@ -182,7 +182,7 @@ describe('formatTaskDetail', () => {
     const blocks = formatTaskDetail(makeTask({ title: title150 }));
     const header = blocks[0] as HeaderBlock;
     expect(header.text.text).toHaveLength(150);
-    expect(header.text.text).not.toEndWith('...');
+    expect(header.text.text).not.toMatch(/\.\.\.$/);
   });
 
   it('returns a SectionBlock with fields as the second block', () => {
