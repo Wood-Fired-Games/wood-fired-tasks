@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-18 — Plan 25-03 complete
+**Last Updated:** 2026-02-18 — Plan 26-01 complete
 
 ## Project Reference
 
@@ -8,15 +8,15 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core Value:** Any agent on the local network can reliably create, find, and update work items in real time — making this the single source of truth for all Wood Fired Games task tracking.
 
-**Current Focus:** v1.5 Slack Integration — Phase 25 COMPLETE (all 3 plans done), Phase 26 next
+**Current Focus:** v1.5 Slack Integration — Phase 26 IN PROGRESS (Plan 01 complete, Plan 02 next)
 
 ## Current Position
 
 **Milestone:** v1.5 Slack Integration — IN PROGRESS
-**Phase:** 25 of 26 (Slash Command Handlers) — COMPLETE
-**Plan:** 3 of 3 in Phase 25 — All plans complete
-**Status:** Milestone complete
-**Last activity:** 2026-02-18 — Plan 25-03 complete (all 20 remaining subcommand handlers: project/dep/comment/subtask/health/CLI-only stubs, 28 tests, 801 total tests)
+**Phase:** 26 of 26 (Notification Pipeline) — IN PROGRESS
+**Plan:** 1 of 2 in Phase 26
+**Status:** Executing
+**Last activity:** 2026-02-18 — Plan 26-01 complete (SlackChannelSubscriptionRepository, subscribe/unsubscribe commands, formatTaskNotification projectName, 24 new tests, 825 total)
 
 **Progress:**
 [██████████] 100%
@@ -25,7 +25,7 @@ v1.1 ████████████████████ 100% (4/4 phas
 v1.2 ████████████████████ 100% (3/3 phases, 7 plans)  — shipped 2026-02-14
 v1.3 ████████████████████ 100% (3/3 phases, 12 plans) — shipped 2026-02-14
 v1.4 ████████████████████ 100% (6/6 phases, 15 plans) — shipped 2026-02-17
-v1.5 ███████░░░░░░░░░░░░░  38% (2/4 phases, 3/TBD plans) — in progress
+v1.5 ██████████░░░░░░░░░░  50% (3/4 phases partial, 4/TBD plans) — in progress
 ```
 
 ## Performance Metrics
@@ -37,7 +37,7 @@ v1.5 ███████░░░░░░░░░░░░░  38% (2/4 phas
 - v1.3 Multi-Agent Coordination: 3 phases, 12 plans, shipped 2026-02-14 (513 tests)
 - v1.4 Hardening and Polish: 6 phases, 15 plans, shipped 2026-02-17 (636 tests)
 
-**Current:** 801 tests passing (63 test files), 24,500+ LOC TypeScript, 138+ files
+**Current:** 825 tests passing (64 test files), 25,000+ LOC TypeScript, 140+ files
 
 **Phase 23 metrics:**
 - Plan 23-01: 3 min, 2 tasks, 4 files, 15 tests added
@@ -52,6 +52,9 @@ v1.5 ███████░░░░░░░░░░░░░  38% (2/4 phas
 - Plan 25-01: 4 min, 2 tasks, 3 files, 18 tests added
 - Plan 25-02: 4 min, 2 tasks, 2 files, 21 tests added
 - Plan 25-03: 4 min, 2 tasks, 2 files, 28 tests added
+
+**Phase 26 metrics (in progress):**
+- Plan 26-01: 4 min, 2 tasks, 6 files, 24 tests added
 
 ## Accumulated Context
 
@@ -91,6 +94,10 @@ Recent decisions for v1.5 work:
 - handleHealth uses try/catch around countTasks only — any exception marks health as failed, no per-service probes
 - CLI-only stubs respond with :information_source: not :x: — informational not error condition
 - parseArgs has no shell quoting — flag values are single whitespace-split tokens; test inputs must use single-token values
+- SlackChannelSubscriptionRepository uses INSERT OR IGNORE — UNIQUE constraint prevents duplicates, preserves original created_at
+- registerTasksCommand 4th param (subscriptionRepo) is optional — no breaking change until Plan 02 wires it
+- Default subscription events are task.created + task.status_changed — most useful for team awareness
+- subscribe/unsubscribe handlers gracefully degrade when subscriptionRepo is undefined — responds "not configured"
 
 ### Open Questions
 
@@ -112,17 +119,17 @@ Also add `users:read` scope and reinstall app (required for UserIdentityCache.re
 ## Session Continuity
 
 **What Just Happened:**
-Phase 25 Plans 01-03 all complete. Plan 25-03 implemented all 20 remaining /tasks subcommand handlers (5 project, 3 dep, 3 comment, 2 subtask, 1 health, 5 CLI-only stubs) and 28 unit tests. Zero stubs remain in tasks-command.ts. 801 total tests passing across 63 test files.
+Plan 26-01 complete. Built SlackChannelSubscriptionRepository (subscribe, unsubscribe, findSubscribedChannels, findByChannel), added /tasks subscribe and /tasks unsubscribe command handlers, enhanced formatTaskNotification with optional projectName, updated HELP_BLOCKS. 24 new tests, 825 total.
 
 **What's Next:**
-Phase 26: Slack notifications — SlackNotifier that emits Block Kit messages to subscribed channels on task events.
+Plan 26-02: SlackNotifier — EventBus listener that posts Block Kit notifications to subscribed channels on task events.
 
 **Context for Next Session:**
-- All 26 /tasks subcommands have real implementations — full CLI parity achieved via Slack
-- tasks-command.ts is the complete slash command handler; Phase 26 builds SlackNotifier separately
-- UIDENT-03 pattern used in 4 handlers (create, claim, comment-add, subtask-create) — resolves display name before service call
-- parseArgs splits on whitespace only (no shell quoting) — relevant for future subcommand extensions
-- Slack app dashboard setup remains a manual prerequisite before any runtime Slack testing
+- SlackChannelSubscriptionRepository at src/slack/repositories/channel-subscription.repository.ts — findSubscribedChannels(projectId, eventType) is the hot path
+- formatTaskNotification(event, projectName?) at src/slack/task-formatter.ts — caller resolves project name
+- registerTasksCommand accepts optional 4th param subscriptionRepo — Plan 02 wires it in server.ts
+- HELP_BLOCKS already includes subscribe/unsubscribe commands
+- subscribe/unsubscribe handlers degrade gracefully when subscriptionRepo is undefined
 
 ---
 *State tracking started: 2026-02-14 for v1.3*
