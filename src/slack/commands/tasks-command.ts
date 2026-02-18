@@ -7,6 +7,7 @@ import type { CommentService } from '../../services/comment.service.js';
 import type { UserIdentityCache } from '../user-identity.js';
 import { NotFoundError, ValidationError, BusinessError } from '../../services/errors.js';
 import { formatTaskList, formatTaskDetail } from '../task-formatter.js';
+import { formatProjectList, formatProjectDetail } from '../formatters/project-formatter.js';
 
 export interface Services {
   taskService: TaskService;
@@ -378,6 +379,370 @@ async function handleClaim(
   await respondBlocks(respond, blocks, `Task #${id} claimed by ${displayName}`);
 }
 
+// ---------------------------------------------------------------------------
+// Project subcommand handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleProjectList — /tasks project-list
+ */
+async function handleProjectList(respond: RespondFn, services: Services): Promise<void> {
+  const projects = services.projectService.listProjects();
+  const blocks = formatProjectList(projects);
+  await respondBlocks(respond, blocks, `Projects (${projects.length})`);
+}
+
+/**
+ * handleProjectShow — /tasks project-show <id>
+ */
+async function handleProjectShow(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-show <id>`');
+    return;
+  }
+  const project = services.projectService.getProject(id);
+  const blocks = formatProjectDetail(project);
+  await respondBlocks(respond, blocks, `Project #${id}`);
+}
+
+/**
+ * handleProjectCreate — /tasks project-create <name> [--description <desc>]
+ */
+async function handleProjectCreate(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const { positionals, flags } = parseArgs(args);
+  const name = positionals.join(' ');
+  if (!name) {
+    await respondError(respond, 'Project name required.', 'Usage: `/tasks project-create <name>`');
+    return;
+  }
+  const project = services.projectService.createProject({
+    name,
+    description: flags['description'] || null,
+  });
+  const blocks = formatProjectDetail(project);
+  await respondBlocks(respond, blocks, `Project created: ${project.name}`);
+}
+
+/**
+ * handleProjectUpdate — /tasks project-update <id> [--name <name>] [--description <desc>]
+ */
+async function handleProjectUpdate(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-update <id> --name <name>`');
+    return;
+  }
+  const { flags } = parseArgs(args.slice(1));
+  const updates: Record<string, unknown> = {};
+  if (flags['name'] !== undefined) updates['name'] = flags['name'];
+  if (flags['description'] !== undefined) updates['description'] = flags['description'];
+  if (Object.keys(updates).length === 0) {
+    await respondError(respond, 'No update fields provided.');
+    return;
+  }
+  const project = services.projectService.updateProject(id, updates);
+  const blocks = formatProjectDetail(project);
+  await respondBlocks(respond, blocks, `Project #${id} updated`);
+}
+
+/**
+ * handleProjectDelete — /tasks project-delete <id>
+ */
+async function handleProjectDelete(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-delete <id>`');
+    return;
+  }
+  services.projectService.deleteProject(id);
+  await respondBlocks(
+    respond,
+    [{ type: 'section', text: { type: 'mrkdwn', text: `:white_check_mark: Project #${id} deleted.` } } as KnownBlock],
+    `Project #${id} deleted.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dependency subcommand handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleDepAdd — /tasks dep-add <task_id> <blocks_task_id>
+ */
+async function handleDepAdd(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const taskId = parseInt(args[0] ?? '', 10);
+  const blocksTaskId = parseInt(args[1] ?? '', 10);
+  if (isNaN(taskId) || isNaN(blocksTaskId)) {
+    await respondError(
+      respond,
+      'Two task IDs required.',
+      'Usage: `/tasks dep-add <task-id> <blocks-task-id>`'
+    );
+    return;
+  }
+  services.dependencyService.addDependency({ task_id: taskId, blocks_task_id: blocksTaskId });
+  await respondBlocks(
+    respond,
+    [{
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:white_check_mark: Dependency added: Task #${taskId} blocks Task #${blocksTaskId}` },
+    } as KnownBlock],
+    `Dependency added: Task #${taskId} blocks Task #${blocksTaskId}`
+  );
+}
+
+/**
+ * handleDepList — /tasks dep-list <task_id>
+ */
+async function handleDepList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks dep-list <id>`');
+    return;
+  }
+  const blockedBy = services.dependencyService.getBlockedBy(id);
+  const blockers = services.dependencyService.getBlockers(id);
+
+  const blocksText = blockedBy.length > 0
+    ? blockedBy.map((d) => `#${d.blocks_task_id}`).join(', ')
+    : '_none_';
+  const blockersText = blockers.length > 0
+    ? blockers.map((d) => `#${d.task_id}`).join(', ')
+    : '_none_';
+
+  await respondBlocks(
+    respond,
+    [{
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Dependencies for Task #${id}*\n*Blocks:* ${blocksText}\n*Blocked by:* ${blockersText}`,
+      },
+    } as KnownBlock],
+    `Dependencies for Task #${id}`
+  );
+}
+
+/**
+ * handleDepRemove — /tasks dep-remove <task_id> <blocks_task_id>
+ */
+async function handleDepRemove(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const taskId = parseInt(args[0] ?? '', 10);
+  const blocksTaskId = parseInt(args[1] ?? '', 10);
+  if (isNaN(taskId) || isNaN(blocksTaskId)) {
+    await respondError(
+      respond,
+      'Two task IDs required.',
+      'Usage: `/tasks dep-remove <task-id> <blocks-task-id>`'
+    );
+    return;
+  }
+  services.dependencyService.removeDependency(taskId, blocksTaskId);
+  await respondBlocks(
+    respond,
+    [{
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:white_check_mark: Dependency removed: Task #${taskId} no longer blocks Task #${blocksTaskId}` },
+    } as KnownBlock],
+    `Dependency removed: Task #${taskId} no longer blocks Task #${blocksTaskId}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Comment subcommand handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleCommentAdd — /tasks comment-add <task_id> <content...>
+ */
+async function handleCommentAdd(
+  respond: RespondFn,
+  services: Services,
+  identityCache: UserIdentityCache,
+  command: SlashCommand,
+  args: string[]
+): Promise<void> {
+  const taskId = parseInt(args[0] ?? '', 10);
+  if (isNaN(taskId)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks comment-add <task-id> <content>`');
+    return;
+  }
+  const content = args.slice(1).join(' ');
+  if (!content) {
+    await respondError(respond, 'Comment content required.', 'Usage: `/tasks comment-add <task-id> <content>`');
+    return;
+  }
+  const author = await identityCache.resolve(command.user_id);
+  services.commentService.addComment({ task_id: taskId, author, content });
+  await respondBlocks(
+    respond,
+    [{
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:white_check_mark: Comment added to Task #${taskId}` },
+    } as KnownBlock],
+    `Comment added to Task #${taskId}`
+  );
+}
+
+/**
+ * handleCommentList — /tasks comment-list <task_id>
+ */
+async function handleCommentList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks comment-list <id>`');
+    return;
+  }
+  const comments = await services.commentService.getComments(id);
+  if (comments.length === 0) {
+    await respondBlocks(
+      respond,
+      [{ type: 'section', text: { type: 'mrkdwn', text: '_No comments._' } } as KnownBlock],
+      `No comments for Task #${id}`
+    );
+    return;
+  }
+  const blocks: KnownBlock[] = [
+    { type: 'header', text: { type: 'plain_text', text: `Comments for Task #${id}`, emoji: true } } as KnownBlock,
+  ];
+  for (const comment of comments) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${comment.author}* (${comment.created_at})\n${comment.content}` },
+    } as KnownBlock);
+  }
+  await respondBlocks(respond, blocks, `Comments for Task #${id}`);
+}
+
+/**
+ * handleCommentDelete — /tasks comment-delete <task_id> <comment_id>
+ */
+async function handleCommentDelete(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const taskId = parseInt(args[0] ?? '', 10);
+  const commentId = parseInt(args[1] ?? '', 10);
+  if (isNaN(taskId) || isNaN(commentId)) {
+    await respondError(
+      respond,
+      'Task ID and Comment ID required.',
+      'Usage: `/tasks comment-delete <task-id> <comment-id>`'
+    );
+    return;
+  }
+  services.commentService.deleteComment(commentId);
+  await respondBlocks(
+    respond,
+    [{
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:white_check_mark: Comment #${commentId} deleted.` },
+    } as KnownBlock],
+    `Comment #${commentId} deleted.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Subtask subcommand handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleSubtaskCreate — /tasks subtask-create <parent_id> <title...> --project <id>
+ */
+async function handleSubtaskCreate(
+  respond: RespondFn,
+  services: Services,
+  identityCache: UserIdentityCache,
+  command: SlashCommand,
+  args: string[]
+): Promise<void> {
+  const parentId = parseInt(args[0] ?? '', 10);
+  if (isNaN(parentId)) {
+    await respondError(respond, 'Parent task ID required.', 'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`');
+    return;
+  }
+  const { positionals, flags } = parseArgs(args.slice(1));
+  const title = positionals.join(' ');
+  if (!title) {
+    await respondError(respond, 'Subtask title required.', 'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`');
+    return;
+  }
+  if (!flags['project']) {
+    await respondError(respond, 'Project ID required.', 'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`');
+    return;
+  }
+  const createdBy = await identityCache.resolve(command.user_id);
+  const task = services.taskService.createTask({
+    title,
+    project_id: parseInt(flags['project'], 10),
+    parent_task_id: parentId,
+    priority: flags['priority'] || 'medium',
+    created_by: createdBy,
+  });
+  const blocks = formatTaskDetail(task);
+  await respondBlocks(respond, blocks, `Subtask created: ${task.title}`);
+}
+
+/**
+ * handleSubtaskList — /tasks subtask-list <parent_id>
+ */
+async function handleSubtaskList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+  const parentId = parseInt(args[0] ?? '', 10);
+  if (isNaN(parentId)) {
+    await respondError(respond, 'Parent task ID required.', 'Usage: `/tasks subtask-list <parent-id>`');
+    return;
+  }
+  const subtasks = services.taskService.getSubtasks(parentId);
+  const blocks = formatTaskList(subtasks);
+  await respondBlocks(respond, blocks, `Subtasks for Task #${parentId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Health handler
+// ---------------------------------------------------------------------------
+
+/**
+ * handleHealth — /tasks health
+ */
+async function handleHealth(respond: RespondFn, services: Services): Promise<void> {
+  try {
+    const count = services.taskService.countTasks();
+    await respondBlocks(
+      respond,
+      [{
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:white_check_mark: Service is healthy. ${count} tasks in database.` },
+      } as KnownBlock],
+      `Service is healthy. ${count} tasks in database.`
+    );
+  } catch {
+    await respondBlocks(
+      respond,
+      [{ type: 'section', text: { type: 'mrkdwn', text: ':x: Service health check failed.' } } as KnownBlock],
+      'Service health check failed.'
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CLI-only stub handler
+// ---------------------------------------------------------------------------
+
+/**
+ * handleCliOnly — for subcommands only available via the CLI (backup, doctor, stats, db-check, completions)
+ */
+async function handleCliOnly(respond: RespondFn, subcommand: string): Promise<void> {
+  await respondBlocks(
+    respond,
+    [{
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:information_source: \`${subcommand}\` is only available via the CLI.\nRun: \`tasks ${subcommand}\``,
+      },
+    } as KnownBlock],
+    `${subcommand} is only available via the CLI.`
+  );
+}
+
 /**
  * registerTasksCommand — registers the /tasks slash command on the Bolt App.
  *
@@ -428,70 +793,64 @@ export function registerTasksCommand(
           break;
 
         // ── Project commands ───────────────────────────────────────────────────
-        case 'project-create':
-          await respondError(respond, 'Not yet implemented: `project-create`');
-          break;
         case 'project-list':
-          await respondError(respond, 'Not yet implemented: `project-list`');
+          await handleProjectList(respond, services);
           break;
         case 'project-show':
-          await respondError(respond, 'Not yet implemented: `project-show`');
+          await handleProjectShow(respond, services, args);
+          break;
+        case 'project-create':
+          await handleProjectCreate(respond, services, args);
           break;
         case 'project-update':
-          await respondError(respond, 'Not yet implemented: `project-update`');
+          await handleProjectUpdate(respond, services, args);
           break;
         case 'project-delete':
-          await respondError(respond, 'Not yet implemented: `project-delete`');
+          await handleProjectDelete(respond, services, args);
           break;
 
         // ── Dependency commands ────────────────────────────────────────────────
         case 'dep-add':
-          await respondError(respond, 'Not yet implemented: `dep-add`');
+          await handleDepAdd(respond, services, args);
           break;
         case 'dep-list':
-          await respondError(respond, 'Not yet implemented: `dep-list`');
+          await handleDepList(respond, services, args);
           break;
         case 'dep-remove':
-          await respondError(respond, 'Not yet implemented: `dep-remove`');
+          await handleDepRemove(respond, services, args);
           break;
 
         // ── Comment commands ───────────────────────────────────────────────────
         case 'comment-add':
-          await respondError(respond, 'Not yet implemented: `comment-add`');
+          await handleCommentAdd(respond, services, identityCache, command, args);
           break;
         case 'comment-list':
-          await respondError(respond, 'Not yet implemented: `comment-list`');
+          await handleCommentList(respond, services, args);
           break;
         case 'comment-delete':
-          await respondError(respond, 'Not yet implemented: `comment-delete`');
+          await handleCommentDelete(respond, services, args);
           break;
 
         // ── Subtask commands ───────────────────────────────────────────────────
         case 'subtask-create':
-          await respondError(respond, 'Not yet implemented: `subtask-create`');
+          await handleSubtaskCreate(respond, services, identityCache, command, args);
           break;
         case 'subtask-list':
-          await respondError(respond, 'Not yet implemented: `subtask-list`');
+          await handleSubtaskList(respond, services, args);
+          break;
+
+        // ── Health ─────────────────────────────────────────────────────────────
+        case 'health':
+          await handleHealth(respond, services);
           break;
 
         // ── Operational commands (CLI-only stubs) ──────────────────────────────
-        case 'health':
-          await respondError(respond, 'Not yet implemented: `health`');
-          break;
         case 'backup':
-          await respondError(respond, 'Not yet implemented: `backup`');
-          break;
         case 'doctor':
-          await respondError(respond, 'Not yet implemented: `doctor`');
-          break;
         case 'stats':
-          await respondError(respond, 'Not yet implemented: `stats`');
-          break;
         case 'db-check':
-          await respondError(respond, 'Not yet implemented: `db-check`');
-          break;
         case 'completions':
-          await respondError(respond, 'Not yet implemented: `completions`');
+          await handleCliOnly(respond, subcommand);
           break;
 
         // ── Help ───────────────────────────────────────────────────────────────
