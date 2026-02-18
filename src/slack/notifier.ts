@@ -1,11 +1,15 @@
 import type { WebClient } from '@slack/web-api';
 import type { KnownBlock } from '@slack/types';
-import type { Logger } from 'pino';
 import { eventBus } from '../events/event-bus.js';
 import type { TaskEvent } from '../events/types.js';
 import type { SlackChannelSubscriptionRepository } from './repositories/channel-subscription.repository.js';
 import type { ProjectService } from '../services/project.service.js';
 import { formatTaskNotification } from './task-formatter.js';
+
+/** Minimal logger interface — accepts Fastify's BaseLogger and pino Logger */
+interface NotifierLogger {
+  error(obj: Record<string, unknown>, msg: string): void;
+}
 
 const TASK_EVENT_TYPES = [
   'task.created',
@@ -29,7 +33,7 @@ export class SlackNotifier {
     private readonly client: WebClient,
     private readonly subscriptionRepo: SlackChannelSubscriptionRepository,
     private readonly projectService: ProjectService,
-    private readonly logger: Logger
+    private readonly logger: NotifierLogger
   ) {}
 
   /**

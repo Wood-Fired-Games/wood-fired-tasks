@@ -20,6 +20,8 @@ import { SlackService } from '../services/slack.service.js';
 import { eventBus } from '../events/event-bus.js';
 import { registerTasksCommand } from '../slack/commands/tasks-command.js';
 import { UserIdentityCache } from '../slack/user-identity.js';
+import { SlackNotifier } from '../slack/notifier.js';
+import { SlackChannelSubscriptionRepository } from '../slack/repositories/channel-subscription.repository.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
@@ -219,10 +221,13 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // Start Slack connection (no-op if tokens absent, must be after onClose hook registration)
   await slackService.start();
 
-  // Register slash command handlers if Slack is connected
+  // Register slash command handlers and notification pipeline if Slack is connected
   const slackApp = slackService.getApp();
   if (slackApp) {
     const identityCache = new UserIdentityCache(slackApp.client);
+    const subscriptionRepo = new SlackChannelSubscriptionRepository(app.db);
+
+    // Register slash command handlers (subscribe/unsubscribe now have repo access)
     registerTasksCommand(
       slackApp,
       {
@@ -231,9 +236,26 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         dependencyService: app.dependencyService,
         commentService: app.commentService,
       },
-      identityCache
+      identityCache,
+      subscriptionRepo
     );
+
+    // Create and start notification pipeline
+    const slackNotifier = new SlackNotifier(
+      slackApp.client,
+      subscriptionRepo,
+      app.projectService,
+      server.log
+    );
+    slackNotifier.start();
+
+    // Register shutdown hook for notifier (additive — Fastify executes all onClose hooks)
+    server.addHook('onClose', async () => {
+      slackNotifier.stop();
+    });
+
     server.log.info('Slack /tasks command handler registered');
+    server.log.info('Slack notification pipeline started');
   }
 
   return { server, app };
