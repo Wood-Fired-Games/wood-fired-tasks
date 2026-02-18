@@ -148,7 +148,7 @@ Plans:
 | 14-16 | v1.3      | 12/12          | Complete | 2026-02-14 |
 | 17-22 | v1.4      | 15/15          | Complete | 2026-02-17 |
 | 23. Socket Mode Infrastructure | 2/2 | Complete    | 2026-02-18 | - |
-| 24. Block Kit Formatters & User Identity | v1.5 | 0/3 | Not started | - |
+| 24. Block Kit Formatters & User Identity | 1/3 | In Progress|  | - |
 | 25. Slash Command Handlers | v1.5 | 0/TBD | Not started | - |
 | 26. Notification Pipeline | v1.5 | 0/TBD | Not started | - |
 
