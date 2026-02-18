@@ -100,10 +100,12 @@ Plans:
   3. A project list and project detail formatted by the Block Kit formatter use consistent structure matching task formatting conventions
   4. A notification message formatted by the Block Kit formatter includes task title, status change, assignee, and project with a link to the relevant slash command
   5. Slack user ID lookups resolve to display names, cache results in memory with a TTL, and tasks created or claimed from Slack show the resolved display name in CLI, REST, and MCP output
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 24-01: TBD
+- [ ] 24-01-PLAN.md — Task formatters (formatTaskList, formatTaskDetail, formatTaskNotification) with TDD
+- [ ] 24-02-PLAN.md — Project formatters (formatProjectList, formatProjectDetail) with TDD
+- [ ] 24-03-PLAN.md — UserIdentityCache (Slack user ID to display name resolution with TTL cache) with TDD
 
 ### Phase 25: Slash Command Handlers
 **Goal**: Every CLI operation is accessible from Slack via `/tasks <subcommand>`, all handlers acknowledge within 3 seconds, and error responses are informative
@@ -146,7 +148,7 @@ Plans:
 | 14-16 | v1.3      | 12/12          | Complete | 2026-02-14 |
 | 17-22 | v1.4      | 15/15          | Complete | 2026-02-17 |
 | 23. Socket Mode Infrastructure | 2/2 | Complete    | 2026-02-18 | - |
-| 24. Block Kit Formatters & User Identity | v1.5 | 0/TBD | Not started | - |
+| 24. Block Kit Formatters & User Identity | v1.5 | 0/3 | Not started | - |
 | 25. Slash Command Handlers | v1.5 | 0/TBD | Not started | - |
 | 26. Notification Pipeline | v1.5 | 0/TBD | Not started | - |
 
