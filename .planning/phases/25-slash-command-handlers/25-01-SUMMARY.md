@@ -130,6 +130,15 @@ None — no external service configuration required for the router skeleton. Sla
 - `UserIdentityCache` is now wired in production code (server.ts) — the UIDENT-03 gap identified in Phase 24 VERIFICATION.md is closed at the infrastructure level
 - 752 tests passing (63 test files) — no regressions
 
+## Self-Check: PASSED
+
+- FOUND: src/slack/commands/tasks-command.ts
+- FOUND: src/slack/commands/__tests__/tasks-command.test.ts
+- FOUND: .planning/phases/25-slash-command-handlers/25-01-SUMMARY.md
+- FOUND: commit 48c59bf (Task 1: tasks-command.ts)
+- FOUND: commit e4101c6 (Task 2: server.ts wiring + tests)
+- FOUND: commit f5def2c (type fix: UserIdentityCache mock assertion)
+
 ---
 *Phase: 25-slash-command-handlers*
 *Completed: 2026-02-18*
