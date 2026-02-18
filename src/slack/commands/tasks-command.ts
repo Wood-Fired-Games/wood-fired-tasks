@@ -6,6 +6,7 @@ import type { DependencyService } from '../../services/dependency.service.js';
 import type { CommentService } from '../../services/comment.service.js';
 import type { UserIdentityCache } from '../user-identity.js';
 import { NotFoundError, ValidationError, BusinessError } from '../../services/errors.js';
+import { formatTaskList, formatTaskDetail } from '../task-formatter.js';
 
 export interface Services {
   taskService: TaskService;
@@ -169,6 +170,214 @@ const HELP_BLOCKS: KnownBlock[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Task subcommand handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleList — /tasks list [--status <s>] [--project <id>] [--assignee <a>] [--search <q>] [--tags <t>]
+ */
+async function handleList(
+  respond: RespondFn,
+  services: Services,
+  args: string[]
+): Promise<void> {
+  const { flags } = parseArgs(args);
+
+  const filters: Record<string, unknown> = {};
+  if (flags['status']) filters['status'] = flags['status'];
+  if (flags['project']) filters['project_id'] = parseInt(flags['project'], 10);
+  if (flags['assignee']) filters['assignee'] = flags['assignee'];
+  if (flags['search']) filters['search'] = flags['search'];
+  if (flags['tags']) filters['tags'] = flags['tags'].split(',');
+
+  const tasks = services.taskService.listTasks(filters);
+  const blocks = formatTaskList(tasks);
+  await respondBlocks(respond, blocks, `Tasks (${tasks.length})`);
+}
+
+/**
+ * handleShow — /tasks show <id>
+ */
+async function handleShow(
+  respond: RespondFn,
+  services: Services,
+  args: string[]
+): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks show <id>`');
+    return;
+  }
+
+  const task = services.taskService.getTask(id);
+  const allBlocks: KnownBlock[] = [...formatTaskDetail(task)];
+
+  // Append last 5 comments
+  const comments = await services.commentService.getComments(id);
+  if (comments.length > 0) {
+    allBlocks.push({ type: 'divider' } as KnownBlock);
+    allBlocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*Comments*' },
+    } as KnownBlock);
+
+    const displayComments = comments.slice(-5);
+    for (const comment of displayComments) {
+      allBlocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${comment.author}*: ${comment.content}` },
+      } as KnownBlock);
+    }
+
+    if (comments.length > 5) {
+      allBlocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `${comments.length - 5} more comments` }],
+      } as KnownBlock);
+    }
+  }
+
+  // Append dependencies
+  const blockedBy = services.dependencyService.getBlockedBy(id);
+  const blockers = services.dependencyService.getBlockers(id);
+
+  if (blockedBy.length > 0 || blockers.length > 0) {
+    allBlocks.push({ type: 'divider' } as KnownBlock);
+
+    const parts: string[] = [];
+    if (blockedBy.length > 0) {
+      parts.push(`Blocks: ${blockedBy.map((d) => `#${d.blocks_task_id}`).join(', ')}`);
+    }
+    if (blockers.length > 0) {
+      parts.push(`Blocked by: ${blockers.map((d) => `#${d.task_id}`).join(', ')}`);
+    }
+
+    allBlocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: parts.join('\n') },
+    } as KnownBlock);
+  }
+
+  await respondBlocks(respond, allBlocks, `Task #${id}`);
+}
+
+/**
+ * handleCreate — /tasks create <title> --project <id> [--priority <p>] [--description <d>]
+ */
+async function handleCreate(
+  respond: RespondFn,
+  services: Services,
+  identityCache: UserIdentityCache,
+  command: SlashCommand,
+  args: string[]
+): Promise<void> {
+  const { positionals, flags } = parseArgs(args);
+
+  if (positionals.length === 0) {
+    await respondError(respond, 'Title required.', 'Usage: `/tasks create <title> --project <id>`');
+    return;
+  }
+
+  if (!flags['project']) {
+    await respondError(respond, 'Project ID required.', 'Usage: `/tasks create <title> --project <id>`');
+    return;
+  }
+
+  const title = positionals.join(' ');
+  const createdBy = await identityCache.resolve(command.user_id);
+
+  const task = services.taskService.createTask({
+    title,
+    project_id: parseInt(flags['project'], 10),
+    priority: flags['priority'] || 'medium',
+    created_by: createdBy,
+    description: flags['description'] || null,
+  });
+
+  const blocks = formatTaskDetail(task);
+  await respondBlocks(respond, blocks, `Task created: ${task.title}`);
+}
+
+/**
+ * handleUpdate — /tasks update <id> [--status <s>] [--title <t>] [--priority <p>] [--assignee <a>] [--due <d>] [--description <d>]
+ */
+async function handleUpdate(
+  respond: RespondFn,
+  services: Services,
+  args: string[]
+): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks update <id> --status <status>`');
+    return;
+  }
+
+  const { flags } = parseArgs(args.slice(1));
+
+  const updates: Record<string, unknown> = {};
+  if (flags['status'] !== undefined) updates['status'] = flags['status'];
+  if (flags['title'] !== undefined) updates['title'] = flags['title'];
+  if (flags['priority'] !== undefined) updates['priority'] = flags['priority'];
+  if (flags['assignee'] !== undefined) updates['assignee'] = flags['assignee'];
+  if (flags['due'] !== undefined) updates['due_date'] = flags['due'];
+  if (flags['description'] !== undefined) updates['description'] = flags['description'];
+
+  if (Object.keys(updates).length === 0) {
+    await respondError(respond, 'No update fields provided.');
+    return;
+  }
+
+  const task = services.taskService.updateTask(id, updates);
+  const blocks = formatTaskDetail(task);
+  await respondBlocks(respond, blocks, `Task #${id} updated`);
+}
+
+/**
+ * handleDelete — /tasks delete <id>
+ */
+async function handleDelete(
+  respond: RespondFn,
+  services: Services,
+  args: string[]
+): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks delete <id>`');
+    return;
+  }
+
+  services.taskService.deleteTask(id);
+
+  await respondBlocks(
+    respond,
+    [{ type: 'section', text: { type: 'mrkdwn', text: `:white_check_mark: Task #${id} deleted.` } } as KnownBlock],
+    `Task #${id} deleted.`
+  );
+}
+
+/**
+ * handleClaim — /tasks claim <id>
+ */
+async function handleClaim(
+  respond: RespondFn,
+  services: Services,
+  identityCache: UserIdentityCache,
+  command: SlashCommand,
+  args: string[]
+): Promise<void> {
+  const id = parseInt(args[0] ?? '', 10);
+  if (isNaN(id)) {
+    await respondError(respond, 'Task ID required.', 'Usage: `/tasks claim <id>`');
+    return;
+  }
+
+  const displayName = await identityCache.resolve(command.user_id);
+  const task = services.taskService.claimTask(id, displayName);
+  const blocks = formatTaskDetail(task);
+  await respondBlocks(respond, blocks, `Task #${id} claimed by ${displayName}`);
+}
+
 /**
  * registerTasksCommand — registers the /tasks slash command on the Bolt App.
  *
@@ -177,7 +386,7 @@ const HELP_BLOCKS: KnownBlock[] = [
  * the TTL cache is preserved across multiple command invocations.
  *
  * Routing: command.text is split into [subcommand, ...args]. A switch
- * dispatches to subcommand stubs (Plans 02 and 03 will implement them).
+ * dispatches to subcommand handlers (Plans 02 and 03).
  * Unknown subcommands return an ephemeral error with a /tasks help hint.
  *
  * ack() is ALWAYS the first statement — Slack enforces a 3-second deadline
@@ -188,10 +397,6 @@ export function registerTasksCommand(
   services: Services,
   identityCache: UserIdentityCache
 ): void {
-  // Suppress "unused" warnings for services/identityCache — Plans 02 and 03 will use them
-  void services;
-  void identityCache;
-
   app.command('/tasks', async ({ ack, respond, command }: { ack: () => Promise<void>; respond: RespondFn; command: SlashCommand }) => {
     // FIRST: ack() — must complete within 3 seconds of Slack delivering the event.
     // Everything after this point has no time constraint (respond_url valid 30 min).
@@ -200,29 +405,26 @@ export function registerTasksCommand(
     const text = command.text.trim();
     const [subcommand, ...args] = text ? text.split(/\s+/) : [''];
 
-    // Suppress "unused" warning for args — Plans 02 and 03 will use them
-    void args;
-
     try {
       switch (subcommand) {
         // ── Task commands ──────────────────────────────────────────────────────
         case 'list':
-          await respondError(respond, 'Not yet implemented: `list`');
+          await handleList(respond, services, args);
           break;
         case 'show':
-          await respondError(respond, 'Not yet implemented: `show`');
+          await handleShow(respond, services, args);
           break;
         case 'create':
-          await respondError(respond, 'Not yet implemented: `create`');
+          await handleCreate(respond, services, identityCache, command, args);
           break;
         case 'update':
-          await respondError(respond, 'Not yet implemented: `update`');
+          await handleUpdate(respond, services, args);
           break;
         case 'delete':
-          await respondError(respond, 'Not yet implemented: `delete`');
+          await handleDelete(respond, services, args);
           break;
         case 'claim':
-          await respondError(respond, 'Not yet implemented: `claim`');
+          await handleClaim(respond, services, identityCache, command, args);
           break;
 
         // ── Project commands ───────────────────────────────────────────────────
