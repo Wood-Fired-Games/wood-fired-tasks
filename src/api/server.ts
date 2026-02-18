@@ -18,6 +18,8 @@ import { IdempotencyService } from '../services/idempotency.service.js';
 import { ClaimReleaseService } from '../services/claim-release.service.js';
 import { SlackService } from '../services/slack.service.js';
 import { eventBus } from '../events/event-bus.js';
+import { registerTasksCommand } from '../slack/commands/tasks-command.js';
+import { UserIdentityCache } from '../slack/user-identity.js';
 import taskRoutes from './routes/tasks/index.js';
 import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
@@ -216,6 +218,23 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
   // Start Slack connection (no-op if tokens absent, must be after onClose hook registration)
   await slackService.start();
+
+  // Register slash command handlers if Slack is connected
+  const slackApp = slackService.getApp();
+  if (slackApp) {
+    const identityCache = new UserIdentityCache(slackApp.client);
+    registerTasksCommand(
+      slackApp,
+      {
+        taskService: app.taskService,
+        projectService: app.projectService,
+        dependencyService: app.dependencyService,
+        commentService: app.commentService,
+      },
+      identityCache
+    );
+    server.log.info('Slack /tasks command handler registered');
+  }
 
   return { server, app };
 }
