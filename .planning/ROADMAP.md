@@ -63,7 +63,7 @@
 
 </details>
 
-### 🚧 v1.5 Slack Integration (In Progress)
+### v1.5 Slack Integration (In Progress)
 
 **Milestone Goal:** Add Slack as a fourth interface with slash commands for all 24 CLI operations, bot notifications with per-channel subscriptions, Block Kit formatting, and Slack user identity resolution.
 
@@ -135,10 +135,11 @@ Plans:
   3. `/tasks unsubscribe` in a channel removes the channel's subscription and confirms removal
   4. Notification messages include task title, status change or creation event, assignee, and project name
   5. A Slack API error during notification posting is logged and retried without blocking other EventBus subscribers (SSEManager and WorkflowEngine continue to receive the event)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 26-01: TBD
+- [ ] 26-01-PLAN.md — Subscription repository, subscribe/unsubscribe command handlers, formatTaskNotification project name enhancement
+- [ ] 26-02-PLAN.md — SlackNotifier EventBus subscriber with retry and error isolation, server.ts wiring
 
 ## Progress
 
@@ -152,8 +153,8 @@ Plans:
 | 23. Socket Mode Infrastructure | 2/2 | Complete    | 2026-02-18 | - |
 | 24. Block Kit Formatters & User Identity | 3/3 | Complete    | 2026-02-18 | - |
 | 25. Slash Command Handlers | 3/3 | Complete    | 2026-02-18 | - |
-| 26. Notification Pipeline | v1.5 | 0/TBD | Not started | - |
+| 26. Notification Pipeline | v1.5 | 0/2 | Not started | - |
 
 ---
 
-*Last updated: 2026-02-18 — Phase 24 Plan 02 complete (formatProjectList and formatProjectDetail)*
+*Last updated: 2026-02-18 — Phase 26 plans created (2 plans in 2 waves)*
