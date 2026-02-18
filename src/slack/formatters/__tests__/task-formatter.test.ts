@@ -385,4 +385,27 @@ describe('formatTaskNotification', () => {
     const section = blocks[0] as SectionBlock;
     expect(section.text?.text).toContain('_unassigned_');
   });
+
+  it('includes project name when projectName is provided', () => {
+    const event = makeTaskEvent();
+    const blocks = formatTaskNotification(event, 'Wood Fired Games');
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).toContain('_Wood Fired Games_');
+  });
+
+  it('omits project name line when projectName is not provided', () => {
+    const event = makeTaskEvent();
+    const blocks = formatTaskNotification(event);
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).not.toContain('_Project');
+    // Also verify no italic project name line
+    expect(section.text?.text).not.toMatch(/_[A-Z]/);
+  });
+
+  it('omits project name line when projectName is undefined', () => {
+    const event = makeTaskEvent();
+    const blocks = formatTaskNotification(event, undefined);
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).not.toContain('_Project');
+  });
 });
