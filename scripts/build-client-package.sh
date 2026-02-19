@@ -49,6 +49,8 @@ required_files=(
     "client-package/setup.bat"
     "client-package/setup.ps1"
     "client-package/setup.sh"
+    "client-package/uninstall.bat"
+    "client-package/uninstall.ps1"
     "client-package/README.md"
     "dist/cli/bin/tasks-client.js"
 )
@@ -83,9 +85,11 @@ echo "Copying files..."
 
 # Top-level package files
 cp "$PROJECT_ROOT/client-package/README.md"  "$PACKAGE_DIR/"
-cp "$PROJECT_ROOT/client-package/setup.bat"  "$PACKAGE_DIR/"
-cp "$PROJECT_ROOT/client-package/setup.ps1"  "$PACKAGE_DIR/"
-cp "$PROJECT_ROOT/client-package/setup.sh"   "$PACKAGE_DIR/"
+cp "$PROJECT_ROOT/client-package/setup.bat"      "$PACKAGE_DIR/"
+cp "$PROJECT_ROOT/client-package/setup.ps1"      "$PACKAGE_DIR/"
+cp "$PROJECT_ROOT/client-package/setup.sh"       "$PACKAGE_DIR/"
+cp "$PROJECT_ROOT/client-package/uninstall.bat"  "$PACKAGE_DIR/"
+cp "$PROJECT_ROOT/client-package/uninstall.ps1"  "$PACKAGE_DIR/"
 chmod +x "$PACKAGE_DIR/setup.sh"
 
 # Skills
