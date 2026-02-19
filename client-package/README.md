@@ -1,10 +1,12 @@
 # Wood Fired Bugs - Client Setup
 
 This package gives any developer on the local network full access to the
-Wood Fired Bugs task management system via Claude Code.
+Wood Fired Bugs task management system via Claude Code and the `tasks` CLI.
 
-Once set up, you can use `/tasks:create-task`, `/tasks:my-work`, `/tasks:done`,
-and 7 more slash commands directly in Claude Code from any project.
+Once set up, you get:
+- **10 `/tasks:*` slash commands** in Claude Code (`/tasks:create-task`, `/tasks:my-work`, etc.)
+- **`tasks` CLI** in your terminal (`tasks list`, `tasks show 1`, `tasks create`, etc.)
+- **MCP server** providing all 26 tools to Claude Code
 
 ---
 
@@ -21,21 +23,26 @@ and 7 more slash commands directly in Claude Code from any project.
 
 ### Windows
 
-Open PowerShell, navigate to this directory, and run:
+Run `setup.bat` from a command prompt or PowerShell:
 
-```powershell
-.\setup.ps1 -ApiKey "your-api-key-here"
+```
+setup.bat YOUR_API_KEY
 ```
 
 With a custom server URL:
 
+```
+setup.bat YOUR_API_KEY http://192.168.1.100:3000
+```
+
+This handles PowerShell execution policy automatically. Alternatively, run
+PowerShell directly:
+
 ```powershell
-.\setup.ps1 -ServerUrl "http://192.168.1.100:3000" -ApiKey "your-api-key-here"
+powershell -ExecutionPolicy Bypass -File .\setup.ps1 -ApiKey "your-api-key-here"
 ```
 
 ### Linux / Mac
-
-Open a terminal, navigate to this directory, and run:
 
 ```bash
 chmod +x setup.sh
@@ -50,13 +57,63 @@ With a custom server URL:
 
 ### After Setup
 
-1. Open Claude Code in any project
-2. Type `/tasks:my-work` and press Enter
-3. Claude will list your assigned tasks from the shared backend
+**Open a new terminal** (required for PATH changes to take effect), then:
+
+1. Run `tasks list` to see all tasks
+2. Open Claude Code in any project and type `/tasks:my-work`
 
 ---
 
-## Available Commands
+## Tasks CLI
+
+The setup script installs the `tasks` command to your PATH. Open a **new terminal**
+after setup for the PATH change to take effect.
+
+### Common Commands
+
+```
+tasks list                    List all tasks
+tasks list --status open      Filter by status
+tasks list --assignee stuart  Filter by assignee
+tasks show 42                 Show full details for task 42
+tasks create                  Create a task interactively
+tasks update 42 --status done Mark task 42 as done
+tasks claim 42                Claim task 42
+```
+
+### All CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `tasks create` | Create a new task (interactive) |
+| `tasks list` | List tasks with optional filters |
+| `tasks show <id>` | Show task details |
+| `tasks update <id>` | Update a task |
+| `tasks delete <id>` | Delete a task |
+| `tasks claim <id>` | Claim an unassigned task |
+| `tasks project-create` | Create a new project |
+| `tasks project-list` | List all projects |
+| `tasks project-show <id>` | Show project details |
+| `tasks project-update <id>` | Update a project |
+| `tasks project-delete <id>` | Delete a project |
+| `tasks dep-add <id> <blocks-id>` | Add a dependency |
+| `tasks dep-remove <id> <blocks-id>` | Remove a dependency |
+| `tasks dep-list <id>` | List dependencies |
+| `tasks comment-add <id>` | Add a comment |
+| `tasks comment-list <id>` | List comments |
+| `tasks comment-delete <task-id> <comment-id>` | Delete a comment |
+| `tasks subtask-create <parent-id>` | Create a subtask |
+| `tasks subtask-list <parent-id>` | List subtasks |
+| `tasks health` | Check backend connectivity |
+
+All commands support `--json` for machine-readable output and `--help` for usage details.
+
+> **Note:** Server-only commands (`backup`, `doctor`, `stats`, `db-check`) are not
+> available in the client CLI — they require direct database access on the backend.
+
+---
+
+## Claude Code Slash Commands
 
 | Command | Description |
 |---------|-------------|
@@ -81,6 +138,12 @@ With a custom server URL:
 curl http://192.168.69.69:3000/health
 ```
 
+Or using the CLI:
+
+```
+tasks health
+```
+
 Expected response: `{"status":"healthy","version":"1.0.0",...}`
 
 If this fails:
@@ -96,15 +159,27 @@ node --version
 
 Must be v18.0.0 or higher.
 
+### "tasks" command not found
+
+Open a **new terminal** after running setup — PATH changes only apply to new sessions.
+
+If still not found, check that the `bin` directory inside this package is on your PATH:
+- **Windows:** Check `%PATH%` for the `bin\` directory inside this extracted package
+- **Linux/Mac:** Check `$PATH` for the same
+
 ### Test the MCP server manually
 
-After running setup, test the MCP server directly:
+The MCP server defaults to connecting to `http://192.168.69.69:3000`. To test:
 
 **Windows (PowerShell):**
 ```powershell
-$env:WFB_API_URL="http://192.168.69.69:3000"
 $env:WFB_API_KEY="your-api-key-here"
 node ".\mcp-server\dist\mcp\remote\index.js"
+```
+
+**Linux/Mac:**
+```bash
+WFB_API_KEY=your-api-key-here node ./mcp-server/dist/mcp/remote/index.js
 ```
 
 Expected output (to stderr):
@@ -113,12 +188,7 @@ Wood Fired Bugs MCP Server (remote) running on stdio
 Connected to backend: http://192.168.69.69:3000
 ```
 
-**Linux/Mac:**
-```bash
-WFB_API_URL=http://192.168.69.69:3000 \
-WFB_API_KEY=your-api-key-here \
-node ./mcp-server/dist/mcp/remote/index.js
-```
+Press Ctrl+C to exit.
 
 ### MCP server not found in Claude Code
 
@@ -140,21 +210,23 @@ You should see 10 `.md` files. If missing, re-run the setup script.
 ## Architecture
 
 ```
-Your Machine (Claude Code)                  Linux Backend
-┌─────────────────────────────────┐         ┌──────────────────────┐
-│  Claude Code                    │         │  Wood Fired Bugs      │
-│  ┌──────────────────────────┐   │  HTTP   │  REST API             │
-│  │  Remote MCP Server       │───┼────────>│  :3000                │
-│  │  (mcp-server/)           │   │         │                        │
-│  │  Proxies all 26 tools    │   │         │  SQLite database       │
-│  └──────────────────────────┘   │         └──────────────────────┘
-│                                 │
-│  /tasks: skill commands         │
-│  (~/.claude/commands/tasks/)    │
-└─────────────────────────────────┘
+Your Machine                               Linux Backend
+┌──────────────────────────────────┐       ┌──────────────────────┐
+│                                  │       │  Wood Fired Bugs      │
+│  tasks CLI ─────────────────────────────>│  REST API             │
+│  (tasks list, tasks show, etc.)  │ HTTP  │  :3000                │
+│                                  │       │                        │
+│  Claude Code                     │       │  SQLite database       │
+│  ┌───────────────────────────┐   │       └──────────────────────┘
+│  │  Remote MCP Server        │───┼──────>│
+│  │  (mcp-server/)            │   │ HTTP
+│  │  Proxies all 26 tools     │   │
+│  └───────────────────────────┘   │
+│                                  │
+│  /tasks: slash commands          │
+│  (~/.claude/commands/tasks/)     │
+└──────────────────────────────────┘
 ```
 
-The MCP server runs locally as a subprocess of Claude Code (via stdio transport).
-It forwards all tool calls to the backend REST API over HTTP. Your API key is
-stored in Claude Code's `settings.json` and passed to the MCP server as an
-environment variable — it never leaves your machine unencrypted.
+Both the CLI and MCP server connect to the same backend REST API over HTTP.
+Your API key is stored locally — it never leaves your machine unencrypted.
