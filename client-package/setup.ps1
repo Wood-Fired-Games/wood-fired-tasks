@@ -127,20 +127,27 @@ $mcpEntry = @"
 }
 "@
 
-# Use node to merge into existing settings.json (works reliably across PS versions)
-$mergeScript = @"
+# Use node via temp files to merge into settings.json (avoids PS argument-passing issues)
+$tempScript = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "wfb-setup-merge.js")
+$tempMcpJson = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "wfb-setup-mcp.json")
+
+$mcpEntry | Set-Content -Path $tempMcpJson -Encoding UTF8
+
+@"
 const fs = require('fs');
 const settingsPath = process.argv[1];
-const mcpEntry = JSON.parse(process.argv[2]);
+const mcpEntry = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 let settings = {};
 try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch(e) {}
 if (!settings.mcpServers) settings.mcpServers = {};
 settings.mcpServers['wood-fired-bugs'] = mcpEntry;
 fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
 console.log('OK');
-"@
+"@ | Set-Content -Path $tempScript -Encoding UTF8
 
-$result = & node -e $mergeScript $SettingsPath $mcpEntry 2>&1
+$result = & node "$tempScript" "$SettingsPath" "$tempMcpJson" 2>&1
+Remove-Item $tempScript -ErrorAction SilentlyContinue
+Remove-Item $tempMcpJson -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to update settings.json: $result" -ForegroundColor Red
     exit 1
