@@ -112,40 +112,39 @@ if (-not (Test-Path $ClaudeDir)) {
 
 $SettingsPath = Join-Path $ClaudeDir "settings.json"
 
-# Read existing settings or start with empty object
-if (Test-Path $SettingsPath) {
-    $settingsJson = Get-Content -Path $SettingsPath -Raw
-    try {
-        $settings = $settingsJson | ConvertFrom-Json -AsHashtable
-    } catch {
-        Write-Host "WARNING: Could not parse existing settings.json, creating backup..." -ForegroundColor Yellow
-        Copy-Item -Path $SettingsPath -Destination "$SettingsPath.bak" -Force
-        $settings = @{}
-    }
-} else {
-    $settings = @{}
-}
-
-# Ensure mcpServers key exists
-if (-not $settings.ContainsKey('mcpServers')) {
-    $settings['mcpServers'] = @{}
-}
-
-# Normalize McpEntryPoint to use forward slashes (more portable)
+# Normalize McpEntryPoint to forward slashes for JSON
 $McpEntryPointNormalized = $McpEntryPoint -replace '\\', '/'
 
-# Add/update wood-fired-bugs MCP server entry
-$settings['mcpServers']['wood-fired-bugs'] = @{
-    command = 'node'
-    args    = @($McpEntryPointNormalized)
-    env     = @{
-        WFB_API_URL = $ServerUrl
-        WFB_API_KEY = $ApiKey
+# Build the MCP server entry as a JSON string (avoids PS 5.1 hashtable issues)
+$mcpEntry = @"
+{
+    "command": "node",
+    "args": ["$McpEntryPointNormalized"],
+    "env": {
+        "WFB_API_URL": "$ServerUrl",
+        "WFB_API_KEY": "$ApiKey"
     }
 }
+"@
 
-# Write updated settings
-$settings | ConvertTo-Json -Depth 10 | Set-Content -Path $SettingsPath -Encoding UTF8
+# Use node to merge into existing settings.json (works reliably across PS versions)
+$mergeScript = @"
+const fs = require('fs');
+const settingsPath = process.argv[1];
+const mcpEntry = JSON.parse(process.argv[2]);
+let settings = {};
+try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch(e) {}
+if (!settings.mcpServers) settings.mcpServers = {};
+settings.mcpServers['wood-fired-bugs'] = mcpEntry;
+fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+console.log('OK');
+"@
+
+$result = & node -e $mergeScript $SettingsPath $mcpEntry 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to update settings.json: $result" -ForegroundColor Red
+    exit 1
+}
 Write-Host "OK: Updated $SettingsPath" -ForegroundColor Green
 
 # ── 5. Install tasks CLI to PATH ────────────────────────────────────────────
