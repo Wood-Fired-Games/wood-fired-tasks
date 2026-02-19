@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-18 — v1.5 milestone archived
+**Last Updated:** 2026-02-19 — Quick task 6 completed
 
 ## Project Reference
 
@@ -14,7 +14,7 @@ See: .planning/PROJECT.md (updated 2026-02-18)
 
 **Milestone:** v1.5 Slack Integration — SHIPPED and ARCHIVED
 **Status:** Between milestones
-**Last activity:** 2026-02-19 — Completed quick task 5: MCP server startup reliability
+**Last activity:** 2026-02-19 — Completed quick task 6: Windows/LAN client distribution package
 
 **Progress:**
 [██████████] 100%
@@ -56,11 +56,12 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 5 | MCP server startup reliability — exclusive migration lock + retry on transient SQLite errors | 2026-02-19 | 63434ad | [5-review-mcp-server-startup-reliability-an](./quick/5-review-mcp-server-startup-reliability-an/) |
+| 6 | Windows/LAN client distribution — remote MCP proxy server + self-contained zip package | 2026-02-19 | f94a0c6 | [6-create-windows-installer-package-for-lan](./quick/6-create-windows-installer-package-for-lan/) |
 
 ## Session Continuity
 
 **What Just Happened:**
-v1.5 Slack Integration milestone archived. All 26 requirements shipped. Archives created at `.planning/milestones/v1.5-ROADMAP.md` and `.planning/milestones/v1.5-REQUIREMENTS.md`. ROADMAP.md reorganized with v1.5 collapsed. PROJECT.md evolved with v1.5 validated requirements and Slack key decisions.
+Quick task 6 completed: created remote MCP proxy server (src/mcp/remote/) and self-contained client distribution package (dist/wood-fired-bugs-client.zip, 4.8MB). Any developer on the LAN can now unzip and run setup.ps1/setup.sh to get full /tasks:* access via Claude Code.
 
 **What's Next:**
 Start next milestone with `/gsd:new-milestone`.
