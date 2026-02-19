@@ -50,7 +50,7 @@ required_files=(
     "client-package/setup.ps1"
     "client-package/setup.sh"
     "client-package/README.md"
-    "dist/cli/bin/tasks.js"
+    "dist/cli/bin/tasks-client.js"
 )
 
 for f in "${required_files[@]}"; do
@@ -115,11 +115,45 @@ if [[ -d "$PROJECT_ROOT/dist/types" ]]; then
     cp "$PROJECT_ROOT/dist/types/"*.js.map     "$MCP_SERVER_DIR/dist/types/" 2>/dev/null || true
 fi
 
-# CLI compiled JS (full tree under dist/cli/)
-if [[ -d "$PROJECT_ROOT/dist/cli" ]]; then
-    echo "  Copying CLI..."
-    cp -r "$PROJECT_ROOT/dist/cli" "$MCP_SERVER_DIR/dist/cli"
-fi
+# CLI compiled JS (client-safe commands only, no better-sqlite3 deps)
+echo "  Copying CLI (client commands only)..."
+mkdir -p "$MCP_SERVER_DIR/dist/cli/bin"
+mkdir -p "$MCP_SERVER_DIR/dist/cli/commands"
+mkdir -p "$MCP_SERVER_DIR/dist/cli/api"
+mkdir -p "$MCP_SERVER_DIR/dist/cli/config"
+mkdir -p "$MCP_SERVER_DIR/dist/cli/output"
+mkdir -p "$MCP_SERVER_DIR/dist/cli/prompts"
+
+# Client entry point
+cp "$PROJECT_ROOT/dist/cli/bin/tasks-client.js"     "$MCP_SERVER_DIR/dist/cli/bin/"
+cp "$PROJECT_ROOT/dist/cli/bin/tasks-client.js.map"  "$MCP_SERVER_DIR/dist/cli/bin/" 2>/dev/null || true
+
+# All commands EXCEPT server-only ones (backup, doctor, stats, db-check)
+for f in "$PROJECT_ROOT/dist/cli/commands/"*.js; do
+    basename=$(basename "$f")
+    case "$basename" in
+        backup.js|doctor.js|stats.js|db-check.js) continue ;;
+        *) cp "$f" "$MCP_SERVER_DIR/dist/cli/commands/" ;;
+    esac
+done
+# Also copy .js.map for the included commands
+for f in "$PROJECT_ROOT/dist/cli/commands/"*.js.map; do
+    basename=$(basename "$f" .js.map)
+    case "$basename" in
+        backup|doctor|stats|db-check) continue ;;
+        *) cp "$f" "$MCP_SERVER_DIR/dist/cli/commands/" 2>/dev/null || true ;;
+    esac
+done
+
+# API client, config, output, prompts (all safe for remote use)
+cp "$PROJECT_ROOT/dist/cli/api/"*.js      "$MCP_SERVER_DIR/dist/cli/api/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/api/"*.js.map  "$MCP_SERVER_DIR/dist/cli/api/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/config/"*.js     "$MCP_SERVER_DIR/dist/cli/config/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/config/"*.js.map "$MCP_SERVER_DIR/dist/cli/config/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/output/"*.js     "$MCP_SERVER_DIR/dist/cli/output/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/output/"*.js.map "$MCP_SERVER_DIR/dist/cli/output/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/prompts/"*.js     "$MCP_SERVER_DIR/dist/cli/prompts/" 2>/dev/null || true
+cp "$PROJECT_ROOT/dist/cli/prompts/"*.js.map "$MCP_SERVER_DIR/dist/cli/prompts/" 2>/dev/null || true
 
 # Create a minimal package.json for the MCP server
 # Includes runtime dependencies for both MCP server and CLI

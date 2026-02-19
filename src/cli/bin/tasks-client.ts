@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+/**
+ * Client CLI entry point for remote machines.
+ *
+ * Identical to tasks.ts but excludes commands that require local SQLite access:
+ * backup, doctor, stats, db-check.
+ */
+import { program } from 'commander';
+import { createCommand } from '../commands/create.js';
+import { listCommand } from '../commands/list.js';
+import { updateCommand } from '../commands/update.js';
+import { deleteCommand } from '../commands/delete.js';
+import { showCommand } from '../commands/show.js';
+import { projectCreateCommand } from '../commands/project-create.js';
+import { projectListCommand } from '../commands/project-list.js';
+import { projectShowCommand } from '../commands/project-show.js';
+import { projectUpdateCommand } from '../commands/project-update.js';
+import { projectDeleteCommand } from '../commands/project-delete.js';
+import { depAddCommand } from '../commands/dep-add.js';
+import { depRemoveCommand } from '../commands/dep-remove.js';
+import { depListCommand } from '../commands/dep-list.js';
+import { commentAddCommand } from '../commands/comment-add.js';
+import { commentListCommand } from '../commands/comment-list.js';
+import { commentDeleteCommand } from '../commands/comment-delete.js';
+import { subtaskCreateCommand } from '../commands/subtask-create.js';
+import { subtaskListCommand } from '../commands/subtask-list.js';
+import { healthCommand } from '../commands/health.js';
+import { claimCommand } from '../commands/claim.js';
+import { completionsCommand } from '../commands/completions.js';
+
+program
+  .name('tasks')
+  .description('Wood Fired Bugs - Task management CLI (remote client)')
+  .version('1.0.0');
+
+program.option('--json', 'Output as JSON (machine-readable)');
+program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
+program.option('--force', 'Skip confirmation prompts for destructive actions');
+
+program.addCommand(createCommand);
+program.addCommand(listCommand);
+program.addCommand(updateCommand);
+program.addCommand(deleteCommand);
+program.addCommand(showCommand);
+program.addCommand(projectCreateCommand);
+program.addCommand(projectListCommand);
+program.addCommand(projectShowCommand);
+program.addCommand(projectUpdateCommand);
+program.addCommand(projectDeleteCommand);
+program.addCommand(depAddCommand);
+program.addCommand(depRemoveCommand);
+program.addCommand(depListCommand);
+program.addCommand(commentAddCommand);
+program.addCommand(commentListCommand);
+program.addCommand(commentDeleteCommand);
+program.addCommand(subtaskCreateCommand);
+program.addCommand(subtaskListCommand);
+program.addCommand(claimCommand);
+program.addCommand(healthCommand);
+program.addCommand(completionsCommand);
+
+program.parseAsync(process.argv);
