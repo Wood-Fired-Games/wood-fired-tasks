@@ -14,7 +14,7 @@ See: .planning/PROJECT.md (updated 2026-02-18)
 
 **Milestone:** v1.5 Slack Integration — SHIPPED and ARCHIVED
 **Status:** Between milestones
-**Last activity:** 2026-02-18 — v1.5 archived to .planning/milestones/
+**Last activity:** 2026-02-19 — Completed quick task 5: MCP server startup reliability
 
 **Progress:**
 [██████████] 100%
@@ -50,6 +50,12 @@ None — between milestones.
 ### Blockers
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 5 | MCP server startup reliability — exclusive migration lock + retry on transient SQLite errors | 2026-02-19 | 63434ad | [5-review-mcp-server-startup-reliability-an](./quick/5-review-mcp-server-startup-reliability-an/) |
 
 ## Session Continuity
 
