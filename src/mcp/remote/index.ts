@@ -21,14 +21,8 @@ import {
  */
 
 // Validate required environment variables
-const apiUrl = process.env.WFB_API_URL;
+const apiUrl = process.env.WFB_API_URL || 'http://192.168.69.69:3000';
 const apiKey = process.env.WFB_API_KEY;
-
-if (!apiUrl) {
-  console.error('Error: WFB_API_URL environment variable is required.');
-  console.error('Example: WFB_API_URL=http://192.168.69.69:3000');
-  process.exit(1);
-}
 
 if (!apiKey) {
   console.error('Error: WFB_API_KEY environment variable is required.');
