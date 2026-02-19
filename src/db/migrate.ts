@@ -77,10 +77,22 @@ function createUmzug(db: Database.Database): Umzug<Database.Database> {
 
 /**
  * Run all pending migrations.
+ *
+ * Uses BEGIN EXCLUSIVE to serialize concurrent migration runs — only one process
+ * at a time can discover-and-apply pending migrations. If a second process starts
+ * while the first holds the exclusive lock, it waits (up to busy_timeout) then
+ * runs umzug.up() itself, which finds no pending migrations and returns immediately.
  */
 export async function runMigrations(db: Database.Database): Promise<void> {
-  const umzug = createUmzug(db);
-  await umzug.up();
+  db.exec('BEGIN EXCLUSIVE');
+  try {
+    const umzug = createUmzug(db);
+    await umzug.up();
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 /**
