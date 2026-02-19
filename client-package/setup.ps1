@@ -148,17 +148,50 @@ $settings['mcpServers']['wood-fired-bugs'] = @{
 $settings | ConvertTo-Json -Depth 10 | Set-Content -Path $SettingsPath -Encoding UTF8
 Write-Host "OK: Updated $SettingsPath" -ForegroundColor Green
 
-# ── 5. Done ─────────────────────────────────────────────────────────────────
+# ── 5. Install tasks CLI to PATH ────────────────────────────────────────────
+Write-Host ""
+Write-Host "Installing tasks CLI..." -ForegroundColor Yellow
+
+$BinDir = Join-Path $PackageDir "bin"
+if (-not (Test-Path $BinDir)) {
+    New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+}
+
+# Create tasks.cmd wrapper that sets env vars and runs the CLI
+$CliEntryPoint = Join-Path $McpServerPath "dist\cli\bin\tasks.js"
+$TasksCmd = Join-Path $BinDir "tasks.cmd"
+@"
+@echo off
+set "API_BASE_URL=$ServerUrl"
+set "API_KEY=$ApiKey"
+node "$CliEntryPoint" %*
+"@ | Set-Content -Path $TasksCmd -Encoding ASCII
+
+# Add bin dir to user PATH if not already there
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($UserPath -notlike "*$BinDir*") {
+    [Environment]::SetEnvironmentVariable("Path", "$UserPath;$BinDir", "User")
+    Write-Host "OK: Added $BinDir to user PATH" -ForegroundColor Green
+    Write-Host "    (Open a new terminal for PATH to take effect)" -ForegroundColor Yellow
+} else {
+    Write-Host "OK: $BinDir already in PATH" -ForegroundColor Green
+}
+
+Write-Host "OK: tasks CLI installed" -ForegroundColor Green
+
+# ── 6. Done ─────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Setup complete!" -ForegroundColor Green
 Write-Host ""
-Write-Host "To verify the connection, open a terminal and run:" -ForegroundColor Cyan
-Write-Host "  node `"$McpEntryPointNormalized`"" -ForegroundColor White
+Write-Host "Open a NEW terminal, then try:" -ForegroundColor Cyan
+Write-Host "  tasks list             List all tasks" -ForegroundColor White
+Write-Host "  tasks show 1           Show task details" -ForegroundColor White
+Write-Host "  tasks create           Create a task interactively" -ForegroundColor White
 Write-Host ""
-Write-Host "Open Claude Code in any project and try:" -ForegroundColor Cyan
+Write-Host "In Claude Code, try:" -ForegroundColor Cyan
 Write-Host "  /tasks:my-work" -ForegroundColor White
 Write-Host ""
-Write-Host "Available commands:" -ForegroundColor Cyan
+Write-Host "Available /tasks: commands:" -ForegroundColor Cyan
 Write-Host "  /tasks:create-task    Create a new task"
 Write-Host "  /tasks:my-work        List your assigned tasks"
 Write-Host "  /tasks:pick-up        Pick up a task to work on"

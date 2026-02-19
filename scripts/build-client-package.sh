@@ -4,6 +4,7 @@
 # The zip contains:
 #   wood-fired-bugs-client/
 #     README.md
+#     setup.bat
 #     setup.ps1
 #     setup.sh
 #     commands/tasks/*.md          (10 skill files)
@@ -11,9 +12,9 @@
 #       dist/mcp/remote/*.js       (remote MCP server)
 #       dist/mcp/resources/*.js    (events resource)
 #       dist/mcp/errors.js         (error conversion)
+#       dist/cli/                  (CLI compiled JS)
 #       dist/schemas/*.js          (Zod schemas)
-#       node_modules/@modelcontextprotocol/
-#       node_modules/zod/
+#       node_modules/              (runtime dependencies)
 #       package.json
 
 set -e
@@ -45,9 +46,11 @@ required_files=(
     "dist/schemas/task.schema.js"
     "node_modules/@modelcontextprotocol/sdk"
     "node_modules/zod"
+    "client-package/setup.bat"
     "client-package/setup.ps1"
     "client-package/setup.sh"
     "client-package/README.md"
+    "dist/cli/bin/tasks.js"
 )
 
 for f in "${required_files[@]}"; do
@@ -80,6 +83,7 @@ echo "Copying files..."
 
 # Top-level package files
 cp "$PROJECT_ROOT/client-package/README.md"  "$PACKAGE_DIR/"
+cp "$PROJECT_ROOT/client-package/setup.bat"  "$PACKAGE_DIR/"
 cp "$PROJECT_ROOT/client-package/setup.ps1"  "$PACKAGE_DIR/"
 cp "$PROJECT_ROOT/client-package/setup.sh"   "$PACKAGE_DIR/"
 chmod +x "$PACKAGE_DIR/setup.sh"
@@ -111,20 +115,36 @@ if [[ -d "$PROJECT_ROOT/dist/types" ]]; then
     cp "$PROJECT_ROOT/dist/types/"*.js.map     "$MCP_SERVER_DIR/dist/types/" 2>/dev/null || true
 fi
 
+# CLI compiled JS (full tree under dist/cli/)
+if [[ -d "$PROJECT_ROOT/dist/cli" ]]; then
+    echo "  Copying CLI..."
+    cp -r "$PROJECT_ROOT/dist/cli" "$MCP_SERVER_DIR/dist/cli"
+fi
+
 # Create a minimal package.json for the MCP server
-# Only includes the two runtime dependencies needed: MCP SDK and zod
+# Includes runtime dependencies for both MCP server and CLI
 MCP_PKG_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/@modelcontextprotocol/sdk/package.json'); console.log(p.version)")
 ZOD_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/zod/package.json'); console.log(p.version)")
+CHALK_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/chalk/package.json'); console.log(p.version)")
+CLITABLE_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/cli-table3/package.json'); console.log(p.version)")
+COMMANDER_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/commander/package.json'); console.log(p.version)")
+DOTENV_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/dotenv/package.json'); console.log(p.version)")
+CLACK_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/@clack/prompts/package.json'); console.log(p.version)")
 
 cat > "$MCP_SERVER_DIR/package.json" <<PKGJSON
 {
-  "name": "wood-fired-bugs-mcp-remote",
+  "name": "wood-fired-bugs-client",
   "version": "1.0.0",
   "type": "module",
   "private": true,
   "dependencies": {
     "@modelcontextprotocol/sdk": "$MCP_PKG_VERSION",
-    "zod": "$ZOD_VERSION"
+    "zod": "$ZOD_VERSION",
+    "@clack/prompts": "$CLACK_VERSION",
+    "chalk": "$CHALK_VERSION",
+    "cli-table3": "$CLITABLE_VERSION",
+    "commander": "$COMMANDER_VERSION",
+    "dotenv": "$DOTENV_VERSION"
   }
 }
 PKGJSON
