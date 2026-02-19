@@ -1,5 +1,10 @@
 import { App } from '@slack/bolt';
-import type { Logger } from 'pino';
+/** Minimal logger interface compatible with both pino.Logger and FastifyBaseLogger */
+interface MinimalLogger {
+  info(msg: string, ...args: unknown[]): void;
+  error(msg: string, ...args: unknown[]): void;
+  warn(msg: string, ...args: unknown[]): void;
+}
 
 /**
  * SlackService — wraps the @slack/bolt App with lifecycle management.
@@ -19,7 +24,7 @@ export class SlackService {
   constructor(
     private readonly botToken: string | undefined,
     private readonly appToken: string | undefined,
-    private readonly logger: Logger
+    private readonly logger: MinimalLogger
   ) {}
 
   async start(): Promise<void> {
