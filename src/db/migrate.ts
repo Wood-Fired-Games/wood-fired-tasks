@@ -9,7 +9,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
+ * Normalize a migration name to a canonical form without file extension.
+ * This ensures migrations recorded as .ts (dev via tsx) are recognized
+ * when running from compiled .js (dist/), and vice versa.
+ */
+function canonicalName(name: string): string {
+  return name.replace(/\.[tj]s$/, '');
+}
+
+/**
  * Custom Umzug storage that uses SQLite to track migrations.
+ *
+ * Migration names are stored and compared WITHOUT file extensions so that
+ * .ts (dev/test via tsx) and .js (production via dist/) are treated as
+ * the same migration. This prevents re-running migrations when switching
+ * between dev and compiled execution modes.
  */
 class SQLiteStorage implements UmzugStorage {
   private db: Database.Database;
@@ -17,6 +31,7 @@ class SQLiteStorage implements UmzugStorage {
   constructor(db: Database.Database) {
     this.db = db;
     this.ensureMigrationsTable();
+    this.normalizeExistingEntries();
   }
 
   private ensureMigrationsTable() {
@@ -28,12 +43,28 @@ class SQLiteStorage implements UmzugStorage {
     `);
   }
 
+  /**
+   * One-time fixup: rename any legacy entries that have .ts/.js extensions
+   * to their canonical (extensionless) form. This is idempotent — if entries
+   * are already canonical, the UPDATE matches zero rows.
+   */
+  private normalizeExistingEntries() {
+    const rows = this.db.prepare('SELECT name FROM _migrations').all() as { name: string }[];
+    const update = this.db.prepare('UPDATE _migrations SET name = ? WHERE name = ?');
+    for (const row of rows) {
+      const canonical = canonicalName(row.name);
+      if (canonical !== row.name) {
+        update.run(canonical, row.name);
+      }
+    }
+  }
+
   async logMigration({ name }: { name: string }): Promise<void> {
-    this.db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(name);
+    this.db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(canonicalName(name));
   }
 
   async unlogMigration({ name }: { name: string }): Promise<void> {
-    this.db.prepare('DELETE FROM _migrations WHERE name = ?').run(name);
+    this.db.prepare('DELETE FROM _migrations WHERE name = ?').run(canonicalName(name));
   }
 
   async executed(): Promise<string[]> {
@@ -53,7 +84,8 @@ function createUmzug(db: Database.Database): Umzug<Database.Database> {
     migrations: {
       glob: join(__dirname, 'migrations', `*.${ext}`),
       resolve: ({ name, path }) => ({
-        name,
+        // Use canonical (extensionless) name so .ts and .js are treated identically
+        name: canonicalName(name),
         up: async () => {
           const migration = await import(path!);
           return migration.up(db);
