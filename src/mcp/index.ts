@@ -34,6 +34,44 @@ async function main() {
   console.error('Wood Fired Bugs MCP Server running on stdio');
 }
 
+/**
+ * Returns true for transient SQLite contention errors that are safe to retry.
+ */
+function isTransientError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    message.includes('SQLITE_BUSY') ||
+    message.includes('SQLITE_LOCKED') ||
+    message.includes('BEGIN EXCLUSIVE')
+  );
+}
+
+/**
+ * Wraps main() with retry logic for transient SQLite contention errors.
+ *
+ * During concurrent MCP server startups, the exclusive migration lock may
+ * cause SQLITE_BUSY. Retrying up to 3 times (500ms apart) handles the window
+ * between busy_timeout expiry and Claude Code's connection timeout.
+ */
+async function mainWithRetry(maxAttempts = 3, delayMs = 500): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await main();
+      return;
+    } catch (err) {
+      if (isTransientError(err) && attempt < maxAttempts) {
+        console.error(
+          `MCP startup attempt ${attempt} failed (transient), retrying...`,
+          err instanceof Error ? err.message : String(err)
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // Global error handlers
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
@@ -45,8 +83,8 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
-// Run main function
-main().catch((error) => {
-  console.error('Fatal error:', error);
+// Run main function with retry for transient SQLite contention errors
+mainWithRetry().catch((error) => {
+  console.error('Fatal error during MCP startup:', error);
   process.exit(1);
 });
