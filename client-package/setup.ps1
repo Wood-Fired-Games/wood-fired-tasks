@@ -158,7 +158,7 @@ if (-not (Test-Path $BinDir)) {
 }
 
 # Create tasks.cmd wrapper that sets env vars and runs the CLI
-$CliEntryPoint = Join-Path $McpServerPath "dist\cli\bin\tasks.js"
+$CliEntryPoint = Join-Path $McpServerPath "dist\cli\bin\tasks-client.js"
 $TasksCmd = Join-Path $BinDir "tasks.cmd"
 @"
 @echo off
