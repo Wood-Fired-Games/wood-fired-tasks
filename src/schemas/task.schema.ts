@@ -65,6 +65,51 @@ export const TaskFiltersSchema = z.object({
 export type TaskFiltersInput = z.infer<typeof TaskFiltersSchema>;
 
 /**
+ * ListTasksMcpSchema - filters plus MCP-only knobs.
+ *
+ * `verbose` opts back into full task bodies (description + audit fields).
+ * Default response is a compact projection to keep MCP tool result payloads
+ * within reasonable token budgets — full data is still available via get_task.
+ */
+export const ListTasksMcpSchema = TaskFiltersSchema.extend({
+  verbose: z.boolean().optional(),
+});
+
+export type ListTasksMcpInput = z.infer<typeof ListTasksMcpSchema>;
+
+/**
+ * Strip heavy/audit fields from a task for use in list responses. Keeps the
+ * fields a caller needs to decide whether to drill into a task with get_task.
+ *
+ * `parent_task_id` is optional because the remote REST TaskResponse does not
+ * surface it; in-process Task does. The compact projection includes it when
+ * present so callers can still see hierarchy.
+ */
+export function toCompactTask<T extends {
+  id: number;
+  title: string;
+  status: string;
+  priority: string;
+  project_id: number;
+  assignee: string | null;
+  due_date: string | null;
+  tags: string[];
+  parent_task_id?: number | null;
+}>(task: T) {
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    project_id: task.project_id,
+    parent_task_id: task.parent_task_id ?? null,
+    assignee: task.assignee,
+    due_date: task.due_date,
+    tags: task.tags,
+  };
+}
+
+/**
  * ClaimTaskSchema - validation for claiming a task
  */
 export const ClaimTaskSchema = z.object({
