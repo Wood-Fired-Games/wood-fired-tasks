@@ -5,8 +5,9 @@ import { RestClient } from './rest-client.js';
 import {
   CreateTaskSchema,
   UpdateTaskSchema,
-  TaskFiltersSchema,
+  ListTasksMcpSchema,
   CreateProjectSchema,
+  toCompactTask,
 } from '../../schemas/task.schema.js';
 
 /**
@@ -131,12 +132,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     'list_tasks',
     {
       description:
-        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, search)',
-      inputSchema: TaskFiltersSchema,
+        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, search). Returns compact task summaries by default; pass verbose=true to include description and audit fields.',
+      inputSchema: ListTasksMcpSchema,
     },
     async (args) => {
       try {
-        const tasks = await client.listTasks(args as unknown as import('../../cli/api/types.js').TaskFilters);
+        const { verbose, ...filters } = args;
+        const tasks = await client.listTasks(filters as unknown as import('../../cli/api/types.js').TaskFilters);
         if (tasks.length === 0) {
           return {
             content: [
@@ -154,6 +156,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             `- [${task.id}] ${task.title} (${task.status}, ${task.priority})`
           );
         });
+        const payloadTasks = verbose ? tasks : tasks.map(toCompactTask);
         return {
           content: [
             {
@@ -161,7 +164,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: { tasks } as unknown as { [x: string]: unknown },
+          structuredContent: { tasks: payloadTasks } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         throw new McpError(

@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TaskService } from '../../services/task.service.js';
 import { ProjectService } from '../../services/project.service.js';
-import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema } from '../../schemas/task.schema.js';
+import { CreateTaskSchema, UpdateTaskSchema, ListTasksMcpSchema, toCompactTask } from '../../schemas/task.schema.js';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { convertToMcpError } from '../errors.js';
@@ -134,14 +134,15 @@ export function registerTaskTools(
     'list_tasks',
     {
       description:
-        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, search)',
-      inputSchema: TaskFiltersSchema,
+        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, search). Returns compact task summaries by default; pass verbose=true to include description and audit fields.',
+      inputSchema: ListTasksMcpSchema,
     },
     async (args) => {
       const traceId = randomUUID();
       console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'start', timestamp: new Date().toISOString() }));
       try {
-        const tasks = taskService.listTasks(args);
+        const { verbose, ...filters } = args;
+        const tasks = taskService.listTasks(filters);
 
         if (tasks.length === 0) {
           console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
@@ -163,6 +164,8 @@ export function registerTaskTools(
           );
         });
 
+        const payloadTasks = verbose ? tasks : tasks.map(toCompactTask);
+
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
         return {
           content: [
@@ -171,7 +174,7 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: { tasks } as unknown as { [x: string]: unknown },
+          structuredContent: { tasks: payloadTasks } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'list_tasks', event: 'error', error: error instanceof Error ? error.message : String(error) }));
