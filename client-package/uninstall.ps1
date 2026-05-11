@@ -32,41 +32,20 @@ if (Test-Path $ClaudeCommandsDir) {
     Write-Host "OK: Skills directory not found (already removed)" -ForegroundColor Green
 }
 
-# ── 2. Remove MCP server from Claude Code settings ───────────────────────────
+# ── 2. Remove MCP server from Claude Code ────────────────────────────────────
 Write-Host ""
-Write-Host "Removing MCP server from Claude Code settings..." -ForegroundColor Yellow
+Write-Host "Removing MCP server from Claude Code..." -ForegroundColor Yellow
 
-$SettingsPath = Join-Path $env:USERPROFILE ".claude\settings.json"
-if (Test-Path $SettingsPath) {
-    $tempScript = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "wfb-uninstall.js")
-
-@"
-const fs = require('fs');
-const settingsPath = process.argv[1];
-try {
-    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    if (settings.mcpServers && settings.mcpServers['wood-fired-bugs']) {
-        delete settings.mcpServers['wood-fired-bugs'];
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
-        console.log('REMOVED');
-    } else {
-        console.log('NOT_FOUND');
-    }
-} catch(e) {
-    console.log('NOT_FOUND');
-}
-"@ | Set-Content -Path $tempScript -Encoding UTF8
-
-    $result = & node "$tempScript" "$SettingsPath" 2>&1
-    Remove-Item $tempScript -ErrorAction SilentlyContinue
-
-    if ($result -match "REMOVED") {
-        Write-Host "OK: Removed wood-fired-bugs from $SettingsPath" -ForegroundColor Green
+if (Get-Command claude -ErrorAction SilentlyContinue) {
+    $removeOutput = & claude mcp remove wood-fired-bugs --scope user 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "OK: Removed wood-fired-bugs (user scope)" -ForegroundColor Green
     } else {
         Write-Host "OK: MCP server entry not found (already removed)" -ForegroundColor Green
     }
 } else {
-    Write-Host "OK: No settings.json found" -ForegroundColor Green
+    Write-Host "WARNING: 'claude' CLI not found on PATH; skipping MCP removal." -ForegroundColor Yellow
+    Write-Host "         If installed previously, run: claude mcp remove wood-fired-bugs --scope user" -ForegroundColor Yellow
 }
 
 # ── 3. Remove tasks.cmd ──────────────────────────────────────────────────────

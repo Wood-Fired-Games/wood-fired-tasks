@@ -55,7 +55,6 @@ MCP_ENTRY_POINT="$MCP_SERVER_DIR/dist/mcp/remote/index.js"
 SKILLS_SOURCE="$SCRIPT_DIR/commands/tasks"
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_COMMANDS_DIR="$CLAUDE_DIR/commands/tasks"
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 
 echo ""
 echo "Wood Fired Bugs - Client Setup"
@@ -110,67 +109,30 @@ done
 
 echo "OK: Installed $SKILL_COUNT skill files"
 
-# ── 4. Configure Claude Code settings ────────────────────────────────────────
+# ── 4. Register MCP server with Claude Code ──────────────────────────────────
 echo ""
-echo "Configuring Claude Code MCP server..."
+echo "Registering MCP server with Claude Code..."
 
-mkdir -p "$CLAUDE_DIR"
-
-# Build the MCP server config JSON snippet
-MCP_CONFIG=$(cat <<EOF
-{
-  "command": "node",
-  "args": ["$MCP_ENTRY_POINT"],
-  "env": {
-    "WFB_API_URL": "$SERVER_URL",
-    "WFB_API_KEY": "$API_KEY"
-  }
-}
-EOF
-)
-
-# Update or create settings.json
-if [[ -f "$SETTINGS_FILE" ]]; then
-    # Try jq first (cleaner)
-    if command -v jq &>/dev/null; then
-        UPDATED=$(jq --argjson mcpConfig "$MCP_CONFIG" \
-            '.mcpServers["wood-fired-bugs"] = $mcpConfig' \
-            "$SETTINGS_FILE" 2>/dev/null) || true
-
-        if [[ -n "$UPDATED" ]]; then
-            echo "$UPDATED" > "$SETTINGS_FILE"
-        else
-            echo "WARNING: Could not parse settings.json with jq, creating backup and replacing..."
-            cp "$SETTINGS_FILE" "${SETTINGS_FILE}.bak"
-            echo "{\"mcpServers\":{\"wood-fired-bugs\":$MCP_CONFIG}}" > "$SETTINGS_FILE"
-        fi
-    else
-        # Fallback: Python one-liner
-        python3 -c "
-import json, sys
-with open('$SETTINGS_FILE', 'r') as f:
-    try:
-        s = json.load(f)
-    except:
-        s = {}
-if 'mcpServers' not in s:
-    s['mcpServers'] = {}
-s['mcpServers']['wood-fired-bugs'] = json.loads('''$MCP_CONFIG''')
-with open('$SETTINGS_FILE', 'w') as f:
-    json.dump(s, f, indent=2)
-" 2>/dev/null || {
-            # Last resort: overwrite
-            echo "WARNING: Could not update existing settings.json, creating backup..."
-            cp "$SETTINGS_FILE" "${SETTINGS_FILE}.bak"
-            echo "{\"mcpServers\":{\"wood-fired-bugs\":$MCP_CONFIG}}" > "$SETTINGS_FILE"
-        }
-    fi
-else
-    # No existing settings file — create fresh
-    echo "{\"mcpServers\":{\"wood-fired-bugs\":$MCP_CONFIG}}" > "$SETTINGS_FILE"
+if ! command -v claude &>/dev/null; then
+    echo "ERROR: 'claude' CLI not found on PATH."
+    echo "Install Claude Code from https://claude.ai/claude-code and reopen this terminal."
+    exit 1
 fi
 
-echo "OK: Updated $SETTINGS_FILE"
+# Remove any prior user-scope entry so re-running setup is idempotent.
+# 'claude mcp remove' exits non-zero when the entry is absent — that's fine.
+claude mcp remove wood-fired-bugs --scope user >/dev/null 2>&1 || true
+
+if ! claude mcp add wood-fired-bugs \
+    --scope user \
+    -e "WFB_API_URL=$SERVER_URL" \
+    -e "WFB_API_KEY=$API_KEY" \
+    -- node "$MCP_ENTRY_POINT"; then
+    echo "ERROR: 'claude mcp add' failed."
+    exit 1
+fi
+
+echo "OK: Registered wood-fired-bugs at user scope (~/.claude.json)"
 
 # ── 5. Done ───────────────────────────────────────────────────────────────────
 echo ""
