@@ -193,8 +193,17 @@ Press Ctrl+C to exit.
 ### MCP server not found in Claude Code
 
 1. Restart Claude Code after running setup
-2. Check `~/.claude/settings.json` (Linux/Mac) or `%USERPROFILE%\.claude\settings.json` (Windows)
-3. Verify the `mcpServers.wood-fired-bugs` entry exists with correct paths
+2. Run `claude mcp list` and confirm `wood-fired-bugs` appears with status `✓ Connected`
+3. If missing, re-register manually:
+
+   ```
+   claude mcp add wood-fired-bugs --scope user \
+     -e WFB_API_URL=http://192.168.69.69:3000 \
+     -e WFB_API_KEY=YOUR_KEY \
+     -- node /absolute/path/to/mcp-server/dist/mcp/remote/index.js
+   ```
+
+   The entry lives in `~/.claude.json` (not `~/.claude/settings.json`).
 
 ### Skills not appearing
 

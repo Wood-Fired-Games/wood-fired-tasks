@@ -32,3 +32,6 @@ reports/
 # Environment
 .env
 .env.local
+
+# Client install artifacts (tasks.cmd shim contains API key)
+/bin/

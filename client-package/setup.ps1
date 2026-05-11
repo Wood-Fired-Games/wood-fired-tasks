@@ -101,58 +101,30 @@ foreach ($file in $SkillFiles) {
 
 Write-Host "OK: Installed $($SkillFiles.Count) skill files" -ForegroundColor Green
 
-# ── 4. Configure Claude Code settings ───────────────────────────────────────
+# ── 4. Register MCP server with Claude Code ─────────────────────────────────
 Write-Host ""
-Write-Host "Configuring Claude Code MCP server..." -ForegroundColor Yellow
+Write-Host "Registering MCP server with Claude Code..." -ForegroundColor Yellow
 
-$ClaudeDir = Join-Path $env:USERPROFILE ".claude"
-if (-not (Test-Path $ClaudeDir)) {
-    New-Item -ItemType Directory -Path $ClaudeDir -Force | Out-Null
-}
-
-$SettingsPath = Join-Path $ClaudeDir "settings.json"
-
-# Normalize McpEntryPoint to forward slashes for JSON
-$McpEntryPointNormalized = $McpEntryPoint -replace '\\', '/'
-
-# Build the MCP server entry as a JSON string (avoids PS 5.1 hashtable issues)
-$mcpEntry = @"
-{
-    "command": "node",
-    "args": ["$McpEntryPointNormalized"],
-    "env": {
-        "WFB_API_URL": "$ServerUrl",
-        "WFB_API_KEY": "$ApiKey"
-    }
-}
-"@
-
-# Use node via temp files to merge into settings.json (avoids PS argument-passing issues)
-$tempScript = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "wfb-setup-merge.js")
-$tempMcpJson = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "wfb-setup-mcp.json")
-
-$mcpEntry | Set-Content -Path $tempMcpJson -Encoding UTF8
-
-@"
-const fs = require('fs');
-const settingsPath = process.argv[1];
-const mcpEntry = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-let settings = {};
-try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch(e) {}
-if (!settings.mcpServers) settings.mcpServers = {};
-settings.mcpServers['wood-fired-bugs'] = mcpEntry;
-fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
-console.log('OK');
-"@ | Set-Content -Path $tempScript -Encoding UTF8
-
-$result = & node "$tempScript" "$SettingsPath" "$tempMcpJson" 2>&1
-Remove-Item $tempScript -ErrorAction SilentlyContinue
-Remove-Item $tempMcpJson -ErrorAction SilentlyContinue
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Failed to update settings.json: $result" -ForegroundColor Red
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: 'claude' CLI not found on PATH." -ForegroundColor Red
+    Write-Host "Install Claude Code from https://claude.ai/claude-code and reopen this terminal." -ForegroundColor Red
     exit 1
 }
-Write-Host "OK: Updated $SettingsPath" -ForegroundColor Green
+
+# Remove any prior user-scope entry so re-running setup is idempotent.
+# 'claude mcp remove' exits non-zero when the entry is absent — that's fine.
+& claude mcp remove wood-fired-bugs --scope user 2>&1 | Out-Null
+
+& claude mcp add wood-fired-bugs `
+    --scope user `
+    -e "WFB_API_URL=$ServerUrl" `
+    -e "WFB_API_KEY=$ApiKey" `
+    -- node $McpEntryPoint
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: 'claude mcp add' failed (exit code $LASTEXITCODE)." -ForegroundColor Red
+    exit 1
+}
+Write-Host "OK: Registered wood-fired-bugs at user scope (~/.claude.json)" -ForegroundColor Green
 
 # ── 5. Install tasks CLI to PATH ────────────────────────────────────────────
 Write-Host ""
