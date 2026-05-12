@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Network-wide task tracking system for Wood Fired Games",
   "type": "module",
-  "main": "index.js",
+  "main": "dist/index.js",
   "bin": {
     "tasks": "./dist/cli/bin/tasks.js"
   },
@@ -44,6 +44,7 @@
   "devDependencies": {
     "@fast-check/vitest": "^0.2.4",
     "@slack/types": "^2.20.0",
+    "@slack/web-api": "^7.15.2",
     "@stryker-mutator/core": "^9.5.1",
     "@stryker-mutator/typescript-checker": "^9.5.1",
     "@stryker-mutator/vitest-runner": "^9.5.1",
