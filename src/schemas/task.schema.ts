@@ -117,3 +117,31 @@ export const ClaimTaskSchema = z.object({
 });
 
 export type ClaimTaskInput = z.infer<typeof ClaimTaskSchema>;
+
+/**
+ * CompletionReportSchema - validation for `getCompletionReport`.
+ *
+ * Caller supplies EITHER `days` (trailing N days from now, max 365) OR an
+ * explicit `start`/`end` pair (both ISO8601, end >= start). Optional
+ * `project_id` and `assignee` filters narrow the result set.
+ */
+export const CompletionReportSchema = z
+  .object({
+    days: z.number().int().min(1).max(365).optional(),
+    start: z.string().datetime().optional(),
+    end: z.string().datetime().optional(),
+    project_id: z.number().int().positive().optional(),
+    assignee: z.string().min(1).max(100).optional(),
+  })
+  .refine(
+    (v) => v.days !== undefined || (v.start !== undefined && v.end !== undefined),
+    { message: 'Provide either `days` or both `start` and `end`' }
+  )
+  .refine(
+    (v) =>
+      v.days !== undefined ||
+      (v.start !== undefined && v.end !== undefined && v.end >= v.start),
+    { message: '`end` must be greater than or equal to `start`' }
+  );
+
+export type CompletionReportInput = z.infer<typeof CompletionReportSchema>;

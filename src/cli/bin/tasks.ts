@@ -23,6 +23,7 @@ import { claimCommand } from '../commands/claim.js';
 import { backupCommand } from '../commands/backup.js';
 import { doctorCommand } from '../commands/doctor.js';
 import { statsCommand } from '../commands/stats.js';
+import { completedCommand } from '../commands/completed.js';
 import { dbCheckCommand } from '../commands/db-check.js';
 import { completionsCommand } from '../commands/completions.js';
 
@@ -78,6 +79,7 @@ program.addCommand(backupCommand);
 // Register diagnostic commands
 program.addCommand(doctorCommand);
 program.addCommand(statsCommand);
+program.addCommand(completedCommand);
 program.addCommand(dbCheckCommand);
 
 // Register completions command

@@ -20,6 +20,13 @@ export interface IProjectRepository {
   delete(id: number): void;
 }
 
+export interface CompletionRangeFilters {
+  start: string; // ISO8601 inclusive
+  end: string; // ISO8601 inclusive
+  project_id?: number;
+  assignee?: string;
+}
+
 export interface ITaskRepository {
   create(dto: CreateTaskDTO, tags?: string[]): Task & { tags: string[] };
   findById(id: number): (Task & { tags: string[] }) | null;
@@ -30,6 +37,9 @@ export interface ITaskRepository {
   findChildren(parentId: number): Array<Task & { tags: string[] }>;
   count(filters?: TaskFilters): number;
   claimTask(id: number, assignee: string): (Task & { tags: string[] }) | null;
+  findCompletedInRange(
+    filters: CompletionRangeFilters
+  ): Array<Task & { tags: string[] }>;
 }
 
 export interface IDependencyRepository {
