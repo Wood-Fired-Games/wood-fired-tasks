@@ -59,6 +59,8 @@ export const TaskFiltersSchema = z.object({
   tags: z.array(z.string()),
   due_before: z.string().datetime(),
   due_after: z.string().datetime(),
+  updated_before: z.string().datetime(),
+  updated_after: z.string().datetime(),
   search: z.string().min(1).max(200),
 }).partial();
 

@@ -20,6 +20,8 @@ const QueryTaskFiltersSchema = z.object({
   tags: z.string().transform((s) => s.split(',')),
   due_before: z.string().datetime(),
   due_after: z.string().datetime(),
+  updated_before: z.string().datetime(),
+  updated_after: z.string().datetime(),
   search: z.string().min(1).max(200),
 }).partial();
 

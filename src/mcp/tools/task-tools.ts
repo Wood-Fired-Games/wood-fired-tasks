@@ -140,7 +140,7 @@ export function registerTaskTools(
     'list_tasks',
     {
       description:
-        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, search). Returns compact task summaries by default; pass verbose=true to include description and audit fields.',
+        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search). Returns compact task summaries by default; pass verbose=true to include description and audit fields.',
       inputSchema: ListTasksMcpSchema,
     },
     async (args) => {

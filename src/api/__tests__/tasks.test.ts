@@ -353,4 +353,189 @@ describe('Task CRUD Routes', () => {
     const task = JSON.parse(getResponse.body);
     expect(task.estimated_minutes).toBe(60);
   });
+
+  describe('updated_after / updated_before filters', () => {
+    let isolatedProjectId: number;
+    let earlyId: number;
+    let midId: number;
+    let lateId: number;
+
+    beforeAll(async () => {
+      // Isolated project so the new filter tests don't compete with tasks
+      // created by earlier `it` blocks in this file.
+      const project = app.projectService.createProject({
+        name: 'updated_at filter test project',
+      });
+      isolatedProjectId = project.id;
+
+      // Create three tasks then stamp deterministic updated_at values so the
+      // range bounds are stable regardless of test wall-clock timing.
+      const create = async (title: string) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/v1/tasks',
+          headers,
+          payload: {
+            title,
+            project_id: isolatedProjectId,
+            created_by: 'test-user',
+          },
+        });
+        return JSON.parse(res.body).id as number;
+      };
+
+      earlyId = await create('Early task');
+      midId = await create('Mid task');
+      lateId = await create('Late task');
+
+      const stamp = db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?');
+      stamp.run('2026-01-01T00:00:00.000Z', earlyId);
+      stamp.run('2026-06-15T12:30:00.000Z', midId);
+      stamp.run('2026-12-31T23:59:59.000Z', lateId);
+    });
+
+    it('returns ISO-8601 updated_at with T and Z', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks/${midId}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const task = JSON.parse(response.body);
+      expect(task.updated_at).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
+      );
+    });
+
+    it('normalizes SQLite-format updated_at to ISO-8601 on response', async () => {
+      // Simulate a row written by SQLite's datetime('now') (no T, no Z).
+      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(
+        '2026-06-15 12:30:00',
+        midId
+      );
+
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks/${midId}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const task = JSON.parse(response.body);
+      expect(task.updated_at).toBe('2026-06-15T12:30:00.000Z');
+
+      // Restore canonical value for subsequent range-filter tests.
+      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(
+        '2026-06-15T12:30:00.000Z',
+        midId
+      );
+    });
+
+    it('filters with updated_after (inclusive lower bound)', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url:
+          `/api/v1/tasks?project_id=${isolatedProjectId}` +
+          `&updated_after=2026-06-15T12:30:00.000Z`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const tasks = JSON.parse(response.body) as Array<{ id: number }>;
+      const ids = tasks.map((t) => t.id).sort();
+      expect(ids).toEqual([midId, lateId].sort());
+    });
+
+    it('filters with updated_before (inclusive upper bound)', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url:
+          `/api/v1/tasks?project_id=${isolatedProjectId}` +
+          `&updated_before=2026-06-15T12:30:00.000Z`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const tasks = JSON.parse(response.body) as Array<{ id: number }>;
+      const ids = tasks.map((t) => t.id).sort();
+      expect(ids).toEqual([earlyId, midId].sort());
+    });
+
+    it('narrows correctly when updated_after and updated_before are combined', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url:
+          `/api/v1/tasks?project_id=${isolatedProjectId}` +
+          `&updated_after=2026-03-01T00:00:00.000Z` +
+          `&updated_before=2026-09-01T00:00:00.000Z`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const tasks = JSON.parse(response.body) as Array<{ id: number }>;
+      const ids = tasks.map((t) => t.id);
+      expect(ids).toEqual([midId]);
+    });
+
+    it('composes with status filter', async () => {
+      // Move the mid task to "done" so the combined filter has a unique hit.
+      await server.inject({
+        method: 'PUT',
+        url: `/api/v1/tasks/${midId}`,
+        headers,
+        payload: { status: 'in_progress' },
+      });
+      await server.inject({
+        method: 'PUT',
+        url: `/api/v1/tasks/${midId}`,
+        headers,
+        payload: { status: 'done' },
+      });
+      // updated_at moved to "now" by the PUT; re-stamp deterministically.
+      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(
+        '2026-06-15T12:30:00.000Z',
+        midId
+      );
+
+      const response = await server.inject({
+        method: 'GET',
+        url:
+          `/api/v1/tasks?project_id=${isolatedProjectId}` +
+          `&status=done` +
+          `&updated_after=2026-03-01T00:00:00.000Z` +
+          `&updated_before=2026-09-01T00:00:00.000Z`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const tasks = JSON.parse(response.body) as Array<{
+        id: number;
+        status: string;
+      }>;
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].id).toBe(midId);
+      expect(tasks[0].status).toBe('done');
+    });
+
+    it('rejects invalid updated_after datetime with 400', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks?updated_after=not-a-date',
+        headers,
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('rejects invalid updated_before datetime with 400', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks?updated_before=2026-13-99',
+        headers,
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
 });
