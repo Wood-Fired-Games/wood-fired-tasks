@@ -29,6 +29,7 @@ function makeTask(overrides: Partial<Task & { tags: string[] }> = {}): Task & { 
     updated_at: '2026-02-01T00:00:00Z',
     version: 1,
     claimed_at: null,
+    completed_at: null,
     tags: [],
     ...overrides,
   };

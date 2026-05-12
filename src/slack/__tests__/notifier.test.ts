@@ -94,6 +94,7 @@ function makeTaskEvent(overrides: Record<string, unknown> = {}): TaskEvent {
       updated_at: '2026-02-18T00:00:00Z',
       version: 1,
       claimed_at: null,
+      completed_at: null,
       tags: [],
       ...overrides,
     },

@@ -1,8 +1,43 @@
 import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.js';
-import { Task, VALID_STATUS_TRANSITIONS } from '../types/task.js';
-import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema } from '../schemas/task.schema.js';
+import { Task, VALID_STATUS_TRANSITIONS, TaskPriority } from '../types/task.js';
+import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { eventBus } from '../events/event-bus.js';
+
+/**
+ * Inputs for {@link TaskService.getCompletionReport}.
+ *
+ * One of `days` or both `start`/`end` must be provided. `start`/`end` are
+ * inclusive ISO8601 timestamps; `days` is a count of trailing days ending now.
+ */
+export interface CompletionReportInput {
+  days?: number;
+  start?: string;
+  end?: string;
+  project_id?: number;
+  assignee?: string;
+}
+
+export interface CompletionReportRow {
+  id: number;
+  title: string;
+  project_id: number;
+  assignee: string | null;
+  priority: TaskPriority;
+  created_at: string;
+  completed_at: string;
+  time_to_complete_seconds: number;
+}
+
+export interface CompletionReport {
+  range: { start: string; end: string };
+  total: number;
+  rows: CompletionReportRow[];
+  by_project: Array<{ project_id: number; count: number }>;
+  by_assignee: Array<{ assignee: string; count: number }>;
+  by_priority: Array<{ priority: TaskPriority; count: number }>;
+  daily_throughput: Array<{ date: string; count: number }>;
+}
 
 /**
  * TaskService - handles task business logic, validation, and status lifecycle
@@ -259,6 +294,72 @@ export class TaskService {
   }
 
   /**
+   * Get a completion report for tasks transitioned to 'done' inside a range.
+   *
+   * Accepts either `days` (trailing N days from now) or explicit `start`/`end`
+   * ISO8601 bounds. Both bounds are inclusive.
+   */
+  getCompletionReport(input: unknown): CompletionReport {
+    const parsed = CompletionReportSchema.safeParse(input);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      parsed.error.issues.forEach((err) => {
+        const field = err.path.join('.') || '_';
+        if (!fieldErrors[field]) fieldErrors[field] = [];
+        fieldErrors[field].push(err.message);
+      });
+      throw new ValidationError(fieldErrors);
+    }
+
+    const { start, end } = resolveRange(parsed.data);
+    const tasks = this.taskRepo.findCompletedInRange({
+      start,
+      end,
+      project_id: parsed.data.project_id,
+      assignee: parsed.data.assignee,
+    });
+
+    const rows: CompletionReportRow[] = tasks.map((t) => {
+      const completedAt = t.completed_at ?? t.updated_at;
+      const startMs = Date.parse(t.created_at);
+      const endMs = Date.parse(completedAt);
+      const seconds = Number.isFinite(startMs) && Number.isFinite(endMs)
+        ? Math.max(0, Math.round((endMs - startMs) / 1000))
+        : 0;
+      return {
+        id: t.id,
+        title: t.title,
+        project_id: t.project_id,
+        assignee: t.assignee,
+        priority: t.priority,
+        created_at: t.created_at,
+        completed_at: completedAt,
+        time_to_complete_seconds: seconds,
+      };
+    });
+
+    return {
+      range: { start, end },
+      total: rows.length,
+      rows,
+      by_project: aggregate(rows, (r) => r.project_id).map(([k, v]) => ({
+        project_id: k as number,
+        count: v,
+      })),
+      by_assignee: aggregate(rows, (r) => r.assignee ?? '(unassigned)').map(
+        ([k, v]) => ({ assignee: k as string, count: v })
+      ),
+      by_priority: aggregate(rows, (r) => r.priority).map(([k, v]) => ({
+        priority: k as TaskPriority,
+        count: v,
+      })),
+      daily_throughput: aggregate(rows, (r) =>
+        r.completed_at.slice(0, 10)
+      ).map(([k, v]) => ({ date: k as string, count: v })),
+    };
+  }
+
+  /**
    * Get all subtasks (children) of a parent task
    */
   getSubtasks(taskId: number): Array<Task & { tags: string[] }> {
@@ -270,4 +371,33 @@ export class TaskService {
 
     return this.taskRepo.findChildren(taskId);
   }
+}
+
+/**
+ * Resolve a CompletionReport request into concrete inclusive ISO8601 bounds.
+ *
+ * `days` -> [now - days, now]. Otherwise uses the provided start/end.
+ * The schema layer guarantees one form is present and bounds are well-formed.
+ */
+function resolveRange(input: CompletionReportInput): { start: string; end: string } {
+  if (input.days !== undefined) {
+    const end = new Date();
+    const start = new Date(end.getTime() - input.days * 24 * 60 * 60 * 1000);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+  return { start: input.start!, end: input.end! };
+}
+
+function aggregate<T, K extends string | number>(
+  rows: T[],
+  key: (row: T) => K
+): Array<[K, number]> {
+  const counts = new Map<K, number>();
+  for (const row of rows) {
+    const k = key(row);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) =>
+    b[1] !== a[1] ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0]))
+  );
 }

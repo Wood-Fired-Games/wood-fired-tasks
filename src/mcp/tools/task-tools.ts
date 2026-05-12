@@ -1,7 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TaskService } from '../../services/task.service.js';
 import { ProjectService } from '../../services/project.service.js';
-import { CreateTaskSchema, UpdateTaskSchema, ListTasksMcpSchema, toCompactTask } from '../../schemas/task.schema.js';
+import {
+  CreateTaskSchema,
+  UpdateTaskSchema,
+  ListTasksMcpSchema,
+  CompletionReportSchema,
+  toCompactTask,
+} from '../../schemas/task.schema.js';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { convertToMcpError } from '../errors.js';
@@ -288,6 +294,49 @@ export function registerTaskTools(
           } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
+        throw convertToMcpError(error);
+      }
+    }
+  );
+
+  // Tool: completion_report
+  server.registerTool(
+    'completion_report',
+    {
+      description:
+        'Dashboard view of tasks completed (status=done) within a time interval. ' +
+        'Provide either `days` (trailing window) or `start`+`end` ISO8601 bounds. ' +
+        'Returns per-task rows plus aggregates by project, assignee, priority, and daily throughput.',
+      inputSchema: CompletionReportSchema,
+    },
+    async (args) => {
+      const traceId = randomUUID();
+      console.error(JSON.stringify({ level: 'info', traceId, tool: 'completion_report', event: 'start', timestamp: new Date().toISOString() }));
+      try {
+        const report = taskService.getCompletionReport(args);
+
+        const summary = [
+          `${report.total} task(s) completed between ${report.range.start} and ${report.range.end}`,
+        ];
+        if (report.total > 0) {
+          summary.push('');
+          summary.push('Top by project:');
+          for (const r of report.by_project.slice(0, 5)) {
+            summary.push(`  project ${r.project_id}: ${r.count}`);
+          }
+          summary.push('Top by assignee:');
+          for (const r of report.by_assignee.slice(0, 5)) {
+            summary.push(`  ${r.assignee}: ${r.count}`);
+          }
+        }
+
+        console.error(JSON.stringify({ level: 'info', traceId, tool: 'completion_report', event: 'success' }));
+        return {
+          content: [{ type: 'text', text: summary.join('\n') }],
+          structuredContent: report as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        console.error(JSON.stringify({ level: 'error', traceId, tool: 'completion_report', event: 'error', error: error instanceof Error ? error.message : String(error) }));
         throw convertToMcpError(error);
       }
     }

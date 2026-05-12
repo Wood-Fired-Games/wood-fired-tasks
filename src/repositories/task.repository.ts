@@ -5,7 +5,10 @@ import type {
   UpdateTaskDTO,
   TaskFilters,
 } from '../types/task.js';
-import type { ITaskRepository } from './interfaces.js';
+import type {
+  ITaskRepository,
+  CompletionRangeFilters,
+} from './interfaces.js';
 
 export class TaskRepository implements ITaskRepository {
   private insertTaskStmt: Database.Statement;
@@ -136,6 +139,22 @@ export class TaskRepository implements ITaskRepository {
       if (updates.status !== undefined) {
         fields.push('status = @status');
         params.status = updates.status;
+
+        // Maintain completed_at on transitions to/from 'done'.
+        // Read current status inside the same transaction for consistency.
+        const current = this.findByIdStmt.get(id) as
+          | { status: string; completed_at: string | null }
+          | undefined;
+        const movingIntoDone =
+          updates.status === 'done' && current?.status !== 'done';
+        const movingOutOfDone =
+          current?.status === 'done' && updates.status !== 'done';
+
+        if (movingIntoDone) {
+          fields.push("completed_at = datetime('now')");
+        } else if (movingOutOfDone) {
+          fields.push('completed_at = NULL');
+        }
       }
       if (updates.priority !== undefined) {
         fields.push('priority = @priority');
@@ -392,5 +411,55 @@ export class TaskRepository implements ITaskRepository {
 
     const result = this.db.prepare(query).get(params) as { count: number };
     return result.count;
+  }
+
+  findCompletedInRange(
+    filters: CompletionRangeFilters
+  ): Array<Task & { tags: string[] }> {
+    // Use SQLite's datetime() to normalize comparison: completed_at may be
+    // stored as ISO8601 ("2026-04-12T16:17:17Z") or SQLite format
+    // ("2026-04-12 16:17:17") depending on whether the timestamp came from
+    // datetime('now') or new Date().toISOString().
+    const whereClauses: string[] = [
+      "t.status = 'done'",
+      't.completed_at IS NOT NULL',
+      'datetime(t.completed_at) >= datetime(@start)',
+      'datetime(t.completed_at) <= datetime(@end)',
+    ];
+    const params: Record<string, unknown> = {
+      start: filters.start,
+      end: filters.end,
+    };
+
+    if (filters.project_id !== undefined) {
+      whereClauses.push('t.project_id = @project_id');
+      params.project_id = filters.project_id;
+    }
+
+    if (filters.assignee !== undefined) {
+      whereClauses.push('t.assignee = @assignee');
+      params.assignee = filters.assignee;
+    }
+
+    const query = `
+      SELECT
+        t.*,
+        GROUP_CONCAT(tt.tag, ',') as tags_csv
+      FROM tasks t
+      LEFT JOIN task_tags tt ON tt.task_id = t.id
+      WHERE ${whereClauses.join(' AND ')}
+      GROUP BY t.id
+      ORDER BY t.completed_at ASC
+    `;
+
+    const rows = this.db.prepare(query).all(params) as Array<
+      Task & { tags_csv: string | null }
+    >;
+
+    return rows.map((row) => {
+      const { tags_csv, ...task } = row;
+      const tags = tags_csv ? tags_csv.split(',').sort() : [];
+      return { ...task, tags };
+    });
   }
 }

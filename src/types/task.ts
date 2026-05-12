@@ -32,6 +32,7 @@ export interface Task {
   updated_at: string; // ISO8601
   version: number;
   claimed_at: string | null;
+  completed_at: string | null; // ISO8601; set when status transitions to 'done'
 }
 
 export interface Project {
