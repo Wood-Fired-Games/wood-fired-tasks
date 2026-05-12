@@ -115,5 +115,7 @@ export interface TaskFilters {
   tags?: string[];
   due_before?: string; // ISO8601
   due_after?: string; // ISO8601
+  updated_before?: string; // ISO8601
+  updated_after?: string; // ISO8601
   search?: string;
 }

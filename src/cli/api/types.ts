@@ -55,6 +55,8 @@ export interface TaskFilters {
   tags?: string;
   due_before?: string;
   due_after?: string;
+  updated_before?: string;
+  updated_after?: string;
 }
 
 export interface CreateProjectInput {

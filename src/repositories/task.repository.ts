@@ -10,6 +10,18 @@ import type {
   CompletionRangeFilters,
 } from './interfaces.js';
 
+// SQLite's datetime('now') stores "YYYY-MM-DD HH:MM:SS" while JS
+// new Date().toISOString() stores "YYYY-MM-DDTHH:MM:SS.sssZ". Normalize the
+// former to the latter so API responses present a single canonical shape.
+function normalizeIsoTimestamp(value: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
+  return match ? match[1] + 'T' + match[2] + '.000Z' : value;
+}
+
+function normalizeTaskTimestamps<T extends { updated_at: string }>(task: T): T {
+  return { ...task, updated_at: normalizeIsoTimestamp(task.updated_at) };
+}
+
 export class TaskRepository implements ITaskRepository {
   private insertTaskStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
@@ -92,7 +104,7 @@ export class TaskRepository implements ITaskRepository {
     const tagRows = this.findTagsByTaskIdStmt.all(id) as Array<{ tag: string }>;
     const tags = tagRows.map((row) => row.tag);
 
-    return { ...task, tags };
+    return normalizeTaskTimestamps({ ...task, tags });
   }
 
   findAll(): Array<Task & { tags: string[] }> {
@@ -114,7 +126,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return { ...task, tags };
+      return normalizeTaskTimestamps({ ...task, tags });
     });
   }
 
@@ -245,6 +257,19 @@ export class TaskRepository implements ITaskRepository {
       params.due_after = filters.due_after;
     }
 
+    // Wrap updated_at comparisons in datetime() to handle mixed storage
+    // formats: "YYYY-MM-DDTHH:MM:SS.sssZ" (JS toISOString) and
+    // "YYYY-MM-DD HH:MM:SS" (SQLite datetime('now')).
+    if (filters.updated_before !== undefined) {
+      whereClauses.push('datetime(t.updated_at) <= datetime(@updated_before)');
+      params.updated_before = filters.updated_before;
+    }
+
+    if (filters.updated_after !== undefined) {
+      whereClauses.push('datetime(t.updated_at) >= datetime(@updated_after)');
+      params.updated_after = filters.updated_after;
+    }
+
     if (filters.tags !== undefined && filters.tags.length > 0) {
       // Use EXISTS with parameterized IN clause
       const tagPlaceholders = filters.tags
@@ -288,7 +313,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return { ...task, tags };
+      return normalizeTaskTimestamps({ ...task, tags });
     });
   }
 
@@ -340,7 +365,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return { ...task, tags };
+      return normalizeTaskTimestamps({ ...task, tags });
     });
   }
 
@@ -379,6 +404,16 @@ export class TaskRepository implements ITaskRepository {
     if (filters.due_after !== undefined) {
       whereClauses.push('t.due_date >= @due_after');
       params.due_after = filters.due_after;
+    }
+
+    if (filters.updated_before !== undefined) {
+      whereClauses.push('datetime(t.updated_at) <= datetime(@updated_before)');
+      params.updated_before = filters.updated_before;
+    }
+
+    if (filters.updated_after !== undefined) {
+      whereClauses.push('datetime(t.updated_at) >= datetime(@updated_after)');
+      params.updated_after = filters.updated_after;
     }
 
     if (filters.tags !== undefined && filters.tags.length > 0) {
@@ -459,7 +494,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return { ...task, tags };
+      return normalizeTaskTimestamps({ ...task, tags });
     });
   }
 }
