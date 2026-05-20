@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-05-20 — Quick task 260520-gye completed
+**Last Updated:** 2026-05-20 — Quick task 260520-hd5 completed
 
 ## Project Reference
 
@@ -14,7 +14,7 @@ See: .planning/PROJECT.md (updated 2026-02-18)
 
 **Milestone:** v1.5 Slack Integration — SHIPPED and ARCHIVED
 **Status:** Between milestones
-**Last activity:** 2026-05-20 — Completed quick task 260520-gye: Harden API key authentication against weak keys and brute force
+**Last activity:** 2026-05-20 — Completed quick task 260520-hd5: Reduce unauthenticated public surface and bound long-lived connections
 
 **Progress:**
 [██████████] 100%
@@ -60,6 +60,7 @@ None.
 | 260520-exd | Validate and escape SQLite FTS search input (security audit task #183) | 2026-05-20 | 2bb4ebb | Verified | [260520-exd-validate-and-escape-sqlite-fts-search-in](./quick/260520-exd-validate-and-escape-sqlite-fts-search-in/) |
 | 20260520-upgrade-vuln-prod-deps | Upgrade vulnerable production dependencies + CI audit gate (security audit task #181) | 2026-05-20 | 2567f34 | Complete | [20260520-upgrade-vuln-prod-deps-audit-gate](./quick/20260520-upgrade-vuln-prod-deps-audit-gate/) |
 | 260520-gye | Harden API key authentication against weak keys and brute force (security audit task #182) | 2026-05-20 | 747d3f5 | Verified | [260520-gye-harden-api-key-authentication-against-we](./quick/260520-gye-harden-api-key-authentication-against-we/) |
+| 260520-hd5 | Reduce unauthenticated public surface and bound long-lived connections (security audit task #185) | 2026-05-20 | 86c2d7d | Verified | [260520-hd5-reduce-unauthenticated-public-surface-an](./quick/260520-hd5-reduce-unauthenticated-public-surface-an/) |
 
 ## Session Continuity
 
