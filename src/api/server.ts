@@ -7,6 +7,7 @@ import {
   ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import fastifySSE, { SSEPluginOptions } from '@fastify/sse';
+import rateLimit from '@fastify/rate-limit';
 import { createApp, App } from '../index.js';
 import { config } from '../config/env.js';
 import { TaskService } from '../services/task.service.js';
@@ -30,6 +31,25 @@ import eventsRoute from './routes/events.js';
 import healthRoutes from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
 import { registerSwagger } from './plugins/swagger.js';
+import authPlugin from './plugins/auth.js';
+
+/**
+ * Pino redact configuration applied to the Fastify logger in every
+ * environment. Exported so tests can verify the redaction paths without
+ * spinning up a full server.
+ */
+export const LOGGER_REDACT_CONFIG = {
+  paths: [
+    'req.headers.authorization',
+    'req.headers.cookie',
+    'req.headers["x-api-key"]',
+    '*.password',
+    '*.secret',
+    '*.apiKey',
+    '*.token',
+  ],
+  censor: '[REDACTED]',
+} as const;
 
 // Extend Fastify instance with our service decorations
 declare module 'fastify' {
@@ -66,22 +86,14 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     logger: {
       name: 'wood-fired-bugs',
       level: config.LOG_LEVEL,
-      // Redact sensitive fields in production
-      redact:
-        config.NODE_ENV === 'production'
-          ? {
-              paths: [
-                'req.headers.authorization',
-                'req.headers.cookie',
-                'req.headers["x-api-key"]',
-                '*.password',
-                '*.secret',
-                '*.apiKey',
-                '*.token',
-              ],
-              censor: '[REDACTED]',
-            }
-          : undefined,
+      // Redact sensitive fields in EVERY environment so x-api-key (and other
+      // secret-bearing fields) never appear in logs, including tests and dev.
+      // Task #182: ensure invalid auth attempts and successful-request logs
+      // both elide the supplied key value.
+      redact: {
+        paths: [...LOGGER_REDACT_CONFIG.paths],
+        censor: LOGGER_REDACT_CONFIG.censor,
+      },
       transport:
         config.NODE_ENV === 'development'
           ? {
@@ -162,43 +174,40 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     heartbeatInterval: 30000,
   } as SSEPluginOptions);
 
+  // Register global rate limiting (task #182: defense against brute-force
+  // and high-volume abuse). /health is allow-listed so liveness/readiness
+  // probes never consume the budget. Defaults are intentionally high to
+  // avoid disrupting the existing test suite, which exercises many
+  // server.inject calls from 127.0.0.1; operators tune via env.
+  await server.register(rateLimit, {
+    max: Number(process.env.RATE_LIMIT_MAX ?? 1000),
+    timeWindow: process.env.RATE_LIMIT_TIME_WINDOW ?? '1 minute',
+    allowList: (req) =>
+      req.url === '/health' || req.url.startsWith('/health/'),
+    // The error returned here is thrown by @fastify/rate-limit; the project's
+    // custom errorHandler reads `statusCode` and `code` to shape the JSON
+    // response. We attach both so the response surfaces as
+    // { error: 'TOO_MANY_REQUESTS', message: ... } with HTTP 429.
+    errorResponseBuilder: (_req, ctx) => {
+      const err = new Error(
+        `Rate limit exceeded, retry in ${ctx.after}`,
+      ) as Error & { statusCode?: number; code?: string };
+      err.statusCode = ctx.statusCode;
+      err.code = 'TOO_MANY_REQUESTS';
+      return err;
+    },
+  });
+
   // Register public health check route (no auth required)
   await server.register(healthRoutes, { prefix: '/health' });
 
   // Register routes under /api/v1 with auth protection
   await server.register(
     async (api) => {
-      // Read API keys from environment
-      const apiKeysRaw = process.env.API_KEYS || '';
-      const validKeys = new Set(
-        apiKeysRaw
-          .split(',')
-          .map((k) => k.trim())
-          .filter((k) => k.length > 0)
-      );
-
-      if (validKeys.size === 0) {
-        api.log.warn('No API keys configured in API_KEYS env var. All API requests will be rejected.');
-      }
-
-      // Add preHandler hook directly to this scope
-      api.addHook('preHandler', async (request, reply) => {
-        const apiKey = request.headers['x-api-key'];
-
-        if (!apiKey) {
-          return reply.code(401).send({
-            error: 'UNAUTHORIZED',
-            message: 'Missing API key. Provide X-API-Key header.',
-          });
-        }
-
-        if (!validKeys.has(apiKey as string)) {
-          return reply.code(401).send({
-            error: 'UNAUTHORIZED',
-            message: 'Invalid API key.',
-          });
-        }
-      });
+      // Centralized auth (task #182): single canonical plugin. Hardens
+      // production keys, uses constant-time comparison, logs invalid
+      // attempts without leaking the supplied key.
+      await api.register(authPlugin);
 
       // Register task routes
       await api.register(taskRoutes, { prefix: '/tasks' });
