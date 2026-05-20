@@ -253,22 +253,25 @@ NEW_SERVER_CONFIG=$(mktemp)
 chmod 600 "$NEW_SERVER_CONFIG" 2>/dev/null || true
 TEMP_FILES+=("$NEW_SERVER_CONFIG")
 
-# Build MCP server configuration
-cat > "$NEW_SERVER_CONFIG" <<EOF
-{
-  "mcpServers": {
-    "wood-fired-bugs": {
-      "command": "node",
-      "args": ["dist/mcp/index.js"],
-      "cwd": "$SCRIPT_DIR",
-      "env": {
-        "WOOD_FIRED_BUGS_API_KEY": "$API_KEY",
-        "DB_PATH": "./data/tasks.db"
+# Build MCP server configuration via jq so the API key and cwd are JSON-escaped
+# safely. A raw heredoc would corrupt the file (or allow JSON injection) if
+# either value contained an embedded `"`, `\`, or newline.
+jq -n \
+  --arg key "$API_KEY" \
+  --arg cwd "$SCRIPT_DIR" \
+  '{
+    mcpServers: {
+      "wood-fired-bugs": {
+        command: "node",
+        args: ["dist/mcp/index.js"],
+        cwd: $cwd,
+        env: {
+          WOOD_FIRED_BUGS_API_KEY: $key,
+          DB_PATH: "./data/tasks.db"
+        }
       }
     }
-  }
-}
-EOF
+  }' > "$NEW_SERVER_CONFIG"
 
 # Create temporary file for merged config with strict perms — it will contain the API key.
 MERGED_CONFIG=$(mktemp)
