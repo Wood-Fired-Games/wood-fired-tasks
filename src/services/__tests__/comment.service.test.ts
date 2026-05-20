@@ -156,4 +156,46 @@ describe('CommentService', () => {
       commentService.deleteComment(99999);
     }).toThrow(NotFoundError);
   });
+
+  // Regression for task 191 (IDOR audit, security.md SEV-MEDIUM #1).
+  // deleteComment must reject a comment id that belongs to a different task
+  // when called with a task_id scope — otherwise a caller could delete any
+  // comment via DELETE /tasks/:wrong-task/comments/:commentId.
+  it('should throw NotFoundError when deleting comment via wrong task id', () => {
+    const comment = commentService.addComment({
+      task_id: taskId,
+      author: 'John Doe',
+      content: 'Should not be deletable via another task',
+    });
+
+    // Create a second task that does NOT own the comment.
+    const otherTask = taskRepo.create({
+      title: 'Unrelated Task',
+      status: 'open',
+      priority: 'medium',
+      project_id: projectId,
+      created_by: 'test-user',
+    });
+
+    expect(() => {
+      commentService.deleteComment(comment.id, otherTask.id);
+    }).toThrow(NotFoundError);
+
+    // Also reject when the supplied task id does not exist at all.
+    expect(() => {
+      commentService.deleteComment(comment.id, 99999);
+    }).toThrow(NotFoundError);
+
+    // The comment must still be present — wrong-task delete attempts must not
+    // have removed it.
+    const remaining = commentService.getComments(taskId);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe(comment.id);
+
+    // Sanity: correct task id still deletes successfully.
+    expect(() => {
+      commentService.deleteComment(comment.id, taskId);
+    }).not.toThrow();
+    expect(commentService.getComments(taskId)).toHaveLength(0);
+  });
 });

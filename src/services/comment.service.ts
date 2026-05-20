@@ -59,12 +59,28 @@ export class CommentService {
 
   /**
    * Delete a comment
-   * @throws NotFoundError if comment does not exist
+   *
+   * @param id - Comment id to delete.
+   * @param task_id - Optional parent task id. When provided, the comment is
+   *   only deleted if it belongs to this task. This protects the
+   *   `DELETE /tasks/:id/comments/:commentId` route from IDOR — a caller cannot
+   *   delete a comment by guessing its id under an unrelated task. Mismatches
+   *   are reported as NotFoundError to avoid leaking comment existence across
+   *   tasks.
+   * @throws NotFoundError if the comment does not exist, or if `task_id` is
+   *   provided and the comment does not belong to that task.
    */
-  deleteComment(id: number): void {
+  deleteComment(id: number, task_id?: number): void {
     // Verify comment exists
     const comment = this.commentRepo.findById(id);
     if (!comment) {
+      throw new NotFoundError('Comment', id);
+    }
+
+    // When a task_id scope is supplied, enforce ownership before deletion.
+    // Surface the mismatch as NotFoundError to avoid leaking that the comment
+    // exists under a different task.
+    if (task_id !== undefined && comment.task_id !== task_id) {
       throw new NotFoundError('Comment', id);
     }
 

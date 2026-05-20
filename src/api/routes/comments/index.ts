@@ -74,9 +74,11 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const { commentId } = request.params;
+      const { id, commentId } = request.params;
 
-      fastify.commentService.deleteComment(commentId);
+      // Pass task id so the service can enforce ownership — prevents IDOR
+      // where a caller deletes a comment via an unrelated task in the URL.
+      fastify.commentService.deleteComment(commentId, id);
 
       return reply.code(204).send();
     }

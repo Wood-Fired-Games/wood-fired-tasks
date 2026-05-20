@@ -166,4 +166,59 @@ describe('Comment API Routes', () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  // Regression for task 191 (IDOR audit, security.md SEV-MEDIUM #1).
+  // DELETE /tasks/:id/comments/:commentId must enforce that the comment
+  // actually belongs to the task in the URL — otherwise a caller can delete
+  // any comment id by supplying any task id.
+  it('should return 404 when deleting comment via wrong task id', async () => {
+    const project = app.projectService.createProject({ name: 'Test Project' });
+    const taskA = app.taskService.createTask({
+      title: 'Task A',
+      priority: 'medium',
+      project_id: project.id,
+      created_by: 'test-user',
+    });
+    const taskB = app.taskService.createTask({
+      title: 'Task B',
+      priority: 'medium',
+      project_id: project.id,
+      created_by: 'test-user',
+    });
+
+    // Comment belongs to Task A.
+    const comment = app.commentService.addComment({
+      task_id: taskA.id,
+      author: 'Test User',
+      content: 'Owned by Task A',
+    });
+
+    // Attempt to delete via Task B's URL — must 404.
+    const wrongTaskResponse = await server.inject({
+      method: 'DELETE',
+      url: `/api/v1/tasks/${taskB.id}/comments/${comment.id}`,
+      headers: { 'X-API-Key': apiKey },
+    });
+    expect(wrongTaskResponse.statusCode).toBe(404);
+
+    // Attempt to delete via a task id that does not exist — must 404.
+    const missingTaskResponse = await server.inject({
+      method: 'DELETE',
+      url: `/api/v1/tasks/99999/comments/${comment.id}`,
+      headers: { 'X-API-Key': apiKey },
+    });
+    expect(missingTaskResponse.statusCode).toBe(404);
+
+    // Comment must still exist after the failed cross-task deletes.
+    expect(app.commentService.getComments(taskA.id)).toHaveLength(1);
+
+    // Happy path with the correct task id still returns 204.
+    const correctResponse = await server.inject({
+      method: 'DELETE',
+      url: `/api/v1/tasks/${taskA.id}/comments/${comment.id}`,
+      headers: { 'X-API-Key': apiKey },
+    });
+    expect(correctResponse.statusCode).toBe(204);
+    expect(app.commentService.getComments(taskA.id)).toHaveLength(0);
+  });
 });
