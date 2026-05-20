@@ -36,8 +36,10 @@ TEMP_FILES=()
 cleanup() {
   local exit_code=$?
 
-  # Clean up temporary files
-  for temp_file in "${TEMP_FILES[@]}"; do
+  # Clean up temporary files.
+  # Guard the expansion with "${VAR[@]+...}" so an empty array does not
+  # trip `set -u` on bash 3.2 (macOS default).
+  for temp_file in ${TEMP_FILES[@]+"${TEMP_FILES[@]}"}; do
     if [ -f "$temp_file" ]; then
       rm -f "$temp_file"
     fi
