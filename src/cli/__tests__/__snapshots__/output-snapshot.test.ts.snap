@@ -1,0 +1,351 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CLI output snapshots > comment-add > JSON mode emits the comment envelope 1`] = `
+"{
+  "success": true,
+  "data": {
+    "comment": {
+      "id": 10,
+      "task_id": 1,
+      "author": "stuart",
+      "content": "Reproduced on iOS 17.4 — investigating.",
+      "created_at": "2026-02-13T10:30:00Z"
+    }
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > comment-add > human mode renders confirmation message 1`] = `
+"Comment added to task 1
+"
+`;
+
+exports[`CLI output snapshots > create > JSON mode emits the created task envelope 1`] = `
+"{
+  "success": true,
+  "data": {
+    "task": {
+      "id": 1,
+      "title": "Fix login button on mobile",
+      "description": null,
+      "status": "open",
+      "priority": "high",
+      "project_id": 1,
+      "assignee": "stuart",
+      "created_by": "stuart",
+      "due_date": "2026-03-15T00:00:00Z",
+      "created_at": "2026-02-13T10:30:00Z",
+      "updated_at": "2026-02-13T10:30:00Z",
+      "tags": [
+        "bug",
+        "mobile"
+      ]
+    }
+  },
+  "metadata": {
+    "id": 1
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > create > human mode renders success message + task detail 1`] = `
+"Task created successfully
+
+ID:          1
+Title:       Fix login button on mobile
+Status:      open
+Priority:    high
+Project:     1
+Assignee:    stuart
+Created by:  stuart
+Due date:    <LOCALE_DATETIME>
+Tags:        bug, mobile
+Created:     <LOCALE_DATETIME>
+"
+`;
+
+exports[`CLI output snapshots > done (update --status done) > JSON mode emits the updated task envelope 1`] = `
+"{
+  "success": true,
+  "data": {
+    "task": {
+      "id": 3,
+      "title": "Refactor auth middleware",
+      "description": null,
+      "status": "done",
+      "priority": "low",
+      "project_id": 2,
+      "assignee": "bob",
+      "created_by": "bob",
+      "due_date": null,
+      "created_at": "2026-02-13T10:30:00Z",
+      "updated_at": "2026-02-14T15:45:00Z",
+      "tags": []
+    }
+  },
+  "metadata": {
+    "id": 3
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > done (update --status done) > human mode renders success message + updated task detail 1`] = `
+"Task #3 updated successfully
+
+ID:          3
+Title:       Refactor auth middleware
+Status:      done
+Priority:    low
+Project:     2
+Assignee:    bob
+Created by:  bob
+Due date:    -
+Tags:        -
+Created:     <LOCALE_DATETIME>
+"
+`;
+
+exports[`CLI output snapshots > list > JSON mode emits a parseable envelope 1`] = `
+"{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "title": "Fix login button on mobile",
+      "description": null,
+      "status": "open",
+      "priority": "high",
+      "project_id": 1,
+      "assignee": "stuart",
+      "created_by": "stuart",
+      "due_date": "2026-03-15T00:00:00Z",
+      "created_at": "2026-02-13T10:30:00Z",
+      "updated_at": "2026-02-13T10:30:00Z",
+      "tags": [
+        "bug",
+        "mobile"
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Add dark mode toggle",
+      "description": "Users have requested a dark mode option.",
+      "status": "in_progress",
+      "priority": "medium",
+      "project_id": 1,
+      "assignee": "alice",
+      "created_by": "stuart",
+      "due_date": null,
+      "created_at": "2026-02-14T15:45:00Z",
+      "updated_at": "2026-02-14T15:45:00Z",
+      "tags": [
+        "feature",
+        "ui"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Refactor auth middleware",
+      "description": null,
+      "status": "done",
+      "priority": "low",
+      "project_id": 2,
+      "assignee": "bob",
+      "created_by": "bob",
+      "due_date": null,
+      "created_at": "2026-02-13T10:30:00Z",
+      "updated_at": "2026-02-14T15:45:00Z",
+      "tags": []
+    }
+  ],
+  "metadata": {
+    "count": 3
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > list > human mode renders a task table + count footer 1`] = `
+"┌────┬────────────────────────────┬─────────────┬──────────┬──────────┬───────────┐
+│ ID │ Title                      │ Status      │ Priority │ Assignee │ Due Date  │
+├────┼────────────────────────────┼─────────────┼──────────┼──────────┼───────────┤
+│ 1  │ Fix login button on mobile │ open        │ high     │ stuart   │ <LOCALE_DATE> │
+├────┼────────────────────────────┼─────────────┼──────────┼──────────┼───────────┤
+│ 2  │ Add dark mode toggle       │ in_progress │ medium   │ alice    │ -         │
+├────┼────────────────────────────┼─────────────┼──────────┼──────────┼───────────┤
+│ 3  │ Refactor auth middleware   │ done        │ low      │ bob      │ -         │
+└────┴────────────────────────────┴─────────────┴──────────┴──────────┴───────────┘
+
+3 task(s) found
+"
+`;
+
+exports[`CLI output snapshots > my-work (list --assignee) > JSON mode emits filtered envelope 1`] = `
+"{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "title": "Fix login button on mobile",
+      "description": null,
+      "status": "open",
+      "priority": "high",
+      "project_id": 1,
+      "assignee": "stuart",
+      "created_by": "stuart",
+      "due_date": "2026-03-15T00:00:00Z",
+      "created_at": "2026-02-13T10:30:00Z",
+      "updated_at": "2026-02-13T10:30:00Z",
+      "tags": [
+        "bug",
+        "mobile"
+      ]
+    }
+  ],
+  "metadata": {
+    "count": 1
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > my-work (list --assignee) > human mode renders only my tasks 1`] = `
+"┌────┬────────────────────────────┬────────┬──────────┬──────────┬───────────┐
+│ ID │ Title                      │ Status │ Priority │ Assignee │ Due Date  │
+├────┼────────────────────────────┼────────┼──────────┼──────────┼───────────┤
+│ 1  │ Fix login button on mobile │ open   │ high     │ stuart   │ <LOCALE_DATE> │
+└────┴────────────────────────────┴────────┴──────────┴──────────┴───────────┘
+
+1 task(s) found
+"
+`;
+
+exports[`CLI output snapshots > project-list > JSON mode emits a project-list envelope 1`] = `
+"{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "Web App",
+      "description": "Customer-facing web application",
+      "created_at": "2026-02-13T10:30:00Z",
+      "updated_at": "2026-02-13T10:30:00Z"
+    },
+    {
+      "id": 2,
+      "name": "Internal Tools",
+      "description": null,
+      "created_at": "2026-02-14T15:45:00Z",
+      "updated_at": "2026-02-14T15:45:00Z"
+    }
+  ],
+  "metadata": {
+    "count": 2
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > project-list > human mode renders a project table + count footer 1`] = `
+"┌────┬────────────────┬─────────────────────────────────┬───────────┐
+│ ID │ Name           │ Description                     │ Created   │
+├────┼────────────────┼─────────────────────────────────┼───────────┤
+│ 1  │ Web App        │ Customer-facing web application │ <LOCALE_DATE> │
+├────┼────────────────┼─────────────────────────────────┼───────────┤
+│ 2  │ Internal Tools │ -                               │ <LOCALE_DATE> │
+└────┴────────────────┴─────────────────────────────────┴───────────┘
+
+2 project(s) found
+"
+`;
+
+exports[`CLI output snapshots > search (list --search) > JSON mode emits matching tasks envelope 1`] = `
+"{
+  "success": true,
+  "data": [
+    {
+      "id": 2,
+      "title": "Add dark mode toggle",
+      "description": "Users have requested a dark mode option.",
+      "status": "in_progress",
+      "priority": "medium",
+      "project_id": 1,
+      "assignee": "alice",
+      "created_by": "stuart",
+      "due_date": null,
+      "created_at": "2026-02-14T15:45:00Z",
+      "updated_at": "2026-02-14T15:45:00Z",
+      "tags": [
+        "feature",
+        "ui"
+      ]
+    }
+  ],
+  "metadata": {
+    "count": 1
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > search (list --search) > human mode renders empty-results message when no matches 1`] = `
+"No tasks found
+"
+`;
+
+exports[`CLI output snapshots > search (list --search) > human mode renders matching tasks 1`] = `
+"┌────┬──────────────────────┬─────────────┬──────────┬──────────┬──────────┐
+│ ID │ Title                │ Status      │ Priority │ Assignee │ Due Date │
+├────┼──────────────────────┼─────────────┼──────────┼──────────┼──────────┤
+│ 2  │ Add dark mode toggle │ in_progress │ medium   │ alice    │ -        │
+└────┴──────────────────────┴─────────────┴──────────┴──────────┴──────────┘
+
+1 task(s) found
+"
+`;
+
+exports[`CLI output snapshots > show > JSON mode emits a single-task envelope 1`] = `
+"{
+  "success": true,
+  "data": {
+    "task": {
+      "id": 2,
+      "title": "Add dark mode toggle",
+      "description": "Users have requested a dark mode option.",
+      "status": "in_progress",
+      "priority": "medium",
+      "project_id": 1,
+      "assignee": "alice",
+      "created_by": "stuart",
+      "due_date": null,
+      "created_at": "2026-02-14T15:45:00Z",
+      "updated_at": "2026-02-14T15:45:00Z",
+      "tags": [
+        "feature",
+        "ui"
+      ]
+    }
+  }
+}
+"
+`;
+
+exports[`CLI output snapshots > show > human mode renders a task detail block 1`] = `
+"ID:          2
+Title:       Add dark mode toggle
+Status:      in_progress
+Priority:    medium
+Project:     1
+Assignee:    alice
+Created by:  stuart
+Due date:    -
+Tags:        feature, ui
+Created:     <LOCALE_DATETIME>
+
+Description:
+Users have requested a dark mode option.
+"
+`;
