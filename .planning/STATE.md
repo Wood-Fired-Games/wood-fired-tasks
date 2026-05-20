@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-02-19 — Quick task 6 completed
+**Last Updated:** 2026-05-20 — Quick task 260520-exd completed
 
 ## Project Reference
 
@@ -14,7 +14,7 @@ See: .planning/PROJECT.md (updated 2026-02-18)
 
 **Milestone:** v1.5 Slack Integration — SHIPPED and ARCHIVED
 **Status:** Between milestones
-**Last activity:** 2026-02-19 — Completed quick task 6: Windows/LAN client distribution package
+**Last activity:** 2026-05-20 — Completed quick task 260520-exd: Validate and escape SQLite FTS search input
 
 **Progress:**
 [██████████] 100%
@@ -53,10 +53,11 @@ None.
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 5 | MCP server startup reliability — exclusive migration lock + retry on transient SQLite errors | 2026-02-19 | 63434ad | [5-review-mcp-server-startup-reliability-an](./quick/5-review-mcp-server-startup-reliability-an/) |
-| 6 | Windows/LAN client distribution — remote MCP proxy server + self-contained zip package | 2026-02-19 | f94a0c6 | [6-create-windows-installer-package-for-lan](./quick/6-create-windows-installer-package-for-lan/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 5 | MCP server startup reliability — exclusive migration lock + retry on transient SQLite errors | 2026-02-19 | 63434ad | | [5-review-mcp-server-startup-reliability-an](./quick/5-review-mcp-server-startup-reliability-an/) |
+| 6 | Windows/LAN client distribution — remote MCP proxy server + self-contained zip package | 2026-02-19 | f94a0c6 | | [6-create-windows-installer-package-for-lan](./quick/6-create-windows-installer-package-for-lan/) |
+| 260520-exd | Validate and escape SQLite FTS search input (security audit task #183) | 2026-05-20 | 2bb4ebb | Verified | [260520-exd-validate-and-escape-sqlite-fts-search-in](./quick/260520-exd-validate-and-escape-sqlite-fts-search-in/) |
 
 ## Session Continuity
 
