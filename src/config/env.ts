@@ -144,3 +144,104 @@ export const config: Config = new Proxy({} as Config, {
 export function resetConfig(): void {
   _config = undefined;
 }
+
+/**
+ * A parsed API key entry: raw key plus a human-readable label for audit logs.
+ *
+ * Labels are operator-supplied or fingerprint-derived. They are intended to
+ * appear in per-request log lines so operators can attribute calls to a
+ * specific machine/agent without exposing the raw key. The raw `key` field
+ * must NEVER be logged.
+ */
+export interface ApiKeyEntry {
+  /** Raw key string (compared against the supplied X-API-Key). */
+  key: string;
+  /**
+   * Human-readable label for audit logs. Either operator-supplied
+   * (`key:label` syntax) or auto-derived as `key_<first8>` for bare keys.
+   */
+  label: string;
+}
+
+/**
+ * Parse an `API_KEYS` string into a list of `{ key, label }` entries.
+ *
+ * Format:
+ * - `API_KEYS=abc123,def456,ghi789` — bare keys, label auto-derived.
+ * - `API_KEYS=abc123:label-a,def456:label-b` — explicit labels.
+ * - Mixed: `API_KEYS=abc123,def456:ci-bot` — both forms in one list.
+ *
+ * Rules:
+ * - Whitespace around keys and labels is trimmed.
+ * - Empty entries (e.g. trailing comma) are dropped.
+ * - A key MUST NOT be empty. If the `key:` part is empty, the entry is
+ *   rejected with a thrown Error so config validation fails fast.
+ * - Only ONE `:` is permitted per entry — additional `:` characters cause the
+ *   entry to be rejected. (Both labels and keys should be plain text; embedded
+ *   `:` is almost always a typo or attempt to smuggle structure.)
+ * - Bare-key entries get an auto-label of `key_<first8>` where first8 is the
+ *   first 8 characters of the raw key. Short keys (<8 chars) use the entire
+ *   key in the suffix.
+ * - Duplicate labels are PERMITTED (operators may genuinely have two agents
+ *   on the same machine sharing a label) — but the parser exposes the full
+ *   list so callers that care can detect them.
+ * - An empty label after `:` is rejected ("key:" with no label is ambiguous —
+ *   operator likely intended either a bare key or forgot the label).
+ *
+ * This is the single source of truth for the API_KEYS format. The auth
+ * plugin consumes the output directly via `parseApiKeyEntries`.
+ */
+export function parseApiKeyEntries(raw: string | undefined): ApiKeyEntry[] {
+  if (raw === undefined || raw === null) {
+    return [];
+  }
+
+  const entries: ApiKeyEntry[] = [];
+  const rawParts = raw.split(',');
+
+  for (let i = 0; i < rawParts.length; i++) {
+    const part = rawParts[i].trim();
+    if (part.length === 0) {
+      // Empty segment from trailing/double comma — silently skip.
+      continue;
+    }
+
+    const colonCount = (part.match(/:/g) ?? []).length;
+
+    if (colonCount === 0) {
+      // Bare key. Auto-derive label from first 8 characters.
+      const suffix = part.slice(0, 8);
+      entries.push({ key: part, label: `key_${suffix}` });
+      continue;
+    }
+
+    if (colonCount > 1) {
+      throw new Error(
+        `API_KEYS entry #${i + 1} contains multiple ':' separators. ` +
+          `Use exactly one ':' between key and label, e.g. "abc123:ci-bot".`,
+      );
+    }
+
+    // Exactly one ':' — split into key and label.
+    const sepIdx = part.indexOf(':');
+    const keyPart = part.slice(0, sepIdx).trim();
+    const labelPart = part.slice(sepIdx + 1).trim();
+
+    if (keyPart.length === 0) {
+      throw new Error(
+        `API_KEYS entry #${i + 1} has an empty key before ':'. ` +
+          `Format must be "key:label" with a non-empty key.`,
+      );
+    }
+    if (labelPart.length === 0) {
+      throw new Error(
+        `API_KEYS entry #${i + 1} has an empty label after ':'. ` +
+          `Use a bare key (no ':') or supply a non-empty label, e.g. "abc123:ci-bot".`,
+      );
+    }
+
+    entries.push({ key: keyPart, label: labelPart });
+  }
+
+  return entries;
+}

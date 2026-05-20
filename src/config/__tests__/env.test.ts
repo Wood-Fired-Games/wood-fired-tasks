@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { configSchema, ExitCodes, CliExitCodes, resetConfig } from '../env.js';
+import {
+  configSchema,
+  ExitCodes,
+  CliExitCodes,
+  resetConfig,
+  parseApiKeyEntries,
+} from '../env.js';
 
 describe('Configuration Validation', () => {
   const originalEnv = process.env;
@@ -306,6 +312,127 @@ describe('Configuration Validation', () => {
 
     it('should define CONFIG_ERROR as 78', () => {
       expect(CliExitCodes.CONFIG_ERROR).toBe(78);
+    });
+  });
+
+  describe('parseApiKeyEntries (key:label format)', () => {
+    it('returns empty list for undefined input', () => {
+      expect(parseApiKeyEntries(undefined)).toEqual([]);
+    });
+
+    it('returns empty list for empty string', () => {
+      expect(parseApiKeyEntries('')).toEqual([]);
+    });
+
+    it('parses a single bare key with auto-derived label', () => {
+      const entries = parseApiKeyEntries('abc12345xxxxxxxx');
+      expect(entries).toHaveLength(1);
+      expect(entries[0].key).toBe('abc12345xxxxxxxx');
+      // First 8 chars of the key.
+      expect(entries[0].label).toBe('key_abc12345');
+    });
+
+    it('uses entire key as label suffix when key is shorter than 8 chars', () => {
+      const entries = parseApiKeyEntries('short');
+      expect(entries).toEqual([{ key: 'short', label: 'key_short' }]);
+    });
+
+    it('parses a single key:label entry', () => {
+      const entries = parseApiKeyEntries('abc123:ci-bot');
+      expect(entries).toEqual([{ key: 'abc123', label: 'ci-bot' }]);
+    });
+
+    it('parses multiple bare keys', () => {
+      const entries = parseApiKeyEntries('aaaaaaaa11,bbbbbbbb22,cccccccc33');
+      expect(entries).toEqual([
+        { key: 'aaaaaaaa11', label: 'key_aaaaaaaa' },
+        { key: 'bbbbbbbb22', label: 'key_bbbbbbbb' },
+        { key: 'cccccccc33', label: 'key_cccccccc' },
+      ]);
+    });
+
+    it('parses multiple key:label entries', () => {
+      const entries = parseApiKeyEntries('abc:one,def:two,ghi:three');
+      expect(entries).toEqual([
+        { key: 'abc', label: 'one' },
+        { key: 'def', label: 'two' },
+        { key: 'ghi', label: 'three' },
+      ]);
+    });
+
+    it('parses mixed bare and labelled entries', () => {
+      const entries = parseApiKeyEntries(
+        'abc12345xxxxxxxx,def456:ci-bot,ghi789:stuart-laptop',
+      );
+      expect(entries).toEqual([
+        { key: 'abc12345xxxxxxxx', label: 'key_abc12345' },
+        { key: 'def456', label: 'ci-bot' },
+        { key: 'ghi789', label: 'stuart-laptop' },
+      ]);
+    });
+
+    it('trims whitespace around keys and labels', () => {
+      const entries = parseApiKeyEntries('  abc  :  ci-bot  ,  def  ');
+      expect(entries).toEqual([
+        { key: 'abc', label: 'ci-bot' },
+        { key: 'def', label: 'key_def' },
+      ]);
+    });
+
+    it('drops empty entries from trailing or doubled commas', () => {
+      const entries = parseApiKeyEntries('abc:one,,def:two,');
+      expect(entries).toEqual([
+        { key: 'abc', label: 'one' },
+        { key: 'def', label: 'two' },
+      ]);
+    });
+
+    it('permits duplicate labels (operator choice)', () => {
+      const entries = parseApiKeyEntries('aaa:shared,bbb:shared');
+      expect(entries).toEqual([
+        { key: 'aaa', label: 'shared' },
+        { key: 'bbb', label: 'shared' },
+      ]);
+    });
+
+    it('rejects an entry with empty label after ":"', () => {
+      expect(() => parseApiKeyEntries('abc:')).toThrow(/empty label after ':'/);
+      expect(() => parseApiKeyEntries('abc:  ')).toThrow(/empty label after ':'/);
+    });
+
+    it('rejects an entry with empty key before ":"', () => {
+      expect(() => parseApiKeyEntries(':label-only')).toThrow(
+        /empty key before ':'/,
+      );
+    });
+
+    it('rejects an entry containing more than one ":"', () => {
+      expect(() => parseApiKeyEntries('abc:def:ghi')).toThrow(
+        /multiple ':' separators/,
+      );
+    });
+
+    it('rejects label containing ":" via the multiple-colon rule', () => {
+      // A label like "ci:bot" produces two colons in the entry, which is
+      // ambiguous (could be key="ci:bot", label="" or key="ci", label="bot").
+      // We reject rather than guess.
+      expect(() => parseApiKeyEntries('abc:ci:bot')).toThrow(
+        /multiple ':' separators/,
+      );
+    });
+
+    it('does NOT log or surface the raw key in error messages', () => {
+      const sensitive = 'super-secret-key-do-not-leak';
+      try {
+        parseApiKeyEntries(`${sensitive}::extra`);
+        // Should have thrown.
+        expect.fail('expected parseApiKeyEntries to throw');
+      } catch (err) {
+        const msg = (err as Error).message;
+        expect(msg).not.toContain(sensitive);
+        // Position-based error reference is fine.
+        expect(msg).toMatch(/entry #1/);
+      }
     });
   });
 

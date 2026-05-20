@@ -42,6 +42,43 @@ tasks create --title "My first task" --project 1 --created-by "me"
 
 For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 
+## Security Model
+
+**Read this before deploying.** Wood Fired Bugs is designed for trusted multi-agent coordination on a private network. The auth model is intentionally simple and reflects that scope. OSS operators who assume "API key = user login" will mis-deploy this service.
+
+### Every valid API key has full admin power
+
+The auth plugin (`src/api/plugins/auth.ts`) validates only that the supplied `X-API-Key` header matches one of the configured keys. There is:
+
+- **No per-user identity.** The server does not know who is calling — only that they hold a valid key.
+- **No project ACL.** Any valid key can read, write, and delete tasks/projects/comments/dependencies across every project in the database.
+- **No scoped tokens.** There are no read-only keys, no per-route keys, no expiring tokens. A leaked key has full admin power until it is rotated out of `API_KEYS`.
+- **No enforcement of `created_by` / `assignee`.** These are caller-supplied strings. An agent holding any valid key can create or claim a task as any identity it likes. They are convention-only fields useful for filtering and display, not authorization.
+
+### Operator obligations
+
+- **Issue one key per machine/agent.** This lets you revoke an individual key (by removing it from `API_KEYS` and restarting) without rotating credentials for every other agent. The `API_KEYS` env var accepts a comma-separated list specifically so you can revoke piecewise.
+- **Never share keys between humans or services.** Treat keys like SSH private keys — one per identity.
+- **Label your keys.** `API_KEYS` accepts entries of the form `key:label` (alongside bare keys) so per-request audit logs identify the caller by label. Example:
+  ```
+  API_KEYS=abc123def456...:stuart-laptop,xyz789...:ci-runner,bare-key-no-label
+  ```
+  Bare keys get an auto-label `key_<first8>` derived from the first 8 characters of the raw key. The label appears in every per-request log line as `apiKeyLabel=<label>`; the raw key value is never logged.
+- **Reference [SECURITY.md](SECURITY.md) for incident response** (key compromise, rotation, disclosure). Note: `SECURITY.md` is a placeholder until the open-source-readiness audit completes; until then, follow your team's standard credential-compromise playbook.
+
+### Defense in depth
+
+The auth layer is paired with two additional protections, both configurable:
+
+- **Rate limiting** via `@fastify/rate-limit` (global, 1000 req/min default) — tunable through `RATE_LIMIT_MAX` and `RATE_LIMIT_TIME_WINDOW`. Caps brute-force attempts on the auth endpoint and protects against runaway agents.
+- **SSE connection caps** — per-key, per-IP, and global limits on long-lived event-stream connections (`SSE_MAX_CONNECTIONS_PER_KEY` / `SSE_MAX_CONNECTIONS_PER_IP` / `SSE_MAX_CONNECTIONS`). Prevents connection exhaustion from a misbehaving or compromised key.
+
+These are mitigations, not authorization. They reduce blast radius; they do not substitute for proper key hygiene.
+
+### Future work
+
+Scoped/role-based tokens are tracked for a possible v1.0 milestone but are not on the v0.x roadmap. If your deployment requires per-user access control, fronting this service with an authenticating reverse proxy (which sets `X-API-Key` per-tenant after its own auth) is the recommended path until scoped tokens land.
+
 ## Architecture
 
 ```

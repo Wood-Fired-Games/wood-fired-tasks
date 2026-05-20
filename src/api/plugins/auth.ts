@@ -1,6 +1,19 @@
 import { createHash, timingSafeEqual } from 'crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
+import { parseApiKeyEntries, type ApiKeyEntry } from '../../config/env.js';
+
+/**
+ * Fastify request decorator: the label of the API key that authenticated
+ * this request. Set by the auth plugin after a successful key match. Tests
+ * and request-logging code may read it; downstream handlers should not
+ * depend on it for authorization decisions (all keys are admin).
+ */
+declare module 'fastify' {
+  interface FastifyRequest {
+    apiKeyLabel?: string;
+  }
+}
 
 /**
  * Placeholder substrings rejected in production keys (case-insensitive contains check).
@@ -99,13 +112,14 @@ export function validateApiKeysForProduction(keys: string[]): void {
 }
 
 /**
- * Parse the API_KEYS environment variable into a trimmed, non-empty list.
+ * Parse the API_KEYS environment variable into a list of raw key strings.
+ *
+ * Backwards-compatible wrapper around `parseApiKeyEntries` that drops the
+ * labels — used by the production-validation rules (which only care about
+ * the secret material, not the label).
  */
 function parseApiKeys(raw: string | undefined): string[] {
-  return (raw ?? '')
-    .split(',')
-    .map((k) => k.trim())
-    .filter((k) => k.length > 0);
+  return parseApiKeyEntries(raw).map((e) => e.key);
 }
 
 /**
@@ -128,19 +142,35 @@ function parseApiKeys(raw: string | undefined): string[] {
  * plugin.
  */
 const authPluginImpl: FastifyPluginAsync = async (fastify) => {
-  const keys = parseApiKeys(process.env.API_KEYS);
+  // Parse the env into structured entries. parseApiKeyEntries throws on
+  // malformed input (multiple ':' per entry, empty key/label) — same fail-
+  // fast semantics as the production-rules validator below.
+  const entries: ApiKeyEntry[] = parseApiKeyEntries(process.env.API_KEYS);
+  const keys = entries.map((e) => e.key);
 
   if (process.env.NODE_ENV === 'production') {
     // Throws synchronously on bad config — Fastify bubbles up to createServer
     // which surfaces to the caller (start.ts → process exit with non-zero).
     validateApiKeysForProduction(keys);
-  } else if (keys.length === 0) {
+  } else if (entries.length === 0) {
     fastify.log.warn(
       'No API keys configured in API_KEYS env var. All API requests will be rejected.',
     );
   }
 
-  const hashedKeys: Buffer[] = keys.map(hashKey);
+  // Decorate FastifyRequest with `apiKeyLabel` — set after successful auth.
+  // `undefined` default so route handlers can detect un-authenticated paths
+  // (e.g. /health) explicitly. The decorator MUST be added before any route
+  // is registered in this scope, which the `fp` wrapper guarantees because
+  // it lifts hooks/decorators into the parent scope.
+  fastify.decorateRequest('apiKeyLabel', undefined);
+
+  // Pre-compute SHA-256 hashes alongside the labels so the preHandler can
+  // attribute the matched key with O(1) extra work after the constant-time
+  // comparison succeeds.
+  const hashedEntries: Array<{ hash: Buffer; label: string }> = entries.map(
+    (e) => ({ hash: hashKey(e.key), label: e.label }),
+  );
 
   fastify.addHook('preHandler', async (request, reply) => {
     const supplied = request.headers['x-api-key'];
@@ -157,10 +187,19 @@ const authPluginImpl: FastifyPluginAsync = async (fastify) => {
     }
 
     const suppliedHash = hashKey(supplied);
-    // Every configured-key hash is 32 bytes, so timingSafeEqual will not throw.
-    const matched = hashedKeys.some((h) => timingSafeEqual(h, suppliedHash));
 
-    if (!matched) {
+    // Constant-time compare against EVERY configured hash (do not short-
+    // circuit, to avoid leaking match-position via timing). Track the
+    // matched label if any entry compared equal.
+    let matchedLabel: string | undefined;
+    for (const entry of hashedEntries) {
+      if (timingSafeEqual(entry.hash, suppliedHash)) {
+        matchedLabel = entry.label;
+        // Do NOT break — keeps total comparison count fixed.
+      }
+    }
+
+    if (matchedLabel === undefined) {
       request.log.warn(
         { ip: request.ip, route: request.url },
         'Auth failure: invalid X-API-Key',
@@ -171,7 +210,10 @@ const authPluginImpl: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    // Valid key — continue to route handler.
+    // Valid key — attach label for downstream request-completion logs and
+    // operator audit. The raw key is NEVER attached or logged.
+    request.apiKeyLabel = matchedLabel;
+    request.log = request.log.child({ apiKeyLabel: matchedLabel });
   });
 };
 
