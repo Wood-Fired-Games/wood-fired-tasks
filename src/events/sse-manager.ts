@@ -11,7 +11,12 @@ interface SSEConnection {
   lastEventId: number;
   createdAt: Date;
   // task #185: per-key/per-IP attribution for connection caps.
-  apiKey: string;
+  // task #194: stores a short SHA-256 fingerprint (16 hex chars) of the API
+  // key, never the raw key. Hashing both sides of the per-key comparison
+  // means a heap dump or core file no longer leaks live API credentials.
+  // Same hash function as the auth plugin, so the same key always maps to
+  // the same fingerprint and the per-key cap still aggregates correctly.
+  apiKeyFingerprint: string;
   ip: string;
 }
 
@@ -74,7 +79,7 @@ export class SSEManager {
    * introduce when connections close out-of-band (raw `close` / `error`
    * events run on a different tick).
    */
-  canAccept(apiKey: string, ip: string): SSECapDecision {
+  canAccept(apiKeyFingerprint: string, ip: string): SSECapDecision {
     if (this.connections.size >= this.maxConnections) {
       return { ok: false, reason: 'global', retryAfterSeconds: SSE_CAP_RETRY_AFTER_SECONDS };
     }
@@ -82,7 +87,7 @@ export class SSEManager {
     let perKey = 0;
     let perIp = 0;
     for (const conn of this.connections.values()) {
-      if (conn.apiKey === apiKey) perKey++;
+      if (conn.apiKeyFingerprint === apiKeyFingerprint) perKey++;
       if (conn.ip === ip) perIp++;
     }
     if (perKey >= this.maxConnectionsPerKey) {
@@ -99,16 +104,18 @@ export class SSEManager {
     reply: FastifyReply,
     filters: { project_id?: number; event_types?: string[] },
     lastEventId?: number,
-    meta: { apiKey: string; ip: string } = { apiKey: '', ip: '' }
+    meta: { apiKeyFingerprint: string; ip: string } = { apiKeyFingerprint: '', ip: '' }
   ): void {
-    // Store connection
+    // Store connection. task #194: only the fingerprint is retained — the
+    // caller (events route) computes it via hashKey(rawKey).slice(0,16) so
+    // the raw key never crosses this boundary.
     this.connections.set(connectionId, {
       id: connectionId,
       reply,
       filters,
       lastEventId: lastEventId || 0,
       createdAt: new Date(),
-      apiKey: meta.apiKey,
+      apiKeyFingerprint: meta.apiKeyFingerprint,
       ip: meta.ip,
     });
 

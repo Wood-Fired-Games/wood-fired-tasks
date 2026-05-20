@@ -2,6 +2,19 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import { hashKey } from '../plugins/auth.js';
+
+/**
+ * task #194: derive a short, non-reversible fingerprint for the supplied API
+ * key so the SSE connection map can attribute caps without holding the raw
+ * credential. SHA-256 (same hash the auth plugin uses for constant-time
+ * comparison) + 16 hex chars = 64 bits of fingerprint space — more than
+ * enough collision resistance for the small set of configured keys, and
+ * short enough that a heap dump reveals nothing actionable.
+ */
+function fingerprintApiKey(apiKey: string): string {
+  return hashKey(apiKey).toString('hex').slice(0, 16);
+}
 
 const EventFiltersSchema = z.object({
   project_id: z.coerce.number().optional(),
@@ -34,9 +47,12 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
       preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
         // Auth plugin has already validated X-API-Key — it's guaranteed
         // to be a non-empty string at this point.
+        // task #194: hash to a fingerprint immediately; the raw key never
+        // enters the SSEManager.
         const apiKey = (request.headers['x-api-key'] as string) ?? '';
+        const apiKeyFingerprint = fingerprintApiKey(apiKey);
         const ip = request.ip;
-        const decision = server.sseManager.canAccept(apiKey, ip);
+        const decision = server.sseManager.canAccept(apiKeyFingerprint, ip);
         if (!decision.ok) {
           const limitLabel =
             decision.reason === 'per-key'
@@ -64,8 +80,10 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
       }
 
       // Cap check already passed in preHandler — proceed to register the
-      // connection. Re-read apiKey/ip for attribution metadata.
+      // connection. Re-derive the fingerprint (cheap, sync) so the raw key
+      // is never persisted in the SSEManager — see task #194.
       const apiKey = (request.headers['x-api-key'] as string) ?? '';
+      const apiKeyFingerprint = fingerprintApiKey(apiKey);
       const ip = request.ip;
 
       const filters: { project_id?: number; event_types?: string[] } = request.query as any;
@@ -80,9 +98,11 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
       // Keep connection alive
       reply.sse.keepAlive();
 
-      // Register connection with SSEManager (with per-key/per-IP attribution)
+      // Register connection with SSEManager (with per-key/per-IP attribution).
+      // task #194: pass only the fingerprint — the raw key stays scoped to
+      // this request handler.
       server.sseManager.addConnection(connectionId, reply, filters, lastEventId, {
-        apiKey,
+        apiKeyFingerprint,
         ip,
       });
 

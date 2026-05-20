@@ -3,8 +3,16 @@ import { EventEmitter } from 'events';
 import { SSEManager } from '../../events/sse-manager.js';
 import { createServer } from '../server.js';
 import { resetConfig } from '../../config/env.js';
+import { hashKey } from '../plugins/auth.js';
 import type { FastifyInstance } from 'fastify';
 import type { App } from '../../index.js';
+
+// task #194: helper to derive the same fingerprint the events route uses.
+// Tests that saturate the per-key cap must hash the raw key here so the
+// fingerprint matches what the route computes for inject() requests.
+function fp(rawKey: string): string {
+  return hashKey(rawKey).toString('hex').slice(0, 16);
+}
 
 /**
  * task #185: per-key / per-IP / global SSE connection caps.
@@ -38,10 +46,10 @@ describe('SSEManager connection caps (task #185)', () => {
     // maxPerKey=2, maxPerIp=10, maxTotal=10 — only the per-key cap should bite
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 2, 10, 10);
 
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
     expect(manager.canAccept('A', '1.1.1.1')).toEqual({ ok: true });
 
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
     const decision = manager.canAccept('A', '1.1.1.1');
     expect(decision.ok).toBe(false);
     if (decision.ok === false) {
@@ -54,8 +62,8 @@ describe('SSEManager connection caps (task #185)', () => {
     // maxPerKey=10, maxPerIp=2, maxTotal=10 — only the per-IP cap should bite
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 10, 2, 10);
 
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKey: 'B', ip: '1.1.1.1' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'B', ip: '1.1.1.1' });
 
     const decision = manager.canAccept('C', '1.1.1.1');
     expect(decision.ok).toBe(false);
@@ -68,8 +76,8 @@ describe('SSEManager connection caps (task #185)', () => {
     // maxPerKey=10, maxPerIp=10, maxTotal=2 — only the global cap should bite
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 10, 10, 2);
 
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKey: 'B', ip: '2.2.2.2' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'B', ip: '2.2.2.2' });
 
     const decision = manager.canAccept('C', '3.3.3.3');
     expect(decision.ok).toBe(false);
@@ -82,7 +90,7 @@ describe('SSEManager connection caps (task #185)', () => {
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 1, 10, 10);
 
     const r1 = makeMockReply();
-    manager.addConnection('c1', r1, {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c1', r1, {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
 
     // Cap is 1 → second attempt rejected
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(false);
@@ -98,11 +106,11 @@ describe('SSEManager connection caps (task #185)', () => {
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 3, 10, 10);
 
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(true);
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(true);
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(true);
-    manager.addConnection('c3', makeMockReply(), {}, undefined, { apiKey: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c3', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
     // 4th would exceed cap
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(false);
   });
@@ -149,7 +157,7 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     // when inject() would otherwise hang on the SSE keep-alive path.
     const saturator = makeMockReply();
     server.sseManager.addConnection('saturator', saturator, {}, undefined, {
-      apiKey: 'test-key',
+      apiKeyFingerprint: fp('test-key'),
       ip: '127.0.0.1',
     });
 
@@ -188,7 +196,7 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
 
     const saturator = makeMockReply();
     server.sseManager.addConnection('saturator', saturator, {}, undefined, {
-      apiKey: 'other-key',
+      apiKeyFingerprint: fp('other-key'),
       ip: '127.0.0.1',
     });
 
