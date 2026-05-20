@@ -1,6 +1,6 @@
 # Project State: Wood Fired Bugs
 
-**Last Updated:** 2026-05-20 — Quick task 260520-exd completed
+**Last Updated:** 2026-05-20 — Quick task 260520-gye completed
 
 ## Project Reference
 
@@ -14,7 +14,7 @@ See: .planning/PROJECT.md (updated 2026-02-18)
 
 **Milestone:** v1.5 Slack Integration — SHIPPED and ARCHIVED
 **Status:** Between milestones
-**Last activity:** 2026-05-20 — Completed quick task 260520-exd: Validate and escape SQLite FTS search input
+**Last activity:** 2026-05-20 — Completed quick task 260520-gye: Harden API key authentication against weak keys and brute force
 
 **Progress:**
 [██████████] 100%
@@ -59,6 +59,7 @@ None.
 | 6 | Windows/LAN client distribution — remote MCP proxy server + self-contained zip package | 2026-02-19 | f94a0c6 | | [6-create-windows-installer-package-for-lan](./quick/6-create-windows-installer-package-for-lan/) |
 | 260520-exd | Validate and escape SQLite FTS search input (security audit task #183) | 2026-05-20 | 2bb4ebb | Verified | [260520-exd-validate-and-escape-sqlite-fts-search-in](./quick/260520-exd-validate-and-escape-sqlite-fts-search-in/) |
 | 20260520-upgrade-vuln-prod-deps | Upgrade vulnerable production dependencies + CI audit gate (security audit task #181) | 2026-05-20 | 2567f34 | Complete | [20260520-upgrade-vuln-prod-deps-audit-gate](./quick/20260520-upgrade-vuln-prod-deps-audit-gate/) |
+| 260520-gye | Harden API key authentication against weak keys and brute force (security audit task #182) | 2026-05-20 | 747d3f5 | Verified | [260520-gye-harden-api-key-authentication-against-we](./quick/260520-gye-harden-api-key-authentication-against-we/) |
 
 ## Session Continuity
 
