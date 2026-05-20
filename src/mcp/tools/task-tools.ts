@@ -135,12 +135,15 @@ export function registerTaskTools(
     }
   );
 
-  // Tool: list_tasks
+  // Tool: list_tasks (paginated)
+  // Pagination knobs: `limit` (default 50, max 500) and `offset` (default 0).
+  // Returns `{ tasks, total, limit, offset }` so callers can iterate without
+  // re-issuing without filters.
   server.registerTool(
     'list_tasks',
     {
       description:
-        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search). Returns compact task summaries by default; pass verbose=true to include description and audit fields.',
+        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search) and pagination (limit default 50, max 500; offset default 0). Returns `{ tasks, total, limit, offset }`. Compact task projection by default; pass verbose=true for description + audit fields.',
       inputSchema: ListTasksMcpSchema,
     },
     async (args) => {
@@ -148,9 +151,9 @@ export function registerTaskTools(
       console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'start', timestamp: new Date().toISOString() }));
       try {
         const { verbose, ...filters } = args;
-        const tasks = taskService.listTasks(filters);
+        const page = taskService.listTasksPaginated(filters);
 
-        if (tasks.length === 0) {
+        if (page.data.length === 0) {
           console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
           return {
             content: [
@@ -159,18 +162,25 @@ export function registerTaskTools(
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: { tasks: [] } as unknown as { [x: string]: unknown },
+            structuredContent: {
+              tasks: [],
+              total: page.total,
+              limit: page.limit,
+              offset: page.offset,
+            } as unknown as { [x: string]: unknown },
           };
         }
 
-        const summary = [`Found ${tasks.length} task(s):\n`];
-        tasks.forEach((task) => {
+        const summary = [
+          `Found ${page.data.length} of ${page.total} task(s) (limit=${page.limit}, offset=${page.offset}):\n`,
+        ];
+        page.data.forEach((task) => {
           summary.push(
             `- [${task.id}] ${task.title} (${task.status}, ${task.priority})`
           );
         });
 
-        const payloadTasks = verbose ? tasks : tasks.map(toCompactTask);
+        const payloadTasks = verbose ? page.data : page.data.map(toCompactTask);
 
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
         return {
@@ -180,7 +190,12 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: { tasks: payloadTasks } as unknown as { [x: string]: unknown },
+          structuredContent: {
+            tasks: payloadTasks,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
+          } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'list_tasks', event: 'error', error: error instanceof Error ? error.message : String(error) }));
@@ -248,20 +263,26 @@ export function registerTaskTools(
     }
   );
 
-  // Tool: list_subtasks
+  // Tool: list_subtasks (paginated)
   server.registerTool(
     'list_subtasks',
     {
-      description: 'List all subtasks (children) of a parent task',
+      description:
+        'List subtasks (children) of a parent task with pagination (limit default 50, max 500; offset default 0). Returns `{ parent_task_id, subtasks, total, limit, offset }`.',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
       }),
     },
     async (args) => {
       try {
-        const subtasks = taskService.getSubtasks(args.task_id);
+        const page = taskService.getSubtasksPaginated(args.task_id, {
+          limit: args.limit,
+          offset: args.offset,
+        });
 
-        if (subtasks.length === 0) {
+        if (page.data.length === 0) {
           return {
             content: [
               {
@@ -272,12 +293,17 @@ export function registerTaskTools(
             structuredContent: {
               parent_task_id: args.task_id,
               subtasks: [],
+              total: page.total,
+              limit: page.limit,
+              offset: page.offset,
             } as unknown as { [x: string]: unknown },
           };
         }
 
-        const summary = [`Task ${args.task_id} has ${subtasks.length} subtask(s):\n`];
-        subtasks.forEach((task) => {
+        const summary = [
+          `Task ${args.task_id} has ${page.data.length} of ${page.total} subtask(s) (limit=${page.limit}, offset=${page.offset}):\n`,
+        ];
+        page.data.forEach((task) => {
           summary.push(`- [${task.id}] ${task.title} (${task.status})`);
         });
 
@@ -290,7 +316,10 @@ export function registerTaskTools(
           ],
           structuredContent: {
             parent_task_id: args.task_id,
-            subtasks,
+            subtasks: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
           } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
@@ -342,19 +371,25 @@ export function registerTaskTools(
     }
   );
 
-  // Tool: get_subtasks
+  // Tool: get_subtasks (paginated)
   server.registerTool(
     'get_subtasks',
     {
-      description: 'Get all subtasks (children) of a parent task',
+      description:
+        'Get subtasks (children) of a parent task with pagination (limit default 50, max 500; offset default 0). Returns `{ parent_task_id, subtasks, total, limit, offset }`.',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
       }),
     },
     async (args) => {
       try {
-        const subtasks = taskService.getSubtasks(args.task_id);
-        const summary = `Found ${subtasks.length} subtask(s) for task ${args.task_id}`;
+        const page = taskService.getSubtasksPaginated(args.task_id, {
+          limit: args.limit,
+          offset: args.offset,
+        });
+        const summary = `Found ${page.data.length} of ${page.total} subtask(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`;
 
         return {
           content: [
@@ -365,7 +400,10 @@ export function registerTaskTools(
           ],
           structuredContent: {
             parent_task_id: args.task_id,
-            subtasks,
+            subtasks: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
           } as unknown as { [x: string]: unknown },
         };
       } catch (error) {

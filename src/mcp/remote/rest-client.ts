@@ -12,7 +12,19 @@ import type {
   CommentResponse,
   CreateCommentInput,
   HealthResponse,
+  PaginatedResponse,
+  PaginationParams,
 } from '../../cli/api/types.js';
+
+function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
+  if (Array.isArray(payload)) {
+    return { data: payload, total: payload.length, limit: payload.length, offset: 0 };
+  }
+  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+    return payload as PaginatedResponse<T>;
+  }
+  return { data: [], total: 0, limit: 0, offset: 0 };
+}
 
 /**
  * REST API client for the remote MCP server.
@@ -104,6 +116,11 @@ export class RestClient {
   }
 
   async listTasks(filters?: TaskFilters): Promise<TaskResponse[]> {
+    const page = await this.listTasksPaginated(filters);
+    return page.data;
+  }
+
+  async listTasksPaginated(filters?: TaskFilters): Promise<PaginatedResponse<TaskResponse>> {
     let endpoint = '/api/v1/tasks';
     if (filters) {
       const params = new URLSearchParams();
@@ -121,7 +138,8 @@ export class RestClient {
         endpoint += `?${queryString}`;
       }
     }
-    return this.request<TaskResponse[]>(endpoint);
+    const payload = await this.request<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
+    return asPage(payload);
   }
 
   async deleteTask(id: number): Promise<void> {
@@ -135,8 +153,28 @@ export class RestClient {
     });
   }
 
-  async getSubtasks(parentTaskId: number): Promise<TaskResponse[]> {
-    return this.request<TaskResponse[]>(`/api/v1/tasks/${parentTaskId}/subtasks`);
+  async getSubtasks(
+    parentTaskId: number,
+    pagination?: PaginationParams
+  ): Promise<TaskResponse[]> {
+    const page = await this.getSubtasksPaginated(parentTaskId, pagination);
+    return page.data;
+  }
+
+  async getSubtasksPaginated(
+    parentTaskId: number,
+    pagination?: PaginationParams
+  ): Promise<PaginatedResponse<TaskResponse>> {
+    let endpoint = `/api/v1/tasks/${parentTaskId}/subtasks`;
+    if (pagination) {
+      const params = new URLSearchParams();
+      if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
+      if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+      const qs = params.toString();
+      if (qs) endpoint += `?${qs}`;
+    }
+    const payload = await this.request<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
+    return asPage(payload);
   }
 
   // ── Project operations ───────────────────────────────────────────────────
@@ -159,8 +197,24 @@ export class RestClient {
     });
   }
 
-  async listProjects(): Promise<ProjectResponse[]> {
-    return this.request<ProjectResponse[]>('/api/v1/projects');
+  async listProjects(pagination?: PaginationParams): Promise<ProjectResponse[]> {
+    const page = await this.listProjectsPaginated(pagination);
+    return page.data;
+  }
+
+  async listProjectsPaginated(
+    pagination?: PaginationParams
+  ): Promise<PaginatedResponse<ProjectResponse>> {
+    let endpoint = '/api/v1/projects';
+    if (pagination) {
+      const params = new URLSearchParams();
+      if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
+      if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+      const qs = params.toString();
+      if (qs) endpoint += `?${qs}`;
+    }
+    const payload = await this.request<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
+    return asPage(payload);
   }
 
   async deleteProject(id: number): Promise<void> {
@@ -195,8 +249,28 @@ export class RestClient {
     });
   }
 
-  async getComments(taskId: number): Promise<CommentResponse[]> {
-    return this.request<CommentResponse[]>(`/api/v1/tasks/${taskId}/comments`);
+  async getComments(
+    taskId: number,
+    pagination?: PaginationParams
+  ): Promise<CommentResponse[]> {
+    const page = await this.getCommentsPaginated(taskId, pagination);
+    return page.data;
+  }
+
+  async getCommentsPaginated(
+    taskId: number,
+    pagination?: PaginationParams
+  ): Promise<PaginatedResponse<CommentResponse>> {
+    let endpoint = `/api/v1/tasks/${taskId}/comments`;
+    if (pagination) {
+      const params = new URLSearchParams();
+      if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
+      if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+      const qs = params.toString();
+      if (qs) endpoint += `?${qs}`;
+    }
+    const payload = await this.request<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+    return asPage(payload);
   }
 
   async deleteComment(taskId: number, commentId: number): Promise<void> {

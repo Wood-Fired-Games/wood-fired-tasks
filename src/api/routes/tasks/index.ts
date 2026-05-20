@@ -4,7 +4,7 @@ import { CreateTaskSchema, UpdateTaskSchema } from '../../../schemas/task.schema
 import { idempotencyKeyHeaderSchema } from '../../../schemas/idempotency.schema.js';
 import {
   TaskResponseSchema,
-  TaskListResponseSchema,
+  TaskListPaginatedResponseSchema,
   ErrorResponseSchema,
   ClaimRequestSchema,
   ClaimResponseSchema,
@@ -13,16 +13,20 @@ import {
 import { TASK_STATUSES } from '../../../types/task.js';
 import { BusinessError } from '../../../services/errors.js';
 
-// Query parameter schema for task filters (uses coercion for URL params)
+// Query parameter schema for task filters (uses coercion for URL params).
+// `limit`/`offset` bound the result set so a 100k-row table cannot DoS the
+// server via GROUP_CONCAT materialization on every list call. Defaults are
+// applied if omitted; `limit` is capped at 500 to keep payload + query cost
+// predictable across all callers.
 const QueryTaskFiltersSchema = z.object({
-  project_id: z.coerce.number().int().positive(),
-  status: z.enum(TASK_STATUSES),
-  assignee: z.string(),
-  tags: z.string().transform((s) => s.split(',')),
-  due_before: z.string().datetime(),
-  due_after: z.string().datetime(),
-  updated_before: z.string().datetime(),
-  updated_after: z.string().datetime(),
+  project_id: z.coerce.number().int().positive().optional(),
+  status: z.enum(TASK_STATUSES).optional(),
+  assignee: z.string().optional(),
+  tags: z.string().transform((s) => s.split(',')).optional(),
+  due_before: z.string().datetime().optional(),
+  due_after: z.string().datetime().optional(),
+  updated_before: z.string().datetime().optional(),
+  updated_after: z.string().datetime().optional(),
   search: z
     .string()
     .min(1)
@@ -30,8 +34,17 @@ const QueryTaskFiltersSchema = z.object({
     .refine(
       (s) => s.trim().split(/\s+/).filter(Boolean).length <= 32,
       { message: 'Search query must contain at most 32 terms.' }
-    ),
-}).partial();
+    )
+    .optional(),
+  limit: z.coerce.number().int().positive().max(500).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
+// Subtask list query - only pagination (no filters; parent_id is in the path).
+const QuerySubtasksSchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
 
 const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // POST / - Create task
@@ -53,22 +66,27 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // GET / - List/filter tasks
+  // GET / - List/filter tasks (paginated)
+  // Response shape: `{ data, total, limit, offset }` — see
+  // TaskListPaginatedResponseSchema. BREAKING vs. pre-pagination clients
+  // that consumed the bare array — coordinated with CLI/MCP shims.
   fastify.get(
     '/',
     {
       schema: {
         tags: ['tasks'],
-        description: 'List tasks with optional filters',
+        description:
+          'List tasks with optional filters (paginated). Returns ' +
+          '`{ data, total, limit, offset }` — `limit` defaults to 50, max 500.',
         querystring: QueryTaskFiltersSchema,
         response: {
-          200: TaskListResponseSchema,
+          200: TaskListPaginatedResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      const tasks = fastify.taskService.listTasks(request.query);
-      return reply.send(tasks);
+      const result = fastify.taskService.listTasksPaginated(request.query);
+      return reply.send(result);
     }
   );
 
@@ -197,22 +215,28 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // GET /:id/subtasks - Get subtasks of a task
+  // GET /:id/subtasks - Get subtasks of a task (paginated)
   fastify.get(
     '/:id/subtasks',
     {
       schema: {
         tags: ['tasks'],
-        description: 'Get all subtasks (children) of a task',
+        description:
+          'Get subtasks (children) of a task (paginated). Returns ' +
+          '`{ data, total, limit, offset }`.',
         params: z.object({ id: z.coerce.number().int().positive() }),
+        querystring: QuerySubtasksSchema,
         response: {
-          200: TaskListResponseSchema,
+          200: TaskListPaginatedResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      const subtasks = fastify.taskService.getSubtasks(request.params.id);
-      return reply.send(subtasks);
+      const result = fastify.taskService.getSubtasksPaginated(
+        request.params.id,
+        request.query
+      );
+      return reply.send(result);
     }
   );
 };

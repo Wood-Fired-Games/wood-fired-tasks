@@ -2,9 +2,15 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   CommentResponseSchema,
-  CommentListResponseSchema,
+  CommentListPaginatedResponseSchema,
   CreateCommentBodySchema,
 } from './schemas.js';
+
+// Pagination query schema for GET /tasks/:id/comments.
+const QueryCommentListSchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
 
 const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // POST /tasks/:id/comments - Add comment
@@ -35,25 +41,31 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // GET /tasks/:id/comments - Get comments for a task
+  // GET /tasks/:id/comments - Get comments for a task (paginated)
   fastify.get(
     '/:id/comments',
     {
       schema: {
         params: z.object({ id: z.coerce.number().int().positive() }),
+        querystring: QueryCommentListSchema,
         response: {
-          200: CommentListResponseSchema,
+          200: CommentListPaginatedResponseSchema,
         },
         tags: ['comments'],
-        description: 'Get all comments for a task in chronological order',
+        description:
+          'Get comments for a task in chronological order (paginated). ' +
+          'Returns `{ data, total, limit, offset }`.',
       },
     },
     async (request, reply) => {
       const { id } = request.params;
 
-      const comments = fastify.commentService.getComments(id);
+      const result = fastify.commentService.getCommentsPaginated(
+        id,
+        request.query
+      );
 
-      return reply.send(comments);
+      return reply.send(result);
     }
   );
 

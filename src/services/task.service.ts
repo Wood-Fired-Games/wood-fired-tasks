@@ -1,5 +1,12 @@
 import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.js';
-import { Task, VALID_STATUS_TRANSITIONS, TaskPriority } from '../types/task.js';
+import {
+  Task,
+  VALID_STATUS_TRANSITIONS,
+  TaskPriority,
+  PaginatedResponse,
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_OFFSET,
+} from '../types/task.js';
 import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
@@ -130,34 +137,69 @@ export class TaskService {
   }
 
   /**
-   * List tasks with optional filtering
+   * List tasks with optional filtering.
+   *
+   * Returns a plain array of the current page — callers who need the
+   * paginated envelope (with `total` for client-side pagination UIs) should
+   * use {@link listTasksPaginated} instead. This shape is preserved for the
+   * many internal callers (workflow engine, MCP tools) that don't need the
+   * envelope and only care about the rows.
    */
   listTasks(filters?: unknown): Array<Task & { tags: string[] }> {
-    // If filters provided, validate them
-    if (filters !== undefined) {
-      const result = TaskFiltersSchema.safeParse(filters);
-      if (!result.success) {
-        const fieldErrors: Record<string, string[]> = {};
-        result.error.issues.forEach((err) => {
-          const field = err.path.join('.');
-          if (!fieldErrors[field]) {
-            fieldErrors[field] = [];
-          }
-          fieldErrors[field].push(err.message);
-        });
-        throw new ValidationError(fieldErrors);
+    const parsed = this.parseFilters(filters);
+    try {
+      return this.taskRepo.findByFilters(parsed);
+    } catch (err) {
+      if (err instanceof FtsSyntaxError) {
+        throw ftsValidationError();
       }
-      try {
-        return this.taskRepo.findByFilters(result.data);
-      } catch (err) {
-        if (err instanceof FtsSyntaxError) {
-          throw ftsValidationError();
-        }
-        throw err;
-      }
+      throw err;
     }
+  }
 
-    return this.taskRepo.findByFilters({});
+  /**
+   * Paginated list-tasks: returns `{ data, total, limit, offset }`.
+   *
+   * `total` is the unbounded match count for the same filter set so clients
+   * can render "page X of Y" navigation without re-issuing the query without
+   * filters. Used by the REST list endpoint and the MCP list_tasks tool.
+   */
+  listTasksPaginated(
+    filters?: unknown
+  ): PaginatedResponse<Task & { tags: string[] }> {
+    const parsed = this.parseFilters(filters);
+    const limit = parsed.limit ?? DEFAULT_PAGE_LIMIT;
+    const offset = parsed.offset ?? DEFAULT_PAGE_OFFSET;
+    try {
+      const data = this.taskRepo.findByFilters({ ...parsed, limit, offset });
+      // `count` deliberately runs WITHOUT limit/offset so `total` reflects
+      // the full match set.
+      const { limit: _l, offset: _o, ...filtersForCount } = parsed;
+      const total = this.taskRepo.count(filtersForCount);
+      return { data, total, limit, offset };
+    } catch (err) {
+      if (err instanceof FtsSyntaxError) {
+        throw ftsValidationError();
+      }
+      throw err;
+    }
+  }
+
+  private parseFilters(filters?: unknown) {
+    if (filters === undefined) return {};
+    const result = TaskFiltersSchema.safeParse(filters);
+    if (!result.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      result.error.issues.forEach((err) => {
+        const field = err.path.join('.');
+        if (!fieldErrors[field]) {
+          fieldErrors[field] = [];
+        }
+        fieldErrors[field].push(err.message);
+      });
+      throw new ValidationError(fieldErrors);
+    }
+    return result.data;
   }
 
   /**
@@ -387,16 +429,42 @@ export class TaskService {
   }
 
   /**
-   * Get all subtasks (children) of a parent task
+   * Get subtasks (children) of a parent task — current page only.
+   *
+   * Internal callers that need the array directly use this. The REST/MCP
+   * surfaces should use {@link getSubtasksPaginated} so clients get the
+   * envelope with `total` and can iterate pages.
    */
-  getSubtasks(taskId: number): Array<Task & { tags: string[] }> {
+  getSubtasks(
+    taskId: number,
+    pagination?: { limit?: number; offset?: number }
+  ): Array<Task & { tags: string[] }> {
     // Verify parent task exists
     const parentTask = this.taskRepo.findById(taskId);
     if (!parentTask) {
       throw new NotFoundError('Task', taskId);
     }
 
-    return this.taskRepo.findChildren(taskId);
+    return this.taskRepo.findChildren(taskId, pagination);
+  }
+
+  /**
+   * Paginated subtasks: `{ data, total, limit, offset }`. Same envelope as
+   * the rest of the list endpoints.
+   */
+  getSubtasksPaginated(
+    taskId: number,
+    pagination?: { limit?: number; offset?: number }
+  ): PaginatedResponse<Task & { tags: string[] }> {
+    const parentTask = this.taskRepo.findById(taskId);
+    if (!parentTask) {
+      throw new NotFoundError('Task', taskId);
+    }
+    const limit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
+    const offset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
+    const data = this.taskRepo.findChildren(taskId, { limit, offset });
+    const total = this.taskRepo.countChildren(taskId);
+    return { data, total, limit, offset };
   }
 }
 

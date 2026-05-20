@@ -14,3 +14,14 @@ export const CommentResponseSchema = z.object({
   created_at: z.string(),
   updated_at: z.string().nullable(),
 });
+
+/**
+ * Pagination query params for the comment-list endpoint.
+ * Mirrors the task/project list bounds so the API surface stays uniform.
+ */
+export const CommentListQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
+export type CommentListQueryInput = z.infer<typeof CommentListQuerySchema>;

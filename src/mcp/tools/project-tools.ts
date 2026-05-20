@@ -78,18 +78,25 @@ export function registerProjectTools(
     }
   );
 
-  // Tool: list_projects
+  // Tool: list_projects (paginated)
   server.registerTool(
     'list_projects',
     {
-      description: 'List all projects',
-      inputSchema: z.object({}),
+      description:
+        'List projects with pagination (limit default 50, max 500; offset default 0). Returns `{ projects, total, limit, offset }`.',
+      inputSchema: z.object({
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
+      }),
     },
     async (args) => {
       try {
-        const projects = projectService.listProjects();
+        const page = projectService.listProjectsPaginated({
+          limit: args.limit,
+          offset: args.offset,
+        });
 
-        if (projects.length === 0) {
+        if (page.data.length === 0) {
           return {
             content: [
               {
@@ -97,12 +104,19 @@ export function registerProjectTools(
                 text: 'No projects found.',
               },
             ],
-            structuredContent: { projects: [] } as unknown as { [x: string]: unknown },
+            structuredContent: {
+              projects: [],
+              total: page.total,
+              limit: page.limit,
+              offset: page.offset,
+            } as unknown as { [x: string]: unknown },
           };
         }
 
-        const summary = [`Found ${projects.length} project(s):\n`];
-        projects.forEach((project) => {
+        const summary = [
+          `Found ${page.data.length} of ${page.total} project(s) (limit=${page.limit}, offset=${page.offset}):\n`,
+        ];
+        page.data.forEach((project) => {
           summary.push(`- [${project.id}] ${project.name}`);
         });
 
@@ -113,7 +127,12 @@ export function registerProjectTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: { projects } as unknown as { [x: string]: unknown },
+          structuredContent: {
+            projects: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
+          } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         throw convertToMcpError(error);

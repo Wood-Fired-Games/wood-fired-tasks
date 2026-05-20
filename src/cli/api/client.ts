@@ -15,7 +15,39 @@ import type {
   CommentResponse,
   CreateCommentInput,
   HealthResponse,
+  PaginatedResponse,
+  PaginationParams,
 } from './types.js';
+
+/**
+ * Accept either the new pagination envelope `{ data, total, limit, offset }`
+ * or a bare array (older servers that pre-date pagination), and normalize
+ * to a plain `T[]`. CLI list commands operate on arrays for terminal
+ * rendering — `total` is consulted separately for the JSON envelope.
+ */
+function unwrapPage<T>(payload: PaginatedResponse<T> | T[]): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+    return (payload as PaginatedResponse<T>).data;
+  }
+  // Unexpected shape: behave as empty rather than crashing the CLI.
+  return [];
+}
+
+/**
+ * Normalize either an envelope OR a bare array into a synthetic envelope.
+ * Older servers that return bare arrays still work — `total` falls back to
+ * `data.length` and pagination knobs default to sensible values.
+ */
+function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
+  if (Array.isArray(payload)) {
+    return { data: payload, total: payload.length, limit: payload.length, offset: 0 };
+  }
+  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+    return payload as PaginatedResponse<T>;
+  }
+  return { data: [], total: 0, limit: 0, offset: 0 };
+}
 
 /**
  * Custom error class for API client errors.
@@ -124,11 +156,34 @@ export async function createTask(data: CreateTaskInput): Promise<TaskResponse> {
 }
 
 /**
- * List tasks with optional filters.
+ * List tasks with optional filters and pagination.
+ *
+ * Server returns `{ data, total, limit, offset }`. Callers that only need
+ * the rows can use this function; callers that need the envelope (e.g. JSON
+ * output mode) should use {@link listTasksPaginated}.
+ *
+ * Backward-compat: if a legacy server returns a bare array, `unwrapPage`
+ * normalizes it without throwing.
  */
 export async function listTasks(filters?: TaskFilters): Promise<TaskResponse[]> {
-  let endpoint = '/api/v1/tasks';
+  const endpoint = buildTaskListEndpoint(filters);
+  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
+  return unwrapPage(payload);
+}
 
+/**
+ * List tasks and return the full pagination envelope.
+ */
+export async function listTasksPaginated(
+  filters?: TaskFilters
+): Promise<PaginatedResponse<TaskResponse>> {
+  const endpoint = buildTaskListEndpoint(filters);
+  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
+  return asPage(payload);
+}
+
+function buildTaskListEndpoint(filters?: TaskFilters): string {
+  let endpoint = '/api/v1/tasks';
   if (filters) {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
@@ -141,8 +196,7 @@ export async function listTasks(filters?: TaskFilters): Promise<TaskResponse[]> 
       endpoint += `?${queryString}`;
     }
   }
-
-  return apiRequest<TaskResponse[]>(endpoint);
+  return endpoint;
 }
 
 /**
@@ -184,10 +238,37 @@ export async function createProject(data: CreateProjectInput): Promise<ProjectRe
 }
 
 /**
- * List all projects.
+ * List projects (paginated). Returns the rows only.
  */
-export async function listProjects(): Promise<ProjectResponse[]> {
-  return apiRequest<ProjectResponse[]>('/api/v1/projects');
+export async function listProjects(
+  pagination?: PaginationParams
+): Promise<ProjectResponse[]> {
+  const endpoint = buildProjectListEndpoint(pagination);
+  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
+  return unwrapPage(payload);
+}
+
+/**
+ * List projects and return the full pagination envelope.
+ */
+export async function listProjectsPaginated(
+  pagination?: PaginationParams
+): Promise<PaginatedResponse<ProjectResponse>> {
+  const endpoint = buildProjectListEndpoint(pagination);
+  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
+  return asPage(payload);
+}
+
+function buildProjectListEndpoint(pagination?: PaginationParams): string {
+  let endpoint = '/api/v1/projects';
+  if (pagination) {
+    const params = new URLSearchParams();
+    if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
+    if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+    const qs = params.toString();
+    if (qs) endpoint += `?${qs}`;
+  }
+  return endpoint;
 }
 
 /**
@@ -266,10 +347,39 @@ export async function addComment(
 }
 
 /**
- * Get all comments for a task.
+ * Get comments for a task (paginated). Returns the rows only.
  */
-export async function getComments(taskId: number): Promise<CommentResponse[]> {
-  return apiRequest<CommentResponse[]>(`/api/v1/tasks/${taskId}/comments`);
+export async function getComments(
+  taskId: number,
+  pagination?: PaginationParams
+): Promise<CommentResponse[]> {
+  const endpoint = buildCommentsEndpoint(taskId, pagination);
+  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+  return unwrapPage(payload);
+}
+
+/**
+ * Get comments and return the full pagination envelope.
+ */
+export async function getCommentsPaginated(
+  taskId: number,
+  pagination?: PaginationParams
+): Promise<PaginatedResponse<CommentResponse>> {
+  const endpoint = buildCommentsEndpoint(taskId, pagination);
+  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+  return asPage(payload);
+}
+
+function buildCommentsEndpoint(taskId: number, pagination?: PaginationParams): string {
+  let endpoint = `/api/v1/tasks/${taskId}/comments`;
+  if (pagination) {
+    const params = new URLSearchParams();
+    if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
+    if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+    const qs = params.toString();
+    if (qs) endpoint += `?${qs}`;
+  }
+  return endpoint;
 }
 
 /**
@@ -300,10 +410,39 @@ export async function createSubtask(
 }
 
 /**
- * Get all subtasks (children) of a parent task.
+ * Get subtasks (children) of a parent task (paginated). Returns the rows only.
  */
-export async function getSubtasks(parentTaskId: number): Promise<TaskResponse[]> {
-  return apiRequest<TaskResponse[]>(`/api/v1/tasks/${parentTaskId}/subtasks`);
+export async function getSubtasks(
+  parentTaskId: number,
+  pagination?: PaginationParams
+): Promise<TaskResponse[]> {
+  const endpoint = buildSubtasksEndpoint(parentTaskId, pagination);
+  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
+  return unwrapPage(payload);
+}
+
+/**
+ * Get subtasks and return the full pagination envelope.
+ */
+export async function getSubtasksPaginated(
+  parentTaskId: number,
+  pagination?: PaginationParams
+): Promise<PaginatedResponse<TaskResponse>> {
+  const endpoint = buildSubtasksEndpoint(parentTaskId, pagination);
+  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
+  return asPage(payload);
+}
+
+function buildSubtasksEndpoint(parentTaskId: number, pagination?: PaginationParams): string {
+  let endpoint = `/api/v1/tasks/${parentTaskId}/subtasks`;
+  if (pagination) {
+    const params = new URLSearchParams();
+    if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
+    if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+    const qs = params.toString();
+    if (qs) endpoint += `?${qs}`;
+  }
+  return endpoint;
 }
 
 // ── Claim functions ─────────────────────────────────────────

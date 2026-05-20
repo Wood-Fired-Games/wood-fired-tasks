@@ -50,30 +50,39 @@ export function registerCommentTools(
     }
   );
 
-  // get_comments - Get all comments for a task
+  // get_comments - Get comments for a task (paginated)
   server.registerTool(
     'get_comments',
     {
-      description: 'Get all comments for a task in chronological order',
+      description:
+        'Get comments for a task in chronological order with pagination (limit default 50, max 500; offset default 0). Returns `{ task_id, comments, total, limit, offset }`.',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
       }),
     },
     async (args) => {
       try {
         const taskId = args.task_id;
-        const comments = commentService.getComments(taskId);
+        const page = commentService.getCommentsPaginated(taskId, {
+          limit: args.limit,
+          offset: args.offset,
+        });
 
         return {
           content: [
             {
               type: 'text',
-              text: `Found ${comments.length} comment(s) for task ${taskId}`,
+              text: `Found ${page.data.length} of ${page.total} comment(s) for task ${taskId} (limit=${page.limit}, offset=${page.offset})`,
             },
           ],
           structuredContent: {
             task_id: taskId,
-            comments: comments,
+            comments: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
           } as unknown as Record<string, unknown>,
         };
       } catch (error) {

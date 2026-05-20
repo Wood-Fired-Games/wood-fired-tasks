@@ -1,5 +1,10 @@
 import { IProjectRepository } from '../repositories/interfaces.js';
-import { Project } from '../types/task.js';
+import {
+  Project,
+  PaginatedResponse,
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_OFFSET,
+} from '../types/task.js';
 import { CreateProjectSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { eventBus } from '../events/event-bus.js';
@@ -60,10 +65,26 @@ export class ProjectService {
   }
 
   /**
-   * List all projects
+   * List projects — returns just the current page as a plain array.
+   * Internal callers that don't need the envelope use this.
    */
-  listProjects(): Project[] {
-    return this.projectRepo.findAll();
+  listProjects(pagination?: { limit?: number; offset?: number }): Project[] {
+    return this.projectRepo.findAll(pagination);
+  }
+
+  /**
+   * Paginated list-projects: returns `{ data, total, limit, offset }`.
+   * Used by the REST list endpoint and the MCP list_projects tool.
+   */
+  listProjectsPaginated(pagination?: {
+    limit?: number;
+    offset?: number;
+  }): PaginatedResponse<Project> {
+    const limit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
+    const offset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
+    const data = this.projectRepo.findAll({ limit, offset });
+    const total = this.projectRepo.count();
+    return { data, total, limit, offset };
   }
 
   /**

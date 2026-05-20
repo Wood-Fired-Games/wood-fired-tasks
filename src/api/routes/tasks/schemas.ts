@@ -23,7 +23,23 @@ export const TaskResponseSchema = z.object({
   tags: z.array(z.string()),
 });
 
+/**
+ * Legacy bare-array task list shape. Retained for places that still want
+ * the array directly (currently none after the pagination rollout, but kept
+ * so future internal callers have a typed handle).
+ */
 export const TaskListResponseSchema = z.array(TaskResponseSchema);
+
+/**
+ * Paginated task list envelope returned by GET /tasks and GET /tasks/:id/subtasks.
+ * Shape: `{ data: TaskResponse[], total, limit, offset }`.
+ */
+export const TaskListPaginatedResponseSchema = z.object({
+  data: z.array(TaskResponseSchema),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+});
 
 /**
  * ClaimRequestSchema - validation for claim request body

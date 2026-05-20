@@ -57,6 +57,29 @@ export interface TaskFilters {
   due_after?: string;
   updated_before?: string;
   updated_after?: string;
+  /** Page size; max 500. Server defaults to 50 if omitted. */
+  limit?: number;
+  /** Zero-based offset; server defaults to 0 if omitted. */
+  offset?: number;
+}
+
+/**
+ * Paginated envelope returned by every list endpoint.
+ * Shape: `{ data, total, limit, offset }`.
+ *
+ * The CLI gracefully accepts BOTH the envelope and a bare array (legacy
+ * server). See `unwrapPage` in client.ts.
+ */
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaginationParams {
+  limit?: number;
+  offset?: number;
 }
 
 export interface CreateProjectInput {

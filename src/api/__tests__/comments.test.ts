@@ -88,10 +88,60 @@ describe('Comment API Routes', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    expect(body).toHaveLength(3);
-    expect(body[0].content).toBe('First comment');
-    expect(body[1].content).toBe('Second comment');
-    expect(body[2].content).toBe('Third comment');
+    expect(body).toMatchObject({ limit: 50, offset: 0 });
+    expect(body.total).toBe(3);
+    expect(body.data).toHaveLength(3);
+    expect(body.data[0].content).toBe('First comment');
+    expect(body.data[1].content).toBe('Second comment');
+    expect(body.data[2].content).toBe('Third comment');
+  });
+
+  it('paginates comments with limit/offset', async () => {
+    const project = app.projectService.createProject({ name: 'Comment pagination project' });
+    const task = app.taskService.createTask({
+      title: 'Task with many comments',
+      priority: 'medium',
+      project_id: project.id,
+      created_by: 'test-user',
+    });
+
+    // Seed 6 comments
+    for (let i = 0; i < 6; i++) {
+      app.commentService.addComment({
+        task_id: task.id,
+        author: `User ${i + 1}`,
+        content: `Comment number ${i + 1}`,
+      });
+    }
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/v1/tasks/${task.id}/comments?limit=2&offset=2`,
+      headers: { 'X-API-Key': apiKey },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.total).toBe(6);
+    expect(body.limit).toBe(2);
+    expect(body.offset).toBe(2);
+    expect(body.data).toHaveLength(2);
+  });
+
+  it('rejects limit > 500 with 400 on comments', async () => {
+    const project = app.projectService.createProject({ name: 'Comment 400 project' });
+    const task = app.taskService.createTask({
+      title: 'T',
+      priority: 'medium',
+      project_id: project.id,
+      created_by: 'test-user',
+    });
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/v1/tasks/${task.id}/comments?limit=501`,
+      headers: { 'X-API-Key': apiKey },
+    });
+    expect(response.statusCode).toBe(400);
   });
 
   it('should delete a comment and return 204', async () => {

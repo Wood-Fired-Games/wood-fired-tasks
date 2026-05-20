@@ -127,19 +127,21 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     }
   );
 
-  // Tool: list_tasks
+  // Tool: list_tasks (paginated)
   server.registerTool(
     'list_tasks',
     {
       description:
-        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search). Returns compact task summaries by default; pass verbose=true to include description and audit fields.',
+        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search) and pagination (limit default 50, max 500; offset default 0). Returns `{ tasks, total, limit, offset }`. Compact task projection by default; pass verbose=true for description + audit fields.',
       inputSchema: ListTasksMcpSchema,
     },
     async (args) => {
       try {
         const { verbose, ...filters } = args;
-        const tasks = await client.listTasks(filters as unknown as import('../../cli/api/types.js').TaskFilters);
-        if (tasks.length === 0) {
+        const page = await client.listTasksPaginated(
+          filters as unknown as import('../../cli/api/types.js').TaskFilters
+        );
+        if (page.data.length === 0) {
           return {
             content: [
               {
@@ -147,16 +149,23 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: { tasks: [] } as unknown as { [x: string]: unknown },
+            structuredContent: {
+              tasks: [],
+              total: page.total,
+              limit: page.limit,
+              offset: page.offset,
+            } as unknown as { [x: string]: unknown },
           };
         }
-        const summary = [`Found ${tasks.length} task(s):\n`];
-        tasks.forEach((task) => {
+        const summary = [
+          `Found ${page.data.length} of ${page.total} task(s) (limit=${page.limit}, offset=${page.offset}):\n`,
+        ];
+        page.data.forEach((task) => {
           summary.push(
             `- [${task.id}] ${task.title} (${task.status}, ${task.priority})`
           );
         });
-        const payloadTasks = verbose ? tasks : tasks.map(toCompactTask);
+        const payloadTasks = verbose ? page.data : page.data.map(toCompactTask);
         return {
           content: [
             {
@@ -164,7 +173,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: { tasks: payloadTasks } as unknown as { [x: string]: unknown },
+          structuredContent: {
+            tasks: payloadTasks,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
+          } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         throw new McpError(
@@ -236,19 +250,25 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     }
   );
 
-  // Tool: list_subtasks
+  // Tool: list_subtasks (paginated)
   server.registerTool(
     'list_subtasks',
     {
-      description: 'List all subtasks (children) of a parent task',
+      description:
+        'List subtasks (children) of a parent task with pagination (limit default 50, max 500; offset default 0). Returns `{ parent_task_id, subtasks, total, limit, offset }`.',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
       }),
     },
     async (args) => {
       try {
-        const subtasks = await client.getSubtasks(args.task_id);
-        if (subtasks.length === 0) {
+        const page = await client.getSubtasksPaginated(args.task_id, {
+          limit: args.limit,
+          offset: args.offset,
+        });
+        if (page.data.length === 0) {
           return {
             content: [
               {
@@ -259,11 +279,16 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             structuredContent: {
               parent_task_id: args.task_id,
               subtasks: [],
+              total: page.total,
+              limit: page.limit,
+              offset: page.offset,
             } as unknown as { [x: string]: unknown },
           };
         }
-        const summary = [`Task ${args.task_id} has ${subtasks.length} subtask(s):\n`];
-        subtasks.forEach((task) => {
+        const summary = [
+          `Task ${args.task_id} has ${page.data.length} of ${page.total} subtask(s) (limit=${page.limit}, offset=${page.offset}):\n`,
+        ];
+        page.data.forEach((task) => {
           summary.push(`- [${task.id}] ${task.title} (${task.status})`);
         });
         return {
@@ -275,7 +300,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           ],
           structuredContent: {
             parent_task_id: args.task_id,
-            subtasks,
+            subtasks: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
           } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
@@ -287,19 +315,25 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     }
   );
 
-  // Tool: get_subtasks
+  // Tool: get_subtasks (paginated)
   server.registerTool(
     'get_subtasks',
     {
-      description: 'Get all subtasks (children) of a parent task',
+      description:
+        'Get subtasks (children) of a parent task with pagination (limit default 50, max 500; offset default 0). Returns `{ parent_task_id, subtasks, total, limit, offset }`.',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
       }),
     },
     async (args) => {
       try {
-        const subtasks = await client.getSubtasks(args.task_id);
-        const summary = `Found ${subtasks.length} subtask(s) for task ${args.task_id}`;
+        const page = await client.getSubtasksPaginated(args.task_id, {
+          limit: args.limit,
+          offset: args.offset,
+        });
+        const summary = `Found ${page.data.length} of ${page.total} subtask(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`;
         return {
           content: [
             {
@@ -309,7 +343,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           ],
           structuredContent: {
             parent_task_id: args.task_id,
-            subtasks,
+            subtasks: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
           } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
@@ -388,17 +425,24 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     }
   );
 
-  // Tool: list_projects
+  // Tool: list_projects (paginated)
   server.registerTool(
     'list_projects',
     {
-      description: 'List all projects',
-      inputSchema: z.object({}),
+      description:
+        'List projects with pagination (limit default 50, max 500; offset default 0). Returns `{ projects, total, limit, offset }`.',
+      inputSchema: z.object({
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
+      }),
     },
-    async (_args) => {
+    async (args) => {
       try {
-        const projects = await client.listProjects();
-        if (projects.length === 0) {
+        const page = await client.listProjectsPaginated({
+          limit: args.limit,
+          offset: args.offset,
+        });
+        if (page.data.length === 0) {
           return {
             content: [
               {
@@ -406,11 +450,18 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: 'No projects found.',
               },
             ],
-            structuredContent: { projects: [] } as unknown as { [x: string]: unknown },
+            structuredContent: {
+              projects: [],
+              total: page.total,
+              limit: page.limit,
+              offset: page.offset,
+            } as unknown as { [x: string]: unknown },
           };
         }
-        const summary = [`Found ${projects.length} project(s):\n`];
-        projects.forEach((project) => {
+        const summary = [
+          `Found ${page.data.length} of ${page.total} project(s) (limit=${page.limit}, offset=${page.offset}):\n`,
+        ];
+        page.data.forEach((project) => {
           summary.push(`- [${project.id}] ${project.name}`);
         });
         return {
@@ -420,7 +471,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: { projects } as unknown as { [x: string]: unknown },
+          structuredContent: {
+            projects: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
+          } as unknown as { [x: string]: unknown },
         };
       } catch (error) {
         throw new McpError(
@@ -646,28 +702,37 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     }
   );
 
-  // Tool: get_comments
+  // Tool: get_comments (paginated)
   server.registerTool(
     'get_comments',
     {
-      description: 'Get all comments for a task in chronological order',
+      description:
+        'Get comments for a task in chronological order with pagination (limit default 50, max 500; offset default 0). Returns `{ task_id, comments, total, limit, offset }`.',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
+        limit: z.number().int().positive().max(500).optional(),
+        offset: z.number().int().nonnegative().optional(),
       }),
     },
     async (args) => {
       try {
-        const comments = await client.getComments(args.task_id);
+        const page = await client.getCommentsPaginated(args.task_id, {
+          limit: args.limit,
+          offset: args.offset,
+        });
         return {
           content: [
             {
               type: 'text',
-              text: `Found ${comments.length} comment(s) for task ${args.task_id}`,
+              text: `Found ${page.data.length} of ${page.total} comment(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`,
             },
           ],
           structuredContent: {
             task_id: args.task_id,
-            comments,
+            comments: page.data,
+            total: page.total,
+            limit: page.limit,
+            offset: page.offset,
           } as unknown as Record<string, unknown>,
         };
       } catch (error) {

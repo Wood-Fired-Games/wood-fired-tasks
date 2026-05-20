@@ -197,7 +197,8 @@ describe('MCP Comment Tools', () => {
       expect(result.isError).toBeFalsy();
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
-        expect(result.content[0].text).toContain('Found 3 comment(s)');
+        // Paginated envelope: "Found 3 of 3 comment(s) ..."
+        expect(result.content[0].text).toContain('Found 3 of 3 comment(s)');
       }
 
       expect(result.structuredContent).toBeDefined();
@@ -205,12 +206,18 @@ describe('MCP Comment Tools', () => {
         const data = result.structuredContent as {
           task_id: number;
           comments: Array<{ author: string; content: string }>;
+          total: number;
+          limit: number;
+          offset: number;
         };
         expect(data.task_id).toBe(testTaskId);
         expect(data.comments).toHaveLength(3);
         expect(data.comments[0].author).toBe('author1');
         expect(data.comments[1].author).toBe('author2');
         expect(data.comments[2].author).toBe('author3');
+        expect(data.total).toBe(3);
+        expect(data.limit).toBe(50);
+        expect(data.offset).toBe(0);
       }
     });
 
@@ -223,7 +230,7 @@ describe('MCP Comment Tools', () => {
       expect(result.isError).toBeFalsy();
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
-        expect(result.content[0].text).toContain('Found 0 comment(s)');
+        expect(result.content[0].text).toContain('Found 0 of 0 comment(s)');
       }
 
       expect(result.structuredContent).toBeDefined();
@@ -233,6 +240,36 @@ describe('MCP Comment Tools', () => {
         };
         expect(data.comments).toHaveLength(0);
       }
+    });
+
+    it('respects limit/offset pagination args', async () => {
+      // Seed 4 comments on the test task
+      for (let i = 0; i < 4; i++) {
+        await client.callTool({
+          name: 'add_comment',
+          arguments: {
+            task_id: testTaskId,
+            author: 'pager',
+            content: `Comment ${i + 1}`,
+          },
+        });
+      }
+
+      const result = (await client.callTool({
+        name: 'get_comments',
+        arguments: { task_id: testTaskId, limit: 2, offset: 1 },
+      })) as ToolResult;
+
+      const data = result.structuredContent as {
+        comments: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(data.limit).toBe(2);
+      expect(data.offset).toBe(1);
+      expect(data.comments.length).toBeLessThanOrEqual(2);
+      expect(data.total).toBeGreaterThanOrEqual(2);
     });
 
     it('returns error for non-existent task', async () => {

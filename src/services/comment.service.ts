@@ -1,6 +1,10 @@
 import type { ICommentRepository } from '../repositories/interfaces.js';
 import type { ITaskRepository } from '../repositories/interfaces.js';
-import type { Comment } from '../types/task.js';
+import type { Comment, PaginatedResponse } from '../types/task.js';
+import {
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_OFFSET,
+} from '../types/task.js';
 import { CreateCommentSchema } from '../schemas/comment.schema.js';
 import { ValidationError, NotFoundError } from './errors.js';
 
@@ -43,10 +47,14 @@ export class CommentService {
   }
 
   /**
-   * Get all comments for a task in chronological order
+   * Get comments for a task in chronological order — current page only.
+   * Internal callers use this; REST/MCP use {@link getCommentsPaginated}.
    * @throws NotFoundError if task does not exist
    */
-  getComments(taskId: number): Comment[] {
+  getComments(
+    taskId: number,
+    pagination?: { limit?: number; offset?: number }
+  ): Comment[] {
     // Verify task exists
     const task = this.taskRepo.findById(taskId);
     if (!task) {
@@ -54,7 +62,25 @@ export class CommentService {
     }
 
     // Return comments (already ordered chronologically by repository)
-    return this.commentRepo.findByTaskId(taskId);
+    return this.commentRepo.findByTaskId(taskId, pagination);
+  }
+
+  /**
+   * Paginated get-comments: `{ data, total, limit, offset }`.
+   */
+  getCommentsPaginated(
+    taskId: number,
+    pagination?: { limit?: number; offset?: number }
+  ): PaginatedResponse<Comment> {
+    const task = this.taskRepo.findById(taskId);
+    if (!task) {
+      throw new NotFoundError('Task', taskId);
+    }
+    const limit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
+    const offset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
+    const data = this.commentRepo.findByTaskId(taskId, { limit, offset });
+    const total = this.commentRepo.countByTaskId(taskId);
+    return { data, total, limit, offset };
   }
 
   /**

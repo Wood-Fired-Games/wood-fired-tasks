@@ -69,7 +69,7 @@ describe('Task CRUD Routes', () => {
     expect([400, 500]).toContain(response.statusCode);
   });
 
-  it('should list all tasks with GET /tasks', async () => {
+  it('should list all tasks with GET /tasks (paginated envelope)', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/tasks',
@@ -78,11 +78,17 @@ describe('Task CRUD Routes', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThan(0);
+    // GET /tasks now returns `{ data, total, limit, offset }`.
+    expect(body).toMatchObject({
+      limit: 50,
+      offset: 0,
+    });
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(typeof body.total).toBe('number');
+    expect(body.data.length).toBeGreaterThan(0);
   });
 
-  it('should filter tasks by status', async () => {
+  it('should filter tasks by status (envelope)', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/tasks?status=open',
@@ -91,8 +97,8 @@ describe('Task CRUD Routes', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    expect(Array.isArray(body)).toBe(true);
-    body.forEach((task: any) => {
+    expect(Array.isArray(body.data)).toBe(true);
+    body.data.forEach((task: any) => {
       expect(task.status).toBe('open');
     });
   });
@@ -267,7 +273,11 @@ describe('Task CRUD Routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const subtasks = JSON.parse(response.body);
+    const body = JSON.parse(response.body);
+    // Subtasks endpoint also returns the paginated envelope.
+    expect(body).toMatchObject({ limit: 50, offset: 0 });
+    expect(typeof body.total).toBe('number');
+    const subtasks = body.data;
     expect(subtasks).toHaveLength(2);
     expect(subtasks[0].title).toBe('Child Task 1');
     expect(subtasks[1].title).toBe('Child Task 2');
@@ -442,8 +452,8 @@ describe('Task CRUD Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const tasks = JSON.parse(response.body) as Array<{ id: number }>;
-      const ids = tasks.map((t) => t.id).sort();
+      const body = response.json() as { data: Array<{ id: number }> };
+      const ids = body.data.map((t) => t.id).sort();
       expect(ids).toEqual([midId, lateId].sort());
     });
 
@@ -457,8 +467,8 @@ describe('Task CRUD Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const tasks = JSON.parse(response.body) as Array<{ id: number }>;
-      const ids = tasks.map((t) => t.id).sort();
+      const body = response.json() as { data: Array<{ id: number }> };
+      const ids = body.data.map((t) => t.id).sort();
       expect(ids).toEqual([earlyId, midId].sort());
     });
 
@@ -473,8 +483,8 @@ describe('Task CRUD Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const tasks = JSON.parse(response.body) as Array<{ id: number }>;
-      const ids = tasks.map((t) => t.id);
+      const body = response.json() as { data: Array<{ id: number }> };
+      const ids = body.data.map((t) => t.id);
       expect(ids).toEqual([midId]);
     });
 
@@ -509,13 +519,12 @@ describe('Task CRUD Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      const tasks = JSON.parse(response.body) as Array<{
-        id: number;
-        status: string;
-      }>;
-      expect(tasks).toHaveLength(1);
-      expect(tasks[0].id).toBe(midId);
-      expect(tasks[0].status).toBe('done');
+      const body = response.json() as {
+        data: Array<{ id: number; status: string }>;
+      };
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].id).toBe(midId);
+      expect(body.data[0].status).toBe('done');
     });
 
     it('rejects invalid updated_after datetime with 400', async () => {
@@ -536,6 +545,154 @@ describe('Task CRUD Routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+  });
+
+  describe('pagination (limit/offset)', () => {
+    let paginationProjectId: number;
+    const TOTAL = 12;
+
+    beforeAll(async () => {
+      const project = app.projectService.createProject({
+        name: 'Pagination Test Project',
+      });
+      paginationProjectId = project.id;
+      // Seed N tasks so we can exercise multiple pages.
+      for (let i = 0; i < TOTAL; i++) {
+        app.taskService.createTask({
+          title: `Pagination task ${i + 1}`,
+          project_id: paginationProjectId,
+          created_by: 'pagination-tester',
+        });
+      }
+    });
+
+    it('returns the paginated envelope with default limit=50, offset=0', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks?project_id=${paginationProjectId}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        data: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(body).toMatchObject({ limit: 50, offset: 0 });
+      expect(body.total).toBe(TOTAL);
+      expect(body.data).toHaveLength(TOTAL);
+    });
+
+    it('respects custom limit and offset', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=3`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        data: Array<{ id: number }>;
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(body.limit).toBe(5);
+      expect(body.offset).toBe(3);
+      expect(body.total).toBe(TOTAL);
+      expect(body.data).toHaveLength(5);
+    });
+
+    it('does not duplicate rows across pages', async () => {
+      const page1 = (await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=0`,
+        headers,
+      })).json() as { data: Array<{ id: number }> };
+      const page2 = (await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=5`,
+        headers,
+      })).json() as { data: Array<{ id: number }> };
+
+      const ids1 = new Set(page1.data.map((t) => t.id));
+      const ids2 = new Set(page2.data.map((t) => t.id));
+      const overlap = [...ids1].filter((id) => ids2.has(id));
+      expect(overlap).toEqual([]);
+    });
+
+    it('rejects limit > 500 with 400', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks?limit=501',
+        headers,
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('rejects negative offset with 400', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks?offset=-1',
+        headers,
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('rejects limit=0 with 400', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks?limit=0',
+        headers,
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('rejects non-numeric limit with 400', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks?limit=abc',
+        headers,
+      });
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('applies pagination to subtasks endpoint', async () => {
+      // Create a parent + 8 children
+      const parent = app.taskService.createTask({
+        title: 'Subtask pagination parent',
+        project_id: paginationProjectId,
+        created_by: 'pagination-tester',
+      });
+      for (let i = 0; i < 8; i++) {
+        app.taskService.createTask({
+          title: `Sub ${i + 1}`,
+          project_id: paginationProjectId,
+          parent_task_id: parent.id,
+          created_by: 'pagination-tester',
+        });
+      }
+
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks/${parent.id}/subtasks?limit=3&offset=2`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        data: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(body.total).toBe(8);
+      expect(body.limit).toBe(3);
+      expect(body.offset).toBe(2);
+      expect(body.data).toHaveLength(3);
     });
   });
 });

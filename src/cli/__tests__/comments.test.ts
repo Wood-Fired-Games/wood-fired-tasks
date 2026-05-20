@@ -228,7 +228,7 @@ describe('comment-list command', () => {
 
     await program.parseAsync(['node', 'test', 'comment-list', '1']);
 
-    expect(getComments).toHaveBeenCalledWith(1);
+    expect(getComments).toHaveBeenCalledWith(1, { limit: undefined, offset: undefined });
     expect(formatCommentList).toHaveBeenCalledWith(mockComments);
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('alice: Test comment'));
   });
@@ -241,7 +241,7 @@ describe('comment-list command', () => {
 
     await program.parseAsync(['node', 'test', 'comment-list', '1']);
 
-    expect(getComments).toHaveBeenCalledWith(1);
+    expect(getComments).toHaveBeenCalledWith(1, { limit: undefined, offset: undefined });
     expect(formatCommentList).toHaveBeenCalledWith([]);
     expect(consoleLogSpy).toHaveBeenCalledWith('No comments');
   });

@@ -253,7 +253,8 @@ describe('E2E Regression: Full Task Lifecycle', () => {
     })) as ToolResult;
 
     expect(listDoneResult.isError).toBeFalsy();
-    expect(listDoneResult.content[0].text).toContain('Found 2 task(s)');
+    // Pagination envelope: "Found 2 of 2 task(s)"
+    expect(listDoneResult.content[0].text).toContain('Found 2 of 2 task(s)');
 
     // 15. delete_task task2
     const deleteTask2Result = (await client.callTool({

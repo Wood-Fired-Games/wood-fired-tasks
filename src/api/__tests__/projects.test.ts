@@ -41,7 +41,7 @@ describe('Project CRUD Routes', () => {
     expect(body.created_at).toBeDefined();
   });
 
-  it('should list all projects with GET /projects', async () => {
+  it('should list all projects with GET /projects (envelope)', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/projects',
@@ -50,8 +50,53 @@ describe('Project CRUD Routes', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThan(0);
+    expect(body).toMatchObject({ limit: 50, offset: 0 });
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(typeof body.total).toBe('number');
+    expect(body.data.length).toBeGreaterThan(0);
+  });
+
+  it('paginates projects with custom limit/offset', async () => {
+    // Seed extra projects so we have a window to paginate over.
+    for (let i = 0; i < 5; i++) {
+      await server.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers,
+        payload: { name: `Pagination Project ${i + 1}` },
+      });
+    }
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/projects?limit=2&offset=1',
+      headers,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.limit).toBe(2);
+    expect(body.offset).toBe(1);
+    expect(body.data.length).toBeLessThanOrEqual(2);
+    expect(body.total).toBeGreaterThanOrEqual(2);
+  });
+
+  it('rejects limit > 500 with 400', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/projects?limit=501',
+      headers,
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects negative offset with 400', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/v1/projects?offset=-1',
+      headers,
+    });
+    expect(response.statusCode).toBe(400);
   });
 
   it('should get a single project by ID', async () => {

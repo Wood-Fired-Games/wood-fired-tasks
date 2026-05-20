@@ -118,4 +118,27 @@ export interface TaskFilters {
   updated_before?: string; // ISO8601
   updated_after?: string; // ISO8601
   search?: string;
+  /** Pagination: max rows to return. Repository default applies if omitted. */
+  limit?: number;
+  /** Pagination: zero-based row offset. Defaults to 0. */
+  offset?: number;
 }
+
+/**
+ * Generic envelope returned by every paginated list endpoint:
+ *   { data, total, limit, offset }
+ *
+ * `total` is the unbounded match count for the same filter set — i.e. the
+ * number of rows that would have been returned without `limit`/`offset`.
+ */
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Default pagination applied by services when caller omits limit/offset. */
+export const DEFAULT_PAGE_LIMIT = 50;
+export const DEFAULT_PAGE_OFFSET = 0;
+export const MAX_PAGE_LIMIT = 500;

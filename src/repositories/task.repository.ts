@@ -5,11 +5,41 @@ import type {
   UpdateTaskDTO,
   TaskFilters,
 } from '../types/task.js';
+import {
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_OFFSET,
+  MAX_PAGE_LIMIT,
+} from '../types/task.js';
 import type {
   ITaskRepository,
   CompletionRangeFilters,
+  PaginationOptions,
 } from './interfaces.js';
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
+
+/**
+ * Clamp pagination inputs into the supported repository range.
+ *
+ * The schema layer (Zod) already enforces these bounds for HTTP callers, but
+ * the repository is also called directly from services and tests. Defending
+ * here keeps every code path within the budget — a malicious or buggy caller
+ * cannot ask SQLite to materialize an unbounded result set.
+ */
+function resolvePagination(pagination?: PaginationOptions): {
+  limit: number;
+  offset: number;
+} {
+  const rawLimit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
+  const rawOffset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
+  // Clamp to [1, MAX_PAGE_LIMIT]; non-finite or non-integer values collapse to default.
+  const limit = Number.isFinite(rawLimit) && Number.isInteger(rawLimit) && rawLimit > 0
+    ? Math.min(rawLimit, MAX_PAGE_LIMIT)
+    : DEFAULT_PAGE_LIMIT;
+  const offset = Number.isFinite(rawOffset) && Number.isInteger(rawOffset) && rawOffset >= 0
+    ? rawOffset
+    : DEFAULT_PAGE_OFFSET;
+  return { limit, offset };
+}
 
 // SQLite's datetime('now') stores "YYYY-MM-DD HH:MM:SS" while JS
 // new Date().toISOString() stores "YYYY-MM-DDTHH:MM:SS.sssZ". Normalize the
@@ -108,8 +138,11 @@ export class TaskRepository implements ITaskRepository {
     return normalizeTaskTimestamps({ ...task, tags });
   }
 
-  findAll(): Array<Task & { tags: string[] }> {
-    // Use LEFT JOIN with GROUP_CONCAT to get all tasks with their tags
+  findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }> {
+    const { limit, offset } = resolvePagination(pagination);
+    // Use LEFT JOIN with GROUP_CONCAT to get tasks (page) with their tags.
+    // LIMIT/OFFSET bound the result set so a 100k-row table cannot DoS the
+    // request via GROUP_CONCAT materialization.
     const rows = this.db
       .prepare(
         `
@@ -120,9 +153,10 @@ export class TaskRepository implements ITaskRepository {
       LEFT JOIN task_tags tt ON tt.task_id = t.id
       GROUP BY t.id
       ORDER BY t.created_at DESC
+      LIMIT ? OFFSET ?
     `
       )
-      .all() as Array<Task & { tags_csv: string | null }>;
+      .all(limit, offset) as Array<Task & { tags_csv: string | null }>;
 
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
@@ -296,6 +330,16 @@ export class TaskRepository implements ITaskRepository {
     const whereClause =
       whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
+    // Apply pagination so the server never materializes an unbounded result
+    // set. The schema layer caps `limit` at 500; this is a defence in depth
+    // for direct service/repo callers.
+    const { limit, offset } = resolvePagination({
+      limit: filters.limit,
+      offset: filters.offset,
+    });
+    params.__limit = limit;
+    params.__offset = offset;
+
     const query = `
       SELECT
         t.*,
@@ -305,6 +349,7 @@ export class TaskRepository implements ITaskRepository {
       ${whereClause}
       GROUP BY t.id
       ORDER BY t.created_at DESC
+      LIMIT @__limit OFFSET @__offset
     `;
 
     // FTS5 MATCH parses user-supplied search syntax at query time. Malformed
@@ -360,7 +405,11 @@ export class TaskRepository implements ITaskRepository {
     return claimTransaction.immediate();
   }
 
-  findChildren(parentId: number): Array<Task & { tags: string[] }> {
+  findChildren(
+    parentId: number,
+    pagination?: PaginationOptions
+  ): Array<Task & { tags: string[] }> {
+    const { limit, offset } = resolvePagination(pagination);
     const query = `
       SELECT
         t.*,
@@ -370,9 +419,10 @@ export class TaskRepository implements ITaskRepository {
       WHERE t.parent_task_id = ?
       GROUP BY t.id
       ORDER BY t.created_at ASC
+      LIMIT ? OFFSET ?
     `;
 
-    const rows = this.db.prepare(query).all(parentId) as Array<
+    const rows = this.db.prepare(query).all(parentId, limit, offset) as Array<
       Task & { tags_csv: string | null }
     >;
 
@@ -381,6 +431,20 @@ export class TaskRepository implements ITaskRepository {
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
       return normalizeTaskTimestamps({ ...task, tags });
     });
+  }
+
+  /**
+   * Total children count for a parent task. Mirrors `count(filters)` semantics
+   * for the subtask list endpoint — ignores limit/offset so the envelope can
+   * report the true match count.
+   */
+  countChildren(parentId: number): number {
+    const result = this.db
+      .prepare(
+        'SELECT COUNT(*) as count FROM tasks WHERE parent_task_id = ?'
+      )
+      .get(parentId) as { count: number };
+    return result.count;
   }
 
   count(filters?: TaskFilters): number {

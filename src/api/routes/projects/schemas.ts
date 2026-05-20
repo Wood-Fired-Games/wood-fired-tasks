@@ -14,5 +14,16 @@ export const ProjectResponseSchema = z.object({
 
 export const ProjectListResponseSchema = z.array(ProjectResponseSchema);
 
+/**
+ * Paginated project list envelope returned by GET /projects.
+ * Shape: `{ data: ProjectResponse[], total, limit, offset }`.
+ */
+export const ProjectListPaginatedResponseSchema = z.object({
+  data: z.array(ProjectResponseSchema),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+});
+
 // Re-export ErrorResponseSchema for convenience
 export { ErrorResponseSchema };

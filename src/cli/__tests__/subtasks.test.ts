@@ -280,7 +280,7 @@ describe('subtask-list command', () => {
 
     await program.parseAsync(['node', 'test', 'subtask-list', '1']);
 
-    expect(getSubtasks).toHaveBeenCalledWith(1);
+    expect(getSubtasks).toHaveBeenCalledWith(1, { limit: undefined, offset: undefined });
     expect(formatTaskTable).toHaveBeenCalledWith(mockSubtasks);
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('2 Subtask'));
   });
@@ -292,7 +292,7 @@ describe('subtask-list command', () => {
 
     await program.parseAsync(['node', 'test', 'subtask-list', '1']);
 
-    expect(getSubtasks).toHaveBeenCalledWith(1);
+    expect(getSubtasks).toHaveBeenCalledWith(1, { limit: undefined, offset: undefined });
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('No subtasks'));
   });
 

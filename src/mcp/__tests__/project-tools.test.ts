@@ -213,7 +213,8 @@ describe('MCP Project Tools', () => {
 
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
-        expect(result.content[0].text).toContain('Found 3 project(s)');
+        // Paginated envelope: "Found 3 of 3 project(s) (limit=50, offset=0)"
+        expect(result.content[0].text).toContain('Found 3 of 3 project(s)');
         expect(result.content[0].text).toContain('Project Alpha');
         expect(result.content[0].text).toContain('Project Beta');
         expect(result.content[0].text).toContain('Project Gamma');
@@ -223,10 +224,41 @@ describe('MCP Project Tools', () => {
       if (result.structuredContent) {
         const data = result.structuredContent as {
           projects: Array<{ id: number; name: string }>;
+          total: number;
+          limit: number;
+          offset: number;
         };
         expect(data.projects).toHaveLength(3);
         expect(data.projects.map((p) => p.name)).toContain('Project Alpha');
+        expect(data.total).toBe(3);
+        expect(data.limit).toBe(50);
+        expect(data.offset).toBe(0);
       }
+    });
+
+    it('respects limit/offset pagination args', async () => {
+      // Seed projects for paging
+      for (let i = 0; i < 5; i++) {
+        await client.callTool({
+          name: 'create_project',
+          arguments: { name: `Pagination MCP Project ${i + 1}` },
+        });
+      }
+      const result = (await client.callTool({
+        name: 'list_projects',
+        arguments: { limit: 2, offset: 1 },
+      })) as ToolResult;
+
+      const data = result.structuredContent as {
+        projects: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(data.limit).toBe(2);
+      expect(data.offset).toBe(1);
+      expect(data.projects.length).toBeLessThanOrEqual(2);
+      expect(data.total).toBeGreaterThanOrEqual(2);
     });
 
     it('returns empty array when no projects exist', async () => {

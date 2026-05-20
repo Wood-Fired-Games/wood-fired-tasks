@@ -11,6 +11,16 @@ export const CommentResponseSchema = z.object({
 
 export const CommentListResponseSchema = z.array(CommentResponseSchema);
 
+/**
+ * Paginated comment list envelope. Shape: `{ data, total, limit, offset }`.
+ */
+export const CommentListPaginatedResponseSchema = z.object({
+  data: z.array(CommentResponseSchema),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+});
+
 export const CreateCommentBodySchema = z.object({
   author: z.string().min(1).max(100),
   content: z.string().min(1).max(5000),

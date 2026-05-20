@@ -1,6 +1,26 @@
 import type Database from 'better-sqlite3';
 import type { Comment, CreateCommentDTO } from '../types/task.js';
-import type { ICommentRepository } from './interfaces.js';
+import {
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_OFFSET,
+  MAX_PAGE_LIMIT,
+} from '../types/task.js';
+import type { ICommentRepository, PaginationOptions } from './interfaces.js';
+
+function resolvePagination(pagination?: PaginationOptions): {
+  limit: number;
+  offset: number;
+} {
+  const rawLimit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
+  const rawOffset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
+  const limit = Number.isFinite(rawLimit) && Number.isInteger(rawLimit) && rawLimit > 0
+    ? Math.min(rawLimit, MAX_PAGE_LIMIT)
+    : DEFAULT_PAGE_LIMIT;
+  const offset = Number.isFinite(rawOffset) && Number.isInteger(rawOffset) && rawOffset >= 0
+    ? rawOffset
+    : DEFAULT_PAGE_OFFSET;
+  return { limit, offset };
+}
 
 export class CommentRepository implements ICommentRepository {
   private insertStmt: Database.Statement;
@@ -21,7 +41,7 @@ export class CommentRepository implements ICommentRepository {
     );
 
     this.findByTaskIdStmt = db.prepare(
-      'SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC'
+      'SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?'
     );
 
     this.deleteStmt = db.prepare('DELETE FROM task_comments WHERE id = ?');
@@ -51,8 +71,9 @@ export class CommentRepository implements ICommentRepository {
     return comment;
   }
 
-  findByTaskId(taskId: number): Comment[] {
-    return this.findByTaskIdStmt.all(taskId) as Comment[];
+  findByTaskId(taskId: number, pagination?: PaginationOptions): Comment[] {
+    const { limit, offset } = resolvePagination(pagination);
+    return this.findByTaskIdStmt.all(taskId, limit, offset) as Comment[];
   }
 
   findById(id: number): Comment | null {

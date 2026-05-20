@@ -113,10 +113,10 @@ describe('Task search validation (REST)', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as Array<{ title: string }>;
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThanOrEqual(1);
-    expect(body.some((t) => t.title === 'Fix login bug')).toBe(true);
+    const body = response.json() as { data: Array<{ title: string }> };
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data.length).toBeGreaterThanOrEqual(1);
+    expect(body.data.some((t) => t.title === 'Fix login bug')).toBe(true);
   });
 
   it('returns 200 with matching tasks for a valid prefix search', async () => {
@@ -127,7 +127,7 @@ describe('Task search validation (REST)', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    const body = response.json() as Array<{ title: string }>;
-    expect(body.some((t) => t.title.includes('migration'))).toBe(true);
+    const body = response.json() as { data: Array<{ title: string }> };
+    expect(body.data.some((t) => t.title.includes('migration'))).toBe(true);
   });
 });

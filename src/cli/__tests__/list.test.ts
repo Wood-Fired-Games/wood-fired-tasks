@@ -238,6 +238,43 @@ describe('list command', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('3 task(s) found'));
   });
 
+  it('passes --limit and --offset through to listTasks', async () => {
+    const { listTasks } = await import('../api/client.js');
+    vi.mocked(listTasks).mockResolvedValue([]);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'list',
+      '--limit',
+      '25',
+      '--offset',
+      '50',
+    ]);
+
+    expect(listTasks).toHaveBeenCalledWith({ limit: 25, offset: 50 });
+  });
+
+  it('rejects --limit > 500 before calling the API', async () => {
+    const { listTasks } = await import('../api/client.js');
+
+    await program.parseAsync(['node', 'test', 'list', '--limit', '501']);
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(listTasks).not.toHaveBeenCalled();
+  });
+
+  it('rejects negative --offset before calling the API', async () => {
+    const { listTasks } = await import('../api/client.js');
+
+    await program.parseAsync(['node', 'test', 'list', '--offset', '-1']);
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(listTasks).not.toHaveBeenCalled();
+  });
+
   it('validates status filter value', async () => {
     const { listTasks } = await import('../api/client.js');
 

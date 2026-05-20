@@ -1,7 +1,16 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { CreateProjectSchema } from '../../../schemas/task.schema.js';
-import { ProjectResponseSchema, ProjectListResponseSchema } from './schemas.js';
+import {
+  ProjectResponseSchema,
+  ProjectListPaginatedResponseSchema,
+} from './schemas.js';
+
+// Pagination query schema for GET /projects. Mirrors task list bounds.
+const QueryProjectListSchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
 
 const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // POST / - Create project
@@ -23,21 +32,26 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // GET / - List all projects
+  // GET / - List projects (paginated)
+  // BREAKING vs. pre-pagination clients that consumed the bare array — CLI
+  // and MCP layers handle the envelope; bare-array shim retained in CLI for
+  // older servers.
   fastify.get(
     '/',
     {
       schema: {
         tags: ['projects'],
-        description: 'List all projects',
+        description:
+          'List projects (paginated). Returns `{ data, total, limit, offset }`.',
+        querystring: QueryProjectListSchema,
         response: {
-          200: ProjectListResponseSchema,
+          200: ProjectListPaginatedResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      const projects = fastify.projectService.listProjects();
-      return reply.send(projects);
+      const result = fastify.projectService.listProjectsPaginated(request.query);
+      return reply.send(result);
     }
   );
 

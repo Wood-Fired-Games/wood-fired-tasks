@@ -49,8 +49,52 @@ export const CreateProjectSchema = z.object({
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
 /**
+ * Pagination bounds applied to all list endpoints.
+ *
+ * `limit`  — page size; capped at 500 to bound query cost (GROUP_CONCAT
+ *            over task_tags scales with row count).
+ * `offset` — starting row, zero-based.
+ *
+ * Both fields default to safe values so existing callers that omit them
+ * receive the first page (50 rows) rather than the full table.
+ */
+export const PaginationSchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+});
+
+export type PaginationInput = z.infer<typeof PaginationSchema>;
+
+/**
+ * Optional pagination — same bounds, but each field can be omitted entirely.
+ * Used inside service-level filter parsing where defaults are applied later.
+ */
+export const PaginationOptionalSchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+});
+
+export type PaginationOptionalInput = z.infer<typeof PaginationOptionalSchema>;
+
+/**
+ * Wrap a row schema in the standard paginated envelope:
+ *   { data: [...], total, limit, offset }
+ *
+ * `total` is the unbounded count for the same filter set, so clients can
+ * implement page navigation without re-issuing without filters.
+ */
+export function paginatedSchema<T extends z.ZodTypeAny>(itemSchema: T) {
+  return z.object({
+    data: z.array(itemSchema),
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+  });
+}
+
+/**
  * TaskFiltersSchema - validation for task filtering
- * All fields are optional
+ * All fields are optional. Includes pagination knobs (limit/offset).
  */
 export const TaskFiltersSchema = z.object({
   project_id: z.number().int().positive(),
@@ -69,6 +113,8 @@ export const TaskFiltersSchema = z.object({
       (s) => s.trim().split(/\s+/).filter(Boolean).length <= 32,
       { message: 'Search query must contain at most 32 terms.' }
     ),
+  limit: z.coerce.number().int().positive().max(500),
+  offset: z.coerce.number().int().nonnegative(),
 }).partial();
 
 export type TaskFiltersInput = z.infer<typeof TaskFiltersSchema>;

@@ -311,11 +311,23 @@ describe('MCP Task Tools', () => {
       expect(result.isError).toBeFalsy();
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
-        expect(result.content[0].text).toContain('Found 3 task(s)');
+        // Paginated envelope: "Found 3 of 3 task(s) (limit=50, offset=0)"
+        expect(result.content[0].text).toContain('Found 3 of 3 task(s)');
         expect(result.content[0].text).toContain('Task 1');
         expect(result.content[0].text).toContain('Task 2');
         expect(result.content[0].text).toContain('Task 3');
       }
+      // structuredContent now carries the pagination envelope alongside tasks.
+      const data = result.structuredContent as {
+        tasks: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(data.total).toBe(3);
+      expect(data.limit).toBe(50);
+      expect(data.offset).toBe(0);
+      expect(data.tasks).toHaveLength(3);
     });
 
     it('filters tasks by status', async () => {
@@ -340,10 +352,38 @@ describe('MCP Task Tools', () => {
       expect(result.isError).toBeFalsy();
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
-        expect(result.content[0].text).toContain('Found 1 task(s)');
+        expect(result.content[0].text).toContain('Found 1 of 1 task(s)');
         expect(result.content[0].text).toContain('Open task');
         expect(result.content[0].text).not.toContain('In-progress task');
       }
+    });
+
+    it('respects limit/offset pagination args', async () => {
+      // Seed 4 tasks beyond whatever the previous tests left behind.
+      for (let i = 0; i < 4; i++) {
+        app.taskService.createTask({
+          title: `Pagination MCP ${i + 1}`,
+          project_id: testProjectId,
+          created_by: 'test-agent',
+        });
+      }
+
+      const result = (await client.callTool({
+        name: 'list_tasks',
+        arguments: { project_id: testProjectId, limit: 2, offset: 1 },
+      })) as ToolResult;
+
+      expect(result.isError).toBeFalsy();
+      const data = result.structuredContent as {
+        tasks: unknown[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(data.limit).toBe(2);
+      expect(data.offset).toBe(1);
+      expect(data.tasks.length).toBeLessThanOrEqual(2);
+      expect(data.total).toBeGreaterThanOrEqual(2);
     });
 
     it('returns empty message when no tasks match', async () => {
