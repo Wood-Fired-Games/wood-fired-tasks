@@ -21,39 +21,76 @@ Once set up, you get:
 
 ## Quick Start
 
+The setup scripts resolve the API key in this order (most secure first):
+
+1. `WFB_API_KEY` environment variable
+2. Per-user secret file
+   - Windows: `%LOCALAPPDATA%\wood-fired-bugs\api-key` (user-only ACL)
+   - Linux / Mac: `~/.config/wood-fired-bugs/api-key` (mode 600)
+3. Masked interactive prompt
+4. `--api-key` / `-ApiKey` / positional CLI argument — **deprecated**. Command-line
+   secrets leak through shell history (`~/.bash_history`, PowerShell `ConsoleHost_history.txt`)
+   and process listings (`ps -ef`, `Get-Process`, `wmic process get commandline`). The
+   flag still works for one release but emits a warning.
+
+After the first successful setup the key is cached in the per-user secret file,
+so subsequent re-runs and the `tasks` CLI wrapper just read it from disk — no
+env var, no prompt, no argv.
+
 ### Windows
 
-Run `setup.bat` from a command prompt or PowerShell:
-
-```
-setup.bat YOUR_API_KEY
-```
-
-With a custom server URL:
-
-```
-setup.bat YOUR_API_KEY http://192.168.1.100:3000
-```
-
-This handles PowerShell execution policy automatically. Alternatively, run
-PowerShell directly:
+Set the env var, then run with no key on argv:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -ApiKey "your-api-key-here"
+$env:WFB_API_KEY = "your-api-key-here"
+.\setup.bat
 ```
+
+Or let setup.bat prompt:
+
+```
+setup.bat
+```
+
+With a custom server URL (no key required on argv — setup will prompt):
+
+```
+setup.bat http://192.168.1.100:3000
+```
+
+PowerShell direct form:
+
+```powershell
+$env:WFB_API_KEY = "your-api-key-here"
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+> **Deprecated** (key on argv leaks): `setup.bat YOUR_API_KEY` or
+> `.\setup.ps1 -ApiKey "your-api-key-here"`. Still works, emits a warning.
 
 ### Linux / Mac
 
+Set the env var, then run with no key on argv:
+
 ```bash
 chmod +x setup.sh
-./setup.sh --api-key "your-api-key-here"
+WFB_API_KEY="your-api-key-here" ./setup.sh
+```
+
+Or let setup.sh prompt:
+
+```bash
+./setup.sh
 ```
 
 With a custom server URL:
 
 ```bash
-./setup.sh --server-url "http://192.168.1.100:3000" --api-key "your-api-key-here"
+WFB_API_KEY="your-api-key-here" ./setup.sh --server-url "http://192.168.1.100:3000"
 ```
+
+> **Deprecated** (key on argv leaks): `./setup.sh --api-key "your-api-key-here"`.
+> Still works, emits a warning.
 
 ### After Setup
 
@@ -173,14 +210,19 @@ The MCP server defaults to connecting to `http://192.168.69.69:3000`. To test:
 
 **Windows (PowerShell):**
 ```powershell
-$env:WFB_API_KEY="your-api-key-here"
+$env:WFB_API_KEY = (Get-Content "$env:LOCALAPPDATA\wood-fired-bugs\api-key").Trim()
 node ".\mcp-server\dist\mcp\remote\index.js"
 ```
 
 **Linux/Mac:**
 ```bash
-WFB_API_KEY=your-api-key-here node ./mcp-server/dist/mcp/remote/index.js
+WFB_API_KEY="$(cat ~/.config/wood-fired-bugs/api-key)" \
+  node ./mcp-server/dist/mcp/remote/index.js
 ```
+
+Avoid pasting the literal key on the command line — it ends up in your shell
+history. If you must, prefix the command with a space (most shells with
+`HISTCONTROL=ignorespace` will skip it) and rotate the key afterwards.
 
 Expected output (to stderr):
 ```
@@ -194,16 +236,30 @@ Press Ctrl+C to exit.
 
 1. Restart Claude Code after running setup
 2. Run `claude mcp list` and confirm `wood-fired-bugs` appears with status `✓ Connected`
-3. If missing, re-register manually:
+3. If missing, re-register manually. Read the key from the cached secret file
+   so it never appears on the command line:
 
-   ```
+   **Linux/Mac:**
+   ```bash
    claude mcp add wood-fired-bugs --scope user \
      -e WFB_API_URL=http://192.168.69.69:3000 \
-     -e WFB_API_KEY=YOUR_KEY \
+     -e WFB_API_KEY="$(cat ~/.config/wood-fired-bugs/api-key)" \
      -- node /absolute/path/to/mcp-server/dist/mcp/remote/index.js
    ```
 
+   **Windows (PowerShell):**
+   ```powershell
+   $key = (Get-Content "$env:LOCALAPPDATA\wood-fired-bugs\api-key").Trim()
+   claude mcp add wood-fired-bugs --scope user `
+     -e WFB_API_URL=http://192.168.69.69:3000 `
+     -e WFB_API_KEY=$key `
+     -- node C:\path\to\mcp-server\dist\mcp\remote\index.js
+   ```
+
    The entry lives in `~/.claude.json` (not `~/.claude/settings.json`).
+   After running `claude mcp add`, tighten the config permissions:
+   `chmod 600 ~/.claude.json` (Linux/Mac) or
+   `icacls "$env:USERPROFILE\.claude.json" /inheritance:r /grant:r "$env:USERNAME:(R,W)"` (Windows).
 
 ### Skills not appearing
 
@@ -238,4 +294,23 @@ Your Machine                               Linux Backend
 ```
 
 Both the CLI and MCP server connect to the same backend REST API over HTTP.
-Your API key is stored locally — it never leaves your machine unencrypted.
+
+## API Key Storage
+
+Your API key never leaves your machine and is stored in two places, both
+restricted to your user account:
+
+| Path | Access | Purpose |
+|------|--------|---------|
+| `~/.config/wood-fired-bugs/api-key` (Linux/Mac) | mode 600, owner-only | Source of truth read by the `tasks` CLI wrapper and re-runs of `setup.sh` |
+| `%LOCALAPPDATA%\wood-fired-bugs\api-key` (Windows) | user-only ACL via `icacls` | Same as above; the generated `tasks.cmd` reads from here at runtime |
+| `~/.claude.json` (Linux/Mac mode 600, Windows user-only ACL) | restricted by setup | MCP server env block consumed by Claude Code |
+
+The Windows `tasks.cmd` wrapper does **not** embed the key as a literal
+`set API_KEY=...` line. It reads `WFB_API_KEY` from the per-user secret file
+at each invocation. This means an attacker who can read your `%PATH%` cannot
+exfiltrate the key — they would need access to your `%LOCALAPPDATA%` directory,
+which is already protected by the user-only ACL.
+
+If you ever rotate the key, re-run `setup.ps1` / `setup.sh`; the existing
+wrapper picks up the new value automatically.

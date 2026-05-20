@@ -4,13 +4,21 @@
 # Configures Claude Code on this machine to connect to the Wood Fired Bugs
 # task management system running on the local network.
 #
+# API key resolution (most secure first):
+#   1. WFB_API_KEY environment variable
+#   2. Per-user secret file (~/.config/wood-fired-bugs/api-key, mode 600)
+#   3. Masked interactive prompt
+#   4. --api-key KEY argument (DEPRECATED — leaks via shell history and ps)
+#
 # Usage:
-#   ./setup.sh --api-key YOUR_API_KEY
-#   ./setup.sh --server-url http://192.168.1.100:3000 --api-key YOUR_API_KEY
+#   WFB_API_KEY=... ./setup.sh
+#   ./setup.sh                                 # prompts for the key
+#   ./setup.sh --server-url http://192.168.1.100:3000
+#   ./setup.sh --api-key YOUR_API_KEY          # deprecated, still works
 #
 # Options:
 #   --server-url URL    Backend server URL (default: http://192.168.69.69:3000)
-#   --api-key KEY       API key for authentication (required)
+#   --api-key KEY       API key (DEPRECATED — see resolution order above)
 #   --help              Show this help message
 
 set -e
@@ -18,6 +26,11 @@ set -e
 # ── Defaults ────────────────────────────────────────────────────────────────
 SERVER_URL="http://192.168.69.69:3000"
 API_KEY=""
+API_KEY_FROM_ARGV=0
+
+# Per-user secret file. 0600 perms, owner-only access.
+SECRET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs"
+SECRET_FILE="$SECRET_DIR/api-key"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -28,10 +41,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --api-key)
             API_KEY="$2"
+            API_KEY_FROM_ARGV=1
             shift 2
             ;;
         --help|-h)
-            head -20 "$0" | tail -14 | sed 's/^# \?//'
+            sed -n '2,23p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         *)
@@ -42,11 +56,55 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$API_KEY_FROM_ARGV" -eq 1 ]]; then
+    echo "[WARN] --api-key on the command line is DEPRECATED."
+    echo "[WARN] Command-line secrets leak via shell history and 'ps -ef'."
+    echo "[WARN] Prefer the WFB_API_KEY env var, the secret file ($SECRET_FILE),"
+    echo "[WARN] or the interactive prompt. This flag will be removed in a future release."
+fi
+
+# Resolve API key from env var if not on argv
+if [[ -z "$API_KEY" && -n "${WFB_API_KEY:-}" ]]; then
+    API_KEY="$WFB_API_KEY"
+    echo "[INFO] Using API key from WFB_API_KEY environment variable"
+fi
+
+# Resolve API key from secret file
+if [[ -z "$API_KEY" && -r "$SECRET_FILE" ]]; then
+    perms="$(stat -c '%a' "$SECRET_FILE" 2>/dev/null || stat -f '%Lp' "$SECRET_FILE" 2>/dev/null)"
+    if [[ "$perms" == "600" ]]; then
+        API_KEY="$(tr -d '\r\n' < "$SECRET_FILE")"
+        if [[ -n "$API_KEY" ]]; then
+            echo "[INFO] Using API key from $SECRET_FILE"
+        fi
+    else
+        echo "[WARN] Secret file $SECRET_FILE has loose permissions ($perms); ignoring."
+        echo "[WARN] Run: chmod 600 \"$SECRET_FILE\" to fix."
+    fi
+fi
+
+# Final fallback: masked prompt
 if [[ -z "$API_KEY" ]]; then
-    echo "ERROR: --api-key is required"
-    echo "Usage: ./setup.sh --api-key YOUR_API_KEY"
+    echo ""
+    read -rsp "Enter Wood Fired Bugs API key: " API_KEY
+    echo ""
+fi
+
+if [[ -z "$API_KEY" ]]; then
+    echo "ERROR: API key is required"
+    echo "Set WFB_API_KEY, populate $SECRET_FILE (mode 600), or supply it at the prompt."
     exit 1
 fi
+
+# Cache the key in the per-user secret file so future re-runs don't need argv/env.
+if [[ ! -d "$SECRET_DIR" ]]; then
+    mkdir -p "$SECRET_DIR"
+    chmod 700 "$SECRET_DIR" 2>/dev/null || true
+fi
+( umask 077 && : > "$SECRET_FILE" )
+chmod 600 "$SECRET_FILE" 2>/dev/null || true
+printf '%s\n' "$API_KEY" > "$SECRET_FILE"
+chmod 600 "$SECRET_FILE" 2>/dev/null || true
 
 # ── Resolve paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -132,14 +190,22 @@ if ! claude mcp add wood-fired-bugs \
     exit 1
 fi
 
-echo "OK: Registered wood-fired-bugs at user scope (~/.claude.json)"
+# claude mcp add embedded the API key in ~/.claude.json. Tighten perms now.
+CLAUDE_CONFIG="$HOME/.claude.json"
+if [[ -f "$CLAUDE_CONFIG" ]]; then
+    chmod 600 "$CLAUDE_CONFIG" 2>/dev/null || true
+fi
+
+echo "OK: Registered wood-fired-bugs at user scope (~/.claude.json, mode 600)"
 
 # ── 5. Done ───────────────────────────────────────────────────────────────────
 echo ""
 echo "Setup complete!"
 echo ""
-echo "To verify the connection, run:"
-echo "  WFB_API_URL=$SERVER_URL WFB_API_KEY=... node \"$MCP_ENTRY_POINT\""
+echo "API key cached at: $SECRET_FILE (mode 600)"
+echo ""
+echo "To verify the connection, run (key is read from the secret file):"
+echo "  WFB_API_URL=$SERVER_URL WFB_API_KEY=\"\$(cat \"$SECRET_FILE\")\" node \"$MCP_ENTRY_POINT\""
 echo ""
 echo "Open Claude Code in any project and try:"
 echo "  /tasks:my-work"
