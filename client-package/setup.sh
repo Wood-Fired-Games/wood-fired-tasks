@@ -17,14 +17,18 @@
 #   ./setup.sh --api-key YOUR_API_KEY          # deprecated, still works
 #
 # Options:
-#   --server-url URL    Backend server URL (default: http://192.168.69.69:3000)
+#   --server-url URL    Backend server URL (default: http://localhost:3000).
+#                       Override this with --server-url or the WFB_API_URL env
+#                       var when the backend runs on a different host.
 #   --api-key KEY       API key (DEPRECATED — see resolution order above)
 #   --help              Show this help message
 
 set -e
 
 # ── Defaults ────────────────────────────────────────────────────────────────
-SERVER_URL="http://192.168.69.69:3000"
+# Default to localhost; users must override via --server-url or WFB_API_URL
+# when targeting a remote backend.
+SERVER_URL="${WFB_API_URL:-http://localhost:3000}"
 API_KEY=""
 API_KEY_FROM_ARGV=0
 

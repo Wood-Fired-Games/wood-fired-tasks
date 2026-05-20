@@ -13,26 +13,59 @@ import {
  * Remote MCP server entry point.
  *
  * Runs via stdio on the client machine and proxies all 26 MCP tools
- * to the Linux backend's REST API over HTTP.
+ * to the backend's REST API over HTTP.
  *
  * Required environment variables:
- *   WFB_API_URL  - Base URL of the REST API (e.g., http://192.168.69.69:3000)
- *   WFB_API_KEY  - API key for authentication
+ *   WFB_API_URL  - Base URL of the REST API (e.g., http://localhost:3000
+ *                  or http://your-server.local:3000). Required — no default.
+ *   WFB_API_KEY  - API key for authentication. Required.
  */
 
-// Validate required environment variables
-const apiUrl = process.env.WFB_API_URL || 'http://192.168.69.69:3000';
-const apiKey = process.env.WFB_API_KEY;
+/**
+ * Validate the env vars the remote MCP needs. Returns the resolved values on
+ * success or an Error describing exactly which variable was missing/invalid.
+ * Exported so unit tests can exercise the fail-fast paths without spawning
+ * the full MCP server.
+ */
+export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
+  apiUrl: string;
+  apiKey: string;
+} {
+  const apiUrl = env.WFB_API_URL;
+  const apiKey = env.WFB_API_KEY;
 
-if (!apiKey) {
-  console.error('Error: WFB_API_KEY environment variable is required.');
-  console.error('Example: WFB_API_KEY=your-api-key-here');
-  process.exit(1);
+  if (!apiUrl || apiUrl.trim() === '') {
+    throw new Error(
+      'WFB_API_URL must be set when running the remote MCP server ' +
+        '(e.g., http://localhost:3000 or http://your-server.local:3000). ' +
+        'No default is provided to avoid silently connecting to the wrong host.'
+    );
+  }
+
+  if (!apiKey || apiKey.trim() === '') {
+    throw new Error(
+      'WFB_API_KEY must be set when running the remote MCP server. ' +
+        'Example: WFB_API_KEY=your-api-key-here'
+    );
+  }
+
+  return { apiUrl, apiKey };
 }
 
 async function main() {
+  // Resolve config at startup. Fail fast with a readable message — never a
+  // stack trace — when a required env var is missing.
+  let apiUrl: string;
+  let apiKey: string;
+  try {
+    ({ apiUrl, apiKey } = resolveRemoteConfig());
+  } catch (err) {
+    console.error(`Error: ${(err as Error).message}`);
+    process.exit(1);
+  }
+
   // Create REST client
-  const restClient = new RestClient(apiUrl as string, apiKey as string);
+  const restClient = new RestClient(apiUrl, apiKey);
 
   // Create MCP server (same name/version as local server)
   const server = new McpServer({
@@ -44,7 +77,7 @@ async function main() {
   registerRemoteTools(server, restClient);
 
   // Register the events resource (discovery/documentation)
-  const eventsApiUrl = `${(apiUrl as string).replace(/\/$/, '')}/api/v1`;
+  const eventsApiUrl = `${apiUrl.replace(/\/$/, '')}/api/v1`;
   server.resource(
     EVENTS_RESOURCE_NAME,
     EVENTS_RESOURCE_URI,
@@ -53,7 +86,7 @@ async function main() {
       mimeType: 'text/event-stream',
     },
     async () => {
-      return getEventsResourceContent(eventsApiUrl, apiKey as string);
+      return getEventsResourceContent(eventsApiUrl, apiKey);
     }
   );
 
@@ -77,7 +110,15 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
-main().catch((error) => {
-  console.error('Fatal error during remote MCP startup:', error);
-  process.exit(1);
-});
+// Only auto-start when executed directly (node dist/mcp/remote/index.js),
+// not when imported by unit tests.
+const isDirectExecution =
+  import.meta.url === `file://${process.argv[1]}` ||
+  import.meta.url.endsWith(process.argv[1] ?? '');
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    console.error('Fatal error during remote MCP startup:', error);
+    process.exit(1);
+  });
+}

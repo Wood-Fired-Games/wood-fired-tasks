@@ -14,7 +14,7 @@ Once set up, you get:
 
 - **Node.js 18+** installed — [download from nodejs.org](https://nodejs.org/)
 - **Claude Code** installed — [claude.ai/claude-code](https://claude.ai/claude-code)
-- Network access to the backend server (default: `http://192.168.69.69:3000`)
+- Network access to the backend server (default: `http://localhost:3000` — override with `--server-url` or `WFB_API_URL` to target a remote host like `http://your-server.local:3000`)
 - Your API key (ask the server admin)
 
 ---
@@ -172,7 +172,9 @@ All commands support `--json` for machine-readable output and `--help` for usage
 ### Check backend connectivity
 
 ```bash
-curl http://192.168.69.69:3000/health
+curl http://localhost:3000/health
+# Or, when the backend lives on another host:
+# curl http://your-server.local:3000/health
 ```
 
 Or using the CLI:
@@ -206,7 +208,7 @@ If still not found, check that the `bin` directory inside this package is on you
 
 ### Test the MCP server manually
 
-The MCP server defaults to connecting to `http://192.168.69.69:3000`. To test:
+The MCP server requires `WFB_API_URL` (no default — set it to your backend, e.g. `http://localhost:3000` or `http://your-server.local:3000`). To test:
 
 **Windows (PowerShell):**
 ```powershell
@@ -227,7 +229,7 @@ history. If you must, prefix the command with a space (most shells with
 Expected output (to stderr):
 ```
 Wood Fired Bugs MCP Server (remote) running on stdio
-Connected to backend: http://192.168.69.69:3000
+Connected to backend: http://localhost:3000
 ```
 
 Press Ctrl+C to exit.
@@ -239,10 +241,14 @@ Press Ctrl+C to exit.
 3. If missing, re-register manually. Read the key from the cached secret file
    so it never appears on the command line:
 
+   Replace the example URL below with your backend's address (e.g.
+   `http://localhost:3000` for a local backend, or `http://your-server.local:3000`
+   for a LAN host):
+
    **Linux/Mac:**
    ```bash
    claude mcp add wood-fired-bugs --scope user \
-     -e WFB_API_URL=http://192.168.69.69:3000 \
+     -e WFB_API_URL=http://localhost:3000 \
      -e WFB_API_KEY="$(cat ~/.config/wood-fired-bugs/api-key)" \
      -- node /absolute/path/to/mcp-server/dist/mcp/remote/index.js
    ```
@@ -251,7 +257,7 @@ Press Ctrl+C to exit.
    ```powershell
    $key = (Get-Content "$env:LOCALAPPDATA\wood-fired-bugs\api-key").Trim()
    claude mcp add wood-fired-bugs --scope user `
-     -e WFB_API_URL=http://192.168.69.69:3000 `
+     -e WFB_API_URL=http://localhost:3000 `
      -e WFB_API_KEY=$key `
      -- node C:\path\to\mcp-server\dist\mcp\remote\index.js
    ```

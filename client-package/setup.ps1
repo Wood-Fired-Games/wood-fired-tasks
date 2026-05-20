@@ -22,7 +22,9 @@
 
 .PARAMETER ServerUrl
     Base URL of the Wood Fired Bugs backend server.
-    Default: http://192.168.69.69:3000
+    Default: http://localhost:3000
+    Override with -ServerUrl or the WFB_API_URL env var when the backend
+    runs on a different host.
 
 .PARAMETER ApiKey
     API key for authenticating with the Wood Fired Bugs backend.
@@ -38,7 +40,7 @@
 #>
 
 param(
-    [string]$ServerUrl = "http://192.168.69.69:3000",
+    [string]$ServerUrl = $(if ($env:WFB_API_URL) { $env:WFB_API_URL } else { "http://localhost:3000" }),
     [string]$ApiKey
 )
 
