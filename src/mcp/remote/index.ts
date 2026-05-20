@@ -77,6 +77,8 @@ async function main() {
   registerRemoteTools(server, restClient);
 
   // Register the events resource (discovery/documentation)
+  // Note: the API key is intentionally not passed to the resource — it would
+  // be surfaced to the LLM as context (see task #196).
   const eventsApiUrl = `${apiUrl.replace(/\/$/, '')}/api/v1`;
   server.resource(
     EVENTS_RESOURCE_NAME,
@@ -86,7 +88,7 @@ async function main() {
       mimeType: 'text/event-stream',
     },
     async () => {
-      return getEventsResourceContent(eventsApiUrl, apiKey);
+      return getEventsResourceContent(eventsApiUrl);
     }
   );
 

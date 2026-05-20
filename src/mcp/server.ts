@@ -56,8 +56,9 @@ export function createMcpServer(
   registerHealthTools(server, db);
 
   // Register resources
+  // Note: the API key is intentionally not passed to the resource — it would
+  // be surfaced to the LLM as context (see task #196).
   const apiUrl = process.env.API_URL || 'http://localhost:3000/api/v1';
-  const apiKey = process.env.API_KEY || '';
 
   server.resource(
     EVENTS_RESOURCE_NAME,
@@ -67,7 +68,7 @@ export function createMcpServer(
       mimeType: 'text/event-stream',
     },
     async () => {
-      return getEventsResourceContent(apiUrl, apiKey);
+      return getEventsResourceContent(apiUrl);
     }
   );
 

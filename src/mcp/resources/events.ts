@@ -21,16 +21,17 @@ export const EVENTS_RESOURCE_DESCRIPTION =
   'Real-time task and project event stream via Server-Sent Events';
 
 /**
- * Generate the event stream resource content with the configured API URL and key.
+ * Generate the event stream resource content with the configured API URL.
+ *
+ * Note: The API key is intentionally NOT embedded in the resource output.
+ * MCP resources surface to the LLM as context and end up in conversation
+ * history, prompt caches, and client-persisted transcripts. The markdown
+ * uses a `<your-api-key>` placeholder instead.
  *
  * @param apiUrl - Base URL for the API (e.g., http://localhost:3000/api/v1)
- * @param apiKey - API key for authentication
  * @returns ReadResourceResult with markdown documentation
  */
-export function getEventsResourceContent(
-  apiUrl: string,
-  apiKey: string
-): ReadResourceResult {
+export function getEventsResourceContent(apiUrl: string): ReadResourceResult {
   return {
     contents: [
       {
@@ -48,9 +49,9 @@ GET ${apiUrl}/events
 
 ## Authentication
 
-Include API key in header:
+Include API key in header. Replace \`<your-api-key>\` with the value you configured in \`WFB_API_KEY\` (or \`API_KEYS\` for local stdio).
 \`\`\`
-X-API-Key: ${apiKey}
+X-API-Key: <your-api-key>
 \`\`\`
 
 ## Query Parameters
@@ -81,8 +82,10 @@ Server replays missed events from buffer (up to 1000 events or 5-minute window).
 
 ## Example with curl
 
+Replace \`<your-api-key>\` with the value you configured in \`WFB_API_KEY\` (or \`API_KEYS\` for local stdio).
+
 \`\`\`bash
-curl -N -H "X-API-Key: your-key" "${apiUrl}/events?project_id=1&event_types=task.created,task.updated"
+curl -N -H "X-API-Key: <your-api-key>" "${apiUrl}/events?project_id=1&event_types=task.created,task.updated"
 \`\`\`
 
 ## Event Format

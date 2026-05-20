@@ -12,9 +12,11 @@ describe('MCP Events Resource', () => {
   let clientTransport: InMemoryTransport;
 
   beforeEach(async () => {
-    // Set test API URL/key for predictable output
+    // Set test API URL/key for predictable output.
+    // The API_KEY is a canary value — task #196 ensures it never surfaces in
+    // the events://stream markdown (MCP resources flow into LLM context).
     process.env.API_URL = 'http://localhost:3000/api/v1';
-    process.env.API_KEY = 'test-api-key';
+    process.env.API_KEY = 'audit-leak-canary-deadbeef';
 
     app = await createTestApp();
 
@@ -80,13 +82,28 @@ describe('MCP Events Resource', () => {
       expect(text).toContain('GET http://localhost:3000/api/v1/events');
     });
 
-    it('includes API key in authentication section', async () => {
+    it('uses a placeholder in the authentication section (no real key)', async () => {
       const result = await client.readResource({
         uri: 'events://stream',
       });
 
       const text = (result.contents[0] as { text: string }).text;
-      expect(text).toContain('X-API-Key: test-api-key');
+      // Authentication section must use a placeholder, never the configured key.
+      expect(text).toContain('X-API-Key: <your-api-key>');
+      // Guide the reader to the env var they actually configured.
+      expect(text).toContain('WFB_API_KEY');
+    });
+
+    it('does NOT leak the configured API key into resource content (task #196)', async () => {
+      const result = await client.readResource({
+        uri: 'events://stream',
+      });
+
+      const text = (result.contents[0] as { text: string }).text;
+      // The configured key is a recognizable canary; it must never surface
+      // in MCP resource output (would leak into LLM context / prompt cache).
+      expect(text).not.toContain('audit-leak-canary-deadbeef');
+      expect(text).not.toContain(process.env.API_KEY!);
     });
 
     it('documents all event types', async () => {
@@ -144,7 +161,8 @@ describe('MCP Events Resource', () => {
 
       const text = (result.contents[0] as { text: string }).text;
       expect(text).toContain('curl -N');
-      expect(text).toContain('X-API-Key: your-key');
+      // Curl example uses the same placeholder as the auth section.
+      expect(text).toContain('X-API-Key: <your-api-key>');
     });
 
     it('documents event format with SSE structure', async () => {
