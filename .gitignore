@@ -35,3 +35,9 @@ reports/
 
 # Client install artifacts (tasks.cmd shim contains API key)
 /bin/
+
+# Internal planning + agent workspaces (not for open-source distribution)
+.planning/
+.claude/
+.codex/
+.agents/
