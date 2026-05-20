@@ -29,6 +29,9 @@ Thumbs.db
 reports/
 .stryker-tmp/
 
+# Vitest coverage output
+coverage/
+
 # Environment
 .env
 .env.local
