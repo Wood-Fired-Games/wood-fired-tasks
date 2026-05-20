@@ -13,7 +13,7 @@
 # Usage:
 #   WFB_API_KEY=... ./setup.sh
 #   ./setup.sh                                 # prompts for the key
-#   ./setup.sh --server-url http://192.168.1.100:3000
+#   ./setup.sh --server-url http://192.0.2.100:3000
 #   ./setup.sh --api-key YOUR_API_KEY          # deprecated, still works
 #
 # Options:

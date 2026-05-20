@@ -61,7 +61,7 @@ The auth plugin (`src/api/plugins/auth.ts`) validates only that the supplied `X-
 - **Never share keys between humans or services.** Treat keys like SSH private keys — one per identity.
 - **Label your keys.** `API_KEYS` accepts entries of the form `key:label` (alongside bare keys) so per-request audit logs identify the caller by label. Example:
   ```
-  API_KEYS=abc123def456...:stuart-laptop,xyz789...:ci-runner,bare-key-no-label
+  API_KEYS=abc123def456...:alice-laptop,xyz789...:ci-runner,bare-key-no-label
   ```
   Bare keys get an auto-label `key_<first8>` derived from the first 8 characters of the raw key. The label appears in every per-request log line as `apiKeyLabel=<label>`; the raw key value is never logged.
 - **Reference [SECURITY.md](SECURITY.md) for incident response** (key compromise, rotation, disclosure). Note: `SECURITY.md` is a placeholder until the open-source-readiness audit completes; until then, follow your team's standard credential-compromise playbook.

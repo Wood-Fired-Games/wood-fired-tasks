@@ -6,11 +6,11 @@ REM
 REM Preferred (key never appears on a command line):
 REM   set WFB_API_KEY=...
 REM   setup.bat
-REM   setup.bat http://192.168.1.100:3000
+REM   setup.bat http://192.0.2.100:3000
 REM
 REM Legacy (DEPRECATED -- key on argv leaks via shell history and 'wmic process'):
 REM   setup.bat YOUR_API_KEY
-REM   setup.bat YOUR_API_KEY http://192.168.1.100:3000
+REM   setup.bat YOUR_API_KEY http://192.0.2.100:3000
 
 if /I "%~1"=="--help" goto :show_help
 if /I "%~1"=="-h"     goto :show_help

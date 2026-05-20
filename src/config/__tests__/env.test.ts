@@ -362,12 +362,12 @@ describe('Configuration Validation', () => {
 
     it('parses mixed bare and labelled entries', () => {
       const entries = parseApiKeyEntries(
-        'abc12345xxxxxxxx,def456:ci-bot,ghi789:stuart-laptop',
+        'abc12345xxxxxxxx,def456:ci-bot,ghi789:alice-laptop',
       );
       expect(entries).toEqual([
         { key: 'abc12345xxxxxxxx', label: 'key_abc12345' },
         { key: 'def456', label: 'ci-bot' },
-        { key: 'ghi789', label: 'stuart-laptop' },
+        { key: 'ghi789', label: 'alice-laptop' },
       ]);
     });
 

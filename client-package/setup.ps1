@@ -36,7 +36,7 @@
     .\setup.ps1
 
 .EXAMPLE
-    .\setup.ps1 -ServerUrl "http://192.168.1.100:3000"
+    .\setup.ps1 -ServerUrl "http://192.0.2.100:3000"
 #>
 
 param(

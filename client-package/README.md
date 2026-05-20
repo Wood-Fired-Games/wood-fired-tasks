@@ -55,7 +55,7 @@ setup.bat
 With a custom server URL (no key required on argv — setup will prompt):
 
 ```
-setup.bat http://192.168.1.100:3000
+setup.bat http://192.0.2.100:3000
 ```
 
 PowerShell direct form:
@@ -86,7 +86,7 @@ Or let setup.sh prompt:
 With a custom server URL:
 
 ```bash
-WFB_API_KEY="your-api-key-here" ./setup.sh --server-url "http://192.168.1.100:3000"
+WFB_API_KEY="your-api-key-here" ./setup.sh --server-url "http://192.0.2.100:3000"
 ```
 
 > **Deprecated** (key on argv leaks): `./setup.sh --api-key "your-api-key-here"`.
@@ -111,7 +111,7 @@ after setup for the PATH change to take effect.
 ```
 tasks list                    List all tasks
 tasks list --status open      Filter by status
-tasks list --assignee stuart  Filter by assignee
+tasks list --assignee alice   Filter by assignee
 tasks show 42                 Show full details for task 42
 tasks create                  Create a task interactively
 tasks update 42 --status done Mark task 42 as done
