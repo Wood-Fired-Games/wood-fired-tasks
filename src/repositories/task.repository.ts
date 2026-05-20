@@ -9,6 +9,7 @@ import type {
   ITaskRepository,
   CompletionRangeFilters,
 } from './interfaces.js';
+import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
 
 // SQLite's datetime('now') stores "YYYY-MM-DD HH:MM:SS" while JS
 // new Date().toISOString() stores "YYYY-MM-DDTHH:MM:SS.sssZ". Normalize the
@@ -306,9 +307,22 @@ export class TaskRepository implements ITaskRepository {
       ORDER BY t.created_at DESC
     `;
 
-    const rows = this.db.prepare(query).all(params) as Array<
-      Task & { tags_csv: string | null }
-    >;
+    // FTS5 MATCH parses user-supplied search syntax at query time. Malformed
+    // expressions (e.g. unterminated quote, `NEAR(`, bare `*`) throw
+    // SQLITE_ERROR with raw parser text. Catch and re-throw as FtsSyntaxError
+    // ONLY when the caller actually provided a search filter — otherwise
+    // unrelated SQLITE_ERRORs would be misclassified.
+    let rows: Array<Task & { tags_csv: string | null }>;
+    try {
+      rows = this.db.prepare(query).all(params) as Array<
+        Task & { tags_csv: string | null }
+      >;
+    } catch (err) {
+      if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
+        throw new FtsSyntaxError((err as Error).message);
+      }
+      throw err;
+    }
 
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
@@ -444,7 +458,17 @@ export class TaskRepository implements ITaskRepository {
       ${whereClause}
     `;
 
-    const result = this.db.prepare(query).get(params) as { count: number };
+    // Mirror the FTS-error handling from findByFilters so countByFilters
+    // surfaces FtsSyntaxError instead of bare SQLITE_ERROR.
+    let result: { count: number };
+    try {
+      result = this.db.prepare(query).get(params) as { count: number };
+    } catch (err) {
+      if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
+        throw new FtsSyntaxError((err as Error).message);
+      }
+      throw err;
+    }
     return result.count;
   }
 

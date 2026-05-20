@@ -605,6 +605,82 @@ describe('TaskService', () => {
       const filteredCount = taskService.countTasks({ status: 'open' });
       expect(filteredCount).toBe(3); // All created tasks start as open
     });
+
+    describe('FTS5 search validation', () => {
+      const MALFORMED_INPUTS: Array<{ name: string; input: string }> = [
+        { name: 'bare double quote', input: '"' },
+        { name: 'unterminated NEAR(', input: 'NEAR(' },
+        { name: 'bare wildcard', input: '*' },
+        { name: 'dangling OR operator', input: 'foo OR' },
+        { name: 'unterminated phrase', input: '"unterminated phrase' },
+      ];
+
+      for (const { name, input } of MALFORMED_INPUTS) {
+        it(`listTasks throws ValidationError on ${name}`, () => {
+          expect(() => taskService.listTasks({ search: input })).toThrow(
+            ValidationError
+          );
+
+          try {
+            taskService.listTasks({ search: input });
+            throw new Error('should have thrown');
+          } catch (err) {
+            expect(err).toBeInstanceOf(ValidationError);
+            const fieldErrors = (err as ValidationError).fieldErrors;
+            expect(fieldErrors.search).toBeDefined();
+            expect(fieldErrors.search.length).toBeGreaterThan(0);
+            // No raw SQLite text in the client-facing message.
+            const joined = fieldErrors.search.join(' ');
+            expect(joined).not.toContain('fts5:');
+            expect(joined).not.toContain('SQLITE');
+            expect(joined).not.toContain('unterminated string');
+            expect(joined).not.toContain('parse error');
+          }
+        });
+
+        it(`countTasks throws ValidationError on ${name}`, () => {
+          expect(() => taskService.countTasks({ search: input })).toThrow(
+            ValidationError
+          );
+        });
+
+        it(`searchTasks throws ValidationError on ${name}`, () => {
+          // searchTasks delegates to listTasks, so the same mapping applies.
+          expect(() => taskService.searchTasks(input)).toThrow(ValidationError);
+        });
+      }
+
+      it('rejects search with more than 32 terms via Zod refinement', () => {
+        // Use single-character terms so the 33-term count cap is hit BEFORE
+        // the 200-char length cap (otherwise the wrong refinement triggers).
+        const tooMany = Array.from({ length: 33 }, () => 'a').join(' ');
+        try {
+          taskService.listTasks({ search: tooMany });
+          throw new Error('should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          const fieldErrors = (err as ValidationError).fieldErrors;
+          expect(fieldErrors.search).toBeDefined();
+          expect(fieldErrors.search.join(' ')).toContain('at most 32 terms');
+        }
+      });
+
+      it('accepts search with exactly 32 terms', () => {
+        // Use single-letter terms so the joined string also fits inside the
+        // 200-char cap that runs alongside the 32-term cap.
+        const exactly32 = Array.from({ length: 32 }, (_, i) =>
+          String.fromCharCode(97 + (i % 26)) + i
+        ).join(' ');
+        // Should NOT throw — even though no rows match, the query must parse.
+        expect(() => taskService.listTasks({ search: exactly32 })).not.toThrow();
+      });
+
+      it('valid simple search still returns results', () => {
+        const results = taskService.listTasks({ search: 'login' });
+        expect(results.length).toBe(1);
+        expect(results[0].title).toBe('Fix login bug');
+      });
+    });
   });
 
   describe('parent_task_id and subtasks', () => {

@@ -22,7 +22,14 @@ const QueryTaskFiltersSchema = z.object({
   due_after: z.string().datetime(),
   updated_before: z.string().datetime(),
   updated_after: z.string().datetime(),
-  search: z.string().min(1).max(200),
+  search: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine(
+      (s) => s.trim().split(/\s+/).filter(Boolean).length <= 32,
+      { message: 'Search query must contain at most 32 terms.' }
+    ),
 }).partial();
 
 const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {

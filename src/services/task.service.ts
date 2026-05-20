@@ -2,7 +2,20 @@ import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.
 import { Task, VALID_STATUS_TRANSITIONS, TaskPriority } from '../types/task.js';
 import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
+import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
+
+/**
+ * Sanitized message surfaced to clients when the FTS5 search expression
+ * fails to parse. The raw SQLite error text is intentionally NOT included —
+ * see `FtsSyntaxError.originalMessage` for the value preserved for logging.
+ */
+const FTS_SYNTAX_ERROR_MESSAGE =
+  'Invalid search syntax. The search query must be a valid SQLite FTS5 expression.';
+
+function ftsValidationError(): ValidationError {
+  return new ValidationError({ search: [FTS_SYNTAX_ERROR_MESSAGE] });
+}
 
 /**
  * Inputs for {@link TaskService.getCompletionReport}.
@@ -134,7 +147,14 @@ export class TaskService {
         });
         throw new ValidationError(fieldErrors);
       }
-      return this.taskRepo.findByFilters(result.data);
+      try {
+        return this.taskRepo.findByFilters(result.data);
+      } catch (err) {
+        if (err instanceof FtsSyntaxError) {
+          throw ftsValidationError();
+        }
+        throw err;
+      }
     }
 
     return this.taskRepo.findByFilters({});
@@ -242,7 +262,14 @@ export class TaskService {
         });
         throw new ValidationError(fieldErrors);
       }
-      return this.taskRepo.count(result.data);
+      try {
+        return this.taskRepo.count(result.data);
+      } catch (err) {
+        if (err instanceof FtsSyntaxError) {
+          throw ftsValidationError();
+        }
+        throw err;
+      }
     }
 
     return this.taskRepo.count();
