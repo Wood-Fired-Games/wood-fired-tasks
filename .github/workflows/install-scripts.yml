@@ -26,17 +26,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
-        env:
-          # Fail the action when shellcheck reports any severity at or above warning.
-          SHELLCHECK_OPTS: -S warning
-        with:
-          scandir: '.'
-          # Only lint our installer; do not scan unrelated shell snippets.
-          additional_files: 'install.sh'
-          ignore_paths: 'node_modules dist coverage'
-          severity: warning
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --version
+      - name: Run shellcheck on install.sh only
+        # Explicitly scope to install.sh — task 202's scope is the installer only.
+        # Using the action would scan all .sh files in the repo by default.
+        run: shellcheck -S warning install.sh
 
   # -------------------------------------------------------------------------
   # Lint install.ps1 with PSScriptAnalyzer on a Windows runner.
