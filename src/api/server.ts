@@ -28,9 +28,9 @@ import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
 import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
-import healthRoutes from './routes/health.js';
+import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
-import { registerSwagger } from './plugins/swagger.js';
+import { registerSwaggerSpec, registerSwaggerUI } from './plugins/swagger.js';
 import authPlugin from './plugins/auth.js';
 
 /**
@@ -125,7 +125,18 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('idempotencyService', idempotencyService);
 
   // Create and decorate SSEManager
-  const sseManager = new SSEManager();
+  // task #185: per-key/per-IP/global SSE caps are passed in from env so
+  // operators can tune limits without code changes. Defaults are set in
+  // the Zod schema (4 / 8 / 200).
+  const sseManager = new SSEManager(
+    undefined, // maxBufferSize → default
+    undefined, // bufferTtlMs → default
+    undefined, // heartbeatIntervalMs → default
+    undefined, // maxConnectionAgeMs → default
+    config.SSE_MAX_CONNECTIONS_PER_KEY,
+    config.SSE_MAX_CONNECTIONS_PER_IP,
+    config.SSE_MAX_CONNECTIONS
+  );
   server.decorate('sseManager', sseManager);
 
   // Wire EventBus to SSEManager - subscribe to each event type explicitly
@@ -166,8 +177,31 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // Set custom error handler (must be set before routes)
   server.setErrorHandler(errorHandler);
 
-  // Register Swagger/OpenAPI documentation (must be before routes to capture schemas)
-  await registerSwagger(server);
+  // Register Swagger/OpenAPI spec collector (must be before routes so it can
+  // capture their schemas). task #185: the spec collector itself does not
+  // expose any HTTP endpoint — only `@fastify/swagger-ui` does that, and we
+  // register it conditionally below.
+  await registerSwaggerSpec(server);
+
+  // task #185: gate Swagger UI / `/docs/json` in production.
+  // - Non-production (development, test): expose UI without auth — keeps the
+  //   current developer workflow and existing openapi.test.ts assertions.
+  // - Production + ENABLE_SWAGGER_IN_PRODUCTION=true: expose UI but require
+  //   X-API-Key (same canonical auth plugin used for /api/v1).
+  // - Production + default config: do NOT register the UI plugin at all.
+  //   `/docs` and `/docs/json` return 404.
+  const exposeSwaggerUI =
+    config.NODE_ENV !== 'production' || config.ENABLE_SWAGGER_IN_PRODUCTION === true;
+  if (exposeSwaggerUI) {
+    if (config.NODE_ENV === 'production') {
+      await server.register(async (scope) => {
+        await scope.register(authPlugin);
+        await registerSwaggerUI(scope);
+      });
+    } else {
+      await registerSwaggerUI(server);
+    }
+  }
 
   // Register @fastify/sse plugin (must be before routes that use SSE)
   await server.register(fastifySSE as any, {
@@ -198,8 +232,21 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     },
   });
 
-  // Register public health check route (no auth required)
+  // Register public health check route (no auth required). task #185: the
+  // route now returns only { status, timestamp, version } so internal stats
+  // (SSE client count, uptime) are not leaked to unauthenticated probes.
   await server.register(healthRoutes, { prefix: '/health' });
+
+  // task #185: authenticated detailed health check exposes the full
+  // diagnostic payload (component checks + runtime stats). Gated by the
+  // SAME canonical auth plugin used for /api/v1.
+  await server.register(
+    async (scope) => {
+      await scope.register(authPlugin);
+      await scope.register(detailedHealthRoutes);
+    },
+    { prefix: '/health/detailed' }
+  );
 
   // Register routes under /api/v1 with auth protection
   await server.register(

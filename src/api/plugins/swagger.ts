@@ -4,11 +4,16 @@ import fastifySwaggerUI from '@fastify/swagger-ui';
 import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 
 /**
- * Register Swagger/OpenAPI documentation plugins
- * Must be called BEFORE registering routes to capture their schemas
+ * Register the OpenAPI spec collector (`@fastify/swagger`).
+ *
+ * The spec collector hooks into route registration to build the OpenAPI
+ * document — it does NOT expose any HTTP endpoint by itself. Always
+ * registering it keeps the in-process spec available to tests and to the
+ * optional Swagger UI plugin, regardless of whether `/docs` is exposed.
+ *
+ * Must be called BEFORE registering routes to capture their schemas.
  */
-export async function registerSwagger(fastify: FastifyInstance): Promise<void> {
-  // Register @fastify/swagger for OpenAPI spec generation
+export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<void> {
   await fastify.register(fastifySwagger, {
     openapi: {
       info: {
@@ -32,8 +37,19 @@ export async function registerSwagger(fastify: FastifyInstance): Promise<void> {
     },
     transform: jsonSchemaTransform,
   });
+}
 
-  // Register @fastify/swagger-ui for interactive documentation
+/**
+ * Register the interactive Swagger UI plugin at `/docs`.
+ *
+ * Splitting this from spec registration lets `createServer` gate UI exposure
+ * (production-only opt-in + auth) without affecting the in-process OpenAPI
+ * document that tests rely on for schema introspection.
+ *
+ * Task #185: in production, this is only called inside an auth-protected
+ * scope (or skipped entirely when ENABLE_SWAGGER_IN_PRODUCTION!=true).
+ */
+export async function registerSwaggerUI(fastify: FastifyInstance): Promise<void> {
   await fastify.register(fastifySwaggerUI, {
     routePrefix: '/docs',
     uiConfig: {
@@ -41,4 +57,16 @@ export async function registerSwagger(fastify: FastifyInstance): Promise<void> {
       deepLinking: true,
     },
   });
+}
+
+/**
+ * Legacy combined helper: register spec + UI together (no auth, no env gating).
+ *
+ * Retained for callers that want the pre-task-#185 behaviour. New code should
+ * call `registerSwaggerSpec` and `registerSwaggerUI` independently so the UI
+ * can be gated.
+ */
+export async function registerSwagger(fastify: FastifyInstance): Promise<void> {
+  await registerSwaggerSpec(fastify);
+  await registerSwaggerUI(fastify);
 }
