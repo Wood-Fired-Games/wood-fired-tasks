@@ -14,6 +14,18 @@ SKILLS_SOURCE="$SCRIPT_DIR/skills/tasks"
 SKILLS_DEST="$HOME/.claude/commands/tasks"
 SERVICE_URL="${WOOD_FIRED_BUGS_URL:-http://localhost:3000}"
 
+# Per-user secret file for the API key. Strict 0600 permissions.
+SECRET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs"
+SECRET_FILE="$SECRET_DIR/api-key"
+
+# chmod helper — silent if file is missing so we never block install on it.
+secure_file() {
+  local target="$1"
+  if [ -f "$target" ]; then
+    chmod 600 "$target" 2>/dev/null || true
+  fi
+}
+
 # ============================================================================
 # Cleanup and rollback handler
 # ============================================================================
@@ -97,21 +109,44 @@ echo "[OK] Found $SKILL_COUNT skill files"
 # ============================================================================
 
 API_KEY=""
+API_KEY_FROM_ARGV=0
 
-# Check for API key from command line flag
+# Parse command line flags.
+# --api-key is DEPRECATED — secrets on argv leak via shell history and `ps`.
+# Prefer WOOD_FIRED_BUGS_API_KEY, the per-user secret file, or the interactive prompt.
 while [[ $# -gt 0 ]]; do
   case $1 in
     --api-key)
       API_KEY="$2"
+      API_KEY_FROM_ARGV=1
       shift 2
+      ;;
+    -h|--help)
+      cat <<EOF
+Usage: $0 [--api-key KEY]
+
+API key resolution order (most secure first):
+  1. WOOD_FIRED_BUGS_API_KEY environment variable
+  2. Secret file at \$XDG_CONFIG_HOME/wood-fired-bugs/api-key (default ~/.config/wood-fired-bugs/api-key)
+  3. Masked interactive prompt
+  4. --api-key KEY argument (DEPRECATED — leaks via shell history and process listings)
+EOF
+      exit 0
       ;;
     *)
       echo "[ERROR] Unknown option: $1"
-      echo "Usage: $0 [--api-key KEY]"
+      echo "Run '$0 --help' for usage."
       exit 1
       ;;
   esac
 done
+
+if [ "$API_KEY_FROM_ARGV" -eq 1 ]; then
+  echo "[WARN] --api-key on the command line is DEPRECATED."
+  echo "[WARN] Command-line secrets leak via shell history and 'ps -ef'."
+  echo "[WARN] Prefer WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SECRET_FILE),"
+  echo "[WARN] or the interactive prompt. This flag will be removed in a future release."
+fi
 
 # Check for API key from environment variable
 if [ -z "$API_KEY" ] && [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
@@ -119,10 +154,24 @@ if [ -z "$API_KEY" ] && [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
   echo "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable"
 fi
 
-# Prompt for API key if not provided
+# Check for API key from per-user secret file
+if [ -z "$API_KEY" ] && [ -r "$SECRET_FILE" ]; then
+  # Refuse to use the secret file if it is group/world readable.
+  if [ "$(stat -c '%a' "$SECRET_FILE" 2>/dev/null || stat -f '%Lp' "$SECRET_FILE" 2>/dev/null)" = "600" ]; then
+    API_KEY="$(tr -d '\r\n' < "$SECRET_FILE")"
+    if [ -n "$API_KEY" ]; then
+      echo "[INFO] Using API key from $SECRET_FILE"
+    fi
+  else
+    echo "[WARN] Secret file $SECRET_FILE has loose permissions; ignoring."
+    echo "[WARN] Run: chmod 600 \"$SECRET_FILE\" to fix."
+  fi
+fi
+
+# Prompt for API key if still not provided
 if [ -z "$API_KEY" ]; then
   echo ""
-  read -sp "Enter Wood Fired Bugs API key: " API_KEY
+  read -rsp "Enter Wood Fired Bugs API key: " API_KEY
   echo ""
 fi
 
@@ -132,9 +181,23 @@ if [ -z "$API_KEY" ]; then
   exit 1
 fi
 
+# Persist the API key to the per-user secret file with strict permissions
+# so subsequent runs (and any deprecation removal) keep working without argv.
+if [ ! -d "$SECRET_DIR" ]; then
+  mkdir -p "$SECRET_DIR"
+  chmod 700 "$SECRET_DIR" 2>/dev/null || true
+fi
+# Create the file with 0600 perms before writing the secret so a brief
+# world-readable window never exists.
+( umask 077 && : > "$SECRET_FILE" )
+chmod 600 "$SECRET_FILE" 2>/dev/null || true
+printf '%s\n' "$API_KEY" > "$SECRET_FILE"
+chmod 600 "$SECRET_FILE" 2>/dev/null || true
+
 # Show masked key confirmation
 MASKED_KEY="${API_KEY:0:4}$(printf '*%.0s' {1..20})"
 echo "[OK] API key set: $MASKED_KEY"
+echo "[OK] API key cached at $SECRET_FILE (mode 600)"
 
 # ============================================================================
 # Step 3: Copy skill files (LINX-01)
@@ -165,13 +228,18 @@ echo "[INFO] Backing up configuration..."
 # Create config file if it doesn't exist
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "[INFO] Creating new configuration file at $CONFIG_FILE"
+  ( umask 077 && : > "$CONFIG_FILE" )
   echo '{}' > "$CONFIG_FILE"
+  secure_file "$CONFIG_FILE"
 else
-  # Create timestamped backup
+  # Create timestamped backup with strict perms (0600) — backups contain the API key.
   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
   BACKUP_FILE="${CONFIG_FILE}.backup.${TIMESTAMP}"
-  cp "$CONFIG_FILE" "$BACKUP_FILE"
-  echo "[OK] Backed up existing configuration to $BACKUP_FILE"
+  ( umask 077 && cp "$CONFIG_FILE" "$BACKUP_FILE" )
+  secure_file "$BACKUP_FILE"
+  # Re-tighten the config itself in case a previous installer or hand-edit relaxed it.
+  secure_file "$CONFIG_FILE"
+  echo "[OK] Backed up existing configuration to $BACKUP_FILE (mode 600)"
 fi
 
 # ============================================================================
@@ -180,8 +248,9 @@ fi
 
 echo "[INFO] Configuring MCP server..."
 
-# Create temporary file for new server config
+# Create temporary file for new server config with strict perms — it contains the API key.
 NEW_SERVER_CONFIG=$(mktemp)
+chmod 600 "$NEW_SERVER_CONFIG" 2>/dev/null || true
 TEMP_FILES+=("$NEW_SERVER_CONFIG")
 
 # Build MCP server configuration
@@ -201,17 +270,21 @@ cat > "$NEW_SERVER_CONFIG" <<EOF
 }
 EOF
 
-# Create temporary file for merged config
+# Create temporary file for merged config with strict perms — it will contain the API key.
 MERGED_CONFIG=$(mktemp)
+chmod 600 "$MERGED_CONFIG" 2>/dev/null || true
 TEMP_FILES+=("$MERGED_CONFIG")
 
 # Deep merge: existing config + new server config
 jq -s '.[0] * .[1]' "$CONFIG_FILE" "$NEW_SERVER_CONFIG" > "$MERGED_CONFIG"
 
-# Atomic write: move merged config to final location
+# Atomic write: move merged config to final location and re-tighten perms
+# (mv from a 600 source preserves perms on most systems, but explicit chmod
+# guards against filesystem quirks).
 mv "$MERGED_CONFIG" "$CONFIG_FILE"
+secure_file "$CONFIG_FILE"
 
-echo "[OK] MCP server 'wood-fired-bugs' configured in $CONFIG_FILE"
+echo "[OK] MCP server 'wood-fired-bugs' configured in $CONFIG_FILE (mode 600)"
 
 # ============================================================================
 # Step 6: Validate connectivity (LINX-05)

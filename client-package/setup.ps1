@@ -7,9 +7,17 @@
     Configures Claude Code on this machine to connect to the Wood Fired Bugs
     task management system running on the local network.
 
+    API key resolution order (most secure first):
+      1. -ApiKey parameter (DEPRECATED -- leaks via shell history and Get-Process)
+      2. WFB_API_KEY environment variable
+      3. Per-user secret file ($env:LOCALAPPDATA\wood-fired-bugs\api-key)
+      4. Masked interactive prompt
+
     This script:
     - Copies the /tasks: skill files to your Claude Code commands directory
     - Configures the Wood Fired Bugs MCP server in Claude Code settings
+    - Stores the API key in a per-user secret file (user-only ACL) so the
+      generated tasks.cmd wrapper never embeds the key in cleartext
     - Validates that Node.js 18+ is installed
 
 .PARAMETER ServerUrl
@@ -18,22 +26,39 @@
 
 .PARAMETER ApiKey
     API key for authenticating with the Wood Fired Bugs backend.
-    Required.
+    DEPRECATED -- prefer WFB_API_KEY env var, the secret file, or the prompt.
 
 .EXAMPLE
-    .\setup.ps1 -ApiKey "your-api-key-here"
+    # Recommended: set the env var first, then run with no key on argv.
+    $env:WFB_API_KEY = "your-api-key-here"
+    .\setup.ps1
 
 .EXAMPLE
-    .\setup.ps1 -ServerUrl "http://192.168.1.100:3000" -ApiKey "your-api-key-here"
+    .\setup.ps1 -ServerUrl "http://192.168.1.100:3000"
 #>
 
 param(
     [string]$ServerUrl = "http://192.168.69.69:3000",
-    [Parameter(Mandatory=$true)]
     [string]$ApiKey
 )
 
 $ErrorActionPreference = "Stop"
+$ApiKeyFromArgv = $PSBoundParameters.ContainsKey('ApiKey') -and -not [string]::IsNullOrWhiteSpace($ApiKey)
+
+# Per-user secret file. Stored under LOCALAPPDATA (machine-local, not roamed)
+# with a user-only ACL applied via icacls.
+$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-bugs" } else { Join-Path $env:USERPROFILE ".wood-fired-bugs" }
+$SecretFile = Join-Path $SecretDir "api-key"
+
+function Set-UserOnlyAcl {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return }
+    try {
+        & icacls $Path /inheritance:r /grant:r "$($env:USERNAME):(R,W)" 2>$null | Out-Null
+    } catch {
+        Write-Host "[WARN] Could not tighten ACL on $Path : $_" -ForegroundColor Yellow
+    }
+}
 
 Write-Host ""
 Write-Host "Wood Fired Bugs - Client Setup" -ForegroundColor Cyan
@@ -46,6 +71,65 @@ $McpServerPath = Join-Path $PackageDir "mcp-server"
 
 Write-Host "Package directory: $PackageDir"
 Write-Host "MCP server path:   $McpServerPath"
+Write-Host ""
+
+# ── 0. Resolve API key ───────────────────────────────────────────────────────
+if ($ApiKeyFromArgv) {
+    Write-Host "[WARN] -ApiKey on the command line is DEPRECATED." -ForegroundColor Yellow
+    Write-Host "[WARN] Command-line secrets leak via shell history and Get-Process." -ForegroundColor Yellow
+    Write-Host "[WARN] Prefer the WFB_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
+    Write-Host "[WARN] or the interactive prompt. This flag will be removed in a future release." -ForegroundColor Yellow
+}
+
+if (-not $ApiKey) {
+    if ($env:WFB_API_KEY) {
+        $ApiKey = $env:WFB_API_KEY
+        Write-Host "[INFO] Using API key from WFB_API_KEY environment variable" -ForegroundColor Yellow
+    } elseif (Test-Path $SecretFile) {
+        $acl = Get-Acl $SecretFile
+        $foreignAce = $acl.Access | Where-Object {
+            $_.IdentityReference.Value -notmatch [Regex]::Escape($env:USERNAME) -and
+            $_.IdentityReference.Value -notmatch 'SYSTEM' -and
+            $_.IdentityReference.Value -notmatch 'Administrators'
+        }
+        if ($foreignAce) {
+            Write-Host "[WARN] Secret file $SecretFile has loose ACL; ignoring." -ForegroundColor Yellow
+            Write-Host "[WARN] Run: icacls `"$SecretFile`" /inheritance:r /grant:r `"$($env:USERNAME):(R,W)`"" -ForegroundColor Yellow
+        } else {
+            $ApiKey = (Get-Content -Path $SecretFile -Raw).Trim()
+            if ($ApiKey) {
+                Write-Host "[INFO] Using API key from $SecretFile" -ForegroundColor Yellow
+            }
+        }
+    }
+    if (-not $ApiKey) {
+        $secureKey = Read-Host "Enter Wood Fired Bugs API key" -AsSecureString
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+        try {
+            $ApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        } finally {
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        }
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+    Write-Host "ERROR: API key is required." -ForegroundColor Red
+    Write-Host "Set WFB_API_KEY, populate $SecretFile, or supply it at the prompt." -ForegroundColor Red
+    exit 1
+}
+
+# Cache the key in the per-user secret file (user-only ACL) so subsequent runs
+# don't need argv/env, and so the generated tasks.cmd wrapper can read it at
+# runtime instead of embedding the key in cleartext.
+if (-not (Test-Path $SecretDir)) {
+    New-Item -ItemType Directory -Path $SecretDir -Force | Out-Null
+}
+Set-Content -Path $SecretFile -Value $ApiKey -Encoding UTF8 -NoNewline
+Set-UserOnlyAcl -Path $SecretFile
+
+$maskedKey = $ApiKey.Substring(0, [Math]::Min(4, $ApiKey.Length)) + ("*" * [Math]::Max(0, $ApiKey.Length - 4))
+Write-Host "OK: API key cached at $SecretFile ($maskedKey, user-only ACL)" -ForegroundColor Green
 Write-Host ""
 
 # ── 1. Check Node.js ────────────────────────────────────────────────────────
@@ -124,7 +208,10 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: 'claude mcp add' failed (exit code $LASTEXITCODE)." -ForegroundColor Red
     exit 1
 }
-Write-Host "OK: Registered wood-fired-bugs at user scope (~/.claude.json)" -ForegroundColor Green
+# claude mcp add writes the API key into ~/.claude.json. Tighten its ACL.
+$ClaudeConfig = Join-Path $env:USERPROFILE ".claude.json"
+Set-UserOnlyAcl -Path $ClaudeConfig
+Write-Host "OK: Registered wood-fired-bugs at user scope (~/.claude.json, user-only ACL)" -ForegroundColor Green
 
 # ── 5. Install tasks CLI to PATH ────────────────────────────────────────────
 Write-Host ""
@@ -135,15 +222,36 @@ if (-not (Test-Path $BinDir)) {
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 }
 
-# Create tasks.cmd wrapper that sets env vars and runs the CLI
+# Create tasks.cmd wrapper.
+# IMPORTANT: do NOT embed the API key in this file. The wrapper reads it from
+# the per-user secret file at runtime. The secret file has a user-only ACL,
+# and the wrapper itself contains no secrets and is safe to leave on PATH.
 $CliEntryPoint = Join-Path $McpServerPath "dist\cli\bin\tasks-client.js"
 $TasksCmd = Join-Path $BinDir "tasks.cmd"
-@"
+
+# Use single-quoted here-string ($SecretFile expanded by PowerShell;
+# %API_KEY%/%API_BASE_URL% are cmd.exe-time variables we never want to expand here).
+$wrapper = @"
 @echo off
+setlocal
 set "API_BASE_URL=$ServerUrl"
-set "API_KEY=$ApiKey"
+if not defined WFB_API_KEY (
+    if exist "$SecretFile" (
+        for /f "usebackq delims=" %%K in ("$SecretFile") do set "WFB_API_KEY=%%K"
+    )
+)
+if not defined WFB_API_KEY (
+    echo ERROR: Wood Fired Bugs API key not found.
+    echo Set WFB_API_KEY, populate $SecretFile, or re-run setup.ps1.
+    exit /b 1
+)
+set "API_KEY=%WFB_API_KEY%"
 node "$CliEntryPoint" %*
-"@ | Set-Content -Path $TasksCmd -Encoding ASCII
+"@
+$wrapper | Set-Content -Path $TasksCmd -Encoding ASCII
+# Wrapper carries no secrets, but lock down its ACL anyway so a hostile
+# co-tenant can't modify it to exfiltrate the key it loads at runtime.
+Set-UserOnlyAcl -Path $TasksCmd
 
 # Add bin dir to user PATH if not already there
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -155,7 +263,7 @@ if ($UserPath -notlike "*$BinDir*") {
     Write-Host "OK: $BinDir already in PATH" -ForegroundColor Green
 }
 
-Write-Host "OK: tasks CLI installed" -ForegroundColor Green
+Write-Host "OK: tasks CLI installed (reads key from $SecretFile at runtime)" -ForegroundColor Green
 
 # ── 6. Done ─────────────────────────────────────────────────────────────────
 Write-Host ""

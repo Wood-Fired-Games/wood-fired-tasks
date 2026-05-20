@@ -158,19 +158,40 @@ Wood Fired Bugs includes installers for seamless Claude Code integration on Linu
 
 ### Linux and macOS
 
-Run the install script:
+Run the install script. The installer resolves the API key in this order:
+`WOOD_FIRED_BUGS_API_KEY` env var → `~/.config/wood-fired-bugs/api-key`
+(mode 600) → masked interactive prompt → `--api-key` argv flag (deprecated).
 
 ```bash
+# Recommended (key never on argv):
+WOOD_FIRED_BUGS_API_KEY="your-key-here" ./install.sh
+
+# Or let the installer prompt:
 ./install.sh
 ```
 
+The installer writes the key into a 0600 file under
+`~/.config/wood-fired-bugs/api-key`. Subsequent re-runs read from there and
+do not need argv/env. `~/.claude.json` (and any timestamped backup) is also
+chmod'd to 0600 because it contains the key in the MCP env block.
+
 ### Windows
 
-Run the PowerShell installer:
+Run the PowerShell installer. Resolution order is `-ApiKey` (deprecated) →
+`WOOD_FIRED_BUGS_API_KEY` env var → `%LOCALAPPDATA%\wood-fired-bugs\api-key`
+(user-only ACL) → masked prompt.
 
 ```powershell
+# Recommended (key never on argv):
+$env:WOOD_FIRED_BUGS_API_KEY = "your-key-here"
+.\install.ps1
+
+# Or let the installer prompt:
 .\install.ps1
 ```
+
+The installer tightens the ACL on `~/.claude.json` (and any timestamped
+backup) to the current user only via `icacls`.
 
 ### What the Installer Does
 

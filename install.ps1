@@ -12,6 +12,7 @@ $ErrorActionPreference = "Stop"
 
 # Script-scoped variables
 $script:BackupFile = $null
+$script:ApiKeyFromArgv = $PSBoundParameters.ContainsKey('ApiKey') -and -not [string]::IsNullOrWhiteSpace($ApiKey)
 
 # Constants
 $ScriptDir = $PSScriptRoot
@@ -19,6 +20,27 @@ $ConfigFile = Join-Path $env:USERPROFILE ".claude.json"
 $SkillsSource = Join-Path $ScriptDir "skills" "tasks"
 $SkillsDest = Join-Path $env:USERPROFILE ".claude" "commands" "tasks"
 $ServiceUrl = if ($env:WOOD_FIRED_BUGS_URL) { $env:WOOD_FIRED_BUGS_URL } else { "http://localhost:3000" }
+
+# Per-user secret file for the API key. Stored under LOCALAPPDATA so it
+# stays on the local machine (not roamed) and inherits a user-only ACL once
+# we lock it down with icacls.
+$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-bugs" } else { Join-Path $env:USERPROFILE ".wood-fired-bugs" }
+$SecretFile = Join-Path $SecretDir "api-key"
+
+# Restrict the ACL on a file to the current user only.
+# Removes inheritance and grants Read+Write to the current SID.
+function Set-UserOnlyAcl {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return }
+    try {
+        # /inheritance:r — strip inherited ACEs
+        # /grant:r — replace any existing user ACE with the new one
+        # Wrap in stderr redirection so icacls output doesn't pollute the log.
+        & icacls $Path /inheritance:r /grant:r "$($env:USERNAME):(R,W)" 2>$null | Out-Null
+    } catch {
+        Write-Host "[WARN] Could not tighten ACL on $Path : $_" -ForegroundColor Yellow
+    }
+}
 
 try {
     Write-Host "`n[INFO] Wood Fired Bugs Claude Code Installer" -ForegroundColor Cyan
@@ -49,17 +71,48 @@ try {
     Write-Host "[OK] Found $skillCount skill files" -ForegroundColor Green
 
     # ============================================================================
-    # Step 2: Prompt for API key
+    # Step 2: Resolve API key
     # ============================================================================
     Write-Host "`n[INFO] API Key Configuration" -ForegroundColor Cyan
 
-    # Priority: -ApiKey parameter > environment variable > interactive prompt
+    if ($script:ApiKeyFromArgv) {
+        Write-Host "[WARN] -ApiKey on the command line is DEPRECATED." -ForegroundColor Yellow
+        Write-Host "[WARN] Command-line secrets leak via shell history and process listings (Get-Process,wmic)." -ForegroundColor Yellow
+        Write-Host "[WARN] Prefer the WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
+        Write-Host "[WARN] or the interactive prompt. This flag will be removed in a future release." -ForegroundColor Yellow
+    }
+
+    # Resolution order: -ApiKey > env > secret file > interactive prompt
     if (-not $ApiKey) {
         if ($env:WOOD_FIRED_BUGS_API_KEY) {
             $ApiKey = $env:WOOD_FIRED_BUGS_API_KEY
-            Write-Host "[INFO] Using API key from environment variable" -ForegroundColor Yellow
-        } else {
-            $ApiKey = Read-Host "Enter Wood Fired Bugs API key" -MaskInput
+            Write-Host "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable" -ForegroundColor Yellow
+        } elseif (Test-Path $SecretFile) {
+            # Only honor the secret file if it isn't accessible to anyone except the current user.
+            $acl = Get-Acl $SecretFile
+            $foreignAce = $acl.Access | Where-Object {
+                $_.IdentityReference.Value -notmatch [Regex]::Escape($env:USERNAME) -and
+                $_.IdentityReference.Value -notmatch 'SYSTEM' -and
+                $_.IdentityReference.Value -notmatch 'Administrators'
+            }
+            if ($foreignAce) {
+                Write-Host "[WARN] Secret file $SecretFile has loose ACL; ignoring." -ForegroundColor Yellow
+                Write-Host "[WARN] Run: icacls `"$SecretFile`" /inheritance:r /grant:r `"$($env:USERNAME):(R,W)`"" -ForegroundColor Yellow
+            } else {
+                $ApiKey = (Get-Content -Path $SecretFile -Raw).Trim()
+                if ($ApiKey) {
+                    Write-Host "[INFO] Using API key from $SecretFile" -ForegroundColor Yellow
+                }
+            }
+        }
+        if (-not $ApiKey) {
+            $secureKey = Read-Host "Enter Wood Fired Bugs API key" -AsSecureString
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+            try {
+                $ApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+            } finally {
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            }
         }
     }
 
@@ -69,9 +122,17 @@ try {
         exit 1
     }
 
+    # Persist to per-user secret file with restrictive ACL so re-runs can drop argv.
+    if (-not (Test-Path $SecretDir)) {
+        New-Item -ItemType Directory -Path $SecretDir -Force | Out-Null
+    }
+    Set-Content -Path $SecretFile -Value $ApiKey -Encoding UTF8 -NoNewline
+    Set-UserOnlyAcl -Path $SecretFile
+
     # Print masked confirmation
     $maskedKey = $ApiKey.Substring(0, [Math]::Min(4, $ApiKey.Length)) + ("*" * [Math]::Max(0, $ApiKey.Length - 4))
     Write-Host "[OK] API key configured: $maskedKey" -ForegroundColor Green
+    Write-Host "[OK] API key cached at $SecretFile (user-only ACL)" -ForegroundColor Green
 
     # ============================================================================
     # Step 3: Copy skill files (WIN-01)
@@ -106,14 +167,19 @@ try {
     Write-Host "`n[INFO] Managing configuration..." -ForegroundColor Cyan
 
     if (Test-Path $ConfigFile) {
-        # Create timestamped backup
+        # Create timestamped backup. Backup contains the API key in cleartext,
+        # so lock the ACL down to the current user before anything else can read it.
         $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
         $script:BackupFile = "$ConfigFile.backup.$timestamp"
         Copy-Item $ConfigFile $script:BackupFile
-        Write-Host "[OK] Backed up existing config to: $script:BackupFile" -ForegroundColor Green
+        Set-UserOnlyAcl -Path $script:BackupFile
+        # Re-tighten the config itself in case a previous installer or hand-edit relaxed it.
+        Set-UserOnlyAcl -Path $ConfigFile
+        Write-Host "[OK] Backed up existing config to: $script:BackupFile (user-only ACL)" -ForegroundColor Green
     } else {
-        # Create new config file with empty JSON object
+        # Create new config file with empty JSON object, then lock its ACL.
         "{}" | Set-Content $ConfigFile -Encoding UTF8
+        Set-UserOnlyAcl -Path $ConfigFile
         Write-Host "[INFO] Created new config file: $ConfigFile" -ForegroundColor Yellow
     }
 
@@ -146,8 +212,11 @@ try {
 
     # Write back with proper depth (PowerShell defaults to depth 2, we need 10)
     $config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8
+    # The file now contains the API key — re-apply the user-only ACL after every write
+    # (Set-Content can recreate the file and lose the previous ACL).
+    Set-UserOnlyAcl -Path $ConfigFile
 
-    Write-Host "[OK] MCP server 'wood-fired-bugs' configured" -ForegroundColor Green
+    Write-Host "[OK] MCP server 'wood-fired-bugs' configured (user-only ACL)" -ForegroundColor Green
 
     # ============================================================================
     # Step 6: Validate connectivity (WIN-05)

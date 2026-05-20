@@ -74,7 +74,28 @@ if ($UserPath -like "*$BinDir*") {
     Write-Host "OK: bin directory not in PATH (already removed)" -ForegroundColor Green
 }
 
-# ── 5. Done ──────────────────────────────────────────────────────────────────
+# ── 5. Remove per-user secret file ───────────────────────────────────────────
+Write-Host ""
+Write-Host "Removing cached API key..." -ForegroundColor Yellow
+
+$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-bugs" } else { Join-Path $env:USERPROFILE ".wood-fired-bugs" }
+$SecretFile = Join-Path $SecretDir "api-key"
+if (Test-Path $SecretFile) {
+    Remove-Item -Path $SecretFile -Force
+    Write-Host "OK: Removed $SecretFile" -ForegroundColor Green
+    # Best-effort: remove the empty secret dir.
+    try {
+        if ((Get-ChildItem -Path $SecretDir -Force | Measure-Object).Count -eq 0) {
+            Remove-Item -Path $SecretDir -Force
+        }
+    } catch {
+        # Non-fatal — leaving the dir is harmless.
+    }
+} else {
+    Write-Host "OK: No cached API key found (already removed)" -ForegroundColor Green
+}
+
+# ── 6. Done ──────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Uninstall complete!" -ForegroundColor Green
 Write-Host ""
