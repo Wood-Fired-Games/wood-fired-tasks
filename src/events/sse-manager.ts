@@ -10,7 +10,36 @@ interface SSEConnection {
   };
   lastEventId: number;
   createdAt: Date;
+  // task #185: per-key/per-IP attribution for connection caps.
+  apiKey: string;
+  ip: string;
 }
+
+/**
+ * Reason the SSEManager rejected a new connection request. Used by the route
+ * handler to shape the 429 response (which cap was hit).
+ */
+export type SSECapDenyReason = 'per-key' | 'per-ip' | 'global';
+
+/**
+ * Result of {@link SSEManager.canAccept}.
+ *
+ * - `ok: true` — connection is allowed; route may proceed to `addConnection`.
+ * - `ok: false` — caller MUST reject the request with HTTP 429 + `Retry-After`
+ *   header. `reason` identifies which cap was breached so error messages can
+ *   point operators at the right env var to raise.
+ */
+export type SSECapDecision =
+  | { ok: true }
+  | { ok: false; reason: SSECapDenyReason; retryAfterSeconds: number };
+
+/**
+ * task #185: how long clients should wait before reconnecting after a cap
+ * rejection. Picked to be roughly one heartbeat interval — long enough that
+ * an attacker's brute-force loop hits real backpressure, short enough that
+ * legitimate clients recover quickly when an over-quota connection drops.
+ */
+const SSE_CAP_RETRY_AFTER_SECONDS = 30;
 
 export class SSEManager {
   private connections = new Map<string, SSEConnection>();
@@ -24,16 +53,53 @@ export class SSEManager {
     private readonly maxBufferSize = 100,
     private readonly bufferTtlMs = 5 * 60 * 1000, // 5 minutes
     private readonly heartbeatIntervalMs = 30000, // 30 seconds
-    private readonly maxConnectionAgeMs = 10 * 60 * 1000 // 10 minutes
+    private readonly maxConnectionAgeMs = 10 * 60 * 1000, // 10 minutes
+    // task #185: per-key, per-IP and global concurrent connection caps.
+    // Defaults are conservative — operators raise via env. The values are
+    // stored read-only and consulted on every `canAccept` call.
+    private readonly maxConnectionsPerKey = 4,
+    private readonly maxConnectionsPerIp = 8,
+    private readonly maxConnections = 200
   ) {
     this.startHeartbeat();
+  }
+
+  /**
+   * task #185: synchronous cap check. The events route MUST call this
+   * BEFORE `addConnection` so a denied request never half-registers state.
+   *
+   * Counts are derived from the live connection map on each call. n is
+   * bounded by `maxConnections` (default 200), so O(n) iteration is fine
+   * and avoids drift bugs that a separate per-key/per-IP index would
+   * introduce when connections close out-of-band (raw `close` / `error`
+   * events run on a different tick).
+   */
+  canAccept(apiKey: string, ip: string): SSECapDecision {
+    if (this.connections.size >= this.maxConnections) {
+      return { ok: false, reason: 'global', retryAfterSeconds: SSE_CAP_RETRY_AFTER_SECONDS };
+    }
+
+    let perKey = 0;
+    let perIp = 0;
+    for (const conn of this.connections.values()) {
+      if (conn.apiKey === apiKey) perKey++;
+      if (conn.ip === ip) perIp++;
+    }
+    if (perKey >= this.maxConnectionsPerKey) {
+      return { ok: false, reason: 'per-key', retryAfterSeconds: SSE_CAP_RETRY_AFTER_SECONDS };
+    }
+    if (perIp >= this.maxConnectionsPerIp) {
+      return { ok: false, reason: 'per-ip', retryAfterSeconds: SSE_CAP_RETRY_AFTER_SECONDS };
+    }
+    return { ok: true };
   }
 
   addConnection(
     connectionId: string,
     reply: FastifyReply,
     filters: { project_id?: number; event_types?: string[] },
-    lastEventId?: number
+    lastEventId?: number,
+    meta: { apiKey: string; ip: string } = { apiKey: '', ip: '' }
   ): void {
     // Store connection
     this.connections.set(connectionId, {
@@ -42,6 +108,8 @@ export class SSEManager {
       filters,
       lastEventId: lastEventId || 0,
       createdAt: new Date(),
+      apiKey: meta.apiKey,
+      ip: meta.ip,
     });
 
     // Replay missed events if Last-Event-ID provided

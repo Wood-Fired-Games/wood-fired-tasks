@@ -63,6 +63,19 @@ export const configSchema = z.object({
   WAL_CHECKPOINT_INTERVAL_MS: z.string().min(1).default('900000').transform(Number),
   SLACK_BOT_TOKEN: z.string().optional(),
   SLACK_APP_TOKEN: z.string().optional(),
+  // task #185: gate Swagger UI / JSON spec in production. Disabled by default;
+  // operators opt-in with ENABLE_SWAGGER_IN_PRODUCTION=true. When enabled in
+  // production, the canonical auth plugin gates /docs and /docs/json.
+  ENABLE_SWAGGER_IN_PRODUCTION: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  // task #185: SSE connection caps. New per-key/per-IP/global limits bound
+  // long-lived connection exhaustion. When any cap is hit the route returns
+  // 429 with Retry-After.
+  SSE_MAX_CONNECTIONS_PER_KEY: z.string().min(1).default('4').transform(Number),
+  SSE_MAX_CONNECTIONS_PER_IP: z.string().min(1).default('8').transform(Number),
+  SSE_MAX_CONNECTIONS: z.string().min(1).default('200').transform(Number),
 }).refine(
   (d) => (!d.SLACK_BOT_TOKEN && !d.SLACK_APP_TOKEN) || (!!d.SLACK_BOT_TOKEN && !!d.SLACK_APP_TOKEN),
   {
