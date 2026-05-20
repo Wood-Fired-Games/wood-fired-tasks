@@ -187,6 +187,34 @@ export class SSEManager {
     const conn = this.connections.get(connectionId);
     if (!conn) return;
 
+    // task #206: if the client asked for an event older than anything we
+    // still have in the buffer (because we pruned it for size/TTL), they
+    // missed events we can no longer replay. Send an explicit `replay-gap`
+    // hint so the client knows to refetch via REST instead of silently
+    // believing they have a complete event stream. We only signal a gap
+    // when fromEventId > 0 AND the buffer's smallest live id is greater
+    // than fromEventId+1 — i.e. there is genuinely a missing range.
+    if (fromEventId > 0 && this.eventBuffer.length > 0) {
+      const earliestBufferedId = this.eventBuffer[0]!.id;
+      if (earliestBufferedId > fromEventId + 1) {
+        // Fire-and-forget; if the send fails the close/error handler will
+        // clean up. We intentionally do not increment totalEventsSent for
+        // this control message — it's not a domain event.
+        conn.reply.sse
+          .send({
+            event: 'replay-gap',
+            data: JSON.stringify({
+              requestedLastEventId: fromEventId,
+              earliestAvailableId: earliestBufferedId,
+              hint: 'Some events were pruned from the server buffer. Refetch state via REST.',
+            }),
+          })
+          .catch(() => {
+            this.removeConnection(connectionId);
+          });
+      }
+    }
+
     const missedEvents = this.eventBuffer.filter((e) => e.id > fromEventId);
     for (const { id, event } of missedEvents) {
       if (this.matchesFilters(event, conn.filters)) {
