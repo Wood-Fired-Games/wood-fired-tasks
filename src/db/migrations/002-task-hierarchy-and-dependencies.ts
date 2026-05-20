@@ -37,6 +37,11 @@ export function down(db: Database.Database): void {
   const transaction = db.transaction(() => {
     db.exec('DROP TABLE IF EXISTS task_dependencies');
 
+    // Drop the index that references parent_task_id BEFORE dropping the column.
+    // SQLite refuses DROP COLUMN while an index still references it.
+    // Discovered via the migrations-roundtrip schema-drift test (task 201).
+    db.exec('DROP INDEX IF EXISTS idx_tasks_parent_id');
+
     // SQLite 3.35.0+ supports DROP COLUMN
     // better-sqlite3 12.x bundles SQLite 3.46+, so this is safe
     db.exec('ALTER TABLE tasks DROP COLUMN parent_task_id');
