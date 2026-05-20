@@ -225,7 +225,7 @@ try {
 
     try {
         $healthUrl = "$ServiceUrl/health"
-        $response = Invoke-WebRequest -Uri $healthUrl -TimeoutSec 5 -ErrorAction Stop
+        $null = Invoke-WebRequest -Uri $healthUrl -TimeoutSec 5 -ErrorAction Stop
         Write-Host "[OK] Service reachable at $ServiceUrl" -ForegroundColor Green
     } catch {
         Write-Host "[WARN] Could not reach service at $ServiceUrl" -ForegroundColor Yellow

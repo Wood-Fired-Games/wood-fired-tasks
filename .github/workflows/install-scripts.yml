@@ -1,0 +1,220 @@
+name: Install Scripts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'install.sh'
+      - 'install.ps1'
+      - '.github/workflows/install-scripts.yml'
+      - 'skills/tasks/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'install.sh'
+      - 'install.ps1'
+      - '.github/workflows/install-scripts.yml'
+      - 'skills/tasks/**'
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Lint install.sh with shellcheck. Fails on any errors OR warnings —
+  # install.sh ships to end users so we want it clean.
+  # -------------------------------------------------------------------------
+  shellcheck:
+    name: shellcheck install.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        env:
+          # Fail the action when shellcheck reports any severity at or above warning.
+          SHELLCHECK_OPTS: -S warning
+        with:
+          scandir: '.'
+          # Only lint our installer; do not scan unrelated shell snippets.
+          additional_files: 'install.sh'
+          ignore_paths: 'node_modules dist coverage'
+          severity: warning
+
+  # -------------------------------------------------------------------------
+  # Lint install.ps1 with PSScriptAnalyzer on a Windows runner.
+  # The installer is intentionally interactive (Write-Host w/ colors), so
+  # we only fail on Errors here — the noisy Write-Host warnings are
+  # accepted-by-design for an installer that talks to a human. Real bugs
+  # (e.g. unused variable assignments) have been fixed in-source.
+  # -------------------------------------------------------------------------
+  psscriptanalyzer:
+    name: PSScriptAnalyzer install.ps1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+            Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+          Import-Module PSScriptAnalyzer
+          $results = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
+          if ($results) {
+            $results | Format-Table -AutoSize
+            Write-Error "PSScriptAnalyzer reported $($results.Count) error(s) in install.ps1"
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: no errors in install.ps1"
+
+  # -------------------------------------------------------------------------
+  # Smoke-test install.sh on Linux + macOS.
+  #
+  # install.sh does not download a release artifact — it wires up Claude
+  # Code skill files and an MCP server entry in ~/.claude.json that points
+  # at the local checkout's dist/mcp/index.js. So the smoke test:
+  #   1. npm ci && npm run build (produce dist/ for the MCP server entry)
+  #   2. run install.sh with WOOD_FIRED_BUGS_API_KEY env var (no prompt)
+  #   3. assert skill files landed in ~/.claude/commands/tasks/
+  #   4. assert ~/.claude.json contains the wood-fired-bugs MCP server entry
+  #   5. assert the secret file is mode 0600
+  #
+  # Alpine / Debian / Fedora are intentionally skipped — they would
+  # multiply runner minutes without testing behaviour that differs from
+  # ubuntu-latest at the install.sh layer. The only OS-specific code paths
+  # in install.sh are `stat -c` (Linux) vs `stat -f` (macOS), which the
+  # ubuntu + macos matrix legs already cover.
+  # -------------------------------------------------------------------------
+  smoke-unix:
+    name: smoke install.sh (${{ matrix.os }})
+    needs: shellcheck
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install jq (macOS)
+        if: runner.os == 'macOS'
+        run: brew install jq
+
+      - name: Verify prerequisites
+        run: |
+          jq --version
+          curl --version | head -1
+
+      - name: Build local artifacts (dist/mcp/index.js)
+        run: |
+          npm ci
+          npm run build
+          test -f dist/mcp/index.js || { echo "build did not produce dist/mcp/index.js"; exit 1; }
+
+      - name: Run install.sh with env-var API key
+        env:
+          WOOD_FIRED_BUGS_API_KEY: ci-smoke-test-key-not-a-real-secret
+          # Skip the health probe — no service is running in CI.
+          WOOD_FIRED_BUGS_URL: http://127.0.0.1:1
+        run: bash install.sh
+
+      - name: Assert skill files were copied
+        run: |
+          dest="$HOME/.claude/commands/tasks"
+          test -d "$dest" || { echo "skills dest dir missing: $dest"; exit 1; }
+          count=$(find "$dest" -maxdepth 1 -name "*.md" -type f | wc -l)
+          echo "found $count skill files in $dest"
+          test "$count" -ge 1 || { echo "no skill files were copied"; exit 1; }
+
+      - name: Assert MCP server entry in ~/.claude.json
+        run: |
+          test -f "$HOME/.claude.json" || { echo "~/.claude.json missing"; exit 1; }
+          jq -e '.mcpServers["wood-fired-bugs"].command == "node"' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs"].args[0] == "dist/mcp/index.js"' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs"].env.WOOD_FIRED_BUGS_API_KEY | length > 0' "$HOME/.claude.json" >/dev/null
+          echo "MCP server entry present and well-formed"
+
+      - name: Assert secret file permissions are 0600
+        run: |
+          secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs/api-key"
+          test -f "$secret" || { echo "secret file missing: $secret"; exit 1; }
+          mode=$(stat -c '%a' "$secret" 2>/dev/null || stat -f '%Lp' "$secret")
+          echo "secret file mode: $mode"
+          test "$mode" = "600" || { echo "expected 600, got $mode"; exit 1; }
+
+      - name: Assert install.sh --help exits 0
+        run: bash install.sh --help
+
+  # -------------------------------------------------------------------------
+  # Smoke-test install.ps1 on Windows.
+  #
+  # Mirrors smoke-unix: build dist/ locally, run installer with env-var API
+  # key, then assert skill files + ~/.claude.json + secret file landed.
+  # -------------------------------------------------------------------------
+  smoke-windows:
+    name: smoke install.ps1 (windows-latest)
+    needs: psscriptanalyzer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Build local artifacts (dist/mcp/index.js)
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+          if (-not (Test-Path 'dist/mcp/index.js')) {
+            Write-Error "build did not produce dist/mcp/index.js"
+            exit 1
+          }
+
+      - name: Run install.ps1 with env-var API key
+        shell: pwsh
+        env:
+          WOOD_FIRED_BUGS_API_KEY: ci-smoke-test-key-not-a-real-secret
+          WOOD_FIRED_BUGS_URL: http://127.0.0.1:1
+        run: ./install.ps1
+
+      - name: Assert skill files were copied
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:USERPROFILE '.claude\commands\tasks'
+          if (-not (Test-Path $dest)) { Write-Error "skills dest dir missing: $dest"; exit 1 }
+          $count = (Get-ChildItem -Path $dest -Filter '*.md' -File).Count
+          Write-Host "found $count skill files in $dest"
+          if ($count -lt 1) { Write-Error "no skill files were copied"; exit 1 }
+
+      - name: Assert MCP server entry in ~/.claude.json
+        shell: pwsh
+        run: |
+          $cfg = Join-Path $env:USERPROFILE '.claude.json'
+          if (-not (Test-Path $cfg)) { Write-Error "$cfg missing"; exit 1 }
+          $json = Get-Content $cfg -Raw | ConvertFrom-Json
+          if ($json.mcpServers.'wood-fired-bugs'.command -ne 'node') {
+            Write-Error "MCP server command mismatch"
+            exit 1
+          }
+          if ($json.mcpServers.'wood-fired-bugs'.args[0] -ne 'dist/mcp/index.js') {
+            Write-Error "MCP server args[0] mismatch"
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($json.mcpServers.'wood-fired-bugs'.env.WOOD_FIRED_BUGS_API_KEY)) {
+            Write-Error "API key missing from MCP env"
+            exit 1
+          }
+          Write-Host "MCP server entry present and well-formed"
+
+      - name: Assert secret file exists
+        shell: pwsh
+        run: |
+          $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-bugs\api-key'
+          if (-not (Test-Path $secret)) { Write-Error "secret file missing: $secret"; exit 1 }
+          $content = Get-Content $secret -Raw
+          if ([string]::IsNullOrWhiteSpace($content)) { Write-Error "secret file empty"; exit 1 }
+          Write-Host "secret file present: $secret"
