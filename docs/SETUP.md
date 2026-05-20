@@ -7,6 +7,57 @@ Complete setup instructions for Wood Fired Bugs in development, production, and 
 - Node.js 20 or higher
 - npm (comes with Node.js)
 
+## Secrets
+
+[CRITICAL] Treat every value in `.env` as a production-grade secret. The
+file holds `API_KEYS`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and
+`SLACK_SIGNING_SECRET` — anything leaked here grants full access to your
+task data and Slack workspace.
+
+**Rules:**
+
+1. **Create `.env` fresh after every `git clone`.** Copy `.env.example`
+   and fill in real values locally:
+
+   ```bash
+   cp .env.example .env
+   # then edit .env with your real tokens
+   ```
+
+2. **`.env` is gitignored — never commit it.** The repo's `.gitignore`
+   already excludes it; do not override that. Run `git status` before
+   every commit and confirm `.env` is not staged.
+
+3. **Never paste secrets into the repository.** Not in `.env.example`,
+   not in code comments, not in test fixtures, not in commit messages,
+   not in issue descriptions. If a secret lands in tracked content,
+   rotate it immediately at the issuer (Slack admin console, API key
+   generator, etc.) and scrub the working tree.
+
+4. **Rotation requires a server restart.** Both the API server and the
+   Slack subprocess read `.env` on boot only. After changing any value,
+   restart with `npm run dev` (development) or your process manager
+   (`pm2 restart wood-fired-bugs`, `systemctl restart …`) so the new
+   value takes effect.
+
+5. **Use a secret manager in production.** A flat `.env` file is fine
+   for local development, but production deployments should source
+   secrets from a dedicated manager such as:
+
+   - [1Password CLI](https://developer.1password.com/docs/cli/) — `op run -- npm start`
+   - [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) — fetched at boot or via sidecar
+   - [HashiCorp Vault](https://www.vaultproject.io/) — `vault agent` template rendering
+   - [Doppler](https://www.doppler.com/) / [Infisical](https://infisical.com/) — drop-in `.env` replacements
+
+   Inject the resolved values as environment variables on the process;
+   do not write them to disk on the production host.
+
+6. **Compromised tokens are assumed compromised forever.** If a token
+   was ever in cleartext on a workstation that is not under your sole
+   physical control (shared dev VM, CI runner, lost laptop), rotate it.
+   Do not try to "remember which value was where" — rotate first, audit
+   later.
+
 ## Development Setup
 
 ### 1. Clone and Install
