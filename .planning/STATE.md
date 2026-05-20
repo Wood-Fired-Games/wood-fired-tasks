@@ -58,6 +58,7 @@ None.
 | 5 | MCP server startup reliability — exclusive migration lock + retry on transient SQLite errors | 2026-02-19 | 63434ad | | [5-review-mcp-server-startup-reliability-an](./quick/5-review-mcp-server-startup-reliability-an/) |
 | 6 | Windows/LAN client distribution — remote MCP proxy server + self-contained zip package | 2026-02-19 | f94a0c6 | | [6-create-windows-installer-package-for-lan](./quick/6-create-windows-installer-package-for-lan/) |
 | 260520-exd | Validate and escape SQLite FTS search input (security audit task #183) | 2026-05-20 | 2bb4ebb | Verified | [260520-exd-validate-and-escape-sqlite-fts-search-in](./quick/260520-exd-validate-and-escape-sqlite-fts-search-in/) |
+| 20260520-upgrade-vuln-prod-deps | Upgrade vulnerable production dependencies + CI audit gate (security audit task #181) | 2026-05-20 | pending | Complete | [20260520-upgrade-vuln-prod-deps-audit-gate](./quick/20260520-upgrade-vuln-prod-deps-audit-gate/) |
 
 ## Session Continuity
 
