@@ -1,0 +1,2331 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`OpenAPI snapshot (contract drift detection) > matches the committed OpenAPI snapshot 1`] = `
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "apiKey": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey",
+      },
+    },
+  },
+  "info": {
+    "description": "Task management REST API for Wood Fired Games. Designed for LLM agent consumption.",
+    "title": "Wood Fired Bugs API",
+    "version": "<pinned>",
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/v1/events/": {
+      "get": {
+        "description": "Subscribe to real-time task and project events via Server-Sent Events",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "type": "number",
+            },
+          },
+          {
+            "in": "query",
+            "name": "event_types",
+            "required": false,
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {},
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "Events",
+        ],
+      },
+    },
+    "/api/v1/projects/": {
+      "get": {
+        "description": "List projects (paginated). Returns \`{ data, total, limit, offset }\`.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "exclusiveMinimum": true,
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "description": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "name": {
+                            "type": "string",
+                          },
+                          "updated_at": {
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "created_at",
+                          "updated_at",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "limit": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "offset": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "limit",
+                    "offset",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+      "post": {
+        "description": "Create a new project",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "maxLength": 1000,
+                    "nullable": true,
+                    "type": "string",
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "name",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "created_at",
+                    "updated_at",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+    },
+    "/api/v1/projects/{id}": {
+      "delete": {
+        "description": "Delete project by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "No content",
+                  "enum": [
+                    null,
+                  ],
+                  "nullable": true,
+                  "type": "string",
+                },
+              },
+            },
+            "description": "No content",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+      "get": {
+        "description": "Get project by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "created_at",
+                    "updated_at",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+      "put": {
+        "description": "Update project by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "maxLength": 1000,
+                    "nullable": true,
+                    "type": "string",
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "created_at",
+                    "updated_at",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+    },
+    "/api/v1/tasks/": {
+      "get": {
+        "description": "List tasks with optional filters (paginated). Returns \`{ data, total, limit, offset }\` — \`limit\` defaults to 50, max 500.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "in_progress",
+                "done",
+                "closed",
+                "blocked",
+                "backlogged",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "assignee",
+            "required": false,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "tags",
+            "required": false,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "due_after",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "updated_before",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "updated_after",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "exclusiveMinimum": true,
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assignee": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "claimed_at": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "created_by": {
+                            "type": "string",
+                          },
+                          "description": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "due_date": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "estimated_minutes": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "parent_task_id": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "priority": {
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high",
+                              "urgent",
+                            ],
+                            "type": "string",
+                          },
+                          "project_id": {
+                            "type": "number",
+                          },
+                          "status": {
+                            "enum": [
+                              "open",
+                              "in_progress",
+                              "done",
+                              "closed",
+                              "blocked",
+                              "backlogged",
+                            ],
+                            "type": "string",
+                          },
+                          "tags": {
+                            "items": {
+                              "type": "string",
+                            },
+                            "type": "array",
+                          },
+                          "title": {
+                            "type": "string",
+                          },
+                          "updated_at": {
+                            "type": "string",
+                          },
+                          "version": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "description",
+                          "status",
+                          "priority",
+                          "project_id",
+                          "parent_task_id",
+                          "estimated_minutes",
+                          "assignee",
+                          "created_by",
+                          "due_date",
+                          "created_at",
+                          "updated_at",
+                          "version",
+                          "claimed_at",
+                          "tags",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "limit": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "offset": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "limit",
+                    "offset",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+      "post": {
+        "description": "Create a new task",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "assignee": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string",
+                  },
+                  "created_by": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  "description": {
+                    "maxLength": 5000,
+                    "nullable": true,
+                    "type": "string",
+                  },
+                  "due_date": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string",
+                  },
+                  "estimated_minutes": {
+                    "maximum": 10080,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
+                  },
+                  "parent_task_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
+                  },
+                  "priority": {
+                    "default": "medium",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent",
+                    ],
+                    "type": "string",
+                  },
+                  "project_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer",
+                  },
+                  "tags": {
+                    "default": [],
+                    "items": {
+                      "maxLength": 50,
+                      "minLength": 1,
+                      "type": "string",
+                    },
+                    "maxItems": 20,
+                    "type": "array",
+                  },
+                  "title": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "title",
+                  "project_id",
+                  "created_by",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assignee": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "claimed_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "created_by": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "due_date": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "estimated_minutes": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "parent_task_id": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "priority": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "urgent",
+                      ],
+                      "type": "string",
+                    },
+                    "project_id": {
+                      "type": "number",
+                    },
+                    "status": {
+                      "enum": [
+                        "open",
+                        "in_progress",
+                        "done",
+                        "closed",
+                        "blocked",
+                        "backlogged",
+                      ],
+                      "type": "string",
+                    },
+                    "tags": {
+                      "items": {
+                        "type": "string",
+                      },
+                      "type": "array",
+                    },
+                    "title": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "project_id",
+                    "parent_task_id",
+                    "estimated_minutes",
+                    "assignee",
+                    "created_by",
+                    "due_date",
+                    "created_at",
+                    "updated_at",
+                    "version",
+                    "claimed_at",
+                    "tags",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}": {
+      "delete": {
+        "description": "Delete task by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "No content",
+                  "enum": [
+                    null,
+                  ],
+                  "nullable": true,
+                  "type": "string",
+                },
+              },
+            },
+            "description": "No content",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+      "get": {
+        "description": "Get task by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assignee": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "claimed_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "created_by": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "due_date": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "estimated_minutes": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "parent_task_id": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "priority": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "urgent",
+                      ],
+                      "type": "string",
+                    },
+                    "project_id": {
+                      "type": "number",
+                    },
+                    "status": {
+                      "enum": [
+                        "open",
+                        "in_progress",
+                        "done",
+                        "closed",
+                        "blocked",
+                        "backlogged",
+                      ],
+                      "type": "string",
+                    },
+                    "tags": {
+                      "items": {
+                        "type": "string",
+                      },
+                      "type": "array",
+                    },
+                    "title": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "project_id",
+                    "parent_task_id",
+                    "estimated_minutes",
+                    "assignee",
+                    "created_by",
+                    "due_date",
+                    "created_at",
+                    "updated_at",
+                    "version",
+                    "claimed_at",
+                    "tags",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+      "put": {
+        "description": "Update task by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "assignee": {
+                    "maxLength": 100,
+                    "nullable": true,
+                    "type": "string",
+                  },
+                  "description": {
+                    "maxLength": 5000,
+                    "nullable": true,
+                    "type": "string",
+                  },
+                  "due_date": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string",
+                  },
+                  "estimated_minutes": {
+                    "maximum": 10080,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
+                  },
+                  "parent_task_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
+                  },
+                  "priority": {
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent",
+                    ],
+                    "type": "string",
+                  },
+                  "status": {
+                    "enum": [
+                      "open",
+                      "in_progress",
+                      "done",
+                      "closed",
+                      "blocked",
+                      "backlogged",
+                    ],
+                    "type": "string",
+                  },
+                  "tags": {
+                    "items": {
+                      "maxLength": 50,
+                      "minLength": 1,
+                      "type": "string",
+                    },
+                    "maxItems": 20,
+                    "type": "array",
+                  },
+                  "title": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assignee": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "claimed_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "created_by": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "due_date": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "estimated_minutes": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "parent_task_id": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "priority": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "urgent",
+                      ],
+                      "type": "string",
+                    },
+                    "project_id": {
+                      "type": "number",
+                    },
+                    "status": {
+                      "enum": [
+                        "open",
+                        "in_progress",
+                        "done",
+                        "closed",
+                        "blocked",
+                        "backlogged",
+                      ],
+                      "type": "string",
+                    },
+                    "tags": {
+                      "items": {
+                        "type": "string",
+                      },
+                      "type": "array",
+                    },
+                    "title": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "project_id",
+                    "parent_task_id",
+                    "estimated_minutes",
+                    "assignee",
+                    "created_by",
+                    "due_date",
+                    "created_at",
+                    "updated_at",
+                    "version",
+                    "claimed_at",
+                    "tags",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}/claim": {
+      "post": {
+        "description": "Atomically claim an unassigned task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "assignee": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "assignee",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assignee": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "claimed_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "created_by": {
+                      "type": "string",
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "due_date": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "estimated_minutes": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "parent_task_id": {
+                      "nullable": true,
+                      "type": "number",
+                    },
+                    "priority": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "urgent",
+                      ],
+                      "type": "string",
+                    },
+                    "project_id": {
+                      "type": "number",
+                    },
+                    "status": {
+                      "enum": [
+                        "open",
+                        "in_progress",
+                        "done",
+                        "closed",
+                        "blocked",
+                        "backlogged",
+                      ],
+                      "type": "string",
+                    },
+                    "tags": {
+                      "items": {
+                        "type": "string",
+                      },
+                      "type": "array",
+                    },
+                    "title": {
+                      "type": "string",
+                    },
+                    "updated_at": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "description",
+                    "status",
+                    "priority",
+                    "project_id",
+                    "parent_task_id",
+                    "estimated_minutes",
+                    "assignee",
+                    "created_by",
+                    "due_date",
+                    "created_at",
+                    "updated_at",
+                    "version",
+                    "claimed_at",
+                    "tags",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "CONFLICT",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}/comments": {
+      "get": {
+        "description": "Get comments for a task in chronological order (paginated). Returns \`{ data, total, limit, offset }\`.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "exclusiveMinimum": true,
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "author": {
+                            "type": "string",
+                          },
+                          "content": {
+                            "type": "string",
+                          },
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "task_id": {
+                            "type": "number",
+                          },
+                          "updated_at": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "task_id",
+                          "author",
+                          "content",
+                          "created_at",
+                          "updated_at",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "limit": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "offset": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "limit",
+                    "offset",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "comments",
+        ],
+      },
+      "post": {
+        "description": "Add a comment to a task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "author": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  "content": {
+                    "maxLength": 5000,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "author",
+                  "content",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "author": {
+                      "type": "string",
+                    },
+                    "content": {
+                      "type": "string",
+                    },
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "task_id": {
+                      "type": "number",
+                    },
+                    "updated_at": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "task_id",
+                    "author",
+                    "content",
+                    "created_at",
+                    "updated_at",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "comments",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}/comments/{commentId}": {
+      "delete": {
+        "description": "Delete a comment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "path",
+            "name": "commentId",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {},
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "comments",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}/dependencies": {
+      "get": {
+        "description": "Get all dependencies for a task (tasks it blocks and tasks that block it)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "blocked_by": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "blocks_task_id": {
+                            "type": "number",
+                          },
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "task_id": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "task_id",
+                          "blocks_task_id",
+                          "created_at",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "blocks": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "blocks_task_id": {
+                            "type": "number",
+                          },
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "task_id": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "task_id",
+                          "blocks_task_id",
+                          "created_at",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                  },
+                  "required": [
+                    "blocks",
+                    "blocked_by",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "dependencies",
+        ],
+      },
+      "post": {
+        "description": "Add a dependency relationship (this task blocks another task)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "blocks_task_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer",
+                  },
+                },
+                "required": [
+                  "blocks_task_id",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "blocks_task_id": {
+                      "type": "number",
+                    },
+                    "created_at": {
+                      "type": "string",
+                    },
+                    "id": {
+                      "type": "number",
+                    },
+                    "task_id": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "task_id",
+                    "blocks_task_id",
+                    "created_at",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "dependencies",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}/dependencies/{blocksTaskId}": {
+      "delete": {
+        "description": "Remove a dependency relationship",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "path",
+            "name": "blocksTaskId",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {},
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "dependencies",
+        ],
+      },
+    },
+    "/api/v1/tasks/{id}/subtasks": {
+      "get": {
+        "description": "Get subtasks (children) of a task (paginated). Returns \`{ data, total, limit, offset }\`.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "exclusiveMinimum": true,
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assignee": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "claimed_at": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "created_by": {
+                            "type": "string",
+                          },
+                          "description": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "due_date": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "estimated_minutes": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "parent_task_id": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "priority": {
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high",
+                              "urgent",
+                            ],
+                            "type": "string",
+                          },
+                          "project_id": {
+                            "type": "number",
+                          },
+                          "status": {
+                            "enum": [
+                              "open",
+                              "in_progress",
+                              "done",
+                              "closed",
+                              "blocked",
+                              "backlogged",
+                            ],
+                            "type": "string",
+                          },
+                          "tags": {
+                            "items": {
+                              "type": "string",
+                            },
+                            "type": "array",
+                          },
+                          "title": {
+                            "type": "string",
+                          },
+                          "updated_at": {
+                            "type": "string",
+                          },
+                          "version": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "description",
+                          "status",
+                          "priority",
+                          "project_id",
+                          "parent_task_id",
+                          "estimated_minutes",
+                          "assignee",
+                          "created_by",
+                          "due_date",
+                          "created_at",
+                          "updated_at",
+                          "version",
+                          "claimed_at",
+                          "tags",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "limit": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "offset": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "limit",
+                    "offset",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+    },
+    "/health/": {
+      "get": {
+        "description": "Minimal public health check (status + timestamp + version)",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                    },
+                    "timestamp": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "version",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                    },
+                    "timestamp": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "version",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "health",
+        ],
+      },
+    },
+    "/health/detailed/": {
+      "get": {
+        "description": "Detailed authenticated health check with component status and runtime stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "checks": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "database": {
+                          "enum": [
+                            "ok",
+                            "failed",
+                          ],
+                          "type": "string",
+                        },
+                        "eventBus": {
+                          "enum": [
+                            "ok",
+                            "degraded",
+                            "unknown",
+                          ],
+                          "type": "string",
+                        },
+                        "sseManager": {
+                          "enum": [
+                            "ok",
+                            "degraded",
+                            "unknown",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "database",
+                        "eventBus",
+                        "sseManager",
+                      ],
+                      "type": "object",
+                    },
+                    "stats": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "eventBus": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "listenerCount": {
+                              "type": "number",
+                            },
+                          },
+                          "required": [
+                            "listenerCount",
+                          ],
+                          "type": "object",
+                        },
+                        "sseManager": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "clientCount": {
+                              "type": "number",
+                            },
+                            "uptime": {
+                              "type": "number",
+                            },
+                          },
+                          "required": [
+                            "clientCount",
+                            "uptime",
+                          ],
+                          "type": "object",
+                        },
+                      },
+                      "required": [
+                        "eventBus",
+                        "sseManager",
+                      ],
+                      "type": "object",
+                    },
+                    "status": {
+                      "type": "string",
+                    },
+                    "timestamp": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "version",
+                    "checks",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "checks": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "database": {
+                          "enum": [
+                            "ok",
+                            "failed",
+                          ],
+                          "type": "string",
+                        },
+                        "eventBus": {
+                          "enum": [
+                            "ok",
+                            "degraded",
+                            "unknown",
+                          ],
+                          "type": "string",
+                        },
+                        "sseManager": {
+                          "enum": [
+                            "ok",
+                            "degraded",
+                            "unknown",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "database",
+                        "eventBus",
+                        "sseManager",
+                      ],
+                      "type": "object",
+                    },
+                    "stats": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "eventBus": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "listenerCount": {
+                              "type": "number",
+                            },
+                          },
+                          "required": [
+                            "listenerCount",
+                          ],
+                          "type": "object",
+                        },
+                        "sseManager": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "clientCount": {
+                              "type": "number",
+                            },
+                            "uptime": {
+                              "type": "number",
+                            },
+                          },
+                          "required": [
+                            "clientCount",
+                            "uptime",
+                          ],
+                          "type": "object",
+                        },
+                      },
+                      "required": [
+                        "eventBus",
+                        "sseManager",
+                      ],
+                      "type": "object",
+                    },
+                    "status": {
+                      "type": "string",
+                    },
+                    "timestamp": {
+                      "type": "string",
+                    },
+                    "version": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "version",
+                    "checks",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "health",
+        ],
+      },
+    },
+  },
+  "security": [
+    {
+      "apiKey": [],
+    },
+  ],
+  "servers": [
+    {
+      "description": "Development",
+      "url": "<pinned>",
+    },
+  ],
+}
+`;
