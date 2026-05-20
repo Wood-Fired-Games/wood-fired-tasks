@@ -6,6 +6,7 @@ export class SlackChannelSubscriptionRepository {
   private deleteByChannelStmt: Database.Statement;
   private findChannelsStmt: Database.Statement;
   private findByChannelStmt: Database.Statement;
+  private countByChannelStmt: Database.Statement;
 
   constructor(private db: Database.Database) {
     this.insertStmt = db.prepare(
@@ -27,6 +28,20 @@ export class SlackChannelSubscriptionRepository {
     this.findByChannelStmt = db.prepare(
       'SELECT project_id, event_type, created_at FROM slack_channel_subscriptions WHERE channel_id = ? ORDER BY project_id, event_type'
     );
+
+    this.countByChannelStmt = db.prepare(
+      'SELECT COUNT(*) as count FROM slack_channel_subscriptions WHERE channel_id = ?'
+    );
+  }
+
+  /**
+   * countByChannel — total number of subscription rows (project x event_type)
+   * for a given Slack channel. Used to enforce the per-channel cap before a
+   * subscribe call adds more rows.
+   */
+  countByChannel(channelId: string): number {
+    const row = this.countByChannelStmt.get(channelId) as { count: number };
+    return row.count;
   }
 
   subscribe(channelId: string, projectId: number, eventTypes: string[]): void {

@@ -9,6 +9,14 @@ import type { SlackChannelSubscriptionRepository } from '../repositories/channel
 import { NotFoundError, ValidationError, BusinessError } from '../../services/errors.js';
 import { formatTaskList, formatTaskDetail } from '../task-formatter.js';
 import { formatProjectList, formatProjectDetail } from '../formatters/project-formatter.js';
+import { ALLOWED_EVENT_TYPES, isAllowedEventType } from '../../events/types.js';
+
+/**
+ * Hard cap on subscription rows (project_id x event_type) per Slack channel.
+ * Prevents a malicious or careless user from filling the table with junk to
+ * slow subscribe/unsubscribe lookups.
+ */
+export const MAX_SUBSCRIPTIONS_PER_CHANNEL = 100;
 
 export interface Services {
   taskService: TaskService;
@@ -801,9 +809,44 @@ async function handleSubscribe(
   }
 
   // Parse event types — default to task.created + task.status_changed
-  const DEFAULT_EVENTS = ['task.created', 'task.status_changed'];
+  const DEFAULT_EVENTS: string[] = ['task.created', 'task.status_changed'];
   const eventsStr = flags['events'];
-  const eventTypes = eventsStr ? eventsStr.split(',').map(e => e.trim()) : DEFAULT_EVENTS;
+  const eventTypes = eventsStr
+    ? eventsStr.split(',').map(e => e.trim()).filter(e => e.length > 0)
+    : DEFAULT_EVENTS;
+
+  if (eventTypes.length === 0) {
+    await respondError(
+      respond,
+      'No event types specified.',
+      `Allowed values: ${ALLOWED_EVENT_TYPES.map(e => '`' + e + '`').join(', ')}`
+    );
+    return;
+  }
+
+  // Validate every supplied event type against the runtime allowlist.
+  // Reject on first invalid value; do NOT persist anything.
+  for (const eventType of eventTypes) {
+    if (!isAllowedEventType(eventType)) {
+      await respondError(
+        respond,
+        `Invalid event type: \`${eventType}\``,
+        `Allowed values: ${ALLOWED_EVENT_TYPES.map(e => '`' + e + '`').join(', ')}`
+      );
+      return;
+    }
+  }
+
+  // Enforce per-channel subscription cap before inserting more rows.
+  const currentCount = subscriptionRepo.countByChannel(command.channel_id);
+  if (currentCount + eventTypes.length > MAX_SUBSCRIPTIONS_PER_CHANNEL) {
+    await respondError(
+      respond,
+      `Subscription cap reached for this channel (${currentCount}/${MAX_SUBSCRIPTIONS_PER_CHANNEL}).`,
+      'Run `/tasks unsubscribe` to remove existing subscriptions before adding more.'
+    );
+    return;
+  }
 
   subscriptionRepo.subscribe(command.channel_id, projectId, eventTypes);
 

@@ -1150,6 +1150,7 @@ describe('registerTasksCommand', () => {
         unsubscribe: vi.fn(() => 1),
         findSubscribedChannels: vi.fn(() => []),
         findByChannel: vi.fn(() => []),
+        countByChannel: vi.fn(() => 0),
       };
     }
 
@@ -1228,6 +1229,85 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, ['task.created']);
+    });
+
+    it('subscribe --project 3 --events task.created,project.created persists both allowed types', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3 --events task.created,project.created');
+      await handler(args);
+
+      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, ['task.created', 'project.created']);
+    });
+
+    it('subscribe with invalid event type rejects ephemerally and does NOT persist', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3 --events task.created,not.a.real.event');
+      await handler(args);
+
+      // Must NOT have called subscribe (no DB mutation).
+      expect(subRepo.subscribe).not.toHaveBeenCalled();
+
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: Array<{ text?: { text: string } }>;
+      };
+      expect(respondArg.response_type).toBe('ephemeral');
+      expect(respondArg.blocks[0]?.text?.text).toContain('Invalid event type');
+      expect(respondArg.blocks[0]?.text?.text).toContain('not.a.real.event');
+      // Lists allowed values in the error.
+      expect(respondArg.blocks[0]?.text?.text).toContain('task.created');
+      expect(respondArg.blocks[0]?.text?.text).toContain('project.deleted');
+    });
+
+    it('subscribe rejects when adding event types would exceed the 100-subscription per-channel cap', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      // Channel already has 100 subscription rows.
+      subRepo.countByChannel.mockReturnValue(100);
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3 --events task.created');
+      await handler(args);
+
+      expect(subRepo.subscribe).not.toHaveBeenCalled();
+
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: Array<{ text?: { text: string } }>;
+      };
+      expect(respondArg.response_type).toBe('ephemeral');
+      expect(respondArg.blocks[0]?.text?.text).toContain('Subscription cap reached');
+    });
+
+    it('subscribe with empty --events value rejects ephemerally', async () => {
+      const app = makeMockApp();
+      const services = makeMockServices();
+      const identityCache = makeMockIdentityCache();
+      const subRepo = makeMockSubscriptionRepo();
+      registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('subscribe --project 3 --events ,,');
+      await handler(args);
+
+      expect(subRepo.subscribe).not.toHaveBeenCalled();
+      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(respondArg.blocks[0]?.text?.text).toContain('No event types specified');
     });
 
     it('subscribe when subscriptionRepo is undefined responds with "not configured"', async () => {
