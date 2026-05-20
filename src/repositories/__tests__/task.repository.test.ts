@@ -4,6 +4,7 @@ import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { ProjectRepository } from '../project.repository.js';
 import { TaskRepository } from '../task.repository.js';
+import { FtsSyntaxError } from '../errors.js';
 import type { CreateTaskDTO, Task } from '../../types/task.js';
 
 describe('TaskRepository', () => {
@@ -334,6 +335,82 @@ describe('TaskRepository', () => {
       expect(firstTask?.tags).toEqual(['tag1']);
       expect(secondTask?.tags).toEqual(['tag2']);
       expect(thirdTask?.tags).toEqual([]);
+    });
+  });
+
+  describe('FTS5 search syntax errors', () => {
+    beforeEach(() => {
+      // Seed a few tasks so the FTS index has rows; the malformed-search
+      // assertions rely on MATCH actually being evaluated, which requires a
+      // populated FTS table.
+      taskRepo.create(
+        createTestTask({ title: 'Fix login bug', description: 'auth' })
+      );
+      taskRepo.create(
+        createTestTask({
+          title: 'Database migration bug',
+          description: 'migrate users to new schema',
+        })
+      );
+    });
+
+    const MALFORMED_INPUTS: Array<{ name: string; input: string }> = [
+      { name: 'bare double quote', input: '"' },
+      { name: 'unterminated NEAR(', input: 'NEAR(' },
+      { name: 'bare wildcard', input: '*' },
+      { name: 'dangling OR operator', input: 'foo OR' },
+      { name: 'unterminated phrase', input: '"unterminated phrase' },
+    ];
+
+    for (const { name, input } of MALFORMED_INPUTS) {
+      it(`findByFilters throws FtsSyntaxError on ${name}`, () => {
+        expect(() => taskRepo.findByFilters({ search: input })).toThrow(
+          FtsSyntaxError
+        );
+      });
+
+      it(`count throws FtsSyntaxError on ${name}`, () => {
+        expect(() => taskRepo.count({ search: input })).toThrow(
+          FtsSyntaxError
+        );
+      });
+    }
+
+    it('preserves the original SQLite message on FtsSyntaxError', () => {
+      try {
+        taskRepo.findByFilters({ search: '"' });
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(FtsSyntaxError);
+        // originalMessage should retain the raw text for operator logs.
+        expect((err as FtsSyntaxError).originalMessage.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('does NOT wrap non-FTS SQLite errors when search is unset', () => {
+      // Sanity: a normal search-less call must NOT throw — the catch only
+      // engages when filters.search is provided.
+      expect(() => taskRepo.findByFilters({})).not.toThrow();
+      expect(() => taskRepo.count()).not.toThrow();
+    });
+
+    it('valid FTS5 prefix search continues to work', () => {
+      const results = taskRepo.findByFilters({ search: 'migr*' });
+      // Migration task should be found via prefix match.
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results.some((t) => t.title.includes('migration'))).toBe(true);
+    });
+
+    it('valid FTS5 phrase search continues to work', () => {
+      const results = taskRepo.findByFilters({
+        search: '"database migration"',
+      });
+      expect(results.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('valid FTS5 boolean search continues to work', () => {
+      const results = taskRepo.findByFilters({ search: 'login OR migration' });
+      expect(results.length).toBeGreaterThanOrEqual(2);
     });
   });
 });
