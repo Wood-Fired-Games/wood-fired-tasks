@@ -1,0 +1,47 @@
+name: Benchmarks
+
+# task #212: vitest bench suite for hot-path perf regression.
+#
+# IMPORTANT — perf benchmarks are flaky on shared runners; nightly results are
+# advisory and not PR-blocking. This workflow:
+#   * Always runs on `schedule` (nightly) and `workflow_dispatch`.
+#   * Runs on PRs ONLY when the `bench` label is applied, so contributors can
+#     opt-in to a perf snapshot without paying the cost on every PR.
+#   * Uploads the captured bench output as an artifact for trend inspection.
+#   * NEVER fails the build on perf regression — `npm run test:bench` exits
+#     non-zero only if vitest itself errors. The bench files use soft ceilings.
+on:
+  schedule:
+    # Nightly at 07:00 UTC (offset from mutation.yml's 06:00 to avoid contention).
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  bench:
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'bench'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run vitest benchmarks (advisory, never PR-blocking)
+        run: npm run test:bench | tee bench-output.txt
+      - name: Upload bench output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-output
+          path: bench-output.txt
+          if-no-files-found: warn
+          retention-days: 30

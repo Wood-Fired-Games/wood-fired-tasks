@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:bench": "vitest bench --run",
     "migrate": "tsx src/db/migrate.ts",
     "cli": "tsx src/cli/bin/tasks.ts",
     "mcp:start": "node dist/mcp/index.js",

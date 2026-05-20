@@ -5,7 +5,11 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     fileParallelism: false, // Run test files sequentially to avoid env var conflicts
-    exclude: ['dist/**', 'node_modules/**'],
+    // task #212: keep *.bench.ts out of the normal `npm test` run. Vitest still
+    // discovers them when invoked via `vitest bench` because that mode uses its
+    // own includeBench glob (defaulting to `**/*.bench.{js,ts}`) which ignores
+    // this exclude list.
+    exclude: ['dist/**', 'node_modules/**', '**/*.bench.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
