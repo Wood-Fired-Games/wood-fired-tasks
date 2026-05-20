@@ -11,7 +11,7 @@ import { createServer } from './server.js';
  *
  * Features:
  * - Graceful shutdown on SIGTERM/SIGINT
- * - Binds to 0.0.0.0 for LAN accessibility
+ * - Binds to HOST env var (default 127.0.0.1; set HOST=0.0.0.0 for LAN)
  * - Proper error handling for uncaught exceptions
  */
 async function main() {
@@ -77,13 +77,20 @@ async function main() {
   // Start the server
   await server.listen({ port, host });
 
+  // task #188: emit a clearly-visible startup line showing the bound
+  // interface. The default is now 127.0.0.1 (loopback only); operators
+  // who want LAN access must set HOST=0.0.0.0 (or a specific LAN IP)
+  // explicitly. Surfacing the host here makes the binding obvious at boot.
   server.log.info(
     {
       host,
       port,
       nodeEnv: config.NODE_ENV,
     },
-    'Server started'
+    `Server listening on http://${host}:${port}` +
+      (host === '127.0.0.1'
+        ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)'
+        : '')
   );
 }
 

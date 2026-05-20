@@ -149,6 +149,99 @@ describe('POST /api/v1/tasks/:id/claim', () => {
     expect(secondBody).toEqual(firstBody);
   });
 
+  it('rejects X-Idempotency-Key shorter than 8 chars with 400', async () => {
+    const task = createOpenTask('Short Idem Key');
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/claim`,
+      headers: { ...headers, 'x-idempotency-key': 'short' },
+      payload: { assignee: 'agent-1' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects X-Idempotency-Key longer than 128 chars with 400', async () => {
+    const task = createOpenTask('Long Idem Key');
+    const longKey = 'a'.repeat(129);
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/claim`,
+      headers: { ...headers, 'x-idempotency-key': longKey },
+      payload: { assignee: 'agent-1' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = JSON.parse(response.body);
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects X-Idempotency-Key with disallowed characters with 400', async () => {
+    const task = createOpenTask('Bad Charset Idem Key');
+
+    for (const badKey of [
+      'has spaces in it',
+      'has;semicolon-12345',
+      'has"quote-12345',
+      'has/slash-12345',
+      "has'apostrophe1",
+      'has.period.1234',
+    ]) {
+      const response = await server.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/claim`,
+        headers: { ...headers, 'x-idempotency-key': badKey },
+        payload: { assignee: 'agent-1' },
+      });
+
+      expect(response.statusCode, `expected 400 for key="${badKey}"`).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('VALIDATION_ERROR');
+    }
+  });
+
+  it('accepts valid X-Idempotency-Key (UUID-like, 36 chars) with 200', async () => {
+    const task = createOpenTask('Valid Idem Key UUID');
+    const validKey = '550e8400-e29b-41d4-a716-446655440000';
+
+    const response = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/claim`,
+      headers: { ...headers, 'x-idempotency-key': validKey },
+      payload: { assignee: 'agent-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.assignee).toBe('agent-1');
+  });
+
+  it('accepts X-Idempotency-Key at exact boundaries (8 and 128 chars)', async () => {
+    const taskMin = createOpenTask('Boundary Min');
+    const minKey = 'a'.repeat(8);
+    const minResponse = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${taskMin.id}/claim`,
+      headers: { ...headers, 'x-idempotency-key': minKey },
+      payload: { assignee: 'agent-min' },
+    });
+    expect(minResponse.statusCode).toBe(200);
+
+    const taskMax = createOpenTask('Boundary Max');
+    const maxKey = 'b'.repeat(128);
+    const maxResponse = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${taskMax.id}/claim`,
+      headers: { ...headers, 'x-idempotency-key': maxKey },
+      payload: { assignee: 'agent-max' },
+    });
+    expect(maxResponse.statusCode).toBe(200);
+  });
+
   it('accepts X-Claim-Source: workflow header', async () => {
     const task = createOpenTask('Workflow Claim');
 

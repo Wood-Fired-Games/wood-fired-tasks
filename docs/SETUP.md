@@ -24,7 +24,10 @@ Create a `.env` file in the project root:
 ```bash
 # API Server Configuration
 PORT=3000
-HOST=0.0.0.0
+# HOST defaults to 127.0.0.1 (loopback only). Uncomment the next line to
+# expose the server on the LAN — required only when you actually want
+# other machines on your network to reach it.
+# HOST=0.0.0.0
 LOG_LEVEL=debug
 NODE_ENV=development
 
@@ -81,6 +84,11 @@ npm run build
 ```bash
 export NODE_ENV=production
 export PORT=3000
+# HOST defaults to 127.0.0.1 (loopback only). Set to 0.0.0.0 to listen on
+# all interfaces, or to a specific LAN IP to bind only to that NIC. Do
+# this only when the server is intended to be reachable from other hosts;
+# in containerised or reverse-proxied deployments, prefer a specific
+# interface or rely on the container network instead of 0.0.0.0.
 export HOST=0.0.0.0
 export LOG_LEVEL=warn
 export API_KEYS=your-production-key-here
@@ -88,6 +96,11 @@ export DB_PATH=/var/lib/wood-fired-bugs/tasks.db
 ```
 
 [IMPORTANT] Use strong, unique API keys in production. These keys provide full access to your task data.
+
+[SECURITY] The server binds to `127.0.0.1` (loopback) by default. New deployments
+must opt in to LAN exposure by setting `HOST=0.0.0.0` (or a specific LAN IP).
+On boot the bound interface is logged at info level so the binding is
+visible to operators.
 
 ### 3. Run Migrations
 

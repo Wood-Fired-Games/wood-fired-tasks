@@ -53,7 +53,12 @@ export const CliExitCodes = {
 export const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().min(1).default('3000').transform(Number),
-  HOST: z.string().min(1).default('0.0.0.0'),
+  // task #188: default to loopback so a quick-start `npm run dev` on a public
+  // network does not expose the task tracker on every interface. Operators
+  // who want LAN access must opt in explicitly with HOST=0.0.0.0 (or a
+  // specific LAN IP). The bound interface is logged at startup so the
+  // default is visible.
+  HOST: z.string().min(1).default('127.0.0.1'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   API_KEYS: z.string().min(1, 'API_KEYS is required and cannot be empty'),
   DATABASE_PATH: z.string().min(1).default('./data/tasks.db'),

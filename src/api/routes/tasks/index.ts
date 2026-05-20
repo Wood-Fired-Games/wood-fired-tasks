@@ -1,6 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { CreateTaskSchema, UpdateTaskSchema } from '../../../schemas/task.schema.js';
+import { idempotencyKeyHeaderSchema } from '../../../schemas/idempotency.schema.js';
 import {
   TaskResponseSchema,
   TaskListResponseSchema,
@@ -140,14 +141,33 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
         body: ClaimRequestSchema,
         response: {
           200: ClaimResponseSchema,
+          400: ErrorResponseSchema,
           409: ConflictResponseSchema,
         },
       },
     },
     async (request, reply) => {
-      // Check idempotency key
-      const idempotencyKey = request.headers['x-idempotency-key'] as string | undefined;
-      if (idempotencyKey) {
+      // Validate idempotency key header BEFORE touching the DB.
+      // Bounds row size and charset to prevent unbounded `idempotency_keys` growth.
+      const rawIdempotencyKey = request.headers['x-idempotency-key'];
+      let idempotencyKey: string | undefined;
+      if (rawIdempotencyKey !== undefined) {
+        // Fastify may pass duplicate headers as an array; reject ambiguity.
+        if (typeof rawIdempotencyKey !== 'string') {
+          return reply.code(400).send({
+            error: 'VALIDATION_ERROR',
+            message: 'X-Idempotency-Key header must be a single value',
+          });
+        }
+        const parsed = idempotencyKeyHeaderSchema.safeParse(rawIdempotencyKey);
+        if (!parsed.success) {
+          return reply.code(400).send({
+            error: 'VALIDATION_ERROR',
+            message: 'Invalid X-Idempotency-Key header',
+            details: parsed.error.flatten().formErrors,
+          });
+        }
+        idempotencyKey = parsed.data;
         const cached = fastify.idempotencyService.get(idempotencyKey);
         if (cached) {
           return reply.code(200).send(cached as z.infer<typeof ClaimResponseSchema>);

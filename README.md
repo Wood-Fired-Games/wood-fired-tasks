@@ -363,7 +363,7 @@ Cascades are depth-limited (max 5 levels) and wrapped in transactions for atomic
 | Variable | Description | Default |
 |----------|-------------|---------|
 | PORT | HTTP server port | 3000 |
-| HOST | HTTP server host | 0.0.0.0 |
+| HOST | HTTP server host. Defaults to loopback only; set to `0.0.0.0` (or a specific LAN IP) to expose on the network. | 127.0.0.1 |
 | API_KEYS | Comma-separated API keys for authentication | (none - auth disabled) |
 | LOG_LEVEL | Logging level (debug, info, warn, error) | info |
 | NODE_ENV | Environment (development, production) | (none) |

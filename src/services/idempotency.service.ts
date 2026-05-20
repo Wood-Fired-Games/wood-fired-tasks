@@ -6,8 +6,16 @@ import type Database from 'better-sqlite3';
  *
  * Uses the idempotency_keys table created by migration 004.
  * Keys expire after 24 hours.
+ *
+ * Defense-in-depth: in addition to the hourly cleanup scheduled in
+ * `server.ts`, `set()` proactively trims expired rows once the table
+ * grows beyond `MAX_ROWS_BEFORE_CLEANUP`. This bounds DB size even if
+ * the periodic cleanup misfires or the server is under sustained load.
  */
 export class IdempotencyService {
+  /** Trigger an inline cleanup of expired rows when row count exceeds this. */
+  static readonly MAX_ROWS_BEFORE_CLEANUP = 10_000;
+
   constructor(private db: Database.Database) {}
 
   /**
@@ -24,11 +32,22 @@ export class IdempotencyService {
 
   /**
    * Store idempotency key with response for deduplication.
+   *
+   * If the table size exceeds `MAX_ROWS_BEFORE_CLEANUP` after the insert,
+   * trigger a synchronous cleanup of expired rows. The cleanup only removes
+   * rows already past the 24h TTL, so it cannot evict an in-flight key.
    */
   set(key: string, response: object): void {
     this.db.prepare(
       `INSERT OR REPLACE INTO idempotency_keys (key, response) VALUES (?, ?)`
     ).run(key, JSON.stringify(response));
+
+    const countRow = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM idempotency_keys`)
+      .get() as { n: number };
+    if (countRow.n > IdempotencyService.MAX_ROWS_BEFORE_CLEANUP) {
+      this.cleanup();
+    }
   }
 
   /**

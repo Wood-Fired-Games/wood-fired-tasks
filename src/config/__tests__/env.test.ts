@@ -38,7 +38,9 @@ describe('Configuration Validation', () => {
         expect(result.data.API_KEYS).toBe('test-key-1,test-key-2');
         expect(result.data.NODE_ENV).toBe('development');
         expect(result.data.PORT).toBe(3000);
-        expect(result.data.HOST).toBe('0.0.0.0');
+        // task #188: HOST defaults to 127.0.0.1 (loopback) — operators must
+        // opt in to LAN exposure with HOST=0.0.0.0 or a specific LAN IP.
+        expect(result.data.HOST).toBe('127.0.0.1');
         expect(result.data.LOG_LEVEL).toBe('info');
         expect(result.data.DATABASE_PATH).toBe('./data/tasks.db');
         expect(result.data.CONNECTION_TIMEOUT).toBe(120000);
@@ -57,13 +59,57 @@ describe('Configuration Validation', () => {
       if (result.success) {
         expect(result.data.NODE_ENV).toBe('development');
         expect(result.data.PORT).toBe(3000);
-        expect(result.data.HOST).toBe('0.0.0.0');
+        // task #188: default HOST is loopback-only.
+        expect(result.data.HOST).toBe('127.0.0.1');
         expect(result.data.LOG_LEVEL).toBe('info');
         expect(result.data.DATABASE_PATH).toBe('./data/tasks.db');
         expect(result.data.CONNECTION_TIMEOUT).toBe(120000);
         expect(result.data.REQUEST_TIMEOUT).toBe(60000);
         expect(result.data.KEEP_ALIVE_TIMEOUT).toBe(10000);
         expect(result.data.WAL_CHECKPOINT_INTERVAL_MS).toBe(900000);
+      }
+    });
+
+    it('should default HOST to loopback (127.0.0.1) — task #188', () => {
+      // Operators who want LAN exposure must explicitly set HOST=0.0.0.0
+      // (or a specific LAN IP). The default must never silently bind to
+      // every interface; a new OSS user following the README quick-start
+      // would otherwise expose the task tracker on every NIC.
+      process.env.API_KEYS = 'test-key';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.HOST).toBe('127.0.0.1');
+      }
+    });
+
+    it('should honour explicit HOST override for LAN exposure', () => {
+      // Verify the opt-in path: when an operator sets HOST=0.0.0.0
+      // explicitly, the schema must pass that value through unchanged.
+      process.env.API_KEYS = 'test-key';
+      process.env.HOST = '0.0.0.0';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.HOST).toBe('0.0.0.0');
+      }
+    });
+
+    it('should honour an explicit LAN IP for HOST', () => {
+      // A common middle ground is binding to a specific LAN IP rather
+      // than 0.0.0.0; the schema must accept any non-empty string.
+      process.env.API_KEYS = 'test-key';
+      process.env.HOST = '192.168.1.42';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.HOST).toBe('192.168.1.42');
       }
     });
 
