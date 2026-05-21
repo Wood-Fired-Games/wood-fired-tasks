@@ -706,14 +706,30 @@ tasks claim 42 --assignee "agent-1" --json
     "task": {
       "id": 42,
       "title": "Implement authentication",
+      "description": "Add JWT authentication to API",
       "status": "in_progress",
+      "priority": "high",
+      "project_id": 1,
+      "parent_task_id": null,
+      "estimated_minutes": null,
       "assignee": "agent-1",
+      "created_by": "bob",
+      "due_date": "2026-02-20T00:00:00.000Z",
+      "created_at": "2026-02-14T12:00:00.000Z",
+      "updated_at": "2026-02-14T12:05:00.000Z",
       "version": 2,
-      "claimed_at": "2026-02-14T12:00:00.000Z"
+      "claimed_at": "2026-02-14T12:05:00.000Z",
+      "tags": ["backend", "security"]
     }
+  },
+  "metadata": {
+    "id": 42,
+    "assignee": "agent-1"
   }
 }
 ```
+
+The `data` object wraps the full task under the `task` key. The `metadata` block carries the claimed task id and assignee for quick scripting access. `description`, `assignee`, `due_date`, `parent_task_id`, `estimated_minutes`, and `claimed_at` may be `null`. `version` increments by one on every successful claim/update.
 
 **Error handling:**
 
@@ -759,6 +775,400 @@ tasks health --json
   }
 }
 ```
+
+## Diagnostic Commands
+
+These commands operate directly on the local SQLite database file (read from `DATABASE_PATH`, default `./data/tasks.db`). They do not contact the API server.
+
+### tasks doctor
+
+Run diagnostics for database connectivity, disk space, and configuration validity. Useful as a first-line health check when something is misbehaving.
+
+**Example:**
+
+```bash
+tasks doctor
+```
+
+**Checks performed:**
+
+| Check | What it verifies |
+|-------|------------------|
+| Database | Opens the SQLite file read-only, runs `SELECT 1`, reports the active journal mode (WAL expected). |
+| Disk | Reports free vs total bytes on the partition holding the database. Status is `WARN` below 10% free, `FAIL` below 5%. |
+| Config | Parses environment variables against the configuration schema and lists any issues. |
+
+**Exit codes:**
+
+Returns `0` when all checks pass (or only `WARN`). Returns `1` if database, disk, or config status is `FAIL`.
+
+**Output:**
+
+```
+Database:  [PASS] Connected (SQLite WAL mode)
+Disk:      [PASS] 42.3% free (180.4 GB / 426.7 GB)
+Config:    [PASS] All required variables present
+```
+
+When a check fails, the corresponding line uses `[FAIL]` (or `[WARN]` for disk usage between 5%–10%). Config failures are followed by per-field issue lines.
+
+**JSON output:**
+
+```bash
+tasks doctor --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "database": {
+      "status": "PASS",
+      "message": "Connected (SQLite WAL mode)"
+    },
+    "disk": {
+      "status": "PASS",
+      "free": 193710571520,
+      "total": 458153459712,
+      "freePercent": "42.3"
+    },
+    "config": {
+      "status": "PASS",
+      "errors": []
+    }
+  }
+}
+```
+
+### tasks db-check
+
+Run SQLite `PRAGMA integrity_check` and report database file size. Use after a crash or before a backup to confirm the file is not corrupted.
+
+**Example:**
+
+```bash
+tasks db-check
+```
+
+**Exit codes:**
+
+Returns `0` when integrity check passes, `1` if it fails (corruption detected).
+
+**Output (PASS):**
+
+```
+Integrity:  PASSED
+Database:   ./data/tasks.db
+Size:       1.42 MB (364 pages x 4096 bytes)
+```
+
+**Output (FAIL):**
+
+```
+Integrity:  FAILED
+Issues:
+  - *** in database main ***
+  - Page 42: btreeInitPage() returns error code 11
+Database:   ./data/tasks.db
+Size:       1.42 MB (364 pages x 4096 bytes)
+```
+
+**JSON output:**
+
+```bash
+tasks db-check --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "passed": true,
+    "message": "ok",
+    "dbPath": "./data/tasks.db",
+    "sizeBytes": 1490944,
+    "pageCount": 364,
+    "pageSize": 4096
+  }
+}
+```
+
+When `passed` is `false`, `message` contains the joined integrity issues reported by SQLite.
+
+### tasks backup
+
+Create a hot SQLite backup of the task database using the SQLite Online Backup API. The source database is opened read-only, so backups are safe to run while the API server is live.
+
+**Example:**
+
+```bash
+# Default destination: ./tasks-backup-<timestamp>.db
+tasks backup
+
+# Custom destination
+tasks backup --output /var/backups/tasks/nightly.db
+```
+
+**Options:**
+
+| Option | Short | Type | Description |
+|--------|-------|------|-------------|
+| --output | -o | string | Backup destination path. Default: `./tasks-backup-<ISO-timestamp>.db`. Parent directories are created automatically. |
+
+**Exit codes:**
+
+Returns `0` on success. Returns `1` if the source database is missing or the backup operation fails.
+
+**Output:**
+
+```
+Backup created successfully
+  Path:   /var/backups/tasks/nightly.db
+  Size:   1.42 MB
+  Source: ./data/tasks.db
+```
+
+**JSON output:**
+
+```bash
+tasks backup --output /tmp/snapshot.db --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "path": "/tmp/snapshot.db",
+    "size": 1490944,
+    "source": "./data/tasks.db"
+  }
+}
+```
+
+`size` is the size of the backup file in bytes.
+
+### tasks stats
+
+Show task statistics: counts by status, recent activity (last 24h), and per-agent productivity (last 7 days). Reads directly from the database.
+
+**Example:**
+
+```bash
+tasks stats
+```
+
+**Output:**
+
+```
+Task Counts by Status:
+  open          12
+  in_progress    4
+  done          27
+  blocked        1
+  Total         44
+
+Recent Activity (24h):
+  Created:  3
+  Updated:  9
+
+Agent Productivity (7 days):
+  alice        14 tasks (10 done, 2 in progress)
+  bob           8 tasks ( 6 done, 1 in progress)
+```
+
+If there are no tasks at all, the command prints `No tasks found.` and exits. If no agent has updated tasks in the last 7 days, the productivity section reads `No agent activity in the last 7 days.`
+
+**JSON output:**
+
+```bash
+tasks stats --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "statusCounts": [
+      { "status": "blocked", "count": 1 },
+      { "status": "done", "count": 27 },
+      { "status": "in_progress", "count": 4 },
+      { "status": "open", "count": 12 }
+    ],
+    "recentActivity": {
+      "created": 3,
+      "updated": 9
+    },
+    "agentProductivity": [
+      {
+        "assignee": "alice",
+        "task_count": 14,
+        "completed": 10,
+        "in_progress": 2
+      },
+      {
+        "assignee": "bob",
+        "task_count": 8,
+        "completed": 6,
+        "in_progress": 1
+      }
+    ]
+  }
+}
+```
+
+## Reporting Commands
+
+### tasks completed
+
+Dashboard view of tasks that transitioned to `status='done'` within a time interval. Aggregates by project, assignee, priority, and daily throughput. Reads directly from the database.
+
+**Examples:**
+
+```bash
+# Last 7 days (default if no range supplied)
+tasks completed
+
+# Trailing N days
+tasks completed --days 30
+
+# Explicit range (both --since and --until required together)
+tasks completed --since 2026-04-01 --until 2026-04-30
+
+# Scope to one project and assignee
+tasks completed --days 14 --project 1 --assignee alice
+```
+
+**Options:**
+
+| Option | Short | Type | Description |
+|--------|-------|------|-------------|
+| --days | -d | number | Trailing N days from now. Must be a positive integer. Default: `7` when no range is supplied. |
+| --since | | string | Range start (ISO8601, inclusive). Must be paired with `--until`. |
+| --until | | string | Range end (ISO8601, inclusive). Must be paired with `--since`. |
+| --project | -p | number | Filter by project ID (positive integer). |
+| --assignee | -a | string | Filter by assignee name. |
+
+Passing only one of `--since` / `--until` is an error — provide both, or use `--days`.
+
+**Output:**
+
+```
+Completion Report
+  Range:  2026-05-13T00:00:00.000Z  ->  2026-05-20T00:00:00.000Z
+  Total:  4 task(s) completed
+
+ID  Title                         Project        Assignee  Priority  Completed             Time to complete
+42  Implement authentication      Project Alpha  alice     high      5/18/2026, 3:42:00 PM 2d 4h
+43  Write tests                   Project Alpha  bob       medium    5/19/2026, 9:10:00 AM 1d
+...
+
+By project:
+  Project Alpha                  3
+  Project Beta                   1
+
+By assignee:
+  alice                          2
+  bob                            2
+
+By priority:
+  high                           1
+  medium                         3
+
+Daily throughput:
+  2026-05-18    2  ##
+  2026-05-19    1  #
+  2026-05-20    1  #
+```
+
+If no tasks completed in the interval, the command prints `No completed tasks in this interval.` after the header.
+
+**JSON output:**
+
+```bash
+tasks completed --days 7 --json
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "range": {
+      "start": "2026-05-13T00:00:00.000Z",
+      "end": "2026-05-20T00:00:00.000Z"
+    },
+    "total": 4,
+    "rows": [
+      {
+        "id": 42,
+        "title": "Implement authentication",
+        "project_id": 1,
+        "assignee": "alice",
+        "priority": "high",
+        "completed_at": "2026-05-18T15:42:00.000Z",
+        "time_to_complete_seconds": 187200
+      }
+    ],
+    "by_project": [
+      { "project_id": 1, "count": 3 },
+      { "project_id": 2, "count": 1 }
+    ],
+    "by_assignee": [
+      { "assignee": "alice", "count": 2 },
+      { "assignee": "bob", "count": 2 }
+    ],
+    "by_priority": [
+      { "priority": "high", "count": 1 },
+      { "priority": "medium", "count": 3 }
+    ],
+    "daily_throughput": [
+      { "date": "2026-05-18", "count": 2 },
+      { "date": "2026-05-19", "count": 1 },
+      { "date": "2026-05-20", "count": 1 }
+    ]
+  },
+  "metadata": {
+    "count": 4,
+    "range": {
+      "start": "2026-05-13T00:00:00.000Z",
+      "end": "2026-05-20T00:00:00.000Z"
+    }
+  }
+}
+```
+
+## Shell Completion
+
+### tasks completions \<shell\>
+
+Generate a shell completion script and print it to stdout. Pipe to a file or source it from your shell rc to enable tab-completion for commands, subcommands, status values, and priority values.
+
+**Supported shells:** `bash`, `zsh`.
+
+**Examples:**
+
+```bash
+# Bash: append to ~/.bashrc (or drop into /etc/bash_completion.d/)
+tasks completions bash >> ~/.bashrc
+
+# Zsh: write to a directory on $fpath and add the directory to fpath in ~/.zshrc
+mkdir -p ~/.zsh/completions
+tasks completions zsh > ~/.zsh/completions/_tasks
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+```
+
+After restarting your shell (or `source ~/.bashrc` / `compinit` for zsh), pressing TAB after `tasks ` will complete command names. Pressing TAB after `--status ` or `--priority ` will complete valid enum values.
+
+**Arguments:**
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| shell | string | Required. One of `bash` or `zsh`. Any other value exits with code 1. |
+
+**Exit codes:**
+
+Returns `0` on success. Returns `1` if `shell` is not `bash` or `zsh`.
+
+This command does not honor `--json` — it always emits the raw shell script on stdout.
 
 ## Exit Codes
 
