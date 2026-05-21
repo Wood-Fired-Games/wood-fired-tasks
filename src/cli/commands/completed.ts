@@ -60,7 +60,6 @@ export const completedCommand = new Command('completed')
       if (isJsonMode) {
         jsonOutput(report, {
           count: report.total,
-          range: report.range,
         });
         return;
       }

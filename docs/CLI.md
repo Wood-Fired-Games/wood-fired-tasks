@@ -1127,14 +1127,12 @@ tasks completed --days 7 --json
     ]
   },
   "metadata": {
-    "count": 4,
-    "range": {
-      "start": "2026-05-13T00:00:00.000Z",
-      "end": "2026-05-20T00:00:00.000Z"
-    }
+    "count": 4
   }
 }
 ```
+
+`range` appears only inside `data.range` (the report payload). It is no longer duplicated under `metadata`.
 
 ## Shell Completion
 
