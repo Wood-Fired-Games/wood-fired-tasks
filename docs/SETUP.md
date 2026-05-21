@@ -63,7 +63,7 @@ task data and Slack workspace.
 ### 1. Clone and Install
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Wood-Fired-Games/wood-fired-bugs.git
 cd wood-fired-bugs
 npm install
 ```
@@ -349,7 +349,7 @@ All connections use the same schema and WAL mode.
 npm test
 ```
 
-Runs the full test suite with Vitest (513 tests across 47 files).
+Runs the full test suite with Vitest (1084 tests across 87 files).
 
 ### Watch Mode
 

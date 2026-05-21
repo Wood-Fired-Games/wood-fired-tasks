@@ -1,6 +1,10 @@
 # Wood Fired Bugs
 
-Network-wide task tracking for Wood Fired Games
+[![CI](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml)
+[![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/install-scripts.yml)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
+
+Open-source task tracking system from Wood Fired Games.
 
 Wood Fired Bugs is a centralized task management service providing a REST API, CLI tool, and MCP server for managing work items across all projects. LLM agents interact via REST or MCP; humans interact via CLI. All three interfaces share a common service layer and SQLite database with full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation.
 
@@ -20,7 +24,7 @@ Wood Fired Bugs is a centralized task management service providing a REST API, C
 
 ```bash
 # Clone and install
-git clone <repository-url>
+git clone https://github.com/Wood-Fired-Games/wood-fired-bugs.git
 cd wood-fired-bugs
 npm install
 npm run build
@@ -416,7 +420,7 @@ Cascades are depth-limited (max 5 levels) and wrapped in transactions for atomic
 # Development mode with hot reload
 npm run dev
 
-# Run tests (513 tests across 47 files)
+# Run tests (1084 tests across 87 files)
 npm test
 
 # Watch mode for tests
@@ -443,7 +447,7 @@ SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug.
 
 ### Testing
 
-513 tests across 47 test files covering:
+1084 tests across 87 test files covering:
 - Service layer unit tests
 - API route integration tests (all endpoints)
 - MCP tool tests (all tools)
