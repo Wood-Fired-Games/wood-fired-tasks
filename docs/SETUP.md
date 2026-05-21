@@ -4,8 +4,23 @@ Complete setup instructions for Wood Fired Bugs in development, production, and 
 
 ## Prerequisites
 
-- Node.js 20 or higher
-- npm (comes with Node.js)
+- **Node.js 22 or higher** — matches the CI matrix (`actions/setup-node` with
+  `node-version: '22'`) and is enforced by the `engines` field in
+  `package.json`.
+- **npm** — comes with Node.js.
+- **jq** — required by `install.sh` to merge the MCP server entry into
+  `~/.claude.json` safely (raw heredocs would mis-quote the API key on
+  embedded `"`/`\`/newline). Install with:
+  - Debian/Ubuntu: `sudo apt-get install jq`
+  - RHEL/CentOS: `sudo yum install jq`
+  - Fedora: `sudo dnf install jq`
+  - macOS: `brew install jq`
+- **curl** — required by `install.sh` to validate that the API server is
+  reachable at the configured URL (post-install connectivity check). Almost
+  always preinstalled; install with the same package managers if missing.
+
+The Windows installer (`install.ps1`) uses native PowerShell JSON handling
+and `Invoke-WebRequest` instead, so it does not require `jq` or `curl`.
 
 ## Secrets
 
@@ -86,7 +101,7 @@ NODE_ENV=development
 API_KEYS=dev-key-1,dev-key-2
 
 # Database
-DB_PATH=./data/tasks.db
+DATABASE_PATH=./data/tasks.db
 
 # CLI Configuration (for testing CLI commands)
 API_BASE_URL=http://localhost:3000
@@ -94,6 +109,13 @@ API_KEY=dev-key-1
 ```
 
 [IMPORTANT] The `API_KEYS` variable is required for authentication. Set it to one or more comma-separated keys. These keys will be required in the `X-API-Key` header for all API requests.
+
+[NOTE] `DATABASE_PATH` is the canonical name validated by `src/config/env.ts`
+and used by the CLI commands. The MCP server also accepts the legacy
+`DB_PATH` as an alias for backward compatibility with older
+`~/.claude.json` installs, but new configurations should use `DATABASE_PATH`.
+See the [Environment Variables](#environment-variables) section below for the
+full list.
 
 ### 3. Build the Project
 
@@ -109,7 +131,7 @@ This compiles TypeScript to JavaScript in the `dist/` directory.
 npm run migrate
 ```
 
-This creates the SQLite database at `DB_PATH` and runs all migrations to set up the schema.
+This creates the SQLite database at `DATABASE_PATH` and runs all migrations to set up the schema.
 
 ### 5. Start Development Server
 
@@ -143,7 +165,7 @@ export PORT=3000
 export HOST=0.0.0.0
 export LOG_LEVEL=warn
 export API_KEYS=your-production-key-here
-export DB_PATH=/var/lib/wood-fired-bugs/tasks.db
+export DATABASE_PATH=/var/lib/wood-fired-bugs/tasks.db
 ```
 
 [IMPORTANT] Use strong, unique API keys in production. These keys provide full access to your task data.
@@ -261,7 +283,7 @@ backup) to the current user only via `icacls`.
 
 1. **Copies skill files** to `~/.claude/commands/tasks/` (10 skill files)
 2. **Updates MCP server configuration** in `~/.claude.json` to add the wood-fired-bugs MCP server
-3. **Configures environment** with DB_PATH for the MCP server
+3. **Configures environment** with `DATABASE_PATH` for the MCP server
 
 ### Resulting MCP Configuration
 
@@ -274,12 +296,16 @@ The installer adds this configuration to `~/.claude.json`:
       "command": "node",
       "args": ["/path/to/wood-fired-bugs/dist/mcp/index.js"],
       "env": {
-        "DB_PATH": "/path/to/wood-fired-bugs/data/tasks.db"
+        "DATABASE_PATH": "/path/to/wood-fired-bugs/data/tasks.db"
       }
     }
   }
 }
 ```
+
+[NOTE] Older installs may have `DB_PATH` here instead. The MCP server still
+accepts that as a deprecated alias, but re-running the installer or hand-editing
+to `DATABASE_PATH` is recommended for consistency with `src/config/env.ts`.
 
 [NOTE] The MCP server runs as a separate process via stdio. It creates its own database connection and does NOT call the REST API.
 
@@ -312,16 +338,29 @@ All skills use the MCP tools under the hood for data access.
 
 ### Database Path
 
-Set via `DB_PATH` environment variable. Defaults to `./data/tasks.db`.
+Set via `DATABASE_PATH` environment variable. Defaults to `./data/tasks.db`.
+The MCP server also accepts the legacy `DB_PATH` as a deprecated alias for
+backward compatibility with older `~/.claude.json` installs.
 
 ### Migrations
 
-Four migration files in `src/db/migrations/`:
+Seven migration files in `src/db/migrations/`:
 
-1. `001-initial-schema.ts` - Creates projects, tasks, task_tags, dependencies, comments tables
-2. `002-task-hierarchy-and-dependencies.ts` - Task hierarchy and dependency tracking
-3. `003-comments-and-estimates.ts` - Comments and time estimates
-4. `004-claim-protocol.ts` - Version field, claimed_at, idempotency_keys table
+1. `001-initial-schema.ts` — Creates `projects`, `tasks`, `task_tags`, `dependencies`, `comments` tables.
+2. `002-task-hierarchy-and-dependencies.ts` — Task hierarchy (`parent_task_id`) and dependency tracking.
+3. `003-comments-and-estimates.ts` — Comments and `estimated_minutes` field.
+4. `004-claim-protocol.ts` — Optimistic-lock `version` field, `claimed_at` column, `idempotency_keys` table.
+5. `005-backlogged-status.ts` — Adds `backlogged` to the task status CHECK constraint (rebuilds `tasks` table; preserves FTS triggers).
+6. `006-slack-channel-subscriptions.ts` — New `slack_channel_subscriptions` table for the Slack notifier (channel × project × event_type).
+7. `007-completed-at.ts` — Adds `completed_at` timestamp populated on transition into `done` (backfilled from `updated_at` for existing done rows).
+
+### Task statuses
+
+Valid statuses (post-005): `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged`.
+
+`backlogged` is a non-terminal "deferred but not abandoned" state distinct from
+`closed` (won't-do / archive). `completed_at` is populated only when a task
+enters `done`; it is intentionally not set for `closed`.
 
 Migrations run automatically on server start. To run manually:
 
@@ -392,6 +431,80 @@ The Swagger UI includes:
 - Authentication support (X-API-Key header)
 - Full schema definitions from Zod validators
 
+## Environment Variables
+
+The canonical schema lives in [`src/config/env.ts`](../src/config/env.ts) and
+is enforced with Zod at server startup. Misconfiguration causes the server to
+fail fast with sysexits `EX_CONFIG` (78). The table below documents every
+variable the server reads, plus the CLI- and MCP-specific variables.
+
+### Server (read by `src/config/env.ts`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `API_KEYS` | **yes** | — | Comma-separated API keys. Format: bare (`abc123`) or labelled (`abc123:alice-laptop`). Every valid key has full admin power; issue one per machine/agent. See the README "Security Model" section. |
+| `NODE_ENV` | no | `development` | One of `development`, `production`, `test`. Switches log formatting (pino-pretty in dev) and Swagger gating in production. |
+| `PORT` | no | `3000` | HTTP server port. |
+| `HOST` | no | `127.0.0.1` | Bind interface. Loopback-only by default (task #188). Set `0.0.0.0` or a LAN IP to expose. The bound interface is logged at info level on boot. |
+| `LOG_LEVEL` | no | `info` | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. |
+| `DATABASE_PATH` | no | `./data/tasks.db` | Filesystem path to the SQLite database. The MCP server also accepts the legacy `DB_PATH` as a deprecated alias. |
+| `CONNECTION_TIMEOUT` | no | `120000` (ms) | Fastify `connectionTimeout`. |
+| `REQUEST_TIMEOUT` | no | `60000` (ms) | Fastify `requestTimeout`. |
+| `KEEP_ALIVE_TIMEOUT` | no | `10000` (ms) | Fastify `keepAliveTimeout`. |
+| `WAL_CHECKPOINT_INTERVAL_MS` | no | `900000` (15 min) | Interval for the periodic SQLite WAL checkpoint job. |
+| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag to expose `/documentation` and `/documentation/json` when `NODE_ENV=production`. Gated by the auth plugin when enabled (task #185). |
+| `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-API-key cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
+| `SSE_MAX_CONNECTIONS_PER_IP` | no | `8` | Per-IP cap on concurrent SSE connections. |
+| `SSE_MAX_CONNECTIONS` | no | `200` | Global cap on concurrent SSE connections. |
+| `SLACK_BOT_TOKEN` | conditional | — | Slack bot token (`xoxb-…`). Required if any Slack var is set; refused alone (see [`docs/SLACK.md`](SLACK.md)). |
+| `SLACK_APP_TOKEN` | conditional | — | Slack app-level token (`xapp-…`) for Socket Mode. Must be set together with `SLACK_BOT_TOKEN` or neither. |
+| `SLACK_SIGNING_SECRET` | conditional | — | Slack request signing secret. Required when running Slack in HTTP mode; harmless in Socket Mode. |
+
+### Rate limiting (read directly in `src/api/server.ts`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `RATE_LIMIT_MAX` | no | `1000` | Maximum requests per window (global, via `@fastify/rate-limit`). `/health` is allow-listed. |
+| `RATE_LIMIT_TIME_WINDOW` | no | `1 minute` | Window string accepted by `@fastify/rate-limit`. |
+
+### CLI (read by `src/cli/config/env.ts` and individual commands)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `API_BASE_URL` | no | `http://localhost:3000` | Base URL for the REST API the CLI talks to. |
+| `API_KEY` | yes | — | Single API key sent in the `X-API-Key` header. Must match one of the entries in the server's `API_KEYS`. |
+| `DATABASE_PATH` | no | `./data/tasks.db` | Used by the offline CLI commands (`backup`, `doctor`, `stats`, `db-check`, `completed`) that open the SQLite database directly. |
+| `NO_COLOR` | no | unset | When set (any value), suppresses ANSI colors in CLI output. |
+
+### MCP server (read by `src/mcp/index.ts` and `src/mcp/server.ts`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_PATH` | no | `./data/tasks.db` | Path to the SQLite database opened on stdio startup. Canonical name. |
+| `DB_PATH` | no | — | **Deprecated alias** for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs produced by pre-task-#217 versions of `install.sh` / `install.ps1`. |
+| `API_URL` | no | `http://localhost:3000/api/v1` | Only used by the optional remote MCP transport (`src/mcp/server.ts`). |
+| `WOOD_FIRED_BUGS_API_KEY` | no | — | API key the installer writes into the MCP env block. Read by remote MCP transport and used by `install.sh` to resolve a key without putting it on argv. |
+
+### Installer (read by `install.sh` and `install.ps1` only)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `WOOD_FIRED_BUGS_API_KEY` | no | — | API key consumed by the installer. Most secure of the three resolution paths (env > on-disk secret file > masked prompt > deprecated `--api-key` flag). |
+| `WOOD_FIRED_BUGS_URL` | no | `http://localhost:3000` | Health-check URL the installer pings after writing `~/.claude.json`. |
+| `XDG_CONFIG_HOME` | no | `$HOME/.config` | Standard XDG variable; the installer caches the API key under `$XDG_CONFIG_HOME/wood-fired-bugs/api-key` (mode 600). |
+
+[TIP] In production, source these from a secret manager (1Password CLI, AWS
+Secrets Manager, Vault, Doppler, Infisical) — see the "Secrets" section at
+the top of this guide.
+
+## Slack Integration
+
+See [`docs/SLACK.md`](SLACK.md) for the full Slack integration guide: app
+manifest, required scopes, env vars, slash command reference (`/tasks …`),
+channel subscription model, and notifier behaviour. Slack is **optional** —
+the service runs without it; the three Slack env vars are validated as a
+group (all three or none).
+
 ## Troubleshooting
 
 ### API returns 401 Unauthorized
@@ -413,7 +526,7 @@ Check that:
 Check that:
 1. The installer completed successfully
 2. `~/.claude.json` contains the wood-fired-bugs MCP server configuration
-3. The `DB_PATH` in the MCP config points to a valid database
+3. The `DATABASE_PATH` (or legacy `DB_PATH`) in the MCP config points to a valid database
 4. The `command` path points to the compiled MCP server (`dist/mcp/index.js`)
 
 [TIP] Restart Claude Code after running the installer for changes to take effect.
@@ -437,4 +550,5 @@ If you see database errors, try:
 - Read [API.md](API.md) for complete API reference
 - Read [CLI.md](CLI.md) for complete CLI reference
 - Read [MCP.md](MCP.md) for MCP tools and skill files reference
+- Read [SLACK.md](SLACK.md) for the optional Slack integration (slash commands, notifier, channel subscriptions)
 - Check [README.md](../README.md) for architecture overview

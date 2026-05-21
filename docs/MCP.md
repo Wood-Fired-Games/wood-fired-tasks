@@ -48,7 +48,8 @@ npm run mcp:dev
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| DB_PATH | Path to SQLite database file | ./data/tasks.db |
+| `DATABASE_PATH` | Path to SQLite database file (canonical name; matches `src/config/env.ts`). | `./data/tasks.db` |
+| `DB_PATH` | Deprecated alias for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs. | — |
 
 [NOTE] The MCP server creates its own database connection. It does NOT call the REST API.
 
@@ -65,7 +66,7 @@ Add this configuration to `~/.claude.json` in the `mcpServers` section:
       "command": "node",
       "args": ["/absolute/path/to/wood-fired-bugs/dist/mcp/index.js"],
       "env": {
-        "DB_PATH": "/absolute/path/to/wood-fired-bugs/data/tasks.db"
+        "DATABASE_PATH": "/absolute/path/to/wood-fired-bugs/data/tasks.db"
       }
     }
   }
@@ -93,7 +94,7 @@ The provided installers handle configuration automatically:
 Both installers:
 1. Copy skill files to `~/.claude/commands/tasks/`
 2. Add or update the MCP server configuration in `~/.claude.json`
-3. Set the DB_PATH environment variable for the MCP server
+3. Set the `DATABASE_PATH` environment variable for the MCP server (older installs may have `DB_PATH`; both are accepted, with `DATABASE_PATH` taking precedence)
 
 ## Remote MCP Server
 
@@ -745,12 +746,12 @@ SQLite's WAL mode enables concurrent reads and sequential writes across all inte
 
 1. Check that `~/.claude.json` has the correct configuration
 2. Verify the `command` path points to the compiled MCP server (`dist/mcp/index.js`)
-3. Verify the `DB_PATH` in the config points to a valid database file
+3. Verify the `DATABASE_PATH` (or legacy `DB_PATH`) in the config points to a valid database file
 4. Restart Claude Code after configuration changes
 
 ### MCP tools return "database error"
 
-1. Check that the database file exists at `DB_PATH`
+1. Check that the database file exists at `DATABASE_PATH` (or legacy `DB_PATH`)
 2. Verify file permissions allow read/write access
 3. Run `npm run migrate` to ensure the schema is up to date
 4. Check that the database file is not locked by another process
@@ -765,7 +766,7 @@ SQLite's WAL mode enables concurrent reads and sequential writes across all inte
 
 The API and MCP server share the same database file. If changes made via the API don't appear in MCP (or vice versa):
 
-1. Verify both are using the same `DB_PATH`
+1. Verify both are using the same database path (`DATABASE_PATH` or legacy `DB_PATH`)
 2. Check that SQLite is in WAL mode (handled automatically by the app)
 3. If using Docker or VMs, ensure the database file is on a shared volume
 

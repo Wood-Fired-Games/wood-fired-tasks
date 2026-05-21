@@ -31,7 +31,7 @@ npm run build
 
 # Set environment variables
 export API_KEYS="your-api-key-here"
-export DB_PATH="./data/tasks.db"
+export DATABASE_PATH="./data/tasks.db"
 
 # Run database migrations
 npm run migrate
@@ -85,33 +85,113 @@ Scoped/role-based tokens are tracked for a possible v1.0 milestone but are not o
 
 ## Architecture
 
-```
-                    ┌─────────────┐
-                    │  SQLite DB  │
-                    │  (WAL mode) │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-        ┌─────┴─────┐ ┌───┴────┐ ┌────┴─────┐
-        │ REST API  │ │  MCP   │ │   CLI    │
-        │ (Fastify) │ │(stdio) │ │(Commander│
-        │ port 3000 │ │        │ │   .js)   │
-        └─────┬─────┘ └───┬────┘ └────┬─────┘
-              │            │            │
-        ┌─────┴─────┐ ┌───┴────┐ ┌────┴─────┐
-        │ HTTP/SSE  │ │ Claude │ │ Terminal │
-        │  Agents   │ │  Code  │ │  (human) │
-        └───────────┘ └────────┘ └──────────┘
+The service is a single Node process exposing three peer entry points
+(REST, CLI, MCP) over a shared service layer, plus an optional Slack
+subprocess that reuses the same services and database. Real-time events
+flow through an in-process EventBus to the SSE Manager (browser/agent
+consumers) and the Slack notifier (channel subscribers).
+
+```mermaid
+flowchart TB
+  subgraph clients[Clients]
+    HumanCLI[Terminal user<br/>tasks CLI]
+    HTTPAgent[HTTP / SSE agent]
+    ClaudeMCP[Claude Code<br/>MCP stdio]
+    SlackUser[Slack user<br/>/tasks slash]
+  end
+
+  subgraph entry[Entry points]
+    CLI[CLI<br/>Commander.js]
+    REST[REST API<br/>Fastify :3000]
+    MCP[MCP Server<br/>stdio + remote HTTP]
+    Slack[Slack subprocess<br/>@slack/bolt]
+  end
+
+  subgraph guards[Auth and validation]
+    Auth[auth plugin<br/>X-API-Key]
+    RL[Rate limiter<br/>RATE_LIMIT_*]
+    Zod[Zod schemas<br/>request/response]
+  end
+
+  subgraph core[Service layer - shared]
+    TS[TaskService]
+    PS[ProjectService]
+    DS[DependencyService]
+    CS[CommentService]
+    Workflow[Workflow Engine<br/>cascade: parent auto-complete,<br/>dependency auto-unblock,<br/>depth-limited]
+    Idem[Idempotency Service]
+    Claim[Claim/Release Service]
+  end
+
+  subgraph events[Events]
+    Bus[EventBus<br/>in-process]
+    SSE[SSE Manager<br/>per-key/IP/global caps]
+    Notifier[Slack Notifier<br/>per-channel retry]
+  end
+
+  subgraph storage[Persistence]
+    DB[(SQLite WAL<br/>tasks, projects, comments,<br/>dependencies, idempotency_keys,<br/>slack_channel_subscriptions)]
+    Subs[(Channel<br/>Subscription Repo)]
+  end
+
+  HumanCLI --> CLI
+  HTTPAgent -->|HTTP + X-API-Key| REST
+  ClaudeMCP -->|stdio JSON-RPC| MCP
+  SlackUser -->|Socket Mode| Slack
+
+  CLI -->|HTTP| REST
+  REST --> Auth --> RL --> Zod --> TS
+  Zod --> PS
+  Zod --> DS
+  Zod --> CS
+  MCP --> TS
+  MCP --> PS
+  MCP --> DS
+  MCP --> CS
+  Slack --> TS
+  Slack --> PS
+  Slack --> DS
+  Slack --> CS
+  Slack --> Subs
+
+  TS --> Workflow
+  TS --> Claim
+  Claim --> Idem
+  Workflow --> Bus
+  TS --> Bus
+  PS --> Bus
+  DS --> Bus
+  CS --> Bus
+
+  Bus --> SSE
+  Bus --> Notifier
+  Notifier --> Subs
+  SSE -->|text/event-stream| HTTPAgent
+  Notifier -->|chat.postMessage| SlackUser
+
+  TS --> DB
+  PS --> DB
+  DS --> DB
+  CS --> DB
+  Claim --> DB
+  Subs --> DB
 ```
 
 | Interface | Access Method | Transport | Auth |
 |-----------|--------------|-----------|------|
 | REST API | HTTP endpoints | Port 3000 (configurable) | X-API-Key header |
-| CLI | `tasks` command | HTTP to API server | API_KEY env var |
-| MCP Server | stdio protocol | MCP client integration | None (local access) |
+| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | API_KEY env var |
+| MCP Server | stdio JSON-RPC (local) or HTTP (remote variant) | MCP client integration | None for stdio (local access); X-API-Key for remote |
+| Slack subprocess | Slack Socket Mode | WebSocket to Slack | Slack signing secret + bot token |
 
-All three interfaces use the same TypeScript services (TaskService, ProjectService, DependencyService, CommentService) and share the same SQLite database.
+All entry points share the same TypeScript services
+(TaskService, ProjectService, DependencyService, CommentService), the
+Workflow Engine (cascades parent auto-complete and dependency
+auto-unblock; depth-limited and wrapped in a transaction), and the same
+SQLite database in WAL mode. The Slack notifier is a downstream
+EventBus subscriber — it never blocks task mutations, retries transient
+errors twice, and short-circuits permanent errors
+(`not_in_channel`, `channel_not_found`, `invalid_auth`, `token_revoked`).
 
 ## Data Model
 
@@ -120,15 +200,21 @@ All three interfaces use the same TypeScript services (TaskService, ProjectServi
 | Entity | Key Fields |
 |--------|------------|
 | **projects** | id, name, description, created_at, updated_at |
-| **tasks** | id, title, description, status, priority, project_id, parent_task_id, estimated_minutes, assignee, created_by, due_date, version, claimed_at, created_at, updated_at |
+| **tasks** | id, title, description, status, priority, project_id, parent_task_id, estimated_minutes, assignee, created_by, due_date, version, claimed_at, **completed_at**, created_at, updated_at |
 | **task_tags** | id, task_id, tag |
 | **dependencies** | id, task_id, blocks_task_id, created_at |
 | **comments** | id, task_id, author, content, created_at, updated_at |
 | **idempotency_keys** | key, response, created_at |
+| **slack_channel_subscriptions** | id, channel_id, project_id, event_type, created_at (UNIQUE on the triple) |
 
 ### Task Statuses
 
-Valid statuses: `open`, `in_progress`, `done`, `closed`, `blocked`
+Valid statuses: `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged`
+
+- `backlogged` is "deferred but not abandoned" — distinct from `closed` (won't-do / archive).
+- `completed_at` is populated only when a task transitions **into** `done`,
+  and cleared if it transitions back out (e.g. `done → open`). `closed` is
+  intentionally not treated as completion (separate terminal state).
 
 ### Task Priorities
 
@@ -138,11 +224,14 @@ Valid priorities: `low`, `medium`, `high`, `urgent`
 
 | From Status | Allowed Transitions |
 |-------------|---------------------|
-| open | in_progress, blocked, closed |
+| open | in_progress, blocked, closed, backlogged |
 | in_progress | done, blocked, open |
 | blocked | open, in_progress |
+| backlogged | open |
 | done | closed, open |
 | closed | open |
+
+(Canonical source: `VALID_STATUS_TRANSITIONS` in [`src/types/task.ts`](src/types/task.ts).)
 
 ## API Summary
 
@@ -409,9 +498,16 @@ Cascades are depth-limited (max 5 levels) and wrapped in transactions for atomic
 | API_KEYS | Comma-separated API keys for authentication | (none - auth disabled) |
 | LOG_LEVEL | Logging level (debug, info, warn, error) | info |
 | NODE_ENV | Environment (development, production) | (none) |
-| DB_PATH | Path to SQLite database file | ./data/tasks.db |
+| DATABASE_PATH | Path to SQLite database file (canonical; MCP server also accepts legacy `DB_PATH`) | ./data/tasks.db |
 | API_BASE_URL | Base URL for CLI API calls | http://localhost:3000 |
 | API_KEY | API key for CLI authentication | (none) |
+| SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET | Optional Slack integration (all three required together) — see [docs/SLACK.md](docs/SLACK.md) | (none) |
+| RATE_LIMIT_MAX / RATE_LIMIT_TIME_WINDOW | Global rate limiter knobs | 1000 / "1 minute" |
+| SSE_MAX_CONNECTIONS_PER_KEY / SSE_MAX_CONNECTIONS_PER_IP / SSE_MAX_CONNECTIONS | SSE connection caps | 4 / 8 / 200 |
+| ENABLE_SWAGGER_IN_PRODUCTION | Opt-in to expose Swagger UI when `NODE_ENV=production` | false |
+
+[NOTE] The full env-var reference (including server timeouts and installer
+variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#environment-variables).
 
 ## Development
 
@@ -439,12 +535,15 @@ npm run mcp:dev
 
 ### Database
 
-SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug. Four migration files in `src/db/migrations/`:
+SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug. Seven migration files in `src/db/migrations/`:
 
-1. `001-initial-schema.ts` - Projects, tasks, task_tags, dependencies, comments
-2. `002-task-hierarchy-and-dependencies.ts` - Task hierarchy and dependency tracking
-3. `003-comments-and-estimates.ts` - Comments and time estimates
-4. `004-claim-protocol.ts` - Version field, claimed_at, idempotency_keys table
+1. `001-initial-schema.ts` — projects, tasks, task_tags, dependencies, comments
+2. `002-task-hierarchy-and-dependencies.ts` — task hierarchy and dependency tracking
+3. `003-comments-and-estimates.ts` — comments and time estimates
+4. `004-claim-protocol.ts` — version field, claimed_at, idempotency_keys table
+5. `005-backlogged-status.ts` — adds `backlogged` to the status CHECK constraint (rebuilds tasks table; preserves FTS triggers)
+6. `006-slack-channel-subscriptions.ts` — `slack_channel_subscriptions` table for the Slack notifier
+7. `007-completed-at.ts` — `completed_at` column on tasks (set on transition into `done`, backfilled from `updated_at`)
 
 ### Testing
 
@@ -457,6 +556,30 @@ SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug.
 - Claim protocol tests (including 20-agent concurrency)
 - Workflow engine tests (auto-complete, auto-unblock, cascade depth)
 - Skill file validation tests
+
+## Integrations
+
+### Slack
+
+Wood Fired Bugs ships an **optional** Slack integration:
+
+- `/tasks` slash command (read, create, update, claim, subscribe channels to notifications, …)
+- A notifier that posts Block Kit messages to subscribed channels when
+  task events fire on the internal EventBus.
+
+Slack is fully optional — leave `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and
+`SLACK_SIGNING_SECRET` unset and the service runs without it. The three
+variables are validated as a group (all three, or none).
+
+See [docs/SLACK.md](docs/SLACK.md) for: app manifest, required scopes,
+slash-command reference, channel subscription model, error handling.
+
+### Claude Code (MCP)
+
+The shipped MCP server registers as a stdio MCP target in `~/.claude.json`
+and exposes 20 tools plus the `/tasks:*` skill files. See
+[docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
+[docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 
 ## License
 

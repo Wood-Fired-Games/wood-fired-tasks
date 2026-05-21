@@ -9,8 +9,14 @@ import { createMcpServer } from './server.js';
  * to stdio transport for communication with MCP clients.
  */
 async function main() {
-  // Determine database path from environment or use default
-  const dbPath = process.env.DB_PATH || './data/tasks.db';
+  // Determine database path from environment or use default.
+  //
+  // DATABASE_PATH is the canonical name (see src/config/env.ts and all CLI
+  // commands). DB_PATH is accepted as a deprecated alias for backward
+  // compatibility with older ~/.claude.json installs produced by install.sh
+  // / install.ps1 before task #217. New installs should set DATABASE_PATH.
+  const dbPath =
+    process.env.DATABASE_PATH || process.env.DB_PATH || './data/tasks.db';
 
   // Initialize application (database, repositories, services)
   const app = await createApp(dbPath);

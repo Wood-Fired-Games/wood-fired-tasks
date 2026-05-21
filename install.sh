@@ -269,7 +269,7 @@ jq -n \
         cwd: $cwd,
         env: {
           WOOD_FIRED_BUGS_API_KEY: $key,
-          DB_PATH: "./data/tasks.db"
+          DATABASE_PATH: "./data/tasks.db"
         }
       }
     }

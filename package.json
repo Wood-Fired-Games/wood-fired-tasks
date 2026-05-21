@@ -7,6 +7,9 @@
   "bin": {
     "tasks": "./dist/cli/bin/tasks.js"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/api/start.js",

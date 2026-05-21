@@ -40,7 +40,7 @@ describe('MCP Server stdio compliance', () => {
 
       // Spawn MCP server with in-memory database
       const child = spawn('node', [serverPath], {
-        env: { ...process.env, DB_PATH: ':memory:' },
+        env: { ...process.env, DATABASE_PATH: ':memory:' },
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
@@ -121,7 +121,7 @@ describe('MCP Server stdio compliance', () => {
 
       // Spawn MCP server with in-memory database
       const child = spawn('node', [serverPath], {
-        env: { ...process.env, DB_PATH: ':memory:' },
+        env: { ...process.env, DATABASE_PATH: ':memory:' },
         stdio: ['pipe', 'pipe', 'pipe']
       });
 

@@ -198,7 +198,7 @@ try {
         cwd = $ScriptDir
         env = [PSCustomObject]@{
             WOOD_FIRED_BUGS_API_KEY = $ApiKey
-            DB_PATH = "./data/tasks.db"
+            DATABASE_PATH = "./data/tasks.db"
         }
     }
 
