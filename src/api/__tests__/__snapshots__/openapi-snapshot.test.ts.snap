@@ -853,6 +853,276 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/tasks/completion-report": {
+      "get": {
+        "description": "Dashboard report of tasks completed (status=done) in a time interval. Provide either \`days\` (trailing window, 1-365) or both \`start\` and \`end\` ISO8601 timestamps. Optional \`project_id\` and \`assignee\` filters narrow the result set. Returns per-task rows plus aggregates by project, assignee, priority, and daily throughput.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "query",
+            "name": "assignee",
+            "required": false,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "by_assignee": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assignee": {
+                            "type": "string",
+                          },
+                          "count": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                        },
+                        "required": [
+                          "assignee",
+                          "count",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "by_priority": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "count": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                          "priority": {
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high",
+                              "urgent",
+                            ],
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "priority",
+                          "count",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "by_project": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "count": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                          "project_id": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "project_id",
+                          "count",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "daily_throughput": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "count": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                          "date": {
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "date",
+                          "count",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "range": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "end": {
+                          "type": "string",
+                        },
+                        "start": {
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "start",
+                        "end",
+                      ],
+                      "type": "object",
+                    },
+                    "rows": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assignee": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "completed_at": {
+                            "type": "string",
+                          },
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "number",
+                          },
+                          "priority": {
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high",
+                              "urgent",
+                            ],
+                            "type": "string",
+                          },
+                          "project_id": {
+                            "type": "number",
+                          },
+                          "time_to_complete_seconds": {
+                            "type": "number",
+                          },
+                          "title": {
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "project_id",
+                          "assignee",
+                          "priority",
+                          "created_at",
+                          "completed_at",
+                          "time_to_complete_seconds",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                  },
+                  "required": [
+                    "range",
+                    "total",
+                    "rows",
+                    "by_project",
+                    "by_assignee",
+                    "by_priority",
+                    "daily_throughput",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "tasks",
+        ],
+      },
+    },
     "/api/v1/tasks/{id}": {
       "delete": {
         "description": "Delete task by ID",

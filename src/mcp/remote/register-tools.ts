@@ -7,18 +7,29 @@ import {
   UpdateTaskSchema,
   ListTasksMcpSchema,
   CreateProjectSchema,
+  CompletionReportSchema,
   toCompactTask,
 } from '../../schemas/task.schema.js';
 
 /**
- * Register all 26 MCP tools backed by REST API calls via RestClient.
+ * Register all 21 MCP tools backed by REST API calls via RestClient.
  *
  * Tool names, descriptions, and input schemas match the local MCP server exactly.
  * Each handler proxies the request to the REST API and formats the MCP response.
+ *
+ * Layout:
+ *   9 task tools (incl. completion_report — task #245 parity fix)
+ *   5 project tools
+ *   3 dependency tools
+ *   3 comment tools
+ *   1 health tool
+ *
+ * task #245 — the `completion_report` tool reaches parity with the local server
+ * by hitting `GET /api/v1/tasks/completion-report`.
  */
 export function registerRemoteTools(server: McpServer, client: RestClient): void {
 
-  // ── Task tools (8) ──────────────────────────────────────────────────────
+  // ── Task tools (9) ──────────────────────────────────────────────────────
 
   // Tool: create_task
   server.registerTool(
@@ -353,6 +364,51 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         throw new McpError(
           ErrorCode.InternalError,
           error instanceof Error ? error.message : 'Failed to get subtasks'
+        );
+      }
+    }
+  );
+
+  // Tool: completion_report
+  // task #245 — parity with local MCP. Proxies to GET /api/v1/tasks/completion-report.
+  server.registerTool(
+    'completion_report',
+    {
+      description:
+        'Dashboard view of tasks completed (status=done) within a time interval. ' +
+        'Provide either `days` (trailing window) or `start`+`end` ISO8601 bounds. ' +
+        'Returns per-task rows plus aggregates by project, assignee, priority, and daily throughput.',
+      inputSchema: CompletionReportSchema,
+    },
+    async (args) => {
+      try {
+        const report = await client.getCompletionReport(
+          args as unknown as import('../../cli/api/types.js').CompletionReportInput
+        );
+
+        const summary = [
+          `${report.total} task(s) completed between ${report.range.start} and ${report.range.end}`,
+        ];
+        if (report.total > 0) {
+          summary.push('');
+          summary.push('Top by project:');
+          for (const r of report.by_project.slice(0, 5)) {
+            summary.push(`  project ${r.project_id}: ${r.count}`);
+          }
+          summary.push('Top by assignee:');
+          for (const r of report.by_assignee.slice(0, 5)) {
+            summary.push(`  ${r.assignee}: ${r.count}`);
+          }
+        }
+
+        return {
+          content: [{ type: 'text', text: summary.join('\n') }],
+          structuredContent: report as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to get completion report'
         );
       }
     }
