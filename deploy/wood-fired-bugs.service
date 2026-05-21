@@ -6,8 +6,11 @@ StartLimitIntervalSec=60
 
 [Service]
 Type=simple
-User=stuart
-Group=stuart
+# User/Group default to the generic 'wood-fired-bugs' system account.
+# To run as a different account (e.g. WFB_SERVICE_USER=appsvc), do NOT edit this
+# unit in-place -- use a systemd drop-in instead. See deploy/README.md.
+User=wood-fired-bugs
+Group=wood-fired-bugs
 WorkingDirectory=/opt/wood-fired-bugs
 EnvironmentFile=/opt/wood-fired-bugs/.env
 ExecStart=/usr/bin/node /opt/wood-fired-bugs/dist/api/start.js

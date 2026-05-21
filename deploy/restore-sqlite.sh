@@ -5,23 +5,30 @@ set -euo pipefail
 # Restores a gzipped backup to the database path
 #
 # Usage: ./restore-sqlite.sh <backup_file.db.gz> [db_path]
-# Default db_path: /opt/wood-fired-bugs/data/tasks.db
+# Default db_path: ${WFB_INSTALL_DIR}/data/tasks.db (default install dir: /opt/wood-fired-bugs)
+#
+# Configurable env vars (see deploy/README.md):
+#   WFB_INSTALL_DIR   Install path  (default: /opt/wood-fired-bugs)
+#   WFB_SERVICE_USER  Service user  (default: wood-fired-bugs)
 #
 # IMPORTANT: Stop the service before restoring!
 #   sudo systemctl stop wood-fired-bugs
 #   ./restore-sqlite.sh backups/tasks-2026-02-13_020000.db.gz
 #   sudo systemctl start wood-fired-bugs
 
+INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
+SERVICE_USER="${WFB_SERVICE_USER:-wood-fired-bugs}"
+
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <backup_file.db.gz> [db_path]" >&2
   echo "" >&2
   echo "Available backups:" >&2
-  ls -lh /opt/wood-fired-bugs/backups/tasks-*.db.gz 2>/dev/null || echo "  (none found in default location)" >&2
+  ls -lh "${INSTALL_DIR}"/backups/tasks-*.db.gz 2>/dev/null || echo "  (none found in default location)" >&2
   exit 1
 fi
 
 BACKUP_FILE="$1"
-DB_PATH="${2:-/opt/wood-fired-bugs/data/tasks.db}"
+DB_PATH="${2:-${INSTALL_DIR}/data/tasks.db}"
 DB_DIR=$(dirname "$DB_PATH")
 
 # Validate backup file exists
@@ -39,6 +46,7 @@ fi
 
 # Create temp file for decompressed backup
 TEMP_DB=$(mktemp "${DB_DIR}/restore-XXXXXX.db")
+# shellcheck disable=SC2064  # intentional: expand $TEMP_DB now so trap fires with the right path
 trap "rm -f '$TEMP_DB'" EXIT
 
 echo "Decompressing backup: $BACKUP_FILE"
@@ -67,8 +75,8 @@ mv "$TEMP_DB" "$DB_PATH"
 rm -f "${DB_PATH}-wal" "${DB_PATH}-shm"
 
 # Set ownership (if we can detect the service user)
-if id stuart &>/dev/null; then
-  chown stuart:stuart "$DB_PATH"
+if id "$SERVICE_USER" &>/dev/null; then
+  chown "$SERVICE_USER:$SERVICE_USER" "$DB_PATH"
 fi
 
 echo "Restore complete. Start the service:"

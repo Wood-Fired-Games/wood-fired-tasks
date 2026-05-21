@@ -1,5 +1,6 @@
 # Wood Fired Bugs - Automated Daily Backup
-# Install with: crontab -e (as stuart), then paste the line below
+# Install with: sudo -u "${WFB_SERVICE_USER:-wood-fired-bugs}" crontab -e
+# Then paste the line below (the service user, not root, owns the schedule).
 #
 # Schedule: Daily at 2:00 AM
 # Logs: Appended to /var/log/wood-fired-bugs-backup.log

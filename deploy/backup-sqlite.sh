@@ -6,10 +6,14 @@ set -euo pipefail
 # Do NOT use file copy (cp) -- risks corruption in WAL mode (see research pitfall #2)
 #
 # Usage: ./backup-sqlite.sh [db_path] [backup_dir]
-# Defaults: /opt/wood-fired-bugs/data/tasks.db -> /opt/wood-fired-bugs/backups/
+# Defaults: ${WFB_INSTALL_DIR}/data/tasks.db -> ${WFB_INSTALL_DIR}/backups/
+#
+# Configurable env vars (see deploy/README.md):
+#   WFB_INSTALL_DIR   Install path  (default: /opt/wood-fired-bugs)
 
-DB_PATH="${1:-/opt/wood-fired-bugs/data/tasks.db}"
-BACKUP_DIR="${2:-/opt/wood-fired-bugs/backups}"
+INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
+DB_PATH="${1:-${INSTALL_DIR}/data/tasks.db}"
+BACKUP_DIR="${2:-${INSTALL_DIR}/backups}"
 RETENTION_DAYS=30
 TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/tasks-${TIMESTAMP}.db"
