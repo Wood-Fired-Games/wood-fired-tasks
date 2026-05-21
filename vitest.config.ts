@@ -33,13 +33,19 @@ export default defineConfig({
         'node_modules/**',
       ],
       thresholds: {
-        // Baseline thresholds set to current actual coverage rounded down to the
-        // nearest 5 (task 199). Original aspirational targets were
-        // lines/functions 80, branches 70 — adjust upward as coverage improves.
-        lines: 70,
-        functions: 70,
-        branches: 60,
-        statements: 65,
+        // task #249 ratchet: bare-spot tests for CLI commands (completed,
+        // completions, db-check, doctor, stats), CLI output formatters
+        // (formatters, json-output), CLI prompts (interactive), and MCP-remote
+        // glue (register-tools, rest-client) lifted coverage well above the
+        // audit targets (lines/functions 80, branches 70). Current actuals
+        // sit around 88/87/77/87 — these thresholds reserve a ~3 point safety
+        // margin below the current numbers so unrelated future work has room
+        // to land without retripping the gate, while still asserting the
+        // post-#249 quality floor.
+        lines: 85,
+        functions: 85,
+        branches: 75,
+        statements: 85,
       },
     },
   },
