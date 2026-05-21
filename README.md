@@ -12,7 +12,7 @@ Wood Fired Bugs is a centralized task management service providing a REST API, C
 
 - REST API with 20 authenticated endpoints for full task lifecycle management
 - CLI (`tasks`) with 20 commands for terminal-based operations
-- MCP server with 20 tools for native Claude Code integration
+- MCP server with 21 tools for native Claude Code integration (local SQLite or remote HTTP modes)
 - 10 Claude Code skill files for workflow-driven slash commands
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
@@ -265,20 +265,21 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 20 tools and 1 resource for Claude Code integration.
+The MCP server exposes 21 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the REST-backed subset (20 tools) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
-### Task Tools (8)
+### Task Tools (9)
 
 | Tool | Description |
 |------|-------------|
 | create_task | Create a new task in a project |
 | get_task | Get a task by its ID |
 | update_task | Update an existing task |
-| list_tasks | List tasks with optional filters |
+| list_tasks | List tasks with optional filters and pagination |
 | delete_task | Delete a task by its ID |
 | claim_task | Atomically claim an unassigned task |
-| list_subtasks | List all subtasks of a parent task |
-| get_subtasks | Get all subtasks of a parent task |
+| list_subtasks | Paginated list of subtasks for a parent task |
+| get_subtasks | Paginated subtasks for a parent task (alternative shape) |
+| completion_report | Dashboard of tasks completed in a window with per-project/assignee/priority aggregates |
 
 ### Project Tools (5)
 

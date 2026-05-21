@@ -8,11 +8,11 @@ Wood Fired Bugs exposes task management capabilities via the Model Context Proto
 
 The MCP server provides:
 
-- 20 tools for task, project, comment, dependency, and health operations
+- 21 tools for task, project, comment, dependency, reporting, and health operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 10 pre-built skill files for common workflows
-- Shared SQLite database with the REST API and CLI
+- Two server modes: **local** (in-process SQLite) and **remote** (HTTP proxy to a deployed REST API)
 
 ## MCP Server
 
@@ -95,11 +95,94 @@ Both installers:
 2. Add or update the MCP server configuration in `~/.claude.json`
 3. Set the DB_PATH environment variable for the MCP server
 
+## Remote MCP Server
+
+Wood Fired Bugs ships a **second** MCP server entry point (`npm run mcp:remote`, source under `src/mcp/remote/`) for the case where the bugs REST API runs on a different machine than the developer's MCP client. Instead of opening the SQLite file in-process, the remote server proxies every tool call to the deployed REST API over HTTP.
+
+### When to use the remote server
+
+| Scenario | Use |
+|----------|-----|
+| Bugs API and your Claude Code client run on the same host (laptop, dev box). | **Local** (`mcp:start` / `mcp:dev`) — direct SQLite access, no network hop. |
+| Bugs API runs on a shared server, container, VM, or homelab box; multiple machines / agents share a single database. | **Remote** (`mcp:remote`) — every machine points its MCP client at the deployed API. |
+| You don't want SQLite write contention from multiple long-lived MCP processes against a network-mounted database file. | **Remote** — the API owns the only writer. |
+
+### Configuration
+
+The remote server is configured entirely via environment variables and fails fast at startup with a readable message if either is missing:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `WFB_API_URL` | yes | Base URL of the deployed bugs API, e.g. `http://your-server.local:3000` or `https://bugs.example.com`. The remote server appends `/api/v1` itself — supply the host root. No default; setting nothing fails startup so a misconfigured client never silently hits `localhost`. |
+| `WFB_API_KEY` | yes | API key the remote server uses for every outbound REST call. Must match a key on the API's `API_KEYS` list. |
+
+### Claude Code config snippet
+
+Add this alongside (or instead of) the local `wood-fired-bugs` entry in `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs-remote": {
+      "command": "node",
+      "args": ["/absolute/path/to/wood-fired-bugs/dist/mcp/remote/index.js"],
+      "env": {
+        "WFB_API_URL": "https://bugs.example.com",
+        "WFB_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+For development you can also run it via `tsx`:
+
+```bash
+WFB_API_URL=http://localhost:3000 WFB_API_KEY=dev-key npm run mcp:remote
+```
+
+### Local vs remote at a glance
+
+| Aspect | Local MCP server (`mcp:start`) | Remote MCP server (`mcp:remote`) |
+|--------|-------------------------------|----------------------------------|
+| Source | `src/mcp/index.ts` → `src/mcp/server.ts` | `src/mcp/remote/index.ts` → `src/mcp/remote/register-tools.ts` |
+| Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
+| Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFB_API_URL` + `WFB_API_KEY` (both required, no defaults) |
+| Auth surface | None (filesystem-trusted) | API key on every call |
+| Tool count | 21 (full set including `completion_report`) | 20 (REST-backed equivalents — see note below) |
+| `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFB_API_URL/api/v1` |
+
+> Note: the remote server currently mirrors the original 20 REST-backed tools. `completion_report` is a local-only convenience that queries SQLite directly via `TaskService.getCompletionReport`; a REST endpoint + remote-tool wrapper is tracked separately. For now, use the local MCP server when you need completion reports.
+
 ## Tools Reference
 
-The MCP server exposes 20 tools organized by domain.
+The MCP server exposes 21 tools organized by domain:
 
-### Task Tools (8 tools)
+| Tool | Domain | One-line description |
+|------|--------|----------------------|
+| `create_task` | Task | Create a new task in a project. |
+| `get_task` | Task | Get a single task by ID. |
+| `update_task` | Task | Update title, status, priority, assignee, due date, or tags. |
+| `list_tasks` | Task | List tasks with filters and pagination; returns compact rows by default. |
+| `delete_task` | Task | Permanently delete a task. |
+| `claim_task` | Task | Atomically assign an unclaimed task to an agent and set status to `in_progress`. |
+| `list_subtasks` | Task | Paginated list of a task's child subtasks (summary text + structured payload). |
+| `get_subtasks` | Task | Paginated subtasks of a task (alternative shape returning the same data). |
+| `completion_report` | Task | Dashboard report of completed tasks over a time window with per-project / assignee / priority / daily aggregates. |
+| `create_project` | Project | Create a new project container. |
+| `get_project` | Project | Get a project by ID. |
+| `list_projects` | Project | List all projects. |
+| `update_project` | Project | Update project name or description. |
+| `delete_project` | Project | Permanently delete a project. |
+| `add_comment` | Comment | Add a comment to a task. |
+| `get_comments` | Comment | Chronological comment thread for a task. |
+| `delete_comment` | Comment | Delete a comment by ID. |
+| `add_dependency` | Dependency | Mark that one task blocks another. |
+| `remove_dependency` | Dependency | Remove a blocking relationship between two tasks. |
+| `get_dependencies` | Dependency | Return both blockers and blocked-by relationships for a task. |
+| `check_health` | Health | Verify database connectivity and report version info. |
+
+### Task Tools (9 tools)
 
 #### create_task
 
@@ -165,7 +248,7 @@ Update an existing task by ID.
 
 #### list_tasks
 
-List tasks with optional filters.
+List tasks with optional filters and pagination. Returns a compact task projection by default; pass `verbose=true` for full description + audit fields.
 
 **Input Schema:**
 
@@ -177,9 +260,16 @@ List tasks with optional filters.
   "tags": ["array of strings (optional)"],
   "due_before": "string (optional, ISO8601)",
   "due_after": "string (optional, ISO8601)",
-  "search": "string (optional, max 200 chars)"
+  "updated_before": "string (optional, ISO8601)",
+  "updated_after": "string (optional, ISO8601)",
+  "search": "string (optional, max 200 chars)",
+  "limit": "number (optional, 1-500, default 50)",
+  "offset": "number (optional, >=0, default 0)",
+  "verbose": "boolean (optional, default false)"
 }
 ```
+
+**Returns:** `{ tasks, total, limit, offset }`.
 
 **Usage:** When Claude Code needs to find tasks, filter by criteria, or search for specific work items.
 
@@ -214,31 +304,86 @@ Atomically claim an unassigned task, setting assignee and transitioning status t
 
 #### list_subtasks
 
-List all subtasks (children) of a parent task.
+List subtasks (children) of a parent task. Paginated.
 
 **Input Schema:**
 
 ```json
 {
-  "task_id": "number (required, positive integer)"
+  "task_id": "number (required, positive integer)",
+  "limit": "number (optional, 1-500, default 50)",
+  "offset": "number (optional, >=0, default 0)"
 }
 ```
+
+**Returns:** `{ parent_task_id, subtasks, total, limit, offset }` plus a human-readable summary in text content.
 
 **Usage:** When Claude Code needs to see the breakdown of a parent task into subtasks.
 
 #### get_subtasks
 
-Get all subtasks (children) of a parent task.
+Get all subtasks (children) of a parent task. Paginated.
 
 **Input Schema:**
 
 ```json
 {
-  "task_id": "number (required, positive integer)"
+  "task_id": "number (required, positive integer)",
+  "limit": "number (optional, 1-500, default 50)",
+  "offset": "number (optional, >=0, default 0)"
 }
 ```
 
-**Usage:** Alternative to list_subtasks for retrieving child tasks.
+**Returns:** `{ parent_task_id, subtasks, total, limit, offset }`.
+
+**Usage:** Alternative to list_subtasks for retrieving child tasks when callers prefer a uniform paginated shape.
+
+#### completion_report
+
+Dashboard view of tasks completed (`status=done`) within a time interval. Caller supplies **either** a trailing window (`days`) **or** explicit `start`/`end` ISO8601 bounds; optional filters narrow by project or assignee.
+
+**Input Schema:**
+
+```json
+{
+  "days": "number (optional, 1-365 — trailing days from now)",
+  "start": "string (optional, ISO8601 — required with end)",
+  "end": "string (optional, ISO8601 — required with start; must be >= start)",
+  "project_id": "number (optional, positive integer)",
+  "assignee": "string (optional, 1-100 chars)"
+}
+```
+
+Provide either `days` OR both `start` and `end`. The two forms are mutually exclusive; supplying neither is a validation error.
+
+**Returns (structuredContent):**
+
+```json
+{
+  "range": { "start": "ISO8601", "end": "ISO8601" },
+  "total": "number — count of done tasks in the window",
+  "rows": [
+    {
+      "id": "number",
+      "title": "string",
+      "project_id": "number",
+      "assignee": "string | null",
+      "priority": "low|medium|high|urgent",
+      "created_at": "ISO8601",
+      "completed_at": "ISO8601",
+      "time_to_complete_seconds": "number"
+    }
+  ],
+  "by_project":   [{ "project_id": "number", "count": "number" }],
+  "by_assignee":  [{ "assignee": "string", "count": "number" }],
+  "by_priority":  [{ "priority": "low|medium|high|urgent", "count": "number" }],
+  "daily_throughput": [{ "date": "YYYY-MM-DD", "count": "number" }]
+}
+```
+
+The text content returns a short summary including total count, range, and top-5 projects/assignees.
+
+**Usage:** When Claude Code or a dashboard skill needs completion throughput over a period — e.g., weekly velocity, per-assignee throughput, time-to-complete distributions, daily burn-down.
 
 ### Project Tools (5 tools)
 
@@ -431,17 +576,39 @@ The MCP server exposes 1 resource.
 
 **Name:** Event Stream
 
+**MIME type:** `text/event-stream` (resource returns Markdown describing the live SSE endpoint).
+
 **Description:** Real-time task and project event stream via Server-Sent Events.
 
-This resource provides discovery documentation for the SSE event stream endpoint. It tells agents:
+This resource does **not** stream events directly — MCP resources are request/response, not long-lived connections. Instead it returns Markdown documentation telling agents how to open an SSE connection to the REST API:
 
-- The SSE endpoint URL (`GET /api/v1/events`)
-- Required authentication (`X-API-Key` header)
+- The SSE endpoint URL (`GET <apiUrl>/events`)
+- Required authentication (`X-API-Key` header — the resource never embeds the key, only the placeholder, so prompt-cache surfaces stay clean)
 - Available query parameters for filtering (`project_id`, `event_types`)
-- All 8 event types and their triggers
+- The canonical event type list (see below)
 - Reconnection protocol (`Last-Event-ID` header)
+- Example `curl -N` invocation
+- SSE event frame format (`id:`, `event:`, `data:` lines)
 
-**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. The resource does not stream events directly; it provides the HTTP endpoint documentation so agents can connect via HTTP.
+**Canonical event types**
+
+The resource description and the server's emitted events MUST stay in sync. The authoritative list lives in `src/events/types.ts` (`ALLOWED_EVENT_TYPES`); the resource Markdown is generated from the same set:
+
+| Event | Trigger |
+|-------|---------|
+| `task.created` | New task created |
+| `task.updated` | Task field(s) updated |
+| `task.deleted` | Task deleted |
+| `task.status_changed` | Task status transitioned |
+| `task.claimed` | Task atomically claimed by an agent via `claim_task` |
+| `project.created` | New project created |
+| `project.updated` | Project updated |
+| `project.deleted` | Project deleted |
+| `ping` | SSE heartbeat (every 30 seconds — not in `ALLOWED_EVENT_TYPES`, transport-level only) |
+
+If you add or rename a domain event, update `ALLOWED_EVENT_TYPES` in `src/events/types.ts`, the table in `src/mcp/resources/events.ts`, and this table together. The `events-resource` MCP test (`src/mcp/__tests__/events-resource.test.ts`) is the canonical regression guard.
+
+**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. After reading this resource, agents open the SSE connection over HTTP (or via `curl -N`) using their `WFB_API_KEY` / local `API_KEYS` value.
 
 ## Skill Files
 
@@ -607,8 +774,9 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`
-- Explore the 20 MCP tools for custom workflows
+- Explore the 21 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Use `claim_task` for multi-agent task coordination
+- Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host
 - Read the `events://stream` resource for real-time event integration
 - Read the [API.md](API.md) reference for REST API details
 - Read the [CLI.md](CLI.md) reference for command-line usage

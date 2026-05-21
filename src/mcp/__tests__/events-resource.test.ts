@@ -3,6 +3,7 @@ import { createTestApp } from '../../index.js';
 import { createMcpServer } from '../server.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { ALLOWED_EVENT_TYPES } from '../../events/types.js';
 import type { App } from '../../index.js';
 
 describe('MCP Events Resource', () => {
@@ -127,6 +128,23 @@ describe('MCP Events Resource', () => {
 
       // Heartbeat
       expect(text).toContain('ping');
+    });
+
+    it('stays in sync with ALLOWED_EVENT_TYPES (task #241)', async () => {
+      // Regression guard: every domain event the server is willing to emit
+      // (canonical list in src/events/types.ts) MUST appear verbatim in the
+      // events resource description, otherwise agents reading the resource
+      // get a stale event-types list and the docs in docs/MCP.md drift.
+      const result = await client.readResource({
+        uri: 'events://stream',
+      });
+      const text = (result.contents[0] as { text: string }).text;
+
+      for (const eventType of ALLOWED_EVENT_TYPES) {
+        expect(text, `Resource missing event type "${eventType}"`).toContain(
+          eventType
+        );
+      }
     });
 
     it('documents filter parameters', async () => {
