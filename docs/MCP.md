@@ -150,10 +150,10 @@ WFB_API_URL=http://localhost:3000 WFB_API_KEY=dev-key npm run mcp:remote
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFB_API_URL` + `WFB_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 21 (full set including `completion_report`) | 20 (REST-backed equivalents — see note below) |
+| Tool count | 21 (full set including `completion_report`) | 21 (full parity — `completion_report` proxies `GET /api/v1/tasks/completion-report`) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFB_API_URL/api/v1` |
 
-> Note: the remote server currently mirrors the original 20 REST-backed tools. `completion_report` is a local-only convenience that queries SQLite directly via `TaskService.getCompletionReport`; a REST endpoint + remote-tool wrapper is tracked separately. For now, use the local MCP server when you need completion reports.
+The remote server is at full tool parity with the local server. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces.
 
 ## Tools Reference
 

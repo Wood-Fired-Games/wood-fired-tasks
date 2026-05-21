@@ -149,6 +149,42 @@ export interface CreateCommentInput {
   content: string;
 }
 
+// ── Completion report types ─────────────────────────────────
+
+/**
+ * Input filters for `GET /api/v1/tasks/completion-report`. Caller must supply
+ * EITHER `days` OR both `start` and `end`. Mirrors the in-process
+ * CompletionReportInput in services/task.service.ts.
+ */
+export interface CompletionReportInput {
+  days?: number;
+  start?: string;
+  end?: string;
+  project_id?: number;
+  assignee?: string;
+}
+
+export interface CompletionReportRow {
+  id: number;
+  title: string;
+  project_id: number;
+  assignee: string | null;
+  priority: string;
+  created_at: string;
+  completed_at: string;
+  time_to_complete_seconds: number;
+}
+
+export interface CompletionReportResponse {
+  range: { start: string; end: string };
+  total: number;
+  rows: CompletionReportRow[];
+  by_project: Array<{ project_id: number; count: number }>;
+  by_assignee: Array<{ assignee: string; count: number }>;
+  by_priority: Array<{ priority: string; count: number }>;
+  daily_throughput: Array<{ date: string; count: number }>;
+}
+
 // ── Health types ────────────────────────────────────────────
 
 /**

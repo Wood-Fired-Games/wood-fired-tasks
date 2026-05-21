@@ -14,6 +14,8 @@ import type {
   HealthResponse,
   PaginatedResponse,
   PaginationParams,
+  CompletionReportInput,
+  CompletionReportResponse,
 } from '../../cli/api/types.js';
 
 function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
@@ -277,6 +279,34 @@ export class RestClient {
     await this.request<void>(`/api/v1/tasks/${taskId}/comments/${commentId}`, {
       method: 'DELETE',
     });
+  }
+
+  // ── Completion report operations ─────────────────────────────────────────
+
+  /**
+   * Fetch a completion report from `GET /api/v1/tasks/completion-report`.
+   *
+   * Caller supplies EITHER `days` (trailing window, 1-365) OR an explicit
+   * `start`+`end` ISO8601 pair. Optional `project_id` and `assignee` filters
+   * narrow the result set. The server-side schema enforces these invariants
+   * and returns a 400 with a sanitized validation error on misuse.
+   */
+  async getCompletionReport(
+    input: CompletionReportInput
+  ): Promise<CompletionReportResponse> {
+    const params = new URLSearchParams();
+    if (input.days !== undefined) params.append('days', String(input.days));
+    if (input.start !== undefined) params.append('start', input.start);
+    if (input.end !== undefined) params.append('end', input.end);
+    if (input.project_id !== undefined) {
+      params.append('project_id', String(input.project_id));
+    }
+    if (input.assignee !== undefined) params.append('assignee', input.assignee);
+    const qs = params.toString();
+    const endpoint = qs
+      ? `/api/v1/tasks/completion-report?${qs}`
+      : '/api/v1/tasks/completion-report';
+    return this.request<CompletionReportResponse>(endpoint);
   }
 
   // ── Health operations ────────────────────────────────────────────────────

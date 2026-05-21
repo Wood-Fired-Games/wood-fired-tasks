@@ -9,6 +9,8 @@ import {
   ClaimRequestSchema,
   ClaimResponseSchema,
   ConflictResponseSchema,
+  CompletionReportQuerySchema,
+  CompletionReportResponseSchema,
 } from './schemas.js';
 import { TASK_STATUSES } from '../../../types/task.js';
 import { BusinessError } from '../../../services/errors.js';
@@ -87,6 +89,35 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const result = fastify.taskService.listTasksPaginated(request.query);
       return reply.send(result);
+    }
+  );
+
+  // GET /completion-report - Completion report (must be declared before
+  // GET /:id so the static path beats the dynamic id matcher).
+  // task #245: parity with local MCP `completion_report` tool — exposes
+  // the same TaskService.getCompletionReport output over REST so the
+  // remote MCP server can wrap it.
+  fastify.get(
+    '/completion-report',
+    {
+      schema: {
+        tags: ['tasks'],
+        description:
+          'Dashboard report of tasks completed (status=done) in a time interval. ' +
+          'Provide either `days` (trailing window, 1-365) or both `start` and `end` ' +
+          'ISO8601 timestamps. Optional `project_id` and `assignee` filters narrow ' +
+          'the result set. Returns per-task rows plus aggregates by project, ' +
+          'assignee, priority, and daily throughput.',
+        querystring: CompletionReportQuerySchema,
+        response: {
+          200: CompletionReportResponseSchema,
+          400: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const report = fastify.taskService.getCompletionReport(request.query);
+      return reply.send(report);
     }
   );
 

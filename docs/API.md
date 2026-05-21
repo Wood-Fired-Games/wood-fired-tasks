@@ -563,6 +563,60 @@ curl http://localhost:3000/api/v1/tasks/42/subtasks \
   -H "X-API-Key: your-key"
 ```
 
+### GET /api/v1/tasks/completion-report
+
+Dashboard report of tasks completed (`status=done`) within a time interval.
+Supply **either** `days` (trailing window, 1-365) **or** both `start` and `end`
+ISO8601 timestamps. Optional `project_id` and `assignee` filters narrow results.
+
+**Query parameters:**
+
+- `days` (optional, integer 1-365) — trailing window from now
+- `start` (optional, ISO8601) — required with `end`
+- `end` (optional, ISO8601) — required with `start`; must be `>= start`
+- `project_id` (optional, positive integer) — filter by project
+- `assignee` (optional, 1-100 chars) — filter by assignee
+
+You must supply either `days` or both `start` and `end`. Mixing forms is
+rejected with HTTP 400.
+
+**Response:** 200 OK
+
+```json
+{
+  "range": { "start": "2026-04-21T00:00:00.000Z", "end": "2026-05-21T00:00:00.000Z" },
+  "total": 12,
+  "rows": [
+    {
+      "id": 42,
+      "title": "Ship completion report",
+      "project_id": 1,
+      "assignee": "alice",
+      "priority": "high",
+      "created_at": "2026-05-19T09:00:00.000Z",
+      "completed_at": "2026-05-21T14:00:00.000Z",
+      "time_to_complete_seconds": 190800
+    }
+  ],
+  "by_project":   [{ "project_id": 1, "count": 8 }],
+  "by_assignee":  [{ "assignee": "alice", "count": 5 }],
+  "by_priority":  [{ "priority": "high", "count": 6 }],
+  "daily_throughput": [{ "date": "2026-05-21", "count": 3 }]
+}
+```
+
+**Examples:**
+
+```bash
+# Trailing 7 days
+curl 'http://localhost:3000/api/v1/tasks/completion-report?days=7' \
+  -H "X-API-Key: your-key"
+
+# Explicit window, filtered by assignee
+curl 'http://localhost:3000/api/v1/tasks/completion-report?start=2026-05-01T00:00:00Z&end=2026-05-21T23:59:59Z&assignee=alice' \
+  -H "X-API-Key: your-key"
+```
+
 ## Comment Endpoints
 
 Comments are nested under tasks at `/api/v1/tasks/:id/comments`.

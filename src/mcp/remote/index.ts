@@ -12,7 +12,7 @@ import {
 /**
  * Remote MCP server entry point.
  *
- * Runs via stdio on the client machine and proxies all 26 MCP tools
+ * Runs via stdio on the client machine and proxies all 21 MCP tools
  * to the backend's REST API over HTTP.
  *
  * Required environment variables:
@@ -73,7 +73,7 @@ async function main() {
     version: '1.0.0',
   });
 
-  // Register all 26 tools backed by REST API
+  // Register all 21 tools backed by REST API
   registerRemoteTools(server, restClient);
 
   // Register the events resource (discovery/documentation)
