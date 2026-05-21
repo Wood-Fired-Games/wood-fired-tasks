@@ -88,6 +88,33 @@ For validation errors (400), the API uses Zod schemas and returns detailed error
 }
 ```
 
+## Paginated list shape
+
+All authenticated list endpoints (`GET /api/v1/tasks`, `GET /api/v1/projects`, `GET /api/v1/tasks/:id/subtasks`, `GET /api/v1/tasks/:id/comments`) return a paginated envelope rather than a bare array:
+
+```json
+{
+  "data": [ /* array of items for this page */ ],
+  "total": 137,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `data` | array | Items for the current page. |
+| `total` | number | Total matching rows across the full result set (independent of `limit`/`offset`). |
+| `limit` | number | Effective page size (default `50`, max `500`). |
+| `offset` | number | Effective offset (default `0`). |
+
+**Bounds:**
+- `limit` must be `1 <= limit <= 500`; values outside that range return `400 VALIDATION_ERROR`.
+- `offset` must be `>= 0`; negative values return `400 VALIDATION_ERROR`.
+- Paginate by advancing `offset` in `limit`-sized steps until `offset + data.length >= total`.
+
+[NOTE] This is a breaking change for raw-array clients that predate the pagination rollout (task #192, commit `ee72306`). The CLI and MCP layers unwrap the envelope transparently and fall back to bare-array parsing for older servers; direct HTTP consumers must read `data` to access items.
+
 ## Health Endpoints
 
 There are two health routes. `/health` is the public liveness probe; `/health/detailed` is an authenticated diagnostic endpoint that exposes component status and runtime statistics.
@@ -203,26 +230,43 @@ curl -X POST http://localhost:3000/api/v1/projects \
 
 ### GET /api/v1/projects
 
-List all projects.
+List projects (paginated). Returns the envelope `{ data, total, limit, offset }` — see [Paginated list shape](#paginated-list-shape).
+
+**Query Parameters (all optional):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| limit | number | Page size, default 50, max 500 |
+| offset | number | Pagination offset, default 0 |
 
 **Response:** 200 OK
 
 ```json
-[
-  {
-    "id": 1,
-    "name": "Project Alpha",
-    "description": "First project",
-    "created_at": "2026-02-14T12:00:00.000Z",
-    "updated_at": "2026-02-14T12:00:00.000Z"
-  }
-]
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "Project Alpha",
+      "description": "First project",
+      "created_at": "2026-02-14T12:00:00.000Z",
+      "updated_at": "2026-02-14T12:00:00.000Z"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
 ```
 
-**Example:**
+**Examples:**
 
 ```bash
+# First page (default limit 50)
 curl http://localhost:3000/api/v1/projects \
+  -H "X-API-Key: your-key"
+
+# Second page of 25
+curl "http://localhost:3000/api/v1/projects?limit=25&offset=25" \
   -H "X-API-Key: your-key"
 ```
 
@@ -359,7 +403,7 @@ curl -X POST http://localhost:3000/api/v1/tasks \
 
 ### GET /api/v1/tasks
 
-List tasks with optional filters.
+List tasks with optional filters (paginated). Returns the envelope `{ data, total, limit, offset }` — see [Paginated list shape](#paginated-list-shape).
 
 **Query Parameters (all optional):**
 
@@ -380,31 +424,42 @@ List tasks with optional filters.
 **Response:** 200 OK
 
 ```json
-[
-  {
-    "id": 42,
-    "title": "Implement authentication",
-    "description": "Add JWT authentication to API",
-    "status": "in_progress",
-    "priority": "high",
-    "project_id": 1,
-    "parent_task_id": null,
-    "estimated_minutes": 240,
-    "assignee": "alice",
-    "created_by": "bob",
-    "due_date": "2026-02-20T00:00:00.000Z",
-    "created_at": "2026-02-14T12:00:00.000Z",
-    "updated_at": "2026-02-14T13:00:00.000Z",
-    "tags": ["backend", "security"]
-  }
-]
+{
+  "data": [
+    {
+      "id": 42,
+      "title": "Implement authentication",
+      "description": "Add JWT authentication to API",
+      "status": "in_progress",
+      "priority": "high",
+      "project_id": 1,
+      "parent_task_id": null,
+      "estimated_minutes": 240,
+      "assignee": "alice",
+      "created_by": "bob",
+      "due_date": "2026-02-20T00:00:00.000Z",
+      "created_at": "2026-02-14T12:00:00.000Z",
+      "updated_at": "2026-02-14T13:00:00.000Z",
+      "tags": ["backend", "security"]
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
 ```
+
+[NOTE] Requests with `limit > 500` or `offset < 0` are rejected with `400 VALIDATION_ERROR`.
 
 **Examples:**
 
 ```bash
-# All tasks
+# First page (default limit 50)
 curl http://localhost:3000/api/v1/tasks \
+  -H "X-API-Key: your-key"
+
+# Second page of 25
+curl "http://localhost:3000/api/v1/tasks?limit=25&offset=25" \
   -H "X-API-Key: your-key"
 
 # Tasks for project 1
@@ -531,29 +586,41 @@ curl -X DELETE http://localhost:3000/api/v1/tasks/42 \
 
 ### GET /api/v1/tasks/:id/subtasks
 
-Get all subtasks (children) of a parent task.
+Get subtasks (children) of a parent task (paginated). Returns the envelope `{ data, total, limit, offset }` — see [Paginated list shape](#paginated-list-shape).
+
+**Query Parameters (all optional):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| limit | number | Page size, default 50, max 500 |
+| offset | number | Pagination offset, default 0 |
 
 **Response:** 200 OK
 
 ```json
-[
-  {
-    "id": 43,
-    "title": "Subtask 1",
-    "description": "First subtask",
-    "status": "open",
-    "priority": "medium",
-    "project_id": 1,
-    "parent_task_id": 42,
-    "estimated_minutes": 60,
-    "assignee": "alice",
-    "created_by": "bob",
-    "due_date": null,
-    "created_at": "2026-02-14T12:00:00.000Z",
-    "updated_at": "2026-02-14T12:00:00.000Z",
-    "tags": []
-  }
-]
+{
+  "data": [
+    {
+      "id": 43,
+      "title": "Subtask 1",
+      "description": "First subtask",
+      "status": "open",
+      "priority": "medium",
+      "project_id": 1,
+      "parent_task_id": 42,
+      "estimated_minutes": 60,
+      "assignee": "alice",
+      "created_by": "bob",
+      "due_date": null,
+      "created_at": "2026-02-14T12:00:00.000Z",
+      "updated_at": "2026-02-14T12:00:00.000Z",
+      "tags": []
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
 ```
 
 **Example:**
@@ -658,29 +725,41 @@ curl -X POST http://localhost:3000/api/v1/tasks/42/comments \
 
 ### GET /api/v1/tasks/:id/comments
 
-Get all comments for a task in chronological order.
+Get comments for a task in chronological order (paginated). Returns the envelope `{ data, total, limit, offset }` — see [Paginated list shape](#paginated-list-shape).
+
+**Query Parameters (all optional):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| limit | number | Page size, default 50, max 500 |
+| offset | number | Pagination offset, default 0 |
 
 **Response:** 200 OK
 
 ```json
-[
-  {
-    "id": 1,
-    "task_id": 42,
-    "author": "alice",
-    "content": "This looks good, approved!",
-    "created_at": "2026-02-14T12:00:00.000Z",
-    "updated_at": null
-  },
-  {
-    "id": 2,
-    "task_id": 42,
-    "author": "bob",
-    "content": "Thanks for the review!",
-    "created_at": "2026-02-14T12:05:00.000Z",
-    "updated_at": null
-  }
-]
+{
+  "data": [
+    {
+      "id": 1,
+      "task_id": 42,
+      "author": "alice",
+      "content": "This looks good, approved!",
+      "created_at": "2026-02-14T12:00:00.000Z",
+      "updated_at": null
+    },
+    {
+      "id": 2,
+      "task_id": 42,
+      "author": "bob",
+      "content": "Thanks for the review!",
+      "created_at": "2026-02-14T12:05:00.000Z",
+      "updated_at": null
+    }
+  ],
+  "total": 2,
+  "limit": 50,
+  "offset": 0
+}
 ```
 
 **Example:**
