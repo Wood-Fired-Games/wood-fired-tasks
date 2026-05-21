@@ -26,7 +26,7 @@ import { subtaskCreateCommand } from '../commands/subtask-create.js';
 import { subtaskListCommand } from '../commands/subtask-list.js';
 import { healthCommand } from '../commands/health.js';
 import { claimCommand } from '../commands/claim.js';
-import { completionsCommand } from '../commands/completions.js';
+import { createCompletionsCommand } from '../commands/completions.js';
 
 program
   .name('tasks')
@@ -57,6 +57,8 @@ program.addCommand(subtaskCreateCommand);
 program.addCommand(subtaskListCommand);
 program.addCommand(claimCommand);
 program.addCommand(healthCommand);
-program.addCommand(completionsCommand);
+// Register completions command (factory binds to `program` — single source of
+// truth for the registered command list; see task #247).
+program.addCommand(createCompletionsCommand(program));
 
 program.parseAsync(process.argv);

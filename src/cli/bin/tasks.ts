@@ -25,7 +25,7 @@ import { doctorCommand } from '../commands/doctor.js';
 import { statsCommand } from '../commands/stats.js';
 import { completedCommand } from '../commands/completed.js';
 import { dbCheckCommand } from '../commands/db-check.js';
-import { completionsCommand } from '../commands/completions.js';
+import { createCompletionsCommand } from '../commands/completions.js';
 
 // Configure CLI program
 program
@@ -82,8 +82,10 @@ program.addCommand(statsCommand);
 program.addCommand(completedCommand);
 program.addCommand(dbCheckCommand);
 
-// Register completions command
-program.addCommand(completionsCommand);
+// Register completions command (factory binds to `program` so generated
+// scripts derive their command list from the same Commander registry — no
+// hardcoded parallel list to keep in sync; see task #247).
+program.addCommand(createCompletionsCommand(program));
 
 // Parse command-line arguments (async to support async command handlers)
 program.parseAsync(process.argv);

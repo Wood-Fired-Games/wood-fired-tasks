@@ -26,8 +26,36 @@ describe('Shell completions', () => {
       expect(output).toContain('backup');
       expect(output).toContain('doctor');
       expect(output).toContain('stats');
+      expect(output).toContain('completed');
       expect(output).toContain('db-check');
       expect(output).toContain('completions');
+    });
+
+    it('command list stays in sync with Commander registry (task #247)', () => {
+      // Completions must derive from the same Commander program that
+      // bin/tasks.ts registers — no parallel hardcoded list.
+      const completionOutput = execSync(
+        'npx tsx src/cli/bin/tasks.ts completions bash',
+        execOpts,
+      );
+      const helpOutput = execSync('npx tsx src/cli/bin/tasks.ts --help', execOpts);
+
+      const match = completionOutput.match(/commands="([^"]+)"/);
+      expect(match).not.toBeNull();
+      const completionCommands = match![1].split(/\s+/).filter(Boolean).sort();
+
+      const helpLines = helpOutput.split('\n');
+      const cmdSectionStart = helpLines.findIndex((l) => l.trim() === 'Commands:');
+      expect(cmdSectionStart).toBeGreaterThan(-1);
+      const helpCommands = helpLines
+        .slice(cmdSectionStart + 1)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0)
+        .map((l) => l.split(/\s+/)[0])
+        .filter((name) => name !== 'help'); // Commander's built-in help isn't a real command.
+      helpCommands.sort();
+
+      expect(completionCommands).toEqual(helpCommands);
     });
 
     it('includes status enum values', () => {
