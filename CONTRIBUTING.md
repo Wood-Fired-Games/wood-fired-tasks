@@ -1,22 +1,221 @@
-# Contributing
+# Contributing to wood-fired-bugs
 
-Thanks for your interest in contributing to wood-fired-bugs. See `README.md` for
-setup and architecture. The notes below cover quality gates that are easy to
-miss.
+Thanks for your interest in contributing! This document describes how to get
+set up, what we expect in PRs, and the quality gates that gate merges.
 
-## Mutation testing policy
+## Welcome / Overview
 
-We use [Stryker](https://stryker-mutator.io/) to verify that our test suite
-actually fails when production code is mutated (a strong "tests assert
-something useful" signal that line/branch coverage cannot give).
+`wood-fired-bugs` is a network-wide task tracking system with three surfaces:
+
+- A **REST API** (Fastify) — see `docs/API.md`.
+- A **CLI** (`tasks ...`) — see `docs/CLI.md`.
+- An **MCP server** that exposes tasks to AI assistants — see `docs/MCP.md`.
+
+We welcome external contributions that fit the project's scope:
+
+- Bug fixes with regression tests.
+- Documentation improvements and clarifications.
+- New MCP tools that compose existing API operations.
+- Additional CLI subcommands.
+- Test coverage improvements (unit, integration, property-based).
+- Performance and resilience fixes that come with benchmarks or load tests.
+
+Large architectural changes should be discussed in a GitHub issue first so
+we can confirm fit before you spend a lot of time.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md). By
+participating, you agree to uphold its standards. Report unacceptable
+behavior to the maintainers via the contact listed in `CODE_OF_CONDUCT.md`.
+
+## Security
+
+**Do not file public GitHub issues for security vulnerabilities.** Report
+them privately by following the process in [`SECURITY.md`](./SECURITY.md).
+The maintainers will acknowledge receipt, investigate, and coordinate a
+fix and disclosure timeline with you.
+
+If you discover a vulnerability while preparing a PR, stop, contact the
+maintainers privately, and we will work with you on a coordinated patch.
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js 22+** (LTS recommended). The CI matrix pins to Node 22.
+- **npm** (ships with Node).
+- **git**.
+
+### Clone and install
+
+```bash
+git clone https://github.com/<org>/wood-fired-bugs.git
+cd wood-fired-bugs
+npm ci
+npm test
+```
+
+`npm ci` produces a clean, lockfile-faithful install. `npm test` should
+pass against a freshly-cloned checkout — if it does not, that is itself a
+bug worth reporting.
+
+### Where the docs live
+
+| Topic              | File             |
+| ------------------ | ---------------- |
+| REST API reference | `docs/API.md`    |
+| CLI reference      | `docs/CLI.md`    |
+| MCP integration    | `docs/MCP.md`    |
+| Local setup        | `docs/SETUP.md`  |
+
+Read `docs/SETUP.md` for environment variables, database location, and how
+to run the API, CLI, and MCP server locally.
+
+## Development Workflow
+
+1. **Branch from `main`.** Use a descriptive branch name like
+   `fix/task-list-pagination` or `feat/mcp-bulk-update`.
+2. **Make atomic commits.** Each commit should be one logical change that
+   builds and tests cleanly on its own. Prefer many small commits over one
+   large catch-all.
+3. **Use conventional commits** for the subject line, e.g.:
+   - `fix(api): return 404 when project missing`
+   - `feat(mcp): add bulk_update_tasks tool`
+   - `docs(cli): clarify --status flag values`
+   - `test(db): add migration rollback coverage`
+   - `chore(deps): bump fastify to 5.8`
+4. **Keep PRs small and focused.** One concern per PR. Refactors should be
+   separate commits (or separate PRs) from behavior changes.
+5. **Rebase, do not merge `main` into your branch.** Keep history linear.
+
+## Testing
+
+We use [Vitest](https://vitest.dev/). The test suite is the contract.
+
+### Commands
+
+```bash
+npm test               # Single run (what CI runs)
+npm run test:watch     # Watch mode for local iteration
+npm run test:coverage  # Run with coverage report (./coverage/)
+npm run test:bench     # Run benchmarks (excluded from npm test)
+```
+
+### What tests are required
+
+- **Bug fixes:** a regression test that fails on `main` and passes with
+  your fix.
+- **New features:** unit tests for the new logic AND at least one
+  integration test that exercises it through the public surface (HTTP
+  route, CLI command, or MCP tool).
+- **New MCP tools / CLI commands:** integration tests that invoke the
+  tool/command end-to-end against a real (test-scoped) SQLite database.
+
+### Where tests live
+
+Tests live next to the code they exercise, named `*.test.ts`. Larger
+integration tests live under `src/<area>/__tests__/`. Benchmarks live in
+`*.bench.ts` files and are excluded from the default test run.
+
+### Coverage thresholds
+
+Coverage is enforced by Vitest via `vitest.config.ts`. Current minimums:
+
+| Metric     | Threshold |
+| ---------- | --------- |
+| Lines      | 70%       |
+| Functions  | 70%       |
+| Branches   | 60%       |
+| Statements | 65%       |
+
+These are baselines (task 199) — please do not lower them. Raise them when
+your change improves coverage materially.
+
+## Quality Gates
+
+Before opening a PR, run these locally:
+
+```bash
+npx tsc                       # Type-check / build
+npm test                      # Vitest with coverage thresholds
+npx knip --dependencies       # Detect unused dependencies
+```
+
+CI runs the same gates on every PR. If any fails, the PR cannot merge.
+
+### Mutation testing policy
+
+We use [Stryker](https://stryker-mutator.io/) to verify that our test
+suite actually fails when production code is mutated (a strong "tests
+assert something useful" signal that line/branch coverage cannot give).
 
 - **Current break threshold:** `50` (mutation score below 50% fails CI).
 - **Where:** `stryker.config.js` (`thresholds.break`).
-- **When CI runs it:** nightly (06:00 UTC), on `workflow_dispatch`, and on any
-  PR labeled `mutation`. It is intentionally NOT part of the default PR check
-  matrix because a full run takes 20-45 minutes.
-- **Plan to raise it:** the `50` baseline is conservative for first enforcement.
-  Once we have a few clean nightly runs we will raise to `60`, then `75` to
-  match the `low: 60 / high: 80` reporting thresholds already in the config.
-- **Running locally:** `npm run test:mutation`. The HTML report is written to
-  `reports/mutation/` and is uploaded as the `mutation-report` artifact in CI.
+- **When CI runs it:** nightly (06:00 UTC), on `workflow_dispatch`, and on
+  any PR labeled `mutation`. It is intentionally NOT part of the default
+  PR check matrix because a full run takes 20-45 minutes.
+- **Plan to raise it:** the `50` baseline is conservative for first
+  enforcement. Once we have a few clean nightly runs we will raise to
+  `60`, then `75` to match the `low: 60 / high: 80` reporting thresholds
+  already in the config.
+- **Running locally:** `npm run test:mutation`. The HTML report is written
+  to `reports/mutation/` and is uploaded as the `mutation-report` artifact
+  in CI.
+
+If your PR touches a hot module (anything under `src/api/`, `src/db/`,
+`src/mcp/tools/`, or `src/cli/commands/`), consider labeling it
+`mutation` so the nightly check runs against your branch before merge.
+
+## Commit & PR Style
+
+- **Conventional commits** — `<type>(<area>): <subject>` (see Development
+  Workflow above).
+- **Atomic commits** — one logical change per commit; squash WIP commits
+  before pushing.
+- **Sign-off NOT required** — we do not enforce DCO sign-off. Just use a
+  real name and email in your commits.
+- **Link the issue** in the PR body: `Closes #123` or `Refs #123`.
+- **Use the PR template** — fill in the summary, test plan, and any
+  follow-ups it asks for.
+- **Self-review first.** Read your own diff in the GitHub UI before
+  requesting review.
+
+## Release Process
+
+Releases follow [Semantic Versioning](https://semver.org/):
+
+- **MAJOR** (`v2.0.0`) — breaking API, CLI, or MCP changes.
+- **MINOR** (`v1.3.0`) — new features, backwards-compatible.
+- **PATCH** (`v1.2.4`) — bug fixes, docs, internal refactors.
+
+Maintainers cut releases by:
+
+1. Updating `CHANGELOG.md` with the new version, date, and grouped notes
+   (`Added`, `Changed`, `Fixed`, `Security`).
+2. Bumping `version` in `package.json`.
+3. Tagging the release: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push --tags`.
+4. Publishing GitHub release notes from the changelog entry.
+
+Only project maintainers (listed in the repo's GitHub team) can cut
+releases. Contributors should not bump versions in their PRs — the
+maintainer cutting the release will batch version bumps.
+
+## Areas Welcoming Contribution
+
+Looking for something to work on? These areas are explicitly open:
+
+- **Bug fixes** — anything in the issue tracker labeled `bug`.
+- **Doc improvements** — clarifications, examples, broken links, missing
+  flags in `docs/CLI.md` or `docs/API.md`.
+- **New MCP tools** — see `docs/MCP.md` for the tool authoring pattern.
+  Good candidates: bulk operations, richer search, subtask helpers.
+- **Additional CLI commands** — see `docs/CLI.md`. Composability with
+  existing commands is preferred over one-off scripts.
+- **Test coverage improvements** — raising the coverage floor or killing
+  surviving mutants from the mutation report.
+- **Performance work** — add a benchmark in a `*.bench.ts` file first,
+  then optimize against it.
+
+Questions? Open a discussion or a draft PR — we would rather talk early
+than rewrite later.
