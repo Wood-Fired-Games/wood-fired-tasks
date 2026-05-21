@@ -8,9 +8,9 @@ Complete reference for the Wood Fired Bugs REST API.
 
 ## Authentication
 
-All endpoints under `/api/v1` require authentication via the `X-API-Key` header.
+All endpoints under `/api/v1` require authentication via the `X-API-Key` header. The authenticated `/health/detailed` route also requires `X-API-Key`. In production, the Swagger UI (`/docs`, `/docs/json`) is gated — see [Production gating](#production-gating) below.
 
-The `/health` endpoint is public and does not require authentication.
+The only public, unauthenticated endpoint is `/health` (minimal liveness probe).
 
 ### Example Request
 
@@ -39,7 +39,11 @@ or
 }
 ```
 
-[NOTE] API keys are configured via the `API_KEYS` environment variable on the server (comma-separated list).
+[IMPORTANT] `API_KEYS` is **REQUIRED**. The server fails to start (exit code 78, `EX_CONFIG`) if `API_KEYS` is unset or empty — there is no "auth disabled" fallback mode.
+
+- Format: a comma-separated list of one or more keys. Each entry is either a bare key (`abc123def456...`) or a labelled key (`abc123def456...:ci-runner`). Labels appear in audit logs and never expose the raw key.
+- **Production length requirement:** when `NODE_ENV=production`, each key must be at least **32 characters**. Keys that are shorter, repeat a single character, or contain placeholder phrases (`changeme`, `placeholder`, `example`, `change-me-to-a-real-key`) or values (`test`, `dev`) cause the server to refuse to start.
+- In non-production environments the length floor is not enforced, but the server still rejects every request when no keys are configured (fail-closed). Generate keys with a CSPRNG, e.g. `openssl rand -hex 32`.
 
 ## Error Handling
 
@@ -84,11 +88,13 @@ For validation errors (400), the API uses Zod schemas and returns detailed error
 }
 ```
 
-## Health Endpoint
+## Health Endpoints
+
+There are two health routes. `/health` is the public liveness probe; `/health/detailed` is an authenticated diagnostic endpoint that exposes component status and runtime statistics.
 
 ### GET /health
 
-Check service health and database connectivity.
+Minimal public health check. Pings the database (the only critical check on the public endpoint) and returns a fixed minimal payload so unauthenticated probes cannot fingerprint the deployment.
 
 **Authentication:** None (public endpoint)
 
@@ -98,18 +104,66 @@ Check service health and database connectivity.
 {
   "status": "healthy",
   "timestamp": "2026-02-14T12:00:00.000Z",
-  "version": "1.0.0",
-  "checks": {
-    "database": "ok"
-  }
+  "version": "1.0.0"
 }
 ```
+
+**Response:** 503 Service Unavailable (database ping failed) — same shape, with `status: "unhealthy"`.
 
 **Example:**
 
 ```bash
 curl http://localhost:3000/health
 ```
+
+[NOTE] This endpoint deliberately omits component checks, SSE client counts, uptime, and event-bus statistics — those previously lived on `/health` and have moved to the authenticated `/health/detailed` route below so they are not exposed to unauthenticated callers. The public route is also allow-listed from global rate limiting so liveness/readiness probes never consume the request budget.
+
+### GET /health/detailed
+
+Authenticated diagnostic health check. Returns component-level status and runtime statistics for the database, the in-process event bus, and the SSE manager.
+
+**Authentication:** Required (`X-API-Key` header). Returns 401 if the key is missing or invalid.
+
+**Response:** 200 OK
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-02-14T12:00:00.000Z",
+  "version": "1.0.0",
+  "checks": {
+    "database": "ok",
+    "eventBus": "ok",
+    "sseManager": "ok"
+  },
+  "stats": {
+    "eventBus": { "listenerCount": 8 },
+    "sseManager": { "clientCount": 0, "uptime": 12345 }
+  }
+}
+```
+
+Field semantics:
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `checks.database` | `ok` \| `failed` | `SELECT 1` against the SQLite database succeeded or threw. |
+| `checks.eventBus` | `ok` \| `degraded` \| `unknown` | In-process event bus liveness. |
+| `checks.sseManager` | `ok` \| `degraded` \| `unknown` | SSE fan-out manager liveness. |
+| `stats.eventBus.listenerCount` | number | Currently-subscribed listener count. |
+| `stats.sseManager.clientCount` | number | Live SSE client connections. |
+| `stats.sseManager.uptime` | number | SSE manager uptime in milliseconds. |
+
+**Response:** 503 Service Unavailable (database ping failed) — same shape, with `status: "unhealthy"` and `checks.database: "failed"`.
+
+**Example:**
+
+```bash
+curl http://localhost:3000/health/detailed \
+  -H "X-API-Key: your-key"
+```
+
+[NOTE] `/health/detailed` is **not** gated off in production — it remains available behind `X-API-Key` so operators have a single uniform authenticated probe across environments. Only the unauthenticated `/health` route is intentionally minimal.
 
 ## Project Endpoints
 
@@ -317,7 +371,11 @@ List tasks with optional filters.
 | tags | string | Filter by tags (comma-separated) |
 | due_before | string | Tasks due before date (ISO8601) |
 | due_after | string | Tasks due after date (ISO8601) |
-| search | string | Search in title and description (max 200 chars) |
+| updated_before | string | Tasks last updated before date (ISO8601) |
+| updated_after | string | Tasks last updated after date (ISO8601) |
+| search | string | Search in title and description (max 200 chars, max 32 terms) |
+| limit | number | Page size, default 50, max 500 |
+| offset | number | Pagination offset, default 0 |
 
 **Response:** 200 OK
 
@@ -363,6 +421,14 @@ curl "http://localhost:3000/api/v1/tasks?search=authentication" \
 
 # Tasks with bug tag
 curl "http://localhost:3000/api/v1/tasks?tags=bug" \
+  -H "X-API-Key: your-key"
+
+# Tasks updated since a given timestamp (incremental sync)
+curl "http://localhost:3000/api/v1/tasks?updated_after=2026-01-01T00:00:00Z" \
+  -H "X-API-Key: your-key"
+
+# Tasks updated within a window
+curl "http://localhost:3000/api/v1/tasks?updated_after=2026-01-01T00:00:00Z&updated_before=2026-02-01T00:00:00Z" \
   -H "X-API-Key: your-key"
 ```
 
@@ -829,8 +895,10 @@ Each event includes a `metadata.source` field:
 Swagger UI is available at:
 
 ```
-http://localhost:3000/documentation
+http://localhost:3000/docs
 ```
+
+The raw OpenAPI 3 document is served at `/docs/json`.
 
 The Swagger UI provides:
 
@@ -840,4 +908,16 @@ The Swagger UI provides:
 - Example values for all fields
 - Full Zod schema validation details
 
-[TIP] Use Swagger UI to explore the API and test endpoints without writing curl commands.
+### Production gating
+
+Swagger UI is **disabled by default in production** (`NODE_ENV=production`). The behaviour is:
+
+| Environment | `ENABLE_SWAGGER_IN_PRODUCTION` | `/docs` and `/docs/json` |
+|-------------|-------------------------------|--------------------------|
+| `development` or `test` | (ignored) | Exposed, no auth required. |
+| `production` | unset / `false` (default) | **Not registered** — returns 404. |
+| `production` | `true` | Exposed, but `X-API-Key` is required (same canonical auth plugin as `/api/v1`). |
+
+The in-process OpenAPI spec collector is always loaded so internal tests can introspect route schemas, but the HTTP routes that serve the UI and JSON document are only mounted when the gate above allows it.
+
+[TIP] Use Swagger UI in development to explore the API and test endpoints without writing curl commands. In production, fetch the spec via `/docs/json` with your API key only after opting in with `ENABLE_SWAGGER_IN_PRODUCTION=true`.
