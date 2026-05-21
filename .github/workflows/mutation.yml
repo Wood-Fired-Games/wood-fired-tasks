@@ -19,11 +19,11 @@ jobs:
       (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'mutation'))
     runs-on: ubuntu-latest
-    # Stryker runs ~6900 mutants and takes ~3-4 hours wall time on the
-    # default ubuntu-latest runner. Give it 4h headroom over observed runtime.
-    # If runtime grows past this, shard the run or reduce mutant scope instead
-    # of bumping the timeout indefinitely.
-    timeout-minutes: 240
+    # Stryker runs ~7000 mutants and takes ~5h20m wall time on the default
+    # ubuntu-latest runner (observed 2026-05-21). 360m is the GH Actions max
+    # for default runners — if runtime grows past this, the only options are
+    # sharding the run across parallel jobs or reducing mutant scope.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

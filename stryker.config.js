@@ -23,7 +23,7 @@ export default {
   thresholds: {
     high: 80,
     low: 60,
-    break: 50,
+    break: 60,
   },
   packageManager: 'npm',
 };
