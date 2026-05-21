@@ -154,7 +154,8 @@ assert something useful" signal that line/branch coverage cannot give).
 - **Where:** `stryker.config.js` (`thresholds.break`).
 - **When CI runs it:** nightly (06:00 UTC), on `workflow_dispatch`, and on
   any PR labeled `mutation`. It is intentionally NOT part of the default
-  PR check matrix because a full run takes 20-45 minutes.
+  PR check matrix because a full run takes ~3-4 hours wall time on a
+  default GitHub Actions runner (~6900 mutants).
 - **Plan to raise it:** the `50` baseline is conservative for first
   enforcement. Once we have a few clean nightly runs we will raise to
   `60`, then `75` to match the `low: 60 / high: 80` reporting thresholds
