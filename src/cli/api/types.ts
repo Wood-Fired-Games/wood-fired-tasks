@@ -1,22 +1,28 @@
 /**
  * CLI-side TypeScript interfaces for REST API request/response shapes.
- * These are decoupled from server types to keep the CLI independent.
+ *
+ * `TaskResponse` is derived from the server's Zod `TaskResponseSchema` (the
+ * single source of truth) via `z.infer<>`. This guarantees the CLI type stays
+ * aligned with the wire format whenever the server schema changes — no manual
+ * sync required. Add new task response fields to the Zod schema in
+ * `src/api/routes/tasks/schemas.ts` and the CLI picks them up automatically.
+ *
+ * Other request/response shapes (inputs, filters, pagination envelopes) remain
+ * hand-written here because they are CLI-only concerns or shared client
+ * scaffolding rather than server response payloads.
  */
 
-export interface TaskResponse {
-  id: number;
-  title: string;
-  description: string | null;
-  status: string;
-  priority: string;
-  project_id: number;
-  assignee: string | null;
-  created_by: string;
-  due_date: string | null;
-  created_at: string;
-  updated_at: string;
-  tags: string[];
-}
+import type { z } from 'zod';
+import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
+
+/**
+ * Task response shape, inferred from the server Zod schema.
+ *
+ * Fields: id, title, description, status, priority, project_id,
+ * parent_task_id, estimated_minutes, assignee, created_by, due_date,
+ * created_at, updated_at, version, claimed_at, tags.
+ */
+export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 
 export interface ProjectResponse {
   id: number;
