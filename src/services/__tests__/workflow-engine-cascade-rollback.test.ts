@@ -19,20 +19,31 @@ import type { TaskEvent } from '../../events/types.js';
  * transaction rolls back (better-sqlite3 semantics) and cascadeError is captured
  * + rethrown so the outer try/catch logs without crashing the EventBus.
  *
+ * As of task #244 the cascade is ALSO wrapped in an `eventBus.runInTransaction`
+ * buffer so emits fired by `taskService.updateTask` during the cascade are
+ * deferred to commit. On rollback the buffer is discarded, preventing phantom
+ * `task.status_changed` events from leaking to SSE/Slack/MCP subscribers for
+ * work that the DB never persisted.
+ *
  * This suite injects a faulty taskRepo.update DURING the cascade (specifically
  * when the engine attempts to transition the parent open -> done — the second
  * workflow-triggered write) and verifies:
  *   - The parent task's status reverts to its pre-cascade value (open). The
  *     in-progress write that succeeded earlier in the cascade transaction is
  *     also reverted because the cascade transaction rolls back as a unit.
- *   - No `task.status_changed` event with `to: 'done'` is broadcast for the
- *     parent (the cascade's failed step). The parent never reached 'done', so
- *     no done event can have been emitted.
+ *   - ZERO `task.status_changed` events are broadcast for the rolled-back
+ *     parent — neither `to: 'in_progress'` (the savepoint write) nor
+ *     `to: 'done'` (the failed write) leak to external subscribers. This is
+ *     the tightened assertion (task #244): the previous version only
+ *     guarded `to: 'done'`, which would have silently let an `in_progress`
+ *     phantom event escape.
  *
  * The injection point is `taskRepo.update` — one level deeper than the
  * existing "transaction atomicity" test which spies on taskService.updateTask.
  * This catches regressions where the rollback path is broken at the
- * repository boundary (e.g. accidental autocommit, savepoint mismanagement).
+ * repository boundary (e.g. accidental autocommit, savepoint mismanagement)
+ * OR at the EventBus boundary (events emitted synchronously inside the
+ * cascade transaction).
  */
 describe('WorkflowEngine: cascade rollback on taskRepo.update failure (regression)', () => {
   let app: App;
@@ -77,7 +88,7 @@ describe('WorkflowEngine: cascade rollback on taskRepo.update failure (regressio
     });
   }
 
-  it('rolls back parent state and suppresses task.status_changed event when taskRepo.update throws mid-cascade', () => {
+  it('rolls back parent state and suppresses ALL task.status_changed events for the parent when taskRepo.update throws mid-cascade', () => {
     // Hierarchy: parent has two children. Marking child 2 done triggers cascade
     // because child 1 was already marked done before the engine started.
     const parent = createTask('Parent');
@@ -163,22 +174,16 @@ describe('WorkflowEngine: cascade rollback on taskRepo.update failure (regressio
     expect(parentAfter.status).toBe(preCascadeParent.status);
     expect(parentAfter.status).toBe('open');
 
-    // ASSERTION 2: no task.status_changed event was broadcast for the
-    // rolled-back parent. The parent's in_progress event was emitted into
-    // the EventBus during the transaction, but its DB write was reverted —
-    // so any event referencing parent.id with `to: 'in_progress'` or
-    // `to: 'done'` represents a broadcast that lies about persisted state.
-    //
-    // The regression we're guarding against: a future change that emits the
-    // status_changed event AFTER commit (correct) vs DURING the transaction
-    // (current behavior leaks a phantom event). We assert the current
-    // contract: no `to: 'done'` event for the parent. A done event would
-    // be the most damaging — downstream consumers (Slack, MCP clients)
-    // would see the parent as completed when it isn't.
-    const parentDoneEvents = receivedEvents.filter(
-      (e) => e.data.id === parent.id && (e.metadata as any).to === 'done'
-    );
-    expect(parentDoneEvents).toHaveLength(0);
+    // ASSERTION 2: ZERO task.status_changed events were broadcast for the
+    // rolled-back parent. As of task #244 the cascade is wrapped in
+    // `eventBus.runInTransaction(...)` so every emit fired by
+    // `taskService.updateTask` inside the cascade is buffered and discarded on
+    // rollback. The parent's intermediate `to: 'in_progress'` event AND the
+    // never-reached `to: 'done'` event must both stay out of the subscriber
+    // stream — any leak would lie to downstream consumers (Slack, MCP, SSE)
+    // about persisted state.
+    const parentEvents = receivedEvents.filter((e) => e.data.id === parent.id);
+    expect(parentEvents).toHaveLength(0);
 
     // ASSERTION 3: child2's user-triggered done IS persisted. child2's
     // taskRepo.update committed in its OWN transaction before the cascade

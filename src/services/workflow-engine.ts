@@ -28,6 +28,17 @@ import type { TaskEvent } from '../events/types.js';
  * - Nested db.transaction() calls from TaskRepository.update become savepoints.
  * - Cascade errors are tracked internally and re-thrown to trigger rollback,
  *   since EventBus wraps handlers in try/catch (error isolation).
+ *
+ * Phantom-event suppression (task #244):
+ * - The cascade transaction is also wrapped in `eventBus.runInTransaction(...)`
+ *   so every `task.updated` / `task.status_changed` emit fired by
+ *   `taskService.updateTask` during the cascade is BUFFERED. The buffer flushes
+ *   to SSE/Slack/MCP subscribers only on successful commit. On rollback the
+ *   buffer is discarded, so no phantom events leak for work the DB never
+ *   persisted.
+ * - The engine's own subscription is registered with `ignoreTransaction: true`
+ *   so cascade recursion still drives synchronously inside the transaction —
+ *   only external subscribers are deferred to commit time.
  */
 export class WorkflowEngine {
   private cascadeDepth = 0;
@@ -44,12 +55,19 @@ export class WorkflowEngine {
   ) {}
 
   /**
-   * Start listening for task.status_changed events
+   * Start listening for task.status_changed events.
+   *
+   * Subscribes with `ignoreTransaction: true` so the engine still receives
+   * status_changed emits synchronously while a transactional emit buffer is
+   * active. Cascade recursion depends on synchronous redelivery during the
+   * transaction — see processCascade and the class doc comment for the
+   * phantom-event suppression contract (task #244).
    */
   start(): void {
     const unsub = this.eventBus.subscribe(
       'task.status_changed',
-      (event: TaskEvent) => this.handleStatusChanged(event)
+      (event: TaskEvent) => this.handleStatusChanged(event),
+      { ignoreTransaction: true }
     );
     this.unsubscribes.push(unsub);
   }
@@ -76,21 +94,28 @@ export class WorkflowEngine {
    */
   private handleStatusChanged(event: TaskEvent): void {
     if (this.cascadeDepth === 0) {
-      // Entry point — wrap entire cascade in one transaction
+      // Entry point — wrap entire cascade in one DB transaction AND one
+      // EventBus transactional buffer so external subscribers (SSE / Slack /
+      // MCP) only see events for state the DB actually committed (task #244).
+      // The engine's own subscription bypasses the buffer so cascade recursion
+      // still drives synchronously inside the transaction.
       try {
-        const cascadeTx = this.db.transaction(() => {
-          this.processCascade(event);
-          // If any nested cascade operation set an error, throw to trigger rollback
-          if (this.cascadeError) {
-            const err = this.cascadeError;
-            this.cascadeError = null;
-            throw err;
-          }
+        this.eventBus.runInTransaction(() => {
+          const cascadeTx = this.db.transaction(() => {
+            this.processCascade(event);
+            // If any nested cascade operation set an error, throw to trigger rollback
+            if (this.cascadeError) {
+              const err = this.cascadeError;
+              this.cascadeError = null;
+              throw err;
+            }
+          });
+          cascadeTx();
         });
-        cascadeTx();
       } catch (error) {
-        // Transaction rolled back — log but don't throw
-        // (this handler is called from EventBus which has its own try/catch)
+        // Transaction rolled back AND event buffer discarded — log but don't
+        // throw (this handler is called from EventBus which has its own
+        // try/catch).
         this.cascadeError = null;
         console.error('WorkflowEngine: cascade rolled back due to error:', error);
       }
