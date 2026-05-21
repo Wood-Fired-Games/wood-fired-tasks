@@ -119,8 +119,8 @@ const TASK_1 = {
   status: 'open' as const,
   priority: 'high' as const,
   project_id: 1,
-  assignee: 'stuart',
-  created_by: 'stuart',
+  assignee: 'alice',
+  created_by: 'alice',
   due_date: FIXED_DUE,
   created_at: FIXED_DATE_A,
   updated_at: FIXED_DATE_A,
@@ -135,7 +135,7 @@ const TASK_2 = {
   priority: 'medium' as const,
   project_id: 1,
   assignee: 'alice',
-  created_by: 'stuart',
+  created_by: 'alice',
   due_date: null,
   created_at: FIXED_DATE_B,
   updated_at: FIXED_DATE_B,
@@ -176,7 +176,7 @@ const PROJECT_2 = {
 const COMMENT_1 = {
   id: 10,
   task_id: 1,
-  author: 'stuart',
+  author: 'alice',
   content: 'Reproduced on iOS 17.4 — investigating.',
   created_at: FIXED_DATE_A,
 };
@@ -315,7 +315,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'list', '-a', 'stuart'])
+        program.parseAsync(['node', 'tasks', 'list', '-a', 'alice'])
       );
       expect(out).toMatchSnapshot();
     });
@@ -327,7 +327,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', '--json', 'list', '-a', 'stuart'])
+        program.parseAsync(['node', 'tasks', '--json', 'list', '-a', 'alice'])
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -400,11 +400,11 @@ describe('CLI output snapshots', () => {
           '-p',
           '1',
           '-c',
-          'stuart',
+          'alice',
           '--priority',
           'high',
           '-a',
-          'stuart',
+          'alice',
           '--due',
           FIXED_DUE,
           '--tags',
@@ -432,11 +432,11 @@ describe('CLI output snapshots', () => {
           '-p',
           '1',
           '-c',
-          'stuart',
+          'alice',
           '--priority',
           'high',
           '-a',
-          'stuart',
+          'alice',
           '--due',
           FIXED_DUE,
           '--tags',
@@ -464,7 +464,7 @@ describe('CLI output snapshots', () => {
           'comment-add',
           '1',
           '-a',
-          'stuart',
+          'alice',
           '-c',
           'Reproduced on iOS 17.4 — investigating.',
         ])
@@ -487,7 +487,7 @@ describe('CLI output snapshots', () => {
           'comment-add',
           '1',
           '-a',
-          'stuart',
+          'alice',
           '-c',
           'Reproduced on iOS 17.4 — investigating.',
         ])

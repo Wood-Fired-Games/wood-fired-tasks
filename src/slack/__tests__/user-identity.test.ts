@@ -42,7 +42,7 @@ describe('UserIdentityCache', () => {
   describe('resolve() calls users.info with correct userId', () => {
     it('should call users.info with the given userId', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Stuart' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -56,40 +56,40 @@ describe('UserIdentityCache', () => {
     it('should return display_name when present', async () => {
       const mockClient = makeMockClient(() =>
         Promise.resolve(
-          makeSuccessResponse({ display_name: 'Stuart', real_name: 'Stuart M', name: 'stuart' })
+          makeSuccessResponse({ display_name: 'Alice', real_name: 'Alice M', name: 'alice' })
         )
       );
       const cache = new UserIdentityCache(mockClient);
 
       const result = await cache.resolve('U123');
 
-      expect(result).toBe('Stuart');
+      expect(result).toBe('Alice');
     });
 
     it('should return real_name when display_name is empty', async () => {
       const mockClient = makeMockClient(() =>
         Promise.resolve(
-          makeSuccessResponse({ display_name: '', real_name: 'Stuart M', name: 'stuart' })
+          makeSuccessResponse({ display_name: '', real_name: 'Alice M', name: 'alice' })
         )
       );
       const cache = new UserIdentityCache(mockClient);
 
       const result = await cache.resolve('U123');
 
-      expect(result).toBe('Stuart M');
+      expect(result).toBe('Alice M');
     });
 
     it('should return name when display_name and real_name are empty', async () => {
       const mockClient = makeMockClient(() =>
         Promise.resolve(
-          makeSuccessResponse({ display_name: '', real_name: '', name: 'stuart' })
+          makeSuccessResponse({ display_name: '', real_name: '', name: 'alice' })
         )
       );
       const cache = new UserIdentityCache(mockClient);
 
       const result = await cache.resolve('U123');
 
-      expect(result).toBe('stuart');
+      expect(result).toBe('alice');
     });
 
     it('should return userId when display_name, real_name are empty and name is missing', async () => {
@@ -116,7 +116,7 @@ describe('UserIdentityCache', () => {
   describe('Caching', () => {
     it('should use cached value on second resolve() call — users.info called once', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Stuart' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -130,7 +130,7 @@ describe('UserIdentityCache', () => {
   describe('TTL expiry', () => {
     it('should call users.info again after TTL expires', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Stuart' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
       );
       // 100ms TTL for testing
       const cache = new UserIdentityCache(mockClient, 100);
@@ -187,7 +187,7 @@ describe('UserIdentityCache', () => {
   describe('clear()', () => {
     it('should empty cache so next resolve() calls users.info again', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Stuart' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
       );
       const cache = new UserIdentityCache(mockClient);
 

@@ -89,19 +89,19 @@ describe('create command', () => {
       priority: 'medium',
       project_id: 1,
       assignee: null,
-      created_by: 'stuart',
+      created_by: 'alice',
       due_date: null,
       created_at: '2026-02-13T00:00:00Z',
       updated_at: '2026-02-13T00:00:00Z',
       tags: [],
     });
 
-    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'stuart']);
+    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'alice']);
 
     expect(createTask).toHaveBeenCalledWith({
       title: 'Test task',
       project_id: 1,
-      created_by: 'stuart',
+      created_by: 'alice',
       priority: 'medium',
     });
   });
@@ -116,7 +116,7 @@ describe('create command', () => {
       priority: 'high',
       project_id: 1,
       assignee: 'bob',
-      created_by: 'stuart',
+      created_by: 'alice',
       due_date: '2025-12-31T00:00:00Z',
       created_at: '2026-02-13T00:00:00Z',
       updated_at: '2026-02-13T00:00:00Z',
@@ -132,7 +132,7 @@ describe('create command', () => {
       '-p',
       '1',
       '-c',
-      'stuart',
+      'alice',
       '--priority',
       'high',
       '--assignee',
@@ -148,7 +148,7 @@ describe('create command', () => {
     expect(createTask).toHaveBeenCalledWith({
       title: 'Full task',
       project_id: 1,
-      created_by: 'stuart',
+      created_by: 'alice',
       priority: 'high',
       assignee: 'bob',
       due_date: '2025-12-31T00:00:00Z',
@@ -167,14 +167,14 @@ describe('create command', () => {
       priority: 'medium',
       project_id: 1,
       assignee: null,
-      created_by: 'stuart',
+      created_by: 'alice',
       due_date: null,
       created_at: '2026-02-13T00:00:00Z',
       updated_at: '2026-02-13T00:00:00Z',
       tags: [],
     });
 
-    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'stuart']);
+    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'alice']);
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('created successfully'));
   });
@@ -191,7 +191,7 @@ describe('create command', () => {
       '-p',
       '1',
       '-c',
-      'stuart',
+      'alice',
       '--priority',
       'invalid',
     ]);
@@ -212,7 +212,7 @@ describe('create command', () => {
       })
     );
 
-    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'stuart']);
+    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'alice']);
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -230,7 +230,7 @@ describe('create command', () => {
       priority: 'medium' as const,
       project_id: 1,
       assignee: null,
-      created_by: 'stuart',
+      created_by: 'alice',
       due_date: null,
       created_at: '2026-02-13T00:00:00Z',
       updated_at: '2026-02-13T00:00:00Z',
@@ -240,7 +240,7 @@ describe('create command', () => {
     vi.mocked(createTask).mockResolvedValue(mockTask);
 
     // Global options like --json go before subcommand name
-    await program.parseAsync(['node', 'test', '--json', 'create', '-t', 'JSON test task', '-p', '1', '-c', 'stuart']);
+    await program.parseAsync(['node', 'test', '--json', 'create', '-t', 'JSON test task', '-p', '1', '-c', 'alice']);
 
     expect(jsonOutput).toHaveBeenCalledWith({ task: mockTask }, { id: mockTask.id });
     // Should NOT show success message in JSON mode
@@ -263,14 +263,14 @@ describe('create command', () => {
       priority: 'medium',
       project_id: 1,
       assignee: null,
-      created_by: 'stuart',
+      created_by: 'alice',
       due_date: null,
       created_at: '2026-02-13T00:00:00Z',
       updated_at: '2026-02-13T00:00:00Z',
       tags: [],
     });
 
-    await program.parseAsync(['node', 'test', 'create', '-p', '1', '-c', 'stuart']);
+    await program.parseAsync(['node', 'test', 'create', '-p', '1', '-c', 'alice']);
 
     // Verify promptForMissing was called for title
     expect(promptForMissing).toHaveBeenCalledWith('title', undefined);

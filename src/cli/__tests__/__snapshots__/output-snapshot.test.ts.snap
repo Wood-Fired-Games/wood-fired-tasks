@@ -7,7 +7,7 @@ exports[`CLI output snapshots > comment-add > JSON mode emits the comment envelo
     "comment": {
       "id": 10,
       "task_id": 1,
-      "author": "stuart",
+      "author": "alice",
       "content": "Reproduced on iOS 17.4 — investigating.",
       "created_at": "2026-02-13T10:30:00Z"
     }
@@ -32,8 +32,8 @@ exports[`CLI output snapshots > create > JSON mode emits the created task envelo
       "status": "open",
       "priority": "high",
       "project_id": 1,
-      "assignee": "stuart",
-      "created_by": "stuart",
+      "assignee": "alice",
+      "created_by": "alice",
       "due_date": "2026-03-15T00:00:00Z",
       "created_at": "2026-02-13T10:30:00Z",
       "updated_at": "2026-02-13T10:30:00Z",
@@ -58,8 +58,8 @@ Title:       Fix login button on mobile
 Status:      open
 Priority:    high
 Project:     1
-Assignee:    stuart
-Created by:  stuart
+Assignee:    alice
+Created by:  alice
 Due date:    <LOCALE_DATETIME>
 Tags:        bug, mobile
 Created:     <LOCALE_DATETIME>
@@ -119,8 +119,8 @@ exports[`CLI output snapshots > list > JSON mode emits a parseable envelope 1`] 
       "status": "open",
       "priority": "high",
       "project_id": 1,
-      "assignee": "stuart",
-      "created_by": "stuart",
+      "assignee": "alice",
+      "created_by": "alice",
       "due_date": "2026-03-15T00:00:00Z",
       "created_at": "2026-02-13T10:30:00Z",
       "updated_at": "2026-02-13T10:30:00Z",
@@ -137,7 +137,7 @@ exports[`CLI output snapshots > list > JSON mode emits a parseable envelope 1`] 
       "priority": "medium",
       "project_id": 1,
       "assignee": "alice",
-      "created_by": "stuart",
+      "created_by": "alice",
       "due_date": null,
       "created_at": "2026-02-14T15:45:00Z",
       "updated_at": "2026-02-14T15:45:00Z",
@@ -172,7 +172,7 @@ exports[`CLI output snapshots > list > human mode renders a task table + count f
 "┌────┬────────────────────────────┬─────────────┬──────────┬──────────┬───────────┐
 │ ID │ Title                      │ Status      │ Priority │ Assignee │ Due Date  │
 ├────┼────────────────────────────┼─────────────┼──────────┼──────────┼───────────┤
-│ 1  │ Fix login button on mobile │ open        │ high     │ stuart   │ <LOCALE_DATE> │
+│ 1  │ Fix login button on mobile │ open        │ high     │ alice    │ <LOCALE_DATE> │
 ├────┼────────────────────────────┼─────────────┼──────────┼──────────┼───────────┤
 │ 2  │ Add dark mode toggle       │ in_progress │ medium   │ alice    │ -         │
 ├────┼────────────────────────────┼─────────────┼──────────┼──────────┼───────────┤
@@ -194,8 +194,8 @@ exports[`CLI output snapshots > my-work (list --assignee) > JSON mode emits filt
       "status": "open",
       "priority": "high",
       "project_id": 1,
-      "assignee": "stuart",
-      "created_by": "stuart",
+      "assignee": "alice",
+      "created_by": "alice",
       "due_date": "2026-03-15T00:00:00Z",
       "created_at": "2026-02-13T10:30:00Z",
       "updated_at": "2026-02-13T10:30:00Z",
@@ -216,7 +216,7 @@ exports[`CLI output snapshots > my-work (list --assignee) > human mode renders o
 "┌────┬────────────────────────────┬────────┬──────────┬──────────┬───────────┐
 │ ID │ Title                      │ Status │ Priority │ Assignee │ Due Date  │
 ├────┼────────────────────────────┼────────┼──────────┼──────────┼───────────┤
-│ 1  │ Fix login button on mobile │ open   │ high     │ stuart   │ <LOCALE_DATE> │
+│ 1  │ Fix login button on mobile │ open   │ high     │ alice    │ <LOCALE_DATE> │
 └────┴────────────────────────────┴────────┴──────────┴──────────┴───────────┘
 
 1 task(s) found
@@ -274,7 +274,7 @@ exports[`CLI output snapshots > search (list --search) > JSON mode emits matchin
       "priority": "medium",
       "project_id": 1,
       "assignee": "alice",
-      "created_by": "stuart",
+      "created_by": "alice",
       "due_date": null,
       "created_at": "2026-02-14T15:45:00Z",
       "updated_at": "2026-02-14T15:45:00Z",
@@ -319,7 +319,7 @@ exports[`CLI output snapshots > show > JSON mode emits a single-task envelope 1`
       "priority": "medium",
       "project_id": 1,
       "assignee": "alice",
-      "created_by": "stuart",
+      "created_by": "alice",
       "due_date": null,
       "created_at": "2026-02-14T15:45:00Z",
       "updated_at": "2026-02-14T15:45:00Z",
@@ -340,7 +340,7 @@ Status:      in_progress
 Priority:    medium
 Project:     1
 Assignee:    alice
-Created by:  stuart
+Created by:  alice
 Due date:    -
 Tags:        feature, ui
 Created:     <LOCALE_DATETIME>

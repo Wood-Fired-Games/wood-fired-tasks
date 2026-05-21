@@ -55,7 +55,7 @@ describe('claim command', () => {
     priority: 'high',
     project_id: 1,
     assignee: 'agent-1',
-    created_by: 'stuart',
+    created_by: 'alice',
     due_date: null,
     created_at: '2026-02-13T00:00:00Z',
     updated_at: '2026-02-14T10:00:00Z',

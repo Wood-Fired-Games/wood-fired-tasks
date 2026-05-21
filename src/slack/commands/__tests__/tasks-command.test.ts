@@ -36,7 +36,7 @@ function makeMockTask(overrides: Record<string, unknown> = {}) {
     parent_task_id: null,
     estimated_minutes: null,
     assignee: null,
-    created_by: 'Stuart',
+    created_by: 'Alice',
     due_date: null,
     created_at: '2026-02-18T00:00:00Z',
     updated_at: '2026-02-18T00:00:00Z',
@@ -51,7 +51,7 @@ function makeMockComment(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
     task_id: 42,
-    author: 'Stuart',
+    author: 'Alice',
     content: 'This is a comment',
     created_at: '2026-02-18T00:00:00Z',
     updated_at: null,
@@ -88,7 +88,7 @@ function makeMockServices(): Services {
       createTask: vi.fn().mockReturnValue(makeMockTask()),
       updateTask: vi.fn().mockReturnValue(makeMockTask()),
       deleteTask: vi.fn().mockReturnValue(undefined),
-      claimTask: vi.fn().mockReturnValue(makeMockTask({ assignee: 'Stuart', claimed_at: '2026-02-18T00:00:00Z' })),
+      claimTask: vi.fn().mockReturnValue(makeMockTask({ assignee: 'Alice', claimed_at: '2026-02-18T00:00:00Z' })),
       getSubtasks: vi.fn().mockReturnValue([]),
       countTasks: vi.fn().mockReturnValue(42),
       searchTasks: vi.fn().mockReturnValue([]),
@@ -108,7 +108,7 @@ function makeMockServices(): Services {
     } as unknown as Services['dependencyService'],
     commentService: {
       getComments: vi.fn().mockResolvedValue([]),
-      addComment: vi.fn().mockReturnValue({ id: 7, task_id: 42, author: 'Stuart', content: 'Test', created_at: '2026-02-18T00:00:00Z', updated_at: null }),
+      addComment: vi.fn().mockReturnValue({ id: 7, task_id: 42, author: 'Alice', content: 'Test', created_at: '2026-02-18T00:00:00Z', updated_at: null }),
       deleteComment: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['commentService'],
   };
@@ -116,7 +116,7 @@ function makeMockServices(): Services {
 
 function makeMockIdentityCache() {
   return {
-    resolve: vi.fn().mockResolvedValue('Stuart'),
+    resolve: vi.fn().mockResolvedValue('Alice'),
     clear: vi.fn(),
   } as unknown as InstanceType<typeof import('../../../slack/user-identity.js').UserIdentityCache>;
 }
@@ -448,7 +448,7 @@ describe('registerTasksCommand', () => {
         expect.objectContaining({
           title: 'Fix login bug',
           project_id: 3,
-          created_by: 'Stuart',
+          created_by: 'Alice',
         })
       );
       expect(args.respond).toHaveBeenCalledOnce();
@@ -886,7 +886,7 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
       expect(services.commentService.addComment).toHaveBeenCalledWith(
-        expect.objectContaining({ task_id: 42, content: 'This is a great comment', author: 'Stuart' })
+        expect.objectContaining({ task_id: 42, content: 'This is a great comment', author: 'Alice' })
       );
       expect(args.respond).toHaveBeenCalledOnce();
       const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
@@ -1423,7 +1423,7 @@ describe('registerTasksCommand', () => {
 
       expect(args.ack).toHaveBeenCalledOnce();
       expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
-      expect(services.taskService.claimTask).toHaveBeenCalledWith(42, 'Stuart');
+      expect(services.taskService.claimTask).toHaveBeenCalledWith(42, 'Alice');
       expect(args.respond).toHaveBeenCalledOnce();
     });
 

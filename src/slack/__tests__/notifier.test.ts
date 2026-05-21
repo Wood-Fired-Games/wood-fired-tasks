@@ -88,7 +88,7 @@ function makeTaskEvent(overrides: Record<string, unknown> = {}): TaskEvent {
       parent_task_id: null,
       estimated_minutes: null,
       assignee: null,
-      created_by: 'Stuart',
+      created_by: 'Alice',
       due_date: null,
       created_at: '2026-02-18T00:00:00Z',
       updated_at: '2026-02-18T00:00:00Z',
@@ -98,7 +98,7 @@ function makeTaskEvent(overrides: Record<string, unknown> = {}): TaskEvent {
       tags: [],
       ...overrides,
     },
-    metadata: { source: 'user', actor: 'Stuart' },
+    metadata: { source: 'user', actor: 'Alice' },
   } as TaskEvent;
 }
 
