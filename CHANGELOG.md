@@ -1,0 +1,202 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Each release groups changes under `Added`, `Changed`, `Fixed`, and `Security`.
+Security-relevant items (auth, secret handling, network exposure, dependency
+vulnerabilities, supply-chain pinning) are always called out under `Security`.
+
+## [Unreleased]
+
+No changes since v1.8.
+
+## [v1.8] - 2026-05-20
+
+Pre-OSS hardening — test coverage, mutation testing, and performance regression
+gates added as part of the open-source audit.
+
+### Added
+- Vitest `bench` suite for hot-path perf regression (task 212).
+- v8 coverage reporter + CI threshold gate (task 199).
+- Stryker mutation score enforcement in CI (task 203).
+- Cross-platform install-script smoke tests + linters (task 202).
+- OpenAPI snapshot for contract drift detection (task 207).
+
+### Changed
+- Expanded fast-check property tests over service invariants (tasks 200, 209).
+- CLI snapshot + real-binary end-to-end tests (tasks 208, 211).
+- Migrations verified via up→down→up schema snapshots (task 201).
+
+### Fixed
+- `install.sh` `TEMP_FILES` expansion under `set -u` on bash 3.2.
+- CI shellcheck scoped to `install.sh`; tests excluded from `tsc` build.
+- SSE fan-out and Slack request-signing regression coverage (tasks 205, 206).
+
+### Security
+- Generalized personal/internal examples in docs and tests pre-OSS.
+
+## [v1.7] - 2026-05-20
+
+Security audit remediation release — concentrated mitigation of pre-OSS
+security review findings.
+
+### Changed
+- Default HTTP bind moved to `127.0.0.1` (task 188).
+- `limit` / `offset` pagination on list endpoints (task 192).
+
+### Fixed
+- DELETE comment validates task ownership (task 191).
+- Slack `subscribe` event types validated against allowlist (task 198).
+
+### Security
+- Untracked `.planning/` and internal agent dirs (task 186 prep).
+- Documented `.env` handling, scrubbed working-tree secrets (task 187).
+- Admin trust model documented + per-key labels (task 189).
+- Removed live API key from events MCP resource markdown (task 196).
+- Removed hardcoded internal LAN IP (task 190).
+- SSE map stores hashed API-key fingerprint, not raw key (task 194).
+- `install.sh` escapes API keys via `jq -n --arg` (task 195).
+- All GitHub Actions pinned to commit SHAs (task 197).
+
+## [v1.6] - 2026-05-20
+
+First wave of security-audit fixes plus client-package / remote-MCP work.
+
+### Added
+- Remote MCP proxy server backed by the REST API for thin clients (quick-6).
+- Client package with `setup.bat`/`uninstall.*` scripts and bundled CLI.
+- `updated_after` / `updated_before` filters on `GET /tasks` (task 100).
+- Completion-report dashboard (task 97).
+
+### Changed
+- `list_tasks` MCP response trimmed to compact summaries by default.
+- Migration name normalization prevents `.ts` / `.js` mismatch crashes.
+
+### Fixed
+- Startup retries for transient SQLite errors in MCP entry point.
+- Migrations serialized with exclusive SQLite transaction lock (quick-5).
+- `SlackService` logger type widened to `FastifyBaseLogger`.
+- Client install handles spaces in paths and PowerShell 5.1.
+
+### Security
+- Reduced unauthenticated public surface, bounded SSE connections (task 185).
+- Hardened API-key auth against weak keys + brute force (task 182).
+- Upgraded vulnerable prod deps + CI `npm audit` gate (task 181).
+- Validated FTS search input, mapped syntax errors to 400 (task 183).
+- Secured API-key handling across all installer scripts (task 184).
+
+## [v1.5] - 2026-02-18
+
+Slack integration milestone.
+
+### Added
+- Slack Bolt integration (`SlackService`) with channel subscriptions and
+  `subscribe`/`unsubscribe` command surface (phases 23–26).
+- `tasks` slash-command router with task/project/dep/comment/subtask/health
+  subcommands and Block Kit formatters.
+- `UserIdentityCache` for Slack user ID → display name resolution.
+- `SlackNotifier` subscribed to EventBus with retry and per-channel error
+  isolation.
+
+### Changed
+- Slack token config validated both-or-neither via Zod.
+
+## [v1.4] - 2026-02-17
+
+Reliability, UX polish, and CI quality gates.
+
+### Added
+- `tasks doctor`, `tasks stats`, `tasks db-check` diagnostics (phase 19).
+- `tasks backup` CLI command + `backlogged` status (phase 18).
+- Property-based tests for `CycleDetector` and status transitions (phase 20).
+- Stryker mutation testing; knip unused-dep detection; GitHub Actions CI.
+- Request IDs, MCP `traceId` logging, reduced SSE buffer.
+
+### Changed
+- Phase 17 Core Reliability work landed across 4 plans.
+- Phase 21 UX polish: spinner, color utils, shell completions.
+
+### Fixed
+- Sweep no longer reverts `done`/`closed` tasks (quick-4).
+- CLI `apiRequest` handles HTTP 204; SSE returns 400 on missing `Accept`.
+
+### Security
+- systemd unit gains resource limits + security hardening (phase 22).
+
+## [v1.3] - 2026-02-14
+
+Workflow engine, atomic task-claim protocol, and SSE event stream.
+
+### Added
+- `EventBus` with generics + Task/Project CRUD emissions (phase 14).
+- `GET /api/v1/events` SSE endpoint, `SSEManager` with buffering.
+- Atomic claim protocol (CAS + `BEGIN IMMEDIATE`), `claim_task` MCP tool,
+  `tasks claim` CLI, stale-claim auto-release service (phase 15).
+- `WorkflowEngine` parent auto-complete with cascade depth + dependency
+  auto-unblock (phase 16).
+
+### Changed
+- `@fastify/sse` API usage corrected for v0.4.0.
+
+## [v1.2] - 2026-02-14
+
+Installers, Claude Code skills, and documentation.
+
+### Added
+- Bash and PowerShell installer scripts (phase 13).
+- Claude Code skill files: `create-task`, `log-bug`, `my-work`, `show-task`,
+  `pick-up`, `search`, `add-comment`, `done`, `blocked`, `project-status`
+  (phase 12).
+- `README.md`, `docs/SETUP.md`, `docs/API.md`, `docs/CLI.md`, `docs/MCP.md`.
+- E2E regression suite and skill-file validation tests.
+
+### Fixed
+- Redirected Umzug logger to stderr so MCP stdio output stays clean.
+
+## [v1.1] - 2026-02-13
+
+CLI expansion, MCP tool surface, JSON mode.
+
+### Added
+- Project, dependency, comment, subtask, and health CLI commands
+  (phases 08-01 through 08-05).
+- MCP project tools, `list_subtasks` task tool, and `check_health` health
+  tool (phase 09).
+- Global `--json`, `--no-input`, `--force` flags and `@clack/prompts`
+  interactive prompts (phase 07).
+- `NO_COLOR` environment variable support.
+
+### Fixed
+- HTTP client only sends `Content-Type` when the request has a body.
+- `dotenv` stdout contamination suppressed so JSON output stays clean.
+
+## [v1.0] - 2026-02-13
+
+Initial tagged release — REST API, CLI, MCP server, SQLite backing store,
+and the task/project/dependency/comment/subtask domain model.
+
+### Added
+- Fastify REST API: task + project CRUD, auth, error handler, health,
+  OpenAPI docs (phase 02).
+- CLI with API client + task `create`/`list`/`update`/`delete`/`show`
+  commands (phase 03).
+- MCP server with task CRUD tools + error conversion (phase 04).
+- systemd service unit + production entry point with graceful shutdown
+  (phase 05-01).
+- SQLite backup/restore scripts with cron schedule (phase 05-02).
+- Task hierarchy (subtasks), dependency service, comments, time estimates
+  (phase 06).
+
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.8...HEAD
+[v1.8]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.7...v1.8
+[v1.7]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.6...v1.7
+[v1.6]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.5...v1.6
+[v1.5]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.4...v1.5
+[v1.4]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.3...v1.4
+[v1.3]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.2...v1.3
+[v1.2]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.1...v1.2
+[v1.1]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.0...v1.1
+[v1.0]: https://github.com/Wood-Fired-Games/wood-fired-bugs/releases/tag/v1.0
