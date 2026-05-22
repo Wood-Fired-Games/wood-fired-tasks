@@ -11,7 +11,68 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-No changes since v1.8.
+OSS-launch readiness and CI sharding work landed since v1.11.
+
+### Added
+- Tool-count drift regression test for public docs (task 260).
+- `.env.example` aligned with documented config (task 259).
+
+### Changed
+- License relicensed from ISC to MIT for OSS launch (task 253).
+- SECURITY.md rewritten for the actual TypeScript/Fastify stack (task 254).
+- OSS package metadata + npm `files` allowlist (task 255).
+- Installer split into local vs. remote MCP paths; unused API key flag dropped (task 258).
+- Stryker mutation tests sharded across 4 parallel CI jobs; threshold raised to 75; workflow timeout extended (tasks 250, 252).
+
+### Fixed
+- Test runs cleanly clean up `task.status_changed` listeners between runs (task 257).
+
+## [v1.11] - 2026-05-21
+
+Coverage ratchet, CLI bare-spot tests, and workflow engine cascade-rollback fix.
+
+### Added
+- Vitest coverage thresholds ratcheted past 80/80/70 (task 249).
+- Test coverage for remote MCP rest-client + register-tools (task 249).
+- Test coverage for CLI bare-spot commands `completed`/`completions`/`db-check`/`doctor` (task 249).
+- Test coverage for CLI interactive prompts (task 249).
+- Test coverage for CLI formatters + JSON output (task 249).
+
+### Fixed
+- Workflow engine no longer leaks phantom events during cascade rollback (task 244).
+
+## [v1.10] - 2026-05-21
+
+Pagination envelope, schema-derived CLI types, and a new MCP completion-report tool.
+
+### Added
+- `completion_report` tool on the remote MCP server (task 245).
+
+### Changed
+- List endpoints documented with paginated envelope shape (task 248).
+- CLI `TaskResponse` derived from the server Zod schema instead of being hand-maintained (task 246).
+- CLI shell-completions command list derived from the Commander registry (task 247).
+
+### Fixed
+- Dropped duplicate `metadata.range` field in `tasks completed --json` output.
+
+## [v1.9] - 2026-05-20
+
+Documentation sweep for OSS launch — README, CONTRIBUTING, CHANGELOG, API/CLI/MCP docs, and de-personalized fixtures/scripts.
+
+### Added
+- `CHANGELOG.md` with backfill of recent security-relevant changes (task 217).
+- GitHub issue and PR templates (task 232).
+- CONTRIBUTING.md expanded for external contributors (task 229).
+
+### Changed
+- README badges, refreshed test counts, canonical URLs, branding sweep (task 238).
+- SETUP, Slack, data model, env vars, and architecture docs expanded (task 214).
+- MCP docs corrected: tool count, remote server, events resource (task 220).
+- CLI docs document 6 previously-missing commands; fixed `claim` JSON shape (task 223).
+- API docs corrected: endpoint surface, `/health` & swagger, env, filters (task 227).
+- Test fixtures de-personalized with generic names (task 237).
+- Deploy scripts de-personalized via `WFB_SERVICE_USER` (task 236).
 
 ## [v1.8] - 2026-05-20
 
@@ -190,7 +251,10 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.8...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.11...HEAD
+[v1.11]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.10...v1.11
+[v1.10]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.9...v1.10
+[v1.9]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.8...v1.9
 [v1.8]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.7...v1.8
 [v1.7]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.6...v1.7
 [v1.6]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.5...v1.6
