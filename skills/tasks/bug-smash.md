@@ -17,16 +17,16 @@ The loop is project-agnostic. Validation commands (`build`, `test`, `smoke`) and
 
 ## 1. Argument Parsing
 
-Parse `$ARGUMENTS`:
+Parse `$ARGUMENTS` — or, when invoked via natural language ("run bug-smash on project X"), extract the equivalent fields from the request:
 
-- `[project-name]` — case-insensitive partial match against project names.
-- `--max-tasks N` — optional. Stop the loop after N successful task closures and check in with the user before continuing. Default is **3**. Pass `--max-tasks 0` to loop until the backlog is empty (only do this if the user explicitly asks for unattended drain).
+- `[project-name-or-id]` — if the value starts with `#` or is a bare integer, treat it as the project ID and skip the name match. Otherwise, do a case-insensitive partial match against project names.
+- `--max-tasks N` — optional. Stop the loop after N successful task closures and check in with the user before continuing. Default is **3**. Pass `--max-tasks 0` to loop until the backlog is empty (only do this if the user explicitly asks for unattended drain). If the user invokes via natural language and doesn't state a budget, default to **3** but propose an adjustment in Section 2e if the backlog looks epic-sized.
 
-**If no project name is provided:** ask the user. Do not pick one silently.
+**If no project name/ID is provided:** ask the user. Do not pick one silently.
 
 ### Resolve Project ID
 
-Call `wood-fired-bugs:list_projects`, match the argument, store `project_id` + `project_name`. If no match, list available projects and stop.
+Call `wood-fired-bugs:list_projects`, match the argument (by ID if numeric/`#`-prefixed, else by name), store `project_id` + `project_name`. If no match, list available projects and stop.
 
 ---
 
@@ -43,6 +43,8 @@ Look for one or more spec docs that the tasks reference:
 - ADRs / PRDs / SPECs under `docs/`, `.planning/`, or similar.
 
 **Read these in full once.** They are the source of truth subagents will need excerpts from. Keep mental notes — section numbers, line ranges, acceptance-criteria patterns — so you can quote them in subagent briefs without re-reading.
+
+If the loop is non-trivial (≥ 2 tasks) and the spec doc is large (>200 lines), externalize the mental notes into a short cache file at the repo root (e.g. `.bug-smash-spec-excerpts.md`) with one entry per likely-referenced section: doc path + line range + 1-line summary + which task IDs probably need it. Later loop iterations pull from the cache instead of re-deriving section/line refs from memory. Add the cache path to `.gitignore` if not already covered.
 
 ### 2b. Discover validation commands
 
@@ -70,6 +72,8 @@ Record this matrix as a short memo. If the loop is non-trivial (≥ 3 tasks), **
 
 **Before touching anything, run `<build>` and `<test>`** and confirm they pass on the unchanged tree. If they don't, the loop must not start — pre-existing breakage will be attributed to the first task and stall everything.
 
+**Trust the exit code, not the summarizer prose.** `bash-summarize` will sometimes prominently flag stderr noise from tests that exercise error paths (e.g. `error: required option '-a, --assignee <name>' not specified` from a CLI argparse fixture). If the exit code is 0 *and* the headline test count matches expectation, the suite is green regardless of how scary the summary reads. Re-run with raw output only if the headline numbers are missing or contradict the exit code.
+
 If the suite is already red:
 
 1. Surface the failure to the user: list each failing test, its file, and a one-line guess at cause.
@@ -89,7 +93,11 @@ Scan the open task list for signals that tasks are **epic-sized rather than bug-
 - Tags include `roadmap`, `epic`, `milestone`, `phase`.
 - `parent_task_id` is null but the task title sounds like a workstream ("Add ESLint and formatter quality gate", "Strengthen migration safety", etc.).
 
-If most open tasks fit those signals, surface this to the user before starting:
+If most open tasks fit those signals, surface this to the user before starting — *unless* the project name or description itself contains the words `roadmap`, `phase`, or `epic` (the user already knows the shape). In the self-identifying case, skip the "are you sure?" framing and ask only for the budget number:
+
+> Project self-identifies as a roadmap. Recommend `--max-tasks=1` (one epic-sized commit per run, with a checkpoint between). Confirm budget (1, 2, or 3) and I'll proceed.
+
+In the non-self-identifying case (you discovered the epic shape but the user didn't telegraph it), use the longer framing:
 
 > The backlog looks epic-sized (e.g. roadmap phases) rather than bug-sized. The smash loop will still work, but each iteration will spawn a long-running subagent and produce a substantial commit. Confirm `--max-tasks N` is set sensibly (recommend 1–3 for epics, 5–10 for true bugs) and that you want me to proceed.
 
@@ -138,7 +146,17 @@ This is the load-bearing step. **Do not implement the fix yourself**, no matter 
 - Each iteration is independently auditable.
 - The orchestrator remains the single source of truth for what passed/failed.
 
-Use the `Agent` tool with `subagent_type=general-purpose` (or a more specialised agent type if one fits). Brief template — adapt to the task:
+Use the `Agent` tool. Picking the agent type:
+
+| Stack signal | Subagent |
+|--------------|----------|
+| `.csproj`, `.sln`, `*.cs` files | `dotnet-claude-kit:*` (pick by task shape — `code-review`, `test-engineer`, `build-error-resolver`, etc.) |
+| TS/JS/Node/Python/Go/Rust/anything else | `general-purpose` |
+| Read-only investigation (no edits) | `Explore` |
+
+If unsure, `general-purpose` is always safe. Don't over-specialise — the brief is the load-bearing part, not the agent type.
+
+Brief template — adapt to the task. Brief size should scale with codebase quality: if you know the repo is already well-typed and well-tested, prefer thinner briefs (keep the constraint list intact but drop worked-example idioms); if the repo is messy, beef up the "decisions in the brief" and "preferred idioms" sections.
 
 ```
 You are implementing wood-fired-bugs task #<id> ("<title>") from project "<project_name>".
@@ -205,11 +223,12 @@ Do NOT commit. Do NOT push. Do NOT modify the bugs database. The orchestrator ow
 
 When the subagent returns its summary:
 
-1. `git status` — confirm only the files the subagent named were modified.
+1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it.
 2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted).
-3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` to keep raw output out of context.
-4. If validation now fails, send the subagent (or a new one) back with the failure output and a tight diagnostic prompt. Do *not* try to fix it inline in the orchestrator context — that defeats the pattern.
-5. If validation passes, proceed.
+3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` to keep raw output out of context. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path.
+4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
+5. If validation now fails, send the subagent (or a new one) back with the failure output and a tight diagnostic prompt. Do *not* try to fix it inline in the orchestrator context — that defeats the pattern.
+6. If validation passes, proceed.
 
 If after 2 round-trips the task isn't validating green, **stop the loop and ask the user**. Don't burn through the backlog with half-broken commits.
 
@@ -328,6 +347,7 @@ After 2–3 honest subagent round-trips, set the task to `blocked` with a commen
 - **One task at a time.** Plan → dispatch → verify → commit → close → repeat. No parallel task dispatch within a single project unless tasks are explicitly independent (rare).
 - **Validation runs in the orchestrator, not just the subagent.** Re-run; never trust reported numbers.
 - **Commit per task.** One task = one commit (plus an optional pre-loop housekeeping commit).
+- **Epic-sized tasks → largest coherent slice, defer the rest.** When a task's own acceptance criteria say "incrementally" or "one X per PR" and span more work than fits in a single commit, the orchestrator picks the largest coherent slice that lands cleanly in one commit. Document what was deferred in the close-out comment so the user can promote follow-on tasks. Do *not* let an epic-sized task block the loop, and do *not* split into multiple commits within one task closure.
 - **Push after each commit.** Use `-u <remote> <branch>` on the first push if needed.
 - **Close duplicates** with a back-reference.
 - **Don't create new tasks during the loop.** Note discoveries in comments on related tasks; the user promotes them later.
