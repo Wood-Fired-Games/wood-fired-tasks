@@ -517,7 +517,7 @@ variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#envi
 # Development mode with hot reload
 npm run dev
 
-# Run tests (1084 tests across 87 files)
+# Run tests (1300 tests across 101 files)
 npm test
 
 # Watch mode for tests
@@ -547,7 +547,7 @@ SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug.
 
 ### Testing
 
-1084 tests across 87 test files covering:
+1300 tests across 101 test files covering:
 - Service layer unit tests
 - API route integration tests (all endpoints)
 - MCP tool tests (all tools)
@@ -556,6 +556,16 @@ SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug.
 - Claim protocol tests (including 20-agent concurrency)
 - Workflow engine tests (auto-complete, auto-unblock, cascade depth)
 - Skill file validation tests
+
+### Code Quality Roadmap
+
+The current TypeScript service quality baseline and the prioritized
+uplift roadmap (lint/format gate, stricter compiler flags, architecture
+guardrails, migration safety, CI/release automation) live in
+[docs/CODE_QUALITY_ROADMAP.md](docs/CODE_QUALITY_ROADMAP.md). It is the
+source of truth for the `Code Quality Uplift Roadmap` project tracked
+in the bugs database and should be linked from future PR/release
+quality checklist work.
 
 ## Integrations
 
