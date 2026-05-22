@@ -218,11 +218,57 @@ Pass condition: within the first 3 reads after `AGENTS.md`, the agent opens `doc
 
 All five probes pass without the agent reading any file outside the committed repo, without consulting any task tracker, and without any chat history beyond the probe prompt itself.
 
-## 8. Relationship to existing docs
+## 8. Recommended read paths
+
+One mini-table per intent. Each path is capped at the smallest useful set of files (≤ 5). Files marked `(coming soon)` are reserved by the contract but not yet on disk; skip them if absent.
+
+| Intent | Read in order |
+|---|---|
+| API change (REST routes) | `AGENTS.md` → `docs/AGENT_CONTEXT.md` → `docs/API.md` → `src/api/routes/<resource>/` → `src/api/__tests__/` |
+| MCP tool change | `AGENTS.md` → `docs/MCP.md` → `src/mcp/tools/` → `src/mcp/__tests__/` → `docs/INTERFACES.md` (coming soon) |
+| CLI subcommand change | `AGENTS.md` → `docs/CLI.md` → `src/cli/commands/` → `src/cli/__tests__/` |
+| DB schema / migration | `AGENTS.md` → `src/schemas/` → `src/db/migrations/` → `src/db/migrate.ts` → `src/db/__tests__/` |
+| Slack change | `AGENTS.md` → `docs/SLACK.md` → `src/slack/` → `slack-app-manifest.yml` |
+| Test-only fix | failing test file → unit under test → `vitest.config.ts` → `src/<surface>/__tests__/` (sibling pattern) |
+| Docs / agent-context change | `docs/AGENT_CONTEXT.md` → `AGENTS.md` → `.agent-context.json` → `scripts/agent-context/manifest.ts` |
+| Release / packaging change | `docs/RELEASE.md` → `CHANGELOG.md` → `package.json` → `.github/workflows/` |
+
+When `docs/NAVIGATION.md` lands it will supersede this table for finer-grained, per-surface recipes; the table above remains the minimum-useful map.
+
+## 9. Glossary of repo-specific terms
+
+Repo-specific terms. Definitions are extractive (read the source if you need more); one line each.
+
+| Term | Definition |
+|---|---|
+| **task** | Unit of work tracked in the `tasks` table; owns title, status, project_id, optional parent_task_id, assignee, tags. |
+| **project** | Container for tasks (`projects` table). A task belongs to exactly one project. |
+| **subtask** | A task with a non-null `parent_task_id`; parent auto-completes when all subtasks are done. |
+| **dependency** | A directed `task → task` edge in `task_dependencies`; blocks dependent until predecessor is done. |
+| **comment** | Free-text annotation on a task (`comments` table); append-only from the API surface. |
+| **claim** | Atomic acquire+release of a task via the claim endpoint; uses optimistic locking and the 24h idempotency cache. |
+| **status** | One of six legal values: `open`, `in_progress`, `blocked`, `done`, `closed`, `backlogged`. |
+| **local MCP** | In-process stdio MCP server (`npm run mcp:dev`); talks straight to the shared SQLite file. |
+| **remote MCP** | HTTP MCP server (`npm run mcp:remote`); proxies tool calls into the REST API over the network. |
+| **service** | Shared business-logic layer under `src/services/`; every surface (API, MCP, CLI, Slack) calls services, never repositories. |
+| **repository** | SQL access layer under `src/repositories/`; the only code that talks to better-sqlite3 directly. |
+| **schema** | Zod schemas in `src/schemas/`; the single validation source of truth for every surface. |
+| **migration** | A file under `src/db/migrations/` run by umzug; named with a monotonic numeric prefix. |
+| **event** | In-process event-bus payload; types listed in `src/events/types.ts` (e.g. `task.created`, `task.status_changed`, `project.deleted`). |
+| **WorkflowEngine** | Service that cascades parent task completion and auto-unblocks dependents when their predecessors finish. |
+| **idempotency** | 24h replay cache keyed by `Idempotency-Key` header; applied today only on the claim endpoint. |
+| **SSE** | Server-Sent Events stream at `GET /api/v1/events`; long-lived per-key/per-IP connection capped by `SSE_MAX_CONNECTIONS_*`. |
+| **API key** | Server env var is `API_KEYS` (plural, comma-separated); CLI env var is `API_KEY` (singular). Both surfaces send the same header: `X-API-Key`. |
+
+## 10. Source of truth
+
+This document is the **source of truth for agent onboarding**. Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`, any future `.<vendor>/`) are **adapters only** — they MUST point back here and MUST NOT carry unique project facts. Any divergence between this contract and the on-disk files (missing canonical file, oversized doc, vendor file with unique facts, stale read paths) is a freshness bug worth filing. See §6 for the full vendor-neutrality boundary rules.
+
+## 11. Relationship to existing docs
 
 This contract does not rewrite or supersede the existing deep docs. `docs/API.md`, `docs/MCP.md`, `docs/CLI.md`, `docs/SETUP.md`, `docs/SLACK.md`, `docs/RELEASE.md`, `docs/CODE_QUALITY_ROADMAP.md`, `CONTRIBUTING.md`, and `README.md` remain authoritative for their topics. The new agent-facing files (`AGENTS.md`, `docs/REPO_MAP.md`, `docs/ARCHITECTURE.md`, `docs/WORKFLOWS.md`, `docs/INTERFACES.md`, `docs/NAVIGATION.md`, `.agent-context.json`) add a compact, navigable top layer; they link down to the deep docs rather than duplicate them.
 
-## 9. Change control
+## 12. Change control
 
 Changes to this contract require:
 
