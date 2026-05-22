@@ -4,11 +4,19 @@
  *
  * Fails with a non-zero exit code if:
  *   1. Any "present" entry references a path that doesn't exist on disk.
- *   2. Any "present" entry exceeds its `line_budget`.
+ *   2. Any "present" entry exceeds its `line_budget` (failure message
+ *      includes the approximate token estimate so contributors can see
+ *      how far over the "few tokens as possible" target they are).
  *   3. Any "present" entry lacks an `Owner:` line in the first 3 lines
  *      (skipped for files in OWNER_LINE_EXEMPT, e.g. README.md, SECURITY.md).
  *   4. The on-disk `.agent-context.json` differs from a freshly generated
  *      manifest (other than the `_generated.generated_at` timestamp).
+ *   5. Any internal markdown link in a "present" `.md` file points at a
+ *      relative path that does not exist on disk.
+ *
+ * This script reads only files inside the repository (.md sources, the
+ * committed .agent-context.json, and the in-process manifest.ts source).
+ * It NEVER opens data/*.db, .env, ~/.claude.json, or any HTTP endpoint.
  *
  * Usage:
  *   npm run agent-context:check
@@ -21,8 +29,10 @@ import {
   type AgentContextManifest,
   MANIFEST_PATH,
   OWNER_LINE_EXEMPT,
+  approxTokensForLines,
   buildManifest,
   findRepoRoot,
+  validateInternalLinks,
 } from './manifest.js';
 
 interface CheckResult {
@@ -59,8 +69,9 @@ export function runChecks(repoRoot: string): CheckResult {
     }
 
     if (entry.actual_lines > entry.line_budget) {
+      const actualTokens = approxTokensForLines(entry.actual_lines);
       errors.push(
-        `File "${entry.path}" exceeds its line budget: ${entry.actual_lines} > ${entry.line_budget}.`,
+        `File "${entry.path}" exceeds its line budget: ${entry.actual_lines} > ${entry.line_budget} (~${actualTokens} tokens vs ~${entry.approx_token_budget} budget).`,
       );
     }
 
@@ -71,6 +82,10 @@ export function runChecks(repoRoot: string): CheckResult {
         );
       }
     }
+  }
+
+  for (const linkErr of validateInternalLinks(repoRoot)) {
+    errors.push(linkErr.message);
   }
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);
