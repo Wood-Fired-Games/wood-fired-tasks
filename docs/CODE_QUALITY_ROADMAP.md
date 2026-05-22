@@ -440,6 +440,34 @@ Migration review checklist:
 - Does the down migration actually restore the previous schema/data contract?
 - Is there a backup/restore note for risky changes?
 
+Status:
+
+- **PR template + release-doc additions: landed in task #268.** The PR
+  template gained a "Migration changes" section mirroring the checklist
+  above; `docs/RELEASE.md` gained a "Migration expectations" section
+  covering transactionality, backfills, forward-only policy, and operator
+  backup/restore notes.
+- **Migration audit (task #268):**
+
+  | Migration                          | Kind                       | Targeted test                                |
+  | ---------------------------------- | -------------------------- | -------------------------------------------- |
+  | 001-initial-schema                 | schema-only                | round-trip snapshot only (sufficient)        |
+  | 002-task-hierarchy-and-dependencies| schema-only                | round-trip snapshot only (sufficient)        |
+  | 003-comments-and-estimates         | schema-only                | round-trip snapshot only (sufficient)        |
+  | 004-claim-protocol                 | data-semantic (DEFAULT backfill of `version=1`, nullable `claimed_at`) | **added in #268** (`migration-004.test.ts`)  |
+  | 005-backlogged-status              | data-semantic (table rebuild + copy) | present (`migration-005.test.ts`)           |
+  | 006-slack-channel-subscriptions    | schema-only                | present (`migration-006.test.ts`)            |
+  | 007-completed-at                   | data-semantic (`UPDATE` backfill) | present (`migration-007.test.ts`)           |
+
+- **SQLite row mapping: largely covered by task #266.**
+  `src/repositories/row-mapper.ts` funnels every nullable/date/tag-bearing
+  read through `mapRow` / `mapRows`. The remaining ad-hoc casts in
+  `src/repositories/*` are limited to `info.lastInsertRowid as number`,
+  which is the better-sqlite3 return-type boundary rather than a row-shape
+  cast. Any new repository method touching nullable/date/tag columns must
+  use the helper; direct `stmt.get(...) as Row` should be reviewed as an
+  exception (called out in `docs/RELEASE.md` migration expectations).
+
 ### Phase 6: Improve CI, Dependency, And Release Automation
 
 Goal: make the documented release quality floor executable.

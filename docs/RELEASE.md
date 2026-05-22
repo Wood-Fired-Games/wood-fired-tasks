@@ -45,6 +45,26 @@ file accidentally added to the publish set. The tarball should contain:
 If you see `src/`, `data/`, `.env*`, `.planning/`, test files, or anything
 unexpected, fix the `files` whitelist in `package.json` before publishing.
 
+## Migration expectations
+
+These are release-time gates for any release that includes a new `src/db/migrations/` file. They mirror the PR-template checklist but are stated as the operator-facing contract; cross-reference Phase 5 of `docs/CODE_QUALITY_ROADMAP.md`.
+
+- **Serialized flow.** All migrations run through Umzug with `BEGIN EXCLUSIVE`. New migrations must be registered there — never call ad-hoc `db.exec` from product code.
+- **Transactionality.** Every `up` and `down` body wraps schema and data changes in `db.transaction(...)`. Pragma toggles around table rebuilds (e.g. `foreign_keys = OFF`) live inside the same transaction so a failure rolls them back.
+- **Backfills.** Any backfill (`UPDATE`, `INSERT INTO ... SELECT`, `DEFAULT` on `NOT NULL` add-column) MUST be covered by a targeted test under `src/db/__tests__/migration-NNN.test.ts` that seeds pre-migration data, applies the migration, and asserts the post-state. Schema-only migrations are covered by the generic `migrations-roundtrip.test.ts` snapshot and need no per-file test.
+- **Down migrations.** Default expectation is a working `down` that restores the prior schema/data contract — verified by `migrations-roundtrip.test.ts`. Forward-only migrations are allowed for one-way data transforms only; they must:
+  1. Throw or no-op from `down` with a clear message, AND
+  2. Call this out in the commit body, AND
+  3. Add a one-line entry in this section explaining why the migration is forward-only and what operator action is required for rollback.
+- **Backup / restore.** Any migration that rewrites a table (e.g. migration 005), drops a column, or executes a non-trivial backfill needs an operator note here describing the recovery procedure (typically: stop the service, restore the SQLite file from the latest backup, redeploy the previous artefact).
+- **Row mapping.** New repository methods that touch nullable, date, or tag columns must funnel reads through `mapRow` / `mapRows` in `src/repositories/row-mapper.ts` (added in task #266). Direct `stmt.get(...) as RowType` casts outside that helper should be reviewed as exceptions.
+
+Current forward-only migrations: _none._
+
+Current backup/restore-sensitive migrations:
+- **005-backlogged-status** — rebuilds the `tasks` table (rename-swap pattern). Rollback before a confirmed bug means restoring the SQLite file from the pre-deploy backup; the `down` migration is safe but rewrites the table a second time.
+- **007-completed-at** — backfills `completed_at` from `updated_at` for `status='done'` rows. The backfill is irreversible in the sense that the prior NULL state is lost, but the `down` migration drops the column entirely, so rollback restores schema parity.
+
 ## Pre-Open-Source Launch Checklist
 
 This checklist is the gate that must be clean before the repo's first
