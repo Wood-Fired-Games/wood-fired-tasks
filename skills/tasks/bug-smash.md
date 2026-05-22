@@ -140,6 +140,10 @@ Using the matrix from Section 2b, decide what validation the orchestrator will r
 
 **Pre-scan the scope when the task's acceptance criteria are broad.** If the task says "replace X" or "add Y across the codebase" without naming sites, run a quick `grep` / `find` *yourself* to enumerate the actual sites *before* writing the brief. Concrete site counts ("4 `Record<string,any>` sites at these exact lines") let you scope the slice and write a tight brief. Vague briefs ("find and replace broad anys") cause subagents to drift or over-reach. This pre-scan should be light — read-only, under a minute, no edits.
 
+**Pre-scan failure modes — try multiple patterns.** A single `grep` is brittle: if a dep is installed but `from 'dep'` returns 0 hits, the import may be via a wrapper (`from '@dep/integration'`), a default-export rename, a namespace import (`import * as fc from 'dep'`), or a re-export through a local barrel. Before stating "X doesn't exist" in a brief, try at least: the dep name without an import keyword, common wrapper namespace forms (`@<dep>/`), and a `find` for the conventional test file pattern (e.g. `*.property.test.ts`). A confident "absent" finding in the brief that's wrong wastes subagent time and forces a re-brief.
+
+**Welcome subagent corrections.** If the subagent's report contradicts a factual claim in the brief (e.g. "property tests already exist — the real gap is X"), the subagent is usually right. They had time to investigate; the orchestrator had time to pre-scan. Don't push back to defend the brief; verify, accept, and move on. Note the correction in the close-out comment so the user sees the orchestrator-vs-subagent factual delta.
+
 **If the task's acceptance criteria assume tooling that doesn't exist yet**, document the prerequisite and defer the dependent criterion. Example: a criterion that says "add an explicit lint exception pattern for unavoidable casts" is moot if there's no lint rule that flags casts. Note this in the close-out comment ("deferred — prerequisite tooling: enable `noExplicitAny`"); don't fabricate a stub.
 
 ### Step 4 — Dispatch a subagent
