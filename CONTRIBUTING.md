@@ -140,9 +140,49 @@ Before opening a PR, run these locally:
 npx tsc                       # Type-check / build
 npm test                      # Vitest with coverage thresholds
 npx knip --dependencies       # Detect unused dependencies
+npm run depcruise             # Import boundaries + cycles
 ```
 
 CI runs the same gates on every PR. If any fails, the PR cannot merge.
+
+### Architecture and Boundary Checks
+
+`npm run depcruise` runs [dependency-cruiser](https://github.com/sverweij/dependency-cruiser)
+over `src/` and enforces two things:
+
+1. **No import cycles inside `src/`.** A new cycle is always an error.
+2. **Layer boundaries** as documented in
+   `docs/CODE_QUALITY_ROADMAP.md` Phase 4. The rule names map directly to
+   the policy:
+   - `leaves-no-upstream` — `src/db`, `src/types`, `src/schemas` must not
+     import from entry-point or business-logic layers.
+   - `repositories-layer` — `src/repositories` may only import `db`,
+     `types`, `schemas`, `utils`, `config`, and other repositories.
+   - `events-layer` — `src/events` may import `schemas`, `types`, `utils`,
+     `config`; not entry points, services, or repositories.
+   - `services-layer` — `src/services` must not import entry-point layers
+     (`api`, `cli`, `mcp`, `slack`).
+
+The config lives at `.dependency-cruiser.cjs`.
+
+**If your PR fails the gate:**
+
+1. Read the rule name in the failure output and find it in
+   `.dependency-cruiser.cjs`. The `comment` field on each rule explains
+   the policy in plain English.
+2. In most cases the right fix is to move the import to the correct
+   layer — e.g. importing a shared type from `src/types/` instead of
+   reaching into a service. Apply the fix and re-run `npm run depcruise`.
+3. If the violation is intentional (a deliberate architecture change),
+   raise it in the PR before relaxing the rule. With reviewer sign-off,
+   a layer rule may be downgraded from `severity: 'error'` to `'warn'`
+   in `.dependency-cruiser.cjs` while the migration is in flight. The
+   `no-circular` rule is not downgradable — cycles must be broken
+   before merge.
+
+`npm run depcruise:graph` writes a `dependency-graph.dot` file for
+visual inspection (render with Graphviz). It is local-only — not wired
+into CI.
 
 ### Mutation testing policy
 

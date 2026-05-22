@@ -403,6 +403,21 @@ Initial boundary policy:
 - `src/db`, `src/types`, and `src/schemas` must not depend on entry-point
   layers.
 
+Status:
+
+- **Import-boundary + cycle checks: landed in task #267.** Enforced via
+  [dependency-cruiser](https://github.com/sverweij/dependency-cruiser).
+  Config at `.dependency-cruiser.cjs`, gate at `npm run depcruise`, CI
+  job `depcruise` in `.github/workflows/ci.yml`. Contributor workflow
+  is documented under "Architecture and Boundary Checks" in
+  `CONTRIBUTING.md`.
+- **Complexity reporting: deferred.** Needs an advisory-mode tool with
+  per-file thresholds calibrated against the current codebase before it
+  can be gated. Recommended follow-on: `eslint-plugin-sonarjs` (for
+  cognitive/cyclomatic complexity) or `complexity-report`. Track as a
+  separate task so the calibration pass does not block the boundary
+  gate.
+
 ### Phase 5: Strengthen Database And Migration Safety
 
 Goal: make migration risk review explicit.
