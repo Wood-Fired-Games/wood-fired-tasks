@@ -134,9 +134,13 @@ Read the task description carefully. Extract:
 - **Linked docs** — any references to roadmap sections, ADRs, line ranges.
 - **Constraints** mentioned in the description ("avoid unrelated refactors", "warning-free", "don't bulk-reformat", etc.).
 
-### Step 3 — Plan the validation depth
+### Step 3 — Plan the validation depth and pre-scan scope
 
 Using the matrix from Section 2b, decide what validation the orchestrator will run after the subagent returns. Doc-only? Tests only. Runtime? Build + tests + smoke. Be explicit about this *now* so the subagent brief in Step 4 specifies the same depth.
+
+**Pre-scan the scope when the task's acceptance criteria are broad.** If the task says "replace X" or "add Y across the codebase" without naming sites, run a quick `grep` / `find` *yourself* to enumerate the actual sites *before* writing the brief. Concrete site counts ("4 `Record<string,any>` sites at these exact lines") let you scope the slice and write a tight brief. Vague briefs ("find and replace broad anys") cause subagents to drift or over-reach. This pre-scan should be light — read-only, under a minute, no edits.
+
+**If the task's acceptance criteria assume tooling that doesn't exist yet**, document the prerequisite and defer the dependent criterion. Example: a criterion that says "add an explicit lint exception pattern for unavoidable casts" is moot if there's no lint rule that flags casts. Note this in the close-out comment ("deferred — prerequisite tooling: enable `noExplicitAny`"); don't fabricate a stub.
 
 ### Step 4 — Dispatch a subagent
 
@@ -225,7 +229,7 @@ When the subagent returns its summary:
 
 1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it.
 2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted).
-3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` to keep raw output out of context. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path.
+3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
 5. If validation now fails, send the subagent (or a new one) back with the failure output and a tight diagnostic prompt. Do *not* try to fix it inline in the orchestrator context — that defeats the pattern.
 6. If validation passes, proceed.
