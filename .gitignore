@@ -51,3 +51,6 @@ coverage/
 # Biome cache (defensive; current versions don't create one but future may)
 .biome/
 .biome-cache/
+
+# Bug-smash skill caches (local-only orchestrator memos)
+.bug-smash-*.md
