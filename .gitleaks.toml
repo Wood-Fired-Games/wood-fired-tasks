@@ -1,0 +1,54 @@
+# gitleaks config for wood-fired-bugs
+# Inherits all default rules from gitleaks v8.x; only adds allowlists
+# for known false positives (test fixtures, documentation placeholders,
+# and internal planning docs that ship outside the npm tarball).
+#
+# Rationale per entry is documented next to the regex/path so future
+# maintainers know why it was added (task #256).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "wood-fired-bugs false-positive allowlist (see task #256)"
+
+paths = [
+  # Internal planning workspaces — never published to npm, not part of
+  # the OSS surface area; keep gitleaks from re-scanning them on every
+  # PR. (.gitignore already excludes most, but a few historical commits
+  # touched .codex/ planning docs.)
+  '''(^|/)\.codex/''',
+  '''(^|/)\.planning/''',
+  '''(^|/)\.agents/''',
+  # CHANGELOG entries reference task IDs and short SHA prefixes that
+  # occasionally trip the generic-api-key heuristic.
+  '''^CHANGELOG\.md$''',
+  # Local gitleaks JSON report — never tracked, but allowlist it
+  # defensively in case it ever lands in a transient working copy.
+  '''^\.gitleaks-report\.json$''',
+]
+
+regexes = [
+  # Deterministic test fixture used across auth + swagger tests to
+  # exercise the 32-character key validator. Sequential, no entropy,
+  # never used outside test files. (task #256 finding 1-5)
+  '''k1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6?''',
+  # Test-only API key constant used by comments.test.ts and
+  # dependencies.test.ts. (task #256 finding 7-8)
+  '''test-api-key-12345''',
+  # Documentation placeholder in docs/API.md curl example.
+  # (task #256 finding 6)
+  '''your-key-here''',
+  # Slack placeholder tokens shown in .env.example / SETUP docs.
+  '''xoxb-your-bot-token-here''',
+  '''xapp-your-app-token-here''',
+  '''xoxb-EXAMPLE-NOT-A-REAL-TOKEN''',
+]
+
+stopwords = [
+  "example",
+  "placeholder",
+  "your-api-key",
+  "your-key-here",
+  "test-api-key",
+]

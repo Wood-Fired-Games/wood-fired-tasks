@@ -44,3 +44,6 @@ coverage/
 .claude/
 .codex/
 .agents/
+
+# gitleaks scan reports (local-only; never commit)
+.gitleaks-report.json
