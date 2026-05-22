@@ -12,8 +12,11 @@ These run automatically on every PR and on `main`:
 | --------------------- | ------------------------------------------- | --------------------------------------------------------------------- |
 | Tests                 | `.github/workflows/ci.yml` (`test`)         | `npm test` passes; vitest suite green                                 |
 | Coverage              | `.github/workflows/ci.yml` (`coverage`)     | Coverage thresholds enforced via `vitest.config.ts`                   |
+| Build                 | `.github/workflows/ci.yml` (`build`)        | `npm run build` (tsc) clean — declaration output regressions caught   |
+| Lint                  | `.github/workflows/ci.yml` (`lint`)         | `npm run lint` (Biome check) clean                                    |
 | Unused deps           | `.github/workflows/ci.yml` (`deps`)         | `knip --dependencies` clean                                           |
-| Prod audit            | `.github/workflows/ci.yml` (`audit`)        | `npm audit --omit=dev --audit-level=high` clean                       |
+| Boundaries            | `.github/workflows/ci.yml` (`depcruise`)    | `npm run depcruise` — import boundaries + cycles clean                |
+| Prod audit            | `.github/workflows/ci.yml` (`audit`)        | `npm audit --omit=dev --audit-level=high` clean (dev-dep audit advisory) |
 | Install scripts       | `.github/workflows/install-scripts.yml`     | `install.sh` / `install.ps1` smoke tests across OSes                  |
 | Mutation testing      | `.github/workflows/mutation.yml`            | Nightly Stryker run (advisory until break threshold reached)          |
 | Benchmarks            | `.github/workflows/bench.yml`               | Nightly perf snapshot (advisory only)                                 |
@@ -26,11 +29,18 @@ Before `npm publish`:
 
 ```bash
 npm ci
-npm test                     # 1300+ tests must pass
-npm run lint:deps            # knip clean
+npm run quality              # Full local gate (build, test, lint,
+                             # lint:deps, depcruise, prod audit)
 npm run pack:check           # inspect the tarball file list
-npm run build                # produce dist/
 ```
+
+`npm publish` triggers the `prepublishOnly` hook automatically, which
+re-runs the minimum release-safe subset (build, test, lint:deps, prod
+audit, pack:check) — so the manual pre-publish smoke test above is
+belt-and-braces. Lint is skipped from `prepublishOnly` because it is a
+quality signal, not a release blocker. `format:check` is not a gate
+today (Biome formatter is disabled in `biome.json`); see
+`docs/CODE_QUALITY_ROADMAP.md` Phase 6 for the follow-up.
 
 `npm run pack:check` is the most important manual step — it surfaces any
 file accidentally added to the publish set. The tarball should contain:

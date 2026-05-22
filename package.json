@@ -57,13 +57,15 @@
     "mcp:dev": "tsx src/mcp/index.ts",
     "mcp:remote": "node dist/mcp/remote/index.js",
     "lint": "biome check .",
-    "format:check": "biome format .",
+    "format:check": "echo 'format:check is unavailable: biome.json has formatter.enabled=false. Enable the formatter in a dedicated follow-up PR before re-adding this gate.' >&2 && exit 1",
     "format": "biome format --write .",
     "lint:deps": "knip --dependencies",
     "depcruise": "depcruise src --config .dependency-cruiser.cjs",
     "depcruise:graph": "depcruise src --config .dependency-cruiser.cjs --output-type dot --output-to dependency-graph.dot",
     "test:mutation": "stryker run",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "quality": "npm run build && npm test && npm run lint && npm run lint:deps && npm run depcruise && npm audit --omit=dev --audit-level=high",
+    "prepublishOnly": "npm run build && npm test && npm run lint:deps && npm audit --omit=dev --audit-level=high && npm run pack:check"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",

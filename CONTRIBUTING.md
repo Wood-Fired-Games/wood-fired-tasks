@@ -137,13 +137,39 @@ your change improves coverage materially.
 Before opening a PR, run these locally:
 
 ```bash
-npx tsc                       # Type-check / build
+npm run quality               # Composite: build, test, lint,
+                              # lint:deps, depcruise, prod audit
+```
+
+Or run individual gates while iterating:
+
+```bash
+npm run build                 # Type-check / build (tsc)
 npm test                      # Vitest with coverage thresholds
-npx knip --dependencies       # Detect unused dependencies
+npm run lint                  # Biome lint
+npm run lint:deps             # knip --dependencies
 npm run depcruise             # Import boundaries + cycles
 ```
 
 CI runs the same gates on every PR. If any fails, the PR cannot merge.
+
+Note: `format:check` is intentionally **not** a gate today — Biome's
+formatter is disabled in `biome.json` (`formatter.enabled=false`). A
+separate task will enable it and land the one-time reformat sweep, at
+which point `format:check` will be re-added to CI and `npm run quality`.
+Running `npm run format:check` today will deliberately fail with an
+explanatory message so the missing gate cannot masquerade as a green
+check.
+
+### Dependency audit policy
+
+CI gates production dependencies only via
+`npm audit --omit=dev --audit-level=high`. Dev-dependency audit is
+**advisory, not gated** — running `npm audit` locally (no flags) surfaces
+dev-dep advisories, which contributors should review at PR time but which
+do not block CI. Dev deps do not ship in the published package, and gating
+on dev-dep advisories produces frequent CI red without commensurate
+user-facing risk.
 
 ### Architecture and Boundary Checks
 

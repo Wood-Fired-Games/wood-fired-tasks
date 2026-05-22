@@ -490,6 +490,39 @@ Suggested `quality` scope once tooling exists:
 - production audit
 - pack check
 
+Status:
+
+- **Landed in task #269.** Four tightly-scoped CI/automation tweaks:
+  1. `npm run build` added as the `build` CI job in
+     `.github/workflows/ci.yml`.
+  2. `format:check` is **intentionally omitted from CI and from
+     `npm run quality`**; Biome's formatter is disabled in `biome.json`
+     (`formatter.enabled=false`), so a real format gate requires a
+     separate follow-on task that enables `formatter.enabled: true` and
+     lands the one-time reformat sweep. The `format:check` script is
+     kept in `package.json` but now exits non-zero with an explanatory
+     message so it cannot silently pass as a false-positive gate.
+     **Recommend that formatter-enable + reformat sweep as the next
+     quality task.**
+  3. `.github/dependabot.yml` configured for `npm` and `github-actions`
+     ecosystems on a weekly Monday cadence, with patch/minor grouping to
+     cut PR noise.
+  4. `npm run quality` composite script chains build, test, lint,
+     lint:deps, depcruise, and production audit (fail-fast `&&` order,
+     cheapest gate first). `format:check` is deliberately excluded
+     until the formatter is enabled.
+  5. `prepublishOnly` script chains the minimum release-safe subset:
+     build, test, lint:deps, production audit, and pack:check. Lint and
+     format are intentionally omitted from `prepublishOnly` since they
+     are quality signals, not release blockers.
+- **Dev-dependency audit policy: advisory, not gated.** Codified in
+  `CONTRIBUTING.md` under "Dependency audit policy". CI continues to gate
+  production deps via `npm audit --omit=dev --audit-level=high`; dev-dep
+  advisories are surfaced to contributors via local `npm audit` but do
+  not block CI. Rationale: dev deps do not ship in the published
+  package, and gating on dev-dep advisories produces frequent CI red
+  without commensurate user-facing risk.
+
 ### Phase 7: Expand High-Value Mutation, Property, And Performance Coverage
 
 Goal: spend expensive testing only where it is likely to find real defects.
