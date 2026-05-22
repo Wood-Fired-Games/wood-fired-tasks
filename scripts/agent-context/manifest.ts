@@ -162,8 +162,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     line_budget: 250,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
-    status: 'reserved',
-    notes: 'Reserved slot — landing in task #277.',
+    status: 'present',
   },
   {
     path: 'docs/INTERFACES.md',

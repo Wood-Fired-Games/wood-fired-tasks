@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-22T21:54:08.171Z",
+    "generated_at": "2026-05-22T21:58:13.535Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -75,9 +75,11 @@
       "line_budget": 250,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
-      "status": "reserved",
-      "notes": "Reserved slot — landing in task #277.",
-      "approx_token_budget": 5000
+      "status": "present",
+      "approx_token_budget": 5000,
+      "actual_lines": 191,
+      "sha256": "d438292dd0a8a76544f30e37d63887354ced3ef765c62b13455866e67aa5c49f",
+      "actual_owner": "Repository maintainers"
     },
     {
       "path": "docs/INTERFACES.md",
