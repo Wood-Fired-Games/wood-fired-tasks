@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-22T22:12:45.064Z",
+    "generated_at": "2026-05-22T22:22:13.589Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -104,9 +104,11 @@
       "line_budget": 300,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
-      "status": "reserved",
-      "notes": "Reserved slot — landing in task #279.",
-      "approx_token_budget": 6000
+      "status": "present",
+      "approx_token_budget": 6000,
+      "actual_lines": 139,
+      "sha256": "d6ff60010373a9df37bd44bcc82f46240c73ea092b222bf0462962228ca55ef9",
+      "actual_owner": "Repository maintainers"
     },
     {
       "path": "docs/API.md",
