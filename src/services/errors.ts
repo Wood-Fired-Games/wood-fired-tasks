@@ -7,7 +7,7 @@
  * Contains structured field errors from Zod validation
  */
 export class ValidationError extends Error {
-  public readonly name = 'ValidationError';
+  public override readonly name = 'ValidationError';
   public readonly fieldErrors: Record<string, string[]>;
 
   constructor(fieldErrors: Record<string, string[]>) {
@@ -23,7 +23,7 @@ export class ValidationError extends Error {
  * BusinessError - thrown when business logic rules are violated
  */
 export class BusinessError extends Error {
-  public readonly name = 'BusinessError';
+  public override readonly name = 'BusinessError';
 
   constructor(message: string) {
     super(message);
@@ -37,7 +37,7 @@ export class BusinessError extends Error {
  * NotFoundError - thrown when a requested entity does not exist
  */
 export class NotFoundError extends Error {
-  public readonly name = 'NotFoundError';
+  public override readonly name = 'NotFoundError';
   public readonly entity: string;
   public readonly id: number | string;
 

@@ -15,7 +15,7 @@
  * clients verbatim (it leaks internal parser details).
  */
 export class FtsSyntaxError extends Error {
-  public readonly name = 'FtsSyntaxError';
+  public override readonly name = 'FtsSyntaxError';
   public readonly originalMessage: string;
 
   constructor(originalMessage: string) {

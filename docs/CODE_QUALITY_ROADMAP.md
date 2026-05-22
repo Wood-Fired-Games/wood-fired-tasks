@@ -344,12 +344,21 @@ Acceptance criteria:
 
 Suggested order:
 
-1. `useUnknownInCatchVariables`
-2. `noFallthroughCasesInSwitch`
-3. `noImplicitOverride`
+1. `useUnknownInCatchVariables` — landed in task #265
+2. `noFallthroughCasesInSwitch` — landed in task #265
+3. `noImplicitOverride` — landed in task #265
 4. `noPropertyAccessFromIndexSignature`
 5. `exactOptionalPropertyTypes`
 6. `noUncheckedIndexedAccess`
+
+Deferred flags (still off, with rationale):
+
+- `noPropertyAccessFromIndexSignature` — deferred; needs a sweep of
+  `Record<string, any>` / dynamic access patterns; coupled with task #266.
+- `exactOptionalPropertyTypes` — deferred; broad churn around
+  optional-vs-undefined call sites and schema inference.
+- `noUncheckedIndexedAccess` — deferred; introduces `T | undefined` at every
+  index access; requires significant control-flow refactoring.
 
 ### Phase 3: Reduce Unsafe Casts And Untyped Boundaries
 
