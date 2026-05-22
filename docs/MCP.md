@@ -11,7 +11,7 @@ The MCP server provides:
 - 21 tools for task, project, comment, dependency, reporting, and health operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
-- 10 pre-built skill files for common workflows
+- 11 pre-built skill files for common workflows
 - Two server modes: **local** (in-process SQLite) and **remote** (HTTP proxy to a deployed REST API)
 
 ## MCP Server
@@ -627,7 +627,7 @@ If you add or rename a domain event, update `ALLOWED_EVENT_TYPES` in `src/events
 
 ## Skill Files
 
-Wood Fired Bugs provides 10 pre-built skill files in the `/tasks:` namespace.
+Wood Fired Bugs provides 11 pre-built skill files in the `/tasks:` namespace.
 
 After installation, these skills are available as slash commands in Claude Code.
 
@@ -711,6 +711,18 @@ After installation, these skills are available as slash commands in Claude Code.
 
 **Workflow:** Prompts for comment content, adds comment to specified task using add_comment MCP tool.
 
+### /tasks:bug-smash
+
+**Description:** Autonomous bug-fixing loop that drains a project's open backlog one task at a time.
+
+**Use when:** User wants to clear an open-task backlog hands-off — typically said as "smash the bugs", "work through the backlog", or "fix every open task in <project>".
+
+**Workflow:** Resolves the target project from the argument (asks if omitted), discovers the repo's build/test/smoke commands once, then loops: pick the highest-priority open task (`urgent > high > medium > low`, ties broken by oldest ID first), `claim_task`, apply the fix using the repo's standard workflow (e.g. `/gsd:quick`) or manual implementation, run the discovered validation suite, `add_comment` summarizing root cause + change + validation results, `update_task` to `done`, commit and push one task per commit, and repeat until `list_tasks status=open` is empty. Validation commands are **not hardcoded** — they're read from `CLAUDE.md`, `package.json`, `Makefile`, or asked once at startup, making the loop project-agnostic. Tasks that can't be resolved after 2–3 attempts are moved to `blocked` with a comment so the loop keeps draining the rest.
+
+**Arguments:** `[project-name]` — case-insensitive partial match. If omitted, the skill asks rather than guessing.
+
+**Safety:** Stops on empty backlog (no polling), commits per task with the task ID in the message, never uses `git add -A`, notes manual follow-ups (e.g. blocked SSH push, sudo-required deploys) in task comments instead of stalling the loop.
+
 ## How It Works
 
 ### Architecture
@@ -788,7 +800,7 @@ The API and MCP server share the same database file. If changes made via the API
 
 ## Next Steps
 
-- Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`
+- Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:bug-smash`
 - Explore the 21 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host

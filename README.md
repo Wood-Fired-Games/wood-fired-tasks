@@ -13,7 +13,7 @@ Wood Fired Bugs is a centralized task management service providing a REST API, C
 - REST API with 20 authenticated endpoints for full task lifecycle management
 - CLI (`tasks`) with 20 commands for terminal-based operations
 - MCP server with 21 tools for native Claude Code integration (local SQLite or remote HTTP modes)
-- 10 Claude Code skill files for workflow-driven slash commands
+- 11 Claude Code skill files for workflow-driven slash commands (including the autonomous `bug-smash` loop)
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
 - Workflow automation: parent auto-complete and dependency auto-unblock
