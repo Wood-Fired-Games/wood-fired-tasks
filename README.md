@@ -68,7 +68,7 @@ The auth plugin (`src/api/plugins/auth.ts`) validates only that the supplied `X-
   API_KEYS=abc123def456...:alice-laptop,xyz789...:ci-runner,bare-key-no-label
   ```
   Bare keys get an auto-label `key_<first8>` derived from the first 8 characters of the raw key. The label appears in every per-request log line as `apiKeyLabel=<label>`; the raw key value is never logged.
-- **Reference [SECURITY.md](SECURITY.md) for incident response** (key compromise, rotation, disclosure). Note: `SECURITY.md` is a placeholder until the open-source-readiness audit completes; until then, follow your team's standard credential-compromise playbook.
+- **Reference [SECURITY.md](SECURITY.md) for incident response** (key compromise, rotation, disclosure).
 
 ### Defense in depth
 
