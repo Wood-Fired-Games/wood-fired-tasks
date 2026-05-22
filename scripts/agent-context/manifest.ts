@@ -286,6 +286,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'docs/README.md',
+    role: 'docs-index',
+    purpose:
+      'Docs directory index grouping the agent, surface, setup, and quality docs by audience.',
+    when_to_read: 'on-demand',
+    line_budget: 90,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'CONTRIBUTING.md',
     role: 'human-onboarding',
     purpose: 'Human contributor workflow, commit and PR rules.',
