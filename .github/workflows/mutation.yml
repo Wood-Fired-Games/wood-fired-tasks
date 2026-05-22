@@ -1,9 +1,14 @@
 name: Mutation Testing
 
 on:
-  schedule:
-    # Nightly at 06:00 UTC
-    - cron: '0 6 * * *'
+  # Schedule trigger is disabled: observed Stryker runtime is ~6h09m, which
+  # exceeds the 6h hard ceiling for GH Actions default runners — every
+  # nightly was getting cancelled at the timeout (see runs 26233837678,
+  # 26247080933). Re-enable once the workflow is sharded across parallel
+  # jobs. Tracking issue: see wood-fired-bugs follow-up task referenced in
+  # task #250.
+  # schedule:
+  #   - cron: '0 6 * * *'
   workflow_dispatch:
   pull_request:
     branches: [main]
@@ -19,10 +24,12 @@ jobs:
       (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'mutation'))
     runs-on: ubuntu-latest
-    # Stryker runs ~7000 mutants and takes ~5h20m wall time on the default
-    # ubuntu-latest runner (observed 2026-05-21). 360m is the GH Actions max
-    # for default runners — if runtime grows past this, the only options are
-    # sharding the run across parallel jobs or reducing mutant scope.
+    # Stryker runs ~7000 mutants and takes ~6h09m wall time on the default
+    # ubuntu-latest runner (observed 2026-05-21 runs 26233837678 and
+    # 26247080933 — both cancelled at the 6h ceiling with 92-97% complete).
+    # 360m is the GH Actions max for default runners. The only way to make
+    # this fit is to shard the run across parallel jobs or reduce mutant
+    # scope; the schedule trigger is disabled above until that lands.
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

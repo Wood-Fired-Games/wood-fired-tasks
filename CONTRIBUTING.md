@@ -150,16 +150,16 @@ We use [Stryker](https://stryker-mutator.io/) to verify that our test
 suite actually fails when production code is mutated (a strong "tests
 assert something useful" signal that line/branch coverage cannot give).
 
-- **Current break threshold:** `50` (mutation score below 50% fails CI).
+- **Current break threshold:** `75` (mutation score below 75% fails CI).
+  Raised from `50 → 60 → 75` based on partial-run evidence (~86% sample
+  score, ~79.7% pessimistic worst-case projection).
 - **Where:** `stryker.config.js` (`thresholds.break`).
-- **When CI runs it:** nightly (06:00 UTC), on `workflow_dispatch`, and on
-  any PR labeled `mutation`. It is intentionally NOT part of the default
-  PR check matrix because a full run takes ~3-4 hours wall time on a
-  default GitHub Actions runner (~6900 mutants).
-- **Plan to raise it:** the `50` baseline is conservative for first
-  enforcement. Once we have a few clean nightly runs we will raise to
-  `60`, then `75` to match the `low: 60 / high: 80` reporting thresholds
-  already in the config.
+- **When CI runs it:** on `workflow_dispatch` and on any PR labeled
+  `mutation`. The nightly schedule trigger is **currently disabled**
+  because a full run takes ~6h09m on the default ubuntu-latest runner
+  (~7000 mutants) and exceeds the 6h GH Actions ceiling — every nightly
+  was being cancelled at the timeout. Re-enabling depends on sharding the
+  run across parallel jobs (tracked separately).
 - **Running locally:** `npm run test:mutation`. The HTML report is written
   to `reports/mutation/` and is uploaded as the `mutation-report` artifact
   in CI.
