@@ -229,7 +229,7 @@ Do NOT commit. Do NOT push. Do NOT modify the bugs database. The orchestrator ow
 When the subagent returns its summary:
 
 1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it.
-2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted).
+2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted). **Watch specifically for silent-pass gates**: a new CI job, npm script, or assertion that passes trivially (no-op, always-true condition, doesn't actually run the underlying tool). A gate that doesn't exercise the real check is worse than no gate — it gives false confidence forever. If you see one, re-brief and remove it (don't accept the compromise just because validation passed).
 3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. The `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
 5. If validation now fails, send the subagent (or a new one) back with the failure output and a tight diagnostic prompt. Do *not* try to fix it inline in the orchestrator context — that defeats the pattern.
@@ -323,10 +323,15 @@ If the user explicitly asked to "drain the whole backlog" or "run until empty", 
 
 ## Error Handling
 
-### Build / test fails after subagent returns
+### Build / test fails — or orchestrator detects a brief deviation — after subagent returns
 
-1. Re-brief the subagent (via `SendMessage` to the same agent ID, *not* a new Agent call) with the failure output and a tight diagnostic prompt. Same agent = full context preserved.
-2. If two re-briefs don't get green, mark the bugs-db task `blocked` with a comment listing what was tried, then move on.
+Use `SendMessage` to the same agent ID (not a new Agent call) whenever the orchestrator needs the subagent to iterate. This applies to:
+
+- **Validation failures** (build/test/lint regressed).
+- **Quality deviations on a passing build** — silent-pass gates, no-op scripts, fabricated checks, scope creep, hard-constraint violations the orchestrator catches during Step 5 inspection.
+- **Discovered constraints that change scope** — e.g. the subagent surfaced a tooling constraint not in the brief (`formatter.enabled: false` in biome config) and proposed a compromise. Re-brief with the constraint acknowledged and the right policy (accept, defer the deliverable cleanly, or split the work) — don't accept compromises that introduce anti-patterns just to ship.
+
+Same agent = full context preserved; the re-brief can be short ("you previously did X, do Y instead, because Z"). If two re-briefs don't land the right outcome, mark the bugs-db task `blocked` with a comment listing what was tried, then move on.
 
 ### Subagent goes off-script
 
