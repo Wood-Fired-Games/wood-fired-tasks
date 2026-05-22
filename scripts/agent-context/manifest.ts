@@ -59,6 +59,13 @@ const OWNER_LINE_EXEMPT = new Set<string>([
   'docs/RELEASE.md',
   'docs/CODE_QUALITY_ROADMAP.md',
   'CONTRIBUTING.md',
+  // Adapter files (authority: 'adapter') intentionally carry no Owner: line.
+  // They are thin pointers to the canonical entry (AGENTS.md), not
+  // authoritative docs that own a topic; ownership semantics belong to the
+  // canonical files they point at. The adapter-link check in check.ts
+  // independently enforces that every adapter resolves to AGENTS.md.
+  'CLAUDE.md',
+  'llms.txt',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -327,6 +334,32 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     owner_role: 'Repository maintainers',
     status: 'present',
     notes: 'Owner line check exempt — policy doc, not agent-facing primary.',
+  },
+  {
+    path: 'llms.txt',
+    role: 'llms-txt-adapter',
+    purpose:
+      'Community llms.txt site-map convention — flat, link-rich pointer to the canonical agent docs. Adapter only; no unique facts.',
+    when_to_read: 'on-demand',
+    line_budget: 60,
+    authority: 'adapter',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      'Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.',
+  },
+  {
+    path: 'CLAUDE.md',
+    role: 'claude-adapter',
+    purpose:
+      "Thin pointer for Claude Code's automatic root-file pickup. Routes Claude users to AGENTS.md. Adapter only; no unique facts.",
+    when_to_read: 'on-demand',
+    line_budget: 30,
+    authority: 'adapter',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      'Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.',
   },
 ];
 

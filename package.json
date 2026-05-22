@@ -47,6 +47,8 @@
     "CHANGELOG.md",
     "SECURITY.md",
     "AGENTS.md",
+    "CLAUDE.md",
+    "llms.txt",
     "docs/AGENT_CONTEXT.md"
   ],
   "engines": {

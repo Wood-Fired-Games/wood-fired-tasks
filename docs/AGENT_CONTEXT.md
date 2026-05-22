@@ -68,6 +68,7 @@ Produced by a committed script from code or schema. Humans edit the script, not 
 Vendor-specific files that exist only to point a vendor toolchain at the authoritative content. They MUST NOT carry unique project facts.
 
 - `CLAUDE.md` (if added) — body: `> See [AGENTS.md](AGENTS.md).` plus optional vendor-only config notes.
+- `llms.txt` (community LLM site-map convention) — pointer or compact link list only.
 - `.cursor/rules/*` (if added) — pointer or vendor-config only.
 - `.gemini/*`, `.codex/*` (if added) — pointer or vendor-config only.
 - `.claude/commands/*` — Claude-specific slash commands. Allowed because they are vendor config, not project facts.

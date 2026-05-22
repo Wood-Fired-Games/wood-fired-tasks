@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-22T22:55:12.644Z",
+    "generated_at": "2026-05-22T23:04:59.579Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -35,8 +35,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 8000,
-      "actual_lines": 279,
-      "sha256": "41446f6f8e422b53d794b37a6be2dda83a74cae2f2f51b8b2c99cb0fc5cf9128",
+      "actual_lines": 280,
+      "sha256": "038895a355743f5e72ef872a5e8c5c1909a286058ac0f0dedc97ceadc1317e7e",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -274,6 +274,34 @@
       "approx_token_budget": 6000,
       "actual_lines": 97,
       "sha256": "a691a4d7704891c11560f054ee522238f4271628562dc9bf2885afac5e857d8e"
+    },
+    {
+      "path": "llms.txt",
+      "role": "llms-txt-adapter",
+      "purpose": "Community llms.txt site-map convention — flat, link-rich pointer to the canonical agent docs. Adapter only; no unique facts.",
+      "when_to_read": "on-demand",
+      "line_budget": 60,
+      "authority": "adapter",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
+      "approx_token_budget": 1200,
+      "actual_lines": 33,
+      "sha256": "77b68dffe319faae95659f049dba0d99b42d3209e3a95954efc211a21876390d"
+    },
+    {
+      "path": "CLAUDE.md",
+      "role": "claude-adapter",
+      "purpose": "Thin pointer for Claude Code's automatic root-file pickup. Routes Claude users to AGENTS.md. Adapter only; no unique facts.",
+      "when_to_read": "on-demand",
+      "line_budget": 30,
+      "authority": "adapter",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
+      "approx_token_budget": 600,
+      "actual_lines": 21,
+      "sha256": "7868603a347b7ff1c21e85f897aab5c090807ece1f1688a882f0eab3e49947f4"
     }
   ],
   "groups": {

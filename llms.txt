@@ -1,0 +1,33 @@
+# wood-fired-bugs
+
+> Network-wide task tracking with REST, MCP, and CLI surfaces. Vendor-neutral
+> agent context — start with AGENTS.md.
+
+## Agent entry points
+
+- [AGENTS.md](AGENTS.md): First-read navigation hub.
+- [docs/AGENT_CONTEXT.md](docs/AGENT_CONTEXT.md): Contract — canonical files, budgets, freshness, vendor-neutrality.
+- [.agent-context.json](.agent-context.json): Machine-readable manifest of canonical files and groups.
+- [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md): Repeatable onboarding smoke test (scripted + manual).
+
+## Architecture and navigation
+
+- [docs/REPO_MAP.md](docs/REPO_MAP.md): Compact tree + per-directory ownership.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Data flow, mutation flows, auth model.
+- [docs/INTERFACES.md](docs/INTERFACES.md): REST routes / MCP tools / CLI commands (counts verified in CI).
+- [docs/NAVIGATION.md](docs/NAVIGATION.md): 17 change-type recipes.
+- [docs/WORKFLOWS.md](docs/WORKFLOWS.md): Build, test, lint, dev recipes.
+
+## Surface reference
+
+- [docs/API.md](docs/API.md): REST API.
+- [docs/MCP.md](docs/MCP.md): MCP tools.
+- [docs/CLI.md](docs/CLI.md): CLI.
+- [docs/SLACK.md](docs/SLACK.md): Slack surface.
+
+## Other
+
+- [docs/SETUP.md](docs/SETUP.md): Local setup.
+- [docs/RELEASE.md](docs/RELEASE.md): Release process.
+- [CONTRIBUTING.md](CONTRIBUTING.md): Contribution rules (incl. agent context maintenance).
+- [SECURITY.md](SECURITY.md): Security policy.
