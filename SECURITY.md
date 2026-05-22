@@ -1,5 +1,7 @@
 # Security Policy
 
+For repository structure and agent-context entry, see [`AGENTS.md`](AGENTS.md).
+
 We take the security of wood-fired-bugs seriously. This document explains
 which versions receive security fixes, how to report a vulnerability, and
 what is in scope.

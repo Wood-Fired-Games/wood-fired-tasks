@@ -1,5 +1,7 @@
 # REST API Reference
 
+Agents: start at [`AGENTS.md`](../AGENTS.md); the full read-order contract is in [`docs/AGENT_CONTEXT.md`](AGENT_CONTEXT.md).
+
 Complete reference for the Wood Fired Bugs REST API.
 
 **Base URL:** `http://localhost:3000`

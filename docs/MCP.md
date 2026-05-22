@@ -1,5 +1,7 @@
 # MCP Server and Claude Code Integration
 
+Agents: start at [`AGENTS.md`](../AGENTS.md); the full read-order contract is in [`docs/AGENT_CONTEXT.md`](AGENT_CONTEXT.md).
+
 Complete reference for the Wood Fired Bugs MCP server and Claude Code skill files.
 
 ## Overview
