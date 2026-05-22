@@ -151,8 +151,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     line_budget: 300,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
-    status: 'reserved',
-    notes: 'Reserved slot — landing in task #276.',
+    status: 'present',
   },
   {
     path: 'docs/WORKFLOWS.md',
