@@ -301,16 +301,22 @@ TEMP_FILES+=("$NEW_SERVER_CONFIG")
 if [ "$MODE" = "local" ]; then
   # Local: stdio MCP server with direct SQLite access. Only DATABASE_PATH —
   # no API key (the local server never reads one; task #258).
+  #
+  # Use absolute paths for both args and DATABASE_PATH. Claude Code's MCP
+  # config schema does not honor a `cwd` key (`claude mcp add` has no
+  # --cwd flag); the server is launched from Claude Code's CWD, so any
+  # relative path in args/env resolves against the wrong directory and
+  # node exits with "Cannot find module ...".
   jq -n \
-    --arg cwd "$SCRIPT_DIR" \
+    --arg entry "$SCRIPT_DIR/dist/mcp/index.js" \
+    --arg db   "$SCRIPT_DIR/data/tasks.db" \
     '{
       mcpServers: {
         "wood-fired-bugs": {
           command: "node",
-          args: ["dist/mcp/index.js"],
-          cwd: $cwd,
+          args: [$entry],
           env: {
-            DATABASE_PATH: "./data/tasks.db"
+            DATABASE_PATH: $db
           }
         }
       }
@@ -319,16 +325,17 @@ else
   # Remote: stdio bridge that proxies tools to a REST backend. Requires
   # WFB_API_URL + WFB_API_KEY. Server name 'wood-fired-bugs-remote' matches
   # docs/MCP.md so both entries can coexist in ~/.claude.json.
+  #
+  # Same absolute-path rule as the local branch — Claude Code ignores `cwd`.
   jq -n \
-    --arg key "$API_KEY" \
-    --arg url "$SERVICE_URL" \
-    --arg cwd "$SCRIPT_DIR" \
+    --arg key   "$API_KEY" \
+    --arg url   "$SERVICE_URL" \
+    --arg entry "$SCRIPT_DIR/dist/mcp/remote/index.js" \
     '{
       mcpServers: {
         "wood-fired-bugs-remote": {
           command: "node",
-          args: ["dist/mcp/remote/index.js"],
-          cwd: $cwd,
+          args: [$entry],
           env: {
             WFB_API_URL: $url,
             WFB_API_KEY: $key

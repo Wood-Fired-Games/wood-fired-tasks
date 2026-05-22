@@ -211,22 +211,26 @@ try {
     # Build new server config — local writes only DATABASE_PATH, remote writes
     # WFB_API_URL + WFB_API_KEY under a separate server name so both can
     # coexist. Task #258.
+    #
+    # Use absolute paths for args + DATABASE_PATH. Claude Code's MCP config
+    # schema does not honor a `cwd` key (`claude mcp add` has no --cwd flag);
+    # the server is launched from Claude Code's CWD, so any relative path
+    # resolves against the wrong directory and node exits with
+    # "Cannot find module ...".
     if ($Mode -eq 'local') {
         $serverName = 'wood-fired-bugs'
         $newServer = [PSCustomObject]@{
             command = "node"
-            args = @("dist/mcp/index.js")
-            cwd = $ScriptDir
+            args = @((Join-Path $ScriptDir 'dist/mcp/index.js'))
             env = [PSCustomObject]@{
-                DATABASE_PATH = "./data/tasks.db"
+                DATABASE_PATH = (Join-Path $ScriptDir 'data/tasks.db')
             }
         }
     } else {
         $serverName = 'wood-fired-bugs-remote'
         $newServer = [PSCustomObject]@{
             command = "node"
-            args = @("dist/mcp/remote/index.js")
-            cwd = $ScriptDir
+            args = @((Join-Path $ScriptDir 'dist/mcp/remote/index.js'))
             env = [PSCustomObject]@{
                 WFB_API_URL = $ServiceUrl
                 WFB_API_KEY = $ApiKey
