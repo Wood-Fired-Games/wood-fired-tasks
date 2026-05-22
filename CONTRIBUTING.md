@@ -153,16 +153,42 @@ assert something useful" signal that line/branch coverage cannot give).
 - **Current break threshold:** `75` (mutation score below 75% fails CI).
   Raised from `50 → 60 → 75` based on partial-run evidence (~86% sample
   score, ~79.7% pessimistic worst-case projection).
-- **Where:** `stryker.config.js` (`thresholds.break`).
-- **When CI runs it:** on `workflow_dispatch` and on any PR labeled
-  `mutation`. The nightly schedule trigger is **currently disabled**
-  because a full run takes ~6h09m on the default ubuntu-latest runner
-  (~7000 mutants) and exceeds the 6h GH Actions ceiling — every nightly
-  was being cancelled at the timeout. Re-enabling depends on sharding the
-  run across parallel jobs (tracked separately).
-- **Running locally:** `npm run test:mutation`. The HTML report is written
-  to `reports/mutation/` and is uploaded as the `mutation-report` artifact
-  in CI.
+- **Where:** `stryker.config.js` (`thresholds.break`) — the local default.
+  In CI the threshold is enforced post-aggregation against the unified
+  score across all shards (see below).
+- **When CI runs it:** nightly at 06:00 UTC (schedule), on
+  `workflow_dispatch`, and on any PR labeled `mutation`.
+- **Sharded design (task #252):** A full unsharded Stryker run was ~6h09m
+  on the default ubuntu-latest runner (~7000 mutants), exceeding the 6h GH
+  Actions ceiling. `.github/workflows/mutation.yml` now runs Stryker
+  across **4 parallel matrix shards**, each restricted to a disjoint
+  subset of `src/` via `--mutate` overrides:
+  - shard 0 (`cli`) — `src/cli/**/*.ts`
+  - shard 1 (`api-mcp`) — `src/api/**/*.ts`, `src/mcp/**/*.ts`
+  - shard 2 (`services-db-repos`) — `src/services/**/*.ts`,
+    `src/db/**/*.ts`, `src/repositories/**/*.ts`
+  - shard 3 (`misc`) — `src/slack`, `src/schemas`, `src/events`,
+    `src/utils`, `src/types`, `src/config`, `src/index.ts`
+
+  Each shard uploads its `mutation.json` as artifact
+  `mutation-shard-<id>-json`. A final `aggregate` job downloads every
+  shard report, merges `files[].mutants[]` via
+  `scripts/aggregate-mutation-reports.ts`, computes the unified score
+  `(killed + timeout) / (killed + timeout + survived + noCoverage)`, and
+  fails the workflow when the unified score is below the `75` threshold.
+  The aggregator also writes `reports/mutation/aggregate.json` and pushes
+  a summary to the GitHub Actions job summary.
+- **Running locally:** `npm run test:mutation` runs Stryker against the
+  full `src/` set (uses `stryker.config.js` directly — no sharding). The
+  HTML report is written to `reports/mutation/`. Each shard's HTML report
+  is also uploaded in CI as `mutation-shard-<id>-html`, plus the
+  aggregated JSON as `mutation-aggregate`.
+- **Adding files to a shard:** when a new top-level directory lands under
+  `src/`, add its glob to the appropriate shard in the matrix in
+  `.github/workflows/mutation.yml`. The aggregator does not care about
+  partitioning — it merges whatever JSON arrives — but the shards must
+  cover the same set of files that `stryker.config.js` mutates, otherwise
+  the unified score will silently exclude them.
 
 If your PR touches a hot module (anything under `src/api/`, `src/db/`,
 `src/mcp/tools/`, or `src/cli/commands/`), consider labeling it

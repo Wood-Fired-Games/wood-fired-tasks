@@ -1,21 +1,25 @@
 name: Mutation Testing
 
 on:
-  # Schedule trigger is disabled: observed Stryker runtime is ~6h09m, which
-  # exceeds the 6h hard ceiling for GH Actions default runners — every
-  # nightly was getting cancelled at the timeout (see runs 26233837678,
-  # 26247080933). Re-enable once the workflow is sharded across parallel
-  # jobs. Tracking issue: see wood-fired-bugs follow-up task referenced in
-  # task #250.
-  # schedule:
-  #   - cron: '0 6 * * *'
+  # Nightly schedule re-enabled (task #252) after sharding the workflow across
+  # 4 parallel jobs. Pre-sharding, a full run was ~6h09m which exceeded the 6h
+  # GH Actions ceiling on default runners; sharded runs target ~1h30m–2h per
+  # shard with all shards running in parallel.
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
 
+# Cancel superseded runs on the same ref to save runner minutes when a new
+# commit lands or the workflow is re-dispatched.
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  mutation:
+  shard:
     # Only run on PRs that carry the "mutation" label; always run on schedule
     # and manual dispatch.
     if: >-
@@ -24,13 +28,37 @@ jobs:
       (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'mutation'))
     runs-on: ubuntu-latest
-    # Stryker runs ~7000 mutants and takes ~6h09m wall time on the default
-    # ubuntu-latest runner (observed 2026-05-21 runs 26233837678 and
-    # 26247080933 — both cancelled at the 6h ceiling with 92-97% complete).
-    # 360m is the GH Actions max for default runners. The only way to make
-    # this fit is to shard the run across parallel jobs or reduce mutant
-    # scope; the schedule trigger is disabled above until that lands.
-    timeout-minutes: 360
+    # Each shard is a disjoint subset of src/ — see the matrix below for the
+    # exact partitioning. Per-shard wall time is expected to be ~1h30m–2h on
+    # the default runner (full unsharded run was ~6h09m for ~7000 mutants;
+    # 4-way shard divides the workload roughly evenly).
+    timeout-minutes: 300
+    strategy:
+      # Don't kill sibling shards if one fails — we still want partial reports
+      # for the aggregator and the HTML artifact upload.
+      fail-fast: false
+      matrix:
+        shard:
+          - id: 0
+            name: cli
+            globs: 'src/cli/**/*.ts'
+          - id: 1
+            name: api-mcp
+            globs: 'src/api/**/*.ts src/mcp/**/*.ts'
+          - id: 2
+            name: services-db-repos
+            globs: 'src/services/**/*.ts src/db/**/*.ts src/repositories/**/*.ts'
+          - id: 3
+            name: misc
+            globs: >-
+              src/slack/**/*.ts
+              src/schemas/**/*.ts
+              src/events/**/*.ts
+              src/utils/**/*.ts
+              src/types/**/*.ts
+              src/config/**/*.ts
+              src/index.ts
+    name: shard-${{ matrix.shard.id }}-${{ matrix.shard.name }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -38,13 +66,100 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      - name: Run Stryker mutation tests (fails when score < break threshold)
-        run: npm run test:mutation
-      - name: Upload mutation HTML report
+      - name: Run Stryker (shard ${{ matrix.shard.id }} / ${{ matrix.shard.name }})
+        # Per-shard --mutate restricts Stryker to a disjoint subset of src/.
+        # Exclusion globs match stryker.config.js so we keep the same set of
+        # ignored files (tests, migrate.ts, cli/bin/tasks.ts).
+        # --reporters json,clear-text,progress ensures a JSON report is
+        # written at reports/mutation/mutation.json for the aggregator.
+        # We do NOT enforce thresholds.break here — the aggregator does that
+        # against the unified score across all shards.
+        #
+        # SHARD_GLOBS is sourced from the matrix (author-controlled YAML),
+        # but we still pass it via env to avoid the GHA `run:` interpolation
+        # injection pattern.
+        # STRYKER_DISABLE_BREAK_THRESHOLD=1 tells stryker.config.js to skip
+        # the per-shard break check (a single shard's score is meaningless;
+        # the unified break is enforced by the aggregator job below).
+        env:
+          SHARD_GLOBS: ${{ matrix.shard.globs }}
+          STRYKER_DISABLE_BREAK_THRESHOLD: '1'
+        run: |
+          set -eu
+          mutate_args=()
+          for g in $SHARD_GLOBS; do
+            mutate_args+=(--mutate "$g")
+          done
+          npx stryker run \
+            "${mutate_args[@]}" \
+            --mutate '!src/**/__tests__/**' \
+            --mutate '!src/**/*.test.ts' \
+            --mutate '!src/db/migrate.ts' \
+            --mutate '!src/cli/bin/tasks.ts' \
+            --reporters json,clear-text,progress
+      - name: Upload shard JSON report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutation-report
+          name: mutation-shard-${{ matrix.shard.id }}-json
+          path: reports/mutation/mutation.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload shard HTML report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-shard-${{ matrix.shard.id }}-html
+          path: reports/mutation/
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: aggregate-and-enforce-threshold
+    needs: shard
+    if: always() && needs.shard.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Download all shard JSON reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: mutation-shard-*-json
+          path: shard-reports/
+      - name: List downloaded shard reports
+        run: ls -lR shard-reports/
+      - name: Aggregate shard reports and enforce 75% break threshold
+        run: |
+          set -eu
+          mkdir -p reports/mutation
+          npx tsx scripts/aggregate-mutation-reports.ts \
+            --threshold 75 \
+            --output reports/mutation/aggregate.json \
+            shard-reports/*/mutation.json | tee reports/mutation/aggregate-summary.txt
+      - name: Append summary to GitHub job summary
+        if: always()
+        run: |
+          set -eu
+          if [ -f reports/mutation/aggregate-summary.txt ]; then
+            {
+              echo '## Unified mutation score'
+              echo ''
+              echo '```'
+              cat reports/mutation/aggregate-summary.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload aggregated report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-aggregate
           path: reports/mutation/
           if-no-files-found: warn
           retention-days: 30
