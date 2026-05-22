@@ -21,13 +21,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SKILLS_DIR = path.resolve(__dirname, '../../../skills/tasks');
 
-// Known MCP tool names in the system
+// Known MCP tool names in the system. Keep in sync with the tools registered
+// in src/mcp/tools/*.ts (server.ts wires them all up at startup).
 const KNOWN_MCP_TOOLS = new Set([
   'create_task',
   'get_task',
   'update_task',
   'list_tasks',
   'delete_task',
+  'claim_task',
   'list_subtasks',
   'get_subtasks',
   'create_project',
@@ -427,12 +429,16 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (10 files)', () => {
+  it('skill file count matches expected (11 files)', () => {
+    // Update this count when adding or removing a skill file in
+    // `skills/tasks/`. The README ("N Claude Code skill files") and
+    // docs/MCP.md ("N pre-built skill files") references should be
+    // updated in the same change.
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'));
 
-    expect(skillFiles).toHaveLength(10);
+    expect(skillFiles).toHaveLength(11);
   });
 
   it('each skill file has workflow steps', () => {
