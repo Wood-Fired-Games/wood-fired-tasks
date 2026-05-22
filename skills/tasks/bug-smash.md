@@ -226,6 +226,7 @@ Do NOT commit. Do NOT push. Do NOT modify the bugs database. The orchestrator ow
 - If a choice exists (tool A vs B, approach X vs Y), the orchestrator should pick one in the brief — based on the domain doc and stated preferences. Don't ask the subagent to choose; that drags decision-making into a context that lacks the project's full picture.
 - Pass **excerpts** of domain docs, not the whole doc. The subagent doesn't need 500 lines of roadmap; it needs the 20 lines that anchor this task.
 - When the brief asks the subagent to add a CI job, tell it explicitly: copy pinned action SHAs from a neighbouring job in the same workflow rather than fetching new ones. Otherwise the subagent may pick `@v4`-style floating refs that violate the project's pinning convention.
+- **Audit-with-budget pattern.** When the acceptance criteria is "ensure X for every Y" (e.g. "every data-semantic migration has a targeted test", "every cast site is localised"), brief the subagent to *audit first, then act within a budget*. Typical budget: 1-2 fixes per iteration. If the audit surfaces 3+ gaps, the subagent adds **one** representative fix as a worked example, lists the remaining gaps in their summary, and the orchestrator records them in the close-out comment as recommended follow-on tasks. This prevents one task closure from ballooning into a sweep and keeps each commit coherent.
 - Always end with "Do NOT commit". The orchestrator must stage and verify before any commit lands.
 
 ### Step 5 — Verify the subagent's claim
@@ -343,7 +344,7 @@ If the subagent committed despite being told not to, or modified files outside t
 
 1. `git reset` the bad changes if they're staged.
 2. Re-brief with explicit "you previously did X, do not do that — here's why".
-3. If it happens twice in a session, switch agent types or fall back to inline implementation for that task (and note in the v3 friction log).
+3. If it happens twice in a session, switch agent types or fall back to inline implementation for that task (and note the recurrence to the user — repeated off-script behaviour from the same agent type is a signal worth a skill update).
 
 ### Deployment / smoke blocked
 
@@ -361,7 +362,7 @@ After 2–3 honest subagent round-trips, set the task to `blocked` with a commen
 - **One task at a time.** Plan → dispatch → verify → commit → close → repeat. No parallel task dispatch within a single project unless tasks are explicitly independent (rare).
 - **Validation runs in the orchestrator, not just the subagent.** Re-run; never trust reported numbers.
 - **Commit per task.** One task = one commit (plus an optional pre-loop housekeeping commit).
-- **Epic-sized tasks → largest coherent slice, defer the rest.** When a task's own acceptance criteria say "incrementally" or "one X per PR" and span more work than fits in a single commit, the orchestrator picks the largest coherent slice that lands cleanly in one commit. Document what was deferred in the close-out comment so the user can promote follow-on tasks. Do *not* let an epic-sized task block the loop, and do *not* split into multiple commits within one task closure.
+- **Epic-sized tasks → largest coherent slice, defer the rest.** When a task's own acceptance criteria say "incrementally" or "one X per PR" and span more work than fits in a single commit, the orchestrator picks the largest coherent slice that lands cleanly in one commit. Document what was deferred in the close-out comment so the user can promote follow-on tasks. Do *not* let an epic-sized task block the loop, and do *not* split into multiple commits within one task closure. **Inverse:** if all sub-deliverables are small independent config tweaks (each 5-15 lines, no shared touch points), they CAN fit in one commit together — that IS the largest coherent slice. Don't artificially fragment a task whose deliverables don't conflict.
 - **Push after each commit.** Use `-u <remote> <branch>` on the first push if needed.
 - **Close duplicates** with a back-reference.
 - **Don't create new tasks during the loop.** Note discoveries in comments on related tasks; the user promotes them later.
