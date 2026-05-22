@@ -165,7 +165,11 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     purpose:
       'System one-pager: data flow across API, MCP, CLI, Slack, DB. Boundaries, not internals.',
     when_to_read: 'second',
-    line_budget: 300,
+    // Bumped 300 -> 350 by the milestone-close audit (#286). The doc landed at
+    // exactly 300/300, leaving no room for any subsequent edit; 50 lines of
+    // headroom lets the freshness rule (#281) stay useful without forcing a
+    // split today. Tighten back to 300 once a future task trims the doc.
+    line_budget: 350,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
