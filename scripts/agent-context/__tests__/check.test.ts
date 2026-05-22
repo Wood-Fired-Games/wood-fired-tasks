@@ -27,12 +27,11 @@ const REQUIRED_GROUPS = [
   'security-sensitive',
 ] as const;
 
-const RESERVED_SLOTS = [
-  'docs/ARCHITECTURE.md',
-  'docs/WORKFLOWS.md',
-  'docs/INTERFACES.md',
-  'docs/NAVIGATION.md',
-] as const;
+// Note: we intentionally do not hard-code the reserved-slot list. As
+// canonical docs land, entries flip from `reserved` -> `present`; a
+// hard-coded list creates a moving snapshot that breaks every flip. The
+// `every reserved entry must lack actual_lines` invariant below catches
+// any real drift.
 
 function loadOnDisk(repoRoot: string): AgentContextManifest {
   const abs = resolve(repoRoot, MANIFEST_PATH);
@@ -76,13 +75,14 @@ describe('agent-context manifest', () => {
     }
   });
 
-  it('contains every reserved canonical slot', () => {
+  it('every reserved entry must lack actual_lines (file not on disk)', () => {
     const fresh = buildManifest({ repoRoot });
-    const reservedPaths = new Set(
-      fresh.files.filter((f) => f.status === 'reserved').map((f) => f.path),
-    );
-    for (const p of RESERVED_SLOTS) {
-      expect(reservedPaths.has(p), `${p} should be a reserved slot`).toBe(true);
+    for (const entry of fresh.files) {
+      if (entry.status !== 'reserved') continue;
+      expect(
+        entry.actual_lines,
+        `${entry.path} is marked reserved but has actual_lines — flip to present`,
+      ).toBeUndefined();
     }
   });
 
