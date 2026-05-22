@@ -48,6 +48,7 @@ only when adding or removing dependencies.
 | Dep graph (DOT)              | `npm run depcruise:graph`                | Visualising module structure; produces `dependency-graph.dot`.              |
 | Mutation tests               | `npm run test:mutation`                  | Periodic quality run. Slow; not a per-commit gate.                          |
 | Manifest check               | `npm run agent-context:check`            | After editing any agent-facing doc or the manifest source.                  |
+| Onboarding smoke (scripted)  | `npx vitest run scripts/agent-context/__tests__/onboarding-smoke.test.ts` | After editing any agent-facing doc; see [docs/ONBOARDING_SMOKE.md](ONBOARDING_SMOKE.md). |
 | Manifest regenerate          | `npm run agent-context:gen`              | After flipping a manifest entry from `reserved` to `present`.               |
 | Full local quality gate      | `npm run quality`                        | Before opening a PR — mirrors the CI matrix.                                |
 
