@@ -10,7 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
@@ -22,10 +22,20 @@ export const GENERATOR_PATH = 'scripts/agent-context/generate.ts';
 export const MANIFEST_PATH = '.agent-context.json';
 
 // ~4 chars per token, per the contract.
-const CHARS_PER_TOKEN = 4;
+export const CHARS_PER_TOKEN = 4;
 // Average characters per line used to derive an approximate token budget from
 // a line budget. 80 is a generous upper bound for prose-heavy markdown.
-const CHARS_PER_LINE = 80;
+export const CHARS_PER_LINE = 80;
+
+/**
+ * Convert a line count to an approximate token count using the same
+ * heuristic used to derive `approx_token_budget` from `line_budget`.
+ * Kept in one place so `check.ts` failure messages and the manifest's
+ * `approx_token_budget` field stay in lockstep.
+ */
+export function approxTokensForLines(lineCount: number): number {
+  return Math.round((lineCount * CHARS_PER_LINE) / CHARS_PER_TOKEN);
+}
 
 // Files which are agent-facing but for historical reasons do not carry an
 // `Owner:` line in their first three lines. These are skipped from the
@@ -402,9 +412,7 @@ export function buildManifest(
   const generatedAt = options.generatedAt ?? new Date().toISOString();
 
   const files: ManifestFileEntry[] = MANIFEST_SOURCE.map((entry) => {
-    const approxTokenBudget = Math.round(
-      (entry.line_budget * CHARS_PER_LINE) / CHARS_PER_TOKEN,
-    );
+    const approxTokenBudget = approxTokensForLines(entry.line_budget);
     const out: ManifestFileEntry = {
       ...entry,
       approx_token_budget: approxTokenBudget,
@@ -461,3 +469,159 @@ export function buildManifest(
 }
 
 export { OWNER_LINE_EXEMPT };
+
+// ---------------------------------------------------------------------------
+// Internal-link validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Match the `](target)` tail of a markdown link on a single line. Link text
+ * may wrap across lines, but the closing `](target)` is always on one line
+ * in practice (CommonMark allows multi-line targets only in reference-style
+ * links, which we treat as out of scope — see limitations below).
+ *
+ * Group 1 captures the target. We deliberately exclude whitespace and `)`
+ * from the target match. Empty parens are skipped by the caller.
+ *
+ * Limitations (documented; out of scope for v1):
+ *   - Reference-style links (`[text][label]` + `[label]: target`) are not
+ *     resolved. None of the current agent-facing docs use them.
+ *   - Image links (`![alt](path)`) ARE matched the same way as regular
+ *     links; broken image paths surface as errors, which is the desired
+ *     behavior for agent-facing docs.
+ *   - Targets containing literal `)` (rare for filesystem paths) are
+ *     truncated at the first `)`. Document paths in this repo do not
+ *     contain `)`.
+ *   - Inside fenced code blocks we still scan; this is a known minor
+ *     limitation. Any fenced literal that happens to look like
+ *     `](rel/path)` will be checked, but for agent-facing docs this is
+ *     not currently a source of false positives. If it becomes one, add
+ *     a fenced-block tracker here.
+ */
+const LINK_TAIL_RE = /\]\(([^)\s]+)\)/g;
+
+export interface LinkValidationError {
+  file: string;
+  line: number;
+  target: string;
+  resolved: string;
+  message: string;
+}
+
+/**
+ * Validate internal markdown links in every "present" `.md` entry in
+ * MANIFEST_SOURCE. Returns a flat list of errors; empty list means all
+ * relative links resolve to files on disk.
+ *
+ * Skipped (out of scope) targets:
+ *   - http://, https://, mailto:, ftp://, file:// schemes
+ *   - Bare anchor fragments (`#section`) that refer to the same file
+ *   - Empty targets
+ *   - Absolute filesystem paths (`/foo`) — out of scope; agent-facing
+ *     docs never use absolute paths.
+ *
+ * In-scope targets:
+ *   - `./file.md`, `file.md`, `../AGENTS.md`, `docs/REPO_MAP.md`
+ *   - Targets with `#fragment` (the fragment is stripped before resolving)
+ *
+ * The validator reads ONLY the markdown files listed in MANIFEST_SOURCE.
+ * It never opens `data/*.db`, `.env`, `~/.claude.json`, or any HTTP
+ * endpoint. Network access is intrinsically impossible because no
+ * outbound IO primitives are imported.
+ */
+export function validateInternalLinks(repoRoot: string): LinkValidationError[] {
+  const errors: LinkValidationError[] = [];
+
+  for (const entry of MANIFEST_SOURCE) {
+    if (entry.status !== 'present') continue;
+    if (!entry.path.endsWith('.md')) continue;
+
+    const abs = resolve(repoRoot, entry.path);
+    if (!existsSync(abs)) continue; // file-exists is checked elsewhere
+
+    const text = readFileSync(abs, 'utf8');
+    const lines = text.split('\n');
+    const sourceDir = dirname(abs);
+
+    let inFencedBlock = false;
+    for (let i = 0; i < lines.length; i++) {
+      const rawLine = lines[i] ?? '';
+      // Track fenced code blocks (``` or ~~~). Anything inside is treated
+      // as literal text — links inside fences must not be checked because
+      // they are often illustrative examples of content destined for
+      // another file.
+      if (/^\s*(```|~~~)/.test(rawLine)) {
+        inFencedBlock = !inFencedBlock;
+        continue;
+      }
+      if (inFencedBlock) continue;
+
+      // Strip inline backtick code spans before link scanning. A code span
+      // `...` (or ``...``) is literal text in CommonMark — any link inside
+      // it is not a real link. This avoids false positives on documented
+      // examples like `> See [AGENTS.md](AGENTS.md).` shown as an inline
+      // illustration of what another file (e.g. CLAUDE.md at repo root)
+      // should contain.
+      const line = stripInlineCode(rawLine);
+
+      LINK_TAIL_RE.lastIndex = 0;
+      let match: RegExpExecArray | null = LINK_TAIL_RE.exec(line);
+      while (match !== null) {
+        const raw = match[1] ?? '';
+        if (raw.length > 0 && !isOutOfScopeTarget(raw)) {
+          const targetNoFragment = stripFragment(raw);
+          if (targetNoFragment.length > 0) {
+            const resolvedAbs = resolve(sourceDir, targetNoFragment);
+            if (!existsSync(resolvedAbs)) {
+              errors.push({
+                file: entry.path,
+                line: i + 1,
+                target: raw,
+                resolved: resolvedAbs,
+                message: `${entry.path}:${
+                  i + 1
+                }: broken link to "${raw}" (resolved to "${resolvedAbs}")`,
+              });
+            }
+          }
+        }
+        match = LINK_TAIL_RE.exec(line);
+      }
+    }
+  }
+
+  return errors;
+}
+
+function isOutOfScopeTarget(target: string): boolean {
+  // External schemes — never resolved against the filesystem.
+  if (/^(https?|mailto|ftp|file|tel):/i.test(target)) return true;
+  // Bare anchor fragment on the same file.
+  if (target.startsWith('#')) return true;
+  // Absolute filesystem path — agent-facing docs never use these; treat
+  // as out of scope to avoid false positives on `/api/v1/...` style
+  // documentation references that look path-like but aren't filesystem
+  // targets.
+  if (isAbsolute(target)) return true;
+  return false;
+}
+
+function stripFragment(target: string): string {
+  const hash = target.indexOf('#');
+  return hash === -1 ? target : target.slice(0, hash);
+}
+
+/**
+ * Remove inline backtick code spans from a line so link scanning skips
+ * them. Handles single-backtick spans (` ... `) and the common
+ * double-backtick form (`` ... ``). This is a pragmatic approximation of
+ * CommonMark inline code parsing — sufficient for agent-facing docs
+ * which never nest backticks asymmetrically across lines.
+ */
+function stripInlineCode(line: string): string {
+  // Replace matched double-backtick spans first, then single-backtick.
+  // Non-greedy match keeps adjacent spans on the same line independent.
+  return line
+    .replace(/``[^`\n]*``/g, '')
+    .replace(/`[^`\n]*`/g, '');
+}
