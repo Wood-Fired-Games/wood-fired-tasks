@@ -26,6 +26,16 @@
 
 <!-- What could break? Which subsystems are touched (CLI, MCP, REST, DB schema)? Any migrations or backfills required? Roll-back plan? -->
 
+## Quality
+
+- [ ] Affected layers (check all that apply): `api` / `cli` / `mcp` / `slack` / `services` / `events` / `repositories` / `db` / `schemas` / `types` / `utils` / `config` / docs / CI.
+- [ ] Runtime boundaries touched (Zod schemas, MCP tool input, Slack signature handling, SSE event filtering, SQL/FTS query construction) — noted in the PR description.
+- [ ] Test level matches the change (route → integration; service → service test; repository → repo + integration; util → unit; state-machine / dependency-cycle / pagination change → property test under `**/__tests__/*.property.test.ts`).
+- [ ] Local quality gates ran: `npm run quality` (build, tests, lint, lint:deps, depcruise, prod audit).
+- [ ] Security-sensitive surfaces (auth, secrets, SQL/FTS query construction, Slack signature verification, MCP tool argument handling, SSE event leakage) — flagged in the PR description if touched.
+
+<!-- See `docs/CODE_QUALITY_ROADMAP.md` for the full quality contract and the "Ongoing Review Checklist" section. -->
+
 ## Migration changes (only if this PR touches `src/db/migrations/`)
 
 - [ ] Runs inside the serialized migration flow (registered with the existing Umzug pipeline; no ad-hoc connections).

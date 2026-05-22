@@ -151,6 +151,12 @@ npm run quality               # Composite: build, test, lint,
                               # lint:deps, depcruise, prod audit
 ```
 
+The PR template's **Quality** and **Migration changes** checklists are
+part of the review contract — authors must fill them in, and reviewers
+must consider them when the corresponding surfaces are touched. See
+[`docs/CODE_QUALITY_ROADMAP.md`](./docs/CODE_QUALITY_ROADMAP.md) for the
+full quality contract and the "Ongoing Review Checklist" section.
+
 Or run individual gates while iterating:
 
 ```bash

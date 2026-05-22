@@ -587,6 +587,16 @@ Suggested PR quality prompts:
 - Which tests prove the behavior?
 - Did build, tests, lint/format, dependency check, audit, and pack check pass?
 
+Status:
+
+- **Landed in task #271.** `.github/PULL_REQUEST_TEMPLATE.md` gained a
+  "Quality" section above the existing "Migration changes" section,
+  covering affected layers, runtime boundaries, test level, the
+  `npm run quality` composite gate, and security-sensitive surfaces.
+  `docs/RELEASE.md` now cross-links this roadmap and the "Ongoing Review
+  Checklist" section below as the canonical per-PR prompts, so the PR
+  template stays scannable instead of duplicating the full roadmap.
+
 ## Ongoing Review Checklist
 
 Use this checklist when reviewing non-trivial PRs:
@@ -606,14 +616,51 @@ Use this checklist when reviewing non-trivial PRs:
 
 ## Definition Of Done For Quality Uplift
 
-The roadmap can be considered complete when:
+Status as of task #271 (Phase 8 close-out):
 
-- The repo has a lint and format gate in CI.
-- Stricter TypeScript flags have been ratcheted as far as practical.
-- Unsafe casts are reduced, localized, or explicitly documented.
-- Architecture/import boundaries are checked automatically.
-- Build, tests, coverage, dependency hygiene, audit, lint, and format are all
-  easy to run locally and visible in CI.
-- Dependency update automation exists.
-- Migration/security/test review expectations are captured in PR and release
-  workflows.
+- **Lint gate: DONE.** Biome lint runs as the `lint` CI job and locally via
+  `npm run lint` (0/0 baseline, warning-free). **Format gate: DEFERRED** —
+  Biome formatter is intentionally disabled in `biome.json`; enabling it
+  requires a one-time reformat sweep, called out as the recommended
+  follow-on under Phase 6 status.
+- **Stricter TypeScript flags: PARTIALLY DONE.**
+  `useUnknownInCatchVariables`, `noFallthroughCasesInSwitch`, and
+  `noImplicitOverride` landed in task #265. **DEFERRED:**
+  `noPropertyAccessFromIndexSignature`, `exactOptionalPropertyTypes`, and
+  `noUncheckedIndexedAccess` — rationale captured under Phase 2 "Deferred
+  flags".
+- **Unsafe casts reduced, localized, or documented: DONE for the priority
+  targets.** Repository row reads funnel through
+  `src/repositories/row-mapper.ts` (task #266); remaining ad-hoc casts are
+  limited to the `info.lastInsertRowid as number` boundary. Other priority
+  targets (MCP structured output, Slack Block Kit, SSE event filtering,
+  dependency-cycle metadata) are tracked under Phase 3.
+- **Architecture / import boundaries checked automatically: DONE.**
+  dependency-cruiser enforces layer rules and the no-cycles rule via
+  `npm run depcruise` and the `depcruise` CI job (task #267). **Complexity
+  reporting: DEFERRED** — Phase 4 status calls out the recommended
+  follow-on (advisory-mode `eslint-plugin-sonarjs` or `complexity-report`).
+- **Build, tests, coverage, dependency hygiene, audit, lint, and format
+  easy to run locally and visible in CI: MOSTLY DONE.** `npm run quality`
+  chains build, test, lint, lint:deps, depcruise, and prod audit; CI runs
+  the same gates. Format is the only deferred element (see Phase 6 status).
+- **Dependency update automation: DONE.** `.github/dependabot.yml`
+  configured for `npm` and `github-actions` on a weekly Monday cadence
+  with patch/minor grouping (task #269).
+- **Migration / security / test review expectations captured in PR and
+  release workflows: DONE.** Migration checklist landed in the PR template
+  and `docs/RELEASE.md` (task #268); per-migration test policy and the
+  row-mapper convention codified under Phase 5. The PR template's
+  "Quality" section and the `docs/RELEASE.md` cross-link to this roadmap
+  (task #271) make the per-PR review prompts repeatable.
+
+Remaining open items (tracked as follow-on tasks, not blockers for this
+roadmap closeout):
+
+- Formatter enable + one-time reformat sweep (Phase 6 follow-on).
+- Complexity reporting calibration pass (Phase 4 follow-on).
+- Remaining strict-TS flag ratchet for `noPropertyAccessFromIndexSignature`,
+  `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` (Phase 2
+  deferred list).
+- Mutation review for high-risk / low-score modules and additional date-
+  filter / idempotency-TTL property tests (Phase 7 follow-on).

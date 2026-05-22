@@ -4,6 +4,11 @@ This document covers the pre-publication checks that gate every npm release
 of `wood-fired-bugs`, plus the open-source launch checklist. Run through this
 the first time you publish to npm, and again whenever a major version cuts.
 
+See [`docs/CODE_QUALITY_ROADMAP.md`](./CODE_QUALITY_ROADMAP.md) for the full
+code-quality contract and gate definitions; the "Ongoing Review Checklist"
+section there is the canonical per-PR review prompts, and the PR template's
+"Quality" and "Migration changes" sections mirror those gates for every PR.
+
 ## Continuous gates
 
 These run automatically on every PR and on `main`:
