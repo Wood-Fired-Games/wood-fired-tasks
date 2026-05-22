@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-22T22:35:22.156Z",
+    "generated_at": "2026-05-22T22:45:51.315Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 90,
-      "sha256": "44a6936a3f0a38e4b5e5ddb630542b0544b4978bd5380ba7ad5ec83f2ff5bf0d",
+      "actual_lines": 91,
+      "sha256": "5c6ef569af7592b7965783f56df7e6bfd01815b686ddcdbe31afc572c7295aa3",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -77,8 +77,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 191,
-      "sha256": "d438292dd0a8a76544f30e37d63887354ced3ef765c62b13455866e67aa5c49f",
+      "actual_lines": 192,
+      "sha256": "fef67bda5f34d383827b177413813fe79e22db04ee57883d19291fa30d5754bc",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -205,6 +205,20 @@
       "approx_token_budget": 30000,
       "actual_lines": 666,
       "sha256": "d0ffbcb15513a55a5f37b9d9edaf06d183bd2b6e7e63e5b49dd4ad0bf2c7b1b1"
+    },
+    {
+      "path": "docs/ONBOARDING_SMOKE.md",
+      "role": "onboarding-smoke",
+      "purpose": "Agent onboarding smoke test: seven probe scenarios that prove a fresh agent can navigate the repo from committed context alone.",
+      "when_to_read": "on-demand",
+      "line_budget": 200,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 4000,
+      "actual_lines": 158,
+      "sha256": "bde22df437489f074e60d6d5845248511c9d3168bb3d4c436765781bf933b7e3",
+      "actual_owner": "Repository maintainers"
     },
     {
       "path": "CONTRIBUTING.md",

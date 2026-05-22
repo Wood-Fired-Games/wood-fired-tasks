@@ -275,6 +275,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     notes: 'Advisory budget — tighten in a follow-up.',
   },
   {
+    path: 'docs/ONBOARDING_SMOKE.md',
+    role: 'onboarding-smoke',
+    purpose:
+      'Agent onboarding smoke test: seven probe scenarios that prove a fresh agent can navigate the repo from committed context alone.',
+    when_to_read: 'on-demand',
+    line_budget: 200,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'CONTRIBUTING.md',
     role: 'human-onboarding',
     purpose: 'Human contributor workflow, commit and PR rules.',

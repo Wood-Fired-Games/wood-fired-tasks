@@ -78,6 +78,7 @@ Treat these as off-limits unless your task explicitly requires touching them.
 | [docs/SLACK.md](docs/SLACK.md) | Slack integration reference |
 | [docs/RELEASE.md](docs/RELEASE.md) | Release process |
 | [docs/CODE_QUALITY_ROADMAP.md](docs/CODE_QUALITY_ROADMAP.md) | Quality roadmap |
+| [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Onboarding smoke test — 7 probe scenarios for fresh agents |
 | `docs/REPO_MAP.md` | Reserved — repo tree with per-directory ownership (coming in this milestone) |
 | `docs/ARCHITECTURE.md` | Reserved — system one-pager, data flow across surfaces (coming in this milestone) |
 | `docs/WORKFLOWS.md` | Reserved — canonical command recipes (coming in this milestone) |
