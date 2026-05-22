@@ -2,11 +2,44 @@
   "name": "wood-fired-bugs",
   "version": "1.0.0",
   "description": "Network-wide task tracking system for Wood Fired Games",
+  "keywords": [
+    "task-tracker",
+    "bug-tracker",
+    "mcp",
+    "model-context-protocol",
+    "fastify",
+    "cli",
+    "slack-integration",
+    "sqlite",
+    "typescript",
+    "claude-code"
+  ],
+  "author": "Wood Fired Games",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wood-Fired-Games/wood-fired-bugs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Wood-Fired-Games/wood-fired-bugs/issues"
+  },
+  "homepage": "https://github.com/Wood-Fired-Games/wood-fired-bugs#readme",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "tasks": "./dist/cli/bin/tasks.js"
   },
+  "files": [
+    "dist/",
+    "!dist/**/__tests__/**",
+    "!dist/**/*.test.*",
+    "!dist/**/*.property.test.*",
+    "!dist/wood-fired-bugs-client.zip",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -24,11 +57,9 @@
     "mcp:dev": "tsx src/mcp/index.ts",
     "mcp:remote": "node dist/mcp/remote/index.js",
     "lint:deps": "knip --dependencies",
-    "test:mutation": "stryker run"
+    "test:mutation": "stryker run",
+    "pack:check": "npm pack --dry-run"
   },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "@clack/prompts": "^1.0.1",
     "@fastify/rate-limit": "^10.3.0",

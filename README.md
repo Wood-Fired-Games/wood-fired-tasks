@@ -581,6 +581,15 @@ and exposes 21 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 
+## Release Verification
+
+Before publishing to npm, run `npm run pack:check` (alias for
+`npm pack --dry-run`) and inspect the printed file list. Confirm that
+`dist/` JS + `.d.ts` files, `LICENSE`, `README.md`, `CHANGELOG.md`, and
+`SECURITY.md` are present, and that `src/`, `.env*`, `data/*.db`,
+`.planning/`, and test files are **absent**. The package uses an explicit
+`files` allowlist in `package.json` — adjust it there if the output drifts.
+
 ## License
 
 MIT
