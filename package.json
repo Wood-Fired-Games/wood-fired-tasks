@@ -101,7 +101,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
-    "@fast-check/vitest": "^0.2.4",
+    "@fast-check/vitest": "^0.4.1",
     "@slack/types": "^2.20.0",
     "@slack/web-api": "^7.15.2",
     "@stryker-mutator/core": "^9.5.1",
