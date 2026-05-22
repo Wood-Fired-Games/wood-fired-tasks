@@ -276,6 +276,88 @@ If your PR touches a hot module (anything under `src/api/`, `src/db/`,
 `src/mcp/tools/`, or `src/cli/commands/`), consider labeling it
 `mutation` so the nightly check runs against your branch before merge.
 
+## Agent context maintenance
+
+This repo ships a set of agent-facing context files so any AI assistant or
+new human contributor can orient quickly after a fresh clone. Those files
+are only useful if they stay accurate. The rules below describe when each
+file must be updated, what belongs in your PR, and how the authoritative
+vs. generated split works. Nothing here is vendor-specific — the rules
+apply equally whether you use Claude, Cursor, Gemini, Codex, Copilot, or no
+AI assistant at all.
+
+### When to update each agent-facing file
+
+| File                          | Update when                                                                                                                                                                                       | Authority                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `AGENTS.md`                   | Adding a new top-level surface, changing essential commands, changing the read-next intent table, or renaming a top-level directory in `src/`.                                                    | Authoritative              |
+| `docs/AGENT_CONTEXT.md`       | Adding a new canonical doc, changing a size budget, changing the authority taxonomy or freshness rule, or changing the vendor-neutral boundary.                                                   | Authoritative              |
+| `docs/REPO_MAP.md`            | Adding, renaming, or removing a top-level directory or a notable `src/` subtree.                                                                                                                  | Authoritative              |
+| `docs/ARCHITECTURE.md`        | Changing a mutation flow (status transition matrix, claim semantics, idempotency window, event types), changing a layer boundary, or changing the auth model on any surface.                      | Authoritative              |
+| `docs/WORKFLOWS.md`           | Adding, removing, or renaming an `npm` script; changing required env vars; or changing the focused-vs-full test guidance.                                                                         | Authoritative              |
+| `docs/INTERFACES.md`          | Adding or removing a REST route, MCP tool, or CLI command. Update the per-surface table **and** the `Total: N` anchor; the drift test fails otherwise.                                            | Generated (verified by test) |
+| `docs/NAVIGATION.md`          | Adding a new change-type recipe, or changing the implementation / test / docs paths for an existing recipe.                                                                                       | Authoritative              |
+| `.agent-context.json`         | After editing `scripts/agent-context/manifest.ts` (path additions, status flips, budget changes). Regenerate with `npm run agent-context:gen`.                                                    | Generated                  |
+
+### PR checklist for agent context impact
+
+There is no PR template yet, so copy the relevant items below into your PR
+description and tick the ones that apply. (When a PR template lands, these
+will move there.)
+
+- [ ] If this PR adds, removes, or renames a REST route, MCP tool, or CLI command, I updated `docs/INTERFACES.md` (per-row table + `Total: N` anchor) and ran `npm test` so the drift test stays green.
+- [ ] If this PR changes a status transition, claim rule, event type, idempotency rule, or other behavior that crosses surfaces, I updated `docs/ARCHITECTURE.md`.
+- [ ] If this PR adds a new top-level directory or renames a notable subtree, I updated `docs/REPO_MAP.md`.
+- [ ] If this PR adds an `npm` script or changes a developer command, I updated `docs/WORKFLOWS.md`.
+- [ ] If this PR adds a new canonical agent-facing doc, I added a row in the `docs/AGENT_CONTEXT.md` §2 table, classified it in §3, and gave it a size budget in §4.
+- [ ] If this PR changes the canonical-files list, the size budgets, or the freshness rules, I updated `docs/AGENT_CONTEXT.md` and `AGENTS.md`'s deeper-docs table to match.
+- [ ] If this PR edits `scripts/agent-context/manifest.ts` or any agent-facing doc, I ran `npm run agent-context:gen` and `npm run agent-context:check` and committed the regenerated `.agent-context.json`.
+- [ ] If this PR adds a vendor-specific file (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`, or any future `.<vendor>/`), it is either a thin pointer to `AGENTS.md` or vendor-only configuration with no unique project facts (per `docs/AGENT_CONTEXT.md` §6).
+
+### Ownership and freshness expectations
+
+All authoritative agent-facing files carry an `Owner:` line in their first
+three lines (per the contract in `docs/AGENT_CONTEXT.md`). The value is a
+role — `Owner: maintainers` or `Owner: docs` — not a person, so ownership
+survives contributor turnover.
+
+Hand-written authoritative files MUST stay under their declared line
+budget. If the budget is exceeded, split the doc by linking to a new file
+rather than growing the budget. Bigger files defeat the point: an agent
+that has to read 800 lines to orient is back where it started.
+
+Generated files MUST NOT be hand-edited. Their source is the corresponding
+generator script under `scripts/`. Regenerate with
+`npm run agent-context:gen` (or the appropriate script) and commit the
+artefact alongside the source change in the same PR.
+
+A forthcoming freshness CI check (tracked as a follow-up task) will
+re-run the generator and fail PRs whose committed artefact drifts from
+the regenerated content. Until that lands, contributors are responsible
+for the manual run. `docs/INTERFACES.md` drift is *already* enforced by
+`scripts/agent-context/__tests__/interfaces-counts.test.ts` — other drift
+is not yet automated, so reviewers should spot-check it during review.
+
+### Vendor-specific adapter review
+
+If a PR adds or modifies a vendor-specific file (`.claude/`, `CLAUDE.md`,
+`.cursor/`, `.gemini/`, `.codex/`, or any future `.<vendor>/`), reviewers
+MUST check it against `docs/AGENT_CONTEXT.md` §6. The file MUST be either
+(a) a thin pointer of the form `> See [AGENTS.md](AGENTS.md).` plus
+optional vendor-config notes, or (b) vendor-only configuration such as
+slash commands, MCP client wiring, or tool allow-lists. The file MUST NOT
+contain unique project facts — if it does, move the content into
+`AGENTS.md` or `docs/` and replace the vendor file with a pointer. As an
+invariant, deleting every vendor-specific file from a clean checkout MUST
+leave the project fully usable by any agent that reads `AGENTS.md`.
+
+### Canonical guidance lives in committed repo files
+
+Canonical agent guidance lives in committed repo files only — never in
+private chat transcripts, task tracker comments, or vendor memory
+features. If a fact only exists in a place an external contributor cannot
+read after a fresh clone, it is not canonical.
+
 ## Commit & PR Style
 
 - **Conventional commits** — `<type>(<area>): <subject>` (see Development
