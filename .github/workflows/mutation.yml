@@ -67,36 +67,22 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - name: Run Stryker (shard ${{ matrix.shard.id }} / ${{ matrix.shard.name }})
-        # Per-shard --mutate restricts Stryker to a disjoint subset of src/.
-        # Exclusion globs match stryker.config.js so we keep the same set of
-        # ignored files (tests, migrate.ts, cli/bin/tasks.ts).
+        # Shard partitioning is driven by STRYKER_MUTATE_GLOBS — see
+        # stryker.config.js. The CLI --mutate flag does NOT accumulate
+        # (later --mutate overrides earlier ones), so passing per-shard
+        # globs via env is the only reliable approach. Exclusions stay in
+        # stryker.config.js.
         # --reporters json,clear-text,progress ensures a JSON report is
         # written at reports/mutation/mutation.json for the aggregator.
-        # We do NOT enforce thresholds.break here — the aggregator does that
-        # against the unified score across all shards.
-        #
-        # SHARD_GLOBS is sourced from the matrix (author-controlled YAML),
-        # but we still pass it via env to avoid the GHA `run:` interpolation
-        # injection pattern.
         # STRYKER_DISABLE_BREAK_THRESHOLD=1 tells stryker.config.js to skip
         # the per-shard break check (a single shard's score is meaningless;
         # the unified break is enforced by the aggregator job below).
         env:
-          SHARD_GLOBS: ${{ matrix.shard.globs }}
+          STRYKER_MUTATE_GLOBS: ${{ matrix.shard.globs }}
           STRYKER_DISABLE_BREAK_THRESHOLD: '1'
         run: |
-          set -eu
-          mutate_args=()
-          for g in $SHARD_GLOBS; do
-            mutate_args+=(--mutate "$g")
-          done
-          npx stryker run \
-            "${mutate_args[@]}" \
-            --mutate '!src/**/__tests__/**' \
-            --mutate '!src/**/*.test.ts' \
-            --mutate '!src/db/migrate.ts' \
-            --mutate '!src/cli/bin/tasks.ts' \
-            --reporters json,clear-text,progress
+          set -euo pipefail
+          npx stryker run --reporters json,clear-text,progress
       - name: Upload shard JSON report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -135,8 +121,11 @@ jobs:
       - name: List downloaded shard reports
         run: ls -lR shard-reports/
       - name: Aggregate shard reports and enforce 75% break threshold
+        # pipefail is essential: without it the `tee` swallows a non-zero
+        # exit from the aggregator and the workflow silently passes when
+        # the unified score is below threshold.
         run: |
-          set -eu
+          set -euo pipefail
           mkdir -p reports/mutation
           npx tsx scripts/aggregate-mutation-reports.ts \
             --threshold 75 \

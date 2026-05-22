@@ -307,6 +307,18 @@ function main(): void {
     }
   }
 
+  // Defense in depth: an aggregation with zero covered mutants is almost
+  // certainly a broken pipeline (e.g., shards mutated nothing), not a
+  // genuine score of 0%. Fail loud rather than silently "passing" a
+  // null threshold or letting a 0%-below-threshold check do the work.
+  if (result.totalCovered === 0) {
+    process.stderr.write(
+      'error: aggregate report has zero covered mutants; ' +
+        'shards likely failed to mutate any source files\n',
+    );
+    process.exit(1);
+  }
+
   if (args.threshold !== null && result.score < args.threshold) {
     process.exit(1);
   }

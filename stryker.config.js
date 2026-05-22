@@ -1,4 +1,22 @@
 // @ts-check
+
+// Task #252: per-shard CI runs need to restrict mutation to a subset of src/.
+// Stryker's --mutate CLI flag does NOT accumulate (later --mutate overrides
+// earlier ones), so we drive shard partitioning via STRYKER_MUTATE_GLOBS env
+// var: a whitespace-separated list of include globs. Exclusions are always
+// applied. When the env var is unset (local `npm run test:mutation` runs), we
+// fall back to mutating the full src/ tree.
+const exclusions = [
+  '!src/**/__tests__/**',
+  '!src/**/*.test.ts',
+  '!src/db/migrate.ts',
+  '!src/cli/bin/tasks.ts',
+];
+const shardGlobsRaw = process.env.STRYKER_MUTATE_GLOBS;
+const includes = shardGlobsRaw && shardGlobsRaw.trim()
+  ? shardGlobsRaw.trim().split(/\s+/)
+  : ['src/**/*.ts'];
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
@@ -7,13 +25,7 @@ export default {
     related: false,
   },
   coverageAnalysis: 'perTest',
-  mutate: [
-    'src/**/*.ts',
-    '!src/**/__tests__/**',
-    '!src/**/*.test.ts',
-    '!src/db/migrate.ts',
-    '!src/cli/bin/tasks.ts',
-  ],
+  mutate: [...includes, ...exclusions],
   checkers: ['typescript'],
   tsconfigFile: 'tsconfig.json',
   typescriptChecker: {
