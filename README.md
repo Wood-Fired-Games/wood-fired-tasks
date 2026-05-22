@@ -20,6 +20,16 @@ Wood Fired Bugs is a centralized task management service providing a REST API, C
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
 - Cross-platform installers for Linux/macOS and Windows
 
+## For agents
+
+Coding agents (Claude Code, Cursor, Gemini, Codex, and others) should start with:
+
+1. [AGENTS.md](AGENTS.md) — first-read navigation hub.
+2. [docs/AGENT_CONTEXT.md](docs/AGENT_CONTEXT.md) — the vendor-neutral context contract.
+3. [.agent-context.json](.agent-context.json) — machine-readable manifest of canonical files and their budgets.
+
+Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are adapters and MUST NOT carry unique facts — see `docs/AGENT_CONTEXT.md` §6.
+
 ## Quick Start
 
 ```bash
