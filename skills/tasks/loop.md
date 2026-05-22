@@ -1,11 +1,11 @@
 ---
-name: bug-smash
+name: loop
 description: Autonomous backlog-drain loop. A single orchestrating context picks the highest priority open task from a Wood Fired Bugs project, dispatches a subagent to implement the fix, independently re-validates with the project's build/test/smoke commands, closes the task, commits, pushes, and continues. Use when the user wants to drain an open backlog hands-off without filling the main context with implementation noise.
 argument-hint: [project-name] [--max-tasks N]
 disable-model-invocation: false
 ---
 
-# Bug Smash Workflow
+# Task Loop Workflow
 
 You are the **orchestrator** of an autonomous backlog-drain. Your job is *not* to implement fixes yourself — your job is to **plan, dispatch subagents, verify, and commit**, so this single context stays clean and consistent across many task iterations.
 
@@ -17,7 +17,7 @@ The loop is project-agnostic. Validation commands (`build`, `test`, `smoke`) and
 
 ## 1. Argument Parsing
 
-Parse `$ARGUMENTS` — or, when invoked via natural language ("run bug-smash on project X"), extract the equivalent fields from the request:
+Parse `$ARGUMENTS` — or, when invoked via natural language ("loop the backlog on project X", "drain project X"), extract the equivalent fields from the request:
 
 - `[project-name-or-id]` — if the value starts with `#` or is a bare integer, treat it as the project ID and skip the name match. Otherwise, do a case-insensitive partial match against project names.
 - `--max-tasks N` — optional. Stop the loop after N successful task closures and check in with the user before continuing. Default is **3**. Pass `--max-tasks 0` to loop until the backlog is empty (only do this if the user explicitly asks for unattended drain). If the user invokes via natural language and doesn't state a budget, default to **3** but propose an adjustment in Section 2e if the backlog looks epic-sized.
@@ -44,7 +44,7 @@ Look for one or more spec docs that the tasks reference:
 
 **Read these in full once.** They are the source of truth subagents will need excerpts from. Keep mental notes — section numbers, line ranges, acceptance-criteria patterns — so you can quote them in subagent briefs without re-reading.
 
-If the loop is non-trivial (≥ 2 tasks) and the spec doc is large (>200 lines), externalize the mental notes into a short cache file at the repo root (e.g. `.bug-smash-spec-excerpts.md`) with one entry per likely-referenced section: doc path + line range + 1-line summary + which task IDs probably need it. Later loop iterations pull from the cache instead of re-deriving section/line refs from memory. Add the cache path to `.gitignore` if not already covered.
+If the loop is non-trivial (≥ 2 tasks) and the spec doc is large (>200 lines), externalize the mental notes into a short cache file at the repo root (e.g. `.tasks-loop-spec-excerpts.md`) with one entry per likely-referenced section: doc path + line range + 1-line summary + which task IDs probably need it. Later loop iterations pull from the cache instead of re-deriving section/line refs from memory. Add the cache path to `.gitignore` if not already covered.
 
 ### 2b. Discover validation commands
 
@@ -66,7 +66,7 @@ Build a per-task validation matrix you can reuse:
 | Runtime / API / DB change | build, tests, smoke. |
 | Migration | build, tests, smoke, plus migration round-trip. |
 
-Record this matrix as a short memo. If the loop is non-trivial (≥ 3 tasks), **write the memo to `.bug-smash-memo.md` at the repo root** so subagents you spawn can read it without you re-explaining. Add the memo path to `.gitignore` if it isn't already covered.
+Record this matrix as a short memo. If the loop is non-trivial (≥ 3 tasks), **write the memo to `.tasks-loop-memo.md` at the repo root** so subagents you spawn can read it without you re-explaining. Add the memo path to `.gitignore` if it isn't already covered.
 
 ### 2c. Baseline the test suite
 
@@ -185,7 +185,7 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 - Tests: `<test command>` (current baseline: <N> tests / <M> files passing)
 - Existing CI patterns: <one-line summary>
 - Source tree shape: <one-line summary>
-- Validation memo path: `.bug-smash-memo.md`
+- Validation memo path: `.tasks-loop-memo.md`
 
 ## Required deliverables
 

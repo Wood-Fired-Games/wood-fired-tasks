@@ -711,13 +711,13 @@ After installation, these skills are available as slash commands in Claude Code.
 
 **Workflow:** Prompts for comment content, adds comment to specified task using add_comment MCP tool.
 
-### /tasks:bug-smash
+### /tasks:loop
 
-**Description:** Autonomous bug-fixing loop that drains a project's open backlog one task at a time.
+**Description:** Autonomous backlog-drain loop that works through a project's open tasks one at a time. A single orchestrating context plans and verifies; subagents implement each task.
 
-**Use when:** User wants to clear an open-task backlog hands-off — typically said as "smash the bugs", "work through the backlog", or "fix every open task in <project>".
+**Use when:** User wants to clear an open-task backlog hands-off — typically said as "loop the backlog", "drain project X", "work through the backlog", or "fix every open task in <project>".
 
-**Workflow:** Resolves the target project from the argument (asks if omitted), discovers the repo's build/test/smoke commands once, then loops: pick the highest-priority open task (`urgent > high > medium > low`, ties broken by oldest ID first), `claim_task`, apply the fix using the repo's standard workflow (e.g. `/gsd:quick`) or manual implementation, run the discovered validation suite, `add_comment` summarizing root cause + change + validation results, `update_task` to `done`, commit and push one task per commit, and repeat until `list_tasks status=open` is empty. Validation commands are **not hardcoded** — they're read from `CLAUDE.md`, `package.json`, `Makefile`, or asked once at startup, making the loop project-agnostic. Tasks that can't be resolved after 2–3 attempts are moved to `blocked` with a comment so the loop keeps draining the rest.
+**Workflow:** Resolves the target project from the argument (asks if omitted), discovers the repo's build/test/smoke commands once, then loops: pick the highest-priority open task (`urgent > high > medium > low`, ties broken by oldest ID first), `claim_task`, dispatch a subagent with a self-contained brief (acceptance criteria, domain-doc excerpts, repo conventions, validation steps, "do not commit"), independently re-run the validation suite when the subagent returns, `add_comment` summarizing approach + change + validation results, `update_task` to `done`, commit and push one task per commit, and repeat until `list_tasks status=open` is empty. Validation commands are **not hardcoded** — they're read from `CLAUDE.md`, `package.json`, `Makefile`, or asked once at startup, making the loop project-agnostic. Tasks that can't be resolved after 2–3 attempts are moved to `blocked` with a comment so the loop keeps draining the rest.
 
 **Arguments:** `[project-name]` — case-insensitive partial match. If omitted, the skill asks rather than guessing.
 
