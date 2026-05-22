@@ -19,11 +19,11 @@ import {
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 26 tools and 1 resource:
- * - 8 task tools (create, get, update, list, delete, claim, get_subtasks, list_subtasks)
+ * Factory function that creates an McpServer with 21 tools and 1 resource:
+ * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
  * - 5 project tools (create, get, update, list, delete)
- * - 7 dependency tools (add, remove, list, get_blocks, get_blocked_by, graph, check_cycle)
- * - 5 comment tools (add, list, get, update, delete)
+ * - 3 dependency tools (add, remove, list)
+ * - 3 comment tools (add, list, delete)
  * - 1 health tool (check_health)
  * - 1 resource (events://stream - SSE event stream discovery)
  *
