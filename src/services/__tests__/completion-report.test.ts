@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { ValidationError } from '../errors.js';
 import type { App } from '../../index.js';
@@ -12,6 +12,11 @@ describe('TaskService.getCompletionReport', () => {
     app = await createTestApp();
     projectAId = app.projectService.createProject({ name: 'Alpha' }).id;
     projectBId = app.projectService.createProject({ name: 'Beta' }).id;
+  });
+
+  afterEach(() => {
+    // task #257: release WorkflowEngine's EventBus subscription between tests.
+    app.dispose();
   });
 
   /**

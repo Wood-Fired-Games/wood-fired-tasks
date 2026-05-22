@@ -26,6 +26,11 @@ describe('TaskService - claimTask', () => {
     testProjectId = project.id;
   });
 
+  afterEach(() => {
+    // task #257: release WorkflowEngine's EventBus subscription between tests.
+    app.dispose();
+  });
+
   describe('happy path claim', () => {
     it('claims an unassigned open task and sets assignee, status, and claimed_at', () => {
       const task = taskService.createTask({

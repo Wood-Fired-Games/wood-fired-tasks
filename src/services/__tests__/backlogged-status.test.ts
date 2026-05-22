@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { TaskService } from '../task.service.js';
 import { ProjectService } from '../project.service.js';
@@ -32,6 +32,11 @@ describe('TaskService - Backlogged Status', () => {
       description: 'For testing backlogged status lifecycle',
     });
     testProjectId = project.id;
+  });
+
+  afterEach(() => {
+    // task #257: release WorkflowEngine's EventBus subscription between tests.
+    app.dispose();
   });
 
   describe('open -> backlogged transition', () => {

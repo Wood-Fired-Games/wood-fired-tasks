@@ -22,6 +22,20 @@ export interface App {
   dependencyService: DependencyService;
   commentService: CommentService;
   workflowEngine: WorkflowEngine;
+  /**
+   * Tear down everything `createApp` started: stops the WorkflowEngine
+   * (releasing its EventBus subscription) and closes the SQLite handle.
+   *
+   * task #257: tests previously closed only the DB, leaving the WorkflowEngine
+   * subscribed to `task.status_changed` on the singleton EventBus. Every
+   * `createTestApp` call therefore added another listener and after ~10 tests
+   * Node emitted `MaxListenersExceededWarning`. Use this from `afterEach`
+   * (or any callsite that owns the App lifetime) instead of `app.db.close()`
+   * directly so cleanup stays symmetric with `createApp`.
+   *
+   * Idempotent — safe to call multiple times.
+   */
+  dispose: () => void;
 }
 
 /**
@@ -56,6 +70,19 @@ export async function createApp(dbPath?: string): Promise<App> {
   );
   workflowEngine.start();
 
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    // Stop the WorkflowEngine FIRST so it unsubscribes from the singleton
+    // EventBus before the DB it relies on is gone. Order matters: a queued
+    // event handler that fires post-close would otherwise hit a closed db.
+    workflowEngine.stop();
+    if (db.open) {
+      db.close();
+    }
+  };
+
   return {
     db,
     projectService,
@@ -63,6 +90,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     dependencyService,
     commentService,
     workflowEngine,
+    dispose,
   };
 }
 

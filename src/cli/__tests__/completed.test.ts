@@ -51,7 +51,7 @@ describe('completed command', () => {
     consoleErrorSpy.mockRestore();
     stdoutSpy.mockRestore();
     try {
-      app.db.close();
+      app.dispose();
     } catch {
       /* ignored */
     }

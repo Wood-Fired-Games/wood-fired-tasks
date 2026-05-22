@@ -51,7 +51,7 @@ describe('stats command', () => {
     consoleLogSpy.mockRestore();
     stdoutSpy.mockRestore();
     try {
-      app.db.close();
+      app.dispose();
     } catch {
       /* ignored */
     }

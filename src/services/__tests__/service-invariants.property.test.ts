@@ -116,7 +116,7 @@ describe('TaskService.updateTask status transition invariants', () => {
         }
         return true;
       } finally {
-        app.db.close();
+        app.dispose();
       }
     }
   );
@@ -158,7 +158,7 @@ describe('CompletionReport range resolution invariants', () => {
         expect(report.total).toBe(numTasks);
         return true;
       } finally {
-        app.db.close();
+        app.dispose();
       }
     }
   );
@@ -194,7 +194,7 @@ describe('CompletionReport range resolution invariants', () => {
         expect(report.rows.length).toBe(report.total);
         return true;
       } finally {
-        app.db.close();
+        app.dispose();
       }
     }
   );
@@ -273,7 +273,7 @@ describe('TaskRepository.findByFilters subset/count invariants', () => {
         expect(count).toBe(filtered.length);
         return true;
       } finally {
-        app.db.close();
+        app.dispose();
       }
     }
   );

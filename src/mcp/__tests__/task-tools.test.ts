@@ -56,7 +56,7 @@ describe('MCP Task Tools', () => {
   afterEach(async () => {
     await clientTransport.close();
     await serverTransport.close();
-    app.db.close();
+    app.dispose();
   });
 
   describe('create_task tool', () => {

@@ -80,7 +80,7 @@ describe('E2E Regression: Full Task Lifecycle', () => {
   afterEach(async () => {
     await clientTransport.close();
     await serverTransport.close();
-    app.db.close();
+    app.dispose();
   });
 
   it('complete project workflow through MCP', async () => {

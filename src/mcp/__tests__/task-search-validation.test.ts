@@ -61,7 +61,7 @@ describe('MCP list_tasks search validation', () => {
   afterEach(async () => {
     await clientTransport.close();
     await serverTransport.close();
-    app.db.close();
+    app.dispose();
   });
 
   const MALFORMED_INPUTS: Array<{ name: string; input: string }> = [

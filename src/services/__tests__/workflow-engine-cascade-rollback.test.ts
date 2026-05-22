@@ -77,6 +77,9 @@ describe('WorkflowEngine: cascade rollback on taskRepo.update failure (regressio
     if (engine) {
       engine.stop();
     }
+    // task #257: clean up the App's DB handle (built-in WorkflowEngine was
+    // already stopped in beforeEach so dispose just closes the DB).
+    app.dispose();
   });
 
   function createTask(title: string, parentId?: number): Task & { tags: string[] } {

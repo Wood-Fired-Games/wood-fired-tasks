@@ -40,7 +40,7 @@ describe('RestClient.getCompletionReport (remote MCP parity for #245)', () => {
 
   afterAll(async () => {
     await server.close();
-    app.db.close();
+    app.dispose();
   });
 
   /** Helper: walk a task open → in_progress → done so completed_at is set. */

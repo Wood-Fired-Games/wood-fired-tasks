@@ -139,15 +139,27 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   );
   server.decorate('sseManager', sseManager);
 
-  // Wire EventBus to SSEManager - subscribe to each event type explicitly
-  eventBus.subscribe('task.created', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('task.updated', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('task.deleted', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('task.status_changed', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('task.claimed', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('project.created', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event));
-  eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event));
+  // Wire EventBus to SSEManager - subscribe to each event type explicitly.
+  //
+  // task #257: eventBus is a process-wide SINGLETON, so every createServer()
+  // call (notably the integration test suite which spins up dozens of Fastify
+  // instances) was permanently attaching another 8 listeners — exceeding the
+  // default 10-listener threshold and emitting MaxListenersExceededWarning.
+  // Capture the unsubscribe handles returned by eventBus.subscribe and tear
+  // them down in the server's onClose hook below so each createServer/close
+  // cycle is listener-neutral. This also closes a small but real leak in any
+  // long-lived process that rebuilds the server (e.g. hot-reload, integration
+  // harnesses).
+  const sseUnsubscribers: Array<() => void> = [
+    eventBus.subscribe('task.created', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('task.updated', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('task.deleted', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('task.status_changed', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('task.claimed', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('project.created', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event)),
+  ];
 
   // Create and start ClaimReleaseService for auto-releasing stale claims
   const claimReleaseService = new ClaimReleaseService(app.db);
@@ -172,7 +184,21 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     sseManager.shutdown();
     app.workflowEngine.stop();
     await slackService.stop();
+    // task #257: drop our EventBus subscriptions so the singleton emitter
+    // does not accumulate listeners across createServer/close cycles.
+    for (const unsubscribe of sseUnsubscribers) {
+      unsubscribe();
+    }
+    sseUnsubscribers.length = 0;
   });
+
+  // task #257: from this point on, any thrown error (e.g.
+  // `validateApiKeysForProduction` failing inside `authPlugin`) would skip the
+  // normal `server.close()` path, leaving the EventBus listeners and other
+  // resources allocated above leaked. Wrap the remaining wiring in try/catch
+  // and route construction failures through `server.close()` so the onClose
+  // hook above runs (sse unsubscribe + claim release stop + workflow stop).
+  try {
 
   // Set custom error handler (must be set before routes)
   server.setErrorHandler(errorHandler);
@@ -315,4 +341,24 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   }
 
   return { server, app };
+
+  } catch (err) {
+    // task #257: registration failed (most often
+    // `validateApiKeysForProduction` rejecting weak prod keys). Drain the
+    // onClose hooks so we don't leak EventBus subscriptions, the SSE manager
+    // heartbeat, idempotency interval, claim-release timer, etc. Also dispose
+    // the underlying App (closes the DB handle and re-stops the workflow
+    // engine — both calls are idempotent).
+    try {
+      await server.close();
+    } catch {
+      // Swallow secondary errors so the original cause propagates.
+    }
+    try {
+      app.dispose();
+    } catch {
+      // Same — protect the throw of the original error.
+    }
+    throw err;
+  }
 }

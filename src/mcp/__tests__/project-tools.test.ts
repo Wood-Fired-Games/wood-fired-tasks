@@ -50,7 +50,7 @@ describe('MCP Project Tools', () => {
   afterEach(async () => {
     await clientTransport.close();
     await serverTransport.close();
-    app.db.close();
+    app.dispose();
   });
 
   describe('create_project tool', () => {

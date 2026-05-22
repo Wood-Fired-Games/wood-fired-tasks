@@ -158,7 +158,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
 
   afterAll(async () => {
     await server.close();
-    app.db.close();
+    app.dispose();
   });
 
   it('project-create returns a JSON envelope with an id', async () => {

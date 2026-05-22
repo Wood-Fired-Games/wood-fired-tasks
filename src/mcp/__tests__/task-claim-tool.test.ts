@@ -55,7 +55,7 @@ describe('MCP claim_task Tool', () => {
   afterEach(async () => {
     await clientTransport.close();
     await serverTransport.close();
-    app.db.close();
+    app.dispose();
   });
 
   it('claims an unassigned open task successfully', async () => {

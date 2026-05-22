@@ -44,7 +44,7 @@ describe('MCP Events Resource', () => {
     delete process.env.API_KEY;
     await clientTransport.close();
     await serverTransport.close();
-    app.db.close();
+    app.dispose();
   });
 
   describe('resource listing', () => {

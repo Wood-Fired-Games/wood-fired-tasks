@@ -47,6 +47,9 @@ describe('WorkflowEngine', () => {
     if (engine) {
       engine.stop();
     }
+    // task #257: clean up the App's resources (built-in WorkflowEngine was
+    // stopped in beforeEach, but the DB handle is still open).
+    app.dispose();
   });
 
   /**

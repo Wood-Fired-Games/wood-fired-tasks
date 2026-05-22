@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { TaskService } from '../task.service.js';
 import { ProjectService } from '../project.service.js';
@@ -24,6 +24,13 @@ describe('TaskService', () => {
       description: 'For testing',
     });
     testProjectId = project.id;
+  });
+
+  afterEach(() => {
+    // task #257: dispose() stops WorkflowEngine (unsubscribing from EventBus)
+    // and closes the DB. Without this every test leaked a `task.status_changed`
+    // listener and after ~10 tests Node emitted MaxListenersExceededWarning.
+    app.dispose();
   });
 
   describe('createTask', () => {
@@ -805,18 +812,24 @@ describe('TaskService', () => {
   describe('createApp tests', () => {
     it('createTestApp returns db, projectService, taskService, dependencyService', async () => {
       const testApp = await createTestApp();
-
-      expect(testApp.db).toBeDefined();
-      expect(testApp.projectService).toBeDefined();
-      expect(testApp.taskService).toBeDefined();
-      expect(testApp.dependencyService).toBeDefined();
+      try {
+        expect(testApp.db).toBeDefined();
+        expect(testApp.projectService).toBeDefined();
+        expect(testApp.taskService).toBeDefined();
+        expect(testApp.dependencyService).toBeDefined();
+      } finally {
+        testApp.dispose();
+      }
     });
 
     it('createApp initializes database with WAL mode', async () => {
-      const { db } = await createTestApp();
-
-      const result = db.pragma('journal_mode', { simple: true }) as string;
-      expect(result).toBe('memory'); // In-memory databases use 'memory' journal mode, not WAL
+      const testApp = await createTestApp();
+      try {
+        const result = testApp.db.pragma('journal_mode', { simple: true }) as string;
+        expect(result).toBe('memory'); // In-memory databases use 'memory' journal mode, not WAL
+      } finally {
+        testApp.dispose();
+      }
     });
   });
 
