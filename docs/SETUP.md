@@ -242,72 +242,134 @@ npm run cli -- <command>
 
 Wood Fired Bugs includes installers for seamless Claude Code integration on Linux/macOS and Windows.
 
+### Install modes
+
+The installer supports two modes:
+
+| Mode | Server name written to `~/.claude.json` | What it does | API key |
+|------|-----------------------------------------|--------------|---------|
+| `local` (default) | `wood-fired-bugs` | Spawns the stdio MCP server (`dist/mcp/index.js`) that opens the SQLite database in-process. | **Not used.** Local MCP only needs `DATABASE_PATH`; no key is collected, persisted, or written. |
+| `remote` | `wood-fired-bugs-remote` | Spawns the stdio bridge (`dist/mcp/remote/index.js`) that proxies every tool call to a deployed REST API. | Required. Written as `WFB_API_KEY` in the MCP entry's `env`. |
+
+Both modes write independent entries, so it is safe to run the installer in
+local mode and later add a remote entry with `--mode remote` — they coexist
+under different server names in `~/.claude.json`.
+
 ### Linux and macOS
 
-Run the install script. The installer resolves the API key in this order:
-`WOOD_FIRED_BUGS_API_KEY` env var → `~/.config/wood-fired-bugs/api-key`
-(mode 600) → masked interactive prompt → `--api-key` argv flag (deprecated).
-
 ```bash
-# Recommended (key never on argv):
-WOOD_FIRED_BUGS_API_KEY="your-key-here" ./install.sh
-
-# Or let the installer prompt:
+# Local mode (default) — no key prompt, no key in ~/.claude.json:
 ./install.sh
+
+# Remote mode — resolves WFB_API_KEY from env, secret file, or prompt:
+WOOD_FIRED_BUGS_API_KEY="your-key-here" ./install.sh --mode remote
 ```
 
-The installer writes the key into a 0600 file under
-`~/.config/wood-fired-bugs/api-key`. Subsequent re-runs read from there and
-do not need argv/env. `~/.claude.json` (and any timestamped backup) is also
-chmod'd to 0600 because it contains the key in the MCP env block.
+In `--mode remote`, the installer resolves the API key in this order:
+`WOOD_FIRED_BUGS_API_KEY` env var → `~/.config/wood-fired-bugs/api-key`
+(mode 600) → masked interactive prompt → `--api-key` argv flag (deprecated).
+The key is then cached at `~/.config/wood-fired-bugs/api-key` (mode 600)
+and written into the `wood-fired-bugs-remote` MCP entry's `env` as
+`WFB_API_KEY`. `~/.claude.json` (and any timestamped backup) is also
+chmod'd to 0600.
+
+In `--mode local`, none of those paths execute — even if
+`WOOD_FIRED_BUGS_API_KEY` is exported in your shell, the installer silently
+ignores it.
 
 ### Windows
 
-Run the PowerShell installer. Resolution order is `-ApiKey` (deprecated) →
-`WOOD_FIRED_BUGS_API_KEY` env var → `%LOCALAPPDATA%\wood-fired-bugs\api-key`
-(user-only ACL) → masked prompt.
-
 ```powershell
-# Recommended (key never on argv):
-$env:WOOD_FIRED_BUGS_API_KEY = "your-key-here"
+# Local mode (default):
 .\install.ps1
 
-# Or let the installer prompt:
-.\install.ps1
+# Remote mode:
+$env:WOOD_FIRED_BUGS_API_KEY = "your-key-here"
+.\install.ps1 -Mode remote
 ```
 
-The installer tightens the ACL on `~/.claude.json` (and any timestamped
-backup) to the current user only via `icacls`.
+Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
+`WOOD_FIRED_BUGS_API_KEY` env var → `%LOCALAPPDATA%\wood-fired-bugs\api-key`
+(user-only ACL) → masked prompt. The installer tightens the ACL on
+`~/.claude.json` (and any timestamped backup) to the current user only via
+`icacls`. `-Mode local` collects no key.
 
 ### What the Installer Does
 
 1. **Copies skill files** to `~/.claude/commands/tasks/` (10 skill files)
-2. **Updates MCP server configuration** in `~/.claude.json` to add the wood-fired-bugs MCP server
-3. **Configures environment** with `DATABASE_PATH` for the MCP server
+2. **Updates MCP server configuration** in `~/.claude.json`:
+   - Local: adds/updates the `wood-fired-bugs` entry pointing at `dist/mcp/index.js`
+   - Remote: adds/updates the `wood-fired-bugs-remote` entry pointing at `dist/mcp/remote/index.js`
+3. **Configures environment** — `DATABASE_PATH` for local, `WFB_API_URL` + `WFB_API_KEY` for remote
 
 ### Resulting MCP Configuration
 
-The installer adds this configuration to `~/.claude.json`:
+**Local mode (default)** — no API key is written:
 
 ```json
 {
   "mcpServers": {
     "wood-fired-bugs": {
       "command": "node",
-      "args": ["/path/to/wood-fired-bugs/dist/mcp/index.js"],
+      "args": ["dist/mcp/index.js"],
+      "cwd": "/path/to/wood-fired-bugs",
       "env": {
-        "DATABASE_PATH": "/path/to/wood-fired-bugs/data/tasks.db"
+        "DATABASE_PATH": "./data/tasks.db"
       }
     }
   }
 }
 ```
 
-[NOTE] Older installs may have `DB_PATH` here instead. The MCP server still
-accepts that as a deprecated alias, but re-running the installer or hand-editing
-to `DATABASE_PATH` is recommended for consistency with `src/config/env.ts`.
+**Remote mode** — separate server name, holds the API key:
 
-[NOTE] The MCP server runs as a separate process via stdio. It creates its own database connection and does NOT call the REST API.
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs-remote": {
+      "command": "node",
+      "args": ["dist/mcp/remote/index.js"],
+      "cwd": "/path/to/wood-fired-bugs",
+      "env": {
+        "WFB_API_URL": "http://localhost:3000",
+        "WFB_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+[NOTE] Older installs may have `DB_PATH` instead of `DATABASE_PATH`. The MCP
+server still accepts that as a deprecated alias, but re-running the installer
+or hand-editing to `DATABASE_PATH` is recommended for consistency with
+`src/config/env.ts`.
+
+[NOTE] The local MCP server runs as a separate process via stdio. It creates
+its own database connection and does NOT call the REST API.
+
+#### Migration: removing an unused API key from older local installs (task #258)
+
+Versions of the installer before task #258 wrote `WOOD_FIRED_BUGS_API_KEY`
+into the `wood-fired-bugs` MCP entry even though the **local** MCP server
+never reads it (it only consumes `DATABASE_PATH`). The key sat there as
+dead weight and as a needless leak surface.
+
+If you previously ran `./install.sh` or `.\install.ps1` and your
+`~/.claude.json` looks like this under `mcpServers."wood-fired-bugs".env`:
+
+```json
+{
+  "WOOD_FIRED_BUGS_API_KEY": "...",
+  "DATABASE_PATH": "./data/tasks.db"
+}
+```
+
+…you can safely **delete the `WOOD_FIRED_BUGS_API_KEY` line** by hand. The
+local MCP server will keep working with only `DATABASE_PATH`. Re-running
+`./install.sh` (default `--mode local`) also rewrites the entry without the
+key. If you also want the remote bridge, run `./install.sh --mode remote`
+to add a separate `wood-fired-bugs-remote` entry that carries
+`WFB_API_KEY` — that's where the key belongs.
 
 ### Skill Files
 
@@ -483,13 +545,13 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `DATABASE_PATH` | no | `./data/tasks.db` | Path to the SQLite database opened on stdio startup. Canonical name. |
 | `DB_PATH` | no | — | **Deprecated alias** for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs produced by pre-task-#217 versions of `install.sh` / `install.ps1`. |
 | `API_URL` | no | `http://localhost:3000/api/v1` | Only used by the optional remote MCP transport (`src/mcp/server.ts`). |
-| `WOOD_FIRED_BUGS_API_KEY` | no | — | API key the installer writes into the MCP env block. Read by remote MCP transport and used by `install.sh` to resolve a key without putting it on argv. |
+| `WOOD_FIRED_BUGS_API_KEY` | no | — | Read by the installer in `--mode remote` to populate the `WFB_API_KEY` env on the `wood-fired-bugs-remote` MCP entry. Ignored by `--mode local` (task #258) and never read by the local MCP server itself. |
 
 ### Installer (read by `install.sh` and `install.ps1` only)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `WOOD_FIRED_BUGS_API_KEY` | no | — | API key consumed by the installer. Most secure of the three resolution paths (env > on-disk secret file > masked prompt > deprecated `--api-key` flag). |
+| `WOOD_FIRED_BUGS_API_KEY` | no | — | API key consumed by the installer **only in `--mode remote`**. Resolution order: env var > on-disk secret file > masked prompt > deprecated `--api-key` flag. Silently ignored in local mode (default) since the local MCP server does not use a key. |
 | `WOOD_FIRED_BUGS_URL` | no | `http://localhost:3000` | Health-check URL the installer pings after writing `~/.claude.json`. |
 | `XDG_CONFIG_HOME` | no | `$HOME/.config` | Standard XDG variable; the installer caches the API key under `$XDG_CONFIG_HOME/wood-fired-bugs/api-key` (mode 600). |
 

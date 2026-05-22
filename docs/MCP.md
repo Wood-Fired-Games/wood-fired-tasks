@@ -77,24 +77,38 @@ Add this configuration to `~/.claude.json` in the `mcpServers` section:
 
 ### Automatic Installation
 
-The provided installers handle configuration automatically:
+The provided installers handle configuration automatically. Both default to
+`--mode local`, which writes a `wood-fired-bugs` entry that holds only
+`DATABASE_PATH` — no API key is collected, persisted, or written, because the
+local MCP server does not use one (task #258).
 
 **Linux/macOS:**
 
 ```bash
-./install.sh
+./install.sh                 # local (default) — no API key
+./install.sh --mode remote   # remote — prompts/reads WFB_API_KEY
 ```
 
 **Windows:**
 
 ```powershell
-.\install.ps1
+.\install.ps1                # local (default)
+.\install.ps1 -Mode remote   # remote
 ```
 
 Both installers:
 1. Copy skill files to `~/.claude/commands/tasks/`
-2. Add or update the MCP server configuration in `~/.claude.json`
-3. Set the `DATABASE_PATH` environment variable for the MCP server (older installs may have `DB_PATH`; both are accepted, with `DATABASE_PATH` taking precedence)
+2. Add or update the MCP server configuration in `~/.claude.json`:
+   - local mode adds/updates `wood-fired-bugs` (points at `dist/mcp/index.js`)
+   - remote mode adds/updates `wood-fired-bugs-remote` (points at `dist/mcp/remote/index.js`)
+3. Set the `DATABASE_PATH` environment variable for the local server, or
+   `WFB_API_URL` + `WFB_API_KEY` for the remote server. Older local installs
+   may have `DB_PATH`; both are accepted, with `DATABASE_PATH` taking precedence.
+
+See [docs/SETUP.md → Migration: removing an unused API key from older local
+installs](SETUP.md#migration-removing-an-unused-api-key-from-older-local-installs-task-258)
+if your existing `wood-fired-bugs` entry contains a leftover
+`WOOD_FIRED_BUGS_API_KEY` — it can be removed.
 
 ## Remote MCP Server
 

@@ -5,6 +5,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)]
+    [ValidateSet('local', 'remote')]
+    [string]$Mode = 'local',
+
+    [Parameter(Mandatory=$false)]
     [string]$ApiKey
 )
 
@@ -71,68 +75,81 @@ try {
     Write-Host "[OK] Found $skillCount skill files" -ForegroundColor Green
 
     # ============================================================================
-    # Step 2: Resolve API key
+    # Step 2: Resolve install mode and (if remote) the API key
     # ============================================================================
-    Write-Host "`n[INFO] API Key Configuration" -ForegroundColor Cyan
+    Write-Host "`n[INFO] Install mode: $Mode" -ForegroundColor Cyan
 
-    if ($script:ApiKeyFromArgv) {
-        Write-Host "[WARN] -ApiKey on the command line is DEPRECATED." -ForegroundColor Yellow
-        Write-Host "[WARN] Command-line secrets leak via shell history and process listings (Get-Process,wmic)." -ForegroundColor Yellow
-        Write-Host "[WARN] Prefer the WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
-        Write-Host "[WARN] or the interactive prompt. This flag will be removed in a future release." -ForegroundColor Yellow
-    }
+    if ($Mode -eq 'local') {
+        # Local mode: silently ignore any API-key inputs. The local MCP server
+        # reads DATABASE_PATH and never reads WFB_API_KEY /
+        # WOOD_FIRED_BUGS_API_KEY, so keeping a key in ~/.claude.json would
+        # be dead weight (and a leak surface). Task #258.
+        if ($script:ApiKeyFromArgv -or $env:WOOD_FIRED_BUGS_API_KEY) {
+            Write-Host "[INFO] Ignoring API key input — local mode does not use one." -ForegroundColor Yellow
+        }
+        $ApiKey = $null
+    } else {
+        Write-Host "`n[INFO] API Key Configuration (remote mode)" -ForegroundColor Cyan
 
-    # Resolution order: -ApiKey > env > secret file > interactive prompt
-    if (-not $ApiKey) {
-        if ($env:WOOD_FIRED_BUGS_API_KEY) {
-            $ApiKey = $env:WOOD_FIRED_BUGS_API_KEY
-            Write-Host "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable" -ForegroundColor Yellow
-        } elseif (Test-Path $SecretFile) {
-            # Only honor the secret file if it isn't accessible to anyone except the current user.
-            $acl = Get-Acl $SecretFile
-            $foreignAce = $acl.Access | Where-Object {
-                $_.IdentityReference.Value -notmatch [Regex]::Escape($env:USERNAME) -and
-                $_.IdentityReference.Value -notmatch 'SYSTEM' -and
-                $_.IdentityReference.Value -notmatch 'Administrators'
+        if ($script:ApiKeyFromArgv) {
+            Write-Host "[WARN] -ApiKey on the command line is DEPRECATED." -ForegroundColor Yellow
+            Write-Host "[WARN] Command-line secrets leak via shell history and process listings (Get-Process,wmic)." -ForegroundColor Yellow
+            Write-Host "[WARN] Prefer the WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
+            Write-Host "[WARN] or the interactive prompt. This flag will be removed in a future release." -ForegroundColor Yellow
+        }
+
+        # Resolution order: -ApiKey > env > secret file > interactive prompt
+        if (-not $ApiKey) {
+            if ($env:WOOD_FIRED_BUGS_API_KEY) {
+                $ApiKey = $env:WOOD_FIRED_BUGS_API_KEY
+                Write-Host "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable" -ForegroundColor Yellow
+            } elseif (Test-Path $SecretFile) {
+                # Only honor the secret file if it isn't accessible to anyone except the current user.
+                $acl = Get-Acl $SecretFile
+                $foreignAce = $acl.Access | Where-Object {
+                    $_.IdentityReference.Value -notmatch [Regex]::Escape($env:USERNAME) -and
+                    $_.IdentityReference.Value -notmatch 'SYSTEM' -and
+                    $_.IdentityReference.Value -notmatch 'Administrators'
+                }
+                if ($foreignAce) {
+                    Write-Host "[WARN] Secret file $SecretFile has loose ACL; ignoring." -ForegroundColor Yellow
+                    Write-Host "[WARN] Run: icacls `"$SecretFile`" /inheritance:r /grant:r `"$($env:USERNAME):(R,W)`"" -ForegroundColor Yellow
+                } else {
+                    $ApiKey = (Get-Content -Path $SecretFile -Raw).Trim()
+                    if ($ApiKey) {
+                        Write-Host "[INFO] Using API key from $SecretFile" -ForegroundColor Yellow
+                    }
+                }
             }
-            if ($foreignAce) {
-                Write-Host "[WARN] Secret file $SecretFile has loose ACL; ignoring." -ForegroundColor Yellow
-                Write-Host "[WARN] Run: icacls `"$SecretFile`" /inheritance:r /grant:r `"$($env:USERNAME):(R,W)`"" -ForegroundColor Yellow
-            } else {
-                $ApiKey = (Get-Content -Path $SecretFile -Raw).Trim()
-                if ($ApiKey) {
-                    Write-Host "[INFO] Using API key from $SecretFile" -ForegroundColor Yellow
+            if (-not $ApiKey) {
+                $secureKey = Read-Host "Enter Wood Fired Bugs API key" -AsSecureString
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+                try {
+                    $ApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+                } finally {
+                    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
                 }
             }
         }
-        if (-not $ApiKey) {
-            $secureKey = Read-Host "Enter Wood Fired Bugs API key" -AsSecureString
-            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-            try {
-                $ApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-            } finally {
-                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-            }
+
+        # Validate key is non-empty
+        if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+            Write-Error "API key is required in -Mode remote. Please provide a valid API key."
+            exit 1
         }
-    }
 
-    # Validate key is non-empty
-    if ([string]::IsNullOrWhiteSpace($ApiKey)) {
-        Write-Error "API key is required. Please provide a valid API key."
-        exit 1
-    }
+        # Persist to per-user secret file with restrictive ACL so re-runs can drop argv.
+        if (-not (Test-Path $SecretDir)) {
+            New-Item -ItemType Directory -Path $SecretDir -Force | Out-Null
+        }
+        Set-Content -Path $SecretFile -Value $ApiKey -Encoding UTF8 -NoNewline
+        Set-UserOnlyAcl -Path $SecretFile
 
-    # Persist to per-user secret file with restrictive ACL so re-runs can drop argv.
-    if (-not (Test-Path $SecretDir)) {
-        New-Item -ItemType Directory -Path $SecretDir -Force | Out-Null
+        # Print masked confirmation
+        $maskedKey = $ApiKey.Substring(0, [Math]::Min(4, $ApiKey.Length)) + ("*" * [Math]::Max(0, $ApiKey.Length - 4))
+        Write-Host "[OK] API key configured: $maskedKey" -ForegroundColor Green
+        Write-Host "[OK] API key cached at $SecretFile (user-only ACL)" -ForegroundColor Green
     }
-    Set-Content -Path $SecretFile -Value $ApiKey -Encoding UTF8 -NoNewline
-    Set-UserOnlyAcl -Path $SecretFile
-
-    # Print masked confirmation
-    $maskedKey = $ApiKey.Substring(0, [Math]::Min(4, $ApiKey.Length)) + ("*" * [Math]::Max(0, $ApiKey.Length - 4))
-    Write-Host "[OK] API key configured: $maskedKey" -ForegroundColor Green
-    Write-Host "[OK] API key cached at $SecretFile (user-only ACL)" -ForegroundColor Green
 
     # ============================================================================
     # Step 3: Copy skill files (WIN-01)
@@ -191,14 +208,29 @@ try {
     # Read existing config
     $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
 
-    # Build new server config
-    $newServer = [PSCustomObject]@{
-        command = "node"
-        args = @("dist/mcp/index.js")
-        cwd = $ScriptDir
-        env = [PSCustomObject]@{
-            WOOD_FIRED_BUGS_API_KEY = $ApiKey
-            DATABASE_PATH = "./data/tasks.db"
+    # Build new server config — local writes only DATABASE_PATH, remote writes
+    # WFB_API_URL + WFB_API_KEY under a separate server name so both can
+    # coexist. Task #258.
+    if ($Mode -eq 'local') {
+        $serverName = 'wood-fired-bugs'
+        $newServer = [PSCustomObject]@{
+            command = "node"
+            args = @("dist/mcp/index.js")
+            cwd = $ScriptDir
+            env = [PSCustomObject]@{
+                DATABASE_PATH = "./data/tasks.db"
+            }
+        }
+    } else {
+        $serverName = 'wood-fired-bugs-remote'
+        $newServer = [PSCustomObject]@{
+            command = "node"
+            args = @("dist/mcp/remote/index.js")
+            cwd = $ScriptDir
+            env = [PSCustomObject]@{
+                WFB_API_URL = $ServiceUrl
+                WFB_API_KEY = $ApiKey
+            }
         }
     }
 
@@ -207,16 +239,17 @@ try {
         $config | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
     }
 
-    # Add or update wood-fired-bugs server (Add-Member -Force handles idempotency)
-    $config.mcpServers | Add-Member -MemberType NoteProperty -Name "wood-fired-bugs" -Value $newServer -Force
+    # Add or update server entry (Add-Member -Force handles idempotency)
+    $config.mcpServers | Add-Member -MemberType NoteProperty -Name $serverName -Value $newServer -Force
 
     # Write back with proper depth (PowerShell defaults to depth 2, we need 10)
     $config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8
-    # The file now contains the API key — re-apply the user-only ACL after every write
-    # (Set-Content can recreate the file and lose the previous ACL).
+    # Re-apply the user-only ACL after every write (Set-Content can recreate
+    # the file and lose the previous ACL). The file may contain the API key
+    # in remote mode, and may contain pre-existing secrets either way.
     Set-UserOnlyAcl -Path $ConfigFile
 
-    Write-Host "[OK] MCP server 'wood-fired-bugs' configured (user-only ACL)" -ForegroundColor Green
+    Write-Host "[OK] MCP server '$serverName' configured (user-only ACL)" -ForegroundColor Green
 
     # ============================================================================
     # Step 6: Validate connectivity (WIN-05)
@@ -243,9 +276,14 @@ try {
     Write-Host "=" * 60 -ForegroundColor Green
 
     Write-Host "`nWhat was installed:" -ForegroundColor Cyan
+    Write-Host "  - Install mode: $Mode"
     Write-Host "  - Skill files:  $skillCount file(s) -> $SkillsDest"
-    Write-Host "  - MCP server:   wood-fired-bugs -> $ConfigFile"
-    Write-Host "  - API key:      Configured in MCP environment"
+    Write-Host "  - MCP server:   $serverName -> $ConfigFile"
+    if ($Mode -eq 'remote') {
+        Write-Host "  - API key:      Configured in MCP environment (WFB_API_KEY)"
+    } else {
+        Write-Host "  - API key:      Not used in local mode"
+    }
     if ($script:BackupFile) {
         Write-Host "  - Backup:       $script:BackupFile"
     }

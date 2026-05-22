@@ -107,9 +107,15 @@ fi
 echo "[OK] Found $SKILL_COUNT skill files"
 
 # ============================================================================
-# Step 2: Prompt for API key
+# Step 2: Parse flags, resolve mode, optionally collect API key
 # ============================================================================
 
+# Install mode: 'local' (default) writes a stdio MCP server entry that opens
+# the SQLite database directly and needs only DATABASE_PATH. 'remote' writes
+# an MCP entry that talks to a deployed REST API and needs WFB_API_URL +
+# WFB_API_KEY. Local mode does NOT touch the API key at all (no prompt, no
+# argv flag, no env-var read, no secret-file write).
+MODE="local"
 API_KEY=""
 API_KEY_FROM_ARGV=0
 
@@ -118,6 +124,10 @@ API_KEY_FROM_ARGV=0
 # Prefer WOOD_FIRED_BUGS_API_KEY, the per-user secret file, or the interactive prompt.
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --mode)
+      MODE="$2"
+      shift 2
+      ;;
     --api-key)
       API_KEY="$2"
       API_KEY_FROM_ARGV=1
@@ -125,9 +135,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<EOF
-Usage: $0 [--api-key KEY]
+Usage: $0 [--mode local|remote] [--api-key KEY]
 
-API key resolution order (most secure first):
+Modes:
+  local  (default) Write an MCP entry that opens the SQLite database in-process.
+                   Needs only DATABASE_PATH. No API key is collected, stored, or
+                   written to ~/.claude.json — local MCP does not use one.
+  remote           Write an MCP entry that proxies calls to a deployed REST API.
+                   Requires an API key (WFB_API_KEY) and WFB_API_URL.
+
+API key resolution order in --mode remote (most secure first):
   1. WOOD_FIRED_BUGS_API_KEY environment variable
   2. Secret file at \$XDG_CONFIG_HOME/wood-fired-bugs/api-key (default ~/.config/wood-fired-bugs/api-key)
   3. Masked interactive prompt
@@ -143,63 +160,85 @@ EOF
   esac
 done
 
-if [ "$API_KEY_FROM_ARGV" -eq 1 ]; then
-  echo "[WARN] --api-key on the command line is DEPRECATED."
-  echo "[WARN] Command-line secrets leak via shell history and 'ps -ef'."
-  echo "[WARN] Prefer WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SECRET_FILE),"
-  echo "[WARN] or the interactive prompt. This flag will be removed in a future release."
-fi
+# Validate --mode value
+case "$MODE" in
+  local|remote) ;;
+  *)
+    echo "[ERROR] Invalid --mode: '$MODE' (expected 'local' or 'remote')"
+    exit 1
+    ;;
+esac
 
-# Check for API key from environment variable
-if [ -z "$API_KEY" ] && [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
-  API_KEY="$WOOD_FIRED_BUGS_API_KEY"
-  echo "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable"
-fi
+echo "[INFO] Install mode: $MODE"
 
-# Check for API key from per-user secret file
-if [ -z "$API_KEY" ] && [ -r "$SECRET_FILE" ]; then
-  # Refuse to use the secret file if it is group/world readable.
-  if [ "$(stat -c '%a' "$SECRET_FILE" 2>/dev/null || stat -f '%Lp' "$SECRET_FILE" 2>/dev/null)" = "600" ]; then
-    API_KEY="$(tr -d '\r\n' < "$SECRET_FILE")"
-    if [ -n "$API_KEY" ]; then
-      echo "[INFO] Using API key from $SECRET_FILE"
-    fi
-  else
-    echo "[WARN] Secret file $SECRET_FILE has loose permissions; ignoring."
-    echo "[WARN] Run: chmod 600 \"$SECRET_FILE\" to fix."
+if [ "$MODE" = "local" ]; then
+  # Local mode: silently ignore any API-key inputs. The local MCP server reads
+  # DATABASE_PATH and never reads WFB_API_KEY / WOOD_FIRED_BUGS_API_KEY, so
+  # keeping a key in ~/.claude.json would be dead weight (and a leak surface).
+  if [ "$API_KEY_FROM_ARGV" -eq 1 ] || [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
+    echo "[INFO] Ignoring API key input — local mode does not use one."
   fi
-fi
+  API_KEY=""
+else
+  # Remote mode: same resolution order as before.
+  if [ "$API_KEY_FROM_ARGV" -eq 1 ]; then
+    echo "[WARN] --api-key on the command line is DEPRECATED."
+    echo "[WARN] Command-line secrets leak via shell history and 'ps -ef'."
+    echo "[WARN] Prefer WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SECRET_FILE),"
+    echo "[WARN] or the interactive prompt. This flag will be removed in a future release."
+  fi
 
-# Prompt for API key if still not provided
-if [ -z "$API_KEY" ]; then
-  echo ""
-  read -rsp "Enter Wood Fired Bugs API key: " API_KEY
-  echo ""
-fi
+  # Check for API key from environment variable
+  if [ -z "$API_KEY" ] && [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
+    API_KEY="$WOOD_FIRED_BUGS_API_KEY"
+    echo "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable"
+  fi
 
-# Validate API key is non-empty
-if [ -z "$API_KEY" ]; then
-  echo "[ERROR] API key is required"
-  exit 1
-fi
+  # Check for API key from per-user secret file
+  if [ -z "$API_KEY" ] && [ -r "$SECRET_FILE" ]; then
+    # Refuse to use the secret file if it is group/world readable.
+    if [ "$(stat -c '%a' "$SECRET_FILE" 2>/dev/null || stat -f '%Lp' "$SECRET_FILE" 2>/dev/null)" = "600" ]; then
+      API_KEY="$(tr -d '\r\n' < "$SECRET_FILE")"
+      if [ -n "$API_KEY" ]; then
+        echo "[INFO] Using API key from $SECRET_FILE"
+      fi
+    else
+      echo "[WARN] Secret file $SECRET_FILE has loose permissions; ignoring."
+      echo "[WARN] Run: chmod 600 \"$SECRET_FILE\" to fix."
+    fi
+  fi
 
-# Persist the API key to the per-user secret file with strict permissions
-# so subsequent runs (and any deprecation removal) keep working without argv.
-if [ ! -d "$SECRET_DIR" ]; then
-  mkdir -p "$SECRET_DIR"
-  chmod 700 "$SECRET_DIR" 2>/dev/null || true
-fi
-# Create the file with 0600 perms before writing the secret so a brief
-# world-readable window never exists.
-( umask 077 && : > "$SECRET_FILE" )
-chmod 600 "$SECRET_FILE" 2>/dev/null || true
-printf '%s\n' "$API_KEY" > "$SECRET_FILE"
-chmod 600 "$SECRET_FILE" 2>/dev/null || true
+  # Prompt for API key if still not provided
+  if [ -z "$API_KEY" ]; then
+    echo ""
+    read -rsp "Enter Wood Fired Bugs API key: " API_KEY
+    echo ""
+  fi
 
-# Show masked key confirmation
-MASKED_KEY="${API_KEY:0:4}$(printf '*%.0s' {1..20})"
-echo "[OK] API key set: $MASKED_KEY"
-echo "[OK] API key cached at $SECRET_FILE (mode 600)"
+  # Validate API key is non-empty
+  if [ -z "$API_KEY" ]; then
+    echo "[ERROR] API key is required in --mode remote"
+    exit 1
+  fi
+
+  # Persist the API key to the per-user secret file with strict permissions
+  # so subsequent runs (and any deprecation removal) keep working without argv.
+  if [ ! -d "$SECRET_DIR" ]; then
+    mkdir -p "$SECRET_DIR"
+    chmod 700 "$SECRET_DIR" 2>/dev/null || true
+  fi
+  # Create the file with 0600 perms before writing the secret so a brief
+  # world-readable window never exists.
+  ( umask 077 && : > "$SECRET_FILE" )
+  chmod 600 "$SECRET_FILE" 2>/dev/null || true
+  printf '%s\n' "$API_KEY" > "$SECRET_FILE"
+  chmod 600 "$SECRET_FILE" 2>/dev/null || true
+
+  # Show masked key confirmation
+  MASKED_KEY="${API_KEY:0:4}$(printf '*%.0s' {1..20})"
+  echo "[OK] API key set: $MASKED_KEY"
+  echo "[OK] API key cached at $SECRET_FILE (mode 600)"
+fi
 
 # ============================================================================
 # Step 3: Copy skill files (LINX-01)
@@ -250,30 +289,54 @@ fi
 
 echo "[INFO] Configuring MCP server..."
 
-# Create temporary file for new server config with strict perms — it contains the API key.
+# Create temporary file for new server config with strict perms. Even in
+# local mode the merged config may contain pre-existing secrets, so keep 600.
 NEW_SERVER_CONFIG=$(mktemp)
 chmod 600 "$NEW_SERVER_CONFIG" 2>/dev/null || true
 TEMP_FILES+=("$NEW_SERVER_CONFIG")
 
-# Build MCP server configuration via jq so the API key and cwd are JSON-escaped
-# safely. A raw heredoc would corrupt the file (or allow JSON injection) if
-# either value contained an embedded `"`, `\`, or newline.
-jq -n \
-  --arg key "$API_KEY" \
-  --arg cwd "$SCRIPT_DIR" \
-  '{
-    mcpServers: {
-      "wood-fired-bugs": {
-        command: "node",
-        args: ["dist/mcp/index.js"],
-        cwd: $cwd,
-        env: {
-          WOOD_FIRED_BUGS_API_KEY: $key,
-          DATABASE_PATH: "./data/tasks.db"
+# Build MCP server configuration via jq so values are JSON-escaped safely. A
+# raw heredoc would corrupt the file (or allow JSON injection) if any value
+# contained an embedded `"`, `\`, or newline.
+if [ "$MODE" = "local" ]; then
+  # Local: stdio MCP server with direct SQLite access. Only DATABASE_PATH —
+  # no API key (the local server never reads one; task #258).
+  jq -n \
+    --arg cwd "$SCRIPT_DIR" \
+    '{
+      mcpServers: {
+        "wood-fired-bugs": {
+          command: "node",
+          args: ["dist/mcp/index.js"],
+          cwd: $cwd,
+          env: {
+            DATABASE_PATH: "./data/tasks.db"
+          }
         }
       }
-    }
-  }' > "$NEW_SERVER_CONFIG"
+    }' > "$NEW_SERVER_CONFIG"
+else
+  # Remote: stdio bridge that proxies tools to a REST backend. Requires
+  # WFB_API_URL + WFB_API_KEY. Server name 'wood-fired-bugs-remote' matches
+  # docs/MCP.md so both entries can coexist in ~/.claude.json.
+  jq -n \
+    --arg key "$API_KEY" \
+    --arg url "$SERVICE_URL" \
+    --arg cwd "$SCRIPT_DIR" \
+    '{
+      mcpServers: {
+        "wood-fired-bugs-remote": {
+          command: "node",
+          args: ["dist/mcp/remote/index.js"],
+          cwd: $cwd,
+          env: {
+            WFB_API_URL: $url,
+            WFB_API_KEY: $key
+          }
+        }
+      }
+    }' > "$NEW_SERVER_CONFIG"
+fi
 
 # Create temporary file for merged config with strict perms — it will contain the API key.
 MERGED_CONFIG=$(mktemp)
@@ -289,7 +352,12 @@ jq -s '.[0] * .[1]' "$CONFIG_FILE" "$NEW_SERVER_CONFIG" > "$MERGED_CONFIG"
 mv "$MERGED_CONFIG" "$CONFIG_FILE"
 secure_file "$CONFIG_FILE"
 
-echo "[OK] MCP server 'wood-fired-bugs' configured in $CONFIG_FILE (mode 600)"
+if [ "$MODE" = "local" ]; then
+  SERVER_NAME="wood-fired-bugs"
+else
+  SERVER_NAME="wood-fired-bugs-remote"
+fi
+echo "[OK] MCP server '$SERVER_NAME' configured in $CONFIG_FILE (mode 600)"
 
 # ============================================================================
 # Step 6: Validate connectivity (LINX-05)
@@ -315,8 +383,9 @@ echo " Installation Complete"
 echo "=========================================="
 echo ""
 echo "Summary:"
+echo "  - Install mode: $MODE"
 echo "  - $COPIED_COUNT skill files installed to $SKILLS_DEST"
-echo "  - MCP server 'wood-fired-bugs' configured in $CONFIG_FILE"
+echo "  - MCP server '$SERVER_NAME' configured in $CONFIG_FILE"
 if [ -n "$BACKUP_FILE" ]; then
   echo "  - Backup saved to $BACKUP_FILE"
 fi
