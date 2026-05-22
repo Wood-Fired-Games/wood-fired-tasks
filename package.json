@@ -28,7 +28,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@clack/prompts": "^1.0.1",
     "@fastify/rate-limit": "^10.3.0",

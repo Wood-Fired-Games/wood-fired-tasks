@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml)
 [![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/install-scripts.yml)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Open-source task tracking system from Wood Fired Games.
 
@@ -583,4 +583,4 @@ and exposes 20 tools plus the `/tasks:*` skill files. See
 
 ## License
 
-ISC
+MIT
