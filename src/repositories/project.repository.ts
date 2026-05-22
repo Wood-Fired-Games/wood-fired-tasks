@@ -6,6 +6,8 @@ import {
   MAX_PAGE_LIMIT,
 } from '../types/task.js';
 import type { IProjectRepository, PaginationOptions } from './interfaces.js';
+import { mapRow, mapRows } from './row-mapper.js';
+import type { SqlParams } from './types.js';
 
 /**
  * Same defensive clamp used in TaskRepository — see notes there.
@@ -60,30 +62,31 @@ export class ProjectRepository implements IProjectRepository {
   }
 
   findById(id: number): Project | null {
-    const row = this.findByIdStmt.get(id) as Project | undefined;
+    const row = mapRow<Project>(this.findByIdStmt, id);
     return row || null;
   }
 
   findAll(pagination?: PaginationOptions): Project[] {
     const { limit, offset } = resolvePagination(pagination);
-    return this.findAllStmt.all(limit, offset) as Project[];
+    return mapRows<Project>(this.findAllStmt, limit, offset);
   }
 
   /** Total project count, ignoring pagination. */
   count(): number {
-    const result = this.countStmt.get() as { count: number };
-    return result.count;
+    const result = mapRow<{ count: number }>(this.countStmt);
+    // COUNT(*) always returns exactly one row — `result` is never undefined.
+    return result?.count ?? 0;
   }
 
   findByName(name: string): Project | null {
-    const row = this.findByNameStmt.get(name) as Project | undefined;
+    const row = mapRow<Project>(this.findByNameStmt, name);
     return row || null;
   }
 
   update(id: number, updates: Partial<CreateProjectDTO>): Project {
     // Build dynamic SET clause from provided fields
     const fields: string[] = [];
-    const params: Record<string, any> = { id };
+    const params: SqlParams = { id };
 
     if (updates.name !== undefined) {
       fields.push('name = @name');

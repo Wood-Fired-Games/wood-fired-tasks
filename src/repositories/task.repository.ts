@@ -16,6 +16,8 @@ import type {
   PaginationOptions,
 } from './interfaces.js';
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
+import { mapRow, mapRows } from './row-mapper.js';
+import type { SqlParams } from './types.js';
 
 /**
  * Clamp pagination inputs into the supported repository range.
@@ -126,13 +128,13 @@ export class TaskRepository implements ITaskRepository {
   }
 
   findById(id: number): (Task & { tags: string[] }) | null {
-    const task = this.findByIdStmt.get(id) as Task | undefined;
+    const task = mapRow<Task>(this.findByIdStmt, id);
     if (!task) {
       return null;
     }
 
     // Load tags
-    const tagRows = this.findTagsByTaskIdStmt.all(id) as Array<{ tag: string }>;
+    const tagRows = mapRows<{ tag: string }>(this.findTagsByTaskIdStmt, id);
     const tags = tagRows.map((row) => row.tag);
 
     return normalizeTaskTimestamps({ ...task, tags });
@@ -143,8 +145,8 @@ export class TaskRepository implements ITaskRepository {
     // Use LEFT JOIN with GROUP_CONCAT to get tasks (page) with their tags.
     // LIMIT/OFFSET bound the result set so a 100k-row table cannot DoS the
     // request via GROUP_CONCAT materialization.
-    const rows = this.db
-      .prepare(
+    const rows = mapRows<Task & { tags_csv: string | null }>(
+      this.db.prepare(
         `
       SELECT
         t.*,
@@ -154,9 +156,11 @@ export class TaskRepository implements ITaskRepository {
       GROUP BY t.id
       ORDER BY t.created_at DESC
       LIMIT ? OFFSET ?
-    `
-      )
-      .all(limit, offset) as Array<Task & { tags_csv: string | null }>;
+    `,
+      ),
+      limit,
+      offset,
+    );
 
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
@@ -172,7 +176,7 @@ export class TaskRepository implements ITaskRepository {
     const result = this.db.transaction(() => {
       // Build dynamic UPDATE SET clause
       const fields: string[] = [];
-      const params: Record<string, any> = { id };
+      const params: SqlParams = { id };
 
       // Only update fields that are provided (excluding tags)
       if (updates.title !== undefined) {
@@ -189,9 +193,10 @@ export class TaskRepository implements ITaskRepository {
 
         // Maintain completed_at on transitions to/from 'done'.
         // Read current status inside the same transaction for consistency.
-        const current = this.findByIdStmt.get(id) as
-          | { status: string; completed_at: string | null }
-          | undefined;
+        const current = mapRow<{
+          status: string;
+          completed_at: string | null;
+        }>(this.findByIdStmt, id);
         const movingIntoDone =
           updates.status === 'done' && current?.status !== 'done';
         const movingOutOfDone =
@@ -264,7 +269,7 @@ export class TaskRepository implements ITaskRepository {
 
   findByFilters(filters: TaskFilters): Array<Task & { tags: string[] }> {
     const whereClauses: string[] = [];
-    const params: Record<string, any> = {};
+    const params: SqlParams = {};
 
     // Build WHERE clause from filters
     if (filters.project_id !== undefined) {
@@ -359,9 +364,10 @@ export class TaskRepository implements ITaskRepository {
     // unrelated SQLITE_ERRORs would be misclassified.
     let rows: Array<Task & { tags_csv: string | null }>;
     try {
-      rows = this.db.prepare(query).all(params) as Array<
-        Task & { tags_csv: string | null }
-      >;
+      rows = mapRows<Task & { tags_csv: string | null }>(
+        this.db.prepare(query),
+        params,
+      );
     } catch (err) {
       if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
         throw new FtsSyntaxError((err as Error).message);
@@ -381,7 +387,10 @@ export class TaskRepository implements ITaskRepository {
     // This prevents SQLITE_BUSY when multiple agents try to claim simultaneously
     const claimTransaction = this.db.transaction(() => {
       // Read current task state
-      const task = this.findByIdStmt.get(id) as (import('../types/task.js').Task) | undefined;
+      const task = mapRow<import('../types/task.js').Task>(
+        this.findByIdStmt,
+        id,
+      );
       if (!task) return null;
 
       // CAS: only claim if unassigned and status is 'open'
@@ -422,9 +431,12 @@ export class TaskRepository implements ITaskRepository {
       LIMIT ? OFFSET ?
     `;
 
-    const rows = this.db.prepare(query).all(parentId, limit, offset) as Array<
-      Task & { tags_csv: string | null }
-    >;
+    const rows = mapRows<Task & { tags_csv: string | null }>(
+      this.db.prepare(query),
+      parentId,
+      limit,
+      offset,
+    );
 
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
@@ -439,24 +451,26 @@ export class TaskRepository implements ITaskRepository {
    * report the true match count.
    */
   countChildren(parentId: number): number {
-    const result = this.db
-      .prepare(
-        'SELECT COUNT(*) as count FROM tasks WHERE parent_task_id = ?'
-      )
-      .get(parentId) as { count: number };
-    return result.count;
+    const result = mapRow<{ count: number }>(
+      this.db.prepare(
+        'SELECT COUNT(*) as count FROM tasks WHERE parent_task_id = ?',
+      ),
+      parentId,
+    );
+    // COUNT(*) always returns exactly one row — `result` is never undefined.
+    return result?.count ?? 0;
   }
 
   count(filters?: TaskFilters): number {
     if (!filters) {
-      const result = this.db
-        .prepare('SELECT COUNT(*) as count FROM tasks')
-        .get() as { count: number };
-      return result.count;
+      const result = mapRow<{ count: number }>(
+        this.db.prepare('SELECT COUNT(*) as count FROM tasks'),
+      );
+      return result?.count ?? 0;
     }
 
     const whereClauses: string[] = [];
-    const params: Record<string, any> = {};
+    const params: SqlParams = {};
 
     // Build WHERE clause (same logic as findByFilters)
     if (filters.project_id !== undefined) {
@@ -524,16 +538,17 @@ export class TaskRepository implements ITaskRepository {
 
     // Mirror the FTS-error handling from findByFilters so countByFilters
     // surfaces FtsSyntaxError instead of bare SQLITE_ERROR.
-    let result: { count: number };
+    let result: { count: number } | undefined;
     try {
-      result = this.db.prepare(query).get(params) as { count: number };
+      result = mapRow<{ count: number }>(this.db.prepare(query), params);
     } catch (err) {
       if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
         throw new FtsSyntaxError((err as Error).message);
       }
       throw err;
     }
-    return result.count;
+    // COUNT(*) always returns exactly one row — `result` is never undefined.
+    return result?.count ?? 0;
   }
 
   findCompletedInRange(
@@ -549,7 +564,7 @@ export class TaskRepository implements ITaskRepository {
       'datetime(t.completed_at) >= datetime(@start)',
       'datetime(t.completed_at) <= datetime(@end)',
     ];
-    const params: Record<string, unknown> = {
+    const params: SqlParams = {
       start: filters.start,
       end: filters.end,
     };
@@ -575,9 +590,10 @@ export class TaskRepository implements ITaskRepository {
       ORDER BY t.completed_at ASC
     `;
 
-    const rows = this.db.prepare(query).all(params) as Array<
-      Task & { tags_csv: string | null }
-    >;
+    const rows = mapRows<Task & { tags_csv: string | null }>(
+      this.db.prepare(query),
+      params,
+    );
 
     return rows.map((row) => {
       const { tags_csv, ...task } = row;

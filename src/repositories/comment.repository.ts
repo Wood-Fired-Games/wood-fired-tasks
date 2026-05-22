@@ -6,6 +6,7 @@ import {
   MAX_PAGE_LIMIT,
 } from '../types/task.js';
 import type { ICommentRepository, PaginationOptions } from './interfaces.js';
+import { mapRow, mapRows } from './row-mapper.js';
 
 function resolvePagination(pagination?: PaginationOptions): {
   limit: number;
@@ -73,11 +74,11 @@ export class CommentRepository implements ICommentRepository {
 
   findByTaskId(taskId: number, pagination?: PaginationOptions): Comment[] {
     const { limit, offset } = resolvePagination(pagination);
-    return this.findByTaskIdStmt.all(taskId, limit, offset) as Comment[];
+    return mapRows<Comment>(this.findByTaskIdStmt, taskId, limit, offset);
   }
 
   findById(id: number): Comment | null {
-    const comment = this.findByIdStmt.get(id) as Comment | undefined;
+    const comment = mapRow<Comment>(this.findByIdStmt, id);
     return comment || null;
   }
 
@@ -87,7 +88,8 @@ export class CommentRepository implements ICommentRepository {
   }
 
   countByTaskId(taskId: number): number {
-    const result = this.countByTaskIdStmt.get(taskId) as { count: number };
-    return result.count;
+    const result = mapRow<{ count: number }>(this.countByTaskIdStmt, taskId);
+    // COUNT(*) always returns exactly one row — `result` is never undefined.
+    return result?.count ?? 0;
   }
 }

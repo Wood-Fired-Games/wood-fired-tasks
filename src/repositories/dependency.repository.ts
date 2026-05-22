@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Dependency, CreateDependencyDTO } from '../types/task.js';
 import type { IDependencyRepository } from './interfaces.js';
+import { mapRows } from './row-mapper.js';
 
 export class DependencyRepository implements IDependencyRepository {
   private insertStmt: Database.Statement;
@@ -56,15 +57,15 @@ export class DependencyRepository implements IDependencyRepository {
   }
 
   findAll(): Dependency[] {
-    return this.findAllStmt.all() as Dependency[];
+    return mapRows<Dependency>(this.findAllStmt);
   }
 
   findByTaskId(taskId: number): Dependency[] {
-    return this.findByTaskIdStmt.all(taskId) as Dependency[];
+    return mapRows<Dependency>(this.findByTaskIdStmt, taskId);
   }
 
   findBlockingTask(taskId: number): Dependency[] {
-    return this.findBlockingTaskStmt.all(taskId) as Dependency[];
+    return mapRows<Dependency>(this.findBlockingTaskStmt, taskId);
   }
 
   delete(taskId: number, blocksTaskId: number): boolean {
