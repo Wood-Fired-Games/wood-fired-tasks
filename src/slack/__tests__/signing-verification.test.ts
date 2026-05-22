@@ -89,7 +89,6 @@ describe('Slack request-signing verification (HTTP receiver)', () => {
       signingSecret: SIGNING_SECRET,
       endpoints: SLASH_COMMAND_ENDPOINT,
       processBeforeResponse: true,
-      // biome-ignore lint/suspicious/noExplicitAny: minimal logger shim for test silence
       logger: silentLogger as any,
     });
 

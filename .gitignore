@@ -47,3 +47,7 @@ coverage/
 
 # gitleaks scan reports (local-only; never commit)
 .gitleaks-report.json
+
+# Biome cache (defensive; current versions don't create one but future may)
+.biome/
+.biome-cache/
