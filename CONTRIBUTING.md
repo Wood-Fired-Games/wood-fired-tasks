@@ -118,6 +118,16 @@ Tests live next to the code they exercise, named `*.test.ts`. Larger
 integration tests live under `src/<area>/__tests__/`. Benchmarks live in
 `*.bench.ts` files and are excluded from the default test run.
 
+### Property tests
+
+Property tests live in `**/__tests__/*.property.test.ts` and use
+[`@fast-check/vitest`](https://github.com/dubzzz/fast-check/tree/main/packages/vitest).
+Use them for invariants that should survive across many input variations —
+state machines, idempotency, CAS protocols, cycle prevention, and
+pagination/filter combinations. Property tests *complement* example-based
+tests; they do not replace them. Keep `numRuns` tight (usually 5–20) so
+the suite stays well under a second per file.
+
 ### Coverage thresholds
 
 Coverage is enforced by Vitest via `vitest.config.ts`. Current minimums:

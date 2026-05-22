@@ -537,6 +537,37 @@ Acceptance criteria:
 - Keep nightly/label-triggered expensive checks unless a change is unusually
   risky.
 
+Progress notes (task #270):
+
+- Pagination/filter combinations were the gap among the roadmap's listed
+  invariant areas — state-machine, claim/release CAS, and cycle-detection
+  properties already existed under `src/**/__tests__/*.property.test.ts`,
+  but no property test covered the page-walk / filter-narrowing invariants
+  of the list endpoints.
+- Landed
+  [`src/services/__tests__/pagination-filter.property.test.ts`](../src/services/__tests__/pagination-filter.property.test.ts)
+  asserting four invariants through the public `TaskService` surface
+  (`listTasksPaginated`, `listTasks`, `countTasks`):
+  1. Walking every page (`limit = L`, `offset = k*L`) reconstructs the
+     un-paginated result with no duplicates and no drops.
+  2. The envelope's `total` is invariant under page size and matches
+     `countTasks(filters)`.
+  3. Adding any filter is monotone — `count({A,B}) <= min(count{A}, count{B})`.
+  4. Offsets at or past `total` return an empty `data` array while still
+     reporting the correct `total`.
+- Deferred to follow-on tasks (still in-scope for this phase but not landed
+  in #270):
+  - Mutation-result review for high-risk / low-score modules (`npm run
+    test:mutation`). The existing 75% break threshold remains the active
+    gate.
+  - Date-filter property tests (`due_before`/`due_after`/`updated_*`
+    boundary invariants) and idempotency-key TTL property tests, if the
+    next mutation run flags those modules.
+  - Additional benchmark files. Three benchmarks exist today
+    (`sse-manager.bench.ts`, `cycle-detector.bench.ts`,
+    `task.repository.bench.ts`) — only add more when a concrete hot path
+    with regression risk is identified.
+
 ### Phase 8: Adopt PR And Release Quality Checklist
 
 Goal: make review expectations repeatable.
