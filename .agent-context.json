@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-22T23:04:59.579Z",
+    "generated_at": "2026-05-22T23:17:24.431Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 91,
-      "sha256": "5c6ef569af7592b7965783f56df7e6bfd01815b686ddcdbe31afc572c7295aa3",
+      "actual_lines": 92,
+      "sha256": "8cd1f7bcd58713b5421cb053cb45a49218f8944689629142604b04930a2aab8e",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -58,11 +58,11 @@
       "role": "architecture-one-pager",
       "purpose": "System one-pager: data flow across API, MCP, CLI, Slack, DB. Boundaries, not internals.",
       "when_to_read": "second",
-      "line_budget": 300,
+      "line_budget": 350,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
-      "approx_token_budget": 6000,
+      "approx_token_budget": 7000,
       "actual_lines": 300,
       "sha256": "a058e41bbbed1e31992b887590f3b51febdcbe896f2af9131a925a320183cbb6",
       "actual_owner": "Repository maintainers"

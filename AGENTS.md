@@ -22,16 +22,16 @@ Pick your intent, read the files in order. Files marked `(reserved)` are slots d
 | Intent | Read in this order |
 |---|---|
 | docs-only change | `docs/AGENT_CONTEXT.md` → `CONTRIBUTING.md` → the doc you are editing |
-| API change (REST routes) | `docs/API.md` → `src/api/routes/` → an existing test in `src/api/__tests__/` → `docs/INTERFACES.md` (reserved) |
-| MCP tool change | `docs/MCP.md` → `src/mcp/tools/` → `src/mcp/__tests__/` → `docs/INTERFACES.md` (reserved) |
+| API change (REST routes) | `docs/API.md` → `src/api/routes/` → an existing test in `src/api/__tests__/` → `docs/INTERFACES.md` |
+| MCP tool change | `docs/MCP.md` → `src/mcp/tools/` → `src/mcp/__tests__/` → `docs/INTERFACES.md` |
 | CLI change | `docs/CLI.md` → `src/cli/commands/` → `src/cli/__tests__/` |
 | Schema / status / enum change | `src/schemas/` → matching `src/services/` or `src/repositories/` → API/MCP/CLI surface that exposes it |
-| Database migration | `src/db/migrations/` → `src/db/migrate.ts` → `src/db/__tests__/` → `docs/ARCHITECTURE.md` (reserved) |
+| Database migration | `src/db/migrations/` → `src/db/migrate.ts` → `src/db/__tests__/` → `docs/ARCHITECTURE.md` |
 | Slack change | `docs/SLACK.md` → `src/slack/` → `slack-app-manifest.yml` |
 | Test-only fix | failing test file → the unit under test → `vitest.config.ts` |
 | Release / docs update | `docs/RELEASE.md` → `CHANGELOG.md` → `package.json` |
 
-When in doubt, open `docs/NAVIGATION.md` (reserved) once it lands; until then this table is the canonical task → files map.
+For per-surface change recipes (17 task shapes with files / tests / docs), see [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
 
 ## Essential commands
 
@@ -79,12 +79,13 @@ Treat these as off-limits unless your task explicitly requires touching them.
 | [docs/RELEASE.md](docs/RELEASE.md) | Release process |
 | [docs/CODE_QUALITY_ROADMAP.md](docs/CODE_QUALITY_ROADMAP.md) | Quality roadmap |
 | [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Onboarding smoke test — 7 probe scenarios for fresh agents |
-| `docs/REPO_MAP.md` | Reserved — repo tree with per-directory ownership (coming in this milestone) |
-| `docs/ARCHITECTURE.md` | Reserved — system one-pager, data flow across surfaces (coming in this milestone) |
-| `docs/WORKFLOWS.md` | Reserved — canonical command recipes (coming in this milestone) |
-| `docs/INTERFACES.md` | Reserved — generated index of routes, MCP tools, CLI commands (coming in this milestone) |
-| `docs/NAVIGATION.md` | Reserved — task-oriented "if you want to do X, read these files" index (coming in this milestone) |
-| `.agent-context.json` | Reserved — machine-readable manifest of the files above (coming in this milestone) |
+| [docs/REPO_MAP.md](docs/REPO_MAP.md) | Compact repo tree with per-directory ownership |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System one-pager, data flow across surfaces |
+| [docs/WORKFLOWS.md](docs/WORKFLOWS.md) | Canonical command recipes (build, test, lint, run) |
+| [docs/INTERFACES.md](docs/INTERFACES.md) | Inventory of REST routes, MCP tools, CLI commands (counts verified by CI) |
+| [docs/NAVIGATION.md](docs/NAVIGATION.md) | Task-oriented "if you want to do X, read these files" index |
+| [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Repeatable onboarding smoke test (scripted + manual) |
+| [.agent-context.json](.agent-context.json) | Machine-readable manifest of the files above |
 
 ## Vendor neutrality
 
