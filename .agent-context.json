@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-22T22:01:54.461Z",
+    "generated_at": "2026-05-22T22:12:45.064Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -84,14 +84,17 @@
     {
       "path": "docs/INTERFACES.md",
       "role": "interfaces-index",
-      "purpose": "Generated index of REST routes, MCP tools, and CLI subcommands with source-file pointers.",
+      "purpose": "Compact source-verified index of REST routes, MCP tools, and CLI subcommands with file pointers.",
       "when_to_read": "generated-index",
       "line_budget": 400,
       "authority": "generated",
       "owner_role": "Repository maintainers",
-      "status": "reserved",
-      "notes": "Reserved slot — landing in task #278.",
-      "approx_token_budget": 8000
+      "status": "present",
+      "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
+      "approx_token_budget": 8000,
+      "actual_lines": 274,
+      "sha256": "7b615885348cac61e6e10f6775525698c3b49430e9f66e52bd5e6c0efab90ede",
+      "actual_owner": "Repository maintainers"
     },
     {
       "path": "docs/NAVIGATION.md",

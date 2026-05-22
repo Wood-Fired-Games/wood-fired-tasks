@@ -168,13 +168,14 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     path: 'docs/INTERFACES.md',
     role: 'interfaces-index',
     purpose:
-      'Generated index of REST routes, MCP tools, and CLI subcommands with source-file pointers.',
+      'Compact source-verified index of REST routes, MCP tools, and CLI subcommands with file pointers.',
     when_to_read: 'generated-index',
     line_budget: 400,
     authority: 'generated',
     owner_role: 'Repository maintainers',
-    status: 'reserved',
-    notes: 'Reserved slot — landing in task #278.',
+    status: 'present',
+    notes:
+      'Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.',
   },
   {
     path: 'docs/NAVIGATION.md',
