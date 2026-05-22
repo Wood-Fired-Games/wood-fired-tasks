@@ -13,6 +13,10 @@
  *      manifest (other than the `_generated.generated_at` timestamp).
  *   5. Any internal markdown link in a "present" `.md` file points at a
  *      relative path that does not exist on disk.
+ *   6. Any adapter file (authority === 'adapter', status === 'present')
+ *      does not contain a markdown link to `AGENTS.md`. Adapters MUST
+ *      point at the canonical entry — that is the only thing that makes
+ *      them adapters rather than rogue vendor-specific docs.
  *
  * This script reads only files inside the repository (.md sources, the
  * committed .agent-context.json, and the in-process manifest.ts source).
@@ -39,6 +43,13 @@ interface CheckResult {
   errors: string[];
   warnings: string[];
 }
+
+/**
+ * Match a markdown link whose target resolves to `AGENTS.md` at the repo
+ * root. Accepts `AGENTS.md`, `./AGENTS.md`, and any `#fragment` suffix.
+ * Used by the adapter-link check (see rule 6 in the file header comment).
+ */
+const ADAPTER_AGENTS_LINK_RE = /\]\((?:\.\/)?AGENTS\.md(?:#[^)]*)?\)/;
 
 function normalizeForCompare(
   m: AgentContextManifest,
@@ -86,6 +97,23 @@ export function runChecks(repoRoot: string): CheckResult {
 
   for (const linkErr of validateInternalLinks(repoRoot)) {
     errors.push(linkErr.message);
+  }
+
+  // Adapter files MUST link to AGENTS.md — that is what distinguishes an
+  // adapter from a rogue vendor-specific doc. Check applies to every
+  // present adapter regardless of file extension (covers CLAUDE.md and
+  // llms.txt). Anchored fragments are accepted.
+  for (const entry of fresh.files) {
+    if (entry.authority !== 'adapter') continue;
+    if (entry.status !== 'present') continue;
+    const abs = resolve(repoRoot, entry.path);
+    if (!existsSync(abs)) continue; // file-exists already reported above
+    const text = readFileSync(abs, 'utf8');
+    if (!ADAPTER_AGENTS_LINK_RE.test(text)) {
+      errors.push(
+        `Adapter file "${entry.path}" does not link to AGENTS.md — adapters must point to the canonical entry.`,
+      );
+    }
   }
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);

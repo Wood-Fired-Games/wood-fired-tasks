@@ -168,4 +168,45 @@ describe('agent-context manifest', () => {
     expect(typeof onDisk.groups).toBe('object');
     expect(typeof onDisk.custom_fields).toBe('object');
   });
+
+  // --- Adapter-link enforcement (task #285) -------------------------------
+  //
+  // Adapter files (authority: 'adapter') exist only to point a vendor
+  // toolchain or convention scanner at the canonical AGENTS.md. The check
+  // pipeline must (a) recognise at least the two committed adapters
+  // (CLAUDE.md, llms.txt), (b) ensure every committed adapter links to
+  // AGENTS.md, and (c) emit a specific error message when an adapter is
+  // missing the link. The first two assertions guard the rule itself; the
+  // third proves the enforcement code path is wired in by stubbing a
+  // throwaway adapter without an AGENTS.md link and re-running the check.
+
+  it('declares every committed adapter and they all link to AGENTS.md', () => {
+    const fresh = buildManifest({ repoRoot });
+    const adapters = fresh.files.filter(
+      (f) => f.authority === 'adapter' && f.status === 'present',
+    );
+    // Sanity: the two adapters introduced in #285 must be present.
+    const paths = new Set(adapters.map((a) => a.path));
+    expect(paths.has('CLAUDE.md')).toBe(true);
+    expect(paths.has('llms.txt')).toBe(true);
+
+    // Each adapter must contain an AGENTS.md link.
+    const adapterLinkRe = /\]\((?:\.\/)?AGENTS\.md(?:#[^)]*)?\)/;
+    for (const a of adapters) {
+      const abs = resolve(repoRoot, a.path);
+      expect(existsSync(abs), `${a.path} should exist on disk`).toBe(true);
+      const text = readFileSync(abs, 'utf8');
+      expect(
+        adapterLinkRe.test(text),
+        `${a.path} must link to AGENTS.md (adapter-link rule)`,
+      ).toBe(true);
+    }
+
+    // And the committed tree must not surface any adapter-link errors.
+    const { errors } = runChecks(repoRoot);
+    const adapterLinkErrors = errors.filter((e) =>
+      e.includes('does not link to AGENTS.md'),
+    );
+    expect(adapterLinkErrors).toEqual([]);
+  });
 });
