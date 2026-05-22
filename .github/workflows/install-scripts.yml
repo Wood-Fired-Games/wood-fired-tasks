@@ -143,8 +143,9 @@ jobs:
         run: |
           test -f "$HOME/.claude.json" || { echo "~/.claude.json missing"; exit 1; }
           jq -e '.mcpServers["wood-fired-bugs"].command == "node"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs"].args[0] == "dist/mcp/index.js"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs"].env.DATABASE_PATH | length > 0' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs"].args[0] | startswith("/") and endswith("/dist/mcp/index.js")' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs"].env.DATABASE_PATH | startswith("/") and endswith("/data/tasks.db")' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
           # Task #258: local MCP must NOT carry any API key in its env.
           jq -e '.mcpServers["wood-fired-bugs"].env | has("WFB_API_KEY") | not' "$HOME/.claude.json" >/dev/null
           jq -e '.mcpServers["wood-fired-bugs"].env | has("WOOD_FIRED_BUGS_API_KEY") | not' "$HOME/.claude.json" >/dev/null
@@ -172,7 +173,8 @@ jobs:
       - name: Assert remote MCP entry has WFB_API_URL + WFB_API_KEY
         run: |
           jq -e '.mcpServers["wood-fired-bugs-remote"].command == "node"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs-remote"].args[0] == "dist/mcp/remote/index.js"' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs-remote"].args[0] | startswith("/") and endswith("/dist/mcp/remote/index.js")' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-bugs-remote"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
           jq -e '.mcpServers["wood-fired-bugs-remote"].env.WFB_API_KEY | length > 0' "$HOME/.claude.json" >/dev/null
           jq -e '.mcpServers["wood-fired-bugs-remote"].env.WFB_API_URL | length > 0' "$HOME/.claude.json" >/dev/null
           echo "remote MCP entry present and well-formed"
@@ -252,8 +254,12 @@ jobs:
           $json = Get-Content $cfg -Raw | ConvertFrom-Json
           $entry = $json.mcpServers.'wood-fired-bugs'
           if ($entry.command -ne 'node') { Write-Error "local MCP command mismatch"; exit 1 }
-          if ($entry.args[0] -ne 'dist/mcp/index.js') { Write-Error "local MCP args[0] mismatch"; exit 1 }
-          if ([string]::IsNullOrWhiteSpace($entry.env.DATABASE_PATH)) { Write-Error "DATABASE_PATH missing"; exit 1 }
+          # args[0] must be an ABSOLUTE path ending in dist/mcp/index.js — Claude
+          # Code ignores the `cwd` field, so a relative path breaks the MCP server.
+          if (-not ([System.IO.Path]::IsPathRooted($entry.args[0]))) { Write-Error "local MCP args[0] not absolute: $($entry.args[0])"; exit 1 }
+          if (-not ($entry.args[0] -like '*dist\mcp\index.js' -or $entry.args[0] -like '*dist/mcp/index.js')) { Write-Error "local MCP args[0] mismatch: $($entry.args[0])"; exit 1 }
+          if (-not ([System.IO.Path]::IsPathRooted($entry.env.DATABASE_PATH))) { Write-Error "DATABASE_PATH not absolute: $($entry.env.DATABASE_PATH)"; exit 1 }
+          if ($entry.PSObject.Properties.Name -contains 'cwd') { Write-Error "local MCP entry contains cwd — Claude Code ignores it; installer must not write it"; exit 1 }
           if ($entry.env.PSObject.Properties.Name -contains 'WFB_API_KEY') {
             Write-Error "local MCP entry contains WFB_API_KEY — task #258 forbids this"
             exit 1
@@ -289,7 +295,9 @@ jobs:
           $json = Get-Content $cfg -Raw | ConvertFrom-Json
           $entry = $json.mcpServers.'wood-fired-bugs-remote'
           if ($entry.command -ne 'node') { Write-Error "remote MCP command mismatch"; exit 1 }
-          if ($entry.args[0] -ne 'dist/mcp/remote/index.js') { Write-Error "remote MCP args[0] mismatch"; exit 1 }
+          if (-not ([System.IO.Path]::IsPathRooted($entry.args[0]))) { Write-Error "remote MCP args[0] not absolute: $($entry.args[0])"; exit 1 }
+          if (-not ($entry.args[0] -like '*dist\mcp\remote\index.js' -or $entry.args[0] -like '*dist/mcp/remote/index.js')) { Write-Error "remote MCP args[0] mismatch: $($entry.args[0])"; exit 1 }
+          if ($entry.PSObject.Properties.Name -contains 'cwd') { Write-Error "remote MCP entry contains cwd — Claude Code ignores it; installer must not write it"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($entry.env.WFB_API_KEY)) { Write-Error "WFB_API_KEY missing"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($entry.env.WFB_API_URL)) { Write-Error "WFB_API_URL missing"; exit 1 }
           Write-Host "remote MCP entry present and well-formed"
