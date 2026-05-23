@@ -260,7 +260,14 @@ function buildUserLabelMap(db: Database.Database): Map<number, string> {
 }
 
 /** Apply mappings via per-table transactions. Returns total rows updated.
- * Idempotent: WHERE clauses include `<fk_col> IS NULL` so re-runs are no-ops. */
+ * Idempotent: WHERE clauses include `<fk_col> IS NULL` so re-runs are no-ops.
+ *
+ * `limit` (WR-03 clarification): the cap is PER TABLE, not per mapping —
+ * `remaining` is a single counter shared across the loop over `toApply`.
+ * The SQL's per-mapping `LIMIT ?` binding receives the table-level
+ * remainder so a mapping that has more matching rows than `remaining`
+ * still terminates at the table budget. Documented this way in --help.
+ */
 function applyMappings(
   db: Database.Database,
   spec: (typeof TABLES)[number],
@@ -330,7 +337,12 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
   )
   .option(
     '--limit <n>',
-    'Cap rows processed per mapping (testing only)',
+    // WR-03: align help with implementation. The SQL has a per-mapping
+    // LIMIT binding but `applyMappings` shares a single `remaining`
+    // counter across the loop over mappings, so the budget is per-table
+    // (whichever mappings iterate first consume the same N). Documented
+    // as such here. See applyMappings() for the counter logic.
+    'Cap rows processed per table, NOT per mapping (testing only)',
     (v) => parseInt(v, 10),
   )
   .action(
@@ -343,7 +355,18 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
       const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
       const db = initDatabase(dbPath);
       try {
-        await runMigrations(db);
+        // WR-05: dry-run is supposed to be side-effect-free. Previously
+        // `runMigrations(db)` ran unconditionally — meaning a "preview"
+        // on a backup or production replica could silently advance the
+        // schema. Gate the migration on --commit so dry-run is truly
+        // read-only. Operators running --commit get the auto-migrate
+        // they need; operators running --dry-run get a clean preview
+        // (and a clear error from the planning SQL if the schema is
+        // behind — migration 009's identity FK columns are required to
+        // build the plan at all).
+        if (opts.commit) {
+          await runMigrations(db);
+        }
 
         // Validate --user-fallback enum.
         const strategy: FallbackStrategy =
