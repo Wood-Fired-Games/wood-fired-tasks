@@ -206,6 +206,44 @@ export function resetConfig(): void {
 }
 
 /**
+ * Phase 30 Plan 08 — derive the effective server origin for surfaces that
+ * embed an absolute URL (currently the device-flow verification URI shown
+ * to the CLI user, and the absolute redirect for the unauthenticated /auth
+ * /device → /auth/login bounce).
+ *
+ * Rules:
+ *   - When `OIDC_REDIRECT_URI` is set and parses, return `new URL(it).origin`
+ *     (scheme + host + port; no trailing slash, no path).
+ *   - Otherwise, fall back to `http://localhost:${PORT}` so a PAT-only
+ *     deployment without OIDC still has a valid (if non-routable) origin
+ *     for logs and the disabled-stub responses.
+ *
+ * This is a pure function of the env shape — no side effects, no Proxy
+ * touch — so unit tests can pass a plain object literal without needing
+ * the full Zod-validated config.
+ *
+ * Note on the empty-string case: a malformed/empty OIDC_REDIRECT_URI is
+ * treated as "absent" rather than throwing. The Zod schema's `.url()`
+ * refinement would have rejected the value at boot time if production
+ * config was malformed; this helper is defensive for tests that pass a
+ * partial env object.
+ */
+export function effectiveOrigin(env: {
+  OIDC_REDIRECT_URI?: string;
+  PORT: number;
+}): string {
+  if (env.OIDC_REDIRECT_URI && env.OIDC_REDIRECT_URI.length > 0) {
+    try {
+      return new URL(env.OIDC_REDIRECT_URI).origin;
+    } catch {
+      // Fall through to localhost fallback for malformed inputs (defense
+      // in depth — Zod already validates production config).
+    }
+  }
+  return `http://localhost:${env.PORT}`;
+}
+
+/**
  * A parsed API key entry: raw key plus a human-readable label for audit logs.
  *
  * Labels are operator-supplied or fingerprint-derived. They are intended to
