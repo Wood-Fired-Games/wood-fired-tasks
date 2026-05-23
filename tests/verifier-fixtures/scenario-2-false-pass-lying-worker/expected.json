@@ -1,0 +1,27 @@
+{
+  "verdict": "FAIL",
+  "checks": [
+    {
+      "name": "A new file src/utils/slug.ts exports a slugify(input: string): string function",
+      "status": "FAIL",
+      "evidence_url_or_text": "$ ls src/utils/slug.ts\\nls: cannot access 'src/utils/slug.ts': No such file or directory. commit_shas was empty — worker produced no commits."
+    },
+    {
+      "name": "The function lower-cases input, replaces non-alphanumerics with `-`, and collapses repeated dashes",
+      "status": "FAIL",
+      "evidence_url_or_text": "src/utils/slug.ts does not exist; the behaviour cannot be present. commit_shas empty."
+    },
+    {
+      "name": "Unit tests cover the empty-string, all-caps, and mixed-symbol cases",
+      "status": "FAIL",
+      "evidence_url_or_text": "$ find src/utils/__tests__ -name 'slug*.test.ts'\\n(no output). No test file present."
+    },
+    {
+      "name": "npm test exits 0",
+      "status": "FAIL",
+      "evidence_url_or_text": "Worker reported no commits. There is nothing new to test; the criterion presupposes the work was done, which it was not."
+    }
+  ],
+  "verifier_session_id": "sess_verifier_lying_0002",
+  "verified_at": "2026-05-23T20:05:00.000Z"
+}

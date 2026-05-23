@@ -286,6 +286,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     notes: 'Advisory budget — tighten in a follow-up.',
   },
   {
+    path: 'docs/verifier-contract.md',
+    role: 'deep-doc',
+    purpose:
+      'Wave 2.1 tasks-verifier subagent contract: inputs, outputs, verdict rollup, evidence format, tool allow/denylists, bounds.',
+    when_to_read: 'on-demand',
+    line_budget: 400,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/ONBOARDING_SMOKE.md',
     role: 'onboarding-smoke',
     purpose:

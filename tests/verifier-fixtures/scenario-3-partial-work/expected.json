@@ -1,0 +1,32 @@
+{
+  "verdict": "PARTIAL",
+  "checks": [
+    {
+      "name": "A new file src/utils/slug.ts exports a slugify(input: string): string function",
+      "status": "PASS",
+      "evidence_url_or_text": "src/utils/slug.ts:1 — `export function slugify(input: string): string { ... }` present at HEAD."
+    },
+    {
+      "name": "The function lower-cases input, replaces non-alphanumerics with `-`, and collapses repeated dashes",
+      "status": "PASS",
+      "evidence_url_or_text": "src/utils/slug.ts:3 — body chains `.toLowerCase()` + `.replace(/[^a-z0-9]+/g, '-')` + `.replace(/-+/g, '-')`."
+    },
+    {
+      "name": "Unit tests cover the empty-string, all-caps, and mixed-symbol cases",
+      "status": "PASS",
+      "evidence_url_or_text": "src/utils/__tests__/slug.test.ts:12,18,24 — three `it()` blocks for the three named cases."
+    },
+    {
+      "name": "Onboarding doc docs/SETUP.md mentions the new helper in the `## Utilities` section",
+      "status": "SKIP",
+      "evidence_url_or_text": "UNCHECKABLE: docs/SETUP.md not in the worker's diff (git show 1111aaaa --stat omitted the path); however the criterion may be satisfied by a prior unrelated commit on main. Cannot disambiguate within bounds without a wider `git log -p -- docs/SETUP.md` scan."
+    },
+    {
+      "name": "A manual UAT check confirms the helper renders sensibly inside the admin dashboard",
+      "status": "SKIP",
+      "evidence_url_or_text": "UNCHECKABLE: criterion requires human UAT against the admin dashboard; no automated signal observable from the diff or test output."
+    }
+  ],
+  "verifier_session_id": "sess_verifier_partial_0003",
+  "verified_at": "2026-05-23T20:10:00.000Z"
+}

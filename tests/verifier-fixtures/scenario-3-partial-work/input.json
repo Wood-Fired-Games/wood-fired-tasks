@@ -1,0 +1,12 @@
+{
+  "task_id": 9003,
+  "acceptance_criteria": "- A new file `src/utils/slug.ts` exports a `slugify(input: string): string` function.\n- The function lower-cases input, replaces non-alphanumerics with `-`, and collapses repeated dashes.\n- Unit tests cover the empty-string, all-caps, and mixed-symbol cases.\n- Onboarding doc `docs/SETUP.md` mentions the new helper in the `## Utilities` section.\n- A manual UAT check confirms the helper renders sensibly inside the admin dashboard.",
+  "worker_subagent_session_id": "sess_worker_partial_0003",
+  "commit_shas": [
+    "1111aaaa2222bbbb3333cccc4444dddd5555eeee"
+  ],
+  "file_changes": [
+    "src/utils/slug.ts",
+    "src/utils/__tests__/slug.test.ts"
+  ]
+}

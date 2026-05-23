@@ -1,0 +1,7 @@
+{
+  "task_id": 9002,
+  "acceptance_criteria": "- A new file `src/utils/slug.ts` exports a `slugify(input: string): string` function.\n- The function lower-cases input, replaces non-alphanumerics with `-`, and collapses repeated dashes.\n- Unit tests cover the empty-string, all-caps, and mixed-symbol cases.\n- `npm test` exits 0.",
+  "worker_subagent_session_id": "sess_worker_lying_0002",
+  "commit_shas": [],
+  "file_changes": []
+}

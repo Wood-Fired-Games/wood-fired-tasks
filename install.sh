@@ -12,6 +12,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$HOME/.claude.json"
 SKILLS_SOURCE="$SCRIPT_DIR/skills/tasks"
 SKILLS_DEST="$HOME/.claude/commands/tasks"
+# Wave 2.1 (task #314): subagent definitions distributed alongside the
+# /tasks:* slash commands. install.sh copies every .md file in skills/agents
+# to ~/.claude/agents/ so subagents like `tasks-verifier` become invocable
+# by Claude Code. Empty directory is non-fatal (logged + skipped).
+SKILLS_AGENT_SOURCE="$SCRIPT_DIR/skills/agents"
+SKILLS_AGENT_DEST="$HOME/.claude/agents"
 SERVICE_URL="${WOOD_FIRED_BUGS_URL:-http://localhost:3000}"
 
 # Per-user secret file for the API key. Strict 0600 permissions.
@@ -356,6 +362,37 @@ done
 
 echo "[OK] Copied $COPIED_COUNT skill files to $SKILLS_DEST"
 
+# ----------------------------------------------------------------------------
+# Step 3b: Copy subagent definitions (task #314, Wave 2.1)
+# ----------------------------------------------------------------------------
+# Mirrors the skill-file loop above but targets ~/.claude/agents/. Defensive:
+# missing or empty directory is logged + skipped rather than treated as an
+# error, so a slim distribution that ships zero subagents still installs.
+
+AGENT_COPIED_COUNT=0
+if [ ! -d "$SKILLS_AGENT_SOURCE" ]; then
+  echo "[INFO] No subagent source directory at $SKILLS_AGENT_SOURCE — skipping agent install"
+else
+  AGENT_FILE_COUNT=$(find "$SKILLS_AGENT_SOURCE" -maxdepth 1 -name "*.md" -type f ! -name "README.md" | wc -l)
+  if [ "$AGENT_FILE_COUNT" -eq 0 ]; then
+    echo "[INFO] No subagent files (*.md) in $SKILLS_AGENT_SOURCE — skipping agent install"
+  else
+    echo "[INFO] Installing subagent definitions..."
+    mkdir -p "$SKILLS_AGENT_DEST"
+    for agent_file in "$SKILLS_AGENT_SOURCE"/*.md; do
+      if [ -f "$agent_file" ]; then
+        # Skip the directory README — it documents the source layout, not a runnable subagent.
+        if [ "$(basename "$agent_file")" = "README.md" ]; then
+          continue
+        fi
+        cp -a "$agent_file" "$SKILLS_AGENT_DEST/"
+        AGENT_COPIED_COUNT=$((AGENT_COPIED_COUNT + 1))
+      fi
+    done
+    echo "[OK] Copied $AGENT_COPIED_COUNT subagent definitions to $SKILLS_AGENT_DEST"
+  fi
+fi
+
 # ============================================================================
 # Step 4: Backup existing config (LINX-04)
 # ============================================================================
@@ -491,6 +528,7 @@ echo ""
 echo "Summary:"
 echo "  - Install mode: $MODE"
 echo "  - $COPIED_COUNT skill files installed to $SKILLS_DEST"
+echo "  - $AGENT_COPIED_COUNT subagent definitions installed to $SKILLS_AGENT_DEST"
 if [ "$PRESERVE_EXISTING" -eq 1 ]; then
   echo "  - MCP server '$SERVER_NAME' PRESERVED in $CONFIG_FILE (no changes written)"
 else

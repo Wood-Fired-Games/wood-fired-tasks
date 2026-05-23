@@ -35,6 +35,11 @@ $ScriptDir = $PSScriptRoot
 $ConfigFile = Join-Path $env:USERPROFILE ".claude.json"
 $SkillsSource = Join-Path $ScriptDir "skills" "tasks"
 $SkillsDest = Join-Path $env:USERPROFILE ".claude" "commands" "tasks"
+# Wave 2.1 (task #314): subagent definitions distributed alongside the
+# /tasks:* slash commands. Mirrors the SKILLS_AGENT_SOURCE/DEST pair in
+# install.sh. Missing or empty directory is logged + skipped, never fatal.
+$SkillsAgentSource = Join-Path $ScriptDir "skills" "agents"
+$SkillsAgentDest = Join-Path $env:USERPROFILE ".claude" "agents"
 $ServiceUrl = if ($env:WOOD_FIRED_BUGS_URL) { $env:WOOD_FIRED_BUGS_URL } else { "http://localhost:3000" }
 
 # Per-user secret file for the API key. Stored under LOCALAPPDATA so it
@@ -269,6 +274,39 @@ try {
         Write-Host "[OK] All skill files are up to date" -ForegroundColor Green
     }
 
+    # ----------------------------------------------------------------------------
+    # Step 3b: Copy subagent definitions (task #314, Wave 2.1)
+    # ----------------------------------------------------------------------------
+    # Mirrors the skill-file loop above but targets ~/.claude/agents/.
+    # Defensive: missing or empty directory is logged + skipped, never fatal.
+    $agentCopiedCount = 0
+    if (-not (Test-Path $SkillsAgentSource)) {
+        Write-Host "`n[INFO] No subagent source directory at $SkillsAgentSource — skipping agent install" -ForegroundColor Yellow
+    } else {
+        $agentFiles = Get-ChildItem -Path $SkillsAgentSource -Filter "*.md" | Where-Object { $_.Name -ne "README.md" }
+        if ($agentFiles.Count -eq 0) {
+            Write-Host "`n[INFO] No subagent files (*.md) in $SkillsAgentSource — skipping agent install" -ForegroundColor Yellow
+        } else {
+            Write-Host "`n[INFO] Installing subagent definitions..." -ForegroundColor Cyan
+            if (-not (Test-Path $SkillsAgentDest)) {
+                New-Item -ItemType Directory -Force -Path $SkillsAgentDest | Out-Null
+                Write-Host "[INFO] Created directory: $SkillsAgentDest" -ForegroundColor Yellow
+            }
+            foreach ($file in $agentFiles) {
+                $dest = Join-Path $SkillsAgentDest $file.Name
+                if (-not (Test-Path $dest) -or $file.LastWriteTime -gt (Get-Item $dest).LastWriteTime) {
+                    Copy-Item $file.FullName $dest -Force
+                    $agentCopiedCount++
+                }
+            }
+            if ($agentCopiedCount -gt 0) {
+                Write-Host "[OK] Copied $agentCopiedCount subagent definition(s) to $SkillsAgentDest" -ForegroundColor Green
+            } else {
+                Write-Host "[OK] All subagent definitions are up to date" -ForegroundColor Green
+            }
+        }
+    }
+
     # ============================================================================
     # Step 4: Backup existing config (WIN-04)
     # ============================================================================
@@ -379,6 +417,7 @@ try {
     Write-Host "`nWhat was installed:" -ForegroundColor Cyan
     Write-Host "  - Install mode: $Mode"
     Write-Host "  - Skill files:  $skillCount file(s) -> $SkillsDest"
+    Write-Host "  - Subagents:    $agentCopiedCount file(s) -> $SkillsAgentDest"
     if ($script:PreserveExisting) {
         Write-Host "  - MCP server:   '$serverName' PRESERVED in $ConfigFile (no changes written)"
     } else {

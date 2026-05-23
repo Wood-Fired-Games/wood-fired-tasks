@@ -1,0 +1,27 @@
+{
+  "verdict": "PASS",
+  "checks": [
+    {
+      "name": "A new file src/utils/slug.ts exports a slugify(input: string): string function",
+      "status": "PASS",
+      "evidence_url_or_text": "src/utils/slug.ts:1 — `export function slugify(input: string): string { ... }` present at HEAD."
+    },
+    {
+      "name": "The function lower-cases input, replaces non-alphanumerics with `-`, and collapses repeated dashes",
+      "status": "PASS",
+      "evidence_url_or_text": "src/utils/slug.ts:3 — body calls `.toLowerCase()`, `.replace(/[^a-z0-9]+/g, '-')`, `.replace(/-+/g, '-')`."
+    },
+    {
+      "name": "Unit tests cover the empty-string, all-caps, and mixed-symbol cases",
+      "status": "PASS",
+      "evidence_url_or_text": "src/utils/__tests__/slug.test.ts:12,18,24 — three `it()` blocks named 'returns empty for empty input', 'lower-cases ALL CAPS', 'collapses mixed symbols to single dash'."
+    },
+    {
+      "name": "npm test exits 0",
+      "status": "PASS",
+      "evidence_url_or_text": "$ npm test\\n... Test Files  176 passed (176)\\n      Tests  2174 passed (2174)\\n   Duration  12.43s"
+    }
+  ],
+  "verifier_session_id": "sess_verifier_real_pass_0001",
+  "verified_at": "2026-05-23T20:00:00.000Z"
+}

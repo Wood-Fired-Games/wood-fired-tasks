@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-23T19:43:19.446Z",
+    "generated_at": "2026-05-23T21:42:06.450Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -205,6 +205,20 @@
       "approx_token_budget": 30000,
       "actual_lines": 666,
       "sha256": "d0ffbcb15513a55a5f37b9d9edaf06d183bd2b6e7e63e5b49dd4ad0bf2c7b1b1"
+    },
+    {
+      "path": "docs/verifier-contract.md",
+      "role": "deep-doc",
+      "purpose": "Wave 2.1 tasks-verifier subagent contract: inputs, outputs, verdict rollup, evidence format, tool allow/denylists, bounds.",
+      "when_to_read": "on-demand",
+      "line_budget": 400,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 8000,
+      "actual_lines": 302,
+      "sha256": "7968e321c0f52da90bfbde97a534c781f6afbb61e12d216932fcca29aa2c8476",
+      "actual_owner": "Repository maintainers"
     },
     {
       "path": "docs/ONBOARDING_SMOKE.md",
