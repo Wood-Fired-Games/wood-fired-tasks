@@ -371,6 +371,36 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // OIDC_CLIENT_ID is guaranteed by the env schema's all-or-nothing
     // refine on this branch.
     const origin = effectiveOrigin(config);
+    // WR-06 (Phase 30 review) — log a clear boot-time warning when the
+    // effective origin fell back to localhost. In production, the Zod
+    // schema's `.url()` refine on OIDC_REDIRECT_URI plus the all-or-
+    // nothing OIDC refine make this unreachable when OIDC is enabled.
+    // BUT the helper silently swallows `new URL(...)` failures for the
+    // benefit of unit tests that pass partial env objects (see env.ts
+    // §effectiveOrigin), and a future code path that bypasses Zod (or a
+    // typo'd env that survives validation somehow) could land us in the
+    // fallback without operators knowing. Surface the discrepancy at
+    // boot so the misconfigured verification_uri that the CLI prints
+    // isn't the first signal something is wrong.
+    if (
+      !config.OIDC_REDIRECT_URI ||
+      config.OIDC_REDIRECT_URI.length === 0 ||
+      origin === `http://localhost:${config.PORT}`
+    ) {
+      // The condition above also catches the legitimate-but-suspect
+      // case where OIDC_REDIRECT_URI happens to be http://localhost:PORT
+      // — in that case the warning is technically redundant but cheap,
+      // and the operator gets a clear signal that the device-flow
+      // verification_uri the CLI prints points at localhost.
+      server.log.warn(
+        {
+          event: 'device_flow_origin_fallback',
+          OIDC_REDIRECT_URI: config.OIDC_REDIRECT_URI ?? null,
+          fallbackOrigin: origin,
+        },
+        'device-flow origin resolved to localhost — CLI verification_uri will be unroutable for remote clients',
+      );
+    }
     const clientId = config.OIDC_CLIENT_ID as string;
     await server.register(authRoutes, {
       prefix: '/auth',
