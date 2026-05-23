@@ -31,6 +31,7 @@ import { claimCommand } from '../commands/claim.js';
 import { createCompletionsCommand } from '../commands/completions.js';
 import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
+import { whoamiCommand } from '../commands/whoami.js';
 
 program
   .name('tasks')
@@ -79,6 +80,9 @@ program.addCommand(loginCommand);
 
 // Register logout command (Plan 30-07).
 program.addCommand(logoutCommand);
+
+// Register whoami command (Plan 30-07).
+program.addCommand(whoamiCommand);
 
 // Plan 30-05: top-level catch — friendly NotAuthenticatedError surface.
 program.parseAsync(process.argv).catch((err) => {
