@@ -92,11 +92,11 @@ export class ApiTokenRepository implements IApiTokenRepository {
     return this.findById(Number(info.lastInsertRowid))!;
   }
 
-  revoke(_id: number, _userId: number): boolean {
-    throw new Error('not yet implemented (28-02 Task 2)');
+  revoke(id: number, userId: number): boolean {
+    return this.revokeStmt.run(id, userId).changes === 1;
   }
 
-  touchLastUsed(_id: number): void {
-    throw new Error('not yet implemented (28-02 Task 2)');
+  touchLastUsed(id: number): void {
+    this.touchLastUsedStmt.run(id);
   }
 }
