@@ -436,6 +436,163 @@ describe('Configuration Validation', () => {
     });
   });
 
+  describe('OIDC + session-cookie validation (Phase 29-01)', () => {
+    beforeEach(() => {
+      delete process.env.OIDC_ISSUER_URL;
+      delete process.env.OIDC_CLIENT_ID;
+      delete process.env.OIDC_CLIENT_SECRET;
+      delete process.env.OIDC_REDIRECT_URI;
+      delete process.env.OIDC_SCOPES;
+      delete process.env.SESSION_COOKIE_NAME;
+      delete process.env.SESSION_COOKIE_SECRET;
+    });
+
+    // 32-byte base64 secret (sodium key constraint per 29-RESEARCH.md).
+    const validSecret32 = Buffer.alloc(32).toString('base64');
+    const tooShortSecret31 = Buffer.alloc(31).toString('base64');
+    const tooLongSecret33 = Buffer.alloc(33).toString('base64');
+
+    it('accepts a SESSION_COOKIE_SECRET of exactly 32 bytes (base64)', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SESSION_COOKIE_SECRET = validSecret32;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.SESSION_COOKIE_SECRET).toBe(validSecret32);
+      }
+    });
+
+    it('rejects a SESSION_COOKIE_SECRET that decodes to 31 bytes', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SESSION_COOKIE_SECRET = tooShortSecret31;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const msgs = result.error.issues.map((i) => i.message).join(' ');
+        expect(msgs).toContain('base64-encoded 32 bytes');
+      }
+    });
+
+    it('rejects a SESSION_COOKIE_SECRET that decodes to 33 bytes', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.SESSION_COOKIE_SECRET = tooLongSecret33;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const msgs = result.error.issues.map((i) => i.message).join(' ');
+        expect(msgs).toContain('base64-encoded 32 bytes');
+      }
+    });
+
+    it('rejects a non-base64 garbage SESSION_COOKIE_SECRET', () => {
+      process.env.API_KEYS = 'test-key';
+      // `!!!` is not valid base64; Buffer.from is lenient but decoded length
+      // will not be 32, so the refine still rejects it.
+      process.env.SESSION_COOKIE_SECRET = '!!!';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const msgs = result.error.issues.map((i) => i.message).join(' ');
+        expect(msgs).toContain('base64-encoded 32 bytes');
+      }
+    });
+
+    it('accepts the full OIDC quartet + SESSION_COOKIE_SECRET set together', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.OIDC_ISSUER_URL = 'https://accounts.google.com';
+      process.env.OIDC_CLIENT_ID = 'client-id';
+      process.env.OIDC_CLIENT_SECRET = 'client-secret';
+      process.env.OIDC_REDIRECT_URI = 'https://example.com/auth/callback';
+      process.env.SESSION_COOKIE_SECRET = validSecret32;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_ISSUER_URL).toBe('https://accounts.google.com');
+        expect(result.data.OIDC_CLIENT_ID).toBe('client-id');
+        expect(result.data.OIDC_CLIENT_SECRET).toBe('client-secret');
+        expect(result.data.OIDC_REDIRECT_URI).toBe('https://example.com/auth/callback');
+      }
+    });
+
+    it('rejects partial OIDC configuration (only OIDC_ISSUER_URL set)', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.OIDC_ISSUER_URL = 'https://accounts.google.com';
+      process.env.SESSION_COOKIE_SECRET = validSecret32;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const msgs = result.error.issues.map((i) => i.message).join(' ');
+        expect(msgs).toContain('OIDC_* must all be set together, or none at all');
+      }
+    });
+
+    it('rejects OIDC enabled without SESSION_COOKIE_SECRET', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.OIDC_ISSUER_URL = 'https://accounts.google.com';
+      process.env.OIDC_CLIENT_ID = 'client-id';
+      process.env.OIDC_CLIENT_SECRET = 'client-secret';
+      process.env.OIDC_REDIRECT_URI = 'https://example.com/auth/callback';
+      // SESSION_COOKIE_SECRET intentionally unset.
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const msgs = result.error.issues.map((i) => i.message).join(' ');
+        expect(msgs).toContain('SESSION_COOKIE_SECRET is required when OIDC is enabled');
+      }
+    });
+
+    it('accepts disabled mode (no OIDC vars, no SESSION_COOKIE_SECRET)', () => {
+      process.env.API_KEYS = 'test-key';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_ISSUER_URL).toBeUndefined();
+        expect(result.data.OIDC_CLIENT_ID).toBeUndefined();
+        expect(result.data.OIDC_CLIENT_SECRET).toBeUndefined();
+        expect(result.data.OIDC_REDIRECT_URI).toBeUndefined();
+        expect(result.data.SESSION_COOKIE_SECRET).toBeUndefined();
+      }
+    });
+
+    it('defaults OIDC_SCOPES to "openid email profile" when unset', () => {
+      process.env.API_KEYS = 'test-key';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_SCOPES).toBe('openid email profile');
+      }
+    });
+
+    it('defaults SESSION_COOKIE_NAME to "wfb_session" when unset', () => {
+      process.env.API_KEYS = 'test-key';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.SESSION_COOKIE_NAME).toBe('wfb_session');
+      }
+    });
+  });
+
   describe('Slack token validation', () => {
     it('should accept config with both Slack tokens absent', () => {
       process.env.API_KEYS = 'test-key';
