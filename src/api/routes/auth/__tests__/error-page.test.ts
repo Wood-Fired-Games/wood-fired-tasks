@@ -30,7 +30,10 @@ describe('GET /auth/error', () => {
 
   beforeAll(async () => {
     server = Fastify();
-    await server.register(authErrorRoute);
+    // Mirror Plan 8's wiring: authRoutes plugin is registered with the
+    // /auth prefix in server.ts, so the externally-visible path becomes
+    // /auth/error.
+    await server.register(authErrorRoute, { prefix: '/auth' });
     await server.ready();
   });
 

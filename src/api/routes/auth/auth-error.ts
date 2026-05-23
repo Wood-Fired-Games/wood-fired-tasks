@@ -15,7 +15,8 @@
  * Cache-Control: no-store — security-relevant pages must never be cached.
  *
  * The route registers at `GET /error`; the parent plugin in `index.ts`
- * (Plan 8 wires the prefix `/auth`) means the final path is `/auth/error`.
+ * (registered by Plan 8 at server.ts with prefix `/auth`) means the
+ * final externally-visible path is `/auth/error`.
  */
 import type { FastifyPluginAsync } from 'fastify';
 
@@ -41,7 +42,7 @@ const ALLOWED_REASONS = new Set([
 
 const authErrorRoute: FastifyPluginAsync = async (fastify) => {
   fastify.get(
-    '/auth/error',
+    '/error',
     { config: { skipAuth: true } },
     async (request, reply) => {
       const rawReason = (request.query as { reason?: unknown }).reason;
