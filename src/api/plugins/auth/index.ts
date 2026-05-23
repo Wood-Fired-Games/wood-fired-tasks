@@ -54,7 +54,11 @@ import type {
   FastifyReply,
 } from 'fastify';
 import fp from 'fastify-plugin';
-import { parseApiKeyEntries, type ApiKeyEntry } from '../../../config/env.js';
+import {
+  parseApiKeyEntries,
+  config,
+  type ApiKeyEntry,
+} from '../../../config/env.js';
 import { hashKey, validateApiKeysForProduction } from './keys.js';
 import {
   logAuthFailure,
@@ -357,6 +361,23 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
         }
         if (legacyOutcome.kind === 'match') {
           applyPrincipal(request, legacyOutcome.result, legacyOutcome.label);
+          // Plan 31-05 (MIGR-02): emit one warn log per legacy-authed request
+          // so operators can grep their log feed for sunset-readiness reporting
+          // (`event: 'legacy_auth_used'`). The onSend hook below stamps the
+          // RFC 8594 Deprecation/Sunset headers; this line is the canonical
+          // audit signal — the headers are advisory to the client, the log
+          // is the operator-side source of truth.
+          request.log.warn(
+            {
+              event: 'legacy_auth_used',
+              userId: legacyOutcome.result.user.id,
+              apiKeyLabel: legacyOutcome.label,
+              requestId: request.id,
+              requestUrl: request.url,
+              sunset: config.LEGACY_AUTH_SUNSET_DATE,
+            },
+            'legacy_auth_used',
+          );
           if (enforceSessionOnly(request, reply)) return;
           return;
         }
@@ -374,6 +395,30 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
       } catch (err) {
         return sendInternalError(request, reply, err);
       }
+    },
+  );
+
+  // Plan 31-05 (MIGR-02): RFC 8594 Deprecation + Sunset response headers
+  // for every legacy-X-API-Key-authed request. Gated strictly on
+  // `request.authMethod === 'legacy'` so PAT, session, anonymous (skipAuth),
+  // and failed-auth responses NEVER carry the headers (Pitfall 4 in
+  // 31-RESEARCH §Common Pitfalls).
+  //
+  // Callback-style (4-arg) signature is used INTENTIONALLY rather than async
+  // — registering an async onSend hook inside this fp()-wrapped plugin
+  // delays `reply.sent` from becoming true synchronously when the preHandler
+  // calls `reply.send()` (e.g. from `enforceSessionOnly`'s 403). The
+  // me-tokens session-only tests then see the route handler run after the
+  // 403 reply was queued. The synchronous callback form keeps reply.send()
+  // synchronous, preserving the Phase 28 sessionOnly invariant.
+  fastify.addHook(
+    'onSend',
+    (request, reply, payload, done) => {
+      if (request.authMethod === 'legacy') {
+        reply.header('Deprecation', 'true');
+        reply.header('Sunset', config.LEGACY_AUTH_SUNSET_DATE);
+      }
+      done(null, payload);
     },
   );
 };
