@@ -219,4 +219,41 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
     expect(row.assignee_user_id).toBeNull();
     expect(row.assignee_user_id).not.toBe(SPOOFED);
   });
+
+  // WR-01: defense-in-depth — the PUT handler must explicitly strip
+  // `created_by_user_id` even though `UpdateTaskSchema` doesn't declare
+  // it. Today Zod-strip drops the field, but the route's destructure
+  // pattern (matching the POST handler) is the documented spoof barrier
+  // against future schema drift.
+  it('IGNORES body-supplied created_by_user_id (WR-01 defense-in-depth)', async () => {
+    // Seed an existing FK so the spoof attempt has something to overwrite.
+    const task = createTaskRow('spoof created_by_user_id');
+    const ORIGINAL_CREATOR = aliceUserId;
+    db.prepare(
+      'UPDATE tasks SET created_by_user_id = ? WHERE id = ?',
+    ).run(ORIGINAL_CREATOR, task.id);
+
+    const SPOOFED = 99997;
+    const response = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${task.id}`,
+      headers,
+      payload: {
+        // Title bump so the update is non-empty.
+        title: 'updated-title',
+        created_by_user_id: SPOOFED,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const row = db
+      .prepare(
+        'SELECT created_by_user_id FROM tasks WHERE id = ?',
+      )
+      .get(task.id) as { created_by_user_id: number | null };
+    // The original creator FK is preserved; the spoof MUST NOT have
+    // overwritten it.
+    expect(row.created_by_user_id).toBe(ORIGINAL_CREATOR);
+    expect(row.created_by_user_id).not.toBe(SPOOFED);
+  });
 });

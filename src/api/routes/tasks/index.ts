@@ -185,10 +185,18 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       //   - any other free-form name  → null (no display_name lookup
       //                                 helper exists; migrate-identities
       //                                 CLI backfills these in Plan 05).
+      // WR-01: defense-in-depth — strip BOTH server-derived FK fields. Today
+      // `UpdateTaskSchema` doesn't declare `created_by_user_id`, so Zod's
+      // default `.strip()` already removes any client-supplied value. We
+      // still destructure it out here so a future schema edit (adding the
+      // field, switching to `.passthrough()`, etc.) cannot silently re-open
+      // the spoof vector. Mirrors the POST handler above.
       const {
+        created_by_user_id: _spoofedCreatedBy,
         assignee_user_id: _spoofedAssigneeUserId,
         ...sanitizedBody
       } = request.body as Record<string, unknown>;
+      void _spoofedCreatedBy;
       void _spoofedAssigneeUserId;
 
       const bodyRec = sanitizedBody as Record<string, unknown>;
