@@ -358,4 +358,111 @@ describe('X-API-Key log redaction', () => {
       expect(allLogs).not.toContain(bareKeyRaw);
     });
   });
+
+  /**
+   * Phase 28 (Plan 28-04) — audit fields contract.
+   *
+   * AUDIT-01 requires every authenticated-request log line to carry
+   * `user_id`, `token_id`, `auth_method`. The chain plugin satisfies this
+   * by re-childing `request.log` with the audit bindings immediately after
+   * a strategy match. Tests below assert the shape of the captured log
+   * stream after a legacy auth — `token_id` MUST be `null` (legacy has no
+   * api_tokens row), `auth_method` MUST be `'legacy'`, `user_id` MUST be a
+   * numeric primary key from the seeded `users` table.
+   *
+   * ADDITIVE only: this describe block does NOT re-use the captured stream
+   * from earlier blocks. It boots its own minimal Fastify with the chain
+   * plugin so test ordering / log accumulation cannot mask a missing field.
+   */
+  describe('phase-28 audit fields (user_id, token_id, auth_method)', () => {
+    let server: any;
+    let db: Database.Database;
+    const captured: string[] = [];
+    const originalApiKeys = process.env.API_KEYS;
+
+    beforeAll(async () => {
+      const id = await bootIdentityDb('test-key');
+      db = id.db;
+      const dest = new Writable({
+        write(chunk, _enc, cb) {
+          captured.push(chunk.toString());
+          cb();
+        },
+      });
+      const logger = pino(
+        {
+          level: 'info',
+          redact: {
+            paths: [...LOGGER_REDACT_CONFIG.paths],
+            censor: LOGGER_REDACT_CONFIG.censor,
+          },
+        },
+        dest,
+      );
+      server = Fastify({ loggerInstance: logger });
+      server.decorate('userRepository', id.userRepository);
+      server.decorate('apiTokenRepository', id.apiTokenRepository);
+      await server.register(authPlugin);
+      // Emit a route-handler info line so the captured stream sees the
+      // re-childed bindings. Fastify's own request-completion log uses the
+      // logger captured at request start (BEFORE preHandler ran), so it
+      // does NOT carry the chain plugin's child bindings — the explicit
+      // emit below is the audit-trail anchor that downstream operators
+      // grep for.
+      server.get('/api/v1/tasks', async (req: any) => {
+        req.log.info({ probe: 'phase-28-audit' }, 'phase-28 audit probe');
+        return {
+          ok: true,
+          user: req.user,
+          authMethod: req.authMethod,
+          tokenId: req.tokenId,
+        };
+      });
+      await server.ready();
+    });
+
+    afterAll(async () => {
+      await server.close();
+      db.close();
+      if (originalApiKeys === undefined) {
+        delete process.env.API_KEYS;
+      } else {
+        process.env.API_KEYS = originalApiKeys;
+      }
+    });
+
+    it('legacy auth populates request.user, authMethod=legacy, tokenId=null', async () => {
+      captured.length = 0;
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        headers: { 'x-api-key': 'test-key' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.user).not.toBeNull();
+      expect(typeof body.user.id).toBe('number');
+      expect(body.authMethod).toBe('legacy');
+      expect(body.tokenId).toBeNull();
+    });
+
+    it('captured log line carries user_id (number), token_id (null), auth_method=legacy', async () => {
+      captured.length = 0;
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        headers: { 'x-api-key': 'test-key' },
+      });
+      expect(res.statusCode).toBe(200);
+      const allLogs = captured.join('');
+      // user_id MUST be present and a positive integer (no quotes around
+      // the value — `user_id:5` not `user_id:"5"`).
+      expect(allLogs).toMatch(/"user_id":\s*\d+/);
+      // token_id MUST be the JSON literal `null` for legacy (no api_tokens
+      // row backs legacy auth — that's the whole point of MIGR-01 compat).
+      expect(allLogs).toMatch(/"token_id":null/);
+      // auth_method MUST be the literal string "legacy".
+      expect(allLogs).toMatch(/"auth_method":"legacy"/);
+    });
+  });
 });
