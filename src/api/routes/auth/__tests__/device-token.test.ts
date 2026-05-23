@@ -181,6 +181,35 @@ describe('POST /auth/device/token', () => {
     expect(afterSecond?.interval).toBe(10);
   });
 
+  it('7b. (WR-04) slow_down interval is capped at 60s under spam', async () => {
+    // Force the session.interval to a value that would jump past the
+    // cap on the next +5. The handler must clamp to 60 instead of 65.
+    const ref = findByDeviceCode(session.deviceCode);
+    if (!ref) throw new Error('test setup: session vanished');
+    ref.interval = 58;
+    ref.lastPollAt = Date.now() - 1000; // inside (58-1)*1000ms window
+
+    const r = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r.json()).toMatchObject({ error: 'slow_down' });
+    const after = findByDeviceCode(session.deviceCode);
+    // 58 + 5 = 63, clamped to 60. Confirms the Math.min cap fires.
+    expect(after?.interval).toBe(60);
+
+    // Subsequent slow_down hits stay pinned at 60.
+    if (after) after.lastPollAt = Date.now() - 1000;
+    const r2 = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r2.json()).toMatchObject({ error: 'slow_down' });
+    expect(findByDeviceCode(session.deviceCode)?.interval).toBe(60);
+  });
+
   it('7. slow_down is additive: third poll within window bumps 10→15 (not 20)', async () => {
     // First poll: authorization_pending, lastPollAt now.
     await pollJson(app, {

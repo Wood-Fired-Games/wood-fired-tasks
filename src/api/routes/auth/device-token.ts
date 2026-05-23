@@ -105,11 +105,23 @@ const deviceTokenRoute: FastifyPluginAsync<DeviceTokenRouteOptions> = async (
       // gentle-tolerance phrasing: a client whose clock drift gives it a
       // poll arriving ~1s early is NOT considered abusive. We mutate
       // BEFORE sending so the next poll sees the new pace.
+      //
+      // WR-04 (Phase 30 review) — cap interval growth at 60 s. Without
+      // a ceiling, a hostile client polling at sub-interval cadence can
+      // drive `session.interval` past the session's 600 s TTL in seconds
+      // (50 ms intervals × 200 hits = 1005 s). A legitimate CLI that
+      // shares the same device_code (e.g. on-host adversary that read
+      // /proc/<pid>/cmdline) then receives `interval=1005`, adds the
+      // RFC-mandated +5, and stops polling effectively until the
+      // session expires — a denial-of-service against the legitimate
+      // login. The 60 s cap keeps a misbehaving client paying the
+      // back-off cost while preserving the legitimate CLI's ability to
+      // complete the flow within the TTL.
       if (
         session.lastPollAt > 0 &&
         now - session.lastPollAt < (session.interval - 1) * 1000
       ) {
-        session.interval += 5;
+        session.interval = Math.min(session.interval + 5, 60);
         session.lastPollAt = now;
         request.log.debug(
           { event: 'device_flow_poll', status: session.status, slow_down: true },
