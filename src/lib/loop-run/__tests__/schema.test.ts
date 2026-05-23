@@ -50,11 +50,17 @@ describe('LoopRunFrontmatterSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('exposes all 14 required keys', () => {
+  it('exposes all 14 required keys (plus optional Wave 4.2 additions)', () => {
     // Schema-mirror sanity check — the JSON Schema marks all 14 fields
-    // required; the Zod shape MUST have the same keys.
-    const shapeKeys = Object.keys(LoopRunFrontmatterSchema.shape).sort();
-    expect(shapeKeys).toEqual([...REQUIRED_FIELDS].sort());
+    // required; the Zod shape MUST contain those keys. Optional additions
+    // (e.g. Wave 4.2's `gate_decision` from #319) may appear as extra
+    // shape keys but MUST NOT appear in REQUIRED_FIELDS.
+    const shapeKeys = new Set(Object.keys(LoopRunFrontmatterSchema.shape));
+    for (const required of REQUIRED_FIELDS) {
+      expect(shapeKeys.has(required)).toBe(true);
+    }
+    // Every required field must be present in the schema shape.
+    expect(shapeKeys.size).toBeGreaterThanOrEqual(REQUIRED_FIELDS.length);
   });
 
   // Parametrize the "missing each required field" check — 14 generated cases,
@@ -120,5 +126,52 @@ describe('LoopRunFrontmatterSchema', () => {
       tasks_not_verified: 0,
     };
     expect(LoopRunFrontmatterSchema.safeParse(mismatched).success).toBe(true);
+  });
+
+  // Wave 4.2 (task #319) — optional `gate_decision` from the §2f topology
+  // pre-flight gate. Must remain optional so pre-#319 LOOP-RUN.md files
+  // (which never emitted the field) still parse cleanly.
+  describe('gate_decision (#319 topology pre-flight gate)', () => {
+    it('accepts gate_decision: "allowed"', () => {
+      const result = LoopRunFrontmatterSchema.safeParse({
+        ...VALID,
+        gate_decision: 'allowed',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts gate_decision: "overridden"', () => {
+      const result = LoopRunFrontmatterSchema.safeParse({
+        ...VALID,
+        gate_decision: 'overridden',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts gate_decision: "blocked"', () => {
+      const result = LoopRunFrontmatterSchema.safeParse({
+        ...VALID,
+        gate_decision: 'blocked',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts frontmatter WITHOUT gate_decision (backward compatibility for pre-#319 emissions)', () => {
+      // The 14-required-fields baseline (locked by REQUIRED_FIELDS above)
+      // is unchanged. gate_decision is purely additive — schema MUST stay
+      // permissive for files written before #319 landed.
+      const result = LoopRunFrontmatterSchema.safeParse(VALID);
+      expect(result.success).toBe(true);
+      const parsed = result.success ? result.data : undefined;
+      expect(parsed?.gate_decision).toBeUndefined();
+    });
+
+    it('rejects unknown gate_decision values', () => {
+      const result = LoopRunFrontmatterSchema.safeParse({
+        ...VALID,
+        gate_decision: 'invalid',
+      });
+      expect(result.success).toBe(false);
+    });
   });
 });

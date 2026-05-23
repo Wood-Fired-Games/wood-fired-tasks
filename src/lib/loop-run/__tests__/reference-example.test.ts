@@ -67,10 +67,11 @@ describe('docs/loop-run-reference-example.md — schema lock', () => {
     expect(block.length).toBeGreaterThan(0);
   });
 
-  it('parses all 14 required fields out of the YAML block', () => {
+  it('parses all 14 required fields out of the YAML block (plus optional #319 gate_decision)', () => {
     expect(Object.keys(data).sort()).toEqual(
       [
         'ended_at',
+        'gate_decision',
         'orchestrator_session_id',
         'project_id',
         'run_id',
@@ -86,6 +87,15 @@ describe('docs/loop-run-reference-example.md — schema lock', () => {
         'wall_seconds',
       ].sort(),
     );
+  });
+
+  it('reference example documents Wave 4.2 gate_decision: "allowed" (task #319)', () => {
+    // The reference run is a FLAT-topology drain (project 12 mock), so the
+    // §2f topology pre-flight gate yields gate_decision: allowed. Locks the
+    // example to the canonical value so the schema-evolution audit stays
+    // honest — if a future edit removes the field from the example, the
+    // optional-field guarantee in schema.ts is no longer demonstrated.
+    expect(data.gate_decision).toBe('allowed');
   });
 
   it('validates against LoopRunFrontmatterSchema', () => {

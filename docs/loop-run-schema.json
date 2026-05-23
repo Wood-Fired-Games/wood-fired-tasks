@@ -91,6 +91,11 @@
       "type": "integer",
       "minimum": 0,
       "description": "Tasks with verdict NOT_VERIFIED."
+    },
+    "gate_decision": {
+      "type": "string",
+      "enum": ["allowed", "overridden", "blocked"],
+      "description": "Wave 4.2 (task #319) — outcome of the §2f topology pre-flight gate. `allowed` = topology=FLAT, loop proceeded. `overridden` = topology=DAG plus `--i-know-what-im-doing`, loop proceeded with warning. `blocked` = topology=DAG (no override) OR DAG_CYCLIC (cannot be overridden); loop halted before any worker dispatch. Optional for backward compatibility with pre-#319 emissions."
     }
   }
 }

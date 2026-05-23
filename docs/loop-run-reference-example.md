@@ -16,6 +16,7 @@ tasks_passed: 12
 tasks_failed: 1
 tasks_partial: 1
 tasks_not_verified: 1
+gate_decision: allowed
 ---
 
 # LOOP-RUN — Project 12 (Improving Agent Visibility / Accessibility)

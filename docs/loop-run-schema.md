@@ -82,6 +82,7 @@ delimited by `---` lines, and MUST appear first in the file.
 | `tasks_failed` | integer | ≥ 0 | Subset with verdict `FAIL`. | `1` |
 | `tasks_partial` | integer | ≥ 0 | Subset with verdict `PARTIAL`. | `1` |
 | `tasks_not_verified` | integer | ≥ 0 | Subset with verdict `NOT_VERIFIED`. | `1` |
+| `gate_decision` | string (optional) | `allowed` \| `overridden` \| `blocked` | Wave 4.2 (task #319). Outcome of the §2f topology pre-flight gate in `skills/tasks/loop.md`. `allowed` when `topology=FLAT`; `overridden` when `topology=DAG` and the invocation included `--i-know-what-im-doing`; `blocked` when `topology=DAG` without override OR `topology=DAG_CYCLIC` (which cannot be overridden). Optional for backward compatibility with pre-#319 emissions. | `allowed` |
 
 Invariant (checked by the validator and re-checked by replay):
 `tasks_attempted == tasks_passed + tasks_failed + tasks_partial + tasks_not_verified`.

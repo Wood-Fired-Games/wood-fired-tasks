@@ -40,6 +40,22 @@ export const LoopRunFrontmatterSchema = z.object({
   tasks_failed: z.number().int().nonnegative(),
   tasks_partial: z.number().int().nonnegative(),
   tasks_not_verified: z.number().int().nonnegative(),
+  /**
+   * Wave 4.2 (task #319) — outcome of the §2f topology pre-flight gate.
+   *
+   *   - `allowed`    — topology=FLAT; the loop proceeded normally.
+   *   - `overridden` — topology=DAG and the invocation included
+   *                    `--i-know-what-im-doing`; the loop proceeded with a
+   *                    loud warning in the orchestrator's first prompt.
+   *   - `blocked`    — topology=DAG without override OR topology=DAG_CYCLIC
+   *                    (which cannot be overridden); the loop halted before
+   *                    dispatching any worker.
+   *
+   * Optional to preserve backward compatibility with the pre-#319
+   * LOOP-RUN.md emissions locked in by task #316's reference example +
+   * schema tests. Emissions WITHOUT this field still parse.
+   */
+  gate_decision: z.enum(['allowed', 'overridden', 'blocked']).optional(),
 });
 
 export type LoopRunFrontmatter = z.infer<typeof LoopRunFrontmatterSchema>;

@@ -21,6 +21,7 @@ Parse `$ARGUMENTS` — or, when invoked via natural language ("loop the backlog 
 
 - `[project-name-or-id]` — if the value starts with `#` or is a bare integer, treat it as the project ID and skip the name match. Otherwise, do a case-insensitive partial match against project names.
 - `--max-tasks N` — optional. Stop the loop after N successful task closures and check in with the user before continuing. Default is **3**. Pass `--max-tasks 0` to loop until the backlog is empty (only do this if the user explicitly asks for unattended drain). If the user invokes via natural language and doesn't state a budget, default to **3** but propose an adjustment in Section 2e if the backlog looks epic-sized.
+- `--i-know-what-im-doing` — optional escape hatch for the §2f topology pre-flight gate (Wave 4.2 / task #319). When the project's `topology_check` returns `DAG` (acyclic dependency edges exist), `/tasks:loop` halts by default — looping over a DAG is the wrong tool; the user should use `/gsd-autonomous` for a milestone or run tasks individually in topological order. Pass `--i-know-what-im-doing` to override the DAG halt and proceed anyway (the override decision is logged in the orchestrator's first prompt and recorded as `gate_decision: overridden` in the LOOP-RUN.md frontmatter). The flag is **tolerated for `DAG`** topology only. It is **explicitly rejected for `DAG_CYCLIC`** — a cycle must be broken before any runner can proceed, no exceptions.
 
 **If no project name/ID is provided:** ask the user. Do not pick one silently.
 
@@ -100,6 +101,32 @@ If most open tasks fit those signals, surface this to the user before starting �
 In the non-self-identifying case (you discovered the epic shape but the user didn't telegraph it), use the longer framing:
 
 > The backlog looks epic-sized (e.g. roadmap phases) rather than bug-sized. The smash loop will still work, but each iteration will spawn a long-running subagent and produce a substantial commit. Confirm `--max-tasks N` is set sensibly (recommend 1–3 for epics, 5–10 for true bugs) and that you want me to proceed.
+
+### 2f. Topology pre-flight gate
+
+Wave 4.2 (task #319). Before entering §3 The Loop and BEFORE dispatching any worker, the orchestrator MUST call the `topology_check` MCP tool with `{project_id}` and branch on the returned `topology` field. `/tasks:loop` is the right tool ONLY when the project is **FLAT** (zero dependency edges). When edges exist, the loop is the wrong shape — `/gsd-autonomous` (for an ordered milestone) or running tasks individually in topological order is correct instead.
+
+Record the branch outcome in orchestrator state as `gate_decision` for inclusion in the LOOP-RUN.md frontmatter (Step 9). Log the gate decision in the orchestrator's first prompt so a transcript reader sees what was decided and why.
+
+**Branches:**
+
+- **`topology: "FLAT"`** → set `gate_decision = "allowed"`. Proceed to §3 The Loop. No warning needed; this is the canonical case.
+
+- **`topology: "DAG"`** → check whether the invocation arguments include the `--i-know-what-im-doing` flag (see §1 Argument Parsing).
+  - If the flag IS present → set `gate_decision = "overridden"`. Proceed to §3 The Loop with a **loud warning** in the orchestrator's first prompt (e.g. `"WARNING: --i-know-what-im-doing override accepted; looping over a DAG with K dependency edges. Tasks may run out of dependency order."`). The override is logged so the human reviewing LOOP-RUN.md sees the explicit opt-in.
+  - If the flag is NOT present → set `gate_decision = "blocked"`. HALT the loop immediately. Do NOT dispatch any worker. Emit this message verbatim, substituting the real project id and edge count:
+
+    ```
+    Project <id> has <count> dependency edges. Use /gsd-autonomous (for a milestone) or run tasks individually in topological order. Override with --i-know-what-im-doing.
+    ```
+
+- **`topology: "DAG_CYCLIC"`** → set `gate_decision = "blocked"` unconditionally. HALT the loop immediately. Do NOT dispatch any worker. The `--i-know-what-im-doing` flag **MUST NOT override** this branch — a cycle in the dependency graph means there is no topological order any runner could follow, so cycles must be broken before any runner can proceed. Emit this message verbatim, substituting the real project id:
+
+    ```
+    Project <id> has a dependency cycle (DAG_CYCLIC). Cannot loop — cycles must be broken before any runner can proceed. --i-know-what-im-doing does NOT apply.
+    ```
+
+**Blocked-branch behaviour:** when `gate_decision = "blocked"`, the orchestrator does NOT enter §3 The Loop, does NOT claim any task, and does NOT dispatch a worker. Step 9 (LOOP-RUN.md emit) is still permitted — emit a single LOOP-RUN.md with `gate_decision: blocked`, `tasks_attempted: 0`, and the empty-body sentinels — so the run is auditable. Step 10 (integration audit) is skipped (no worker sessions means no overlaps to audit).
 
 ---
 
@@ -445,6 +472,7 @@ The YAML frontmatter is the 14 required fields from `docs/loop-run-schema.md` §
 | `subagents_dispatched` | Count of distinct subagent sessions spawned this run (worker dispatches in Step 4 + verifier dispatches in Step 7). |
 | `tasks_attempted` | Tasks picked up so far (Step 1 increments this counter). |
 | `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Decided by the Step 7 verdict for each task. Increments on the corresponding Step 7 branch. |
+| `gate_decision` (optional) | Section 2f topology pre-flight gate; set once at run start. `allowed` for FLAT, `overridden` for DAG with `--i-know-what-im-doing`, `blocked` for DAG (no override) or DAG_CYCLIC. Omit the field for pre-#319 emissions (the schema marks it optional for backward compatibility). |
 
 Use orchestrator-observed counts as the primary source; cite `agent_transactions_v` as the cross-check source for any post-run audit. The skill MUST NOT block emission on a live DB connection.
 
