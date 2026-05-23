@@ -6,6 +6,7 @@ on:
     paths:
       - 'install.sh'
       - 'install.ps1'
+      - 'deploy/*.sh'
       - '.github/workflows/install-scripts.yml'
       - 'skills/tasks/**'
   pull_request:
@@ -13,8 +14,13 @@ on:
     paths:
       - 'install.sh'
       - 'install.ps1'
+      - 'deploy/*.sh'
       - '.github/workflows/install-scripts.yml'
       - 'skills/tasks/**'
+
+# Note on workflow security: this workflow is scoped to lint + smoke-test
+# the installer scripts only. It does not consume any untrusted input
+# fields (issue titles, PR bodies, commit messages) in shell commands.
 
 jobs:
   # -------------------------------------------------------------------------
@@ -35,6 +41,32 @@ jobs:
         # Explicitly scope to install.sh — task 202's scope is the installer only.
         # Using the action would scan all .sh files in the repo by default.
         run: shellcheck -S warning install.sh
+
+  # -------------------------------------------------------------------------
+  # Lint the production deploy scripts. install.sh (root-level) provisions
+  # the operator's Claude Code config; deploy/install.sh provisions the
+  # host (service user, systemd unit) and deploy/upgrade.sh ships builds
+  # in place. All three must pass shellcheck -S warning so a bad change
+  # cannot land silently. Task #325 introduced the split.
+  # -------------------------------------------------------------------------
+  shellcheck-deploy:
+    name: shellcheck deploy/*.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --version
+      - name: Run shellcheck on deploy/install.sh and deploy/upgrade.sh
+        run: shellcheck -S warning deploy/install.sh deploy/upgrade.sh
+      - name: Verify both scripts parse as valid bash (bash -n)
+        run: |
+          bash -n deploy/install.sh
+          bash -n deploy/upgrade.sh
+      - name: Verify deploy/upgrade.sh is executable
+        run: test -x deploy/upgrade.sh
 
   # -------------------------------------------------------------------------
   # Lint install.ps1 with PSScriptAnalyzer on a Windows runner.

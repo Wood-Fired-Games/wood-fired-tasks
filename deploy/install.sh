@@ -1,28 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wood Fired Bugs - Deployment Setup
+# Wood Fired Bugs - Host Provisioning (install once, then run upgrade.sh)
 # Run as root or with sudo: sudo bash deploy/install.sh
+#
+# This script provisions the HOST (service user, install directories, env
+# template, systemd unit, drop-in override). It does NOT deploy the
+# application artefacts -- that responsibility lives in deploy/upgrade.sh,
+# which is run every time you ship a new build.
+#
+# The split exists so re-deploys (the common case) do not need to re-run
+# host provisioning, and so the deploy step has its own backup + health
+# probe + rollback recipe.
 #
 # Prerequisites:
 #   - Node.js installed at /usr/bin/node
-#   - Project built (npm run build)
 #   - sqlite3 CLI installed (sudo apt-get install sqlite3)
 #
 # What this script does:
-#   1. Creates ${WFB_INSTALL_DIR} directory structure (default /opt/wood-fired-bugs)
-#   2. Copies built application files
-#   3. Installs production dependencies
-#   4. Copies systemd unit file
-#   5. Enables and starts the service
+#   1. Creates the ${WFB_SERVICE_USER} system account (if absent)
+#   2. Creates ${WFB_INSTALL_DIR} directory structure
+#   3. Seeds .env from deploy/wood-fired-bugs.env.example (if absent)
+#   4. Installs the systemd unit at /etc/systemd/system/
+#   5. Writes a drop-in override when WFB_INSTALL_DIR / WFB_SERVICE_USER
+#      differ from the packaged defaults
+#   6. Enables the service (does NOT start it -- upgrade.sh starts it)
 #
 # Configurable env vars (see deploy/README.md):
 #   WFB_INSTALL_DIR   Install path  (default: /opt/wood-fired-bugs)
 #   WFB_SERVICE_USER  Service user  (default: wood-fired-bugs)
 #
-# After running, you MUST:
-#   - Edit ${WFB_INSTALL_DIR}/.env to set real API_KEYS
-#   - Run: sudo systemctl restart wood-fired-bugs
+# After running, the next step is ALWAYS:
+#   sudo ./deploy/upgrade.sh
+#
+# upgrade.sh copies dist/ + package files, runs npm ci --omit=dev, applies
+# migrations, starts the service, and probes /health. Re-run upgrade.sh on
+# every subsequent deploy; you should not need to re-run install.sh unless
+# you change install-dir / service-user policy.
 
 INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
 SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,25 +53,18 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     --home-dir "$INSTALL_DIR" "$SERVICE_USER"
 fi
 
-# Create directory structure
+# Create directory structure. dist/ is created empty -- upgrade.sh fills it.
 mkdir -p "$INSTALL_DIR"/{data,backups,dist}
 
-# Copy application files
-cp -r "$SOURCE_DIR/dist/"* "$INSTALL_DIR/dist/"
-cp "$SOURCE_DIR/package.json" "$INSTALL_DIR/"
-cp "$SOURCE_DIR/package-lock.json" "$INSTALL_DIR/" 2>/dev/null || true
-
-# Install production dependencies only
-cd "$INSTALL_DIR"
-npm install --omit=dev
-
-# Copy env template if .env doesn't exist
+# Copy env template if .env doesn't exist. upgrade.sh leaves .env untouched
+# so this is the one place an operator picks up the template.
 if [ ! -f "$INSTALL_DIR/.env" ]; then
   cp "$SOURCE_DIR/deploy/wood-fired-bugs.env.example" "$INSTALL_DIR/.env"
-  echo "WARNING: Created .env from template. Edit $INSTALL_DIR/.env to set API_KEYS before starting."
+  echo "WARNING: Created .env from template. Edit $INSTALL_DIR/.env to set API_KEYS before running upgrade.sh."
 fi
 
-# Set ownership
+# Set ownership on the directories we just created. upgrade.sh re-chowns
+# after it copies dist/ and runs npm ci.
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 
 # Install systemd unit
@@ -92,9 +99,12 @@ systemctl daemon-reload
 systemctl enable wood-fired-bugs
 
 echo ""
-echo "=== Deployment Complete ==="
+echo "=== Host Provisioning Complete ==="
 echo "Next steps:"
 echo "  1. Edit $INSTALL_DIR/.env (set API_KEYS)"
-echo "  2. sudo systemctl start wood-fired-bugs"
-echo "  3. sudo systemctl status wood-fired-bugs"
-echo "  4. sudo journalctl -u wood-fired-bugs -f"
+echo "  2. Build the app:           npm ci && npm run build"
+echo "  3. Deploy the app:          sudo ./deploy/upgrade.sh"
+echo "  4. Check service health:    sudo systemctl status wood-fired-bugs"
+echo "  5. Follow logs:             sudo journalctl -u wood-fired-bugs -f"
+echo ""
+echo "On every subsequent release, only step 2+3 need to be repeated."

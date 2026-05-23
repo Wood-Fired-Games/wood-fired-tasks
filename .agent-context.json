@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-23T13:27:24.047Z",
+    "generated_at": "2026-05-23T19:34:38.432Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 752,
-      "sha256": "9d0714f7c62329e2b282fd201a7cacfd7055dab1aadce4dfd9dc71584129d719"
+      "actual_lines": 773,
+      "sha256": "cef34dfe023c93dfc7a7d7ac1264bf02a4732acc96a38cf4e10ba16c319e9281"
     },
     {
       "path": "docs/SLACK.md",
@@ -258,8 +258,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
-      "actual_lines": 615,
-      "sha256": "9720d38d2463efc7650a940e98e2d17998581864db6d872040bb3cebc86dcc5d"
+      "actual_lines": 617,
+      "sha256": "ac4dd3e9451c3a3add92ec40b6b8ed0711819230a56933b68a0b99c0777dfc1d"
     },
     {
       "path": "SECURITY.md",

@@ -56,6 +56,8 @@ tasks create --title "My first task" --project 1 --created-by "me"
 
 For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 
+For self-hosted production: operators provision a host once with `deploy/install.sh` and ship every subsequent release in place with `deploy/upgrade.sh` (atomic backup, migrate, restart, /health probe, rollback recipe on failure). See `docs/SETUP.md` for the walkthrough.
+
 ## Security Model
 
 **Read this before deploying.** Wood Fired Bugs is designed for trusted multi-agent coordination on a private network. The auth model is intentionally simple and reflects that scope. OSS operators who assume "API key = user login" will mis-deploy this service.

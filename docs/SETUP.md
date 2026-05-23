@@ -281,6 +281,27 @@ The API server will start with hot reload enabled. Any changes to TypeScript fil
 
 ## Production Deployment
 
+The `deploy/` scripts split host provisioning from app deployment: operators
+run `deploy/install.sh` **once** to create the service user, install dirs,
+and systemd unit, then run `deploy/upgrade.sh` **on every release** to
+backup, copy `dist/`, migrate, restart, and health-probe. Full self-hosting
+walkthrough is tracked separately; the manual steps below remain valid for
+operators not using the scripts.
+
+```bash
+# One-time host provisioning (creates user, dirs, installs systemd unit):
+sudo ./deploy/install.sh
+
+# Every release (build then deploy in place):
+npm ci && npm run build
+sudo ./deploy/upgrade.sh
+```
+
+If `upgrade.sh`'s post-deploy `/health` probe fails, the script prints the
+exact rollback commands (paths to the db + dist backup it captured at the
+start of the run) and exits non-zero. There is no automatic rollback in v1
+because migrations are involved -- the operator decides whether to restore.
+
 ### 1. Install and Build
 
 ```bash
