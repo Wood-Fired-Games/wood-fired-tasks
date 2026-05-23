@@ -105,7 +105,7 @@ In the non-self-identifying case (you discovered the epic shape but the user did
 
 ## 3. The Loop
 
-For each iteration, the orchestrator goes through **nine steps**. Do not skip ahead.
+For each iteration, the orchestrator goes through **ten steps**. Do not skip ahead. Steps 1–9 run per iteration; **Step 10 runs ONCE at loop termination** (after the budget is hit or the backlog drains) — it is the only terminal step.
 
 ### Step 1 — Pick the next task
 
@@ -465,6 +465,162 @@ All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections us
 The orchestrator MUST NOT `git add` the `.planning/loops/` artifact. It MUST NOT modify `.gitignore` to make `.planning/loops/` an exception.
 
 Return to Step 1.
+
+### Step 10 — Integration audit (run termination)
+
+This is the **terminal step**. It runs ONCE per loop run — never per iteration — after Step 1's "backlog empty" announcement OR after the `--max-tasks N` budget is hit. The goal is to catch the failure mode the per-task verifier cannot see: **ten green tasks that together break the system**. This is the same role gsd's `MILESTONE-AUDIT.md` plays for cross-phase integration; Step 10 is its `/tasks:loop` analogue. Subagent definition: [`skills/agents/integration-auditor.md`](../agents/integration-auditor.md). Inline schema: [`src/lib/loop-run/integration-audit-schema.ts`](../../src/lib/loop-run/integration-audit-schema.ts).
+
+#### 10a. When this step runs
+
+Step 10 runs ONCE at loop termination, **not per iteration**. Triggers:
+
+- The `--max-tasks N` budget has been hit (the orchestrator is about to stop and check in with the user per Section "Drain Budget / Checkpoints").
+- `list_tasks status=open` returned empty (the backlog has drained, the orchestrator is about to exit per Step 1's exit condition).
+
+Step 10 fires AFTER the last Step 9 re-emit of LOOP-RUN.md for the run. Skipping Step 10 because the loop closed only one task is **not allowed** — a single-task loop can still produce an overlap with a prior (pre-loop) commit if the orchestrator picked that task up mid-day, but in practice the overlap detector handles this naturally (one worker session vs zero → no overlap).
+
+#### 10b. Detect overlaps
+
+Compute the set of worker session commit ranges from the loop run. For each pair of worker sessions (i, j) with `i < j`, run:
+
+```bash
+git diff --name-only <worker_i_pre_sha>..<worker_i_post_sha>
+git diff --name-only <worker_j_pre_sha>..<worker_j_post_sha>
+```
+
+An **overlap** is a file path that appears in ≥ 2 distinct worker sessions' commit sets. Build a deduplicated list of `{file_path, task_ids: [...]}` pairs (task_ids in ascending order, deduped).
+
+**Generated-file exclusion list** — mirrors Step 9d's Integration Concerns auto-flag exactly so the two views never disagree:
+
+- `package-lock.json`
+- `*.lock` (any file ending in `.lock`)
+- `dist/**`
+- `coverage/**`
+- `.agent-context.json`
+
+Exclude these from BOTH overlap detection AND the auditor input. Auto-generated noise must not consume the auditor's tool budget.
+
+**Empty-overlap suppression**: if the deduplicated overlap list is empty after exclusions, **do NOT emit INTEGRATION-AUDIT.md** and proceed to "Final LOOP-RUN.md re-emit" below. Avoiding noise when the loop ran clean is load-bearing UX — `.planning/loops/` stays scannable.
+
+#### 10c. INTEGRATION-AUDIT.md schema
+
+Artifact path: `.planning/loops/<UTC-timestamp>-<project_id>-integration.md` — same `<UTC-timestamp>-<project_id>` prefix as the run's LOOP-RUN.md, with `-integration` suffix. The skill prose IS the contract; there is no separate `docs/integration-audit-schema.md` (out of scope — LOOP-RUN.md got that treatment in Wave 1.5 only because Wave 1 had a dedicated spec task).
+
+**Frontmatter** (YAML, mirrors `IntegrationAuditFrontmatterSchema` in `src/lib/loop-run/integration-audit-schema.ts`):
+
+```yaml
+---
+run_id: <UUIDv4 — REUSE the LOOP-RUN.md run_id; same run>
+project_id: <integer>
+generated_at: <RFC 3339 UTC>
+overlap_count: <positive integer — file is only emitted when ≥ 1>
+broken_count: <non-negative integer>
+risky_count: <non-negative integer>
+safe_count: <non-negative integer>
+---
+```
+
+`broken_count + risky_count + safe_count` MUST equal `overlap_count` by construction — but the schema does NOT enforce the sum invariant (mirrors `LoopRunFrontmatterSchema`'s deliberate non-enforcement; the check is the replay tooling's job).
+
+**Body** — one `## Overlap: <file_path>` block per overlap, ordered most-severe-first (BROKEN before RISKY before SAFE; within a severity, by file_path ascending):
+
+```markdown
+## Overlap: <file_path>
+
+- **Tasks:** #<id_a>, #<id_b>
+- **Verdict:** SAFE | RISKY | BROKEN
+- **Rationale:** <auditor's rationale, ≤ 500 chars>
+
+### Diff from task #<id_a>
+
+\`\`\`diff
+<git diff <pre>..HEAD -- <file_path> excerpt restricted to the hunks worker_a touched>
+\`\`\`
+
+### Diff from task #<id_b>
+
+\`\`\`diff
+<git diff <pre>..HEAD -- <file_path> excerpt restricted to the hunks worker_b touched>
+\`\`\`
+
+### Auditor evidence
+
+- <evidence[0]>
+- <evidence[1]>
+- ...
+```
+
+#### 10d. Dispatch the integration-auditor subagent (one per overlap)
+
+For EACH overlap in the deduplicated list, dispatch a separate `integration-auditor` invocation. **One auditor per overlap, NOT one per file** — every (file, task-pair) overlap gets its own verdict and evidence trail.
+
+Use the `Agent` tool. Prefer `subagent_type: "integration-auditor"` if available — `install.sh` copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md`, so a user who ran the installer has the named agent registered. If the named agent is unavailable, fall back to `subagent_type: "general-purpose"` and embed the full body of `skills/agents/integration-auditor.md` as the Agent's prompt prefix, followed by a fenced JSON block containing the per-overlap envelope.
+
+```
+Agent(
+  subagent_type: "integration-auditor",  // or "general-purpose" + embedded prompt body
+  description: "Audit overlap on <file_path> between tasks #<id_a> and #<id_b>",
+  prompt: <<-EOF
+Here is your overlap envelope. Follow skills/agents/integration-auditor.md exactly. Your final message MUST be a single JSON object parseable as IntegrationOverlap (see src/lib/loop-run/integration-audit-schema.ts).
+
+```json
+{
+  "file_path": "<path>",
+  "task_ids": [<id_a>, <id_b>],
+  "diff_a": "<unified diff hunks from task_a's commits, restricted to file_path>",
+  "diff_b": "<unified diff hunks from task_b's commits, restricted to file_path>"
+}
+```
+EOF
+)
+```
+
+The integration-auditor's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a strict git-read allowlist, and the read-only wood-fired-bugs MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/integration-auditor.md` for the enforced allowlist.
+
+**Bounds recap**: the integration-auditor MUST stay within **≤ 15 tool calls** and **≤ 3 minutes** wall-clock per overlap. Bounds are tighter than `tasks-verifier`'s because the audit scope is one file × two hunks. If the bound is exceeded, the auditor self-emits `RISKY` with a note that the bound was hit.
+
+**Parse + validate**: parse each auditor's final message as JSON. Reject anything that does not match `IntegrationOverlapSchema`. On parse failure or schema-validation failure, synthesize a fallback `{verdict: "RISKY", rationale: "auditor output unparseable", evidence: ["<note about the parse error>"]}` for that overlap — never silently drop an overlap, never auto-promote to SAFE.
+
+#### 10e. Branch on rolled-up verdict
+
+After every auditor returns (sequentially or in parallel — orchestrator's choice), roll up the verdicts:
+
+- **No BROKEN, no RISKY** (all SAFE) → emit INTEGRATION-AUDIT.md at the path from §10c. **Do NOT revert any tasks.** Loop run is clean.
+- **No BROKEN, ≥ 1 RISKY** (mix of SAFE + RISKY) → emit INTEGRATION-AUDIT.md. **Do NOT revert any tasks.** RISKY warnings are surfaced for human review; the loop run is NOT marked failed.
+- **≥ 1 BROKEN** → emit INTEGRATION-AUDIT.md AND execute the BROKEN-revert protocol:
+
+  1. For each task ID that appears in a BROKEN overlap, call `wood-fired-bugs:update_task` to flip it from `done` back to `in_progress`, **preserving** the verifier's PASS evidence (append an `integration_concern` note rather than replacing the existing `verification_evidence` object):
+
+     ```
+     wood-fired-bugs:update_task with id=<task_id>, updates={
+       "status": "in_progress",
+       "verification_evidence": {
+         ...<existing PASS evidence>,
+         "integration_concern": "BROKEN overlap on <file_path> with task #<other_id>; see .planning/loops/<artifact-path>"
+       }
+     }
+     ```
+
+  2. For each reverted task, call `wood-fired-bugs:add_comment` explaining the integration concern, citing the auditor's verdict and rationale:
+
+     ```
+     wood-fired-bugs:add_comment with task_id=<task_id>, author=<agent>, content=
+       "Integration auditor verdict: BROKEN.\n\nOverlap on `<file_path>` with task #<other_id>:\n<auditor rationale>\n\nReverting to in_progress. See INTEGRATION-AUDIT.md for the full evidence trail."
+     ```
+
+  3. Mark the loop run as **failed** for this run. The `LoopRunFrontmatterSchema` is locked (Wave 3.1 / task #316 does NOT permit adding a `run_marked_failed` column), so failure is conveyed via a new body section in the **final LOOP-RUN.md re-emit**.
+
+**Final LOOP-RUN.md re-emit**: after Step 10 produces verdicts AND after any BROKEN-revert task updates land, re-emit Step 9 ONE final time with:
+
+- Updated `tasks_passed` / `tasks_partial` counts reflecting the reverted tasks (reverted tasks drop out of `tasks_passed` and back into `tasks_partial` since they are now in_progress with a verifier PASS but an integration concern).
+- A new `## Integration Failure` body section (BROKEN case only) summarizing what was reverted, citing the INTEGRATION-AUDIT.md path, and listing the affected task IDs. Sentinel paragraph is NOT used — the section is only present when the integration audit triggered reverts.
+- The existing `## Integration Concerns` Step 9d auto-flag stays as-is — it is the lightweight per-iteration overlap detector and is now augmented (not replaced) by INTEGRATION-AUDIT.md's deeper auditor-graded view.
+
+#### 10f. NOT committed
+
+Same rationale as Step 9e — `.planning/` is gitignored and INTEGRATION-AUDIT.md lives alongside LOOP-RUN.md as a per-run audit trail, not a versioned artifact. The orchestrator MUST NOT `git add` the `.planning/loops/<...>-integration.md` artifact. It MUST NOT modify `.gitignore`. Cross-reference: see Step 9e for the full open-source-distribution rationale.
+
+After Step 10 completes, the loop terminates. Do NOT return to Step 1.
 
 ---
 

@@ -76,10 +76,14 @@ describe('/tasks:loop skill — LOOP-RUN.md emission wiring (#316)', () => {
     expect(hasRationale).toBe(true);
   });
 
-  it('§3 intro reads "nine steps" (regression catch when Step 10 lands without updating intro)', () => {
-    expect(skill).toMatch(/\*\*nine steps\*\*/);
+  it('§3 intro reads "ten steps" after Wave 3.2 (#317) added Step 10 integration audit', () => {
+    // Pre-Wave-3.2 this said "nine steps"; Wave 3.2 (task #317) added Step 10
+    // (integration audit at run termination) and updated the intro. Test
+    // pinned at "ten steps" so any future addition/removal of a step that
+    // forgets to update the intro fails here.
+    expect(skill).toMatch(/\*\*ten steps\*\*/);
+    expect(skill).not.toMatch(/\*\*nine steps\*\*/);
     expect(skill).not.toMatch(/\*\*eight steps\*\*/);
-    expect(skill).not.toMatch(/\*\*seven steps\*\*/);
   });
 
   it('verifier wiring from #315 is preserved (Step 8 close-the-task heading still present)', () => {
