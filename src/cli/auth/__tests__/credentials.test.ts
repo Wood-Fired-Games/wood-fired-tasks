@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, statSync, writeFileSync, existsSync, chmodSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync, existsSync, chmodSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import * as fs from 'node:fs';
+import { join, dirname } from 'node:path';
 import os from 'node:os';
 
 import {
@@ -133,17 +132,26 @@ describe('writeCredentials', () => {
     expect(existsSync(target)).toBe(true);
   });
 
-  it('is atomic: when rename fails, the target path stays absent', () => {
-    const target = join(tmpDir, 'atomic-creds');
-    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
-      throw new Error('simulated rename failure');
-    });
-    try {
-      expect(() => writeCredentials(sampleCreds, target)).toThrow(/rename/);
-      expect(existsSync(target)).toBe(false);
-    } finally {
-      renameSpy.mockRestore();
-    }
+  it('is atomic: when rename fails, the target path stays absent and tmp is left behind', () => {
+    // Force rename(2) to fail by making the target itself a non-empty
+    // directory. POSIX rename of a regular file ONTO a non-empty dir fails
+    // with ENOTEMPTY/EISDIR — exactly the "rename throws after tmp write"
+    // codepath we want to exercise.
+    const target = join(tmpDir, 'target-as-dir');
+    mkdirSync(target, { recursive: true });
+    // Drop a sentinel so the dir is non-empty (ENOTEMPTY on Linux).
+    writeFileSync(join(target, 'sentinel'), 'x');
+
+    expect(() => writeCredentials(sampleCreds, target)).toThrow();
+
+    // Target is still a directory (untouched by the failed rename).
+    expect(statSync(target).isDirectory()).toBe(true);
+    // The tmp file SHOULD have been written to disk before the rename — that's
+    // the contract: write-then-rename never leaves the final path corrupt.
+    const tmps = readdirSync(dirname(target)).filter((n) =>
+      n.startsWith('target-as-dir.tmp.')
+    );
+    expect(tmps.length).toBeGreaterThanOrEqual(1);
   });
 });
 
