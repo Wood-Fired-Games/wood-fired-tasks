@@ -10,6 +10,12 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         "name": "X-API-Key",
         "type": "apiKey",
       },
+      "bearerAuth": {
+        "bearerFormat": "wfb_pat_<base32>",
+        "description": "Personal Access Token. Format: \`wfb_pat_<32 base32 chars>\`. Mint via POST /api/v1/me/tokens (session-only).",
+        "scheme": "bearer",
+        "type": "http",
+      },
     },
   },
   "info": {
@@ -2589,6 +2595,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
   "security": [
     {
       "apiKey": [],
+    },
+    {
+      "bearerAuth": [],
     },
   ],
   "servers": [

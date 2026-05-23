@@ -141,6 +141,49 @@ describe('OpenAPI Documentation', () => {
     expect(spec.components.securitySchemes.apiKey.in).toBe('header');
   });
 
+  // Phase 28 Plan 06 (PAT-04 surface documentation): the OpenAPI document
+  // must publish BOTH the legacy apiKey scheme AND the new bearerAuth
+  // (Authorization: Bearer wfb_pat_*) scheme. The chain plugin already
+  // accepts either; the spec is the only client-facing surface that
+  // describes it.
+  it('The spec has securitySchemes.bearerAuth defined (Phase 28 PAT surface)', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/docs/json',
+    });
+
+    const spec = JSON.parse(response.payload);
+    expect(spec.components?.securitySchemes?.bearerAuth).toBeDefined();
+    expect(spec.components.securitySchemes.bearerAuth.type).toBe('http');
+    expect(spec.components.securitySchemes.bearerAuth.scheme).toBe('bearer');
+    // bearerFormat names the prefix so client tooling can validate
+    expect(spec.components.securitySchemes.bearerAuth.bearerFormat).toContain(
+      'wfb_pat_',
+    );
+    // Description points at the public prefix and the mint endpoint
+    expect(spec.components.securitySchemes.bearerAuth.description).toContain(
+      'wfb_pat_',
+    );
+  });
+
+  it('The top-level security array contains BOTH apiKey and bearerAuth', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/docs/json',
+    });
+
+    const spec = JSON.parse(response.payload);
+    expect(Array.isArray(spec.security)).toBe(true);
+    const hasApiKey = (spec.security as Array<Record<string, unknown>>).some(
+      (entry) => Object.prototype.hasOwnProperty.call(entry, 'apiKey'),
+    );
+    const hasBearer = (spec.security as Array<Record<string, unknown>>).some(
+      (entry) => Object.prototype.hasOwnProperty.call(entry, 'bearerAuth'),
+    );
+    expect(hasApiKey).toBe(true);
+    expect(hasBearer).toBe(true);
+  });
+
   it('The spec documents request body schemas for POST /api/v1/tasks (has title in properties)', async () => {
     const response = await server.inject({
       method: 'GET',
