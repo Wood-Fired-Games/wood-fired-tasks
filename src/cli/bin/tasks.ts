@@ -30,6 +30,7 @@ import { dbCheckCommand } from '../commands/db-check.js';
 import { dbCommand } from '../commands/db.js';
 import { createCompletionsCommand } from '../commands/completions.js';
 import { loginCommand } from '../commands/login.js';
+import { logoutCommand } from '../commands/logout.js';
 
 // Configure CLI program
 program
@@ -108,6 +109,9 @@ program.addCommand(createCompletionsCommand(program));
 
 // Register login command (Plan 30-06).
 program.addCommand(loginCommand);
+
+// Register logout command (Plan 30-07).
+program.addCommand(logoutCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133

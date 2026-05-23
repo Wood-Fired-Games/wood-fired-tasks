@@ -143,8 +143,9 @@ call.
 | system | `stats` | `commands/stats.ts` | Aggregate task/agent stats. |
 | system | `completions` | `commands/completions.ts` | Generate shell completion scripts. |
 | auth | `login` | `commands/login.ts` | Authenticate via OAuth device flow; writes credentials file. |
+| auth | `logout` | `commands/logout.ts` | Revoke the active PAT (DELETE /me/tokens/active) and remove the local credentials file. |
 
-**Total: 28 commands wired into Commander** (counted by
+**Total: 29 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`). README's "20
 commands" claim is stale — see follow-up task #283.
 
