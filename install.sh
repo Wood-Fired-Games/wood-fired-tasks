@@ -116,8 +116,10 @@ echo "[OK] Found $SKILL_COUNT skill files"
 # WFB_API_KEY. Local mode does NOT touch the API key at all (no prompt, no
 # argv flag, no env-var read, no secret-file write).
 MODE="local"
+MODE_EXPLICIT=0
 API_KEY=""
 API_KEY_FROM_ARGV=0
+FORCE=0
 
 # Parse command line flags.
 # --api-key is DEPRECATED — secrets on argv leak via shell history and `ps`.
@@ -126,6 +128,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --mode)
       MODE="$2"
+      MODE_EXPLICIT=1
       shift 2
       ;;
     --api-key)
@@ -133,9 +136,13 @@ while [[ $# -gt 0 ]]; do
       API_KEY_FROM_ARGV=1
       shift 2
       ;;
+    --force|-y|--yes)
+      FORCE=1
+      shift
+      ;;
     -h|--help)
       cat <<EOF
-Usage: $0 [--mode local|remote] [--api-key KEY]
+Usage: $0 [--mode local|remote] [--api-key KEY] [--force]
 
 Modes:
   local  (default) Write an MCP entry that opens the SQLite database in-process.
@@ -143,6 +150,16 @@ Modes:
                    written to ~/.claude.json — local MCP does not use one.
   remote           Write an MCP entry that proxies calls to a deployed REST API.
                    Requires an API key (WFB_API_KEY) and WFB_API_URL.
+
+Re-run safety:
+  By default, if an MCP entry for the target server name already exists in
+  ~/.claude.json, the installer preserves it and exits without changes. To
+  intentionally change an existing entry, either pass explicit flags/env
+  (--mode, --api-key, WOOD_FIRED_BUGS_URL, WOOD_FIRED_BUGS_API_KEY) — which
+  triggers an interactive confirmation prompt — or pass --force to skip the
+  prompt entirely.
+
+  --force, -y, --yes   Overwrite an existing MCP entry without prompting.
 
 API key resolution order in --mode remote (most secure first):
   1. WOOD_FIRED_BUGS_API_KEY environment variable
@@ -171,7 +188,86 @@ esac
 
 echo "[INFO] Install mode: $MODE"
 
+# Determine the MCP server name we'd be installing under so we can check
+# whether an entry already exists in ~/.claude.json before doing anything
+# destructive. Local and remote modes use different keys so both can coexist.
 if [ "$MODE" = "local" ]; then
+  SERVER_NAME="wood-fired-bugs"
+else
+  SERVER_NAME="wood-fired-bugs-remote"
+fi
+
+# Count any explicit user intent to change configuration. Presence (not value)
+# is what matters here — if the user supplied an env var or flag, they are
+# signalling "please reconfigure this". With no explicit input AND no --force,
+# the installer is non-destructive and preserves an existing entry untouched.
+URL_FROM_ENV=0
+API_KEY_FROM_ENV=0
+if [ -n "${WOOD_FIRED_BUGS_URL:-}" ]; then
+  URL_FROM_ENV=1
+fi
+if [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
+  API_KEY_FROM_ENV=1
+fi
+
+ANY_EXPLICIT=0
+if [ "$MODE_EXPLICIT" -eq 1 ] || [ "$URL_FROM_ENV" -eq 1 ] \
+   || [ "$API_KEY_FROM_ARGV" -eq 1 ] || [ "$API_KEY_FROM_ENV" -eq 1 ]; then
+  ANY_EXPLICIT=1
+fi
+
+# Inspect the existing config (if any) for an entry matching SERVER_NAME.
+PRESERVE_EXISTING=0
+EXISTING_ENTRY=""
+if [ -f "$CONFIG_FILE" ]; then
+  EXISTING_ENTRY=$(jq -r --arg name "$SERVER_NAME" \
+    '.mcpServers[$name] // empty' "$CONFIG_FILE" 2>/dev/null || true)
+fi
+
+if [ -n "$EXISTING_ENTRY" ]; then
+  if [ "$FORCE" -eq 1 ]; then
+    echo "[WARN] --force specified — existing '$SERVER_NAME' MCP entry will be overwritten."
+  elif [ "$ANY_EXPLICIT" -eq 0 ]; then
+    PRESERVE_EXISTING=1
+    echo "[OK] Existing '$SERVER_NAME' MCP entry detected — preserving it (no flags supplied)."
+    echo "[INFO] Re-run with --force, or with explicit --mode/--api-key/WOOD_FIRED_BUGS_URL/"
+    echo "       WOOD_FIRED_BUGS_API_KEY, to intentionally change the entry."
+  else
+    echo ""
+    echo "[WARN] An MCP entry for '$SERVER_NAME' is already configured in $CONFIG_FILE:"
+    echo "----- existing entry -----"
+    jq --arg name "$SERVER_NAME" '.mcpServers[$name]' "$CONFIG_FILE"
+    echo "--------------------------"
+    echo ""
+    echo "Explicit arguments or environment variables were supplied that would change"
+    echo "this entry. Continuing will overwrite the configuration shown above."
+    if [ -t 0 ]; then
+      printf "Overwrite the existing '%s' configuration? [y/N] " "$SERVER_NAME"
+      read -r CONFIRM
+    else
+      echo "[WARN] No TTY available for confirmation. Re-run with --force to overwrite non-interactively."
+      CONFIRM="n"
+    fi
+    case "$CONFIRM" in
+      y|Y|yes|YES)
+        echo "[INFO] Proceeding with overwrite."
+        ;;
+      *)
+        PRESERVE_EXISTING=1
+        echo "[INFO] Keeping existing configuration."
+        ;;
+    esac
+  fi
+fi
+
+if [ "$PRESERVE_EXISTING" -eq 1 ]; then
+  # Skip API key collection entirely when preserving — we are not going to
+  # write a new MCP entry, so there is nothing to feed the key into.
+  if [ "$API_KEY_FROM_ARGV" -eq 1 ] || [ "$API_KEY_FROM_ENV" -eq 1 ]; then
+    echo "[INFO] Ignoring supplied API key — preserving existing MCP entry, not rewriting."
+  fi
+  API_KEY=""
+elif [ "$MODE" = "local" ]; then
   # Local mode: silently ignore any API-key inputs. The local MCP server reads
   # DATABASE_PATH and never reads WFB_API_KEY / WOOD_FIRED_BUGS_API_KEY, so
   # keeping a key in ~/.claude.json would be dead weight (and a leak surface).
@@ -264,30 +360,37 @@ echo "[OK] Copied $COPIED_COUNT skill files to $SKILLS_DEST"
 # Step 4: Backup existing config (LINX-04)
 # ============================================================================
 
-echo "[INFO] Backing up configuration..."
-
-# Create config file if it doesn't exist
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "[INFO] Creating new configuration file at $CONFIG_FILE"
-  ( umask 077 && : > "$CONFIG_FILE" )
-  echo '{}' > "$CONFIG_FILE"
-  secure_file "$CONFIG_FILE"
+if [ "$PRESERVE_EXISTING" -eq 1 ]; then
+  echo "[INFO] Skipping configuration backup — preserving existing MCP entry, no edits will be made."
 else
-  # Create timestamped backup with strict perms (0600) — backups contain the API key.
-  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  BACKUP_FILE="${CONFIG_FILE}.backup.${TIMESTAMP}"
-  ( umask 077 && cp "$CONFIG_FILE" "$BACKUP_FILE" )
-  secure_file "$BACKUP_FILE"
-  # Re-tighten the config itself in case a previous installer or hand-edit relaxed it.
-  secure_file "$CONFIG_FILE"
-  echo "[OK] Backed up existing configuration to $BACKUP_FILE (mode 600)"
+  echo "[INFO] Backing up configuration..."
+
+  # Create config file if it doesn't exist
+  if [ ! -f "$CONFIG_FILE" ]; then
+    echo "[INFO] Creating new configuration file at $CONFIG_FILE"
+    ( umask 077 && : > "$CONFIG_FILE" )
+    echo '{}' > "$CONFIG_FILE"
+    secure_file "$CONFIG_FILE"
+  else
+    # Create timestamped backup with strict perms (0600) — backups contain the API key.
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="${CONFIG_FILE}.backup.${TIMESTAMP}"
+    ( umask 077 && cp "$CONFIG_FILE" "$BACKUP_FILE" )
+    secure_file "$BACKUP_FILE"
+    # Re-tighten the config itself in case a previous installer or hand-edit relaxed it.
+    secure_file "$CONFIG_FILE"
+    echo "[OK] Backed up existing configuration to $BACKUP_FILE (mode 600)"
+  fi
 fi
 
 # ============================================================================
 # Step 5: Merge MCP server config (LINX-02, LINX-03, LINX-05)
 # ============================================================================
 
-echo "[INFO] Configuring MCP server..."
+if [ "$PRESERVE_EXISTING" -eq 1 ]; then
+  echo "[OK] MCP server '$SERVER_NAME' left untouched in $CONFIG_FILE"
+else
+  echo "[INFO] Configuring MCP server..."
 
 # Create temporary file for new server config with strict perms. Even in
 # local mode the merged config may contain pre-existing secrets, so keep 600.
@@ -359,12 +462,8 @@ jq -s '.[0] * .[1]' "$CONFIG_FILE" "$NEW_SERVER_CONFIG" > "$MERGED_CONFIG"
 mv "$MERGED_CONFIG" "$CONFIG_FILE"
 secure_file "$CONFIG_FILE"
 
-if [ "$MODE" = "local" ]; then
-  SERVER_NAME="wood-fired-bugs"
-else
-  SERVER_NAME="wood-fired-bugs-remote"
-fi
 echo "[OK] MCP server '$SERVER_NAME' configured in $CONFIG_FILE (mode 600)"
+fi
 
 # ============================================================================
 # Step 6: Validate connectivity (LINX-05)
@@ -392,7 +491,11 @@ echo ""
 echo "Summary:"
 echo "  - Install mode: $MODE"
 echo "  - $COPIED_COUNT skill files installed to $SKILLS_DEST"
-echo "  - MCP server '$SERVER_NAME' configured in $CONFIG_FILE"
+if [ "$PRESERVE_EXISTING" -eq 1 ]; then
+  echo "  - MCP server '$SERVER_NAME' PRESERVED in $CONFIG_FILE (no changes written)"
+else
+  echo "  - MCP server '$SERVER_NAME' configured in $CONFIG_FILE"
+fi
 if [ -n "$BACKUP_FILE" ]; then
   echo "  - Backup saved to $BACKUP_FILE"
 fi

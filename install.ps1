@@ -9,7 +9,15 @@ param(
     [string]$Mode = 'local',
 
     [Parameter(Mandatory=$false)]
-    [string]$ApiKey
+    [string]$ApiKey,
+
+    # Skip the existing-config confirmation prompt and overwrite the MCP entry
+    # unconditionally. Without -Force, a re-run that finds an existing MCP
+    # entry is non-destructive: the installer preserves the entry untouched
+    # unless explicit -Mode/-ApiKey/env-var input was supplied (in which case
+    # the user is prompted to confirm).
+    [Parameter(Mandatory=$false)]
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +25,10 @@ $ErrorActionPreference = "Stop"
 # Script-scoped variables
 $script:BackupFile = $null
 $script:ApiKeyFromArgv = $PSBoundParameters.ContainsKey('ApiKey') -and -not [string]::IsNullOrWhiteSpace($ApiKey)
+# Was -Mode supplied explicitly (vs. relying on the default 'local')? Used
+# alongside env-var checks to decide whether the user signalled an intent to
+# change the configuration.
+$script:ModeExplicit = $PSBoundParameters.ContainsKey('Mode')
 
 # Constants
 $ScriptDir = $PSScriptRoot
@@ -79,7 +91,86 @@ try {
     # ============================================================================
     Write-Host "`n[INFO] Install mode: $Mode" -ForegroundColor Cyan
 
+    # Determine the MCP server name we'd install under. Local and remote
+    # modes use different keys so both can coexist in ~/.claude.json.
     if ($Mode -eq 'local') {
+        $serverName = 'wood-fired-bugs'
+    } else {
+        $serverName = 'wood-fired-bugs-remote'
+    }
+
+    # Count any explicit user intent to change configuration. Presence (not
+    # value) is what matters here — if the user supplied an env var or flag,
+    # they are signalling "please reconfigure this".
+    $urlFromEnv    = [bool]$env:WOOD_FIRED_BUGS_URL
+    $apiKeyFromEnv = [bool]$env:WOOD_FIRED_BUGS_API_KEY
+    $anyExplicit   = $script:ModeExplicit -or $urlFromEnv -or $script:ApiKeyFromArgv -or $apiKeyFromEnv
+
+    # Inspect the existing config (if any) for an entry matching $serverName.
+    $script:PreserveExisting = $false
+    $existingEntry = $null
+    if (Test-Path $ConfigFile) {
+        try {
+            $rawConfig = Get-Content -Path $ConfigFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($rawConfig -and (Get-Member -InputObject $rawConfig -Name 'mcpServers' -MemberType Properties)) {
+                if (Get-Member -InputObject $rawConfig.mcpServers -Name $serverName -MemberType Properties -ErrorAction SilentlyContinue) {
+                    $existingEntry = $rawConfig.mcpServers.$serverName
+                }
+            }
+        } catch {
+            # Treat unreadable / non-JSON config the same as "no existing entry"
+            # — the merge step below will recreate it.
+            $existingEntry = $null
+        }
+    }
+
+    if ($existingEntry) {
+        if ($Force) {
+            Write-Host "[WARN] -Force specified — existing '$serverName' MCP entry will be overwritten." -ForegroundColor Yellow
+        } elseif (-not $anyExplicit) {
+            $script:PreserveExisting = $true
+            Write-Host "[OK] Existing '$serverName' MCP entry detected — preserving it (no flags supplied)." -ForegroundColor Green
+            Write-Host "[INFO] Re-run with -Force, or with explicit -Mode/-ApiKey/`$env:WOOD_FIRED_BUGS_URL/" -ForegroundColor Yellow
+            Write-Host "       `$env:WOOD_FIRED_BUGS_API_KEY, to intentionally change the entry." -ForegroundColor Yellow
+        } else {
+            Write-Host ""
+            Write-Host "[WARN] An MCP entry for '$serverName' is already configured in ${ConfigFile}:" -ForegroundColor Yellow
+            Write-Host "----- existing entry -----" -ForegroundColor Yellow
+            $existingEntry | ConvertTo-Json -Depth 10 | Write-Host
+            Write-Host "--------------------------" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "Explicit arguments or environment variables were supplied that would change" -ForegroundColor Yellow
+            Write-Host "this entry. Continuing will overwrite the configuration shown above." -ForegroundColor Yellow
+
+            # Try Read-Host; if PowerShell is running in -NonInteractive mode
+            # or stdin is unavailable (service / unattended context), the call
+            # throws — treat that as a refusal. We don't rely on
+            # [Environment]::UserInteractive because it returns true under
+            # pwsh -NonInteractive on Linux/macOS.
+            $confirm = $null
+            try {
+                $confirm = Read-Host "Overwrite the existing '$serverName' configuration? [y/N]"
+            } catch {
+                Write-Host "[WARN] Non-interactive session — refusing to overwrite without -Force." -ForegroundColor Yellow
+                $confirm = 'n'
+            }
+            if ($confirm -match '^(y|yes)$') {
+                Write-Host "[INFO] Proceeding with overwrite." -ForegroundColor Yellow
+            } else {
+                $script:PreserveExisting = $true
+                Write-Host "[INFO] Keeping existing configuration." -ForegroundColor Green
+            }
+        }
+    }
+
+    if ($script:PreserveExisting) {
+        # Skip API key collection entirely — we are not going to write a new
+        # MCP entry, so there is nothing to feed the key into.
+        if ($script:ApiKeyFromArgv -or $apiKeyFromEnv) {
+            Write-Host "[INFO] Ignoring supplied API key — preserving existing MCP entry, not rewriting." -ForegroundColor Yellow
+        }
+        $ApiKey = $null
+    } elseif ($Mode -eq 'local') {
         # Local mode: silently ignore any API-key inputs. The local MCP server
         # reads DATABASE_PATH and never reads WFB_API_KEY /
         # WOOD_FIRED_BUGS_API_KEY, so keeping a key in ~/.claude.json would
@@ -181,79 +272,85 @@ try {
     # ============================================================================
     # Step 4: Backup existing config (WIN-04)
     # ============================================================================
-    Write-Host "`n[INFO] Managing configuration..." -ForegroundColor Cyan
-
-    if (Test-Path $ConfigFile) {
-        # Create timestamped backup. Backup contains the API key in cleartext,
-        # so lock the ACL down to the current user before anything else can read it.
-        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $script:BackupFile = "$ConfigFile.backup.$timestamp"
-        Copy-Item $ConfigFile $script:BackupFile
-        Set-UserOnlyAcl -Path $script:BackupFile
-        # Re-tighten the config itself in case a previous installer or hand-edit relaxed it.
-        Set-UserOnlyAcl -Path $ConfigFile
-        Write-Host "[OK] Backed up existing config to: $script:BackupFile (user-only ACL)" -ForegroundColor Green
+    if ($script:PreserveExisting) {
+        Write-Host "`n[INFO] Skipping configuration backup — preserving existing MCP entry, no edits will be made." -ForegroundColor Yellow
     } else {
-        # Create new config file with empty JSON object, then lock its ACL.
-        "{}" | Set-Content $ConfigFile -Encoding UTF8
-        Set-UserOnlyAcl -Path $ConfigFile
-        Write-Host "[INFO] Created new config file: $ConfigFile" -ForegroundColor Yellow
+        Write-Host "`n[INFO] Managing configuration..." -ForegroundColor Cyan
+
+        if (Test-Path $ConfigFile) {
+            # Create timestamped backup. Backup contains the API key in cleartext,
+            # so lock the ACL down to the current user before anything else can read it.
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $script:BackupFile = "$ConfigFile.backup.$timestamp"
+            Copy-Item $ConfigFile $script:BackupFile
+            Set-UserOnlyAcl -Path $script:BackupFile
+            # Re-tighten the config itself in case a previous installer or hand-edit relaxed it.
+            Set-UserOnlyAcl -Path $ConfigFile
+            Write-Host "[OK] Backed up existing config to: $script:BackupFile (user-only ACL)" -ForegroundColor Green
+        } else {
+            # Create new config file with empty JSON object, then lock its ACL.
+            "{}" | Set-Content $ConfigFile -Encoding UTF8
+            Set-UserOnlyAcl -Path $ConfigFile
+            Write-Host "[INFO] Created new config file: $ConfigFile" -ForegroundColor Yellow
+        }
     }
 
     # ============================================================================
     # Step 5: Merge MCP server config (WIN-02, WIN-03)
     # ============================================================================
-    Write-Host "[INFO] Configuring MCP server..." -ForegroundColor Cyan
-
-    # Read existing config
-    $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
-
-    # Build new server config — local writes only DATABASE_PATH, remote writes
-    # WFB_API_URL + WFB_API_KEY under a separate server name so both can
-    # coexist. Task #258.
-    #
-    # Use absolute paths for args + DATABASE_PATH. Claude Code's MCP config
-    # schema does not honor a `cwd` key (`claude mcp add` has no --cwd flag);
-    # the server is launched from Claude Code's CWD, so any relative path
-    # resolves against the wrong directory and node exits with
-    # "Cannot find module ...".
-    if ($Mode -eq 'local') {
-        $serverName = 'wood-fired-bugs'
-        $newServer = [PSCustomObject]@{
-            command = "node"
-            args = @((Join-Path $ScriptDir 'dist/mcp/index.js'))
-            env = [PSCustomObject]@{
-                DATABASE_PATH = (Join-Path $ScriptDir 'data/tasks.db')
-            }
-        }
+    if ($script:PreserveExisting) {
+        Write-Host "[OK] MCP server '$serverName' left untouched in $ConfigFile" -ForegroundColor Green
     } else {
-        $serverName = 'wood-fired-bugs-remote'
-        $newServer = [PSCustomObject]@{
-            command = "node"
-            args = @((Join-Path $ScriptDir 'dist/mcp/remote/index.js'))
-            env = [PSCustomObject]@{
-                WFB_API_URL = $ServiceUrl
-                WFB_API_KEY = $ApiKey
+        Write-Host "[INFO] Configuring MCP server..." -ForegroundColor Cyan
+
+        # Read existing config
+        $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+
+        # Build new server config — local writes only DATABASE_PATH, remote writes
+        # WFB_API_URL + WFB_API_KEY under a separate server name so both can
+        # coexist. Task #258.
+        #
+        # Use absolute paths for args + DATABASE_PATH. Claude Code's MCP config
+        # schema does not honor a `cwd` key (`claude mcp add` has no --cwd flag);
+        # the server is launched from Claude Code's CWD, so any relative path
+        # resolves against the wrong directory and node exits with
+        # "Cannot find module ...".
+        if ($Mode -eq 'local') {
+            $newServer = [PSCustomObject]@{
+                command = "node"
+                args = @((Join-Path $ScriptDir 'dist/mcp/index.js'))
+                env = [PSCustomObject]@{
+                    DATABASE_PATH = (Join-Path $ScriptDir 'data/tasks.db')
+                }
+            }
+        } else {
+            $newServer = [PSCustomObject]@{
+                command = "node"
+                args = @((Join-Path $ScriptDir 'dist/mcp/remote/index.js'))
+                env = [PSCustomObject]@{
+                    WFB_API_URL = $ServiceUrl
+                    WFB_API_KEY = $ApiKey
+                }
             }
         }
+
+        # Ensure mcpServers property exists
+        if (-not (Get-Member -InputObject $config -Name "mcpServers" -MemberType Properties)) {
+            $config | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
+        }
+
+        # Add or update server entry (Add-Member -Force handles idempotency)
+        $config.mcpServers | Add-Member -MemberType NoteProperty -Name $serverName -Value $newServer -Force
+
+        # Write back with proper depth (PowerShell defaults to depth 2, we need 10)
+        $config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8
+        # Re-apply the user-only ACL after every write (Set-Content can recreate
+        # the file and lose the previous ACL). The file may contain the API key
+        # in remote mode, and may contain pre-existing secrets either way.
+        Set-UserOnlyAcl -Path $ConfigFile
+
+        Write-Host "[OK] MCP server '$serverName' configured (user-only ACL)" -ForegroundColor Green
     }
-
-    # Ensure mcpServers property exists
-    if (-not (Get-Member -InputObject $config -Name "mcpServers" -MemberType Properties)) {
-        $config | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
-    }
-
-    # Add or update server entry (Add-Member -Force handles idempotency)
-    $config.mcpServers | Add-Member -MemberType NoteProperty -Name $serverName -Value $newServer -Force
-
-    # Write back with proper depth (PowerShell defaults to depth 2, we need 10)
-    $config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8
-    # Re-apply the user-only ACL after every write (Set-Content can recreate
-    # the file and lose the previous ACL). The file may contain the API key
-    # in remote mode, and may contain pre-existing secrets either way.
-    Set-UserOnlyAcl -Path $ConfigFile
-
-    Write-Host "[OK] MCP server '$serverName' configured (user-only ACL)" -ForegroundColor Green
 
     # ============================================================================
     # Step 6: Validate connectivity (WIN-05)
@@ -282,8 +379,14 @@ try {
     Write-Host "`nWhat was installed:" -ForegroundColor Cyan
     Write-Host "  - Install mode: $Mode"
     Write-Host "  - Skill files:  $skillCount file(s) -> $SkillsDest"
-    Write-Host "  - MCP server:   $serverName -> $ConfigFile"
-    if ($Mode -eq 'remote') {
+    if ($script:PreserveExisting) {
+        Write-Host "  - MCP server:   '$serverName' PRESERVED in $ConfigFile (no changes written)"
+    } else {
+        Write-Host "  - MCP server:   $serverName -> $ConfigFile"
+    }
+    if ($script:PreserveExisting) {
+        Write-Host "  - API key:      Untouched (existing entry preserved)"
+    } elseif ($Mode -eq 'remote') {
         Write-Host "  - API key:      Configured in MCP environment (WFB_API_KEY)"
     } else {
         Write-Host "  - API key:      Not used in local mode"
