@@ -144,6 +144,41 @@ describe('POST /auth/logout', () => {
     expect(u.searchParams.get('id_token_hint')).toBeTruthy();
     expect(u.searchParams.get('post_logout_redirect_uri')).toBeTruthy();
 
+    // WR-03 fix: the post_logout_redirect_uri must come from
+    // configuration (the harness derives it from REDIRECT_URI's origin),
+    // NOT from request.protocol/hostname. The harness's REDIRECT_URI is
+    // `https://wfb.example.com/auth/callback`, so the post-logout URI
+    // is `https://wfb.example.com/auth/login` regardless of what Host
+    // header the caller smuggled in.
+    expect(u.searchParams.get('post_logout_redirect_uri')).toBe(
+      'https://wfb.example.com/auth/login',
+    );
+  });
+
+  it('WR-03: post_logout_redirect_uri ignores spoofed Host header', async () => {
+    const { cookie, csrf } = await signInAndSeedCsrf(harness, 'lo-host-spoof');
+
+    const r = await harness.server.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: {
+        cookie,
+        host: 'evil.example.org',
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      payload: '_csrf=' + encodeURIComponent(csrf),
+    });
+    expect(r.statusCode).toBe(302);
+
+    const location = r.headers.location;
+    expect(typeof location).toBe('string');
+    const u = new URL(location as string);
+    // Even with a spoofed Host header, the post-logout URI MUST come
+    // from configuration (wfb.example.com), not from request.hostname.
+    const postLogout = u.searchParams.get('post_logout_redirect_uri');
+    expect(postLogout).toBe('https://wfb.example.com/auth/login');
+    expect(postLogout).not.toContain('evil.example.org');
+
     // Session-delete contract: the response must emit a clearing
     // Set-Cookie header so the browser drops the session cookie.
     // Probing with the OLD cookie still decrypts (sealed cookies are

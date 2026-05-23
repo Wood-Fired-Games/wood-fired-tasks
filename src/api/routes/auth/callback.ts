@@ -188,9 +188,44 @@ const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
       }
 
       const redirectTo = handshake.redirectAfterLogin || '/me';
-      return reply
+      const replyWithRedirect = reply
         .header('Cache-Control', 'no-store')
         .redirect(redirectTo, 302);
+
+      // WR-02 — surface "cookie close to 4 KB" as a warn line BEFORE
+      // the browser silently rejects it. Most browsers cap individual
+      // cookies at 4 KB; some intermediaries (proxies, WAFs) drop
+      // headers above 4 KB without notice. The Google id_token plus
+      // sealed-box overhead plus base64 inflation can put `wfb_session`
+      // in the 2.5–4 KB range; a custom-claim-laden id_token (group
+      // memberships, etc.) can push past the limit. The warn fires
+      // EARLY so operators see the problem in logs before users start
+      // reporting "sign-in silently fails after a Google admin change."
+      //
+      // 3500 bytes ≈ 90% of the 4 KB ceiling, matching the
+      // "fail loud before silent breakage" principle from 29-CONTEXT.md.
+      // Bound the lookup to the session cookie specifically so other
+      // Set-Cookie headers (rate-limit, CSRF, etc.) do not skew the check.
+      const setCookieRaw = reply.getHeader('set-cookie');
+      const setCookieList: string[] = Array.isArray(setCookieRaw)
+        ? setCookieRaw.map((c) => String(c))
+        : setCookieRaw !== undefined && setCookieRaw !== null
+          ? [String(setCookieRaw)]
+          : [];
+      const sessionCookieLine = setCookieList.find((c) =>
+        c.startsWith(`${opts.sessionCookieName}=`),
+      );
+      if (sessionCookieLine && sessionCookieLine.length > 3500) {
+        request.log.warn(
+          {
+            cookieLen: sessionCookieLine.length,
+            requestId: request.id,
+          },
+          'session.cookie_size_approaching_limit',
+        );
+      }
+
+      return replyWithRedirect;
     },
   );
 };

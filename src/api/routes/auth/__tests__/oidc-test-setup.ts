@@ -136,6 +136,13 @@ export async function mountAuthRoutes(
     oidcConfig,
     redirectUri: REDIRECT_URI,
     scopes: SCOPES,
+    // WR-02 / WR-03 fix: pass concrete values for the new
+    // AuthRoutesOptions fields. The cookie name matches what the harness
+    // registers above (`cookieName: 'wfb_session'`); the post-logout URI
+    // is derived from REDIRECT_URI's origin to mirror the production
+    // smart default at server.ts.
+    sessionCookieName: 'wfb_session',
+    postLogoutRedirectUri: `${new URL(REDIRECT_URI).origin}/auth/login`,
   });
 
   // Pre-mount probes so tests can inspect session contents without

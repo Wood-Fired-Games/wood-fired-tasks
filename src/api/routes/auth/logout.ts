@@ -53,10 +53,17 @@ const logoutRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
       request.session.delete();
 
       if (typeof idToken === 'string' && idToken.length > 0) {
-        const origin = `${request.protocol}://${request.hostname}`;
+        // WR-03 fix: source the post-logout redirect URI from
+        // configuration (opts.postLogoutRedirectUri), NOT from
+        // request.protocol/hostname. The Host header is caller-
+        // controllable when behind a permissive reverse proxy, and
+        // request.protocol is whatever Fastify sees on the socket
+        // (often `http` behind an HTTPS-terminating proxy without
+        // trustProxy). Hardcoding the value at config time eliminates
+        // both attack and misconfiguration vectors.
         const url = buildEndSessionUrl(opts.oidcConfig, {
           idTokenHint: idToken,
-          postLogoutRedirectUri: `${origin}/auth/login`,
+          postLogoutRedirectUri: opts.postLogoutRedirectUri,
         });
         if (url) {
           return reply

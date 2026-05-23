@@ -349,14 +349,24 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // mode — only the response shape differs.
   if (app.oidcConfig) {
     const authRoutes = (await import('./routes/auth/index.js')).default;
+    // WR-03 fix: post_logout_redirect_uri sourced from config (immune to
+    // Host-header spoofing). Smart default: derive from
+    // OIDC_REDIRECT_URI's origin + `/auth/login`. The env schema's
+    // all-or-nothing refine guarantees OIDC_REDIRECT_URI is set here.
+    const redirectUri = config.OIDC_REDIRECT_URI as string;
+    const postLogoutRedirectUri =
+      config.OIDC_POST_LOGOUT_REDIRECT_URI ??
+      `${new URL(redirectUri).origin}/auth/login`;
     await server.register(authRoutes, {
       prefix: '/auth',
       oidcConfig: app.oidcConfig,
       // OIDC_REDIRECT_URI is guaranteed non-null when oidcConfig is non-null
       // — the env schema's all-or-nothing refine enforces this. The `!`
       // assertion is documented at that refine.
-      redirectUri: config.OIDC_REDIRECT_URI as string,
+      redirectUri,
       scopes: config.OIDC_SCOPES,
+      sessionCookieName: config.SESSION_COOKIE_NAME,
+      postLogoutRedirectUri,
     });
   } else {
     const disabledStub = (await import('./routes/auth/disabled-stub.js')).default;

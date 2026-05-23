@@ -35,6 +35,21 @@ export interface AuthRoutesOptions {
   redirectUri: string;
   /** Space-separated scope string (e.g. "openid email profile"). */
   scopes: string;
+  /**
+   * Cookie name for the session cookie (mirrors `config.SESSION_COOKIE_NAME`).
+   * Used by the WR-02 cookie-size warn line in callback.ts so the
+   * lookup against `reply.getHeader('set-cookie')` matches the
+   * concrete cookie name configured on the secure-session plugin.
+   * Defaults to `wfb_session` at the server.ts wiring site.
+   */
+  sessionCookieName: string;
+  /**
+   * Post-logout redirect URI passed to the IdP's RP-initiated logout
+   * (`post_logout_redirect_uri`). WR-03 fix: sourced from config so the
+   * value does NOT come from caller-controlled headers
+   * (`request.hostname` / `request.protocol`).
+   */
+  postLogoutRedirectUri: string;
 }
 
 const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
@@ -49,6 +64,8 @@ const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     oidcConfig: opts.oidcConfig,
     redirectUri: opts.redirectUri,
     scopes: opts.scopes,
+    sessionCookieName: opts.sessionCookieName,
+    postLogoutRedirectUri: opts.postLogoutRedirectUri,
   };
   await fastify.register(loginRoute, childOpts);
   await fastify.register(callbackRoute, childOpts);

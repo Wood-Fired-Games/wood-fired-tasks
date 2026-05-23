@@ -89,6 +89,13 @@ export const configSchema = z.object({
   OIDC_CLIENT_ID: z.string().min(1).optional(),
   OIDC_CLIENT_SECRET: z.string().min(1).optional(),
   OIDC_REDIRECT_URI: z.string().url().optional(),
+  // WR-03 fix — `post_logout_redirect_uri` for RP-initiated logout.
+  // Optional: when absent, the wiring at src/api/server.ts derives a
+  // default from OIDC_REDIRECT_URI's origin (+ `/auth/login`). Sourcing
+  // from configuration (rather than request.protocol/hostname headers)
+  // makes the value immune to a malicious upstream proxy spoofing the
+  // Host header.
+  OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   OIDC_SCOPES: z.string().min(1).default('openid email profile'),
   SESSION_COOKIE_NAME: z.string().min(1).default('wfb_session'),
   // SESSION_COOKIE_SECRET is the sealed-box key for @fastify/secure-session.
