@@ -3,6 +3,7 @@ import { createApp } from '../index.js';
 import { createMcpServer } from './server.js';
 import { resolveActorUserIdWithPath } from './identity-resolution.js';
 import { parseApiKeyEntries } from '../config/env.js';
+import { precomputeHashedEntries } from '../api/plugins/auth/strategies/legacy.js';
 
 /**
  * MCP server stdio entry point
@@ -35,11 +36,28 @@ async function main() {
   // mainWithRetry wrapper logs it (to stderr) and the process exits with
   // a clear error. Don't catch + ignore; an MCP boot without a usable
   // actor identity is a bug, not a soft failure.
+  // WR-06: compute legacy API_KEYS hashes ONCE at boot (mirrors the REST
+  // legacy strategy in src/api/plugins/auth/strategies/legacy.ts). The
+  // resolver no longer re-hashes per call. Cheap here even though MCP
+  // boot only calls resolveActorUserIdWithPath once — it keeps the
+  // resolver's contract aligned with the REST path so future callers
+  // (tests, multi-instance harnesses) inherit the same discipline.
+  //
+  // WR-02: WFB_MCP_ALLOW_BAD_PAT=1 is the documented opt-in escape hatch
+  // for operators who want to keep MCP booting even when WFB_API_KEY is
+  // a PAT that is unknown/revoked/expired or belongs to a disabled user.
+  // The default (unset / '0' / anything else) fails closed at the
+  // resolver level so a revoked PAT cannot silently demote to mcp-bot
+  // and mask a kill-signal.
+  const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
+  const hashedEntries = precomputeHashedEntries(apiKeyEntries);
+  const allowBadPat = process.env.WFB_MCP_ALLOW_BAD_PAT === '1';
   const { actorUserId, path: resolutionPath } = resolveActorUserIdWithPath({
     apiKey: process.env.WFB_API_KEY,
     apiTokenRepo: app.apiTokenRepository,
     userRepo: app.userRepository,
-    apiKeyEntries: parseApiKeyEntries(process.env.API_KEYS),
+    hashedEntries,
+    allowBadPat,
   });
 
   // One-line INFO log so operators can see which credential class

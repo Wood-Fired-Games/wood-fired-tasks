@@ -65,12 +65,13 @@ describe('resolveActorUserId', () => {
   function insertPat(opts: {
     userId: number;
     revokedAt?: string | null;
+    expiresAt?: string | null;
   }): { token: string } {
     const { token, prefix, suffix, hash } = generateToken();
     db.prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at)
-       VALUES (?, 'test', ?, ?, ?, '[]', NULL)`,
-    ).run(opts.userId, prefix, suffix, hash);
+       VALUES (?, 'test', ?, ?, ?, '[]', ?)`,
+    ).run(opts.userId, prefix, suffix, hash, opts.expiresAt ?? null);
     if (opts.revokedAt) {
       db.prepare(
         `UPDATE api_tokens SET revoked_at = ? WHERE hash = ?`,
@@ -98,7 +99,32 @@ describe('resolveActorUserId', () => {
     expect(actor).toBe(insertUser.id);
   });
 
-  it('PAT path: falls back to mcp-bot when the PAT row exists but is revoked', () => {
+  // WR-02: by default, a revoked PAT now throws (fail-closed). Opt-in
+  // fallback via `allowBadPat: true` (i.e. WFB_MCP_ALLOW_BAD_PAT=1 in
+  // production) restores the legacy mcp-bot-fallback behavior with a
+  // distinct path tag.
+  it('PAT path: THROWS when the PAT row exists but is revoked (fail-closed default — WR-02)', () => {
+    const insertUser = db
+      .prepare(
+        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
+      )
+      .get('alice', 'alice@example.com') as { id: number };
+    const { token } = insertPat({
+      userId: insertUser.id,
+      revokedAt: '2026-01-01T00:00:00Z',
+    });
+
+    expect(() =>
+      resolveActorUserId({
+        apiKey: token,
+        apiTokenRepo,
+        userRepo,
+        apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      }),
+    ).toThrow(/revoked|pat-revoked-fallback/i);
+  });
+
+  it('PAT path: falls back to mcp-bot when revoked + allowBadPat=true (WR-02 opt-in)', () => {
     const insertUser = db
       .prepare(
         `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
@@ -114,13 +140,29 @@ describe('resolveActorUserId', () => {
       apiTokenRepo,
       userRepo,
       apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      allowBadPat: true,
     });
 
     expect(actor).toBe(getMcpBotId());
   });
 
-  it('PAT path: falls back to mcp-bot when the PAT has the prefix but no matching row', () => {
+  it('PAT path: THROWS when the PAT has the prefix but no matching row (fail-closed default — WR-02)', () => {
     // A correctly-prefixed but never-inserted PAT.
+    const unknownPat = 'wfb_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+    expect(() =>
+      resolveActorUserId({
+        apiKey: unknownPat,
+        apiTokenRepo,
+        userRepo,
+        apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      }),
+    ).toThrow(/unknown|pat-unknown-fallback/i);
+    // Sanity: hashToken of the unknown PAT does not collide with anything.
+    expect(apiTokenRepo.findByHash(hashToken(unknownPat))).toBeNull();
+  });
+
+  it('PAT path: falls back to mcp-bot when unknown + allowBadPat=true (WR-02 opt-in)', () => {
     const unknownPat = 'wfb_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
     const actor = resolveActorUserId({
@@ -128,11 +170,141 @@ describe('resolveActorUserId', () => {
       apiTokenRepo,
       userRepo,
       apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      allowBadPat: true,
     });
 
     expect(actor).toBe(getMcpBotId());
-    // Sanity: hashToken of the unknown PAT does not collide with anything.
-    expect(apiTokenRepo.findByHash(hashToken(unknownPat))).toBeNull();
+  });
+
+  // CR-01: expired PAT MUST be rejected (REST PAT strategy already rejects
+  // these; MCP previously accepted them, breaking the cross-surface contract).
+  it('PAT path: THROWS when the PAT is past its expires_at (CR-01)', () => {
+    const insertUser = db
+      .prepare(
+        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
+      )
+      .get('alice', 'alice@example.com') as { id: number };
+    const { token } = insertPat({
+      userId: insertUser.id,
+      expiresAt: '2000-01-01T00:00:00Z', // far in the past
+    });
+
+    expect(() =>
+      resolveActorUserId({
+        apiKey: token,
+        apiTokenRepo,
+        userRepo,
+        apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      }),
+    ).toThrow(/expired|pat-expired-fallback/i);
+  });
+
+  it('PAT path: expired + allowBadPat=true falls back to mcp-bot (NOT silently used) — CR-01 contract', () => {
+    const insertUser = db
+      .prepare(
+        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
+      )
+      .get('alice', 'alice@example.com') as { id: number };
+    const { token } = insertPat({
+      userId: insertUser.id,
+      expiresAt: '2000-01-01T00:00:00Z',
+    });
+
+    const actor = resolveActorUserId({
+      apiKey: token,
+      apiTokenRepo,
+      userRepo,
+      apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      allowBadPat: true,
+    });
+
+    // Critical: the expired PAT's owner is NOT returned; we get mcp-bot.
+    expect(actor).toBe(getMcpBotId());
+    expect(actor).not.toBe(insertUser.id);
+  });
+
+  // Unparseable expires_at — defends against hand-edited DB rows or a
+  // future write path drifting from the ISO-8601 contract. Matches the
+  // REST PAT strategy's NaN-guard (src/api/plugins/auth/strategies/pat.ts).
+  it('PAT path: THROWS when expires_at is unparseable (NaN-guard from REST pat strategy)', () => {
+    const insertUser = db
+      .prepare(
+        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
+      )
+      .get('alice', 'alice@example.com') as { id: number };
+    const { token } = insertPat({
+      userId: insertUser.id,
+      expiresAt: 'soon', // unparseable
+    });
+
+    expect(() =>
+      resolveActorUserId({
+        apiKey: token,
+        apiTokenRepo,
+        userRepo,
+        apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      }),
+    ).toThrow(/expired|pat-expired-fallback/i);
+  });
+
+  // CR-02: disabled user MUST be rejected on the PAT path.
+  it('PAT path: THROWS when the PAT owner is disabled (CR-02)', () => {
+    const insertUser = db
+      .prepare(
+        `INSERT INTO users (display_name, email, disabled_at) VALUES (?, ?, ?) RETURNING id`,
+      )
+      .get('alice', 'alice@example.com', '2026-01-01T00:00:00Z') as {
+        id: number;
+      };
+    const { token } = insertPat({ userId: insertUser.id });
+
+    expect(() =>
+      resolveActorUserId({
+        apiKey: token,
+        apiTokenRepo,
+        userRepo,
+        apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      }),
+    ).toThrow(/disabled|pat-user-disabled-fallback/i);
+  });
+
+  it('PAT path: disabled user + allowBadPat=true falls back to mcp-bot (CR-02)', () => {
+    const insertUser = db
+      .prepare(
+        `INSERT INTO users (display_name, email, disabled_at) VALUES (?, ?, ?) RETURNING id`,
+      )
+      .get('alice', 'alice@example.com', '2026-01-01T00:00:00Z') as {
+        id: number;
+      };
+    const { token } = insertPat({ userId: insertUser.id });
+
+    const actor = resolveActorUserId({
+      apiKey: token,
+      apiTokenRepo,
+      userRepo,
+      apiKeyEntries: parseApiKeyEntries(API_KEYS),
+      allowBadPat: true,
+    });
+
+    expect(actor).toBe(getMcpBotId());
+    expect(actor).not.toBe(insertUser.id);
+  });
+
+  // CR-02 (legacy path): disabled legacy user falls through to mcp-bot.
+  it('legacy path: falls back to mcp-bot when matched user is disabled (CR-02)', () => {
+    // Disable the seeded 'laptop' legacy user.
+    db.prepare(
+      `UPDATE users SET disabled_at = '2026-01-01T00:00:00Z' WHERE display_name = 'laptop'`,
+    ).run();
+
+    const actor = resolveActorUserId({
+      apiKey: 'topsecret-key-1', // would have matched 'laptop'
+      apiTokenRepo,
+      userRepo,
+      apiKeyEntries: parseApiKeyEntries(API_KEYS),
+    });
+
+    expect(actor).toBe(getMcpBotId());
   });
 
   it('legacy path: returns the legacy user.id when WFB_API_KEY matches an API_KEYS entry', () => {
