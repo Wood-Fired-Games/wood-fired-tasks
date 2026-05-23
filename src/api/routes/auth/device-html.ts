@@ -31,6 +31,8 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import {
   approve,
   findByUserCode,
+  recordMintedToken,
+  tokenName,
 } from '../../../services/device-flow-store.js';
 import {
   renderDevicePage,
@@ -38,6 +40,7 @@ import {
 } from '../../../web/pages/device.js';
 import { getOrCreateCsrfToken, verifyCsrfToken } from './csrf.js';
 import { requireUser } from '../../plugins/auth.js';
+import { generateToken } from '../../../services/pat-hash.js';
 
 export interface DeviceHtmlRouteOptions {
   /**
@@ -76,6 +79,15 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (
   fastify,
   opts,
 ) => {
+  // Plan 30-04 Task 2 — fail fast at registration if the host app didn't
+  // wire the api-token repository. The verify handler depends on it to
+  // mint the auto-PAT after approval; a missing decorator surfaces a clear
+  // boot error instead of a runtime 500 on the first device-flow attempt.
+  if (!fastify.hasDecorator('apiTokenRepository')) {
+    throw new Error(
+      'deviceHtmlRoute requires apiTokenRepository to be decorated before registration',
+    );
+  }
   // ---------------------------------------------------------------------------
   // GET /auth/device — render the form (or 302 to /auth/login)
   // ---------------------------------------------------------------------------
@@ -208,6 +220,70 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (
         },
         'device flow approved',
       );
+
+      // 5. (Plan 30-04 Task 2) Mint a PAT for the CLI to consume on its
+      //    next /auth/device/token poll. The session is now in 'approved'
+      //    state, so the lookup here is guaranteed; we re-fetch only to
+      //    read the (already sanitized) hostname captured at create time.
+      //
+      //    The mint is wrapped in a try/catch so a transient DB outage
+      //    surfaces a user-actionable error page rather than a generic
+      //    500. The session stays in 'approved' (mintedToken === null)
+      //    so a retry via the polling endpoint would still see
+      //    `authorization_pending` until the device-code TTL expires —
+      //    no replay window opens.
+      const approvedSession = findByUserCode(userCode);
+      // The store guarantees this lookup is non-null at this point
+      // (approve() returned successfully, no concurrent remove()). The
+      // narrow is a type-system requirement, not a runtime expectation.
+      if (!approvedSession) {
+        throw new Error(
+          'device-flow: session vanished between approve() and mint',
+        );
+      }
+      const name = tokenName(approvedSession.hostname ?? 'unknown');
+      try {
+        const { token, prefix, suffix, hash } = generateToken();
+        const row = fastify.apiTokenRepository.insert({
+          userId: user.id,
+          name,
+          prefix,
+          suffix,
+          hash,
+          scopes: JSON.stringify([]),
+          expiresAt: null,
+        });
+        recordMintedToken(userCode, { tokenId: row.id, token });
+        // Audit log — userId + tokenId only. token, hash, user_code, and
+        // name are intentionally OMITTED (Threats T-30-04-02 / T-30-02-06).
+        request.log.info(
+          {
+            event: 'pat_minted',
+            via: 'device_flow',
+            userId: user.id,
+            tokenId: row.id,
+          },
+          'pat minted via device flow',
+        );
+      } catch (err) {
+        // The PAT didn't land — log + render a recoverable error page.
+        // The session remains 'approved' (no mintedToken), so the CLI
+        // polling endpoint continues returning `authorization_pending`
+        // until the device-code TTL elapses (graceful degradation per
+        // Threat T-30-04-05 disposition).
+        request.log.error(
+          { err, event: 'pat_mint_failed', userId: user.id },
+          'pat mint failed during device flow',
+        );
+        const csrfToken = getOrCreateCsrfToken(request);
+        const html = renderDevicePage({
+          csrfToken,
+          prefilledUserCode: null,
+          errorMessage:
+            'Could not complete sign-in. Please try again.',
+        });
+        return replyHtml(reply, 500, html);
+      }
 
       const successHtml = renderDeviceApprovedPage();
       return replyHtml(reply, 200, successHtml);
