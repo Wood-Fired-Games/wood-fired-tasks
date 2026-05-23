@@ -107,7 +107,7 @@ fi
 # src/ file touched since the dist/ was first populated even when the
 # corresponding .js was just rebuilt.
 NEWEST_DIST="$(find "$SOURCE_DIR/dist" -type f -printf '%T@ %p\n' 2>/dev/null \
-  | sort -nr | head -n1 | awk '{print $2}')"
+  | sort -nr | awk 'NR==1{print $2}' || true)"
 if [ -z "$NEWEST_DIST" ]; then
   echo "ERROR: $SOURCE_DIR/dist exists but is empty." >&2
   echo "Run 'npm run build' before deploying." >&2
