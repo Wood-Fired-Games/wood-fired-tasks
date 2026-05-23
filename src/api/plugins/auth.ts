@@ -17,19 +17,14 @@
  * `src/api/plugins/auth/index.ts` (chain) or `src/api/plugins/auth/keys.ts`
  * (key hashing + production validation).
  *
- * The `apiKeyLabel?: string` declaration is kept here to preserve MIGR-01
- * legacy compat — every existing route handler that reads
- * `request.apiKeyLabel` (notably `routes/events.ts` SSE fingerprinting) sees
- * the same typed surface as before the split. The chain plugin's
- * `decorateRequest('apiKeyLabel', undefined)` populates the slot at register
- * time exactly as the pre-split plugin did.
+ * The `apiKeyLabel?: string` Fastify module augmentation that used to live
+ * in this file (declaration of `FastifyRequest.apiKeyLabel`) was moved to
+ * `src/types/fastify.d.ts` in WR-04 (Phase 28 review) so the chain module
+ * at `src/api/plugins/auth/index.ts` no longer relies on this shim being
+ * transitively imported to see its own typed fields. Importing this shim
+ * still works exactly as before because the central declaration is loaded
+ * via `tsconfig.json` includes.
  */
-
-declare module 'fastify' {
-  interface FastifyRequest {
-    apiKeyLabel?: string;
-  }
-}
 
 export { hashKey, validateApiKeysForProduction } from './auth/keys.js';
 export { default, requireUser } from './auth/index.js';
