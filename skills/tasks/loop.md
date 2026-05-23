@@ -105,7 +105,7 @@ In the non-self-identifying case (you discovered the epic shape but the user did
 
 ## 3. The Loop
 
-For each iteration, the orchestrator goes through **seven steps**. Do not skip ahead.
+For each iteration, the orchestrator goes through **eight steps**. Do not skip ahead.
 
 ### Step 1 — Pick the next task
 
@@ -263,11 +263,114 @@ git push
 
 If push fails because the branch has no upstream, run `git push --set-upstream origin <branch>` once. If push fails for any other reason (auth, conflict), note it in the task comment as a manual follow-up and continue to the next task — don't block the loop.
 
-### Step 7 — Close the bugs-db task
+### Step 7 — Dispatch tasks-verifier
+
+The orchestrator MUST dispatch a separate `tasks-verifier` subagent to grade the work BEFORE closing the bugs task. This is non-negotiable — see the "Generator/critic separation" callout under Important Rules. The verifier reads the acceptance criteria, inspects the commits + diff the worker produced, and emits a structured PASS/FAIL/PARTIAL verdict. Full input/output contract: [`docs/verifier-contract.md`](../../docs/verifier-contract.md).
+
+**Even a worker who reports "no changes needed" still triggers verifier dispatch** with `commit_shas: []` and `file_changes: []`. The contract treats an empty `commit_shas` as a strong negative signal — the verifier will mark file-referencing criteria FAIL unless they are truly observable without a diff (e.g. a doc-only "confirm X is documented at path Y" criterion that the verifier can satisfy by Read alone).
+
+#### 7a. Build the `VerifierInputs` envelope
+
+The orchestrator constructs a single JSON object matching the `VerifierInputs` interface in the contract:
+
+```ts
+const verifierInputs = {
+  task_id: <id>,
+  acceptance_criteria: <string>,         // see resolution rules below
+  worker_subagent_session_id: <string>,  // opaque handle from the Step 4 Agent call
+  commit_shas: <string[]>,               // from Step 6's `git rev-parse HEAD` / commit hash
+  file_changes: <string[]>,              // from Step 6's `git diff --name-only <prev>..HEAD`
+};
+```
+
+**Resolving `acceptance_criteria`** (in order):
+
+1. Read the task's `acceptance_criteria` column via `wood-fired-bugs:get_task` (Wave 1.3 surfaces this as a first-class field).
+2. If that column is NULL/empty, fall back to extracting the "ACCEPTANCE CRITERIA:" / "Acceptance criteria:" block from the task description (existing convention from Step 2).
+3. If neither exists, **skip the verifier dispatch entirely** and proceed straight to Step 8 with `verification_evidence: { verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` plus a comment noting "no acceptance criteria to grade against — verifier skipped". This is the documented escape hatch.
+
+**Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
+
+#### 7b. Dispatch the verifier subagent
+
+Use the `Agent` tool. Prefer `subagent_type: "tasks-verifier"` if available — `install.sh` copies `skills/agents/tasks-verifier.md` to `~/.claude/agents/tasks-verifier.md`, so a user who ran the installer has the named agent registered. If the named agent is unavailable (user has not yet run `install.sh`), fall back to `subagent_type: "general-purpose"` and embed the full body of `skills/agents/tasks-verifier.md` as the Agent's prompt prefix, followed by a fenced JSON block containing the `VerifierInputs` envelope. Either path produces the same contract-compliant output.
+
+```
+Agent(
+  subagent_type: "tasks-verifier",  // or "general-purpose" + embedded prompt body
+  description: "Grade task #<id> against acceptance criteria",
+  prompt: <<-EOF
+Here is your VerifierInputs envelope. Follow docs/verifier-contract.md and the tasks-verifier subagent definition exactly. Your final message MUST be a single JSON object parseable as VerificationEvidence.
+
+```json
+${JSON.stringify(verifierInputs, null, 2)}
+```
+EOF
+)
+```
+
+The verifier subagent's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a git/test allowlist, and the read-only wood-fired-bugs MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/tasks-verifier.md` for the enforced allowlist.
+
+**Bounds recap** (cite `docs/verifier-contract.md` §Bounds): the verifier MUST stay within **≤ 30 tool calls** and **≤ 5 minutes** wall-clock. The subagent self-throttles at 25 tool calls. If the orchestrator observes the bound exceeded, treat the run as `verdict: "PARTIAL"` with a synthetic final SKIP check noting the bound that triggered.
+
+#### 7c. Parse + validate the verifier's output
+
+Parse the verifier's final message as JSON. Reject anything that does not match `VerificationEvidenceSchema` (`src/schemas/task.schema.ts`). On parse failure, synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and treat the verifier run as if it never produced a verdict — proceed to the `NOT_VERIFIED` branch below.
+
+Sanity-check the parsed verdict against the rollup table in the contract (§Verdict rollup rules). If the verifier emitted, say, `verdict: "PASS"` but one of the checks is `status: "FAIL"`, the verifier violated the deterministic rollup — override the top-level verdict to `FAIL` locally before branching.
+
+#### 7d. Branch on verdict
+
+The verdict controls whether the task closes, blocks, or stays in_progress. **Do NOT skip a branch.** Each branch writes the full verifier evidence into `tasks.verification_evidence` via Wave 1.4's `update_task` field.
+
+- **`verdict: "PASS"`** → proceed to Step 8 (close task as done). Pass the full verifier evidence object as `updates.verification_evidence` in the Step 8 `wood-fired-bugs:update_task` call. The status transition to `done` is gated on PASS — no other verdict reaches Step 8's `status: "done"` write.
+
+- **`verdict: "FAIL"`** → the task is NOT done. The orchestrator MUST:
+  1. Call `wood-fired-bugs:add_comment` with the failed checks formatted as a markdown bulleted list (one bullet per `checks[i]` with `status: "FAIL"`, citing the check `name` and its `evidence_url_or_text`).
+  2. Call `wood-fired-bugs:update_task` with `updates: { "status": "blocked", "verification_evidence": <full evidence> }`.
+  3. Do NOT call Step 8's close-as-done path. Move on to the next task in the loop.
+
+  ```
+  wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+    "Verifier verdict: FAIL.\n\nFailed checks:\n- <check.name>: <check.evidence_url_or_text>\n- ..."
+  wood-fired-bugs:update_task with id=<id>, updates={
+    "status": "blocked",
+    "verification_evidence": <full evidence object>
+  }
+  ```
+
+- **`verdict: "PARTIAL"`** → the task is neither closed nor blocked; it stays in_progress so a follow-on attempt can finish the UNCHECKABLE criteria. The orchestrator MUST:
+  1. Call `wood-fired-bugs:add_comment` listing the UNCHECKABLE criteria (the `checks[i]` with `status: "SKIP"` and `evidence_url_or_text` starting with `UNCHECKABLE:`), one bullet per skipped check.
+  2. Call `wood-fired-bugs:update_task` with `updates: { "verification_evidence": <full evidence> }` only — do NOT change `status`. The task stays `in_progress`.
+  3. Move on to the next task in the loop.
+
+  ```
+  wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+    "Verifier verdict: PARTIAL.\n\nUNCHECKABLE criteria (need follow-on):\n- <check.name>: <check.evidence_url_or_text>\n- ..."
+  wood-fired-bugs:update_task with id=<id>, updates={
+    "verification_evidence": <full evidence object>
+  }
+  ```
+
+- **`verdict: "NOT_VERIFIED"`** → treat as PARTIAL but with a comment noting the verifier produced no checks (no acceptance criteria to grade against, or the verifier's output failed schema validation). Status stays `in_progress`. This is the documented no-acceptance-criteria escape hatch — surface it so the user can backfill criteria and re-queue.
+
+  ```
+  wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+    "Verifier verdict: NOT_VERIFIED — no acceptance criteria available, or verifier output failed schema validation. Task stays in_progress; backfill acceptance_criteria and re-queue."
+  wood-fired-bugs:update_task with id=<id>, updates={
+    "verification_evidence": { "verdict": "NOT_VERIFIED", "checks": [], "verified_at": "<iso8601>" }
+  }
+  ```
+
+Only the PASS branch falls through to Step 8. The FAIL / PARTIAL / NOT_VERIFIED branches all return to Step 1 after writing their comment + evidence.
+
+### Step 8 — Close the bugs-db task
+
+This step runs **only when Step 7 produced `verdict: "PASS"`**. For FAIL / PARTIAL / NOT_VERIFIED, Step 7 already wrote the appropriate `status` + `verification_evidence` and the loop returned to Step 1.
 
 ```
 wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=<structured summary>
-wood-fired-bugs:update_task with id=<id>, updates={ "status": "done" }
+wood-fired-bugs:update_task with id=<id>, updates={ "status": "done", "verification_evidence": <full evidence from Step 7> }
 ```
 
 Comment template:
@@ -358,6 +461,7 @@ After 2–3 honest subagent round-trips, set the task to `blocked` with a commen
 
 ## Important Rules
 
+- **Generator/critic separation.** The orchestrator MUST dispatch a SEPARATE `tasks-verifier` subagent to grade each closed task. The orchestrator MUST NOT grade its own dispatches — the verifier's read-only context window is the entire point. Orchestrator validation (Step 5: build/test/lint) is necessary but not sufficient; the verifier checks the ACCEPTANCE CRITERIA, not the build. See Step 7 and [`docs/verifier-contract.md`](../../docs/verifier-contract.md) for the contract; `skills/agents/tasks-verifier.md` enforces the read-only tool surface.
 - **You are the orchestrator, not the carpenter.** Every implementation goes through a subagent, even small ones. Exceptions only when the user explicitly asks for an inline fix.
 - **One task at a time.** Plan → dispatch → verify → commit → close → repeat. No parallel task dispatch within a single project unless tasks are explicitly independent (rare).
 - **Validation runs in the orchestrator, not just the subagent.** Re-run; never trust reported numbers.
