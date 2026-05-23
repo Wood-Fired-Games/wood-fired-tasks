@@ -29,6 +29,7 @@ import { completedCommand } from '../commands/completed.js';
 import { dbCheckCommand } from '../commands/db-check.js';
 import { dbCommand } from '../commands/db.js';
 import { createCompletionsCommand } from '../commands/completions.js';
+import { loginCommand } from '../commands/login.js';
 
 // Configure CLI program
 program
@@ -104,6 +105,9 @@ program.addCommand(dbCommand);
 // scripts derive their command list from the same Commander registry — no
 // hardcoded parallel list to keep in sync; see task #247).
 program.addCommand(createCompletionsCommand(program));
+
+// Register login command (Plan 30-06).
+program.addCommand(loginCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133

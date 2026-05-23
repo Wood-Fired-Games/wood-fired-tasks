@@ -142,8 +142,9 @@ call.
 | system | `backup` | `commands/backup.ts` | SQLite backup. |
 | system | `stats` | `commands/stats.ts` | Aggregate task/agent stats. |
 | system | `completions` | `commands/completions.ts` | Generate shell completion scripts. |
+| auth | `login` | `commands/login.ts` | Authenticate via OAuth device flow; writes credentials file. |
 
-**Total: 27 commands wired into Commander** (counted by
+**Total: 28 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`). README's "20
 commands" claim is stale — see follow-up task #283.
 
