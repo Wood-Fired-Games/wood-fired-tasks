@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-23T11:13:28.247Z",
+    "generated_at": "2026-05-23T13:27:24.047Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -92,8 +92,8 @@
       "status": "present",
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
-      "actual_lines": 278,
-      "sha256": "eb329c084d759dfbb8a1c1ebbd5d03b83905d5d53bd5451da1120845409cb75a",
+      "actual_lines": 280,
+      "sha256": "708ca52c049ffdf2b172f7fad175a3bede7d3946f80de48d2914289c3d651b69",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 811,
-      "sha256": "f2f63682f3a80b970a108f2574b36752cc777b31819df3ea53cbc512c80f8516"
+      "actual_lines": 879,
+      "sha256": "f9d0a9e116be7517a2c3d033c7e68d139dbba31ea7b0a12f7d609fcd1cd42cbc"
     },
     {
       "path": "docs/CLI.md",
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 616,
-      "sha256": "2e9e5997c465b2e2c441b0aae1813fb1ba8f149aeaff14b9ef28f94faed448df"
+      "actual_lines": 752,
+      "sha256": "9d0714f7c62329e2b282fd201a7cacfd7055dab1aadce4dfd9dc71584129d719"
     },
     {
       "path": "docs/SLACK.md",
@@ -176,8 +176,8 @@
       "owner_role": "Slack maintainers",
       "status": "present",
       "approx_token_budget": 16000,
-      "actual_lines": 229,
-      "sha256": "32ba67b86f92999b3ab761fa36d047a310fe5b6a1f845bdf0677e6d0cf2c57a0"
+      "actual_lines": 286,
+      "sha256": "29e5a70286bfc03e4818cc7a5d6f092cacf412c6f319a1c8d1f9afedd4fc5bfe"
     },
     {
       "path": "docs/RELEASE.md",
@@ -272,8 +272,8 @@
       "status": "present",
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
-      "actual_lines": 97,
-      "sha256": "a691a4d7704891c11560f054ee522238f4271628562dc9bf2885afac5e857d8e"
+      "actual_lines": 266,
+      "sha256": "91658d90533f72ecbb59ce42c833e3310a576efccab05eb6e4b679672fe9f69e"
     },
     {
       "path": "llms.txt",
