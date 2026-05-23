@@ -139,6 +139,22 @@ describe('GET /auth/login', () => {
     expect(r.headers.location).toBe('/me');
   });
 
+  it('L4b (CR-01): ?next=/\\evil.com is sanitized to /me (backslash open-redirect prevention)', async () => {
+    // WHATWG URL parsers normalize `\` to `/` in path components, so
+    // `Location: /\evil.com` would navigate to `//evil.com` cross-origin.
+    // The regex must reject backslash in the second position.
+    const { cookie, state, nonce } = await driveLogin(harness, '/\\evil.com');
+    await setupOidcHappyPath({ sub: 'sub-login-bslash', state, nonce });
+
+    const r = await harness.server.inject({
+      method: 'GET',
+      url: `/auth/callback?code=authcode-bslash&state=${state}`,
+      headers: { cookie },
+    });
+    expect(r.statusCode).toBe(302);
+    expect(r.headers.location).toBe('/me');
+  });
+
   it('L1: already-signed-in users get 302 to /me without hitting the IdP', async () => {
     // Sign in once.
     const { cookie: loginCookie, state, nonce } = await driveLogin(harness);

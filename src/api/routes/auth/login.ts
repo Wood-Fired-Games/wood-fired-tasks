@@ -33,14 +33,20 @@ import type { AuthRoutesOptions } from './index.js';
 
 /**
  * Validates `?next=<path>` for open-redirect safety. Pattern: a SINGLE
- * leading slash followed by ANY non-slash character. Rejects:
- *   - missing leading slash  (`me`)
- *   - protocol-relative URLs (`//evil.com`)
- *   - triple slash etc.     (`///foo`)
+ * leading slash followed by ANY character that is NOT another slash AND
+ * NOT a backslash. Rejects:
+ *   - missing leading slash    (`me`)
+ *   - protocol-relative URLs   (`//evil.com`)
+ *   - triple slash etc.        (`///foo`)
+ *   - backslash bypass         (`/\evil.com` — WHATWG URL parsers in
+ *                                browsers normalize `\` to `/` in path
+ *                                components, so `Location: /\evil.com`
+ *                                navigates to `//evil.com` cross-origin.
+ *                                CR-01 in 29-REVIEW.md.)
  *   - empty string
  * Accepts: `/me`, `/me/tokens`, `/projects/42`, `/me?x=1` ...
  */
-const NEXT_PATH_RE = /^\/[^/]/;
+const NEXT_PATH_RE = /^\/[^/\\]/;
 
 interface LoginQuery {
   next?: unknown;
