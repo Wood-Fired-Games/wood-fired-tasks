@@ -1,0 +1,198 @@
+/**
+ * Phase 29 Plan 06 — GET /auth/callback (exchanges code for tokens).
+ *
+ * Decision tree (matches PLAN.md "Hard constraints"):
+ *
+ *   1. session.get('oidc.handshake') missing
+ *        → request.log.error({ requestId, peerIp }, 'oidc.handshake_missing')
+ *        → 302 /auth/error?reason=handshake_missing
+ *
+ *   2. query.state !== handshake.state
+ *        → request.log.error({ received, requestId, peerIp }, 'oidc.state_mismatch')
+ *          [W2 fix: log ERROR level, NOT warn; log `received` but NOT `expected`
+ *           — `expected` is session-bound and leaking it is a minor secret leak
+ *           with no diagnostic value.]
+ *        → 302 /auth/error?reason=state_mismatch
+ *
+ *   3. handleCallback(...) rejects
+ *        → request.log.error({ err, requestId, peerIp }, 'oidc.callback_failed')
+ *        → 302 /auth/error?reason=exchange_failed
+ *
+ *   4. !claims  (defensive — handleCallback should have thrown)
+ *        → request.log.error({ requestId }, 'oidc.id_token_missing')
+ *        → 302 /auth/error?reason=exchange_failed
+ *
+ *   5. claims.email_verified !== true
+ *        → request.log.error({ sub, requestId }, 'oidc.email_unverified')
+ *        → 302 /auth/error?reason=email_unverified
+ *
+ *   6. happy path:
+ *      a. upsertFromOidc({ userRepository }, claims) — INSERT or reuse row
+ *      b. EXPLICITLY clear handshake (W4 fix): session.set('oidc.handshake', undefined)
+ *         BEFORE setting the user payload; survives even if regenerate is a no-op.
+ *      c. session.regenerate() — rotate the cookie (AUTH-05 fixation defense)
+ *      d. session.set('user', toAuthenticatedUser(row))
+ *         session.set('authenticatedAt', Date.now())
+ *         session.set('idToken', tokens.id_token)  [used by /auth/logout]
+ *      e. 302 → handshake.redirectAfterLogin (or /me fallback)
+ *
+ * Every redirect carries Cache-Control: no-store.
+ */
+import type { FastifyPluginAsync } from 'fastify';
+import { handleCallback } from '../../../services/oidc-client.js';
+import { upsertFromOidc } from '../../../services/user-upsert.js';
+import { toAuthenticatedUser } from '../../plugins/auth/strategies/pat.js';
+import type { AuthRoutesOptions } from './index.js';
+
+interface CallbackQuery {
+  code?: unknown;
+  state?: unknown;
+}
+
+const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
+  fastify,
+  opts,
+) => {
+  fastify.get(
+    '/callback',
+    { config: { skipAuth: true } },
+    async (request, reply) => {
+      const handshake = request.session.get('oidc.handshake');
+      if (!handshake) {
+        request.log.error(
+          { requestId: request.id, peerIp: request.ip },
+          'oidc.handshake_missing',
+        );
+        return reply
+          .header('Cache-Control', 'no-store')
+          .redirect('/auth/error?reason=handshake_missing', 302);
+      }
+
+      const queryState = (request.query as CallbackQuery).state;
+      if (typeof queryState !== 'string' || queryState !== handshake.state) {
+        // W2 — error level, NOT warn. Log `received` for diagnostics.
+        // Do NOT log `expected: handshake.state` — the expected value is
+        // session-bound; logging it is a minor secret leak with no
+        // operational value.
+        request.log.error(
+          {
+            received: typeof queryState === 'string' ? queryState : null,
+            requestId: request.id,
+            peerIp: request.ip,
+          },
+          'oidc.state_mismatch',
+        );
+        // Clear handshake — any retry must start over.
+        request.session.set('oidc.handshake', undefined);
+        return reply
+          .header('Cache-Control', 'no-store')
+          .redirect('/auth/error?reason=state_mismatch', 302);
+      }
+
+      // Build the URL the OIDC library expects. The library extracts
+      // `code` + `state` from this URL's query string AND derives the
+      // `redirect_uri` token-endpoint parameter by stripping the query
+      // string from this URL. It must therefore equal the
+      // registered IdP redirect URI EXACTLY (host/path/scheme) —
+      // request.protocol/hostname reflect the *internal* listener
+      // (e.g. http://localhost), which is NOT what the IdP saw at
+      // /authorize time. Using opts.redirectUri as the base preserves
+      // the registered URL while letting us mount the query params
+      // from the incoming request.
+      const currentUrl = new URL(opts.redirectUri);
+      // Copy code+state (the only query params openid-client reads).
+      const incomingQuery = (request.query as Record<string, unknown>) ?? {};
+      for (const key of ['code', 'state']) {
+        const v = incomingQuery[key];
+        if (typeof v === 'string') currentUrl.searchParams.set(key, v);
+      }
+
+      let tokens;
+      try {
+        tokens = await handleCallback(opts.oidcConfig, currentUrl, {
+          pkceVerifier: handshake.pkceVerifier,
+          expectedState: handshake.state,
+          ...(handshake.nonce ? { expectedNonce: handshake.nonce } : {}),
+        });
+      } catch (err) {
+        request.log.error(
+          { err, requestId: request.id, peerIp: request.ip },
+          'oidc.callback_failed',
+        );
+        request.session.set('oidc.handshake', undefined);
+        return reply
+          .header('Cache-Control', 'no-store')
+          .redirect('/auth/error?reason=exchange_failed', 302);
+      }
+
+      const claims = tokens.claims();
+      if (!claims) {
+        // handleCallback should have thrown if the ID token was absent /
+        // malformed, but defend defensively.
+        request.log.error(
+          { requestId: request.id, peerIp: request.ip },
+          'oidc.id_token_missing',
+        );
+        request.session.set('oidc.handshake', undefined);
+        return reply
+          .header('Cache-Control', 'no-store')
+          .redirect('/auth/error?reason=exchange_failed', 302);
+      }
+
+      if (claims.email_verified !== true) {
+        request.log.error(
+          {
+            sub: claims.sub,
+            requestId: request.id,
+            peerIp: request.ip,
+          },
+          'oidc.email_unverified',
+        );
+        request.session.set('oidc.handshake', undefined);
+        return reply
+          .header('Cache-Control', 'no-store')
+          .redirect('/auth/error?reason=email_unverified', 302);
+      }
+
+      const emailClaim =
+        typeof claims.email === 'string' ? claims.email : null;
+      const displayName =
+        typeof claims.name === 'string' && claims.name.length > 0
+          ? claims.name
+          : (emailClaim ?? claims.sub);
+
+      const row = upsertFromOidc(
+        { userRepository: fastify.userRepository },
+        {
+          provider: 'google',
+          sub: claims.sub,
+          email: emailClaim,
+          displayName,
+        },
+      );
+
+      // W4 — EXPLICITLY clear the handshake BEFORE writing the user.
+      // Belt-and-braces: even if regenerate() is a no-op on this version
+      // of secure-session, the handshake key is unambiguously cleared.
+      request.session.set('oidc.handshake', undefined);
+
+      // AUTH-05 — rotate the encrypted cookie before setting the user
+      // payload. regenerate() wipes the session payload AND rolls a new
+      // encryption nonce, defeating fixation.
+      request.session.regenerate();
+
+      request.session.set('user', toAuthenticatedUser(row));
+      request.session.set('authenticatedAt', Date.now());
+      if (typeof tokens.id_token === 'string') {
+        request.session.set('idToken', tokens.id_token);
+      }
+
+      const redirectTo = handshake.redirectAfterLogin || '/me';
+      return reply
+        .header('Cache-Control', 'no-store')
+        .redirect(redirectTo, 302);
+    },
+  );
+};
+
+export default callbackRoute;

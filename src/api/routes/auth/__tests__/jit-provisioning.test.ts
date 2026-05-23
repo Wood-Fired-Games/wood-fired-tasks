@@ -30,8 +30,9 @@ async function loginAndCallback(
 
   const authorize = new URL(loginResp.headers.location as string);
   const state = authorize.searchParams.get('state') ?? '';
+  const nonce = authorize.searchParams.get('nonce') ?? '';
 
-  await setupOidcHappyPath({ sub, state, ...overrides });
+  await setupOidcHappyPath({ sub, state, nonce, ...overrides });
 
   const cbResp = await harness.server.inject({
     method: 'GET',

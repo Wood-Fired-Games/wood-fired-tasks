@@ -79,6 +79,10 @@ export interface AuthTestHarness {
  * Configuration without touching the network. The caller MUST install
  * any token-endpoint interceptors BEFORE driving a `/auth/callback`
  * request (use `installOidcInterceptors` from tests/helpers/oidc-fixtures.ts).
+ *
+ * Probe routes are pre-mounted (e.g. /_test/handshake, /_test/who) so
+ * tests can inspect the session contents without violating Fastify's
+ * "no routes after ready" rule (#3097 equivalent at the test boundary).
  */
 export async function mountAuthRoutes(
   opts: { discoveryOverride?: Record<string, unknown> } = {},
@@ -133,6 +137,17 @@ export async function mountAuthRoutes(
     redirectUri: REDIRECT_URI,
     scopes: SCOPES,
   });
+
+  // Pre-mount probes so tests can inspect session contents without
+  // adding routes after ready() (which Fastify rejects).
+  server.get('/_test/handshake', async (request) => ({
+    handshake: request.session.get('oidc.handshake') ?? null,
+  }));
+  server.get('/_test/who', async (request) => ({
+    user: request.session.get('user') ?? null,
+    authenticatedAt: request.session.get('authenticatedAt') ?? null,
+    idToken: request.session.get('idToken') ?? null,
+  }));
 
   await server.ready();
 

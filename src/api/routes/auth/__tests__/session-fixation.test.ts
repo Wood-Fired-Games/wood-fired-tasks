@@ -46,10 +46,11 @@ describe('session fixation prevention (AUTH-05)', () => {
 
     const authorize = new URL(loginResp.headers.location as string);
     const state = authorize.searchParams.get('state') ?? '';
+    const nonce = authorize.searchParams.get('nonce') ?? '';
 
     // 2. Drive /auth/callback. The handler must regenerate the session
     //    BEFORE writing the user payload.
-    await setupOidcHappyPath({ sub: 'fix-001', state });
+    await setupOidcHappyPath({ sub: 'fix-001', state, nonce });
     const cbResp = await harness.server.inject({
       method: 'GET',
       url: `/auth/callback?code=ac-fix&state=${state}`,
@@ -64,20 +65,16 @@ describe('session fixation prevention (AUTH-05)', () => {
     //    changed AND/OR regenerate() rotated the inner state.
     expect(postLoginCookie).not.toBe(preLoginCookie);
 
-    // 4. Sanity check: the post-login session resolves to a real user.
-    //    Mount a probe route that reflects session.get('user').
-    harness.server.get('/_test/who', async (request) => ({
-      user: request.session.get('user') ?? null,
-    }));
-    await harness.server.ready();
-
+    // 4. Sanity check via the harness's pre-mounted /_test/who probe.
     const probe = await harness.server.inject({
       method: 'GET',
       url: '/_test/who',
       headers: { cookie: postLoginCookie as string },
     });
     expect(probe.statusCode).toBe(200);
-    const body = JSON.parse(probe.body) as { user: { id: number } | null };
+    const body = JSON.parse(probe.body) as {
+      user: { id: number } | null;
+    };
     expect(body.user).not.toBeNull();
     expect(typeof body.user?.id).toBe('number');
   });
