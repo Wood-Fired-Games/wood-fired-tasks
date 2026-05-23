@@ -14,6 +14,7 @@ import {
 } from './schemas.js';
 import { TASK_STATUSES } from '../../../types/task.js';
 import { BusinessError } from '../../../services/errors.js';
+import { requireUser } from '../../plugins/auth/index.js';
 
 // Query parameter schema for task filters (uses coercion for URL params).
 // `limit`/`offset` bound the result set so a 100k-row table cannot DoS the
@@ -63,7 +64,22 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const task = fastify.taskService.createTask(request.body);
+      // Phase 31 Plan 02 — T-31-02 mitigation: strip any body-supplied
+      // identity FKs before invoking the service so a client cannot spoof
+      // `created_by_user_id` / `assignee_user_id`. The service-input zod
+      // schema (Plan 01) accepts these fields by design; the route is the
+      // authoritative server boundary that derives them from `request.user`.
+      const {
+        created_by_user_id: _createdByUserSpoof,
+        assignee_user_id: _assigneeUserSpoof,
+        ...sanitizedBody
+      } = request.body as Record<string, unknown>;
+      void _createdByUserSpoof;
+      void _assigneeUserSpoof;
+      const task = fastify.taskService.createTask({
+        ...sanitizedBody,
+        created_by_user_id: requireUser(request).id,
+      });
       return reply.code(201).send(task);
     }
   );
@@ -155,7 +171,52 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const task = fastify.taskService.updateTask(request.params.id, request.body);
+      // Phase 31 Plan 02 — strip body-supplied assignee_user_id (T-31-02)
+      // and resolve a server-derived value from body.assignee when that key
+      // is present. Resolution policy (decided in 31-02-PLAN <action>):
+      //   - assignee absent           → leave assignee_user_id untouched
+      //   - assignee === null or ''   → clear (set to null, paired with the
+      //                                 TEXT column being cleared by the
+      //                                 service-layer update)
+      //   - email-shape (contains @)  → findByEmail; user found → user.id;
+      //                                 findByEmail throws on null/empty,
+      //                                 so guard with try/catch (the '@@@'
+      //                                 case is the realistic trigger).
+      //   - any other free-form name  → null (no display_name lookup
+      //                                 helper exists; migrate-identities
+      //                                 CLI backfills these in Plan 05).
+      const {
+        assignee_user_id: _spoofedAssigneeUserId,
+        ...sanitizedBody
+      } = request.body as Record<string, unknown>;
+      void _spoofedAssigneeUserId;
+
+      const bodyRec = sanitizedBody as Record<string, unknown>;
+      let resolvedAssigneeUserId: number | null | undefined = undefined;
+      if (Object.prototype.hasOwnProperty.call(bodyRec, 'assignee')) {
+        const assigneeVal = bodyRec.assignee as string | null | undefined;
+        if (assigneeVal === null || assigneeVal === '') {
+          resolvedAssigneeUserId = null;
+        } else if (typeof assigneeVal === 'string' && assigneeVal.includes('@')) {
+          try {
+            const u = fastify.userRepository.findByEmail(assigneeVal);
+            resolvedAssigneeUserId = u?.id ?? null;
+          } catch {
+            // findByEmail throws TypeError on null/empty; never reached for
+            // a non-empty '@'-containing string but defensive belt-and-suspenders.
+            resolvedAssigneeUserId = null;
+          }
+        } else {
+          resolvedAssigneeUserId = null;
+        }
+      }
+
+      const serviceInput =
+        resolvedAssigneeUserId !== undefined
+          ? { ...sanitizedBody, assignee_user_id: resolvedAssigneeUserId }
+          : sanitizedBody;
+
+      const task = fastify.taskService.updateTask(request.params.id, serviceInput);
       return reply.send(task);
     }
   );
@@ -226,7 +287,15 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       try {
         // Determine source from request header or default to 'user'
         const source = (request.headers['x-claim-source'] as 'user' | 'workflow') || 'user';
-        const task = fastify.taskService.claimTask(request.params.id, request.body.assignee, source);
+        // Phase 31 Plan 02 — pass the actor's user.id as the trailing
+        // optional positional (added by Plan 01) so assignee_user_id is
+        // populated from request.user.id, NOT from any body-supplied value.
+        const task = fastify.taskService.claimTask(
+          request.params.id,
+          request.body.assignee,
+          source,
+          requireUser(request).id,
+        );
 
         // Cache response if idempotency key provided
         if (idempotencyKey) {

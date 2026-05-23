@@ -15,9 +15,11 @@ describe('POST /api/v1/tasks/:id/claim — assignee_user_id injection', () => {
   let db: Database.Database;
   let testProjectId: number;
   let legacyUserId: number;
+  let prevApiKeys: string | undefined;
   const headers = { 'x-api-key': TEST_KEY };
 
   beforeAll(async () => {
+    prevApiKeys = process.env.API_KEYS;
     process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
@@ -35,7 +37,11 @@ describe('POST /api/v1/tasks/:id/claim — assignee_user_id injection', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    delete process.env.API_KEYS;
+    if (prevApiKeys === undefined) {
+      delete process.env.API_KEYS;
+    } else {
+      process.env.API_KEYS = prevApiKeys;
+    }
   });
 
   function getTaskRow(id: number): {

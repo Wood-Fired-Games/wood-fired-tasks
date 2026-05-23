@@ -24,9 +24,11 @@ describe('POST /api/v1/tasks — identity FK injection', () => {
   let db: Database.Database;
   let testProjectId: number;
   let legacyUserId: number;
+  let prevApiKeys: string | undefined;
   const headers = { 'x-api-key': TEST_KEY };
 
   beforeAll(async () => {
+    prevApiKeys = process.env.API_KEYS;
     process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
@@ -44,7 +46,14 @@ describe('POST /api/v1/tasks — identity FK injection', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    delete process.env.API_KEYS;
+    // Restore to prior value so sibling test files (which may rely on a
+    // module-level `process.env.API_KEYS = ...` set at import time) keep
+    // working when vitest runs us in the same worker.
+    if (prevApiKeys === undefined) {
+      delete process.env.API_KEYS;
+    } else {
+      process.env.API_KEYS = prevApiKeys;
+    }
   });
 
   function getTaskRow(id: number): {
