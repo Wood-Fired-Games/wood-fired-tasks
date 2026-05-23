@@ -45,8 +45,26 @@ import type { AuthRoutesOptions } from './index.js';
  *                                CR-01 in 29-REVIEW.md.)
  *   - empty string
  * Accepts: `/me`, `/me/tokens`, `/projects/42`, `/me?x=1` ...
+ *
+ * NOTE: this regex would ALSO match `/auth/devicehttp://attacker.com`
+ * because the second character is not a slash/backslash. The handler
+ * gates the device-flow path through DEVICE_NEXT_RE FIRST (any `next`
+ * starting with `/auth/device` MUST match the strict regex exactly,
+ * else /me) so this looser pattern never sees device-shaped malformed
+ * inputs. Open-redirect mitigation: Threat T-30-02-01.
  */
 const NEXT_PATH_RE = /^\/[^/\\]/;
+
+/**
+ * Phase 30 Plan 02 — exact match for the device-flow approval URL the
+ * browser-leg redirect-after-login uses. Either bare `/auth/device` OR
+ * `/auth/device?user_code=XXXXXXXX` where XXXXXXXX is 8 chars from the
+ * confusable-free alphabet. Anything else (`/auth/devicehttp://...`,
+ * `/auth/device#frag`, `/auth/device?other=...`) falls through to the
+ * NEXT_PATH_RE test below. This anchored exact-match is the open-redirect
+ * mitigation (Threat T-30-02-01).
+ */
+const DEVICE_NEXT_RE = /^\/auth\/device(\?user_code=[A-HJ-KM-NP-Z2-9]{8})?$/;
 
 interface LoginQuery {
   next?: unknown;
@@ -68,11 +86,25 @@ const loginRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
           .redirect('/me', 302);
       }
 
+      // Phase 30 Plan 02 — device-flow allowlist takes priority. If the
+      // candidate starts with `/auth/device`, it MUST match DEVICE_NEXT_RE
+      // exactly; otherwise we drop to `/me` rather than passing through
+      // to NEXT_PATH_RE (which would happily accept e.g.
+      // `/auth/devicehttp://attacker.com` because it has one leading slash).
+      // The anchored regex is the open-redirect mitigation
+      // (Threat T-30-02-01); the device-prefix gate ensures malformed
+      // device-shaped paths can never slip into the original sanitizer.
       const nextRaw = (request.query as LoginQuery).next;
-      const redirectAfterLogin =
-        typeof nextRaw === 'string' && NEXT_PATH_RE.test(nextRaw)
-          ? nextRaw
-          : '/me';
+      let redirectAfterLogin: string;
+      if (typeof nextRaw !== 'string') {
+        redirectAfterLogin = '/me';
+      } else if (nextRaw.startsWith('/auth/device')) {
+        redirectAfterLogin = DEVICE_NEXT_RE.test(nextRaw) ? nextRaw : '/me';
+      } else if (NEXT_PATH_RE.test(nextRaw)) {
+        redirectAfterLogin = nextRaw;
+      } else {
+        redirectAfterLogin = '/me';
+      }
 
       // PKCE + CSRF nonces. The verifier stays server-side (encrypted
       // cookie); only the SHA-256 challenge is sent to the IdP.

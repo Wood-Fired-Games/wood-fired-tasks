@@ -177,6 +177,83 @@ describe('GET /auth/login', () => {
     expect(r.statusCode).toBe(302);
     expect(r.headers.location).toBe('/me');
   });
+
+  // ─── Phase 30 Plan 02 — `?next=/auth/device(...)` allowlist ────────────────
+  // The device-flow browser leg redirects unauthenticated visitors to
+  // /auth/login?next=/auth/device(?user_code=XXXXXXXX). The login route's
+  // sanitizer was widened to honor this exact pattern — and tightened so
+  // that any device-shaped path that DOESN'T match the strict regex
+  // (`/auth/devicehttp://attacker.com`, `/auth/device?user_code=BAD`, etc.)
+  // falls through to /me rather than slipping past the looser NEXT_PATH_RE.
+  // Open-redirect mitigation: Threat T-30-02-01.
+
+  async function inspectStoredRedirectAfterLogin(
+    h: AuthTestHarness,
+    nextValue: string,
+  ): Promise<string | null> {
+    const r = await h.server.inject({
+      method: 'GET',
+      url: `/auth/login?next=${encodeURIComponent(nextValue)}`,
+    });
+    expect(r.statusCode).toBe(302);
+    const cookie = extractSessionCookie(r);
+    expect(cookie).not.toBeNull();
+    const probe = await h.server.inject({
+      method: 'GET',
+      url: '/_test/handshake',
+      headers: { cookie: cookie as string },
+    });
+    expect(probe.statusCode).toBe(200);
+    const hs = JSON.parse(probe.body).handshake as {
+      redirectAfterLogin?: string;
+    } | null;
+    return hs?.redirectAfterLogin ?? null;
+  }
+
+  it('30-02 device allowlist: ?next=/auth/device → stored verbatim', async () => {
+    const stored = await inspectStoredRedirectAfterLogin(harness, '/auth/device');
+    expect(stored).toBe('/auth/device');
+  });
+
+  it('30-02 device allowlist: ?next=/auth/device?user_code=ABCDEFGH → stored verbatim', async () => {
+    const stored = await inspectStoredRedirectAfterLogin(
+      harness,
+      '/auth/device?user_code=ABCDEFGH',
+    );
+    expect(stored).toBe('/auth/device?user_code=ABCDEFGH');
+  });
+
+  it('30-02 open-redirect guard: ?next=/auth/devicehttp://attacker.com → /me', async () => {
+    const stored = await inspectStoredRedirectAfterLogin(
+      harness,
+      '/auth/devicehttp://attacker.com',
+    );
+    expect(stored).toBe('/me');
+  });
+
+  it('30-02 malformed user_code guard: ?next=/auth/device?user_code=BAD → /me', async () => {
+    const stored = await inspectStoredRedirectAfterLogin(
+      harness,
+      '/auth/device?user_code=BAD',
+    );
+    expect(stored).toBe('/me');
+  });
+
+  it('30-02 lowercase user_code: ?next=/auth/device?user_code=abcdefgh → /me', async () => {
+    const stored = await inspectStoredRedirectAfterLogin(
+      harness,
+      '/auth/device?user_code=abcdefgh',
+    );
+    expect(stored).toBe('/me');
+  });
+
+  it('30-02 device-shaped path with extra params: ?next=/auth/device?user_code=ABCDEFGH&x=1 → /me', async () => {
+    const stored = await inspectStoredRedirectAfterLogin(
+      harness,
+      '/auth/device?user_code=ABCDEFGH&x=1',
+    );
+    expect(stored).toBe('/me');
+  });
 });
 
 describe('GET /auth/callback', () => {
