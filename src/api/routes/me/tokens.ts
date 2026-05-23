@@ -33,9 +33,16 @@ import { generateToken } from '../../../services/pat-hash.js';
 // Schemas
 // ---------------------------------------------------------------------------
 
+// WR-02 (Phase 28 review) — bounded scopes prevent a session-authed caller
+// from POSTing `{ name: "x", scopes: [<<1 MB of strings>>] }` and inflating
+// the persisted `scopes` TEXT column (which then surfaces verbatim on every
+// subsequent `GET /me/tokens` response). Caps reflect the advisory-only
+// nature of scopes in v1.6 — 32 distinct scopes of ≤64 chars each is more
+// headroom than any realistic deployment will use. `name` keeps its
+// existing 100-char cap.
 const MintTokenBodySchema = z.object({
   name: z.string().min(1).max(100),
-  scopes: z.array(z.string()).optional(),
+  scopes: z.array(z.string().min(1).max(64)).max(32).optional(),
   // ISO-8601 timestamp; persisted verbatim so the auth chain's
   // `new Date(expires_at).getTime()` comparison works.
   expiresAt: z.string().datetime().optional(),

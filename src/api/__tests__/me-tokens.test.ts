@@ -370,6 +370,74 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       });
       expect(res.statusCode).toBe(400);
     });
+
+    it('WR-02: rejects oversized scopes array (>32 elements) with 400', async () => {
+      nextSessionResult = sessionMatch(harness.legacyUser);
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { cookie: 'wfb_session=stub' },
+        payload: {
+          name: 'too-many-scopes',
+          scopes: Array.from({ length: 33 }, (_, i) => `scope${i}`),
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      // No row persisted.
+      const count = harness.db
+        .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'too-many-scopes'")
+        .get() as { c: number };
+      expect(count.c).toBe(0);
+    });
+
+    it('WR-02: rejects oversized scope string (>64 chars) with 400', async () => {
+      nextSessionResult = sessionMatch(harness.legacyUser);
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { cookie: 'wfb_session=stub' },
+        payload: {
+          name: 'oversized-scope-elem',
+          scopes: ['a'.repeat(65)],
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      const count = harness.db
+        .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'oversized-scope-elem'")
+        .get() as { c: number };
+      expect(count.c).toBe(0);
+    });
+
+    it('WR-02: accepts the cap exactly (32 scopes, 64-char elements)', async () => {
+      nextSessionResult = sessionMatch(harness.legacyUser);
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { cookie: 'wfb_session=stub' },
+        payload: {
+          name: 'at-the-cap',
+          scopes: Array.from({ length: 32 }, () => 'a'.repeat(64)),
+        },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.scopes).toHaveLength(32);
+      expect(body.scopes[0]).toHaveLength(64);
+    });
+
+    it('WR-02: rejects empty-string scope element (min(1)) with 400', async () => {
+      nextSessionResult = sessionMatch(harness.legacyUser);
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { cookie: 'wfb_session=stub' },
+        payload: {
+          name: 'empty-scope',
+          scopes: [''],
+        },
+      });
+      expect(res.statusCode).toBe(400);
+    });
   });
 
   // -------------------------------------------------------------------------
