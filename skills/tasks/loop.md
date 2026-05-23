@@ -105,7 +105,7 @@ In the non-self-identifying case (you discovered the epic shape but the user did
 
 ## 3. The Loop
 
-For each iteration, the orchestrator goes through **eight steps**. Do not skip ahead.
+For each iteration, the orchestrator goes through **nine steps**. Do not skip ahead.
 
 ### Step 1 — Pick the next task
 
@@ -395,6 +395,74 @@ Resolved.
 ```
 
 If duplicates exist, close them with `Resolved by fix to task #<id>. See comment on that task for details.`
+
+Then continue to Step 9 (artifact emission) before returning to Step 1.
+
+### Step 9 — Emit LOOP-RUN.md
+
+The final orchestrator step writes a per-run audit artifact summarizing every task touched during this loop invocation. Contract: [`docs/loop-run-schema.md`](../../docs/loop-run-schema.md). JSON Schema mirror: [`docs/loop-run-schema.json`](../../docs/loop-run-schema.json). In-tree TypeScript schema (for tests + future tooling): [`src/lib/loop-run/schema.ts`](../../src/lib/loop-run/schema.ts). Reference example: [`docs/loop-run-reference-example.md`](../../docs/loop-run-reference-example.md).
+
+#### 9a. Artifact path
+
+```
+.planning/loops/<UTC-timestamp>-<project_id>.md
+```
+
+- **Directory:** Always `.planning/loops/` — create on first emission.
+- **Timestamp:** Compact ISO-8601 UTC, format `YYYYMMDDTHHMMSSZ` (e.g. `20260522T175000Z`). The orchestrator MUST use its own `started_at` (the time the loop began), NOT the per-iteration time — one file per run.
+- **project_id:** The numeric wood-fired-bugs project id this loop drained.
+- One file per run. The path is stable across re-emissions within the run.
+
+#### 9b. Incremental rewrite (kill-safe)
+
+The orchestrator re-emits LOOP-RUN.md **after EACH task closes** (i.e. at the end of every Step 8, including FAIL / PARTIAL / NOT_VERIFIED branches from Step 7). Use the `Write` tool to replace the file in place — same path, full new contents. This guarantees that if the loop is killed mid-run (SIGINT, host crash, context window blown), the file on disk still reflects the state at the last completed task.
+
+```
+# Pseudocode — runs after each Step 8 close (or Step 7 non-PASS branch)
+artifact_path = ".planning/loops/" + started_at_compact + "-" + project_id + ".md"
+ended_at = <now UTC, RFC 3339>
+wall_seconds = floor((ended_at - started_at).total_seconds())
+contents = build_loop_run_md(frontmatter, tasks_so_far, findings_so_far, ...)
+Write(artifact_path, contents)
+```
+
+`ended_at` and `wall_seconds` update each iteration; the counts reflect only what's closed so far. A final emission after the budget is hit (or after the backlog drains) produces the run's true final state.
+
+#### 9c. Frontmatter construction
+
+The YAML frontmatter is the 14 required fields from `docs/loop-run-schema.md` §3 (mirrored field-for-field in `docs/loop-run-schema.json` and `src/lib/loop-run/schema.ts`). Source for each:
+
+| Field | Source |
+|---|---|
+| `run_id` | UUIDv4 minted once at run start; reused across every re-emission. |
+| `project_id` | The `project_id` resolved in §1 (Argument Parsing → Resolve Project ID). |
+| `started_at` | Captured at the top of §2 (Pre-Loop Discovery) as RFC 3339 UTC. |
+| `ended_at` | `now()` at the moment of this emission, RFC 3339 UTC. |
+| `wall_seconds` | `floor((ended_at - started_at).total_seconds())`. |
+| `orchestrator_session_id` | `$CLAUDE_SESSION_ID` env var if set; literal string `unknown` otherwise. |
+| `total_tokens` | Sum of input + cache_create + cache_read + output across orchestrator + every subagent. **Primary source:** the `<usage>` block returned by each `Agent` call in Steps 4 and 7 (deterministic, immediately available). **Cross-check source:** `agent_transactions_v` filtered by orchestrator + child `session_id`s — authoritative for retrospective audit but not required at emit time. |
+| `total_usd` | Same primary/cross-check split as `total_tokens`; cache-discounted. |
+| `subagents_dispatched` | Count of distinct subagent sessions spawned this run (worker dispatches in Step 4 + verifier dispatches in Step 7). |
+| `tasks_attempted` | Tasks picked up so far (Step 1 increments this counter). |
+| `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Decided by the Step 7 verdict for each task. Increments on the corresponding Step 7 branch. |
+
+Use orchestrator-observed counts as the primary source; cite `agent_transactions_v` as the cross-check source for any post-run audit. The skill MUST NOT block emission on a live DB connection.
+
+#### 9d. Body sections
+
+All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections use the documented sentinel paragraphs):
+
+- **`## Tasks Closed`** — one row per task attempted so far. Columns in order: `task_id | title | verdict | evidence_link | subagent_session_id | commit_shas`. Title truncated to ≤ 100 chars with `…`. `commit_shas` is `—` when no commits landed (FAIL / NOT_VERIFIED / "no changes needed" branches).
+- **`## Verifier Findings`** — one block per task with verdict `FAIL` or `PARTIAL`, populated from `verification_evidence.checks` cited verbatim (failing check `name` + `evidence_url_or_text`). Sentinel paragraph `_No findings: all attempted tasks verified clean._` when empty.
+- **`## Integration Concerns`** — auto-flag when `git diff --name-only` across the worker session SHAs surfaces **≥ 2 distinct worker sessions touching the same file**. Exclude generated / lockfiles (`package-lock.json`, `*.lock`, `dist/**`). One bullet per overlap citing the file path, contributing task IDs, and commit SHAs. Sentinel `_No integration concerns auto-detected._` when empty.
+- **`## Cost Breakdown`** — table with one row per participant (`orchestrator` + `subagent:<task_id>`) plus a `TOTAL` row. Columns: `participant | model | input_tokens | cache_create_tokens | cache_read_tokens | output_tokens | usd`. Primary source: orchestrator-observed `<usage>` blocks. Cross-check: `agent_transactions_v` (post-run, not required at emit time).
+- **`## Replay Instructions`** — fenced ```bash block with the exact `/tasks:loop` arguments to re-grade this run (project name / id, `--max-tasks`, etc.) plus the verification commands the loop trusted (`npm run build && npm test && npm run lint`).
+
+#### 9e. NOT committed (intentional)
+
+`.planning/` is gitignored per project policy — see the `.gitignore` line `Internal planning + agent workspaces (not for open-source distribution)`. This mirrors gsd convention (`MILESTONE-AUDIT.md` and similar gsd artifacts also live in gitignored `.planning/`). LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact. The trade-off: replay across machines requires manual sharing (copy the file out, attach to a bugs-db comment, or paste into a PR description). The benefit: open-source distribution stays clean, and per-run forensic detail never leaks into the public history of a fork.
+
+The orchestrator MUST NOT `git add` the `.planning/loops/` artifact. It MUST NOT modify `.gitignore` to make `.planning/loops/` an exception.
 
 Return to Step 1.
 
