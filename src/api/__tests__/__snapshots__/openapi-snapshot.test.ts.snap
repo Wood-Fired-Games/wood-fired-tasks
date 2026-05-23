@@ -61,6 +61,313 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/me/tokens/": {
+      "get": {
+        "description": "List the caller's Personal Access Tokens. Returns metadata only — the \`hash\` and \`token\` plaintext are NEVER exposed after mint.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "createdAt": {
+                        "type": "string",
+                      },
+                      "expiresAt": {
+                        "nullable": true,
+                        "type": "string",
+                      },
+                      "id": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer",
+                      },
+                      "lastUsedAt": {
+                        "nullable": true,
+                        "type": "string",
+                      },
+                      "name": {
+                        "type": "string",
+                      },
+                      "prefix": {
+                        "type": "string",
+                      },
+                      "revokedAt": {
+                        "nullable": true,
+                        "type": "string",
+                      },
+                      "scopes": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "suffix": {
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "prefix",
+                      "suffix",
+                      "scopes",
+                      "createdAt",
+                      "lastUsedAt",
+                      "revokedAt",
+                      "expiresAt",
+                    ],
+                    "type": "object",
+                  },
+                  "type": "array",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "session_required",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "me-tokens",
+        ],
+      },
+      "post": {
+        "description": "Mint a new Personal Access Token. The full \`wfb_pat_...\` token is returned EXACTLY ONCE in the response body — store it securely; it cannot be retrieved later.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "expiresAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                    "type": "string",
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  "scopes": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                },
+                "required": [
+                  "name",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "string",
+                    },
+                    "expiresAt": {
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "id": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                    "prefix": {
+                      "type": "string",
+                    },
+                    "scopes": {
+                      "items": {
+                        "type": "string",
+                      },
+                      "type": "array",
+                    },
+                    "suffix": {
+                      "type": "string",
+                    },
+                    "token": {
+                      "description": "Returned exactly once at creation time; cannot be retrieved later.",
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "token",
+                    "name",
+                    "prefix",
+                    "suffix",
+                    "scopes",
+                    "expiresAt",
+                    "createdAt",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "session_required",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "me-tokens",
+        ],
+      },
+    },
+    "/api/v1/me/tokens/{id}": {
+      "delete": {
+        "description": "Revoke one of the caller's Personal Access Tokens. Returns 204 on success. Returns 404 with \`{ error: 'NOT_FOUND' }\` for both unknown ids AND tokens belonging to other users — the response body is intentionally identical to avoid existence-leak (Threat T-28-05-02).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "No content",
+                  "enum": [
+                    null,
+                  ],
+                  "nullable": true,
+                  "type": "string",
+                },
+              },
+            },
+            "description": "No content",
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "session_required",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "NOT_FOUND",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "me-tokens",
+        ],
+      },
+    },
     "/api/v1/projects/": {
       "get": {
         "description": "List projects (paginated). Returns \`{ data, total, limit, offset }\`.",

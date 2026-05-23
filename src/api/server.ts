@@ -28,6 +28,7 @@ import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
 import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
+import meRoutes from './routes/me/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
 import { registerSwaggerSpec, registerSwaggerUI } from './plugins/swagger.js';
@@ -306,6 +307,13 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
       // Register events route
       await api.register(eventsRoute, { prefix: '/events' });
+
+      // Phase 28 Plan 28-05: per-caller resources. All routes inside
+      // meRoutes carry `config: { sessionOnly: true }` so the auth-chain
+      // plugin's enforceSessionOnly gate rejects PAT-authed callers with
+      // 403 (PATs cannot mint/list/revoke PATs — bootstrap path is the
+      // `tasks db mint-token` CLI).
+      await api.register(meRoutes, { prefix: '/me' });
     },
     { prefix: '/api/v1' }
   );

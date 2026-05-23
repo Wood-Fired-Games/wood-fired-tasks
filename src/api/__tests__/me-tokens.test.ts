@@ -102,6 +102,13 @@ function sessionMatch(user: AuthenticatedUser): StrategyOutcome {
  * Insert an api_tokens row directly via SQL. Used to set up cross-user
  * state, pre-existing tokens for list assertions, etc. Mirrors the helper
  * pattern in src/api/__tests__/auth-chain.test.ts:mintPatRow.
+ *
+ * `createdAt` lets callers stamp explicit timestamps so list-ordering
+ * assertions are deterministic — `datetime('now')` only resolves to the
+ * nearest second, and two consecutive inserts in the same test would
+ * otherwise tie on `created_at` and the repository's `ORDER BY created_at
+ * DESC` would produce a SQLite-implementation-defined ordering for the
+ * tied rows.
  */
 function mintPatViaDb(
   db: Database.Database,
@@ -111,9 +118,34 @@ function mintPatViaDb(
     scopes?: string;
     expiresAt?: string | null;
     revoked?: boolean;
+    createdAt?: string;
   },
 ): { id: number; token: string } {
   const { token, prefix, suffix, hash } = generateToken();
+  if (opts.createdAt !== undefined) {
+    const info = db
+      .prepare(
+        `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        opts.userId,
+        opts.name ?? 'seed-token',
+        prefix,
+        suffix,
+        hash,
+        opts.scopes ?? '[]',
+        opts.expiresAt ?? null,
+        opts.createdAt,
+      );
+    const id = Number(info.lastInsertRowid);
+    if (opts.revoked) {
+      db.prepare(
+        "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?",
+      ).run(id);
+    }
+    return { id, token };
+  }
   const info = db
     .prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at)
@@ -345,18 +377,25 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   // -------------------------------------------------------------------------
   describe('GET /api/v1/me/tokens', () => {
     it('5. returns the caller\'s tokens (no hash, no token, no cross-user rows)', async () => {
-      // Seed 2 tokens for the legacy user + 1 for the second user.
+      // Seed 2 tokens for the legacy user + 1 for the second user. Explicit
+      // `createdAt` timestamps so the repository's `ORDER BY created_at
+      // DESC` produces a deterministic newest-first ordering — without
+      // them, two inserts in the same test tick share a one-second
+      // `datetime('now')` value and the tie ordering is undefined.
       mintPatViaDb(harness.db, {
         userId: harness.legacyUser.id,
         name: 'first',
+        createdAt: '2026-01-01T00:00:00.000Z',
       });
       mintPatViaDb(harness.db, {
         userId: harness.legacyUser.id,
         name: 'second',
+        createdAt: '2026-02-01T00:00:00.000Z',
       });
       mintPatViaDb(harness.db, {
         userId: harness.secondUser.id,
         name: 'other-user-token',
+        createdAt: '2026-03-01T00:00:00.000Z',
       });
 
       nextSessionResult = sessionMatch(harness.legacyUser);
