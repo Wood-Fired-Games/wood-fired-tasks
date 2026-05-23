@@ -1,7 +1,8 @@
 // Personal Access Token (PAT) auth strategy.
 //
-// Pure async function (no Fastify hooks, no decorators, no logging) that
-// inspects the incoming `Authorization` header and returns a discriminated
+// Pure async function (almost: a single warn log fires when `expires_at`
+// is non-null but unparseable — see WR-03 below) that inspects the
+// incoming `Authorization` header and returns a discriminated
 // `StrategyOutcome`. The chain plugin (Phase 28 Plan 04) composes it with
 // the session and legacy strategies and applies the side effects.
 //
@@ -96,11 +97,24 @@ export async function tryAuth(
   if (row.revoked_at !== null) {
     return { kind: 'fail', reasonCode: 'revoked' };
   }
-  if (
-    row.expires_at !== null &&
-    new Date(row.expires_at).getTime() < Date.now()
-  ) {
-    return { kind: 'fail', reasonCode: 'expired' };
+  if (row.expires_at !== null) {
+    const expiresMs = new Date(row.expires_at).getTime();
+    // WR-03 (Phase 28 review) — fail-closed on unparseable values. The
+    // route-level `MintTokenBodySchema` uses `z.string().datetime()` so
+    // the API mint path is safe; this guards against a hand-edited DB or
+    // a future write path that drifts from the ISO-8601 contract. Without
+    // the explicit NaN check, `NaN < Date.now()` is `false`, so a token
+    // with `expires_at = 'soon'` would be treated as still valid.
+    if (Number.isNaN(expiresMs)) {
+      request.log.warn(
+        { tokenId: row.id, expiresAt: row.expires_at },
+        'pat.expires_at_unparseable',
+      );
+      return { kind: 'fail', reasonCode: 'expired' };
+    }
+    if (expiresMs < Date.now()) {
+      return { kind: 'fail', reasonCode: 'expired' };
+    }
   }
 
   const user = deps.userRepository.findById(row.user_id);

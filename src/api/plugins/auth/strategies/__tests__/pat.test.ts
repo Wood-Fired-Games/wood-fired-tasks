@@ -57,9 +57,13 @@ function makeTokenRow(overrides: Partial<ApiToken> = {}): ApiToken {
   };
 }
 
-function makeRequest(authorization?: string): FastifyRequest {
+function makeRequest(
+  authorization?: string,
+  log?: { warn: ReturnType<typeof vi.fn> },
+): FastifyRequest {
   return {
     headers: authorization !== undefined ? { authorization } : {},
+    log: log ?? { warn: vi.fn() },
   } as unknown as FastifyRequest;
 }
 
@@ -178,6 +182,23 @@ describe('PAT strategy tryAuth', () => {
       const out = await tryAuth(req, deps);
       expect(out.kind).toBe('match');
       vi.useRealTimers();
+    });
+
+    it('WR-03: fails with expired (fail-closed) when expires_at is unparseable, and emits a warn log', async () => {
+      const warn = vi.fn();
+      const req = makeRequest(`Bearer ${makeToken()}`, { warn });
+      const deps = makeDeps({
+        findByHash: makeTokenRow({ id: 123, expires_at: 'soon' }),
+      });
+      const out = await tryAuth(req, deps);
+      expect(out).toEqual({ kind: 'fail', reasonCode: 'expired' });
+      // Must NOT reach the user lookup — expired short-circuits first.
+      expect(deps.userRepository.findById).not.toHaveBeenCalled();
+      // Exactly one warn log with the diagnostic tag and the offending value.
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [obj, msg] = warn.mock.calls[0];
+      expect(obj).toEqual({ tokenId: 123, expiresAt: 'soon' });
+      expect(msg).toBe('pat.expires_at_unparseable');
     });
 
     it('fails with user_disabled when user.disabled_at is set', async () => {
