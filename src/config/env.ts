@@ -81,12 +81,65 @@ export const configSchema = z.object({
   SSE_MAX_CONNECTIONS_PER_KEY: z.string().min(1).default('4').transform(Number),
   SSE_MAX_CONNECTIONS_PER_IP: z.string().min(1).default('8').transform(Number),
   SSE_MAX_CONNECTIONS: z.string().min(1).default('200').transform(Number),
+  // Phase 29: OIDC browser flow + session cookie configuration.
+  // All four OIDC_* vars are all-or-nothing (see refine below). When unset,
+  // OIDC routes return 501 and the session strategy returns null — PAT +
+  // legacy auth continue to work (disabled mode).
+  OIDC_ISSUER_URL: z.string().url().optional(),
+  OIDC_CLIENT_ID: z.string().min(1).optional(),
+  OIDC_CLIENT_SECRET: z.string().min(1).optional(),
+  OIDC_REDIRECT_URI: z.string().url().optional(),
+  OIDC_SCOPES: z.string().min(1).default('openid email profile'),
+  SESSION_COOKIE_NAME: z.string().min(1).default('wfb_session'),
+  // SESSION_COOKIE_SECRET is the sealed-box key for @fastify/secure-session.
+  // sodium requires exactly 32 bytes; the refine enforces that strictly so
+  // misconfiguration cannot silently produce a weaker key.
+  // Generate with: openssl rand -base64 32
+  SESSION_COOKIE_SECRET: z
+    .string()
+    .min(1)
+    .refine(
+      (s) => {
+        try {
+          return Buffer.from(s, 'base64').length === 32;
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          'SESSION_COOKIE_SECRET must be base64-encoded 32 bytes (openssl rand -base64 32)',
+      },
+    )
+    .optional(),
 }).refine(
   (d) => (!d.SLACK_BOT_TOKEN && !d.SLACK_APP_TOKEN) || (!!d.SLACK_BOT_TOKEN && !!d.SLACK_APP_TOKEN),
   {
     message: 'Both SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together, or neither should be set',
     path: ['SLACK_APP_TOKEN'],
   }
+).refine(
+  (d) => {
+    // All-or-nothing: either zero or all four OIDC_* vars are defined.
+    const oidcVars = [
+      d.OIDC_ISSUER_URL,
+      d.OIDC_CLIENT_ID,
+      d.OIDC_CLIENT_SECRET,
+      d.OIDC_REDIRECT_URI,
+    ];
+    const setCount = oidcVars.filter((v) => v !== undefined && v !== '').length;
+    return setCount === 0 || setCount === 4;
+  },
+  {
+    message: 'OIDC_* must all be set together, or none at all',
+    path: ['OIDC_ISSUER_URL'],
+  },
+).refine(
+  (d) => !d.OIDC_ISSUER_URL || !!d.SESSION_COOKIE_SECRET,
+  {
+    message: 'SESSION_COOKIE_SECRET is required when OIDC is enabled',
+    path: ['SESSION_COOKIE_SECRET'],
+  },
 );
 
 /**
