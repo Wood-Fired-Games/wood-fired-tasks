@@ -253,7 +253,52 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (
           scopes: JSON.stringify([]),
           expiresAt: null,
         });
-        recordMintedToken(userCode, { tokenId: row.id, token });
+        // WR-01 (Phase 30 review) — `recordMintedToken` returns `false`
+        // when the session is no longer in 'approved' state (e.g. a
+        // concurrent `remove()` raced, or the cleanup tick fired between
+        // approve() and here). better-sqlite3 is synchronous so this
+        // race is structurally unreachable today, but the contract is
+        // fragile and silent failure would leave an orphan PAT row in
+        // the DB that the CLI never receives. If the stash fails, REVOKE
+        // the just-minted PAT and render the recoverable-error page so
+        // the user can retry without leaking an unreachable token.
+        const stashed = recordMintedToken(userCode, {
+          tokenId: row.id,
+          token,
+        });
+        if (!stashed) {
+          // Best-effort revoke — if THIS fails too, log + carry on; the
+          // outer catch will render the same error page.
+          try {
+            fastify.apiTokenRepository.revoke(row.id, user.id);
+          } catch (revokeErr) {
+            request.log.error(
+              {
+                err: revokeErr,
+                event: 'pat_orphan_revoke_failed',
+                userId: user.id,
+                tokenId: row.id,
+              },
+              'failed to revoke orphan PAT after recordMintedToken returned false',
+            );
+          }
+          request.log.warn(
+            {
+              event: 'device_flow_mint_stash_failed',
+              userId: user.id,
+              tokenId: row.id,
+            },
+            'recordMintedToken returned false — session not in approved state; orphan PAT revoked',
+          );
+          const csrfToken = getOrCreateCsrfToken(request);
+          const html = renderDevicePage({
+            csrfToken,
+            prefilledUserCode: null,
+            errorMessage:
+              'Could not complete sign-in. Please try again.',
+          });
+          return replyHtml(reply, 500, html);
+        }
         // Audit log — userId + tokenId only. token, hash, user_code, and
         // name are intentionally OMITTED (Threats T-30-04-02 / T-30-02-06).
         request.log.info(
