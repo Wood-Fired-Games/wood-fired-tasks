@@ -301,4 +301,371 @@ describe('UserRepository', () => {
       expect(all).toEqual([]);
     });
   });
+
+  describe('Phase 29 — write methods', () => {
+    describe('insert', () => {
+      it('inserts a new user with (provider, sub, email, displayName) and returns the full row', () => {
+        const row = repo.insert({
+          provider: 'google',
+          sub: 'sub-1',
+          email: 'alice@example.com',
+          displayName: 'Alice',
+        });
+
+        expect(row).not.toBeNull();
+        expect(typeof row.id).toBe('number');
+        expect(row.id).toBeGreaterThan(0);
+        expect(row.oidc_provider).toBe('google');
+        expect(row.oidc_sub).toBe('sub-1');
+        expect(row.email).toBe('alice@example.com');
+        expect(row.display_name).toBe('Alice');
+        expect(row.is_legacy).toBe(0);
+        expect(row.is_service_account).toBe(0);
+        expect(row.slack_user_id).toBeNull();
+        expect(row.disabled_at).toBeNull();
+        expect(typeof row.created_at).toBe('string');
+        expect(row.created_at.length).toBeGreaterThan(0);
+      });
+
+      it('accepts null email (provider declined to share)', () => {
+        const row = repo.insert({
+          provider: 'github',
+          sub: 'gh-12345',
+          email: null,
+          displayName: 'Anonymous Octocat',
+        });
+        expect(row.email).toBeNull();
+        expect(row.display_name).toBe('Anonymous Octocat');
+        expect(row.oidc_provider).toBe('github');
+        expect(row.oidc_sub).toBe('gh-12345');
+      });
+
+      it('round-trips through findByOidcSub on the same connection', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-round-trip',
+          email: 'roundtrip@example.com',
+          displayName: 'Round Trip',
+        });
+        const looked = repo.findByOidcSub('google', 'sub-round-trip');
+        expect(looked).not.toBeNull();
+        expect(looked!.id).toBe(inserted.id);
+        expect(looked!.email).toBe('roundtrip@example.com');
+      });
+
+      it('throws TypeError when provider is null/undefined/empty', () => {
+        const repoAsAny = repo as unknown as {
+          insert: (i: unknown) => unknown;
+        };
+        expect(() =>
+          repoAsAny.insert({
+            provider: null,
+            sub: 's',
+            email: null,
+            displayName: 'd',
+          }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.insert({
+            provider: undefined,
+            sub: 's',
+            email: null,
+            displayName: 'd',
+          }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.insert({
+            provider: '',
+            sub: 's',
+            email: null,
+            displayName: 'd',
+          }),
+        ).toThrow(TypeError);
+      });
+
+      it('throws TypeError when sub is null/undefined/empty', () => {
+        const repoAsAny = repo as unknown as {
+          insert: (i: unknown) => unknown;
+        };
+        expect(() =>
+          repoAsAny.insert({
+            provider: 'google',
+            sub: null,
+            email: null,
+            displayName: 'd',
+          }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.insert({
+            provider: 'google',
+            sub: undefined,
+            email: null,
+            displayName: 'd',
+          }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.insert({
+            provider: 'google',
+            sub: '',
+            email: null,
+            displayName: 'd',
+          }),
+        ).toThrow(TypeError);
+      });
+
+      it('throws TypeError when displayName is null/undefined/empty', () => {
+        const repoAsAny = repo as unknown as {
+          insert: (i: unknown) => unknown;
+        };
+        expect(() =>
+          repoAsAny.insert({
+            provider: 'google',
+            sub: 's',
+            email: null,
+            displayName: null,
+          }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.insert({
+            provider: 'google',
+            sub: 's',
+            email: null,
+            displayName: undefined,
+          }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.insert({
+            provider: 'google',
+            sub: 's',
+            email: null,
+            displayName: '',
+          }),
+        ).toThrow(TypeError);
+      });
+
+      it('raises SqliteError on duplicate (provider, sub) — caller resolves via findByOidcSub', () => {
+        repo.insert({
+          provider: 'google',
+          sub: 'dup-sub',
+          email: 'first@example.com',
+          displayName: 'First',
+        });
+        // Second insert with the SAME (provider, sub) must violate the
+        // partial UNIQUE index from migration 008. better-sqlite3 throws
+        // synchronously.
+        expect(() =>
+          repo.insert({
+            provider: 'google',
+            sub: 'dup-sub',
+            email: 'second@example.com',
+            displayName: 'Second',
+          }),
+        ).toThrow(/UNIQUE/i);
+      });
+
+      it('does NOT trip the legacy partial unique index (idx_users_legacy_display_name)', () => {
+        // Migration 010 added: UNIQUE(display_name) WHERE is_legacy = 1.
+        // OIDC users insert with is_legacy = 0 (DEFAULT), so two OIDC users
+        // sharing a display_name must coexist freely.
+        const a = repo.insert({
+          provider: 'google',
+          sub: 'sub-a',
+          email: 'a@example.com',
+          displayName: 'admin',
+        });
+        const b = repo.insert({
+          provider: 'github',
+          sub: 'sub-b',
+          email: 'b@example.com',
+          displayName: 'admin',
+        });
+        expect(a.id).not.toBe(b.id);
+        expect(a.is_legacy).toBe(0);
+        expect(b.is_legacy).toBe(0);
+        // And a legacy 'admin' row (e.g. from the boot-time seeder) must
+        // still be insertable separately via the raw fixture path.
+        insertUser(db, { display_name: 'admin', is_legacy: 1 });
+        const legacy = repo.findLegacyByDisplayName('admin');
+        expect(legacy).not.toBeNull();
+        expect(legacy!.is_legacy).toBe(1);
+      });
+
+      it('does NOT trip the slack-bot partial unique index (idx_users_slack_bot)', () => {
+        // Migration 010 added: UNIQUE(display_name) WHERE is_service_account = 1.
+        // OIDC users insert with is_service_account = 0 (DEFAULT), so they
+        // must coexist with the seeded 'slack-bot' service-account row.
+        insertUser(db, {
+          display_name: 'slack-bot',
+          slack_user_id: 'U_BOT',
+          is_service_account: 1,
+        });
+        // OIDC user with display_name = 'slack-bot' must be allowed because
+        // is_service_account = 0 puts it outside the partial index.
+        const collide = repo.insert({
+          provider: 'google',
+          sub: 'human-named-slack-bot',
+          email: 'human@example.com',
+          displayName: 'slack-bot',
+        });
+        expect(collide.id).toBeGreaterThan(0);
+        expect(collide.is_service_account).toBe(0);
+        // Service-account row still present and intact.
+        const bot = repo.findBySlackUserId('U_BOT');
+        expect(bot).not.toBeNull();
+        expect(bot!.is_service_account).toBe(1);
+      });
+    });
+
+    describe('updateProfile', () => {
+      it('updates email + displayName and returns the fresh row', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-update-1',
+          email: 'old@example.com',
+          displayName: 'Old Name',
+        });
+        const updated = repo.updateProfile(inserted.id, {
+          email: 'new@example.com',
+          displayName: 'New Name',
+        });
+        expect(updated).not.toBeNull();
+        expect(updated!.id).toBe(inserted.id);
+        expect(updated!.email).toBe('new@example.com');
+        expect(updated!.display_name).toBe('New Name');
+        // Identity columns must be preserved.
+        expect(updated!.oidc_provider).toBe('google');
+        expect(updated!.oidc_sub).toBe('sub-update-1');
+        expect(updated!.is_legacy).toBe(0);
+        expect(updated!.is_service_account).toBe(0);
+      });
+
+      it('updates only displayName when email is omitted (partial patch)', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-update-2',
+          email: 'keep@example.com',
+          displayName: 'Old',
+        });
+        const updated = repo.updateProfile(inserted.id, {
+          displayName: 'New Only',
+        });
+        expect(updated).not.toBeNull();
+        expect(updated!.email).toBe('keep@example.com');
+        expect(updated!.display_name).toBe('New Only');
+      });
+
+      it('updates only email when displayName is omitted (partial patch)', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-update-3',
+          email: 'old@example.com',
+          displayName: 'Stable',
+        });
+        const updated = repo.updateProfile(inserted.id, {
+          email: 'new@example.com',
+        });
+        expect(updated).not.toBeNull();
+        expect(updated!.email).toBe('new@example.com');
+        expect(updated!.display_name).toBe('Stable');
+      });
+
+      it('clears email when explicit null is provided', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-update-4',
+          email: 'present@example.com',
+          displayName: 'WithEmail',
+        });
+        const updated = repo.updateProfile(inserted.id, { email: null });
+        expect(updated).not.toBeNull();
+        expect(updated!.email).toBeNull();
+        expect(updated!.display_name).toBe('WithEmail');
+      });
+
+      it('returns the unchanged row on empty patch (no-op)', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-update-5',
+          email: 'noop@example.com',
+          displayName: 'NoOp',
+        });
+        const updated = repo.updateProfile(inserted.id, {});
+        expect(updated).not.toBeNull();
+        expect(updated!.id).toBe(inserted.id);
+        expect(updated!.email).toBe('noop@example.com');
+        expect(updated!.display_name).toBe('NoOp');
+      });
+
+      it('returns null when id does not exist', () => {
+        const result = repo.updateProfile(99999, {
+          email: 'nobody@example.com',
+        });
+        expect(result).toBeNull();
+      });
+
+      it('throws TypeError when id is non-positive (0, negative, NaN, non-integer)', () => {
+        expect(() => repo.updateProfile(0, { email: 'x@example.com' })).toThrow(
+          TypeError,
+        );
+        expect(() =>
+          repo.updateProfile(-1, { email: 'x@example.com' }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repo.updateProfile(NaN, { email: 'x@example.com' }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repo.updateProfile(1.5, { email: 'x@example.com' }),
+        ).toThrow(TypeError);
+      });
+
+      it('throws TypeError when displayName is supplied as empty/null', () => {
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-update-6',
+          email: 'g@example.com',
+          displayName: 'Stable',
+        });
+        const repoAsAny = repo as unknown as {
+          updateProfile: (id: number, patch: unknown) => unknown;
+        };
+        expect(() =>
+          repoAsAny.updateProfile(inserted.id, { displayName: '' }),
+        ).toThrow(TypeError);
+        expect(() =>
+          repoAsAny.updateProfile(inserted.id, { displayName: null }),
+        ).toThrow(TypeError);
+      });
+
+      it('does NOT mutate identity columns even when patch attempts smuggled keys', () => {
+        // The SET clause is built from a static allowlist (email,
+        // display_name). Smuggled keys on the patch object MUST be ignored.
+        const inserted = repo.insert({
+          provider: 'google',
+          sub: 'sub-immutable',
+          email: 'safe@example.com',
+          displayName: 'Safe',
+        });
+        const repoAsAny = repo as unknown as {
+          updateProfile: (id: number, patch: unknown) => unknown;
+        };
+        const updated = repoAsAny.updateProfile(inserted.id, {
+          email: 'new@example.com',
+          oidc_provider: 'evil',
+          oidc_sub: 'evil-sub',
+          is_legacy: 1,
+          is_service_account: 1,
+          disabled_at: '2030-01-01T00:00:00.000Z',
+          id: 99999,
+        }) as ReturnType<typeof repo.updateProfile>;
+        expect(updated).not.toBeNull();
+        expect(updated!.id).toBe(inserted.id);
+        expect(updated!.email).toBe('new@example.com');
+        expect(updated!.oidc_provider).toBe('google');
+        expect(updated!.oidc_sub).toBe('sub-immutable');
+        expect(updated!.is_legacy).toBe(0);
+        expect(updated!.is_service_account).toBe(0);
+        expect(updated!.disabled_at).toBeNull();
+      });
+    });
+  });
 });

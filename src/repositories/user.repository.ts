@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { User } from '../types/identity.js';
+import type { User, UserUpsertInput } from '../types/identity.js';
 import type { IUserRepository } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 
@@ -20,6 +20,7 @@ export class UserRepository implements IUserRepository {
   private findLegacyByDisplayNameStmt: Database.Statement;
   private findByEmailStmt: Database.Statement;
   private listAllStmt: Database.Statement;
+  private insertStmt: Database.Statement;
 
   constructor(private db: Database.Database) {
     this.findByIdStmt = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -45,6 +46,16 @@ export class UserRepository implements IUserRepository {
     );
 
     this.listAllStmt = db.prepare('SELECT * FROM users ORDER BY id ASC');
+
+    // Phase 29 (Plan 29-02): write methods for OIDC JIT provisioning.
+    // `is_legacy` + `is_service_account` rely on the column DEFAULT 0;
+    // `created_at` relies on DEFAULT (datetime('now')). RETURNING * gives
+    // the caller the fully-populated row in one round trip.
+    this.insertStmt = db.prepare(
+      `INSERT INTO users (oidc_provider, oidc_sub, email, display_name)
+       VALUES (?, ?, ?, ?)
+       RETURNING *`,
+    );
   }
 
   findById(id: number): User | null {
@@ -116,5 +127,109 @@ export class UserRepository implements IUserRepository {
 
   listAll(): User[] {
     return mapRows<User>(this.listAllStmt);
+  }
+
+  /**
+   * Insert a new OIDC-provisioned user row.
+   *
+   * Defense-in-depth guards mirror `findByOidcSub` (WR-03): even though the
+   * TypeScript signature requires non-empty strings, a caller bypass
+   * (`as any`, dynamic JSON input) must NOT be able to write a row with an
+   * empty provider/sub that would later look like a legacy NULL-NULL row.
+   * Empty `display_name` would violate the column-NOT-NULL only if SQLite
+   * rejected `''` (it does not), so the guard is application-level.
+   *
+   * UNIQUE(oidc_provider, oidc_sub) is partial-indexed in migration 008; a
+   * duplicate insert raises `SqliteError` with `code === 'SQLITE_CONSTRAINT_UNIQUE'`.
+   * The caller in Plan 29-05 (`user-upsert.ts`) catches that and resolves
+   * the race via `findByOidcSub`.
+   *
+   * @throws TypeError when `provider`, `sub`, or `displayName` is null,
+   *         undefined, or empty.
+   */
+  insert(input: UserUpsertInput): User {
+    if (input.provider == null || input.provider === '') {
+      throw new TypeError(
+        'UserRepository.insert: provider must be a non-empty string',
+      );
+    }
+    if (input.sub == null || input.sub === '') {
+      throw new TypeError(
+        'UserRepository.insert: sub must be a non-empty string',
+      );
+    }
+    if (input.displayName == null || input.displayName === '') {
+      throw new TypeError(
+        'UserRepository.insert: displayName must be a non-empty string',
+      );
+    }
+    const row = this.insertStmt.get(
+      input.provider,
+      input.sub,
+      input.email,
+      input.displayName,
+    ) as User | undefined;
+    if (!row) {
+      // Defensive: better-sqlite3's RETURNING * always populates on success.
+      // If we somehow get here, surface it loudly rather than returning a
+      // half-constructed object.
+      throw new Error('UserRepository.insert: INSERT produced no row');
+    }
+    return row;
+  }
+
+  /**
+   * Apply email + displayName drift to an existing row.
+   *
+   * The SET clause is built from a static allowlist (`email`, `display_name`)
+   * so a malicious `patch` shape can never pivot into an unrelated column
+   * (T-29-02-04). All values are bound as parameters; `id` is type-checked
+   * before being interpolated.
+   *
+   * Patch semantics:
+   * - `email` present → sets the column (including explicit `null` to clear).
+   * - `displayName` present → sets the column (non-empty required because
+   *   the column is NOT NULL).
+   * - Neither present → returns the existing row unchanged (no SQL emitted).
+   * - `id` does not exist → returns `null`.
+   *
+   * Never mutates oidc_provider/oidc_sub/created_at/is_legacy/
+   * is_service_account/disabled_at — those columns are not in the SET
+   * allowlist.
+   *
+   * @throws TypeError when `id` is not a positive integer, or when
+   *         `patch.displayName` is supplied but null/empty.
+   */
+  updateProfile(
+    id: number,
+    patch: { email?: string | null; displayName?: string },
+  ): User | null {
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new TypeError(
+        'UserRepository.updateProfile: id must be a positive integer',
+      );
+    }
+    const sets: string[] = [];
+    const params: Array<string | null> = [];
+    if (Object.prototype.hasOwnProperty.call(patch, 'email')) {
+      sets.push('email = ?');
+      params.push(patch.email ?? null);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'displayName')) {
+      if (patch.displayName == null || patch.displayName === '') {
+        throw new TypeError(
+          'UserRepository.updateProfile: displayName must be non-empty when supplied',
+        );
+      }
+      sets.push('display_name = ?');
+      params.push(patch.displayName);
+    }
+    if (sets.length === 0) {
+      // No-op patch — return current row unchanged.
+      return this.findById(id);
+    }
+    const sql = `UPDATE users SET ${sets.join(', ')} WHERE id = ? RETURNING *`;
+    const row = this.db.prepare(sql).get(...params, id) as User | undefined;
+    return row ?? null;
   }
 }
