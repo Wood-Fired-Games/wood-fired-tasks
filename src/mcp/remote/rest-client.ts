@@ -29,10 +29,26 @@ function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
 }
 
 /**
+ * Literal PAT prefix shared with `src/services/pat-hash.ts`. Duplicated
+ * here as a constant so the remote MCP package doesn't drag in the
+ * server-side PAT helpers (the rest-client must stay importable from a
+ * minimal stdio subprocess).
+ */
+const PAT_PREFIX = 'wfb_pat_';
+
+/**
  * REST API client for the remote MCP server.
  *
  * Wraps HTTP calls to the Wood Fired Bugs REST API.
- * Uses native fetch (Node 18+) with X-API-Key authentication and a 10-second timeout.
+ * Uses native fetch (Node 18+) with a 10-second timeout. The auth header
+ * is chosen based on the apiKey prefix (Phase 31 Plan 03 Task 3, MCP-01):
+ *
+ *   - apiKey starts with `wfb_pat_` → `Authorization: Bearer <apiKey>`
+ *     (PAT path; the server's PAT strategy hashes the full string)
+ *   - any other apiKey → `X-API-Key: <apiKey>` (legacy path)
+ *
+ * Headers are mutually exclusive so the server's auth chain never has to
+ * pick between two strategies for the same request.
  */
 export class RestClient {
   private readonly baseUrl: string;
@@ -54,9 +70,17 @@ export class RestClient {
     const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
-      const headers: Record<string, string> = {
-        'X-API-Key': this.apiKey,
-      };
+      const headers: Record<string, string> = {};
+      // Phase 31 Plan 03 Task 3 (MCP-01): switch header based on prefix.
+      // Mirrors the same precedence Phase 30 Plan 05 wired into the CLI
+      // client (`src/cli/api/client.ts`). The full apiKey value flows
+      // through verbatim — the server needs the entire `wfb_pat_<body>`
+      // string for the SHA-256 lookup.
+      if (this.apiKey.startsWith(PAT_PREFIX)) {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      } else {
+        headers['X-API-Key'] = this.apiKey;
+      }
       if (options?.body) {
         headers['Content-Type'] = 'application/json';
       }
