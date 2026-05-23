@@ -15,6 +15,7 @@ import { CommentService } from './services/comment.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
 import { eventBus } from './events/event-bus.js';
 import { initOidc, type OidcConfig } from './services/oidc-client.js';
+import { startCleanup as startDeviceFlowCleanup } from './services/device-flow-store.js';
 import type Database from 'better-sqlite3';
 
 /**
@@ -168,6 +169,20 @@ export async function createApp(dbPath?: string): Promise<App> {
   );
   workflowEngine.start();
 
+  // Phase 30 Plan 08 — start the device-flow store's periodic cleanup
+  // exactly once at boot. The cleanup interval prunes expired sessions
+  // every CLEANUP_TICK_MS so the in-memory maps don't grow unboundedly
+  // in long-lived processes. The interval is `.unref()`'d inside
+  // startCleanup() so a stray test that never calls dispose() doesn't
+  // keep vitest alive, but dispose() ALSO clears the interval explicitly
+  // to release the handle the moment the app shuts down (#T-30-08-01).
+  //
+  // The cleanup is wired UNCONDITIONALLY — both OIDC-on and OIDC-off
+  // modes share the same in-memory device-flow store. In OIDC-off mode
+  // the maps stay empty (the disabled-stub never calls createSession),
+  // so the cleanup tick is a no-op; the cost is one timer per process.
+  const deviceFlowCleanup = startDeviceFlowCleanup();
+
   let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
@@ -176,6 +191,11 @@ export async function createApp(dbPath?: string): Promise<App> {
     // EventBus before the DB it relies on is gone. Order matters: a queued
     // event handler that fires post-close would otherwise hit a closed db.
     workflowEngine.stop();
+    // Plan 30-08 — stop the device-flow cleanup interval. Idempotent: the
+    // .stop() handle returned from startCleanup() guards against double-
+    // calls internally so a sibling dispose path that also tears down the
+    // store doesn't error.
+    deviceFlowCleanup.stop();
     if (db.open) {
       db.close();
     }
