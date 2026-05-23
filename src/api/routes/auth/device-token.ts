@@ -162,6 +162,31 @@ const deviceTokenRoute: FastifyPluginAsync<DeviceTokenRouteOptions> = async (
               },
               'approved user not found at token delivery',
             );
+            // WR-02 (Phase 30 review) — purge the orphan PAT row + drop
+            // the session so a) the user_id-less row doesn't linger in
+            // the DB until the FK cascade catches up, and b) the
+            // plaintext PAT held by `session.mintedToken` clears from
+            // process memory immediately (instead of waiting the
+            // remaining TTL × poll-frequency cycles). Both operations
+            // are best-effort: a failed revoke is logged but does not
+            // change the response (the CLI still gets expired_token).
+            try {
+              fastify.apiTokenRepository.revoke(
+                session.mintedTokenId,
+                session.approvedUserId,
+              );
+            } catch (revokeErr) {
+              request.log.error(
+                {
+                  err: revokeErr,
+                  event: 'pat_orphan_revoke_failed',
+                  userId: session.approvedUserId,
+                  tokenId: session.mintedTokenId,
+                },
+                'failed to revoke orphan PAT for vanished user',
+              );
+            }
+            remove(session.deviceCode);
             return reply.code(400).send({ error: 'expired_token' });
           }
           const successEnvelope = {
