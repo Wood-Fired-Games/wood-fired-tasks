@@ -107,18 +107,25 @@ function makeMockRepo(seed: User[] = []): MockRepo {
 }
 
 function makeUser(overrides: Partial<User> & { id: number }): User {
+  // Use property-presence checks (not `??`) so `null` overrides survive —
+  // `email: null` from a caller must produce `email: null`, not the default.
   return {
     id: overrides.id,
-    oidc_provider: overrides.oidc_provider ?? 'google',
-    oidc_sub: overrides.oidc_sub ?? 'sub-default',
-    email: overrides.email ?? 'user@example.com',
-    display_name: overrides.display_name ?? 'Display Name',
-    slack_user_id: overrides.slack_user_id ?? null,
-    is_legacy: overrides.is_legacy ?? 0,
-    is_service_account: overrides.is_service_account ?? 0,
-    created_at: overrides.created_at ?? '2026-05-23T00:00:00Z',
-    disabled_at: overrides.disabled_at ?? null,
-  };
+    oidc_provider:
+      'oidc_provider' in overrides ? overrides.oidc_provider : 'google',
+    oidc_sub: 'oidc_sub' in overrides ? overrides.oidc_sub : 'sub-default',
+    email: 'email' in overrides ? overrides.email : 'user@example.com',
+    display_name:
+      'display_name' in overrides ? overrides.display_name : 'Display Name',
+    slack_user_id:
+      'slack_user_id' in overrides ? overrides.slack_user_id : null,
+    is_legacy: 'is_legacy' in overrides ? overrides.is_legacy : 0,
+    is_service_account:
+      'is_service_account' in overrides ? overrides.is_service_account : 0,
+    created_at:
+      'created_at' in overrides ? overrides.created_at : '2026-05-23T00:00:00Z',
+    disabled_at: 'disabled_at' in overrides ? overrides.disabled_at : null,
+  } as User;
 }
 
 describe('upsertFromOidc', () => {
