@@ -135,10 +135,10 @@ const BadRequestResponseSchema = z.object({
  * browsers send `text/html,application/xhtml+xml,application/xml;q=0.9,...`
  * and the JSON-API callers send `application/json` or `*\/*`).
  *
- * The browser form ALSO sets Content-Type: application/x-www-form-urlencoded,
- * so the HTML branch additionally verifies the body parser produced a
- * plain-object form payload — defensive against a caller spoofing the
- * Accept header without an actual form body.
+ * Accept-header check ONLY — the Content-Type check is done at the call
+ * site (see `isFormEncodedBody` below). WR-01: keeping the two checks
+ * separate so each is testable on its own; the handler ANDs them when
+ * choosing the HTML branch.
  */
 function prefersHtmlResponse(acceptHeader: string | undefined): boolean {
   if (!acceptHeader) return false;
@@ -146,6 +146,23 @@ function prefersHtmlResponse(acceptHeader: string | undefined): boolean {
   if (htmlIdx === -1) return false;
   const jsonIdx = acceptHeader.indexOf('application/json');
   return jsonIdx === -1 || htmlIdx < jsonIdx;
+}
+
+/**
+ * True when the request body is form-encoded
+ * (`application/x-www-form-urlencoded`). Used together with
+ * `prefersHtmlResponse` at the POST mint handler so a JSON caller
+ * cannot inadvertently (or maliciously) trigger the HTML branch by
+ * sending `Accept: text/html` with a JSON body — WR-01 in 29-REVIEW.md.
+ *
+ * The check is `.includes(...)` to tolerate the `; charset=utf-8`
+ * parameter form browsers occasionally append.
+ */
+function isFormEncodedBody(contentType: string | undefined): boolean {
+  return (
+    typeof contentType === 'string' &&
+    contentType.includes('application/x-www-form-urlencoded')
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +225,16 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     handler: async (request, reply) => {
       // ─── Phase 29 Plan 07: HTML branch ───
-      if (prefersHtmlResponse(request.headers.accept)) {
+      // WR-01 fix: require BOTH `Accept: text/html` AND
+      // `Content-Type: application/x-www-form-urlencoded`. A JSON-API
+      // caller that spoofs Accept (deliberately or accidentally) must
+      // not slip into the HTML branch — its JSON body would not parse
+      // as a form payload and the CSRF check would reject anyway, but
+      // the early gate keeps the security boundary explicit.
+      if (
+        prefersHtmlResponse(request.headers.accept) &&
+        isFormEncodedBody(request.headers['content-type'])
+      ) {
         const body = (request.body ?? {}) as {
           _csrf?: unknown;
           name?: unknown;
