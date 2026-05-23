@@ -27,6 +27,9 @@ import {
   remove,
   startCleanup,
   _resetForTests,
+  sanitizeHostname,
+  tokenName,
+  recordMintedToken,
   SESSION_TTL_MS,
   CLEANUP_TICK_MS,
   USER_CODE_ALPHABET,
@@ -78,9 +81,14 @@ describe('device-flow-store', () => {
       expect(s.userCode).toMatch(/^[A-HJ-KM-NP-Z2-9]{8}$/);
     });
 
-    it('accepts null hostname', () => {
+    it('null hostname is sanitized to "unknown" at create time (Plan 30-04)', () => {
       const s = createSession({ clientId: 'cid', hostname: null });
-      expect(s.hostname).toBeNull();
+      expect(s.hostname).toBe('unknown');
+    });
+
+    it('non-null hostname is sanitized at create time (Plan 30-04)', () => {
+      const s = createSession({ clientId: 'cid', hostname: 'Some Host!' });
+      expect(s.hostname).toBe('some-host');
     });
 
     it('user_code alphabet contains no 0/O/1/I/L across 10_000 generations', () => {
@@ -240,6 +248,139 @@ describe('device-flow-store', () => {
       _resetForTests();
       expect(findByDeviceCode(s1.deviceCode)).toBeUndefined();
       expect(findByUserCode(s2.userCode)).toBeUndefined();
+    });
+  });
+
+  /**
+   * Phase 30 Plan 04 Task 1 — sanitization + mint-recording helpers.
+   *
+   * The store owns the lifecycle of session state, so the PAT-mint metadata
+   * (sanitized hostname + minted token) lives here even though the actual
+   * mint happens in the verify handler (Plan 30-04 Task 2).
+   */
+  describe('sanitization + mint recording (Plan 30-04)', () => {
+    describe('sanitizeHostname', () => {
+      it('null → "unknown"', () => {
+        expect(sanitizeHostname(null)).toBe('unknown');
+      });
+
+      it('empty string → "unknown"', () => {
+        expect(sanitizeHostname('')).toBe('unknown');
+      });
+
+      it("apostrophes collapse to '-' (\"Stuart's Laptop\" → \"stuart-s-laptop\")", () => {
+        expect(sanitizeHostname("Stuart's Laptop")).toBe('stuart-s-laptop');
+      });
+
+      it('weird input is trimmed + collapsed', () => {
+        expect(sanitizeHostname('   --weird___name!!!  ')).toBe('weird-name');
+      });
+
+      it('long input is truncated to 32 chars and lowercased', () => {
+        const out = sanitizeHostname('A'.repeat(100));
+        expect(out).toHaveLength(32);
+        expect(out).toBe('a'.repeat(32));
+      });
+
+      it('uppercase is lowercased; hyphens preserved', () => {
+        expect(sanitizeHostname('UPPER-case')).toBe('upper-case');
+      });
+
+      it('dots collapse to "-"', () => {
+        expect(sanitizeHostname('a.b.c')).toBe('a-b-c');
+      });
+
+      it('whitespace-only input → "unknown"', () => {
+        expect(sanitizeHostname('   ')).toBe('unknown');
+      });
+
+      it('input that sanitizes to only hyphens → "unknown"', () => {
+        expect(sanitizeHostname('!!!')).toBe('unknown');
+      });
+    });
+
+    describe('tokenName', () => {
+      it('produces "cli-<host>-<YYYY-MM-DD>" with explicit UTC date', () => {
+        // May 23, 2026 — Date.UTC month is 0-indexed (4 = May).
+        const d = new Date(Date.UTC(2026, 4, 23));
+        expect(tokenName('laptop', d)).toBe('cli-laptop-2026-05-23');
+      });
+
+      it('uses "unknown" segment when sanitized host is "unknown"', () => {
+        const d = new Date(Date.UTC(2026, 0, 1));
+        expect(tokenName('unknown', d)).toBe('cli-unknown-2026-01-01');
+      });
+
+      it('uses UTC (not local) for the date segment', () => {
+        // 2026-05-23T23:30Z is still 2026-05-23 in UTC even if local TZ rolls.
+        const d = new Date(Date.UTC(2026, 4, 23, 23, 30, 0));
+        expect(tokenName('laptop', d)).toBe('cli-laptop-2026-05-23');
+      });
+
+      it('pads single-digit month and day', () => {
+        const d = new Date(Date.UTC(2026, 0, 5)); // Jan 5
+        expect(tokenName('h', d)).toBe('cli-h-2026-01-05');
+      });
+
+      it('defaults to current Date when now is omitted', () => {
+        const out = tokenName('host');
+        expect(out).toMatch(/^cli-host-\d{4}-\d{2}-\d{2}$/);
+      });
+    });
+
+    describe('recordMintedToken', () => {
+      it('happy path: approve then record → session populated', () => {
+        const s = createSession({ clientId: 'cid', hostname: 'laptop' });
+        expect(approve(s.userCode, 7)).toBe(true);
+        expect(
+          recordMintedToken(s.userCode, { tokenId: 42, token: 'wfb_pat_XYZ' }),
+        ).toBe(true);
+        const after = findByDeviceCode(s.deviceCode);
+        expect(after?.mintedTokenId).toBe(42);
+        expect(after?.mintedToken).toBe('wfb_pat_XYZ');
+      });
+
+      it('returns false when session is still pending (approve not called)', () => {
+        const s = createSession({ clientId: 'cid', hostname: 'laptop' });
+        expect(
+          recordMintedToken(s.userCode, { tokenId: 1, token: 'wfb_pat_X' }),
+        ).toBe(false);
+        // Session must remain untouched.
+        const after = findByDeviceCode(s.deviceCode);
+        expect(after?.mintedTokenId).toBeNull();
+        expect(after?.mintedToken).toBeNull();
+      });
+
+      it('returns false for unknown userCode', () => {
+        expect(
+          recordMintedToken('UNKNOWN1', {
+            tokenId: 1,
+            token: 'wfb_pat_X',
+          }),
+        ).toBe(false);
+      });
+
+      it('returns false when session is denied', () => {
+        const s = createSession({ clientId: 'cid', hostname: 'laptop' });
+        expect(deny(s.userCode)).toBe(true);
+        expect(
+          recordMintedToken(s.userCode, { tokenId: 1, token: 'wfb_pat_X' }),
+        ).toBe(false);
+      });
+
+      it('is idempotent: second call with same args still returns true', () => {
+        const s = createSession({ clientId: 'cid', hostname: 'laptop' });
+        approve(s.userCode, 7);
+        expect(
+          recordMintedToken(s.userCode, { tokenId: 9, token: 'wfb_pat_A' }),
+        ).toBe(true);
+        expect(
+          recordMintedToken(s.userCode, { tokenId: 9, token: 'wfb_pat_A' }),
+        ).toBe(true);
+        const after = findByDeviceCode(s.deviceCode);
+        expect(after?.mintedTokenId).toBe(9);
+        expect(after?.mintedToken).toBe('wfb_pat_A');
+      });
     });
   });
 });
