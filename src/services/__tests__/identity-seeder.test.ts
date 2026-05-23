@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { initTestDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { seedIdentities } from '../identity-seeder.js';
+import { createTestApp } from '../../index.js';
 
 /**
  * Tests for the Phase 27 boot-time identity seeder (Plan 6).
@@ -249,5 +250,43 @@ describe('seedIdentities', () => {
       const serialised = JSON.stringify(logger.info.mock.calls);
       expect(serialised).not.toContain(secret);
     });
+  });
+});
+
+/**
+ * Task 6.4 smoke test: end-to-end verification that `createTestApp` actually
+ * runs the seeder during boot and produces the expected user set when
+ * API_KEYS is populated. This exercises the wiring done in src/index.ts
+ * (Task 6.3) without mocking anything -- it's the closest in-process
+ * approximation of "does the server boot clean and seed?".
+ */
+describe('createTestApp boot integration (Task 6.4 smoke)', () => {
+  let prevApiKeys: string | undefined;
+
+  beforeEach(() => {
+    prevApiKeys = process.env.API_KEYS;
+  });
+
+  afterEach(() => {
+    if (prevApiKeys === undefined) {
+      delete process.env.API_KEYS;
+    } else {
+      process.env.API_KEYS = prevApiKeys;
+    }
+  });
+
+  it('seeds alice + bob legacy users plus slack-bot when API_KEYS is set', async () => {
+    process.env.API_KEYS = 'k1:alice,k2:bob';
+
+    const app = await createTestApp();
+    try {
+      const rows = app.db
+        .prepare('SELECT display_name FROM users ORDER BY id')
+        .all() as { display_name: string }[];
+      const names = rows.map((r) => r.display_name);
+      expect(names).toEqual(['alice', 'bob', 'slack-bot']);
+    } finally {
+      app.dispose();
+    }
   });
 });
