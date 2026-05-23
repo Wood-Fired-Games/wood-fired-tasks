@@ -33,6 +33,7 @@ import dependencyRoutes from './routes/dependencies/index.js';
 import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
 import meRoutes from './routes/me/index.js';
+import webRoutes from './routes/web/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
 import { registerSwaggerSpec, registerSwaggerUI } from './plugins/swagger.js';
@@ -319,6 +320,19 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // route now returns only { status, timestamp, version } so internal stats
   // (SSE client count, uptime) are not leaked to unauthenticated probes.
   await server.register(healthRoutes, { prefix: '/health' });
+
+  // ─── Phase 29 Plan 07 ───
+  // Top-level HTML web routes: /login, /me, /me/tokens, /me/tokens/:id/revoke.
+  // All carry `config.skipAuth: true` — the Phase 28 auth chain is
+  // /api/v1-scoped and does not gate them. Each handler implements its
+  // own session-presence check and redirects to /auth/login on miss.
+  // Registered ONLY when secure-session is active (otherwise
+  // request.session is undefined and the handlers cannot evaluate the
+  // session gate). In OIDC-disabled mode, the routes simply don't exist.
+  if (config.SESSION_COOKIE_SECRET) {
+    await server.register(webRoutes);
+  }
+  // ─── end Phase 29 Plan 07 ───
 
   // task #185: authenticated detailed health check exposes the full
   // diagnostic payload (component checks + runtime stats). Gated by the
