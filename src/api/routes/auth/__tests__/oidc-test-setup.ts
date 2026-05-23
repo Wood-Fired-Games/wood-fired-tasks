@@ -148,6 +148,31 @@ export async function mountAuthRoutes(
     authenticatedAt: request.session.get('authenticatedAt') ?? null,
     idToken: request.session.get('idToken') ?? null,
   }));
+  // Probe used by logout.test.ts to seed a CSRF token into the session
+  // (mirrors what GET /me/tokens would do via getOrCreateCsrfToken once
+  // Plan 9 ships) so POST /auth/logout has something to validate against.
+  server.get('/_test/seed-csrf', async (request) => {
+    const { getOrCreateCsrfToken } = await import('../csrf.js');
+    const csrf = getOrCreateCsrfToken(request);
+    return { csrf };
+  });
+  // Probe that simulates a PAT-only user: session.user + csrf are set but
+  // session.idToken is intentionally NOT set. Lets the logout test
+  // exercise the no-RP-initiated-logout branch without driving the OIDC
+  // roundtrip.
+  server.get('/_test/no-id-token-seed', async (request) => {
+    const { getOrCreateCsrfToken } = await import('../csrf.js');
+    request.session.set('user', {
+      id: 999,
+      displayName: 'PAT User',
+      email: null,
+      isLegacy: false,
+      isServiceAccount: false,
+    });
+    request.session.set('authenticatedAt', Date.now());
+    const csrf = getOrCreateCsrfToken(request);
+    return { csrf };
+  });
 
   await server.ready();
 
