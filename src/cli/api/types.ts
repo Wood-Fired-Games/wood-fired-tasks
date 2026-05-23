@@ -41,6 +41,8 @@ export interface CreateTaskInput {
   assignee?: string;
   due_date?: string;
   tags?: string[];
+  /** Wave 1.3 (#311): optional plain-text acceptance criteria (markdown). */
+  acceptance_criteria?: string | null;
 }
 
 export interface UpdateTaskInput {
@@ -51,6 +53,8 @@ export interface UpdateTaskInput {
   assignee?: string | null;
   due_date?: string | null;
   tags?: string[];
+  /** Wave 1.3 (#311): patch acceptance criteria; null clears, string sets. */
+  acceptance_criteria?: string | null;
 }
 
 export interface TaskFilters {

@@ -16,6 +16,11 @@ export const CreateTaskSchema = z.object({
   created_by: z.string().min(1, 'Created by is required').max(100),
   due_date: z.string().datetime({ message: 'Due date must be ISO8601 format' }).optional().nullable(),
   tags: z.array(z.string().min(1).max(50)).max(20).optional().default([]),
+  // Wave 1.3 (task #311): free-form plain-text acceptance criteria. Clients
+  // supply this on create to make "what would prove this is done?" structured
+  // rather than buried in the description field. Multi-line markdown is fine.
+  // No DB constraint — the 5000-char cap is a schema-layer business rule.
+  acceptance_criteria: z.string().max(5000).optional().nullable(),
   // Phase 31 (Plan 31-01): optional FK fields. NOTE — these are server-derived
   // at route boundaries (T-31-02 of 31-01-PLAN threat register): downstream
   // plans STRIP body-supplied values and set them from request.user / Slack
@@ -63,6 +68,9 @@ export const UpdateTaskSchema = z.object({
   // Phase 31 (Plan 31-01): optional FK field. Server-derived at the route
   // boundary (T-31-02) — downstream plans STRIP body-supplied values.
   assignee_user_id: z.number().int().positive().nullable(),
+  // Wave 1.3 (task #311): patch acceptance_criteria on existing tasks.
+  // Pass null to clear, a string to set. Same 5000-char cap as create.
+  acceptance_criteria: z.string().max(5000).nullable(),
 }).partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
@@ -84,6 +92,9 @@ export const UpdateTaskClientSchema = z.object({
   assignee: z.string().max(100).nullable(),
   due_date: z.string().datetime().nullable(),
   tags: z.array(z.string().min(1).max(50)).max(20),
+  // Wave 1.3 (task #311): clients can patch acceptance_criteria — it is
+  // NOT server-derived, so it stays on the client-facing schema.
+  acceptance_criteria: z.string().max(5000).nullable(),
 }).partial().strict();
 
 export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;

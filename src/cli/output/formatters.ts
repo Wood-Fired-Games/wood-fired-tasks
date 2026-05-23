@@ -199,6 +199,14 @@ export function formatTaskDetail(task: TaskResponse): string {
     lines.push(task.description);
   }
 
+  // Wave 1.3 (#311): only render the acceptance block when a value is present —
+  // existing NULL-acceptance tasks should look identical to pre-1.3 output.
+  if (task.acceptance_criteria) {
+    lines.push('');
+    lines.push(`${bold('Acceptance criteria:')}`);
+    lines.push(task.acceptance_criteria);
+  }
+
   return lines.join('\n');
 }
 

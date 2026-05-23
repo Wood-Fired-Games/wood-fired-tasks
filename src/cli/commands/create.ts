@@ -18,6 +18,12 @@ export const createCommand = new Command('create')
   .option('-a, --assignee <name>', 'Assignee name')
   .option('--due <date>', 'Due date (ISO8601 format, e.g. 2025-12-31T00:00:00Z)')
   .option('--tags <tags>', 'Comma-separated tags')
+  // Wave 1.3 (#311): single-value flag carrying plain-text (markdown) acceptance
+  // criteria. Newlines inside the string are preserved by the shell when quoted,
+  // so `--acceptance $'line1\nline2'` works without needing a repeatable option
+  // collector. (Repeatable collection is a possible v2 enhancement once we see
+  // how callers actually want to express multi-clause criteria.)
+  .option('--acceptance <text>', 'Acceptance criteria (plain text / markdown)')
   .action(async (options) => {
     try {
       // Check if JSON mode (global flag from program)
@@ -80,6 +86,9 @@ export const createCommand = new Command('create')
       }
       if (options.tags) {
         input.tags = options.tags.split(',').map((tag: string) => tag.trim());
+      }
+      if (options.acceptance) {
+        input.acceptance_criteria = options.acceptance;
       }
 
       // Create task via API

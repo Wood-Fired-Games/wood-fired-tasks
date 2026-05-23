@@ -281,6 +281,25 @@ describe('formatters: task renderers', () => {
     expect(out).toContain('A description');
   });
 
+  it('formatTaskDetail renders acceptance_criteria block when present (#311)', async () => {
+    const { formatTaskDetail } = await loadModule();
+    const out = formatTaskDetail({
+      ...baseTask,
+      acceptance_criteria: 'Build green; lint clean.',
+    });
+    expect(out).toContain('Acceptance criteria:');
+    expect(out).toContain('Build green; lint clean.');
+  });
+
+  it('formatTaskDetail omits acceptance_criteria block when null (#311)', async () => {
+    const { formatTaskDetail } = await loadModule();
+    const out = formatTaskDetail({
+      ...baseTask,
+      acceptance_criteria: null,
+    });
+    expect(out).not.toContain('Acceptance criteria:');
+  });
+
   it('formatTaskDetail omits empty description block and renders dashes for null fields', async () => {
     const { formatTaskDetail } = await loadModule();
     const out = formatTaskDetail({

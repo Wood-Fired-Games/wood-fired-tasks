@@ -1012,6 +1012,10 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "items": {
                         "additionalProperties": false,
                         "properties": {
+                          "acceptance_criteria": {
+                            "nullable": true,
+                            "type": "string",
+                          },
                           "assignee": {
                             "nullable": true,
                             "type": "string",
@@ -1105,6 +1109,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "version",
                           "claimed_at",
                           "tags",
+                          "acceptance_criteria",
                         ],
                         "type": "object",
                       },
@@ -1152,6 +1157,11 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "acceptance_criteria": {
+                    "maxLength": 5000,
+                    "nullable": true,
+                    "type": "string",
+                  },
                   "assignee": {
                     "maxLength": 100,
                     "nullable": true,
@@ -1236,6 +1246,10 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "acceptance_criteria": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "assignee": {
                       "nullable": true,
                       "type": "string",
@@ -1329,6 +1343,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "claimed_at",
                     "tags",
+                    "acceptance_criteria",
                   ],
                   "type": "object",
                 },
@@ -1675,6 +1690,10 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "acceptance_criteria": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "assignee": {
                       "nullable": true,
                       "type": "string",
@@ -1768,6 +1787,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "claimed_at",
                     "tags",
+                    "acceptance_criteria",
                   ],
                   "type": "object",
                 },
@@ -1801,6 +1821,11 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "acceptance_criteria": {
+                    "maxLength": 5000,
+                    "nullable": true,
+                    "type": "string",
+                  },
                   "assignee": {
                     "maxLength": 100,
                     "nullable": true,
@@ -1878,6 +1903,10 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "acceptance_criteria": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "assignee": {
                       "nullable": true,
                       "type": "string",
@@ -1971,6 +2000,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "claimed_at",
                     "tags",
+                    "acceptance_criteria",
                   ],
                   "type": "object",
                 },
@@ -2027,6 +2057,10 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "acceptance_criteria": {
+                      "nullable": true,
+                      "type": "string",
+                    },
                     "assignee": {
                       "nullable": true,
                       "type": "string",
@@ -2120,6 +2154,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "claimed_at",
                     "tags",
+                    "acceptance_criteria",
                   ],
                   "type": "object",
                 },
@@ -2688,6 +2723,10 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "items": {
                         "additionalProperties": false,
                         "properties": {
+                          "acceptance_criteria": {
+                            "nullable": true,
+                            "type": "string",
+                          },
                           "assignee": {
                             "nullable": true,
                             "type": "string",
@@ -2781,6 +2820,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "version",
                           "claimed_at",
                           "tags",
+                          "acceptance_criteria",
                         ],
                         "type": "object",
                       },

@@ -40,6 +40,12 @@ export interface Task {
   version: number;
   claimed_at: string | null;
   completed_at: string | null; // ISO8601; set when status transitions to 'done'
+  /**
+   * Wave 1.3 (task #311): optional free-form acceptance criteria. Plain
+   * markdown — what would prove this task is done. NULL for all rows that
+   * pre-date migration 011 or for tasks the author chose not to populate.
+   */
+  acceptance_criteria: string | null;
 }
 
 export interface Project {
@@ -94,6 +100,8 @@ export interface CreateTaskDTO {
   created_by_user_id?: number | null;
   /** Phase 31: optional FK into users(id) — parallel to `assignee` TEXT. */
   assignee_user_id?: number | null;
+  /** Wave 1.3 (#311): optional free-form acceptance criteria (markdown). */
+  acceptance_criteria?: string | null;
 }
 
 export interface UpdateTaskDTO {
@@ -112,6 +120,11 @@ export interface UpdateTaskDTO {
    * the FK column. When omitted, the FK column is untouched.
    */
   assignee_user_id?: number | null;
+  /**
+   * Wave 1.3 (#311): patch acceptance_criteria. `undefined` (key absent)
+   * leaves the column untouched; explicit `null` clears it; a string sets it.
+   */
+  acceptance_criteria?: string | null;
 }
 
 export interface CreateProjectDTO {

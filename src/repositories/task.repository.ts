@@ -74,11 +74,11 @@ export class TaskRepository implements ITaskRepository {
       INSERT INTO tasks (
         title, description, status, priority, project_id, parent_task_id,
         estimated_minutes, assignee, created_by, due_date, created_at, updated_at,
-        created_by_user_id, assignee_user_id
+        created_by_user_id, assignee_user_id, acceptance_criteria
       ) VALUES (
         @title, @description, @status, @priority, @project_id, @parent_task_id,
         @estimated_minutes, @assignee, @created_by, @due_date, @created_at, @updated_at,
-        @created_by_user_id, @assignee_user_id
+        @created_by_user_id, @assignee_user_id, @acceptance_criteria
       )
     `);
 
@@ -127,6 +127,9 @@ export class TaskRepository implements ITaskRepository {
         // omits the FK fields, the column stays NULL.
         created_by_user_id: dto.created_by_user_id ?? null,
         assignee_user_id: dto.assignee_user_id ?? null,
+        // Wave 1.3 (#311): same SQL+binding skew rule — bind explicit NULL
+        // when the caller omits the field so pre-1.3 callers keep working.
+        acceptance_criteria: dto.acceptance_criteria ?? null,
       });
 
       const taskId = info.lastInsertRowid as number;
@@ -258,6 +261,13 @@ export class TaskRepository implements ITaskRepository {
       if (updates.estimated_minutes !== undefined) {
         fields.push('estimated_minutes = @estimated_minutes');
         params.estimated_minutes = updates.estimated_minutes;
+      }
+      // Wave 1.3 (#311): patch acceptance_criteria. `undefined` (key absent)
+      // leaves the column untouched; explicit `null` clears it; a string sets
+      // it. Same opt-in semantics as the other partial-update fields above.
+      if (updates.acceptance_criteria !== undefined) {
+        fields.push('acceptance_criteria = @acceptance_criteria');
+        params.acceptance_criteria = updates.acceptance_criteria;
       }
 
       // Always update updated_at

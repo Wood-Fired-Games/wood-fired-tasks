@@ -247,6 +247,50 @@ describe('create command', () => {
     expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('created successfully'));
   });
 
+  it('passes --acceptance into the createTask payload as acceptance_criteria (#311)', async () => {
+    // Wave 1.3: CLI exposes the new server field via --acceptance <text>.
+    // Single-value flag — the caller can embed newlines via $'...' if they
+    // want multi-line markdown. The flag name diverges from the field name
+    // for ergonomics (`--acceptance` is shorter than `--acceptance-criteria`).
+    const { createTask } = await import('../api/client.js');
+    vi.mocked(createTask).mockResolvedValue({
+      id: 99,
+      title: 'Acceptance flag task',
+      description: null,
+      status: 'open',
+      priority: 'medium',
+      project_id: 1,
+      assignee: null,
+      created_by: 'alice',
+      due_date: null,
+      created_at: '2026-02-13T00:00:00Z',
+      updated_at: '2026-02-13T00:00:00Z',
+      tags: [],
+    });
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'create',
+      '-t',
+      'Acceptance flag task',
+      '-p',
+      '1',
+      '-c',
+      'alice',
+      '--acceptance',
+      'tests pass; lint clean',
+    ]);
+
+    expect(createTask).toHaveBeenCalledWith({
+      title: 'Acceptance flag task',
+      project_id: 1,
+      created_by: 'alice',
+      priority: 'medium',
+      acceptance_criteria: 'tests pass; lint clean',
+    });
+  });
+
   it('prompts for missing title when not provided', async () => {
     const { createTask } = await import('../api/client.js');
     const { promptForMissing } = await import('../prompts/interactive.js');

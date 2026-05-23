@@ -22,6 +22,13 @@ export const TaskResponseSchema = z.object({
   version: z.number(),
   claimed_at: z.string().nullable(),
   tags: z.array(z.string()),
+  /**
+   * Wave 1.3 (task #311): optional free-form acceptance criteria (markdown).
+   * Heavy text field — full-task projections (`GET /tasks/:id`, MCP get_task,
+   * REST `POST /tasks` response) include it; the compact `toCompactTask`
+   * projection used by `list_tasks` does NOT.
+   */
+  acceptance_criteria: z.string().nullable(),
 });
 
 /**

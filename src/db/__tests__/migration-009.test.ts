@@ -275,13 +275,39 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('up() after down() restores schema (round-trip)', async () => {
-    const before = db
+    // We assert on:
+    //   (a) the index sqlite_master rows (3 of them), AND
+    //   (b) the *column set* on the tasks / task_comments tables —
+    //       rather than the raw `sql` blob.
+    //
+    // Why not compare the raw `sql` blob anymore?
+    //   SQLite's ALTER TABLE DROP COLUMN does a table rebuild that recomputes
+    //   the canonical CREATE TABLE text. When LATER migrations (e.g. 011 added
+    //   `tasks.acceptance_criteria`) introduce additional columns AFTER the
+    //   009 columns, the rebuild reorders them: the post-rebuild CREATE TABLE
+    //   ends up with `acceptance_criteria` placed before the re-added
+    //   `created_by_user_id` / `assignee_user_id`. That's a cosmetic difference
+    //   in the stored DDL string only — the column SET, types, FK targets, and
+    //   index targets all round-trip correctly, which is what migration 009
+    //   actually contracts. Compare on the structural facts.
+    const beforeIndexes = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
          WHERE name IN ('idx_tasks_created_by_user_id','idx_tasks_assignee_user_id','idx_task_comments_author_user_id')
-            OR (type='table' AND name IN ('tasks','task_comments'))
-         ORDER BY type, name`
+         ORDER BY name`
       )
+      .all();
+    const beforeTaskCols = db
+      .prepare("PRAGMA table_info('tasks')")
+      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const beforeCommentCols = db
+      .prepare("PRAGMA table_info('task_comments')")
+      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const beforeTaskFks = db
+      .prepare("PRAGMA foreign_key_list('tasks')")
+      .all();
+    const beforeCommentFks = db
+      .prepare("PRAGMA foreign_key_list('task_comments')")
       .all();
 
     const { up, down } = await import(
@@ -290,15 +316,92 @@ describe('migration 009: parallel FK columns', () => {
     await down(db);
     await up(db);
 
-    const after = db
+    const afterIndexes = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
          WHERE name IN ('idx_tasks_created_by_user_id','idx_tasks_assignee_user_id','idx_task_comments_author_user_id')
-            OR (type='table' AND name IN ('tasks','task_comments'))
-         ORDER BY type, name`
+         ORDER BY name`
       )
       .all();
+    const afterTaskCols = db
+      .prepare("PRAGMA table_info('tasks')")
+      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const afterCommentCols = db
+      .prepare("PRAGMA table_info('task_comments')")
+      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const afterTaskFks = db
+      .prepare("PRAGMA foreign_key_list('tasks')")
+      .all();
+    const afterCommentFks = db
+      .prepare("PRAGMA foreign_key_list('task_comments')")
+      .all();
 
-    expect(after).toEqual(before);
+    // Indexes survive verbatim (same DDL, same target columns).
+    expect(afterIndexes).toEqual(beforeIndexes);
+
+    // Column SET (not order) is preserved on both tables. We compare by name
+    // because cid (column index) shifts when SQLite rebuilds the table.
+    const colKey = (c: { name: string; type: string; notnull: number }) =>
+      `${c.name}:${c.type}:${c.notnull}`;
+    expect(afterTaskCols.map(colKey).sort()).toEqual(
+      beforeTaskCols.map(colKey).sort()
+    );
+    expect(afterCommentCols.map(colKey).sort()).toEqual(
+      beforeCommentCols.map(colKey).sort()
+    );
+
+    // FK targets and ON DELETE actions are preserved.
+    const fkKey = (fk: {
+      table: string;
+      from: string;
+      to: string;
+      on_delete: string;
+    }) => `${fk.from}->${fk.table}.${fk.to}:${fk.on_delete}`;
+    const fkKeysSorted = (
+      rows: Array<{
+        table: string;
+        from: string;
+        to: string;
+        on_delete: string;
+      }>
+    ) => rows.map(fkKey).sort();
+    expect(
+      fkKeysSorted(
+        afterTaskFks as Array<{
+          table: string;
+          from: string;
+          to: string;
+          on_delete: string;
+        }>
+      )
+    ).toEqual(
+      fkKeysSorted(
+        beforeTaskFks as Array<{
+          table: string;
+          from: string;
+          to: string;
+          on_delete: string;
+        }>
+      )
+    );
+    expect(
+      fkKeysSorted(
+        afterCommentFks as Array<{
+          table: string;
+          from: string;
+          to: string;
+          on_delete: string;
+        }>
+      )
+    ).toEqual(
+      fkKeysSorted(
+        beforeCommentFks as Array<{
+          table: string;
+          from: string;
+          to: string;
+          on_delete: string;
+        }>
+      )
+    );
   });
 });
