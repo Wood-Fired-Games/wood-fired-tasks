@@ -32,7 +32,11 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { findByDeviceCode } from '../../../services/device-flow-store.js';
+import {
+  findByDeviceCode,
+  remove,
+} from '../../../services/device-flow-store.js';
+import { toAuthenticatedUser } from '../../plugins/auth/strategies/pat.js';
 
 export interface DeviceTokenRouteOptions {
   expectedClientId: string;
@@ -56,6 +60,15 @@ const deviceTokenRoute: FastifyPluginAsync<DeviceTokenRouteOptions> = async (
   fastify,
   opts,
 ) => {
+  // Plan 30-04 — token endpoint reads userRepository to build the success
+  // envelope's `user` field. Fail fast at register time if the host app
+  // didn't wire it.
+  if (!fastify.hasDecorator('userRepository')) {
+    throw new Error(
+      'deviceTokenRoute requires userRepository to be decorated before registration',
+    );
+  }
+
   fastify.post(
     '/auth/device/token',
     { config: { skipAuth: true } },
@@ -116,14 +129,64 @@ const deviceTokenRoute: FastifyPluginAsync<DeviceTokenRouteOptions> = async (
 
       switch (session.status) {
         case 'pending':
-        case 'approved':
-          // Plan 30-04 replaces the 'approved' branch with the PAT mint
-          // (look up the user repo by approvedUserId, call generateToken,
-          // insert the api_tokens row, then remove(session.deviceCode) to
-          // prevent replay, then send 200 with the token). Until then
-          // we deliberately keep returning authorization_pending so the
-          // CLI safely polls in a loop while Plans 30-02 / 30-04 ship.
           return reply.code(400).send({ error: 'authorization_pending' });
+        case 'approved': {
+          // Plan 30-04: the verify handler mints the PAT and stashes
+          // {tokenId, token} on the session via recordMintedToken. The
+          // CLI may poll between approve() and the mint completing (a
+          // narrow window, but real — DB outage path keeps the session
+          // in approved/unminted state). In that case the CLI must keep
+          // polling, NOT receive a half-built envelope.
+          if (
+            session.mintedToken === null ||
+            session.mintedTokenId === null ||
+            session.approvedUserId === null
+          ) {
+            return reply
+              .code(400)
+              .send({ error: 'authorization_pending' });
+          }
+          // Look up the approver to project an AuthenticatedUser into
+          // the success envelope. Anything missing here is a bug — the
+          // user existed when verify ran, and the FK ON DELETE CASCADE
+          // would have killed the api_tokens row too. Treat as 500-class.
+          const userRow = fastify.userRepository.findById(
+            session.approvedUserId,
+          );
+          if (!userRow) {
+            request.log.error(
+              {
+                event: 'device_flow_user_vanished',
+                userId: session.approvedUserId,
+                tokenId: session.mintedTokenId,
+              },
+              'approved user not found at token delivery',
+            );
+            return reply.code(400).send({ error: 'expired_token' });
+          }
+          const successEnvelope = {
+            token: session.mintedToken,
+            token_type: 'PAT' as const,
+            token_id: session.mintedTokenId,
+            user: toAuthenticatedUser(userRow),
+          };
+          // One-shot consumption — Threat T-30-04-01 mitigation. We
+          // remove BEFORE sending so a hypothetical synchronous replay
+          // would already see expired_token. (fastify.inject is async
+          // so this ordering matters; production CLI polls are also
+          // network-async.) The captured envelope above is the only
+          // copy of session.mintedToken that survives `remove`.
+          remove(session.deviceCode);
+          request.log.info(
+            {
+              event: 'device_flow_token_issued',
+              userId: session.approvedUserId,
+              tokenId: session.mintedTokenId,
+            },
+            'device-flow PAT delivered',
+          );
+          return reply.code(200).send(successEnvelope);
+        }
         case 'denied':
           return reply.code(400).send({ error: 'access_denied' });
         case 'expired':

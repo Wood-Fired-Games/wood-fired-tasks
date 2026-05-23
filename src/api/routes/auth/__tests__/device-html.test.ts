@@ -28,7 +28,17 @@ import { SESSION_LIFETIME_SECONDS } from '../../../../web/session-constants.js';
 const ORIGIN = 'http://localhost:3000';
 
 async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const app: any = Fastify();
+  // Plan 30-04 added a defensive `hasDecorator('apiTokenRepository')` check
+  // at plugin-register time. This test file only exercises GET /auth/device,
+  // never the mint path on POST /auth/device/verify — a stub decorator
+  // satisfies the boot guard without pulling in the full repo.
+  app.decorate('apiTokenRepository', {
+    insert: () => {
+      throw new Error('device-html.test stub: insert() should not be called');
+    },
+  });
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
     sessionName: 'session',

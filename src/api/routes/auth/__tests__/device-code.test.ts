@@ -117,7 +117,11 @@ describe('POST /auth/device/code', () => {
     expect(r.json()).toMatchObject({ error: 'invalid_client' });
   });
 
-  it('no hostname → session has hostname=null', async () => {
+  it('no hostname → session.hostname is sanitized to "unknown" (Plan 30-04)', async () => {
+    // Plan 30-01 originally stored the raw `null`; Plan 30-04 moves the
+    // hostname sanitization into createSession itself so a downstream
+    // `tokenName(session.hostname)` call can be safely uncondtional.
+    // null/empty are deterministically mapped to 'unknown'.
     const r = await app.inject({
       method: 'POST',
       url: '/auth/device/code',
@@ -128,7 +132,7 @@ describe('POST /auth/device/code', () => {
     const body = r.json() as { device_code: string };
     const session = findByDeviceCode(body.device_code);
     expect(session).toBeDefined();
-    expect(session?.hostname).toBeNull();
+    expect(session?.hostname).toBe('unknown');
   });
 
   it('empty body → 400 invalid_request', async () => {

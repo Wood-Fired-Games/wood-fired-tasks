@@ -34,7 +34,10 @@ import deviceTokenRoute from '../device-token.js';
 import deviceHtmlRoute from '../device-html.js';
 import { extractSessionCookie } from '../../../../../tests/helpers/session-cookie.js';
 import { SESSION_LIFETIME_SECONDS } from '../../../../web/session-constants.js';
-import { _resetForTests as resetDeviceFlowStore } from '../../../../services/device-flow-store.js';
+import {
+  _resetForTests as resetDeviceFlowStore,
+  findByDeviceCode,
+} from '../../../../services/device-flow-store.js';
 import { initDatabase } from '../../../../db/database.js';
 import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
@@ -238,6 +241,13 @@ describe('device-flow end-to-end (server side)', () => {
       | undefined;
     expect(dbRow).toBeDefined();
     expect(dbRow?.name).toBe(`cli-ci-runner-${todayUtc()}`);
+
+    // Pull lastPollAt back so the next poll lands outside the (interval-1)s
+    // rate-gate cooldown. The CLI's real poll loop sleeps for `interval`
+    // seconds between polls; mirroring that with timer-mutation keeps the
+    // test deterministic without sleeping for 5+ real seconds.
+    const refForPoll = findByDeviceCode(codeBody.device_code);
+    if (refForPoll) refForPoll.lastPollAt = Date.now() - 10_000;
 
     // 5. POST /auth/device/token — should now return the PAT.
     const pollSuccess = await h.app.inject({
