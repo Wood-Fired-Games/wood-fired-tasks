@@ -8,8 +8,12 @@ import {
 } from 'fastify-type-provider-zod';
 import fastifySSE, { SSEPluginOptions } from '@fastify/sse';
 import rateLimit from '@fastify/rate-limit';
+import fastifyCookie from '@fastify/cookie';
+import fastifySecureSession from '@fastify/secure-session';
+import fastifyFormbody from '@fastify/formbody';
 import { createApp, App } from '../index.js';
 import { config } from '../config/env.js';
+import { SESSION_LIFETIME_SECONDS } from '../web/session-constants.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
@@ -268,6 +272,48 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
       return err;
     },
   });
+
+  // ─── Phase 29 Plan 04 ─── cookie → secure-session → formbody (top level)
+  //
+  // Registered HERE (above /health and the /api/v1 scope) so:
+  //   • Cookie parsing is uniform across web routes (Plan 29-06/29-07) and
+  //     the /api/v1 scope (where the Phase 28 auth chain's session strategy
+  //     reads `request.session.get('user')`).
+  //   • The order avoids Pitfall 5 — secure-session auto-loads
+  //     @fastify/cookie if absent; an EXPLICIT cookie registration first
+  //     pins the version AND avoids FST_ERR_PLUGIN_DUPLICATE.
+  //   • formbody is global because /auth/logout (Plan 29-06) and HTML form
+  //     posts (Plan 29-07) use application/x-www-form-urlencoded; JSON
+  //     routes are unaffected (formbody only intercepts form-urlencoded).
+  //
+  // When OIDC is disabled (no SESSION_COOKIE_SECRET), the secure-session
+  // plugin would throw on missing key — so we register cookie but SKIP
+  // secure-session + formbody. The session-strategy stub at Plan 29-05
+  // handles `request.session === undefined` gracefully.
+  //
+  // R4 dual-source-of-truth: BOTH `expiry` (server-side enforcement) AND
+  // `cookie.maxAge` (browser-side Set-Cookie attribute) come from the
+  // SAME constant SESSION_LIFETIME_SECONDS. A regression that updates
+  // one without the other is caught by `session-plugins.test.ts`.
+  await server.register(fastifyCookie);
+
+  if (config.SESSION_COOKIE_SECRET) {
+    await server.register(fastifySecureSession, {
+      sessionName: 'session',
+      cookieName: config.SESSION_COOKIE_NAME,
+      key: Buffer.from(config.SESSION_COOKIE_SECRET, 'base64'),
+      expiry: SESSION_LIFETIME_SECONDS,
+      cookie: {
+        path: '/',
+        httpOnly: true,
+        secure: config.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: SESSION_LIFETIME_SECONDS,
+      },
+    });
+    await server.register(fastifyFormbody);
+  }
+  // ─── end Phase 29 Plan 04 ───
 
   // Register public health check route (no auth required). task #185: the
   // route now returns only { status, timestamp, version } so internal stats
