@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../../../types/task.js';
+import { VerificationEvidenceSchema } from '../../../schemas/task.schema.js';
 
 /**
  * TaskResponseSchema - Zod schema for task response
@@ -29,6 +30,13 @@ export const TaskResponseSchema = z.object({
    * projection used by `list_tasks` does NOT.
    */
   acceptance_criteria: z.string().nullable(),
+  /**
+   * Wave 1.4 (task #312): structured verification evidence (verdict + checks).
+   * The REST list endpoint (`GET /tasks`) strips this by default — pass
+   * `?include=verification` to opt back in. Single-task GET and create/update
+   * response bodies always include it.
+   */
+  verification_evidence: VerificationEvidenceSchema.nullable(),
 });
 
 /**

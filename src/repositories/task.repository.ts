@@ -4,6 +4,7 @@ import type {
   CreateTaskDTO,
   UpdateTaskDTO,
   TaskFilters,
+  VerificationEvidence,
 } from '../types/task.js';
 import {
   DEFAULT_PAGE_LIMIT,
@@ -55,6 +56,44 @@ function normalizeTaskTimestamps<T extends { updated_at: string }>(task: T): T {
   return { ...task, updated_at: normalizeIsoTimestamp(task.updated_at) };
 }
 
+/**
+ * Wave 1.4 (#312): parse the JSON-string verification_evidence column into
+ * a typed object so service / route / MCP / CLI callers see a structured
+ * value (matching the Task type) instead of having to JSON.parse themselves.
+ *
+ * Defensive: if a row contains a non-JSON string (e.g. corruption from a
+ * pre-1.4 hand-edit, or a future migration that touches the column), we
+ * surface `null` rather than crashing the whole query. Validation against
+ * the Zod schema is enforced at the boundary on write — read-side parsing
+ * trusts the bytes were validated on the way in.
+ */
+function parseVerificationEvidence(
+  raw: string | null | undefined
+): VerificationEvidence | null {
+  if (raw === null || raw === undefined) return null;
+  try {
+    return JSON.parse(raw) as VerificationEvidence;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wave 1.4 (#312): in-place transform that converts the raw TEXT column
+ * `verification_evidence` (string-or-null) into the parsed
+ * `VerificationEvidence | null` shape that all upstream consumers expect.
+ *
+ * Returns a new object so the original row (a better-sqlite3 cell map) is
+ * not mutated underneath any other reader.
+ */
+function inflateVerificationEvidence<
+  T extends { verification_evidence?: string | VerificationEvidence | null }
+>(task: T): T & { verification_evidence: VerificationEvidence | null } {
+  const raw = task.verification_evidence;
+  const parsed = typeof raw === 'string' ? parseVerificationEvidence(raw) : (raw ?? null);
+  return { ...task, verification_evidence: parsed };
+}
+
 export class TaskRepository implements ITaskRepository {
   private insertTaskStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
@@ -74,11 +113,13 @@ export class TaskRepository implements ITaskRepository {
       INSERT INTO tasks (
         title, description, status, priority, project_id, parent_task_id,
         estimated_minutes, assignee, created_by, due_date, created_at, updated_at,
-        created_by_user_id, assignee_user_id, acceptance_criteria
+        created_by_user_id, assignee_user_id, acceptance_criteria,
+        verification_evidence
       ) VALUES (
         @title, @description, @status, @priority, @project_id, @parent_task_id,
         @estimated_minutes, @assignee, @created_by, @due_date, @created_at, @updated_at,
-        @created_by_user_id, @assignee_user_id, @acceptance_criteria
+        @created_by_user_id, @assignee_user_id, @acceptance_criteria,
+        @verification_evidence
       )
     `);
 
@@ -130,6 +171,10 @@ export class TaskRepository implements ITaskRepository {
         // Wave 1.3 (#311): same SQL+binding skew rule — bind explicit NULL
         // when the caller omits the field so pre-1.3 callers keep working.
         acceptance_criteria: dto.acceptance_criteria ?? null,
+        // Wave 1.4 (#312): verification_evidence is never set on CREATE — a
+        // brand-new task has no evidence yet. Bind NULL unconditionally so
+        // the SQL/binding count stays in sync.
+        verification_evidence: null,
       });
 
       const taskId = info.lastInsertRowid as number;
@@ -152,7 +197,13 @@ export class TaskRepository implements ITaskRepository {
   }
 
   findById(id: number): (Task & { tags: string[] }) | null {
-    const task = mapRow<Task>(this.findByIdStmt, id);
+    // Row arrives with verification_evidence as a raw JSON string (or NULL).
+    // Inflate it to the typed object the Task contract expects before
+    // returning. The cast is narrow: better-sqlite3 surfaces the column as
+    // `string | null`, which the inflateVerificationEvidence helper accepts.
+    const task = mapRow<Omit<Task, 'verification_evidence'> & {
+      verification_evidence: string | null;
+    }>(this.findByIdStmt, id);
     if (!task) {
       return null;
     }
@@ -161,7 +212,9 @@ export class TaskRepository implements ITaskRepository {
     const tagRows = mapRows<{ tag: string }>(this.findTagsByTaskIdStmt, id);
     const tags = tagRows.map((row) => row.tag);
 
-    return normalizeTaskTimestamps({ ...task, tags });
+    return normalizeTaskTimestamps(
+      inflateVerificationEvidence({ ...task, tags })
+    );
   }
 
   findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }> {
@@ -191,7 +244,9 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps({ ...task, tags });
+      return normalizeTaskTimestamps(
+        inflateVerificationEvidence({ ...task, tags })
+      );
     });
   }
 
@@ -268,6 +323,16 @@ export class TaskRepository implements ITaskRepository {
       if (updates.acceptance_criteria !== undefined) {
         fields.push('acceptance_criteria = @acceptance_criteria');
         params.acceptance_criteria = updates.acceptance_criteria;
+      }
+      // Wave 1.4 (#312): patch verification_evidence. Same opt-in semantics
+      // as acceptance_criteria above. The TEXT column stores the JSON
+      // serialization — explicit null clears it.
+      if (updates.verification_evidence !== undefined) {
+        fields.push('verification_evidence = @verification_evidence');
+        params.verification_evidence =
+          updates.verification_evidence === null
+            ? null
+            : JSON.stringify(updates.verification_evidence);
       }
 
       // Always update updated_at
@@ -372,6 +437,21 @@ export class TaskRepository implements ITaskRepository {
       params.search = filters.search;
     }
 
+    // Wave 1.4 (#312): verified-state filter using json_extract on the
+    // verdict slot of the JSON column. NULL-evidence rows (rows that never
+    // crossed a closing transition with auto-NOT_VERIFIED, or pre-1.4 rows)
+    // collapse into the "not verified" bucket alongside explicit NOT_VERIFIED
+    // and FAIL.
+    if (filters.verified === true) {
+      whereClauses.push(
+        "json_extract(t.verification_evidence, '$.verdict') IN ('PASS', 'PARTIAL')"
+      );
+    } else if (filters.verified === false) {
+      whereClauses.push(
+        "(t.verification_evidence IS NULL OR json_extract(t.verification_evidence, '$.verdict') IN ('NOT_VERIFIED', 'FAIL'))"
+      );
+    }
+
     // Build final query
     const whereClause =
       whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -421,7 +501,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps({ ...task, tags });
+      return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
     });
   }
 
@@ -501,7 +581,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps({ ...task, tags });
+      return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
     });
   }
 
@@ -587,6 +667,18 @@ export class TaskRepository implements ITaskRepository {
       params.search = filters.search;
     }
 
+    // Wave 1.4 (#312): mirror the verified-state predicate from findByFilters
+    // so paginated callers get a `total` that matches the visible result set.
+    if (filters.verified === true) {
+      whereClauses.push(
+        "json_extract(t.verification_evidence, '$.verdict') IN ('PASS', 'PARTIAL')"
+      );
+    } else if (filters.verified === false) {
+      whereClauses.push(
+        "(t.verification_evidence IS NULL OR json_extract(t.verification_evidence, '$.verdict') IN ('NOT_VERIFIED', 'FAIL'))"
+      );
+    }
+
     const whereClause =
       whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
@@ -660,7 +752,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps({ ...task, tags });
+      return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
     });
   }
 }

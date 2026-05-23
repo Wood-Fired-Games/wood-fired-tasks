@@ -152,6 +152,34 @@ describe('migration 011: tasks.acceptance_criteria', () => {
   });
 
   it('up() after down() restores the schema (round-trip)', async () => {
+    // This roundtrip must be measured against a database that has ONLY
+    // migrations 001-011 applied — running it on top of `runMigrations(db)`
+    // (which applies every migration including 012, 013, ...) would let a
+    // later migration's column survive the 011 round-trip and re-appear at
+    // the end of the tasks row, producing a column-order diff that has
+    // nothing to do with 011 itself.
+    //
+    // We tear down the shared db (which already had every migration applied
+    // by beforeEach) and re-create a clean one with only 001-011 applied.
+    db.close();
+    db = initTestDatabase();
+    for (let i = 1; i <= 11; i++) {
+      const filename = `${String(i).padStart(3, '0')}-*`;
+      const { readdirSync } = await import('fs');
+      const { join, dirname } = await import('path');
+      const { fileURLToPath, pathToFileURL } = await import('url');
+      const here = dirname(fileURLToPath(import.meta.url));
+      const migrationsDir = join(here, '..', 'migrations');
+      const match = readdirSync(migrationsDir).find((f) =>
+        f.startsWith(filename.slice(0, 4))
+      );
+      if (!match) throw new Error(`migration ${i} not found`);
+      const mod = (await import(
+        /* @vite-ignore */ pathToFileURL(join(migrationsDir, match)).href
+      )) as { up: (db: Database.Database) => void | Promise<void> };
+      await mod.up(db);
+    }
+
     const before = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master

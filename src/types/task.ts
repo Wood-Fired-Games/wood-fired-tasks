@@ -2,6 +2,28 @@
 export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged'] as const;
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
+/**
+ * Wave 1.4 (task #312): structured verification evidence stored in
+ * `tasks.verification_evidence` as a JSON string. Surface-level callers see
+ * the parsed object; the repository handles serialization on write and parse
+ * on read. The authoritative shape lives in
+ * `src/schemas/task.schema.ts#VerificationEvidenceSchema`.
+ */
+export interface VerificationCheck {
+  name: string;
+  status: 'PASS' | 'FAIL' | 'SKIP';
+  evidence_url_or_text: string;
+}
+
+export interface VerificationEvidence {
+  verdict: 'PASS' | 'FAIL' | 'PARTIAL' | 'NOT_VERIFIED';
+  checks?: VerificationCheck[];
+  verifier_session_id?: string;
+  verifier_request_id?: string;
+  /** ISO8601 timestamp recorded by the verifier (not set by auto-NOT_VERIFIED). */
+  verified_at?: string;
+}
+
 export type TaskStatus = typeof TASK_STATUSES[number];
 export type TaskPriority = typeof TASK_PRIORITIES[number];
 
@@ -46,6 +68,15 @@ export interface Task {
    * pre-date migration 011 or for tasks the author chose not to populate.
    */
   acceptance_criteria: string | null;
+  /**
+   * Wave 1.4 (task #312): structured verification evidence. NULL for rows
+   * that pre-date migration 012 OR tasks whose lifecycle has never crossed
+   * a closing transition. Materialized as `{verdict: "NOT_VERIFIED"}` by
+   * `task.service.ts updateTask` when a task transitions to done/closed
+   * without explicit evidence. Stored as a JSON string in SQLite; this
+   * field is the parsed object as seen by service / route / MCP / CLI.
+   */
+  verification_evidence: VerificationEvidence | null;
 }
 
 export interface Project {
@@ -125,6 +156,12 @@ export interface UpdateTaskDTO {
    * leaves the column untouched; explicit `null` clears it; a string sets it.
    */
   acceptance_criteria?: string | null;
+  /**
+   * Wave 1.4 (#312): patch verification_evidence. `undefined` leaves the
+   * column untouched; explicit `null` clears it; an object sets it
+   * (serialized to JSON by the repository).
+   */
+  verification_evidence?: VerificationEvidence | null;
 }
 
 export interface CreateProjectDTO {
@@ -156,6 +193,15 @@ export interface TaskFilters {
   updated_before?: string; // ISO8601
   updated_after?: string; // ISO8601
   search?: string;
+  /**
+   * Wave 1.4 (#312): verified-state filter.
+   *   true  → rows where parsed verdict ∈ {PASS, PARTIAL}.
+   *   false → rows where verification_evidence IS NULL OR
+   *           parsed verdict ∈ {NOT_VERIFIED, FAIL}.
+   *   undefined → no filter applied.
+   * Implemented via json_extract on `$.verdict`.
+   */
+  verified?: boolean;
   /** Pagination: max rows to return. Repository default applies if omitted. */
   limit?: number;
   /** Pagination: zero-based row offset. Defaults to 0. */

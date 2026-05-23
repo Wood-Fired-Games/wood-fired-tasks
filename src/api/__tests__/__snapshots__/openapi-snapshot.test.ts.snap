@@ -979,6 +979,26 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
           },
           {
             "in": "query",
+            "name": "verified",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true",
+                "false",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -1087,6 +1107,72 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "updated_at": {
                             "type": "string",
                           },
+                          "verification_evidence": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "checks": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "evidence_url_or_text": {
+                                      "maxLength": 2000,
+                                      "type": "string",
+                                    },
+                                    "name": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    "status": {
+                                      "enum": [
+                                        "PASS",
+                                        "FAIL",
+                                        "SKIP",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  },
+                                  "required": [
+                                    "name",
+                                    "status",
+                                    "evidence_url_or_text",
+                                  ],
+                                  "type": "object",
+                                },
+                                "maxItems": 50,
+                                "type": "array",
+                              },
+                              "verdict": {
+                                "enum": [
+                                  "PASS",
+                                  "FAIL",
+                                  "PARTIAL",
+                                  "NOT_VERIFIED",
+                                ],
+                                "type": "string",
+                              },
+                              "verified_at": {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string",
+                              },
+                              "verifier_request_id": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "verifier_session_id": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "verdict",
+                            ],
+                            "type": "object",
+                          },
                           "version": {
                             "type": "number",
                           },
@@ -1110,6 +1196,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "claimed_at",
                           "tags",
                           "acceptance_criteria",
+                          "verification_evidence",
                         ],
                         "type": "object",
                       },
@@ -1321,6 +1408,72 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "updated_at": {
                       "type": "string",
                     },
+                    "verification_evidence": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "checks": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "evidence_url_or_text": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "status": {
+                                "enum": [
+                                  "PASS",
+                                  "FAIL",
+                                  "SKIP",
+                                ],
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "status",
+                              "evidence_url_or_text",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "verdict": {
+                          "enum": [
+                            "PASS",
+                            "FAIL",
+                            "PARTIAL",
+                            "NOT_VERIFIED",
+                          ],
+                          "type": "string",
+                        },
+                        "verified_at": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string",
+                        },
+                        "verifier_request_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "verifier_session_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "verdict",
+                      ],
+                      "type": "object",
+                    },
                     "version": {
                       "type": "number",
                     },
@@ -1344,6 +1497,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "claimed_at",
                     "tags",
                     "acceptance_criteria",
+                    "verification_evidence",
                   ],
                   "type": "object",
                 },
@@ -1765,6 +1919,72 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "updated_at": {
                       "type": "string",
                     },
+                    "verification_evidence": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "checks": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "evidence_url_or_text": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "status": {
+                                "enum": [
+                                  "PASS",
+                                  "FAIL",
+                                  "SKIP",
+                                ],
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "status",
+                              "evidence_url_or_text",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "verdict": {
+                          "enum": [
+                            "PASS",
+                            "FAIL",
+                            "PARTIAL",
+                            "NOT_VERIFIED",
+                          ],
+                          "type": "string",
+                        },
+                        "verified_at": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string",
+                        },
+                        "verifier_request_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "verifier_session_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "verdict",
+                      ],
+                      "type": "object",
+                    },
                     "version": {
                       "type": "number",
                     },
@@ -1788,6 +2008,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "claimed_at",
                     "tags",
                     "acceptance_criteria",
+                    "verification_evidence",
                   ],
                   "type": "object",
                 },
@@ -1889,6 +2110,71 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "minLength": 1,
                     "type": "string",
                   },
+                  "verification_evidence": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "checks": {
+                        "items": {
+                          "properties": {
+                            "evidence_url_or_text": {
+                              "maxLength": 2000,
+                              "type": "string",
+                            },
+                            "name": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            "status": {
+                              "enum": [
+                                "PASS",
+                                "FAIL",
+                                "SKIP",
+                              ],
+                              "type": "string",
+                            },
+                          },
+                          "required": [
+                            "name",
+                            "status",
+                            "evidence_url_or_text",
+                          ],
+                          "type": "object",
+                        },
+                        "maxItems": 50,
+                        "type": "array",
+                      },
+                      "verdict": {
+                        "enum": [
+                          "PASS",
+                          "FAIL",
+                          "PARTIAL",
+                          "NOT_VERIFIED",
+                        ],
+                        "type": "string",
+                      },
+                      "verified_at": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                        "type": "string",
+                      },
+                      "verifier_request_id": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "verifier_session_id": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "verdict",
+                    ],
+                    "type": "object",
+                  },
                 },
                 "type": "object",
               },
@@ -1978,6 +2264,72 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "updated_at": {
                       "type": "string",
                     },
+                    "verification_evidence": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "checks": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "evidence_url_or_text": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "status": {
+                                "enum": [
+                                  "PASS",
+                                  "FAIL",
+                                  "SKIP",
+                                ],
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "status",
+                              "evidence_url_or_text",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "verdict": {
+                          "enum": [
+                            "PASS",
+                            "FAIL",
+                            "PARTIAL",
+                            "NOT_VERIFIED",
+                          ],
+                          "type": "string",
+                        },
+                        "verified_at": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string",
+                        },
+                        "verifier_request_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "verifier_session_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "verdict",
+                      ],
+                      "type": "object",
+                    },
                     "version": {
                       "type": "number",
                     },
@@ -2001,6 +2353,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "claimed_at",
                     "tags",
                     "acceptance_criteria",
+                    "verification_evidence",
                   ],
                   "type": "object",
                 },
@@ -2132,6 +2485,72 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "updated_at": {
                       "type": "string",
                     },
+                    "verification_evidence": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "checks": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "evidence_url_or_text": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "status": {
+                                "enum": [
+                                  "PASS",
+                                  "FAIL",
+                                  "SKIP",
+                                ],
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "status",
+                              "evidence_url_or_text",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "verdict": {
+                          "enum": [
+                            "PASS",
+                            "FAIL",
+                            "PARTIAL",
+                            "NOT_VERIFIED",
+                          ],
+                          "type": "string",
+                        },
+                        "verified_at": {
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                          "type": "string",
+                        },
+                        "verifier_request_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "verifier_session_id": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "verdict",
+                      ],
+                      "type": "object",
+                    },
                     "version": {
                       "type": "number",
                     },
@@ -2155,6 +2574,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "claimed_at",
                     "tags",
                     "acceptance_criteria",
+                    "verification_evidence",
                   ],
                   "type": "object",
                 },
@@ -2798,6 +3218,72 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "updated_at": {
                             "type": "string",
                           },
+                          "verification_evidence": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "checks": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "evidence_url_or_text": {
+                                      "maxLength": 2000,
+                                      "type": "string",
+                                    },
+                                    "name": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    "status": {
+                                      "enum": [
+                                        "PASS",
+                                        "FAIL",
+                                        "SKIP",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  },
+                                  "required": [
+                                    "name",
+                                    "status",
+                                    "evidence_url_or_text",
+                                  ],
+                                  "type": "object",
+                                },
+                                "maxItems": 50,
+                                "type": "array",
+                              },
+                              "verdict": {
+                                "enum": [
+                                  "PASS",
+                                  "FAIL",
+                                  "PARTIAL",
+                                  "NOT_VERIFIED",
+                                ],
+                                "type": "string",
+                              },
+                              "verified_at": {
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                                "type": "string",
+                              },
+                              "verifier_request_id": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "verifier_session_id": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "verdict",
+                            ],
+                            "type": "object",
+                          },
                           "version": {
                             "type": "number",
                           },
@@ -2821,6 +3307,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "claimed_at",
                           "tags",
                           "acceptance_criteria",
+                          "verification_evidence",
                         ],
                         "type": "object",
                       },

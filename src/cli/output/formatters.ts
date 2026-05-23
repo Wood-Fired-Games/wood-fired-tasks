@@ -207,6 +207,24 @@ export function formatTaskDetail(task: TaskResponse): string {
     lines.push(task.acceptance_criteria);
   }
 
+  // Wave 1.4 (#312): verdict + compact evidence summary. Only render when
+  // evidence is present so pre-1.4 (NULL-evidence) tasks look identical to
+  // the old output. We surface the verdict + the number of checks + the
+  // verified_at timestamp (when set) — the full check details are available
+  // via the JSON API for callers that want them.
+  if (task.verification_evidence) {
+    const ve = task.verification_evidence;
+    const checkCount = Array.isArray(ve.checks) ? ve.checks.length : 0;
+    const verifiedAt = ve.verified_at
+      ? new Date(ve.verified_at).toLocaleString()
+      : '-';
+    lines.push('');
+    lines.push(`${bold('Verification:')}`);
+    lines.push(`  ${bold('Verdict:')}     ${ve.verdict}`);
+    lines.push(`  ${bold('Checks:')}      ${checkCount}`);
+    lines.push(`  ${bold('Verified at:')} ${verifiedAt}`);
+  }
+
   return lines.join('\n');
 }
 

@@ -2,6 +2,70 @@ import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../types/task.js';
 
 /**
+ * Wave 1.4 (task #312): verdict enum for the verification_evidence envelope.
+ *
+ * - PASS         — verifier confirmed the task's acceptance criteria.
+ * - FAIL         — verifier ran the checks and at least one failed.
+ * - PARTIAL      — some checks passed, some failed/skipped.
+ * - NOT_VERIFIED — task closed without verification (auto-materialized by the
+ *                  service layer when status -> done/closed and no evidence
+ *                  was supplied). Explicitly distinct from "evidence absent
+ *                  because the column is NULL" — see service updateTask.
+ */
+export const VERIFICATION_VERDICTS = [
+  'PASS',
+  'FAIL',
+  'PARTIAL',
+  'NOT_VERIFIED',
+] as const;
+export type VerificationVerdict = (typeof VERIFICATION_VERDICTS)[number];
+
+/**
+ * Per-check status — tighter than the top-level verdict because a single
+ * check is a leaf (it either ran, or was skipped). Kept narrow on purpose so
+ * the boundary rejects free-form strings ("ok", "good", etc.) and forces
+ * verifier subagents to pick one of the three values.
+ */
+export const VERIFICATION_CHECK_STATUSES = ['PASS', 'FAIL', 'SKIP'] as const;
+export type VerificationCheckStatus =
+  (typeof VERIFICATION_CHECK_STATUSES)[number];
+
+/**
+ * Structured verification evidence stored in `tasks.verification_evidence`
+ * as a JSON string (write: JSON.stringify; read: JSON.parse — both happen
+ * inside the repository).
+ *
+ * Only `verdict` is required. Every other field is optional so the
+ * auto-NOT_VERIFIED materialization on close (service-layer behavior — see
+ * task.service.ts updateTask) can emit `{verdict: "NOT_VERIFIED"}` without
+ * lying about a verified_at timestamp or fabricating a session id.
+ *
+ * Bounds:
+ *  - `checks` capped at 50 entries (a single task does not realistically
+ *    accumulate more verification gates than that; the cap bounds row size).
+ *  - `evidence_url_or_text` capped at 2000 chars per entry.
+ *  - identifier strings capped at 200 chars.
+ */
+export const VerificationEvidenceSchema = z.object({
+  verdict: z.enum(VERIFICATION_VERDICTS),
+  checks: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(200),
+        status: z.enum(VERIFICATION_CHECK_STATUSES),
+        evidence_url_or_text: z.string().max(2000),
+      })
+    )
+    .max(50)
+    .optional(),
+  verifier_session_id: z.string().min(1).max(200).optional(),
+  verifier_request_id: z.string().min(1).max(200).optional(),
+  verified_at: z.string().datetime().optional(),
+}).strict();
+
+export type VerificationEvidence = z.infer<typeof VerificationEvidenceSchema>;
+
+/**
  * CreateTaskSchema - validation for creating new tasks
  * Note: status is NOT included - new tasks always start as 'open'
  */
@@ -71,6 +135,11 @@ export const UpdateTaskSchema = z.object({
   // Wave 1.3 (task #311): patch acceptance_criteria on existing tasks.
   // Pass null to clear, a string to set. Same 5000-char cap as create.
   acceptance_criteria: z.string().max(5000).nullable(),
+  // Wave 1.4 (task #312): structured verification evidence. The Zod enum on
+  // `verdict` rejects unknown values at the boundary (the "unknown verdict =
+  // 400" contract). Pass null to clear, an object to set. Stored as a JSON
+  // string by the repository.
+  verification_evidence: VerificationEvidenceSchema.nullable(),
 }).partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
@@ -95,6 +164,10 @@ export const UpdateTaskClientSchema = z.object({
   // Wave 1.3 (task #311): clients can patch acceptance_criteria — it is
   // NOT server-derived, so it stays on the client-facing schema.
   acceptance_criteria: z.string().max(5000).nullable(),
+  // Wave 1.4 (task #312): verifier subagents call update_task with this
+  // envelope. It is NOT server-derived, so it stays on the client-facing
+  // schema. Unknown verdicts get rejected at the Zod boundary.
+  verification_evidence: VerificationEvidenceSchema.nullable(),
 }).partial().strict();
 
 export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
@@ -174,6 +247,10 @@ export const TaskFiltersSchema = z.object({
       (s) => s.trim().split(/\s+/).filter(Boolean).length <= 32,
       { message: 'Search query must contain at most 32 terms.' }
     ),
+  // Wave 1.4 (#312): verified-state filter. See TaskFilters.verified in
+  // src/types/task.ts for semantics. The repository builds the
+  // json_extract(verification_evidence, '$.verdict') predicate.
+  verified: z.boolean(),
   limit: z.coerce.number().int().positive().max(500),
   offset: z.coerce.number().int().nonnegative(),
 }).partial();

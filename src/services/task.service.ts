@@ -238,8 +238,37 @@ export class TaskService {
       }
     }
 
+    // Wave 1.4 (#312): when a task transitions to a closing status (done or
+    // closed) AND the caller did not supply explicit verification_evidence
+    // AND the row currently has no evidence, materialize the explicit
+    // "no one verified this" marker so the column carries intent rather
+    // than NULL ambiguity.
+    //
+    // Why only on the close transitions:
+    //  - Other transitions (in_progress, blocked, backlogged, open) do not
+    //    represent a verification opportunity. Stamping NOT_VERIFIED there
+    //    would falsely imply a verifier looked at the task.
+    //  - `existing.verification_evidence === null` guards against clobbering
+    //    a real previous verdict if the task is reopened and re-closed; the
+    //    historical PASS/FAIL stays put.
+    //
+    // We deliberately set ONLY the verdict — no verified_at timestamp, no
+    // verifier_session_id — so the row reflects truthfully that nothing
+    // was checked.
+    const updatesForRepo = { ...result.data };
+    const isClosingTransition =
+      statusChanged &&
+      (result.data.status === 'done' || result.data.status === 'closed');
+    if (
+      isClosingTransition &&
+      result.data.verification_evidence === undefined &&
+      existing.verification_evidence === null
+    ) {
+      updatesForRepo.verification_evidence = { verdict: 'NOT_VERIFIED' };
+    }
+
     // Update task
-    const updatedTask = this.taskRepo.update(id, result.data);
+    const updatedTask = this.taskRepo.update(id, updatesForRepo);
 
     // Emit task.updated event after successful database operation
     eventBus.emit('task.updated', {

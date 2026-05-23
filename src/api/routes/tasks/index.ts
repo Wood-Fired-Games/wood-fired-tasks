@@ -49,9 +49,37 @@ const QueryTaskFiltersSchema = z.object({
       { message: 'Search query must contain at most 32 terms.' }
     )
     .optional(),
+  // Wave 1.4 (#312): verified-state filter. Accepts the literal strings
+  // 'true' and 'false' (URL query semantics — Fastify gives us strings) and
+  // coerces them to booleans. Omitted = no filter (returns all rows).
+  verified: z
+    .enum(['true', 'false'])
+    .transform((s) => s === 'true')
+    .optional(),
+  // Wave 1.4 (#312): opt-in inflater for the heavy verification_evidence
+  // field. By default the list endpoint strips it from every row to keep
+  // payloads compact; `?include=verification` re-includes it. Comma-separated
+  // so future heavy fields (e.g. `?include=verification,history`) plug in
+  // without another query parameter.
+  include: z.string().optional(),
   limit: z.coerce.number().int().positive().max(500).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
+
+/**
+ * Wave 1.4 (#312): which optional heavy fields are inflated on a list
+ * response. Returns the parsed set of include tokens — currently just
+ * 'verification' is recognised.
+ */
+function parseIncludeSet(raw: string | undefined): Set<string> {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
 
 // Subtask list query - only pagination (no filters; parent_id is in the path).
 const QuerySubtasksSchema = z.object({
@@ -116,8 +144,25 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const result = fastify.taskService.listTasksPaginated(request.query);
-      return reply.send(result);
+      // Strip the include token from the filters object before passing to
+      // the service — the service-layer TaskFiltersSchema would reject the
+      // extra key in strict mode (and otherwise ignore it). The verified
+      // boolean is a real filter, keep it.
+      const { include, ...filters } = request.query as { include?: string } & Record<string, unknown>;
+      const includeSet = parseIncludeSet(include);
+      const result = fastify.taskService.listTasksPaginated(filters);
+      // Wave 1.4 (#312): default-strip verification_evidence from each row
+      // unless the caller opted in via `?include=verification`. Single-task
+      // GET and POST/PUT responses always include it (the strip lives only
+      // here, on the list path).
+      const shouldIncludeVerification = includeSet.has('verification');
+      const data = shouldIncludeVerification
+        ? result.data
+        : result.data.map(({ verification_evidence: _ve, ...rest }) => ({
+            ...rest,
+            verification_evidence: null,
+          }));
+      return reply.send({ ...result, data });
     }
   );
 

@@ -2896,3 +2896,368 @@ exports[`Migration round-trip (up -> down -> up) with schema snapshot > 011-acce
   },
 ]
 `;
+
+exports[`Migration round-trip (up -> down -> up) with schema snapshot > 012-verification-evidence > schema is stable across down() -> up() round-trip > schema 1`] = `
+[
+  {
+    "name": "idx_api_tokens_hash",
+    "sql": "CREATE UNIQUE INDEX idx_api_tokens_hash
+        ON api_tokens(hash)
+    ",
+    "tbl_name": "api_tokens",
+    "type": "index",
+  },
+  {
+    "name": "idx_api_tokens_user_id",
+    "sql": "CREATE INDEX idx_api_tokens_user_id
+        ON api_tokens(user_id)
+    ",
+    "tbl_name": "api_tokens",
+    "type": "index",
+  },
+  {
+    "name": "idx_comments_task_created",
+    "sql": "CREATE INDEX idx_comments_task_created ON task_comments(task_id, created_at)
+    ",
+    "tbl_name": "task_comments",
+    "type": "index",
+  },
+  {
+    "name": "idx_dependencies_blocked",
+    "sql": "CREATE INDEX idx_dependencies_blocked ON task_dependencies(blocks_task_id)",
+    "tbl_name": "task_dependencies",
+    "type": "index",
+  },
+  {
+    "name": "idx_dependencies_task",
+    "sql": "CREATE INDEX idx_dependencies_task ON task_dependencies(task_id)",
+    "tbl_name": "task_dependencies",
+    "type": "index",
+  },
+  {
+    "name": "idx_idempotency_keys_created_at",
+    "sql": "CREATE INDEX idx_idempotency_keys_created_at ON idempotency_keys(created_at)
+    ",
+    "tbl_name": "idempotency_keys",
+    "type": "index",
+  },
+  {
+    "name": "idx_slack_subs_channel_id",
+    "sql": "CREATE INDEX idx_slack_subs_channel_id ON slack_channel_subscriptions(channel_id)",
+    "tbl_name": "slack_channel_subscriptions",
+    "type": "index",
+  },
+  {
+    "name": "idx_slack_subs_event_type",
+    "sql": "CREATE INDEX idx_slack_subs_event_type ON slack_channel_subscriptions(event_type)",
+    "tbl_name": "slack_channel_subscriptions",
+    "type": "index",
+  },
+  {
+    "name": "idx_slack_subs_project_id",
+    "sql": "CREATE INDEX idx_slack_subs_project_id ON slack_channel_subscriptions(project_id)",
+    "tbl_name": "slack_channel_subscriptions",
+    "type": "index",
+  },
+  {
+    "name": "idx_task_comments_author_user_id",
+    "sql": "CREATE INDEX idx_task_comments_author_user_id ON task_comments(author_user_id)",
+    "tbl_name": "task_comments",
+    "type": "index",
+  },
+  {
+    "name": "idx_task_tags_tag",
+    "sql": "CREATE INDEX idx_task_tags_tag ON task_tags(tag)",
+    "tbl_name": "task_tags",
+    "type": "index",
+  },
+  {
+    "name": "idx_task_tags_task_id",
+    "sql": "CREATE INDEX idx_task_tags_task_id ON task_tags(task_id)",
+    "tbl_name": "task_tags",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_assignee",
+    "sql": "CREATE INDEX idx_tasks_assignee ON tasks(assignee)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_assignee_user_id",
+    "sql": "CREATE INDEX idx_tasks_assignee_user_id ON tasks(assignee_user_id)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_completed_at",
+    "sql": "CREATE INDEX idx_tasks_completed_at ON tasks(completed_at)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_created_by_user_id",
+    "sql": "CREATE INDEX idx_tasks_created_by_user_id ON tasks(created_by_user_id)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_parent_id",
+    "sql": "CREATE INDEX idx_tasks_parent_id ON tasks(parent_task_id)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_project_id",
+    "sql": "CREATE INDEX idx_tasks_project_id ON tasks(project_id)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_project_status_assignee",
+    "sql": "CREATE INDEX idx_tasks_project_status_assignee ON tasks(project_id, status, assignee)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_tasks_status_due_date",
+    "sql": "CREATE INDEX idx_tasks_status_due_date ON tasks(status, due_date)",
+    "tbl_name": "tasks",
+    "type": "index",
+  },
+  {
+    "name": "idx_users_legacy_display_name",
+    "sql": "CREATE UNIQUE INDEX idx_users_legacy_display_name
+        ON users(display_name)
+        WHERE is_legacy = 1
+    ",
+    "tbl_name": "users",
+    "type": "index",
+  },
+  {
+    "name": "idx_users_oidc_sub_provider",
+    "sql": "CREATE UNIQUE INDEX idx_users_oidc_sub_provider
+        ON users(oidc_provider, oidc_sub)
+        WHERE oidc_provider IS NOT NULL AND oidc_sub IS NOT NULL
+    ",
+    "tbl_name": "users",
+    "type": "index",
+  },
+  {
+    "name": "idx_users_slack_bot",
+    "sql": "CREATE UNIQUE INDEX idx_users_slack_bot
+        ON users(display_name)
+        WHERE is_service_account = 1
+    ",
+    "tbl_name": "users",
+    "type": "index",
+  },
+  {
+    "name": "idx_users_slack_user_id",
+    "sql": "CREATE UNIQUE INDEX idx_users_slack_user_id
+        ON users(slack_user_id)
+        WHERE slack_user_id IS NOT NULL
+    ",
+    "tbl_name": "users",
+    "type": "index",
+  },
+  {
+    "name": "api_tokens",
+    "sql": "CREATE TABLE api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        prefix TEXT NOT NULL,
+        suffix TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        scopes TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_used_at TEXT,
+        revoked_at TEXT,
+        expires_at TEXT
+      )",
+    "tbl_name": "api_tokens",
+    "type": "table",
+  },
+  {
+    "name": "idempotency_keys",
+    "sql": "CREATE TABLE idempotency_keys (
+        key TEXT PRIMARY KEY,
+        response TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )",
+    "tbl_name": "idempotency_keys",
+    "type": "table",
+  },
+  {
+    "name": "projects",
+    "sql": "CREATE TABLE projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )",
+    "tbl_name": "projects",
+    "type": "table",
+  },
+  {
+    "name": "slack_channel_subscriptions",
+    "sql": "CREATE TABLE slack_channel_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(channel_id, project_id, event_type)
+      )",
+    "tbl_name": "slack_channel_subscriptions",
+    "type": "table",
+  },
+  {
+    "name": "task_comments",
+    "sql": "CREATE TABLE task_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        author TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT
+      , author_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT)",
+    "tbl_name": "task_comments",
+    "type": "table",
+  },
+  {
+    "name": "task_dependencies",
+    "sql": "CREATE TABLE task_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        blocks_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(task_id, blocks_task_id),
+        CHECK(task_id != blocks_task_id)
+      )",
+    "tbl_name": "task_dependencies",
+    "type": "table",
+  },
+  {
+    "name": "task_tags",
+    "sql": "CREATE TABLE task_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        UNIQUE(task_id, tag)
+      )",
+    "tbl_name": "task_tags",
+    "type": "table",
+  },
+  {
+    "name": "tasks",
+    "sql": "CREATE TABLE "tasks" (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'open'
+          CHECK(status IN ('open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged')),
+        priority TEXT NOT NULL DEFAULT 'medium'
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent')),
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        parent_task_id INTEGER REFERENCES "tasks"(id) ON DELETE CASCADE,
+        assignee TEXT,
+        created_by TEXT NOT NULL,
+        due_date TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        estimated_minutes INTEGER,
+        version INTEGER NOT NULL DEFAULT 1,
+        claimed_at TEXT
+      , completed_at TEXT, created_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT, assignee_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT, acceptance_criteria TEXT, verification_evidence TEXT)",
+    "tbl_name": "tasks",
+    "type": "table",
+  },
+  {
+    "name": "tasks_fts",
+    "sql": "CREATE VIRTUAL TABLE tasks_fts USING fts5(
+        title,
+        description,
+        content='tasks',
+        content_rowid='id'
+      )",
+    "tbl_name": "tasks_fts",
+    "type": "table",
+  },
+  {
+    "name": "tasks_fts_config",
+    "sql": "CREATE TABLE 'tasks_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID",
+    "tbl_name": "tasks_fts_config",
+    "type": "table",
+  },
+  {
+    "name": "tasks_fts_data",
+    "sql": "CREATE TABLE 'tasks_fts_data'(id INTEGER PRIMARY KEY, block BLOB)",
+    "tbl_name": "tasks_fts_data",
+    "type": "table",
+  },
+  {
+    "name": "tasks_fts_docsize",
+    "sql": "CREATE TABLE 'tasks_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB)",
+    "tbl_name": "tasks_fts_docsize",
+    "type": "table",
+  },
+  {
+    "name": "tasks_fts_idx",
+    "sql": "CREATE TABLE 'tasks_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID",
+    "tbl_name": "tasks_fts_idx",
+    "type": "table",
+  },
+  {
+    "name": "users",
+    "sql": "CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        oidc_sub TEXT,
+        oidc_provider TEXT,
+        email TEXT,
+        display_name TEXT NOT NULL,
+        slack_user_id TEXT,
+        is_legacy INTEGER NOT NULL DEFAULT 0,
+        is_service_account INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        disabled_at TEXT
+      )",
+    "tbl_name": "users",
+    "type": "table",
+  },
+  {
+    "name": "tasks_fts_delete",
+    "sql": "CREATE TRIGGER tasks_fts_delete AFTER DELETE ON tasks
+      BEGIN
+        INSERT INTO tasks_fts(tasks_fts, rowid, title, description)
+        VALUES('delete', old.id, old.title, old.description);
+      END",
+    "tbl_name": "tasks",
+    "type": "trigger",
+  },
+  {
+    "name": "tasks_fts_insert",
+    "sql": "CREATE TRIGGER tasks_fts_insert AFTER INSERT ON tasks
+      BEGIN
+        INSERT INTO tasks_fts(rowid, title, description)
+        VALUES (new.id, new.title, new.description);
+      END",
+    "tbl_name": "tasks",
+    "type": "trigger",
+  },
+  {
+    "name": "tasks_fts_update",
+    "sql": "CREATE TRIGGER tasks_fts_update AFTER UPDATE ON tasks
+      BEGIN
+        INSERT INTO tasks_fts(tasks_fts, rowid, title, description)
+        VALUES('delete', old.id, old.title, old.description);
+        INSERT INTO tasks_fts(rowid, title, description)
+        VALUES (new.id, new.title, new.description);
+      END",
+    "tbl_name": "tasks",
+    "type": "trigger",
+  },
+]
+`;
