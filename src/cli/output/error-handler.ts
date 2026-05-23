@@ -1,17 +1,26 @@
 import chalk from 'chalk';
 import { ApiClientError } from '../api/client.js';
+import { NotAuthenticatedError } from '../api/errors.js';
 
 /**
  * Display user-friendly CLI error messages.
  * Sets process.exitCode to 1 (allows graceful cleanup, doesn't force immediate exit).
  */
 export function handleError(error: unknown): void {
+  if (error instanceof NotAuthenticatedError) {
+    // Plan 30-05: the friendly "Not authenticated" surface. The error message
+    // is already the canonical "Not authenticated. Run: tasks login" string.
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   if (error instanceof ApiClientError) {
     console.error(chalk.red(`Error (${error.statusCode}): ${error.message}`));
 
     // Provide context-specific hints
     if (error.statusCode === 401) {
-      console.error(chalk.yellow('Check your API_KEY in .env'));
+      console.error(chalk.yellow('Check your API_KEY in .env or run: tasks login'));
     } else if (error.statusCode === 404) {
       console.error(chalk.yellow('Resource not found'));
     }

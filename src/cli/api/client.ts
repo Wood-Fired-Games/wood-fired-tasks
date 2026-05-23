@@ -1,5 +1,7 @@
 import { env } from '../config/env.js';
 import { withSpinner } from '../output/spinner.js';
+import { resolveAuth } from '../auth/credentials.js';
+import { NotAuthenticatedError } from './errors.js';
 import type {
   TaskResponse,
   CreateTaskInput,
@@ -86,9 +88,18 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const headers: Record<string, string> = {
-      'X-API-Key': env.API_KEY,
-    };
+    // Plan 30-05: walk the auth precedence chain (--token flag > credentials
+    // file > env.API_KEY > NotAuthenticatedError). resolveAuth owns the
+    // env.API_KEY read — this module no longer pokes process.env directly.
+    const auth = await resolveAuth();
+    const headers: Record<string, string> = {};
+    if (auth.kind === 'bearer') {
+      headers['Authorization'] = `Bearer ${auth.token}`;
+    } else if (auth.kind === 'legacy') {
+      headers['X-API-Key'] = auth.key;
+    } else {
+      throw new NotAuthenticatedError();
+    }
     // Only set Content-Type for requests that have a body
     if (options?.body) {
       headers['Content-Type'] = 'application/json';

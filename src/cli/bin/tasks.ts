@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
+import { setTokenOverride } from '../auth/credentials.js';
+import { NotAuthenticatedError } from '../api/errors.js';
 import { createCommand } from '../commands/create.js';
 import { listCommand } from '../commands/list.js';
 import { updateCommand } from '../commands/update.js';
@@ -39,6 +41,17 @@ program
 program.option('--json', 'Output as JSON (machine-readable)');
 program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
 program.option('--force', 'Skip confirmation prompts for destructive actions');
+// Plan 30-05: --token global flag overrides credentials file + env.API_KEY.
+// The preAction hook installs the value into the credentials module's
+// resolveAuth state before any subcommand runs.
+program.option(
+  '--token <token>',
+  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)'
+);
+program.hook('preAction', () => {
+  const t = program.opts().token;
+  setTokenOverride(typeof t === 'string' && t.length > 0 ? t : null);
+});
 
 // Register task commands
 program.addCommand(createCommand);
@@ -101,5 +114,14 @@ export { program };
 // Guarded by import.meta.url === `file://${process.argv[1]}` so that
 // importing this module from a test does NOT execute the CLI.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  program.parseAsync(process.argv);
+  // Plan 30-05: top-level catch surfaces NotAuthenticatedError as the
+  // friendly "Not authenticated. Run: tasks login" + exit 1 contract,
+  // rather than the default Commander "unhandled rejection" dump.
+  program.parseAsync(process.argv).catch((err) => {
+    if (err instanceof NotAuthenticatedError) {
+      process.stderr.write(`${err.message}\n`);
+      process.exit(1);
+    }
+    throw err;
+  });
 }

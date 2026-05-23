@@ -6,6 +6,8 @@
  * backup, doctor, stats, db-check.
  */
 import { program } from 'commander';
+import { setTokenOverride } from '../auth/credentials.js';
+import { NotAuthenticatedError } from '../api/errors.js';
 import { createCommand } from '../commands/create.js';
 import { listCommand } from '../commands/list.js';
 import { updateCommand } from '../commands/update.js';
@@ -36,6 +38,15 @@ program
 program.option('--json', 'Output as JSON (machine-readable)');
 program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
 program.option('--force', 'Skip confirmation prompts for destructive actions');
+// Plan 30-05: --token global flag (mirrors tasks.ts behavior).
+program.option(
+  '--token <token>',
+  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)'
+);
+program.hook('preAction', () => {
+  const t = program.opts().token;
+  setTokenOverride(typeof t === 'string' && t.length > 0 ? t : null);
+});
 
 program.addCommand(createCommand);
 program.addCommand(listCommand);
@@ -61,4 +72,11 @@ program.addCommand(healthCommand);
 // truth for the registered command list; see task #247).
 program.addCommand(createCompletionsCommand(program));
 
-program.parseAsync(process.argv);
+// Plan 30-05: top-level catch — friendly NotAuthenticatedError surface.
+program.parseAsync(process.argv).catch((err) => {
+  if (err instanceof NotAuthenticatedError) {
+    process.stderr.write(`${err.message}\n`);
+    process.exit(1);
+  }
+  throw err;
+});

@@ -11,26 +11,17 @@ const envPath = path.join(projectRoot, '.env');
 // Load environment variables from .env file
 dotenv.config({ path: envPath, quiet: true });
 
-// Validate and export environment configuration
-function validateApiKey(): string {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.error('Error: API_KEY is required but not set.');
-    console.error('');
-    console.error('Please set API_KEY in one of the following ways:');
-    console.error('  1. Create a .env file in the project root with: API_KEY=your-key-here');
-    console.error('  2. Set it as an environment variable: export API_KEY=your-key-here');
-    console.error('');
-    process.exit(1);
-  }
-  return apiKey;
-}
-
+// Plan 30-05: API_KEY is no longer required at env-load time. The CLI now
+// authenticates via the precedence chain in src/cli/auth/credentials.ts —
+// --token flag > credentials file > env.API_KEY > NotAuthenticatedError.
+// The "no credentials" branch is enforced by resolveAuth (which throws
+// NotAuthenticatedError), not here. Returning '' from the getter keeps the
+// type narrow and lets resolveAuth's `apiKey.length > 0` check decide.
 export const env = {
   API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:3000',
-  // Use getter to defer validation until API_KEY is accessed
-  // This allows --help to work without requiring API_KEY
+  // Getter so callers re-read process.env.API_KEY on each access — important
+  // for tests that mutate env between calls.
   get API_KEY(): string {
-    return validateApiKey();
+    return process.env.API_KEY ?? '';
   },
 };
