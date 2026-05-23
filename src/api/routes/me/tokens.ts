@@ -102,6 +102,14 @@ const NotFoundResponseSchema = z.object({
   message: z.string(),
 });
 
+// Phase 30 Plan 30-03 — 400 response shape for DELETE /tokens/active when
+// the caller's auth method does not carry a tokenId (session or legacy).
+// The route returns this body with guidance to use the /:id endpoint.
+const NoTokenIdResponseSchema = z.object({
+  error: z.literal('NO_TOKEN_ID'),
+  message: z.string(),
+});
+
 const SessionRequiredResponseSchema = z.object({
   error: z.literal('session_required'),
   message: z.string(),
@@ -370,6 +378,80 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         expiresAt: r.expires_at,
       }));
       return reply.code(200).send(items);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // DELETE /active — self-revoke (Phase 30 Plan 30-03)
+  // -------------------------------------------------------------------------
+  //
+  // The ONE PAT-revoke endpoint that is NOT sessionOnly. Accepts Bearer auth
+  // (and only Bearer auth) so `tasks logout` — which only holds a PAT — can
+  // revoke itself. Session and legacy callers get a 400 with guidance to
+  // use the existing `/:id` route.
+  //
+  // Security tradeoff (locked decision, 30-03-PLAN.md `truths`):
+  //   - A PAT can revoke ITSELF via /tokens/active. This is intentional and
+  //     does NOT enable privilege escalation: the caller already proved
+  //     possession of the secret to authenticate; letting them invalidate
+  //     it is strictly weakening their own access.
+  //   - A PAT CANNOT revoke OTHER PATs. The /:id route below stays
+  //     sessionOnly to preserve the Phase 28 contract ("PATs can't revoke
+  //     PATs"). The /active route narrows revoke() to `request.tokenId`,
+  //     so cross-PAT revocation is structurally impossible — even if a
+  //     malicious caller forged a tokenId in their request, the auth chain
+  //     repopulates `request.tokenId` from the verified Bearer hash before
+  //     the handler runs (T-30-03-04).
+  //
+  // CRITICAL: registered BEFORE the /:id route. Otherwise Fastify's radix
+  // tree matches `/active` against the `/:id` param route first and this
+  // handler is unreachable. The `8. existing /:id route still works for
+  // numeric ids` test guards against accidental re-ordering.
+  fastify.delete(
+    '/active',
+    {
+      // NO `config: { sessionOnly: true }` — explicitly Bearer-accepting.
+      schema: {
+        tags: ['me-tokens'],
+        description:
+          'Revoke the Personal Access Token used to authenticate THIS ' +
+          'request. The only PAT-revoke endpoint that accepts Bearer auth ' +
+          '(every other /me/tokens route is session-only). Returns 204 on ' +
+          'success; 400 with `{ error: "NO_TOKEN_ID" }` when the caller ' +
+          'authenticated via session or legacy X-API-Key (no token to ' +
+          'revoke — use DELETE /api/v1/me/tokens/:id instead).',
+        response: {
+          204: z.null().describe('No content'),
+          400: NoTokenIdResponseSchema,
+          404: NotFoundResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const user = requireUser(request);
+      const tokenId = request.tokenId;
+      if (tokenId === null) {
+        return reply.code(400).send({
+          error: 'NO_TOKEN_ID' as const,
+          message:
+            'This endpoint only accepts PAT-authenticated callers; ' +
+            'session and legacy callers should use DELETE ' +
+            '/api/v1/me/tokens/:id.',
+        });
+      }
+      // Repository.revoke is keyed on (tokenId, userId); ownership is
+      // enforced at SQL even though the chain already guarantees it.
+      // Defense-in-depth: if revoke returns false (already revoked, or —
+      // structurally impossible — ownership mismatch), respond 404 with
+      // the same NOT_FOUND envelope as the /:id route.
+      const success = fastify.apiTokenRepository.revoke(tokenId, user.id);
+      if (!success) {
+        return reply.code(404).send({
+          error: 'NOT_FOUND' as const,
+          message: 'Token not found.',
+        });
+      }
+      return reply.code(204).send(null);
     },
   );
 

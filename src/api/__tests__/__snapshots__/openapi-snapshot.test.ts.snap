@@ -368,6 +368,83 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/me/tokens/active": {
+      "delete": {
+        "description": "Revoke the Personal Access Token used to authenticate THIS request. The only PAT-revoke endpoint that accepts Bearer auth (every other /me/tokens route is session-only). Returns 204 on success; 400 with \`{ error: "NO_TOKEN_ID" }\` when the caller authenticated via session or legacy X-API-Key (no token to revoke — use DELETE /api/v1/me/tokens/:id instead).",
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "No content",
+                  "enum": [
+                    null,
+                  ],
+                  "nullable": true,
+                  "type": "string",
+                },
+              },
+            },
+            "description": "No content",
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "NO_TOKEN_ID",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "NOT_FOUND",
+                      ],
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "me-tokens",
+        ],
+      },
+    },
     "/api/v1/me/tokens/{id}": {
       "delete": {
         "description": "Revoke one of the caller's Personal Access Tokens. Returns 204 on success. Returns 404 with \`{ error: 'NOT_FOUND' }\` for both unknown ids AND tokens belonging to other users — the response body is intentionally identical to avoid existence-leak (Threat T-28-05-02).",
