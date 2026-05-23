@@ -166,7 +166,11 @@ export function createSession(args: CreateSessionArgs): DeviceFlowSession {
   const session: DeviceFlowSession = {
     deviceCode,
     userCode,
-    hostname: args.hostname,
+    // Plan 30-04: hostname is sanitized at create time so the PAT-name
+    // helper (`tokenName`) can read `session.hostname` verbatim without
+    // re-sanitizing. Producing `'unknown'` for null/empty input keeps the
+    // downstream name format stable (`cli-unknown-YYYY-MM-DD`).
+    hostname: sanitizeHostname(args.hostname),
     clientId: args.clientId,
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
@@ -266,6 +270,105 @@ export function startCleanup(): { stop: () => void } {
       clearInterval(id);
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Plan 30-04 — sanitization + PAT-mint metadata
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum length of a sanitized hostname segment. The minted PAT name has
+ * shape `cli-<sanitized>-YYYY-MM-DD` (length 32 + 14 = 46 chars max). 32
+ * is wide enough to be human-recognizable in the web token list but tight
+ * enough to keep the full PAT name comfortably under the 255-char schema
+ * limit even after the date suffix.
+ */
+const HOSTNAME_MAX_LEN = 32;
+
+/**
+ * Coerce a raw hostname into the deterministic, name-safe form used by the
+ * auto-minted PAT (Plan 30-04 Task 2).
+ *
+ * Pipeline:
+ *   1. null OR (trimmed === '') → `'unknown'`.
+ *   2. Lowercase.
+ *   3. Replace any run of `[^a-z0-9-]+` with a single `-` (this folds
+ *      whitespace, dots, punctuation, accented letters, etc.).
+ *   4. Collapse runs of `-+` to a single `-`.
+ *   5. Strip leading + trailing `-`.
+ *   6. Truncate to `HOSTNAME_MAX_LEN` chars.
+ *   7. If the result is empty (e.g. input was `'!!!'`) → `'unknown'`.
+ *
+ * This is intentionally LOSSY (Unicode → `-`) — the PAT name is for
+ * humans skimming a list, not for round-tripping the hostname.
+ */
+export function sanitizeHostname(raw: string | null): string {
+  if (raw === null) return 'unknown';
+  const trimmed = raw.trim();
+  if (trimmed === '') return 'unknown';
+  let out = trimmed.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+  out = out.replace(/-+/g, '-');
+  out = out.replace(/^-+|-+$/g, '');
+  if (out.length > HOSTNAME_MAX_LEN) {
+    out = out.slice(0, HOSTNAME_MAX_LEN);
+    // Truncation could leave a trailing '-' if the cut landed mid-run.
+    out = out.replace(/-+$/, '');
+  }
+  return out === '' ? 'unknown' : out;
+}
+
+/**
+ * Compose the auto-minted PAT name: `cli-<sanitized>-YYYY-MM-DD`.
+ *
+ * The date segment is built from UTC (not local time) so a CI runner in
+ * `Pacific/Apia` and a developer laptop in `Europe/London` minting on the
+ * same calendar day produce the same name. The token-name collision policy
+ * (decision in plan §truths) intentionally PERMITS duplicates, so any UTC
+ * skew is a feature, not a bug.
+ *
+ * @param sanitizedHostname Pre-sanitized via `sanitizeHostname`. We trust
+ *                           the caller — we do NOT re-sanitize here so
+ *                           the function stays pure / mock-friendly.
+ * @param now                Defaults to the current wall-clock. Tests pass
+ *                           an explicit `Date.UTC(...)` for determinism.
+ */
+export function tokenName(
+  sanitizedHostname: string,
+  now: Date = new Date(),
+): string {
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(now.getUTCDate()).padStart(2, '0');
+  return `cli-${sanitizedHostname}-${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Stash the minted PAT (id + plaintext) on the session so the polling
+ * `/auth/device/token` endpoint can return it once.
+ *
+ * Pre-condition: the session must have been transitioned to `approved`
+ * via `approve(userCode, userId)` first. This guards against an out-of-
+ * order caller minting a PAT while the user is still in the `pending`
+ * (or worse, `denied`) state.
+ *
+ * Idempotency: a second call with the same args is treated as a no-op
+ * (returns true). This makes the verify handler safe against an accidental
+ * double-submit without leaking a fresh token.
+ *
+ * Returns false (no mutation) when:
+ *   - session not found (unknown userCode), OR
+ *   - session.status !== 'approved'.
+ */
+export function recordMintedToken(
+  userCode: string,
+  args: { tokenId: number; token: string },
+): boolean {
+  const session = findByUserCode(userCode);
+  if (!session) return false;
+  if (session.status !== 'approved') return false;
+  session.mintedTokenId = args.tokenId;
+  session.mintedToken = args.token;
+  return true;
 }
 
 /**
