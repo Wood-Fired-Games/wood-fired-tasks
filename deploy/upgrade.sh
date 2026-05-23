@@ -17,7 +17,9 @@ set -euo pipefail
 #     $WFB_INSTALL_DIR exists, systemd unit installed)
 #   - The source tree has been built (npm ci && npm run build) so dist/ is
 #     present and newer than src/
-#   - Node.js installed at /usr/bin/node
+#   - Node.js available on PATH (or set $WFB_NODE_BIN to an absolute path).
+#     The script uses whichever node the invoking shell resolves so the
+#     better-sqlite3 native binding ABI matches the systemd service.
 #
 # What this script does (in order, every step has a backup or pre-flight
 # guard so the operator can recover from any failure point):
@@ -39,15 +41,45 @@ set -euo pipefail
 # Configurable env vars:
 #   WFB_INSTALL_DIR   Install path     (default: /opt/wood-fired-bugs)
 #   WFB_SERVICE_NAME  systemd unit     (default: wood-fired-bugs)
+#   WFB_NODE_BIN      Absolute node path; overrides PATH lookup and the
+#                     systemd ExecStart fallback. Use only when neither
+#                     `command -v node` nor `systemctl cat` resolves the
+#                     right node (e.g. unusual nvm setups before the
+#                     systemd unit is installed).
 
 INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
 SERVICE_NAME="${WFB_SERVICE_NAME:-wood-fired-bugs}"
 SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 
+# --- Node binary discovery -------------------------------------------------
+# The migrate step and npm ci must run under the same Node version the
+# systemd service uses, or the better-sqlite3 native binding ABI mismatches
+# and the service fails to boot. Priority:
+#   1. $WFB_NODE_BIN (operator override).
+#   2. `command -v node` from the invoking shell's PATH (the usual case --
+#      sudo's PATH reset is handled by exporting WFB_NODE_BIN below before
+#      the re-exec).
+#   3. ExecStart= line of the installed systemd unit (only useful for in-
+#      place upgrades where install.sh has already run).
+NODE_BIN="${WFB_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+  NODE_BIN="$(systemctl cat "$SERVICE_NAME" 2>/dev/null \
+    | awk -F= '/^ExecStart=/{split($2,a," "); print a[1]; exit}' || true)"
+fi
+if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+  echo "ERROR: no usable node binary found." >&2
+  echo "Either install node so it's on PATH, or set WFB_NODE_BIN=/path/to/node." >&2
+  exit 1
+fi
+export WFB_NODE_BIN="$NODE_BIN"
+NODE_DIR="$(dirname "$NODE_BIN")"
+
 # Re-exec under sudo if not root. Preserves env vars so WFB_* survive.
+# WFB_NODE_BIN is preserved so the post-sudo run uses the same node the
+# pre-sudo PATH lookup resolved (sudo strips PATH by default).
 if [ "$(id -u)" -ne 0 ]; then
-  exec sudo --preserve-env=WFB_INSTALL_DIR,WFB_SERVICE_NAME "$0" "$@"
+  exec sudo --preserve-env=WFB_INSTALL_DIR,WFB_SERVICE_NAME,WFB_NODE_BIN "$0" "$@"
 fi
 
 echo "=== Wood Fired Bugs Upgrade ==="
@@ -143,8 +175,12 @@ if [ -f "$SOURCE_DIR/package-lock.json" ]; then
 fi
 
 # --- Install production dependencies ---------------------------------------
+# Prepend the node binary's directory to PATH so the npm bundled with this
+# node is the one that runs (and better-sqlite3 gets compiled against the
+# matching ABI). Sudo's reset PATH otherwise leaves us with /usr/bin/npm
+# which may be a different Node version.
 echo "[6/8] Installing production dependencies (npm ci --omit=dev)..."
-(cd "$INSTALL_DIR" && npm ci --omit=dev)
+(cd "$INSTALL_DIR" && PATH="$NODE_DIR:$PATH" npm ci --omit=dev)
 
 # --- Re-chown so the service user owns the new files -----------------------
 # install.sh has already established the service user. Re-derive it from the
@@ -154,8 +190,11 @@ SERVICE_GROUP="$(stat -c '%G' "$INSTALL_DIR/data" 2>/dev/null || echo root)"
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$INSTALL_DIR/dist" "$INSTALL_DIR/node_modules" "$INSTALL_DIR/package.json" "$INSTALL_DIR/package-lock.json" 2>/dev/null || true
 
 # --- Run migrations --------------------------------------------------------
+# Use the resolved $NODE_BIN (not the system /usr/bin/node, which may be a
+# different major version). Mismatched node here would crash on first
+# `require('better-sqlite3')` with NODE_MODULE_VERSION.
 echo "[7/8] Running database migrations..."
-(cd "$INSTALL_DIR" && /usr/bin/node dist/db/migrate.js)
+(cd "$INSTALL_DIR" && "$NODE_BIN" dist/db/migrate.js)
 
 # --- Start + health-check --------------------------------------------------
 echo "[8/8] Starting ${SERVICE_NAME} and polling health..."
