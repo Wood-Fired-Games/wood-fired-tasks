@@ -248,6 +248,100 @@ describe('ApiTokenRepository', () => {
     });
   });
 
+  describe('revoke', () => {
+    it('returns true and sets revoked_at on a fresh token owned by the user', () => {
+      const inserted = repo.insert({
+        userId,
+        name: 'to-revoke',
+        prefix: 'wfb_pat_',
+        suffix: 'revk',
+        hash: 'sha256-revoke-happy',
+      });
+
+      const ok = repo.revoke(inserted.id, userId);
+      expect(ok).toBe(true);
+
+      const after = repo.findById(inserted.id);
+      expect(after).not.toBeNull();
+      expect(after!.revoked_at).not.toBeNull();
+      expect(typeof after!.revoked_at).toBe('string');
+    });
+
+    it('returns false and does NOT revoke when caller is a different user (cross-user isolation)', () => {
+      const otherUserId = insertUser(db, 'other-owner-revoke');
+      const inserted = repo.insert({
+        userId,
+        name: 'mine',
+        prefix: 'wfb_pat_',
+        suffix: 'mine',
+        hash: 'sha256-revoke-cross-user',
+      });
+
+      const ok = repo.revoke(inserted.id, otherUserId);
+      expect(ok).toBe(false);
+
+      const after = repo.findById(inserted.id);
+      expect(after).not.toBeNull();
+      expect(after!.revoked_at).toBeNull();
+    });
+
+    it('returns false on the second call (idempotency: revoked_at IS NULL guard)', () => {
+      const inserted = repo.insert({
+        userId,
+        name: 'double-revoke',
+        prefix: 'wfb_pat_',
+        suffix: 'dbrv',
+        hash: 'sha256-revoke-idempotent',
+      });
+
+      expect(repo.revoke(inserted.id, userId)).toBe(true);
+      expect(repo.revoke(inserted.id, userId)).toBe(false);
+    });
+
+    it('returns false for an unknown id', () => {
+      expect(repo.revoke(999999, userId)).toBe(false);
+    });
+  });
+
+  describe('touchLastUsed', () => {
+    it('sets last_used_at to a non-null string', () => {
+      const inserted = repo.insert({
+        userId,
+        name: 'touch-me',
+        prefix: 'wfb_pat_',
+        suffix: 'tchm',
+        hash: 'sha256-touch-happy',
+      });
+
+      expect(inserted.last_used_at).toBeNull();
+
+      repo.touchLastUsed(inserted.id);
+
+      const after = repo.findById(inserted.id);
+      expect(after).not.toBeNull();
+      expect(after!.last_used_at).not.toBeNull();
+      expect(typeof after!.last_used_at).toBe('string');
+      expect(after!.last_used_at!.length).toBeGreaterThan(0);
+    });
+
+    it('is a no-op (no throw) for a missing id', () => {
+      expect(() => repo.touchLastUsed(999999)).not.toThrow();
+    });
+
+    it('returns void (no return value contract)', () => {
+      const inserted = repo.insert({
+        userId,
+        name: 'void-return',
+        prefix: 'wfb_pat_',
+        suffix: 'void',
+        hash: 'sha256-touch-void',
+      });
+
+      const ret = repo.touchLastUsed(inserted.id);
+      expect(ret).toBeUndefined();
+    });
+  });
+
   describe('listByUser', () => {
     it('returns tokens for user ordered by created_at DESC (newest first)', () => {
       insertToken(db, {
