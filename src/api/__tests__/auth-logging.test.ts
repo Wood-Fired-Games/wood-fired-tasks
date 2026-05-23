@@ -4,6 +4,41 @@ import Fastify from 'fastify';
 import pino from 'pino';
 import { LOGGER_REDACT_CONFIG } from '../server.js';
 import authPlugin from '../plugins/auth.js';
+import { initDatabase } from '../../db/database.js';
+import { runMigrations } from '../../db/migrate.js';
+import { seedIdentities } from '../../services/identity-seeder.js';
+import { parseApiKeyEntries } from '../../config/env.js';
+import { UserRepository } from '../../repositories/user.repository.js';
+import { ApiTokenRepository } from '../../repositories/api-token.repository.js';
+import type Database from 'better-sqlite3';
+
+/**
+ * Phase 28 (Plan 28-04): the chain auth plugin reads `fastify.userRepository`
+ * and `fastify.apiTokenRepository` per request. Both describes below
+ * construct a minimal Fastify with the plugin registered directly, so they
+ * MUST also seed an identity DB and decorate the same repositories the
+ * full-stack `createServer` path decorates. Without this, the legacy
+ * strategy's `findLegacyByDisplayName(...)` call would throw and the route
+ * would return 500.
+ */
+async function bootIdentityDb(apiKeys: string): Promise<{
+  db: Database.Database;
+  userRepository: UserRepository;
+  apiTokenRepository: ApiTokenRepository;
+}> {
+  process.env.API_KEYS = apiKeys;
+  const db = initDatabase(':memory:');
+  await runMigrations(db);
+  seedIdentities(db, parseApiKeyEntries(apiKeys), {
+    info: () => {},
+    warn: () => {},
+  });
+  return {
+    db,
+    userRepository: new UserRepository(db),
+    apiTokenRepository: new ApiTokenRepository(db),
+  };
+}
 
 /**
  * Log redaction (task #182).
@@ -102,10 +137,12 @@ describe('X-API-Key log redaction', () => {
     // structural mismatch (msgPrefix); use a permissive type just for the
     // test harness so the route registration compiles.
     let server: any;
+    let db: Database.Database;
     const captured: string[] = [];
 
     beforeAll(async () => {
-      process.env.API_KEYS = 'test-key';
+      const id = await bootIdentityDb('test-key');
+      db = id.db;
       const dest = new Writable({
         write(chunk, _enc, cb) {
           captured.push(chunk.toString());
@@ -122,6 +159,9 @@ describe('X-API-Key log redaction', () => {
         dest,
       );
       server = Fastify({ loggerInstance: logger });
+      // Phase 28: the chain plugin reads these per request.
+      server.decorate('userRepository', id.userRepository);
+      server.decorate('apiTokenRepository', id.apiTokenRepository);
       await server.register(authPlugin);
       server.get('/api/v1/tasks', async () => ({ ok: true }));
       await server.ready();
@@ -129,6 +169,7 @@ describe('X-API-Key log redaction', () => {
 
     afterAll(async () => {
       await server.close();
+      db.close();
     });
 
     it('emits a warn log for invalid auth without leaking the supplied key', async () => {
@@ -142,9 +183,14 @@ describe('X-API-Key log redaction', () => {
       expect(res.statusCode).toBe(401);
 
       const allLogs = captured.join('');
-      expect(allLogs).toMatch(/Auth failure: invalid X-API-Key/);
-      expect(allLogs).toContain('127.0.0.1'); // ip recorded
-      expect(allLogs).toContain('/api/v1/tasks'); // route recorded
+      // Phase 28 (Plan 04): the chain plugin replaces the legacy
+      // "Auth failure: invalid X-API-Key" warn-string with the structured
+      // `tag: 'auth.failure'` log line emitted by `logAuthFailure()`
+      // (src/services/auth-audit.ts). The categorical reasonCode for an
+      // unrecognised legacy key is 'unknown_token'.
+      expect(allLogs).toContain('"tag":"auth.failure"');
+      expect(allLogs).toMatch(/"strategy":"legacy"/);
+      expect(allLogs).toMatch(/"reasonCode":"unknown_token"/);
       // CRITICAL: the supplied key must never appear in any log line. The
       // auth plugin warn log payload deliberately omits headers; the redact
       // config (verified by the first test in this file) ensures even
@@ -161,7 +207,12 @@ describe('X-API-Key log redaction', () => {
       expect(res.statusCode).toBe(401);
 
       const allLogs = captured.join('');
-      expect(allLogs).toMatch(/Auth failure: missing X-API-Key/);
+      // Phase 28 (Plan 04): catch-all path emits `tag: 'auth.failure'`
+      // with `strategy: 'legacy'`, `reasonCode: 'missing_credential'`
+      // (Decision Q6 — the catch-all uses the legacy strategy label).
+      expect(allLogs).toContain('"tag":"auth.failure"');
+      expect(allLogs).toMatch(/"strategy":"legacy"/);
+      expect(allLogs).toMatch(/"reasonCode":"missing_credential"/);
     });
   });
 
@@ -175,6 +226,7 @@ describe('X-API-Key log redaction', () => {
   describe('apiKeyLabel request decoration and audit logging', () => {
     // Permissive type — pino logger / Fastify logger structural mismatch.
     let server: any;
+    let db: Database.Database;
     const captured: string[] = [];
     const originalApiKeys = process.env.API_KEYS;
 
@@ -184,7 +236,13 @@ describe('X-API-Key log redaction', () => {
     const bareKeyRaw = 'bare-key-raw-secret-do-not-log-me-67890123';
 
     beforeAll(async () => {
-      process.env.API_KEYS = `${labelledKeyRaw}:ci-bot,${bareKeyRaw}`;
+      // Phase 28: the chain plugin's legacy strategy looks up the seeded
+      // `users` row matching `display_name = label`. Boot a DB with both
+      // labels seeded so both keys land on a real principal.
+      const id = await bootIdentityDb(
+        `${labelledKeyRaw}:ci-bot,${bareKeyRaw}`,
+      );
+      db = id.db;
       const dest = new Writable({
         write(chunk, _enc, cb) {
           captured.push(chunk.toString());
@@ -204,6 +262,8 @@ describe('X-API-Key log redaction', () => {
         dest,
       );
       server = Fastify({ loggerInstance: logger });
+      server.decorate('userRepository', id.userRepository);
+      server.decorate('apiTokenRepository', id.apiTokenRepository);
       await server.register(authPlugin);
       // Echo back the apiKeyLabel via a route-handler log line so the test
       // can confirm it propagates into per-request logs. This stand-in
@@ -220,6 +280,7 @@ describe('X-API-Key log redaction', () => {
 
     afterAll(async () => {
       await server.close();
+      db.close();
       if (originalApiKeys === undefined) {
         delete process.env.API_KEYS;
       } else {

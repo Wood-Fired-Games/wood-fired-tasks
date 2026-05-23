@@ -20,7 +20,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import type { UserRepository } from '../../../../repositories/user.repository.js';
-import { hashKey } from '../../auth.js';
+import { hashKey } from '../keys.js';
 import type { ApiKeyEntry } from '../../../../config/env.js';
 import { toAuthenticatedUser } from './pat.js';
 import type { StrategyOutcome } from './types.js';

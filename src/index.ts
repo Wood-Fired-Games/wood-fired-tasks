@@ -6,6 +6,8 @@ import { ProjectRepository } from './repositories/project.repository.js';
 import { TaskRepository } from './repositories/task.repository.js';
 import { DependencyRepository } from './repositories/dependency.repository.js';
 import { CommentRepository } from './repositories/comment.repository.js';
+import { UserRepository } from './repositories/user.repository.js';
+import { ApiTokenRepository } from './repositories/api-token.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
 import { DependencyService } from './services/dependency.service.js';
@@ -23,6 +25,15 @@ export interface App {
   taskService: TaskService;
   dependencyService: DependencyService;
   commentService: CommentService;
+  /**
+   * Identity-foundation repositories (Phase 27) decorated onto the Fastify
+   * instance by `createServer` so the Phase 28 auth chain at
+   * `src/api/plugins/auth/index.ts` can call `findLegacyByDisplayName` /
+   * `findByHash` per request without re-constructing per-request prepared
+   * statements.
+   */
+  userRepository: UserRepository;
+  apiTokenRepository: ApiTokenRepository;
   workflowEngine: WorkflowEngine;
   /**
    * Tear down everything `createApp` started: stops the WorkflowEngine
@@ -60,6 +71,11 @@ export async function createApp(dbPath?: string): Promise<App> {
   const taskRepo = new TaskRepository(db);
   const dependencyRepo = new DependencyRepository(db);
   const commentRepo = new CommentRepository(db);
+  // Phase 28 (Plan 28-04): identity repositories — required by the auth
+  // chain plugin's PAT and legacy strategies. Constructed once here so the
+  // prepared statements are cached for the entire process lifetime.
+  const userRepository = new UserRepository(db);
+  const apiTokenRepository = new ApiTokenRepository(db);
 
   // Create services
   const projectService = new ProjectService(projectRepo);
@@ -96,6 +112,8 @@ export async function createApp(dbPath?: string): Promise<App> {
     taskService,
     dependencyService,
     commentService,
+    userRepository,
+    apiTokenRepository,
     workflowEngine,
     dispose,
   };

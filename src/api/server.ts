@@ -120,6 +120,16 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
 
+  // Phase 28 (Plan 28-04): identity repositories decorated for the auth
+  // chain plugin's per-request PAT lookups (`findByHash`) and legacy
+  // principal resolution (`findLegacyByDisplayName`). The matching
+  // FastifyInstance augmentation is centralized in `src/types/fastify.d.ts`
+  // — DO NOT add them to the local `declare module 'fastify'` block above;
+  // TypeScript merges all `interface FastifyInstance` declarations across
+  // files and a duplicate here would conflict.
+  server.decorate('userRepository', app.userRepository);
+  server.decorate('apiTokenRepository', app.apiTokenRepository);
+
   // Create and decorate IdempotencyService
   const idempotencyService = new IdempotencyService(app.db);
   server.decorate('idempotencyService', idempotencyService);

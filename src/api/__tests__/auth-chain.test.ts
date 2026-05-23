@@ -93,12 +93,21 @@ async function buildHarness(opts: {
       method: r.method ?? 'GET',
       url: r.path,
       config: r.config ?? {},
-      handler: async (req: any) => ({
-        user: req.user,
-        authMethod: req.authMethod,
-        tokenId: req.tokenId,
-        apiKeyLabel: req.apiKeyLabel ?? null,
-      }),
+      handler: async (req: any) => {
+        // Emit a log line through the (possibly re-childed) per-request
+        // logger so the captured stream sees the audit fields
+        // (user_id, token_id, auth_method, apiKeyLabel). Fastify's own
+        // "request completed" line uses the logger captured at request
+        // start (BEFORE the auth preHandler ran), so it doesn't carry the
+        // child bindings — the explicit emit below is what tests assert on.
+        req.log.info({ probe: true }, 'probe route reached');
+        return {
+          user: req.user,
+          authMethod: req.authMethod,
+          tokenId: req.tokenId,
+          apiKeyLabel: req.apiKeyLabel ?? null,
+        };
+      },
     });
   }
 
