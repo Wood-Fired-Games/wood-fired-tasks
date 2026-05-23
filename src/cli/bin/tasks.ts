@@ -25,6 +25,7 @@ import { doctorCommand } from '../commands/doctor.js';
 import { statsCommand } from '../commands/stats.js';
 import { completedCommand } from '../commands/completed.js';
 import { dbCheckCommand } from '../commands/db-check.js';
+import { dbCommand } from '../commands/db.js';
 import { createCompletionsCommand } from '../commands/completions.js';
 
 // Configure CLI program
@@ -81,11 +82,24 @@ program.addCommand(doctorCommand);
 program.addCommand(statsCommand);
 program.addCommand(completedCommand);
 program.addCommand(dbCheckCommand);
+// Nested parent for new-style `tasks db <subcommand>` commands (Plan 28-07).
+// Coexists with the flat `db-check` registration above — both invocation
+// forms remain supported, per RESEARCH §5.
+program.addCommand(dbCommand);
 
 // Register completions command (factory binds to `program` so generated
 // scripts derive their command list from the same Commander registry — no
 // hardcoded parallel list to keep in sync; see task #247).
 program.addCommand(createCompletionsCommand(program));
 
-// Parse command-line arguments (async to support async command handlers)
-program.parseAsync(process.argv);
+// Export the configured program so tests can drive `program.parseAsync(...)`
+// against the real registry. The bottom guard mirrors src/db/migrate.ts:133
+// and src/index.ts — only auto-parse when invoked as a script.
+export { program };
+
+// Parse command-line arguments (async to support async command handlers).
+// Guarded by import.meta.url === `file://${process.argv[1]}` so that
+// importing this module from a test does NOT execute the CLI.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  program.parseAsync(process.argv);
+}

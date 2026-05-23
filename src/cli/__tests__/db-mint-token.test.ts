@@ -324,4 +324,44 @@ describe('db-mint-token command', () => {
     // No token row created.
     expect(readTokens()).toHaveLength(0);
   });
+
+  describe('parser integration (Task 2)', () => {
+    it("routes ['db', 'mint-token', ...] through the program registry", async () => {
+      const { program } = await import('../bin/tasks.js');
+      program.exitOverride();
+
+      const legacy = readUser("display_name = 'legacy-key'");
+      expect(legacy).not.toBeNull();
+
+      await program.parseAsync([
+        'node',
+        'tasks',
+        'db',
+        'mint-token',
+        '--user',
+        String(legacy!.id),
+        '--name',
+        'integration',
+      ]);
+
+      expect(process.exitCode).toBe(0);
+      const stdout = loggedStdout();
+      expect(stdout).toMatch(/Token: wfb_pat_[A-Z2-7]{32}/);
+      expect(stdout).toContain(`User: ${legacy!.id} (legacy-key)`);
+
+      const rows = readTokens();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].name).toBe('integration');
+    });
+
+    it("keeps flat 'db-check' subcommand registered (backward compat)", async () => {
+      const { program } = await import('../bin/tasks.js');
+      // db-check is registered as a top-level Command on the program — assert
+      // by name lookup, not by re-parsing (db-check writes to stdout via
+      // chalk-coloured output and exercises a real DB path covered elsewhere).
+      const names = program.commands.map((c) => c.name());
+      expect(names).toContain('db-check');
+      expect(names).toContain('db');
+    });
+  });
 });

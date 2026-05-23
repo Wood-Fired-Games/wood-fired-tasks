@@ -138,11 +138,12 @@ call.
 | system | `health` | `commands/health.ts` | Service health probe. |
 | system | `doctor` | `commands/doctor.ts` | Diagnostics: DB, disk, config. |
 | system | `db-check` | `commands/db-check.ts` | SQLite `PRAGMA integrity_check`. |
+| system | `db` | `commands/db.ts` | Nested parent for `db <subcommand>` (currently hosts `mint-token`). |
 | system | `backup` | `commands/backup.ts` | SQLite backup. |
 | system | `stats` | `commands/stats.ts` | Aggregate task/agent stats. |
 | system | `completions` | `commands/completions.ts` | Generate shell completion scripts. |
 
-**Total: 26 commands wired into Commander** (counted by
+**Total: 27 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`). README's "20
 commands" claim is stale — see follow-up task #283.
 
