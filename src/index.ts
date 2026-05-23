@@ -14,6 +14,7 @@ import { DependencyService } from './services/dependency.service.js';
 import { CommentService } from './services/comment.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
 import { eventBus } from './events/event-bus.js';
+import { initOidc, type OidcConfig } from './services/oidc-client.js';
 import type Database from 'better-sqlite3';
 
 /**
@@ -35,6 +36,20 @@ export interface App {
   userRepository: UserRepository;
   apiTokenRepository: ApiTokenRepository;
   workflowEngine: WorkflowEngine;
+  /**
+   * Phase 29 Plan 08: OIDC client Configuration from `initOidc(env)`, or
+   * `null` when OIDC is intentionally disabled (no OIDC_ISSUER_URL).
+   *
+   * Lifecycle:
+   *   - null → `createServer` registers the 501 stub at /auth/*.
+   *   - non-null → `createServer` registers the real authRoutes plugin
+   *     with this config (and the configured redirect URI + scopes).
+   *
+   * Discovery failure at boot is mapped to `process.exit(78)` (or, in
+   * NODE_ENV=test, a thrown Error so the test process is not killed) —
+   * see the boot block in `createApp` below.
+   */
+  oidcConfig: OidcConfig | null;
   /**
    * Tear down everything `createApp` started: stops the WorkflowEngine
    * (releasing its EventBus subscription) and closes the SQLite handle.
@@ -65,6 +80,66 @@ export async function createApp(dbPath?: string): Promise<App> {
   // re-runs are zero-cost no-ops. parseApiKeyEntries accepts undefined and
   // returns []; the slack-bot row is seeded unconditionally regardless.
   seedIdentities(db, parseApiKeyEntries(process.env.API_KEYS));
+
+  // Phase 29 Plan 08 — OIDC discovery.
+  //   - Returns null when OIDC is intentionally disabled (no OIDC_ISSUER_URL).
+  //     Boot logs `oidc.disabled` and continues; createServer will register
+  //     the 501 stub at /auth/*.
+  //   - Returns a Configuration on success. Boot logs `oidc.ready { issuer }`;
+  //     createServer registers the full authRoutes plugin.
+  //   - THROWS on discovery failure (configured-but-broken). Boot logs
+  //     `oidc.discovery_failed { issuer, err }` and maps to process.exit(78)
+  //     (EX_CONFIG). In NODE_ENV=test we rethrow instead so tests can catch
+  //     the failure without killing the test process.
+  //
+  // We use console.error with a small JSON shape here because the Fastify
+  // request-scoped logger is not yet constructed at this boot stage. The
+  // shape mirrors pino's level/msg convention so downstream log aggregators
+  // can ingest it without a separate parser.
+  //
+  // IMPORTANT: probe `process.env.OIDC_ISSUER_URL` BEFORE touching the
+  // `config` Proxy. The Proxy lazy-loads the full Zod-validated config on
+  // first access, which would otherwise force every `createApp()` /
+  // `createTestApp()` caller — including pure service-layer tests that
+  // never need OIDC or full env validation — to set API_KEYS up front.
+  // Reading the bare env var keeps the disabled-mode path zero-impact for
+  // unrelated callers (matches the old `parseApiKeyEntries(process.env.API_KEYS)`
+  // pattern earlier in this function).
+  let oidcConfig: OidcConfig | null = null;
+  const issuerEnv = process.env.OIDC_ISSUER_URL;
+  if (issuerEnv && issuerEnv.length > 0) {
+    // OIDC is requested — NOW load the validated config (this triggers the
+    // env schema's all-or-nothing OIDC refine AND validates API_KEYS etc.).
+    const { config } = await import('./config/env.js');
+    try {
+      oidcConfig = await initOidc(config);
+      // initOidc cannot return null on this branch (issuer is set), but the
+      // type narrows the same way either way.
+      console.error(
+        JSON.stringify({
+          level: 'info',
+          msg: 'oidc.ready',
+          issuer: config.OIDC_ISSUER_URL,
+        }),
+      );
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          msg: 'oidc.discovery_failed',
+          issuer: config.OIDC_ISSUER_URL,
+          err: errMessage,
+        }),
+      );
+      // Close the DB so the failure path does not leak the handle.
+      if (db.open) db.close();
+      if (config.NODE_ENV === 'test') throw err;
+      process.exit(78);
+    }
+  } else {
+    console.error(JSON.stringify({ level: 'info', msg: 'oidc.disabled' }));
+  }
 
   // Create repositories
   const projectRepo = new ProjectRepository(db);
@@ -115,6 +190,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     userRepository,
     apiTokenRepository,
     workflowEngine,
+    oidcConfig,
     dispose,
   };
 }
