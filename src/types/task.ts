@@ -66,6 +66,12 @@ export interface Comment {
 }
 
 // DTOs for create/update operations
+//
+// Phase 31 (Plan 31-01) added optional nullable FK fields alongside the
+// existing TEXT identity columns. These ride next to the TEXT fields
+// (assignee, created_by, author) and are populated by callers that have
+// already resolved the displayName -> users.id mapping; legacy callers
+// continue to work because every new field is optional and defaults to null.
 export interface CreateTaskDTO {
   title: string;
   description?: string | null;
@@ -77,6 +83,10 @@ export interface CreateTaskDTO {
   assignee?: string | null;
   created_by: string;
   due_date?: string | null;
+  /** Phase 31: optional FK into users(id) — parallel to `created_by` TEXT. */
+  created_by_user_id?: number | null;
+  /** Phase 31: optional FK into users(id) — parallel to `assignee` TEXT. */
+  assignee_user_id?: number | null;
 }
 
 export interface UpdateTaskDTO {
@@ -89,6 +99,12 @@ export interface UpdateTaskDTO {
   assignee?: string | null;
   due_date?: string | null;
   tags?: string[];
+  /**
+   * Phase 31: optional FK into users(id) — parallel to `assignee` TEXT.
+   * When set (including explicitly `null` to clear), the repository writes
+   * the FK column. When omitted, the FK column is untouched.
+   */
+  assignee_user_id?: number | null;
 }
 
 export interface CreateProjectDTO {
@@ -105,6 +121,8 @@ export interface CreateCommentDTO {
   task_id: number;
   author: string;
   content: string;
+  /** Phase 31: optional FK into users(id) — parallel to `author` TEXT. */
+  author_user_id?: number | null;
 }
 
 // Task filtering interface

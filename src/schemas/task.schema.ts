@@ -16,6 +16,13 @@ export const CreateTaskSchema = z.object({
   created_by: z.string().min(1, 'Created by is required').max(100),
   due_date: z.string().datetime({ message: 'Due date must be ISO8601 format' }).optional().nullable(),
   tags: z.array(z.string().min(1).max(50)).max(20).optional().default([]),
+  // Phase 31 (Plan 31-01): optional FK fields. NOTE — these are server-derived
+  // at route boundaries (T-31-02 of 31-01-PLAN threat register): downstream
+  // plans STRIP body-supplied values and set them from request.user / Slack
+  // lookup / MCP boot. They are accepted here only so service/repository
+  // call sites can pass them through.
+  created_by_user_id: z.number().int().positive().optional().nullable(),
+  assignee_user_id: z.number().int().positive().optional().nullable(),
 });
 
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
@@ -34,6 +41,9 @@ export const UpdateTaskSchema = z.object({
   assignee: z.string().max(100).nullable(),
   due_date: z.string().datetime().nullable(),
   tags: z.array(z.string().min(1).max(50)).max(20),
+  // Phase 31 (Plan 31-01): optional FK field. Server-derived at the route
+  // boundary (T-31-02) — downstream plans STRIP body-supplied values.
+  assignee_user_id: z.number().int().positive().nullable(),
 }).partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
