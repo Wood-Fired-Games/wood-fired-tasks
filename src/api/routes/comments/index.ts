@@ -5,6 +5,7 @@ import {
   CommentListPaginatedResponseSchema,
   CreateCommentBodySchema,
 } from './schemas.js';
+import { requireUser } from '../../plugins/auth/index.js';
 
 // Pagination query schema for GET /tasks/:id/comments.
 const QueryCommentListSchema = z.object({
@@ -31,10 +32,14 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const { id } = request.params;
       const { author, content } = request.body;
 
+      // Phase 31 Plan 02 — body-supplied `author_user_id` is ignored by
+      // destructuring only `author` and `content` above (T-31-02). The FK
+      // column is server-derived from `request.user.id`.
       const comment = fastify.commentService.addComment({
         task_id: id,
         author,
         content,
+        author_user_id: requireUser(request).id,
       });
 
       return reply.code(201).send(comment);
