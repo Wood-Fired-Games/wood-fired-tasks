@@ -119,6 +119,31 @@ export const configSchema = z.object({
       },
     )
     .optional(),
+  // Phase 31 (Plan 31-05): RFC 8594 `Sunset:` header value stamped on every
+  // legacy-X-API-Key-authed response. Operator-controlled by design
+  // (T-31-14) — operators may pick the date that fits their rollout.
+  // Validation is two-step:
+  //   1. Regex enforces the wire shape (YYYY-MM-DD).
+  //   2. refine() round-trips through Date so calendar-invalid values
+  //      (e.g. `2026-13-99`, `2026-02-30`) fail loudly. The round-trip
+  //      anchors on `T00:00:00Z` so we compare apples-to-apples against
+  //      the ISO substring, dodging the JS quirk where `new Date('2026-02-30')`
+  //      silently rolls over to March.
+  LEGACY_AUTH_SUNSET_DATE: z
+    .string()
+    .regex(
+      /^\d{4}-\d{2}-\d{2}$/,
+      'LEGACY_AUTH_SUNSET_DATE must be YYYY-MM-DD',
+    )
+    .refine(
+      (s) => {
+        const d = new Date(s + 'T00:00:00Z');
+        if (Number.isNaN(d.getTime())) return false;
+        return d.toISOString().slice(0, 10) === s;
+      },
+      'LEGACY_AUTH_SUNSET_DATE must be a valid calendar date',
+    )
+    .default('2026-12-31'),
 }).refine(
   (d) => (!d.SLACK_BOT_TOKEN && !d.SLACK_APP_TOKEN) || (!!d.SLACK_BOT_TOKEN && !!d.SLACK_APP_TOKEN),
   {
