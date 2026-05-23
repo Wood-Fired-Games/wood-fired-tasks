@@ -1,43 +1,98 @@
-// Session auth strategy — Phase 28 stub.
-//
-// Phase 29 replaces the body of `tryAuth` with the @fastify/secure-session
-// decode logic that resolves `request.cookies['wfb_session']` to an
-// AuthenticatedUser. The function signature defined here MUST NOT change
-// — the chain plugin (Plan 28-04) imports it by that contract and Phase
-// 29's swap is intended to be surgical.
-//
-// In Phase 28 the strategy always returns `{ kind: 'skip' }`. When a
-// `wfb_session` cookie happens to be present (an operator manually setting
-// one for testing, for instance), it emits a single `debug`-level log line
-// tagged `phase: 'session-stub'` so the seam is visible / greppable.
-//
-// Safety: `@fastify/cookie` is NOT installed in Phase 28, so
-// `request.cookies` may be `undefined`. The optional-chain access guard
-// below makes the strategy tolerant of that.
+/**
+ * Phase 29 session auth strategy.
+ *
+ * Replaces the Phase 28 stub. The function signature is intentionally
+ * unchanged — the chain orchestrator at src/api/plugins/auth/index.ts:310
+ * calls `tryAuth(request, deps)` and the Phase 28 contract locked that
+ * shape. Only the body and the `SessionDeps` interface are new.
+ *
+ * Behavior:
+ *   1. No session backend (request.session undefined) → skip.
+ *      This preserves the Phase 28 "OIDC disabled mode" guarantee: when
+ *      @fastify/secure-session has NOT been registered, the chain proceeds
+ *      to the legacy strategy unchanged.
+ *   2. No session.user payload → skip.
+ *   3. session.user.id looked up via userRepository.findById. If the user
+ *      row is absent OR `disabled_at IS NOT NULL`, the strategy clears the
+ *      session via `session.delete()`, emits a warn-level audit line, and
+ *      returns skip (chain proceeds to legacy). Distinguishing "disabled"
+ *      from "missing" in the response or log would leak existence; both
+ *      collapse to one outcome.
+ *   4. Otherwise return match with authMethod='session', tokenId=null.
+ *
+ * Side effects:
+ *   - `session.delete()` on disabled/missing user (mid-session disable).
+ *   - One `request.log.warn` line tagged
+ *     `session.user_disabled_during_active_session`. The chain's
+ *     `logAuthFailure` is NOT invoked from here — the strategy returns skip,
+ *     so the chain moves on. The warn line is the only audit trace of the
+ *     forced logout.
+ */
 import type { FastifyRequest } from 'fastify';
+import type { UserRepository } from '../../../../repositories/user.repository.js';
 import type { StrategyOutcome } from './types.js';
+import { toAuthenticatedUser } from './pat.js';
 
 export interface SessionDeps {
-  // Intentionally empty for Phase 28. Phase 29 will add a session-backend
-  // dependency (likely `cookieSecret: Buffer` + a decoder).
+  userRepository: UserRepository;
 }
 
 /**
- * Session strategy stub.
- *
- * Always returns `{ kind: 'skip' }` in Phase 28. The chain proceeds to
- * the legacy strategy after this returns.
+ * Shape of the payload the OIDC callback writes into the session via
+ * `request.session.set('user', { id })`. Plan 6 owns the write site; this
+ * file is its only documented reader.
  */
+interface SessionUserPayload {
+  id: number;
+}
+
+/**
+ * Shape projection for the optional `request.session` decorator. The
+ * @fastify/secure-session module decorates with `get`/`delete`/`set`/etc.;
+ * we narrow to just what this strategy uses so the `request as { ... }`
+ * cast does not over-promise.
+ */
+interface MaybeSession {
+  session?: {
+    get: <K extends string>(key: K) => unknown;
+    delete: () => void;
+  };
+}
+
 export async function tryAuth(
   request: FastifyRequest,
-  _deps: SessionDeps = {},
+  deps: SessionDeps,
 ): Promise<StrategyOutcome> {
-  const cookies = (request as { cookies?: Record<string, string> }).cookies;
-  if (cookies && cookies['wfb_session']) {
-    request.log.debug(
-      { phase: 'session-stub' },
-      'session strategy stub returning null',
-    );
+  // Defensive: in OIDC-disabled mode the secure-session plugin is NOT
+  // registered, so request.session is undefined. The optional-property
+  // pattern mirrors the Phase 28 stub for safety against a later refactor
+  // that removes the plugin again.
+  const session = (request as unknown as MaybeSession).session;
+  if (!session) {
+    return { kind: 'skip' };
   }
-  return { kind: 'skip' };
+
+  const payload = session.get('user') as SessionUserPayload | undefined;
+  if (!payload) {
+    return { kind: 'skip' };
+  }
+
+  const row = deps.userRepository.findById(payload.id);
+  if (!row || row.disabled_at !== null) {
+    session.delete();
+    request.log.warn(
+      { user_id: payload.id },
+      'session.user_disabled_during_active_session',
+    );
+    return { kind: 'skip' };
+  }
+
+  return {
+    kind: 'match',
+    result: {
+      user: toAuthenticatedUser(row),
+      authMethod: 'session',
+      tokenId: null,
+    },
+  };
 }

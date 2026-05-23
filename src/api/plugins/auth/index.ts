@@ -306,8 +306,14 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
           return;
         }
 
-        // 2. Session stub (Phase 28 always returns 'skip'; Phase 29 fills in)
-        const sessionOutcome = await trySession(request, {});
+        // 2. Session (Phase 29 — real implementation reads
+        // request.session.get('user') and re-validates against
+        // userRepository.findById; returns 'skip' when no session backend
+        // is registered (OIDC-disabled mode) so the legacy strategy still
+        // gets a chance.
+        const sessionOutcome = await trySession(request, {
+          userRepository: fastify.userRepository,
+        });
         if (sessionOutcome.kind === 'fail') {
           // Defensive — Phase 28 stub never returns fail. Keep the branch so
           // Phase 29's swap doesn't need to add it.
