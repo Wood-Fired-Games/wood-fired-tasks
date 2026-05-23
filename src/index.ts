@@ -1,5 +1,7 @@
 import { initDatabase } from './db/database.js';
 import { runMigrations } from './db/migrate.js';
+import { parseApiKeyEntries } from './config/env.js';
+import { seedIdentities } from './services/identity-seeder.js';
 import { ProjectRepository } from './repositories/project.repository.js';
 import { TaskRepository } from './repositories/task.repository.js';
 import { DependencyRepository } from './repositories/dependency.repository.js';
@@ -47,6 +49,11 @@ export async function createApp(dbPath?: string): Promise<App> {
 
   // Run migrations
   await runMigrations(db);
+
+  // Phase 27 (Plan 6): seed legacy + service-account identities. Idempotent --
+  // re-runs are zero-cost no-ops. parseApiKeyEntries accepts undefined and
+  // returns []; the slack-bot row is seeded unconditionally regardless.
+  seedIdentities(db, parseApiKeyEntries(process.env.API_KEYS));
 
   // Create repositories
   const projectRepo = new ProjectRepository(db);
