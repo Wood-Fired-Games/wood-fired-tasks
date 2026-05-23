@@ -86,10 +86,13 @@ export interface ICommentRepository {
 }
 
 /**
- * Read-only repository for the `users` table (Phase 27 scope).
+ * Repository for the `users` table.
  *
- * Insert/update/delete methods are intentionally absent — write paths land
- * in Phase 28 (PAT mint command) and Phase 29 (JIT OIDC provisioning).
+ * Phase 27 shipped the read methods. Phase 28 (Plan 28-02) added the
+ * `findByEmail` read method needed by the `tasks db mint-token` CLI
+ * (`--user <id|email|displayName>` resolution). Write paths are still
+ * deferred: identity-row writes land in Phase 29 (JIT OIDC provisioning)
+ * and Phase 30 (CLI device-code flow).
  */
 export interface IUserRepository {
   /** Lookup a single user by primary key. */
@@ -100,6 +103,14 @@ export interface IUserRepository {
   findBySlackUserId(slackUserId: string): User | null;
   /** Lookup an `is_legacy=1` user by display_name — idempotency key for seeder. */
   findLegacyByDisplayName(displayName: string): User | null;
+  /**
+   * Case-insensitive email lookup (`WHERE LOWER(email) = LOWER(?)`).
+   * Returns the lowest-id row when duplicates exist (`ORDER BY id ASC LIMIT 1`);
+   * v1.6 has no UNIQUE on `email`.
+   *
+   * @throws TypeError when `email` is null, undefined, or empty.
+   */
+  findByEmail(email: string): User | null;
   /** Admin: list every user, ordered by id ASC. */
   listAll(): User[];
 }
