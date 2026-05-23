@@ -21,7 +21,7 @@ import type Database from 'better-sqlite3';
 export async function up(db: Database.Database): Promise<void> {
   db.transaction(() => {
     db.exec(`
-      CREATE TABLE users (
+      CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         oidc_sub TEXT,
         oidc_provider TEXT,
@@ -36,7 +36,7 @@ export async function up(db: Database.Database): Promise<void> {
     `);
 
     db.exec(`
-      CREATE TABLE api_tokens (
+      CREATE TABLE IF NOT EXISTS api_tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
