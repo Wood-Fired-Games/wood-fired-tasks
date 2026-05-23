@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wood-fired-games.github.io/wood-fired-bugs/loop-run-schema.json",
+  "title": "LOOP-RUN.md frontmatter",
+  "description": "Validates the YAML frontmatter block of a .planning/loops/<UTC-timestamp>-<project_id>.md file produced by tasks:loop / tasks:bug-smash. See docs/loop-run-schema.md for the full contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "project_id",
+    "started_at",
+    "ended_at",
+    "wall_seconds",
+    "orchestrator_session_id",
+    "total_tokens",
+    "total_usd",
+    "subagents_dispatched",
+    "tasks_attempted",
+    "tasks_passed",
+    "tasks_failed",
+    "tasks_partial",
+    "tasks_not_verified"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier minted by the orchestrator at run start; used to dedupe re-emissions."
+    },
+    "project_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "wood-fired-bugs project id the loop drained."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Orchestrator start time (RFC 3339, UTC)."
+    },
+    "ended_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Orchestrator end time (RFC 3339, UTC)."
+    },
+    "wall_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "ended_at - started_at in whole seconds."
+    },
+    "orchestrator_session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Claude Code session id of the orchestrating session. Joins to agent_transactions_v.session_id."
+    },
+    "total_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sum of input + cache_create + cache_read + output tokens across orchestrator and all subagents."
+    },
+    "total_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Sum cost in USD across orchestrator and all subagents (cache-discounted)."
+    },
+    "subagents_dispatched": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of distinct subagent sessions spawned during the run."
+    },
+    "tasks_attempted": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tasks picked up during the run (PASS + FAIL + PARTIAL + NOT_VERIFIED)."
+    },
+    "tasks_passed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tasks with verdict PASS."
+    },
+    "tasks_failed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tasks with verdict FAIL."
+    },
+    "tasks_partial": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tasks with verdict PARTIAL."
+    },
+    "tasks_not_verified": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tasks with verdict NOT_VERIFIED."
+    }
+  }
+}
