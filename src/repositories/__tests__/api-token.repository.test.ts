@@ -137,6 +137,117 @@ describe('ApiTokenRepository', () => {
     });
   });
 
+  describe('insert', () => {
+    it('inserts a row and returns the full ApiToken with id > 0, defaults populated', () => {
+      const result = repo.insert({
+        userId,
+        name: 'laptop',
+        prefix: 'wfb_pat_',
+        suffix: 'wxyz',
+        hash: 'sha256-insert-happy',
+      });
+
+      expect(result.id).toBeGreaterThan(0);
+      expect(result.user_id).toBe(userId);
+      expect(result.name).toBe('laptop');
+      expect(result.prefix).toBe('wfb_pat_');
+      expect(result.suffix).toBe('wxyz');
+      expect(result.hash).toBe('sha256-insert-happy');
+      expect(result.scopes).toBe('[]');
+      expect(typeof result.created_at).toBe('string');
+      expect(result.created_at.length).toBeGreaterThan(0);
+      expect(result.last_used_at).toBeNull();
+      expect(result.revoked_at).toBeNull();
+      expect(result.expires_at).toBeNull();
+    });
+
+    it('persists scopes JSON-array string verbatim when provided', () => {
+      const result = repo.insert({
+        userId,
+        name: 'admin-token',
+        prefix: 'wfb_pat_',
+        suffix: 'admn',
+        hash: 'sha256-insert-scopes',
+        scopes: '["admin"]',
+      });
+
+      expect(result.scopes).toBe('["admin"]');
+
+      // Round-trip via findById to confirm DB-level persistence (not just an
+      // in-memory echo).
+      const reread = repo.findById(result.id);
+      expect(reread).not.toBeNull();
+      expect(reread!.scopes).toBe('["admin"]');
+    });
+
+    it('persists expiresAt = null (omitted) as NULL in the DB', () => {
+      const result = repo.insert({
+        userId,
+        name: 'no-expiry',
+        prefix: 'wfb_pat_',
+        suffix: 'noex',
+        hash: 'sha256-insert-no-expiry',
+      });
+
+      expect(result.expires_at).toBeNull();
+
+      const reread = repo.findById(result.id);
+      expect(reread!.expires_at).toBeNull();
+    });
+
+    it('persists explicit expiresAt ISO string', () => {
+      const result = repo.insert({
+        userId,
+        name: 'with-expiry',
+        prefix: 'wfb_pat_',
+        suffix: 'expy',
+        hash: 'sha256-insert-with-expiry',
+        expiresAt: '2027-01-01T00:00:00.000Z',
+      });
+
+      expect(result.expires_at).toBe('2027-01-01T00:00:00.000Z');
+    });
+
+    it('throws on FK violation when userId references a non-existent user', () => {
+      expect(() =>
+        repo.insert({
+          userId: 999999,
+          name: 'orphan',
+          prefix: 'wfb_pat_',
+          suffix: 'orph',
+          hash: 'sha256-insert-orphan',
+        })
+      ).toThrow(/FOREIGN KEY/i);
+    });
+
+    it('returned row matches the snake_case ApiToken shape', () => {
+      const result = repo.insert({
+        userId,
+        name: 'shape-check',
+        prefix: 'wfb_pat_',
+        suffix: 'shap',
+        hash: 'sha256-insert-shape',
+      });
+
+      // Snake_case ApiToken interface fields must all be present.
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: expect.any(Number),
+          user_id: expect.any(Number),
+          name: expect.any(String),
+          prefix: expect.any(String),
+          suffix: expect.any(String),
+          hash: expect.any(String),
+          scopes: expect.any(String),
+          created_at: expect.any(String),
+          last_used_at: null,
+          revoked_at: null,
+          expires_at: null,
+        })
+      );
+    });
+  });
+
   describe('listByUser', () => {
     it('returns tokens for user ordered by created_at DESC (newest first)', () => {
       insertToken(db, {
