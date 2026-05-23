@@ -101,9 +101,19 @@ if [ ! -d "$SOURCE_DIR/src" ]; then
   exit 1
 fi
 
-# Use find -newer for portable mtime comparison. If any src/ file is newer
-# than the entire dist/ tree, the build is stale.
-STALE="$(find "$SOURCE_DIR/src" -type f -newer "$SOURCE_DIR/dist" -print -quit 2>/dev/null || true)"
+# Compare against the newest FILE inside dist/, not the dist/ directory's
+# mtime. tsc rewrites existing .js files in place; that doesn't bump the
+# directory mtime, so a `find -newer dist/` check would falsely flag any
+# src/ file touched since the dist/ was first populated even when the
+# corresponding .js was just rebuilt.
+NEWEST_DIST="$(find "$SOURCE_DIR/dist" -type f -printf '%T@ %p\n' 2>/dev/null \
+  | sort -nr | head -n1 | awk '{print $2}')"
+if [ -z "$NEWEST_DIST" ]; then
+  echo "ERROR: $SOURCE_DIR/dist exists but is empty." >&2
+  echo "Run 'npm run build' before deploying." >&2
+  exit 1
+fi
+STALE="$(find "$SOURCE_DIR/src" -type f -newer "$NEWEST_DIST" -print -quit 2>/dev/null || true)"
 if [ -n "$STALE" ]; then
   echo "ERROR: dist/ is older than src/ (e.g. $STALE)." >&2
   echo "Run 'npm run build' before deploying." >&2
