@@ -11,6 +11,46 @@ import {
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { convertToMcpError } from '../errors.js';
+import type { McpServerContext } from '../server.js';
+import type { UserRepository } from '../../repositories/user.repository.js';
+
+/**
+ * Best-effort resolver for `assignee_user_id` when a PATCH-style update
+ * carries an `assignee` string. Mirrors the REST PATCH handler's helper
+ * (Phase 31 Plan 02 Task 3) so MCP and REST stay internally consistent.
+ *
+ * Resolution rules:
+ *   - `assignee === null` or `assignee === ''` (explicit clear) → null
+ *   - looks like an email (contains '@') → `userRepo.findByEmail` with
+ *     try/catch around the null-guard throw (Pitfall 6); miss → null
+ *   - any other free-form string → null (no display-name lookup exists;
+ *     migrate-identities CLI in Plan 05 can backfill later)
+ *
+ * Exported so the small test in src/mcp/__tests__/task-tools.test.ts can
+ * exercise the helper directly without driving the full MCP server.
+ */
+export function resolveAssigneeUserId(
+  assignee: string | null | undefined,
+  userRepo: UserRepository | undefined,
+): number | null | undefined {
+  // `undefined` means "no assignee key on the update body" — preserve the
+  // existing PATCH semantics by NOT touching assignee_user_id.
+  if (assignee === undefined) return undefined;
+  if (assignee === null || assignee === '') return null;
+  if (!userRepo) return null;
+  if (assignee.includes('@')) {
+    try {
+      const u = userRepo.findByEmail(assignee);
+      return u?.id ?? null;
+    } catch {
+      // findByEmail throws on null/empty; email-shaped-but-invalid (e.g.
+      // '@@@') never actually reaches here because the upstream check
+      // already filtered, but defensive guard against future drift.
+      return null;
+    }
+  }
+  return null;
+}
 
 /**
  * Register all task-related MCP tools
@@ -22,11 +62,20 @@ import { convertToMcpError } from '../errors.js';
  * - list_tasks: List tasks with filters
  * - delete_task: Delete task by ID
  * - claim_task: Atomically claim an unassigned task
+ *
+ * @param ctx - Phase 31 Plan 03: boot-time actor identity. The
+ *   create/update/claim handlers inject `ctx.actorUserId` into the
+ *   service-write input objects so the parallel FK columns
+ *   (`created_by_user_id`, `assignee_user_id`) are populated. Defaults to
+ *   `{ actorUserId: null }` for callers that pre-date Phase 31. The
+ *   optional `ctx.userRepository` enables best-effort assignee email
+ *   resolution in `update_task` (mirrors REST PATCH from Plan 31-02).
  */
 export function registerTaskTools(
   server: McpServer,
   taskService: TaskService,
-  projectService: ProjectService
+  projectService: ProjectService,
+  ctx: McpServerContext = { actorUserId: null },
 ): void {
   // Tool: create_task
   server.registerTool(

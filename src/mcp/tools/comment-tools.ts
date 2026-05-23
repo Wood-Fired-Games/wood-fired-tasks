@@ -2,10 +2,20 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CommentService } from '../../services/comment.service.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import type { McpServerContext } from '../server.js';
 
+/**
+ * Register the MCP comment tools.
+ *
+ * @param ctx - Phase 31 Plan 03 boot-time actor identity. The `add_comment`
+ *   handler injects `ctx.actorUserId` into the service-write input so the
+ *   parallel `task_comments.author_user_id` FK column is populated.
+ *   Defaults to `{ actorUserId: null }` for callers that pre-date Phase 31.
+ */
 export function registerCommentTools(
   server: McpServer,
-  commentService: CommentService
+  commentService: CommentService,
+  ctx: McpServerContext = { actorUserId: null },
 ): void {
   // add_comment - Add a comment to a task
   server.registerTool(

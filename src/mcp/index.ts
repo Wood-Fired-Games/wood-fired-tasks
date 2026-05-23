@@ -1,6 +1,8 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createApp } from '../index.js';
 import { createMcpServer } from './server.js';
+import { resolveActorUserIdWithPath } from './identity-resolution.js';
+import { parseApiKeyEntries } from '../config/env.js';
 
 /**
  * MCP server stdio entry point
@@ -21,13 +23,46 @@ async function main() {
   // Initialize application (database, repositories, services)
   const app = await createApp(dbPath);
 
-  // Create MCP server with initialized services
+  // Phase 31 Plan 03: resolve the MCP actor's user.id BEFORE creating the
+  // MCP server. The resolved id flows into every tool handler via the
+  // McpServerContext so that create_task / claim_task / add_comment writes
+  // populate the parallel FK columns (created_by_user_id, assignee_user_id,
+  // author_user_id) alongside the legacy TEXT columns. See
+  // src/mcp/identity-resolution.ts for the precedence (PAT → legacy →
+  // mcp-bot service-account fallback).
+  //
+  // The resolver throws if mcp-bot is not seeded — let it propagate so the
+  // mainWithRetry wrapper logs it (to stderr) and the process exits with
+  // a clear error. Don't catch + ignore; an MCP boot without a usable
+  // actor identity is a bug, not a soft failure.
+  const { actorUserId, path: resolutionPath } = resolveActorUserIdWithPath({
+    apiKey: process.env.WFB_API_KEY,
+    apiTokenRepo: app.apiTokenRepository,
+    userRepo: app.userRepository,
+    apiKeyEntries: parseApiKeyEntries(process.env.API_KEYS),
+  });
+
+  // One-line INFO log so operators can see which credential class
+  // authenticated this MCP process. WFB_API_KEY value is NEVER logged —
+  // only the resolution path tag (T-31-08 mitigation). console.error so
+  // we don't corrupt the JSON-RPC stdout stream (Pitfall 5).
+  console.error(
+    JSON.stringify({
+      level: 'info',
+      event: 'mcp.actor_resolved',
+      actor_user_id: actorUserId,
+      resolution_path: resolutionPath,
+    }),
+  );
+
+  // Create MCP server with initialized services + boot-time context
   const server = createMcpServer(
     app.taskService,
     app.projectService,
     app.dependencyService,
     app.commentService,
-    app.db
+    app.db,
+    { actorUserId, userRepository: app.userRepository },
   );
 
   // Create stdio transport

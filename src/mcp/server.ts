@@ -4,6 +4,7 @@ import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
 import { CommentService } from '../services/comment.service.js';
+import type { UserRepository } from '../repositories/user.repository.js';
 import { registerTaskTools } from './tools/task-tools.js';
 import { registerDependencyTools } from './tools/dependency-tools.js';
 import { registerCommentTools } from './tools/comment-tools.js';
@@ -15,6 +16,34 @@ import {
   EVENTS_RESOURCE_DESCRIPTION,
   getEventsResourceContent,
 } from './resources/events.js';
+
+/**
+ * Boot-time context for MCP tool handlers (Phase 31 Plan 03).
+ *
+ * Threaded into every `register*Tools` call so handlers can inject the
+ * resolved actor `user.id` into service-write input objects (the parallel
+ * FK columns introduced by migration 009).
+ *
+ * Defaults to `actorUserId: null` for callers that haven't been updated
+ * yet (tests that pre-date Phase 31). Tool handlers treat `null` as "no
+ * actor" and write the FK column as NULL, preserving today's behaviour
+ * for the still-legacy column-only paths.
+ */
+export interface McpServerContext {
+  /** Resolved user.id for the MCP actor; see src/mcp/identity-resolution.ts. */
+  actorUserId: number | null;
+  /**
+   * Optional UserRepository used by the update_task tool to best-effort
+   * resolve `assignee_user_id` from a user-supplied `assignee` email
+   * (mirroring the REST PATCH helper from Plan 31-02). Omit when callers
+   * don't care about assignee FK resolution (tests, future remote
+   * adapters); the handler then leaves the FK column NULL on assignee
+   * changes.
+   */
+  userRepository?: UserRepository;
+}
+
+const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 
 /**
  * Create and configure an MCP server instance
@@ -34,6 +63,10 @@ import {
  * @param dependencyService - Service for dependency operations
  * @param commentService - Service for comment operations
  * @param db - Database instance for health checks
+ * @param ctx - Phase 31 Plan 03: boot-time identity context. Tool handlers
+ *   inject `ctx.actorUserId` into service-write input objects. Defaults to
+ *   `{ actorUserId: null }` so existing tests that don't pass an explicit
+ *   context continue to work — FK columns simply stay NULL for those calls.
  * @returns Configured McpServer instance ready to connect to a transport
  */
 export function createMcpServer(
@@ -41,18 +74,23 @@ export function createMcpServer(
   projectService: ProjectService,
   dependencyService: DependencyService,
   commentService: CommentService,
-  db: Database
+  db: Database,
+  ctx: McpServerContext = DEFAULT_CTX,
 ): McpServer {
   const server = new McpServer({
     name: 'wood-fired-bugs',
     version: '1.0.0',
   });
 
-  // Register all tools
-  registerTaskTools(server, taskService, projectService);
+  // Register all tools — ctx is threaded into every tool group so create /
+  // update / claim / comment handlers can inject ctx.actorUserId into the
+  // service-write input objects (Phase 31 Plan 03 Task 2). update_task
+  // additionally uses ctx.userRepository for best-effort assignee
+  // email-resolution (mirrors REST PATCH from Plan 31-02 Task 3).
+  registerTaskTools(server, taskService, projectService, ctx);
   registerProjectTools(server, projectService);
   registerDependencyTools(server, dependencyService);
-  registerCommentTools(server, commentService);
+  registerCommentTools(server, commentService, ctx);
   registerHealthTools(server, db);
 
   // Register resources
