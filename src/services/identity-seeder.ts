@@ -27,10 +27,13 @@ export interface MinimalLogger {
  */
 const consoleStubLogger: MinimalLogger = {
   info: (obj: object, msg?: string): void => {
-    console.log('[identity-seeder]', msg ?? '', obj);
+    // MUST write to stderr -- the MCP server speaks JSON-RPC over stdout
+    // and createApp() is invoked during MCP boot. Any stdout output here
+    // corrupts the protocol stream (caught by stdio-compliance.test.ts).
+    console.error('[identity-seeder]', msg ?? '', obj);
   },
   warn: (obj: object, msg?: string): void => {
-    console.warn('[identity-seeder]', msg ?? '', obj);
+    console.error('[identity-seeder]', msg ?? '', obj);
   },
 };
 
