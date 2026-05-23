@@ -27,6 +27,7 @@ describe('Configuration Validation', () => {
     delete process.env.WAL_CHECKPOINT_INTERVAL_MS;
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
+    delete process.env.LEGACY_AUTH_SUNSET_DATE;
   });
 
   afterEach(() => {
@@ -658,6 +659,83 @@ describe('Configuration Validation', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.SLACK_BOT_TOKEN).toBe('xoxb-verify');
+      }
+    });
+  });
+
+  describe('LEGACY_AUTH_SUNSET_DATE (Phase 31-05)', () => {
+    // RFC 8594 `Sunset:` header value sent on every legacy-X-API-Key-authed
+    // response. The header is operator-controlled by design (T-31-14); zod's
+    // role is to refuse a value that would render a malformed header or a
+    // calendar-invalid date.
+
+    it('defaults to 2026-12-31 when unset', () => {
+      process.env.API_KEYS = 'test-key';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.LEGACY_AUTH_SUNSET_DATE).toBe('2026-12-31');
+      }
+    });
+
+    it('accepts a future operator-supplied date', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.LEGACY_AUTH_SUNSET_DATE = '2027-06-30';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.LEGACY_AUTH_SUNSET_DATE).toBe('2027-06-30');
+      }
+    });
+
+    it('rejects a non-YYYY-MM-DD shape', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.LEGACY_AUTH_SUNSET_DATE = 'not-a-date';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const errorMessages = result.error.issues
+          .map((i) => i.message)
+          .join(' ');
+        expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
+      }
+    });
+
+    it('rejects well-formed but calendar-invalid dates (e.g. 2026-13-99)', () => {
+      process.env.API_KEYS = 'test-key';
+      process.env.LEGACY_AUTH_SUNSET_DATE = '2026-13-99';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const errorMessages = result.error.issues
+          .map((i) => i.message)
+          .join(' ');
+        expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
+      }
+    });
+
+    it('rejects an out-of-range month even if regex passes (2026-02-30)', () => {
+      process.env.API_KEYS = 'test-key';
+      // 2026-02-30 matches the regex (\d{4}-\d{2}-\d{2}) but Feb 30 is not a
+      // calendar-valid date. The refine() guard must catch this.
+      process.env.LEGACY_AUTH_SUNSET_DATE = '2026-02-30';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const errorMessages = result.error.issues
+          .map((i) => i.message)
+          .join(' ');
+        expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
       }
     });
   });
