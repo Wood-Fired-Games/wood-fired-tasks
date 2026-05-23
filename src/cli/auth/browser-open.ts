@@ -20,7 +20,63 @@
  */
 import { spawn } from 'node:child_process';
 
+/**
+ * WR-03 (Phase 30 review) — validate the URL shape BEFORE handing it to
+ * a child process. The Windows leg invokes `cmd.exe /c start "" <url>`;
+ * even with `shell: false`, libuv's WinAPI quoting of the args array can
+ * be perturbed by a URL containing embedded double quotes or trailing
+ * backslash sequences, letting the value escape its argument slot and
+ * be re-interpreted as cmd metacharacters. The threat surface is narrow
+ * (the URL comes from the device-flow server we just authenticated to),
+ * but the CLI's `--server <url>` flag lets the user point at an
+ * arbitrary origin. A malicious server returning
+ * `verification_uri_complete: 'http://x" & calc & "'` would execute
+ * arbitrary commands without this gate.
+ *
+ * Allowlist:
+ *   - Must parse as a URL via `new URL(...)`.
+ *   - Protocol MUST be http: or https: (no `file:`, `javascript:`,
+ *     `vbscript:`, custom schemes).
+ *   - The URL.toString() round-trip MUST equal the input — this rejects
+ *     exotic escapes that the parser silently normalizes (e.g. inputs
+ *     with embedded double quotes or unencoded control chars where
+ *     toString() emits the canonical form). Round-trip equality also
+ *     catches the trailing-backslash + quote sequence that drives the
+ *     libuv quoting failure.
+ *
+ * Returns `false` (caller will skip the spawn and rely on the printed-
+ * URL fallback) when the URL is rejected. We do NOT throw because the
+ * URL is operator/server-supplied — a graceful "no, don't open that"
+ * is the right UX.
+ */
+function isSafeBrowserUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+  // Round-trip the parser to reject inputs with characters that the URL
+  // parser silently rewrites (e.g. embedded `"`, control chars, unencoded
+  // whitespace). The strict equality is intentional — anything the parser
+  // canonicalized away is suspicious enough to refuse.
+  if (parsed.toString() !== url) {
+    return false;
+  }
+  return true;
+}
+
 export function openBrowser(url: string): boolean {
+  // WR-03 (Phase 30 review) — validate the URL BEFORE selecting the
+  // platform spawn args. A malformed/suspicious URL → false so the caller
+  // falls back to printing the URL for the user to paste manually.
+  if (!isSafeBrowserUrl(url)) {
+    return false;
+  }
+
   let cmd: string;
   let args: string[];
 

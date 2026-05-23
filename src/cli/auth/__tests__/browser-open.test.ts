@@ -131,4 +131,61 @@ describe('openBrowser', () => {
     // Either absent (Node defaults shell=false) or explicitly false; never true.
     expect(opts.shell === undefined || opts.shell === false).toBe(true);
   });
+
+  // WR-03 (Phase 30 review) — URL validation gate.
+  describe('URL validation (WR-03)', () => {
+    it('returns false WITHOUT spawning when URL is unparseable', () => {
+      setPlatform('darwin');
+      const ok = openBrowser('not-a-url');
+      expect(ok).toBe(false);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false WITHOUT spawning for non-http(s) protocols (file:)', () => {
+      setPlatform('darwin');
+      const ok = openBrowser('file:///etc/passwd');
+      expect(ok).toBe(false);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false WITHOUT spawning for javascript: URLs', () => {
+      setPlatform('darwin');
+      const ok = openBrowser('javascript:alert(1)');
+      expect(ok).toBe(false);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false WITHOUT spawning for Windows cmd-injection attempt', () => {
+      // Simulates a malicious server returning a verification_uri_complete
+      // containing embedded double quotes designed to escape libuv's WinAPI
+      // arg quoting and inject `& calc &` as a separate cmd statement. The
+      // round-trip equality check rejects this BEFORE the URL ever reaches
+      // the spawn call.
+      setPlatform('win32');
+      // eslint-disable-next-line no-script-url
+      const malicious = 'http://x" & calc & "';
+      const ok = openBrowser(malicious);
+      expect(ok).toBe(false);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('returns false WITHOUT spawning for URL whose toString() does not round-trip', () => {
+      setPlatform('darwin');
+      // Unencoded whitespace — URL parser normalizes to %20, breaking the
+      // round-trip check.
+      const sneaky = 'http://example.test/path with space';
+      const ok = openBrowser(sneaky);
+      expect(ok).toBe(false);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+
+    it('accepts a well-formed verification_uri_complete', () => {
+      setPlatform('darwin');
+      const child = makeFakeChild();
+      spawnMock.mockReturnValueOnce(child);
+      const ok = openBrowser('https://example.test/auth/device?user_code=ABCDEFGH');
+      expect(ok).toBe(true);
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });
