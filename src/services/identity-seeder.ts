@@ -68,22 +68,28 @@ export function seedIdentities(
   entries: ApiKeyEntry[],
   logger: MinimalLogger = consoleStubLogger,
 ): IdentitySeedResult {
-  // Idempotent INSERT ... WHERE NOT EXISTS. `info.changes` is 1 when a row was
-  // inserted, 0 when the WHERE NOT EXISTS subquery suppressed the insert.
+  // Idempotent INSERT ... ON CONFLICT DO NOTHING. info.changes is 1 when a
+  // row was actually inserted, 0 when the partial UNIQUE index from
+  // migration 010 (WR-04 of 27-REVIEW.md) suppressed the duplicate. The
+  // backing partial UNIQUE indexes are:
+  //   idx_users_legacy_display_name  UNIQUE(display_name) WHERE is_legacy = 1
+  //   idx_users_slack_bot            UNIQUE(display_name) WHERE is_service_account = 1
+  // Two concurrent boots will both attempt their INSERTs; the second one
+  // becomes a DB-level no-op rather than producing a duplicate row.
+  //
+  // The conflict target is specified as `(display_name) WHERE ...` because
+  // SQLite matches partial unique indexes by their predicate — the WHERE
+  // clause is required for the index to be selected as the conflict target.
   const insertLegacyStmt = db.prepare(
     `INSERT INTO users (display_name, is_legacy)
-     SELECT ?, 1
-     WHERE NOT EXISTS (
-       SELECT 1 FROM users WHERE is_legacy = 1 AND display_name = ?
-     )`,
+     VALUES (?, 1)
+     ON CONFLICT(display_name) WHERE is_legacy = 1 DO NOTHING`,
   );
 
   const insertServiceStmt = db.prepare(
     `INSERT INTO users (display_name, is_service_account)
-     SELECT 'slack-bot', 1
-     WHERE NOT EXISTS (
-       SELECT 1 FROM users WHERE is_service_account = 1 AND display_name = 'slack-bot'
-     )`,
+     VALUES ('slack-bot', 1)
+     ON CONFLICT(display_name) WHERE is_service_account = 1 DO NOTHING`,
   );
 
   // Buffer log events; emit AFTER the transaction commits so a rollback
@@ -104,7 +110,7 @@ export function seedIdentities(
   db.transaction(() => {
     for (const entry of entries) {
       // Only `entry.label` is read -- the raw key string is never touched.
-      const info = insertLegacyStmt.run(entry.label, entry.label);
+      const info = insertLegacyStmt.run(entry.label);
       if (info.changes > 0) {
         result.seeded.legacy += 1;
         pending.push({

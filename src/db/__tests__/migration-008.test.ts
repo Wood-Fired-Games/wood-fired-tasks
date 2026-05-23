@@ -186,6 +186,19 @@ describe('Migration 008: Identity Tables', () => {
     expect(after.c).toBe(0);
   });
 
+  // The set of objects migration 008 itself owns. Used by the round-trip
+  // tests below — scoped narrowly so additive later migrations (e.g. 010's
+  // idx_users_legacy_display_name / idx_users_slack_bot) do not get pulled
+  // into the 008-isolated round-trip and cause a false negative.
+  const MIGRATION_008_OBJECTS = [
+    'users',
+    'api_tokens',
+    'idx_users_oidc_sub_provider',
+    'idx_users_slack_user_id',
+    'idx_api_tokens_hash',
+    'idx_api_tokens_user_id',
+  ];
+
   it('down() drops users, api_tokens, and all identity indexes', async () => {
     await runMigrations(db);
 
@@ -199,9 +212,19 @@ describe('Migration 008: Identity Tables', () => {
       .all() as Array<{ name: string }>;
     expect(tables).toHaveLength(0);
 
+    // Only the four indexes that migration 008 itself creates. Later
+    // migrations may add additional idx_users_* indexes (e.g. migration
+    // 010); those are dropped transitively when DROP TABLE users runs,
+    // but it would be a category error to assert "all indexes named like
+    // a migration-008 name are gone" — we check exactly the 008 set.
     const indexes = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND (name LIKE 'idx_users_%' OR name LIKE 'idx_api_tokens_%')"
+        `SELECT name FROM sqlite_master WHERE type='index' AND name IN (
+           'idx_users_oidc_sub_provider',
+           'idx_users_slack_user_id',
+           'idx_api_tokens_hash',
+           'idx_api_tokens_user_id'
+         )`
       )
       .all() as Array<{ name: string }>;
     expect(indexes).toHaveLength(0);
@@ -210,21 +233,21 @@ describe('Migration 008: Identity Tables', () => {
   it('up() after down() restores schema (round-trip)', async () => {
     await runMigrations(db);
 
-    const before = db
-      .prepare(
-        "SELECT name, type, sql FROM sqlite_master WHERE name IN ('users','api_tokens') OR name LIKE 'idx_users_%' OR name LIKE 'idx_api_tokens_%' ORDER BY type, name"
-      )
-      .all();
+    // Capture exactly the objects migration 008 owns. Scoping by an IN-list
+    // (instead of a LIKE pattern) keeps later additive migrations from
+    // bleeding into this round-trip — see MIGRATION_008_OBJECTS comment.
+    const placeholders = MIGRATION_008_OBJECTS.map(() => '?').join(',');
+    const snapshotStmt = db.prepare(
+      `SELECT name, type, sql FROM sqlite_master WHERE name IN (${placeholders}) ORDER BY type, name`
+    );
+
+    const before = snapshotStmt.all(...MIGRATION_008_OBJECTS);
 
     const { up, down } = await import('../migrations/008-identity-tables.js');
     await down(db);
     await up(db);
 
-    const after = db
-      .prepare(
-        "SELECT name, type, sql FROM sqlite_master WHERE name IN ('users','api_tokens') OR name LIKE 'idx_users_%' OR name LIKE 'idx_api_tokens_%' ORDER BY type, name"
-      )
-      .all();
+    const after = snapshotStmt.all(...MIGRATION_008_OBJECTS);
 
     expect(after).toEqual(before);
   });

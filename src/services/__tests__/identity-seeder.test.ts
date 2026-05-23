@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type Database from 'better-sqlite3';
-import { initTestDatabase } from '../../db/database.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { initDatabase, initTestDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { seedIdentities } from '../identity-seeder.js';
 import { createTestApp } from '../../index.js';
@@ -249,6 +252,130 @@ describe('seedIdentities', () => {
 
       const serialised = JSON.stringify(logger.info.mock.calls);
       expect(serialised).not.toContain(secret);
+    });
+  });
+
+  describe('concurrent-boot race safety (WR-04 / migration 010)', () => {
+    // The pre-WR-04 implementation used `INSERT ... WHERE NOT EXISTS (...)`
+    // for idempotency. Two concurrent boots could both pass the
+    // WHERE-NOT-EXISTS subquery before either committed and both INSERT,
+    // producing duplicate rows. The fix is the partial UNIQUE indexes in
+    // migration 010 + `INSERT ... ON CONFLICT DO NOTHING` in the seeder.
+    //
+    // These tests exercise the DB-level guard directly. In a single-process
+    // synchronous engine like better-sqlite3 we cannot reproduce a true
+    // pre-commit race from JS, but we CAN verify the underlying guarantee:
+    // a second INSERT that would have created a duplicate is silently
+    // dropped at the DB layer (info.changes === 0) rather than producing
+    // a duplicate row or throwing.
+
+    it('raw concurrent-race scenario: second INSERT becomes a DB-level no-op (legacy)', () => {
+      // Simulate "process A and process B both pass WHERE-NOT-EXISTS and
+      // both INSERT": just issue the same INSERT twice. With the partial
+      // UNIQUE index + ON CONFLICT DO NOTHING, the second one no-ops.
+      const stmt = db.prepare(
+        `INSERT INTO users (display_name, is_legacy)
+         VALUES (?, 1)
+         ON CONFLICT(display_name) WHERE is_legacy = 1 DO NOTHING`,
+      );
+
+      const r1 = stmt.run('alice');
+      const r2 = stmt.run('alice');
+
+      expect(r1.changes).toBe(1);
+      expect(r2.changes).toBe(0);
+
+      const count = (db
+        .prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1 AND display_name = ?')
+        .get('alice') as { c: number }).c;
+      expect(count).toBe(1);
+    });
+
+    it('raw concurrent-race scenario: second INSERT becomes a DB-level no-op (slack-bot)', () => {
+      const stmt = db.prepare(
+        `INSERT INTO users (display_name, is_service_account)
+         VALUES ('slack-bot', 1)
+         ON CONFLICT(display_name) WHERE is_service_account = 1 DO NOTHING`,
+      );
+
+      const r1 = stmt.run();
+      const r2 = stmt.run();
+
+      expect(r1.changes).toBe(1);
+      expect(r2.changes).toBe(0);
+
+      const count = (db
+        .prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1 AND display_name = ?')
+        .get('slack-bot') as { c: number }).c;
+      expect(count).toBe(1);
+    });
+
+    it('two seedIdentities calls on the SAME db both succeed and leave exactly one row per identity', () => {
+      // Two seeders racing past `runMigrations` (which holds BEGIN EXCLUSIVE
+      // only during migration application) is what WR-04 worried about.
+      // The DB-level guard makes both seeders safe.
+      const entries = [
+        { key: 'k1', label: 'alice' },
+        { key: 'k2', label: 'bob' },
+      ];
+
+      const r1 = seedIdentities(db, entries, logger);
+      const r2 = seedIdentities(db, entries, logger);
+
+      expect(r1.seeded).toEqual({ legacy: 2, service: 1 });
+      expect(r2.seeded).toEqual({ legacy: 0, service: 0 });
+      expect(r2.alreadyPresent).toEqual({ legacy: 2, service: 1 });
+
+      const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as {
+        c: number;
+      }).c;
+      expect(total).toBe(3);
+    });
+
+    it('two connections to the same on-disk DB each run seedIdentities; result is one row per identity', async () => {
+      // The closest in-process approximation of "two createApp() boots
+      // against the shared data/tasks.db file": open two distinct
+      // better-sqlite3 connections to the same file (WAL mode enabled by
+      // initDatabase) and run runMigrations + seedIdentities on each.
+      //
+      // Each connection serialises its own transactions; the DB-level
+      // partial UNIQUE indexes from migration 010 guarantee the second
+      // boot's INSERTs no-op rather than produce duplicates.
+      const tmp = mkdtempSync(join(tmpdir(), 'wfb-seeder-race-'));
+      const dbPath = join(tmp, 'race.db');
+      let dbA: Database.Database | undefined;
+      let dbB: Database.Database | undefined;
+      try {
+        dbA = initDatabase(dbPath);
+        await runMigrations(dbA);
+
+        // Second connection sees the same schema (migrations were committed
+        // on dbA; WAL makes them visible to dbB without ceremony).
+        dbB = initDatabase(dbPath);
+
+        const entries = [
+          { key: 'k1', label: 'alice' },
+          { key: 'k2', label: 'bob' },
+        ];
+
+        const rA = seedIdentities(dbA, entries, logger);
+        const rB = seedIdentities(dbB, entries, logger);
+
+        // Whichever ran first did the inserts; whichever ran second
+        // observed `alreadyPresent`.
+        expect(rA.seeded).toEqual({ legacy: 2, service: 1 });
+        expect(rB.seeded).toEqual({ legacy: 0, service: 0 });
+        expect(rB.alreadyPresent).toEqual({ legacy: 2, service: 1 });
+
+        const total = (dbB
+          .prepare('SELECT COUNT(*) AS c FROM users')
+          .get() as { c: number }).c;
+        expect(total).toBe(3);
+      } finally {
+        if (dbA?.open) dbA.close();
+        if (dbB?.open) dbB.close();
+        rmSync(tmp, { recursive: true, force: true });
+      }
     });
   });
 });
