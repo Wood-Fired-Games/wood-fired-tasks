@@ -80,6 +80,44 @@ function makeMockProject(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Mock user repository. Default behavior:
+ * - findBySlackUserId(...) → returns null (unmapped) unless overridden via vi.mocked()
+ * - findServiceAccountByName('slack-bot') → returns the seeded slack-bot row (id: 999)
+ * - findByEmail(...) → null unless overridden
+ *
+ * Tests that need to vary these (Task 2/3) override per-test via vi.mocked().
+ */
+function makeMockUserRepo() {
+  return {
+    findById: vi.fn().mockReturnValue(null),
+    findByOidcSub: vi.fn().mockReturnValue(null),
+    findBySlackUserId: vi.fn().mockReturnValue(null),
+    findLegacyByDisplayName: vi.fn().mockReturnValue(null),
+    findServiceAccountByName: vi.fn().mockImplementation((name: string) => {
+      if (name === 'slack-bot') {
+        return {
+          id: 999,
+          email: null,
+          display_name: 'slack-bot',
+          oidc_provider: null,
+          oidc_sub: null,
+          slack_user_id: null,
+          is_legacy: 0,
+          is_service_account: 1,
+          created_at: '2026-02-18T00:00:00Z',
+          last_login_at: null,
+        };
+      }
+      return null;
+    }),
+    findByEmail: vi.fn().mockReturnValue(null),
+    listAll: vi.fn().mockReturnValue([]),
+    insert: vi.fn(),
+    updateProfile: vi.fn(),
+  };
+}
+
 function makeMockServices(): Services {
   return {
     taskService: {
@@ -111,6 +149,19 @@ function makeMockServices(): Services {
       addComment: vi.fn().mockReturnValue({ id: 7, task_id: 42, author: 'Alice', content: 'Test', created_at: '2026-02-18T00:00:00Z', updated_at: null }),
       deleteComment: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['commentService'],
+    userRepository: makeMockUserRepo() as unknown as Services['userRepository'],
+  };
+}
+
+/**
+ * Minimal pino-style logger mock used by tests that assert structured warn logs
+ * (Plan 31-04 task 2: `event: 'slack_user_unmapped'`).
+ */
+function makeMockLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 }
 
@@ -1439,6 +1490,349 @@ describe('registerTasksCommand', () => {
       const blockText = respondArg.blocks[0]?.text?.text ?? '';
       expect(blockText).toContain(':x:');
       expect(blockText).toContain('required');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Plan 31-04: slack_user_id → user lookup + slack-bot fallback
+  // ---------------------------------------------------------------------------
+
+  describe('Plan 31-04: actor resolution', () => {
+    // Helper: build a "real" mapped user row
+    function mappedUser(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 17,
+        email: 'alice@example.com',
+        display_name: 'Alice',
+        oidc_provider: 'google',
+        oidc_sub: 'sub-17',
+        slack_user_id: 'U0123ABC',
+        is_legacy: 0,
+        is_service_account: 0,
+        created_at: '2026-02-18T00:00:00Z',
+        last_login_at: null,
+        ...overrides,
+      };
+    }
+
+    describe('Task 1: registration-time slack-bot cache + Services.userRepository', () => {
+      it('looks up findServiceAccountByName("slack-bot") exactly once at registration', () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        expect(userRepo.findServiceAccountByName).toHaveBeenCalledTimes(1);
+        expect(userRepo.findServiceAccountByName).toHaveBeenCalledWith('slack-bot');
+      });
+
+      it('does NOT re-query findServiceAccountByName per message (cached at boot)', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findServiceAccountByName.mockClear();
+
+        // Invoke multiple handlers that resolve actor → should NOT re-call
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('create Test --project 3'));
+        await handler(makeHandlerArgs('create Test2 --project 3'));
+        await handler(makeHandlerArgs('claim 42'));
+        await handler(makeHandlerArgs('comment-add 42 Hello'));
+
+        expect(userRepo.findServiceAccountByName).not.toHaveBeenCalled();
+      });
+
+      it('throws on registration when slack-bot service account is missing', () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findServiceAccountByName.mockReturnValue(null);
+
+        expect(() =>
+          registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger)
+        ).toThrow(/slack-bot/i);
+      });
+    });
+
+    describe('Task 2: handleCreate actor resolution', () => {
+      it('mapped slack_user_id → created_by_user_id = matched user id, no warn log', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findBySlackUserId.mockImplementation((sid: string) =>
+          sid === 'U0123ABC' ? mappedUser() : null
+        );
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('create Fix login bug --project 3'));
+
+        expect(userRepo.findBySlackUserId).toHaveBeenCalledWith('U0123ABC');
+        expect(services.taskService.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Fix login bug',
+            project_id: 3,
+            created_by: 'Alice',
+            created_by_user_id: 17,
+          })
+        );
+        expect(logger.warn).not.toHaveBeenCalled();
+      });
+
+      it('unmapped slack_user_id → created_by_user_id = slackBotUserId + warn log', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        // findBySlackUserId default mock returns null = unmapped
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('create Fix login bug --project 3'));
+
+        expect(services.taskService.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            created_by_user_id: 999, // slack-bot id from makeMockUserRepo
+          })
+        );
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'slack_user_unmapped',
+            slack_user_id: 'U0123ABC',
+          }),
+          'slack_user_unmapped'
+        );
+      });
+    });
+
+    describe('Task 2: handleClaim actor resolution', () => {
+      it('mapped slack_user_id → claimTask receives assigneeUserId = matched user id', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findBySlackUserId.mockReturnValue(mappedUser());
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('claim 42'));
+
+        // claimTask signature: (taskId, assignee, source, assigneeUserId)
+        expect(services.taskService.claimTask).toHaveBeenCalledWith(42, 'Alice', 'workflow', 17);
+        expect(logger.warn).not.toHaveBeenCalled();
+      });
+
+      it('unmapped slack_user_id → claimTask receives assigneeUserId = slackBotUserId + warn log', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('claim 42'));
+
+        expect(services.taskService.claimTask).toHaveBeenCalledWith(42, 'Alice', 'workflow', 999);
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'slack_user_unmapped',
+            slack_user_id: 'U0123ABC',
+          }),
+          'slack_user_unmapped'
+        );
+      });
+    });
+
+    describe('Task 2: handleCommentAdd actor resolution', () => {
+      it('mapped slack_user_id → addComment receives author_user_id = matched user id', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findBySlackUserId.mockReturnValue(mappedUser());
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('comment-add 42 Looks good'));
+
+        expect(services.commentService.addComment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            task_id: 42,
+            author: 'Alice',
+            content: 'Looks good',
+            author_user_id: 17,
+          })
+        );
+        expect(logger.warn).not.toHaveBeenCalled();
+      });
+
+      it('unmapped slack_user_id → addComment receives author_user_id = slackBotUserId + warn log', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('comment-add 42 Hello'));
+
+        expect(services.commentService.addComment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            author_user_id: 999,
+          })
+        );
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'slack_user_unmapped',
+            slack_user_id: 'U0123ABC',
+          }),
+          'slack_user_unmapped'
+        );
+      });
+    });
+
+    describe('Task 2: handleSubtaskCreate actor resolution', () => {
+      it('mapped slack_user_id → subtask createTask receives created_by_user_id = matched user id', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findBySlackUserId.mockReturnValue(mappedUser());
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('subtask-create 10 Fix sub issue --project 3'));
+
+        expect(services.taskService.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            parent_task_id: 10,
+            title: 'Fix sub issue',
+            project_id: 3,
+            created_by: 'Alice',
+            created_by_user_id: 17,
+          })
+        );
+        expect(logger.warn).not.toHaveBeenCalled();
+      });
+
+      it('unmapped slack_user_id → subtask createTask receives created_by_user_id = slackBotUserId + warn log', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('subtask-create 10 Fix sub issue --project 3'));
+
+        expect(services.taskService.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            created_by_user_id: 999,
+          })
+        );
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'slack_user_unmapped',
+            slack_user_id: 'U0123ABC',
+          }),
+          'slack_user_unmapped'
+        );
+      });
+    });
+
+    describe('Task 3: handleUpdate assignee_user_id resolution', () => {
+      it('updates with --assignee <email> resolving to a user sets assignee_user_id', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+        userRepo.findByEmail.mockImplementation((email: string) =>
+          email === 'alice@example.com' ? mappedUser() : null
+        );
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('update 42 --assignee alice@example.com'));
+
+        expect(userRepo.findByEmail).toHaveBeenCalledWith('alice@example.com');
+        expect(services.taskService.updateTask).toHaveBeenCalledWith(42, {
+          assignee: 'alice@example.com',
+          assignee_user_id: 17,
+        });
+      });
+
+      it('updates with --assignee <unmatched-email> sets assignee_user_id = null', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('update 42 --assignee nobody@example.com'));
+
+        expect(services.taskService.updateTask).toHaveBeenCalledWith(42, {
+          assignee: 'nobody@example.com',
+          assignee_user_id: null,
+        });
+      });
+
+      it('updates with --assignee <freeform> (no @) sets assignee_user_id = null without findByEmail call', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('update 42 --assignee Bob'));
+
+        expect(userRepo.findByEmail).not.toHaveBeenCalled();
+        expect(services.taskService.updateTask).toHaveBeenCalledWith(42, {
+          assignee: 'Bob',
+          assignee_user_id: null,
+        });
+      });
+
+      it('update without --assignee leaves assignee_user_id absent from the update DTO', async () => {
+        const app = makeMockApp();
+        const services = makeMockServices();
+        const identityCache = makeMockIdentityCache();
+        const logger = makeMockLogger();
+
+        registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
+        const handler = getHandler(app);
+        await handler(makeHandlerArgs('update 42 --status done'));
+
+        const call = vi.mocked(services.taskService.updateTask).mock.calls[0]!;
+        expect(call[0]).toBe(42);
+        expect(call[1]).toEqual({ status: 'done' });
+        expect(call[1]).not.toHaveProperty('assignee_user_id');
+      });
     });
   });
 });
