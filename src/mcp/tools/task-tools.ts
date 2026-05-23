@@ -88,7 +88,24 @@ export function registerTaskTools(
       const traceId = randomUUID();
       console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'start', timestamp: new Date().toISOString() }));
       try {
-        const task = taskService.createTask(args);
+        // Phase 31 Plan 03 (T-31-07): strip any client-supplied identity
+        // FKs from the JSON-RPC args BEFORE forwarding to the service.
+        // ctx.actorUserId is the authoritative server-derived value; a
+        // tool caller MUST NOT be able to override it. assignee_user_id
+        // is also stripped here — MCP creates default to an unassigned
+        // task; an assignee FK only makes sense after a separate claim
+        // or update.
+        const {
+          created_by_user_id: _spoofCreatedBy,
+          assignee_user_id: _spoofAssignee,
+          ...sanitizedArgs
+        } = args as Record<string, unknown>;
+        void _spoofCreatedBy;
+        void _spoofAssignee;
+        const task = taskService.createTask({
+          ...sanitizedArgs,
+          created_by_user_id: ctx.actorUserId,
+        });
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'success' }));
         return {
           content: [
@@ -166,7 +183,23 @@ export function registerTaskTools(
       const traceId = randomUUID();
       console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'start', timestamp: new Date().toISOString() }));
       try {
-        const task = taskService.updateTask(args.id, args.updates);
+        // Phase 31 Plan 03 (T-31-07): strip any client-supplied
+        // assignee_user_id spoof, then derive it server-side from the
+        // body's `assignee` string (when present) using the same email-
+        // resolution helper as the REST PATCH route (Plan 02 Task 3).
+        const {
+          assignee_user_id: _spoofAssigneeUserId,
+          ...rawUpdates
+        } = args.updates as Record<string, unknown>;
+        void _spoofAssigneeUserId;
+        const updates: Record<string, unknown> = { ...rawUpdates };
+        if (Object.prototype.hasOwnProperty.call(rawUpdates, 'assignee')) {
+          updates.assignee_user_id = resolveAssigneeUserId(
+            rawUpdates.assignee as string | null | undefined,
+            ctx.userRepository,
+          );
+        }
+        const task = taskService.updateTask(args.id, updates);
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'success' }));
         return {
           content: [
@@ -294,7 +327,17 @@ export function registerTaskTools(
       const traceId = randomUUID();
       console.error(JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'start', timestamp: new Date().toISOString() }));
       try {
-        const task = taskService.claimTask(args.task_id, args.assignee);
+        // Phase 31 Plan 03: pass the boot-resolved actor as the trailing
+        // optional positional (Plan 01 service signature). 'workflow' is
+        // the source tag because MCP-initiated claims are agent-driven,
+        // mirroring the Slack handler convention. ctx.actorUserId may be
+        // null — the service binds null to the SQL parameter in that case.
+        const task = taskService.claimTask(
+          args.task_id,
+          args.assignee,
+          'workflow',
+          ctx.actorUserId,
+        );
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'success' }));
         return {
           content: [

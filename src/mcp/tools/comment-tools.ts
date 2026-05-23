@@ -30,10 +30,16 @@ export function registerCommentTools(
     },
     async (args) => {
       try {
+        // Phase 31 Plan 03: inject the boot-resolved actor user.id so the
+        // parallel `task_comments.author_user_id` FK column is populated
+        // alongside the legacy TEXT `author` column. ctx.actorUserId may
+        // be null — the service/repo bind null to the FK in that case,
+        // preserving today's behaviour for callers that pre-date Phase 31.
         const comment = commentService.addComment({
           task_id: args.task_id,
           author: args.author,
           content: args.content,
+          author_user_id: ctx.actorUserId,
         });
 
         return {
