@@ -145,4 +145,42 @@ describe('CommentRepository', () => {
     const comments = commentRepo.findByTaskId(taskId);
     expect(comments).toEqual([]);
   });
+
+  describe('Phase 31 FK column', () => {
+    // Helper: insert a legacy user row to satisfy the FK constraint
+    // (task_comments.author_user_id REFERENCES users(id) ON DELETE RESTRICT).
+    const insertUser = (display_name: string): number => {
+      const info = db
+        .prepare('INSERT INTO users (display_name, is_legacy) VALUES (?, 1)')
+        .run(display_name);
+      return info.lastInsertRowid as number;
+    };
+
+    const readFk = (id: number): number | null => {
+      const row = db
+        .prepare('SELECT author_user_id FROM task_comments WHERE id = ?')
+        .get(id) as { author_user_id: number | null };
+      return row.author_user_id;
+    };
+
+    it('persists author_user_id when supplied', () => {
+      const userId = insertUser('alice-author');
+      const comment = commentRepo.create({
+        task_id: taskId,
+        author: 'alice-author',
+        content: 'with FK',
+        author_user_id: userId,
+      });
+      expect(readFk(comment.id)).toBe(userId);
+    });
+
+    it('leaves author_user_id NULL when field omitted (back-compat)', () => {
+      const comment = commentRepo.create({
+        task_id: taskId,
+        author: 'legacy-author',
+        content: 'no FK',
+      });
+      expect(readFk(comment.id)).toBeNull();
+    });
+  });
 });

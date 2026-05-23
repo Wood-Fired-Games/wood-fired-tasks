@@ -55,7 +55,7 @@ describe('seedIdentities', () => {
   });
 
   describe('first run', () => {
-    it('seeds 2 legacy users + 1 slack-bot user for 2 API_KEYS entries', () => {
+    it('seeds 2 legacy users + 2 service-account users (slack-bot, mcp-bot) for 2 API_KEYS entries', () => {
       const result = seedIdentities(
         db,
         [
@@ -68,10 +68,11 @@ describe('seedIdentities', () => {
       const legacyCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }).c;
       const serviceCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as { c: number }).c;
       expect(legacyCount).toBe(2);
-      expect(serviceCount).toBe(1);
+      // Phase 31: BOTH slack-bot AND mcp-bot are seeded unconditionally.
+      expect(serviceCount).toBe(2);
 
       expect(result).toEqual({
-        seeded: { legacy: 2, service: 1 },
+        seeded: { legacy: 2, service: 2 },
         alreadyPresent: { legacy: 0, service: 0 },
       });
     });
@@ -86,18 +87,18 @@ describe('seedIdentities', () => {
         logger,
       );
 
-      // Expect at least 3 info calls (2 legacy + 1 service). No noop summary on a first run.
-      expect(logger.info.mock.calls.length).toBeGreaterThanOrEqual(3);
+      // Expect at least 4 info calls (2 legacy + 2 service). No noop summary on a first run.
+      expect(logger.info.mock.calls.length).toBeGreaterThanOrEqual(4);
 
       // Each seeded-row call's first arg is the structured payload with event + kind.
       const seededCalls = logger.info.mock.calls.filter((call) => {
         const obj = call[0];
         return typeof obj === 'object' && obj !== null && (obj as { event?: string }).event === 'identity-seeded';
       });
-      expect(seededCalls).toHaveLength(3);
+      expect(seededCalls).toHaveLength(4);
 
       const kinds = seededCalls.map((call) => (call[0] as { kind: string }).kind).sort();
-      expect(kinds).toEqual(['legacy', 'legacy', 'service']);
+      expect(kinds).toEqual(['legacy', 'legacy', 'service', 'service']);
 
       // No noop summary on first run.
       const noopCalls = logger.info.mock.calls.filter((call) => {
@@ -107,23 +108,36 @@ describe('seedIdentities', () => {
       expect(noopCalls).toHaveLength(0);
     });
 
-    it('empty API_KEYS array still seeds the slack-bot row', () => {
+    it('empty API_KEYS array still seeds both service-account rows (slack-bot, mcp-bot)', () => {
       const result = seedIdentities(db, [], logger);
 
       const legacyCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }).c;
       const serviceCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as { c: number }).c;
       expect(legacyCount).toBe(0);
-      expect(serviceCount).toBe(1);
-      expect(result.seeded.service).toBe(1);
+      expect(serviceCount).toBe(2);
+      expect(result.seeded.service).toBe(2);
       expect(result.seeded.legacy).toBe(0);
     });
 
-    it('slack-bot row has display_name=slack-bot (literal lowercase)', () => {
+    it('both service-account rows have the correct literal display_names', () => {
+      seedIdentities(db, [], logger);
+      const rows = db
+        .prepare(
+          'SELECT display_name FROM users WHERE is_service_account = 1 ORDER BY display_name',
+        )
+        .all() as { display_name: string }[];
+      expect(rows.map((r) => r.display_name)).toEqual(['mcp-bot', 'slack-bot']);
+    });
+
+    it('mcp-bot row has is_service_account=1 and slack_user_id=NULL', () => {
       seedIdentities(db, [], logger);
       const row = db
-        .prepare('SELECT display_name FROM users WHERE is_service_account = 1')
-        .get() as { display_name: string };
-      expect(row.display_name).toBe('slack-bot');
+        .prepare(
+          "SELECT is_service_account, slack_user_id FROM users WHERE display_name = 'mcp-bot'",
+        )
+        .get() as { is_service_account: number; slack_user_id: string | null };
+      expect(row.is_service_account).toBe(1);
+      expect(row.slack_user_id).toBeNull();
     });
 
     it('legacy row display_name equals entry.label verbatim', () => {
@@ -147,10 +161,11 @@ describe('seedIdentities', () => {
       const result = seedIdentities(db, entries, logger);
 
       const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
-      expect(total).toBe(3);
+      // Phase 31: 2 legacy + 2 service-account rows.
+      expect(total).toBe(4);
       expect(result).toEqual({
         seeded: { legacy: 0, service: 0 },
-        alreadyPresent: { legacy: 2, service: 1 },
+        alreadyPresent: { legacy: 2, service: 2 },
       });
     });
 
@@ -168,8 +183,19 @@ describe('seedIdentities', () => {
       const [payload] = logger.info.mock.calls[0];
       expect(payload).toMatchObject({
         event: 'identity-seed-noop',
-        counts: { legacy: 2, service: 1 },
+        counts: { legacy: 2, service: 2 },
       });
+    });
+
+    it('mcp-bot row persists across re-runs (coexists with slack-bot)', () => {
+      seedIdentities(db, [], logger);
+      seedIdentities(db, [], logger);
+      const rows = db
+        .prepare(
+          'SELECT display_name FROM users WHERE is_service_account = 1 ORDER BY display_name',
+        )
+        .all() as { display_name: string }[];
+      expect(rows.map((r) => r.display_name)).toEqual(['mcp-bot', 'slack-bot']);
     });
   });
 
@@ -322,14 +348,15 @@ describe('seedIdentities', () => {
       const r1 = seedIdentities(db, entries, logger);
       const r2 = seedIdentities(db, entries, logger);
 
-      expect(r1.seeded).toEqual({ legacy: 2, service: 1 });
+      // Phase 31: 2 service rows (slack-bot, mcp-bot).
+      expect(r1.seeded).toEqual({ legacy: 2, service: 2 });
       expect(r2.seeded).toEqual({ legacy: 0, service: 0 });
-      expect(r2.alreadyPresent).toEqual({ legacy: 2, service: 1 });
+      expect(r2.alreadyPresent).toEqual({ legacy: 2, service: 2 });
 
       const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as {
         c: number;
       }).c;
-      expect(total).toBe(3);
+      expect(total).toBe(4);
     });
 
     it('two connections to the same on-disk DB each run seedIdentities; result is one row per identity', async () => {
@@ -362,15 +389,15 @@ describe('seedIdentities', () => {
         const rB = seedIdentities(dbB, entries, logger);
 
         // Whichever ran first did the inserts; whichever ran second
-        // observed `alreadyPresent`.
-        expect(rA.seeded).toEqual({ legacy: 2, service: 1 });
+        // observed `alreadyPresent`. Phase 31: 2 service rows.
+        expect(rA.seeded).toEqual({ legacy: 2, service: 2 });
         expect(rB.seeded).toEqual({ legacy: 0, service: 0 });
-        expect(rB.alreadyPresent).toEqual({ legacy: 2, service: 1 });
+        expect(rB.alreadyPresent).toEqual({ legacy: 2, service: 2 });
 
         const total = (dbB
           .prepare('SELECT COUNT(*) AS c FROM users')
           .get() as { c: number }).c;
-        expect(total).toBe(3);
+        expect(total).toBe(4);
       } finally {
         if (dbA?.open) dbA.close();
         if (dbB?.open) dbB.close();
@@ -402,16 +429,18 @@ describe('createTestApp boot integration (Task 6.4 smoke)', () => {
     }
   });
 
-  it('seeds alice + bob legacy users plus slack-bot when API_KEYS is set', async () => {
+  it('seeds alice + bob legacy users plus slack-bot AND mcp-bot when API_KEYS is set', async () => {
     process.env.API_KEYS = 'k1:alice,k2:bob';
 
     const app = await createTestApp();
     try {
       const rows = app.db
-        .prepare('SELECT display_name FROM users ORDER BY id')
+        .prepare('SELECT display_name FROM users ORDER BY display_name')
         .all() as { display_name: string }[];
       const names = rows.map((r) => r.display_name);
-      expect(names).toEqual(['alice', 'bob', 'slack-bot']);
+      // Phase 31: both service accounts seeded; sorted alphabetically:
+      // alice, bob, mcp-bot, slack-bot.
+      expect(names).toEqual(['alice', 'bob', 'mcp-bot', 'slack-bot']);
     } finally {
       app.dispose();
     }
