@@ -2028,7 +2028,7 @@ exports[`Migration round-trip (up -> down -> up) with schema snapshot > 009-para
         content TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT
-      , author_user_id INTEGER REFERENCES users(id))",
+      , author_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT)",
     "tbl_name": "task_comments",
     "type": "table",
   },
@@ -2076,7 +2076,7 @@ exports[`Migration round-trip (up -> down -> up) with schema snapshot > 009-para
         estimated_minutes INTEGER,
         version INTEGER NOT NULL DEFAULT 1,
         claimed_at TEXT
-      , completed_at TEXT, created_by_user_id INTEGER REFERENCES users(id), assignee_user_id INTEGER REFERENCES users(id))",
+      , completed_at TEXT, created_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT, assignee_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT)",
     "tbl_name": "tasks",
     "type": "table",
   },

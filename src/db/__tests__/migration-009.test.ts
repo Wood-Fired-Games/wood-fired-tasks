@@ -69,10 +69,10 @@ describe('migration 009: parallel FK columns', () => {
     expect(names).not.toContain('claimer_user_id');
   });
 
-  it('FK constraints on tasks reference users(id) for created_by_user_id and assignee_user_id', () => {
+  it('FK constraints on tasks reference users(id) with ON DELETE RESTRICT for created_by_user_id and assignee_user_id', () => {
     const fks = db
       .prepare("PRAGMA foreign_key_list('tasks')")
-      .all() as Array<{ table: string; from: string; to: string }>;
+      .all() as Array<{ table: string; from: string; to: string; on_delete: string }>;
 
     const createdByFk = fks.find(
       (fk) => fk.from === 'created_by_user_id'
@@ -80,22 +80,46 @@ describe('migration 009: parallel FK columns', () => {
     expect(createdByFk).toBeDefined();
     expect(createdByFk?.table).toBe('users');
     expect(createdByFk?.to).toBe('id');
+    expect(createdByFk?.on_delete).toBe('RESTRICT');
 
     const assigneeFk = fks.find((fk) => fk.from === 'assignee_user_id');
     expect(assigneeFk).toBeDefined();
     expect(assigneeFk?.table).toBe('users');
     expect(assigneeFk?.to).toBe('id');
+    expect(assigneeFk?.on_delete).toBe('RESTRICT');
   });
 
-  it('FK constraint on task_comments references users(id) for author_user_id', () => {
+  it('FK constraint on task_comments references users(id) with ON DELETE RESTRICT for author_user_id', () => {
     const fks = db
       .prepare("PRAGMA foreign_key_list('task_comments')")
-      .all() as Array<{ table: string; from: string; to: string }>;
+      .all() as Array<{ table: string; from: string; to: string; on_delete: string }>;
 
     const authorFk = fks.find((fk) => fk.from === 'author_user_id');
     expect(authorFk).toBeDefined();
     expect(authorFk?.table).toBe('users');
     expect(authorFk?.to).toBe('id');
+    expect(authorFk?.on_delete).toBe('RESTRICT');
+  });
+
+  it('ON DELETE RESTRICT actually rejects deletion of a referenced user', () => {
+    // Functional confirmation that the FK is enforced (foreign_keys PRAGMA is
+    // ON in this project's database.ts) and that RESTRICT semantics apply.
+    const userId = db
+      .prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`)
+      .run('restrict-target').lastInsertRowid as number;
+
+    const projectId = db
+      .prepare('INSERT INTO projects (name) VALUES (?)')
+      .run('p').lastInsertRowid as number;
+
+    db.prepare(
+      `INSERT INTO tasks (title, project_id, created_by, assignee_user_id)
+       VALUES (?, ?, ?, ?)`
+    ).run('t', projectId, 'tester', userId);
+
+    expect(() =>
+      db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+    ).toThrow(/FOREIGN KEY/i);
   });
 
   it('creates idx_tasks_created_by_user_id', () => {

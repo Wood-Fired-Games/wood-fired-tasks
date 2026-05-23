@@ -16,8 +16,13 @@ import type Database from 'better-sqlite3';
  *
  * Patterns:
  * - ALTER TABLE ADD COLUMN with a FK to the users table — mirrors migration
- *   002's parent_task_id pattern. Default ON DELETE behavior (RESTRICT) is fine;
- *   we never delete users in v1.6.
+ *   002's parent_task_id pattern. ON DELETE RESTRICT is declared explicitly:
+ *   SQLite's default when no ON DELETE clause is supplied is actually NO ACTION,
+ *   not RESTRICT (they differ in WHEN the integrity check fires — RESTRICT
+ *   rejects the parent DELETE at statement time, NO ACTION defers it to
+ *   end-of-statement). The v1.6 policy is "never delete users; soft-delete via
+ *   disabled_at" (REQUIREMENTS.md), so RESTRICT is the correct semantic intent
+ *   and matches migration 008's explicit ON DELETE CASCADE on api_tokens.user_id.
  * - down() drops indexes BEFORE columns. SQLite refuses ALTER TABLE DROP COLUMN
  *   while an index still references the column (discovered in migration 002's
  *   roundtrip — see RESEARCH section 7 Pitfall 1).
@@ -29,17 +34,17 @@ export async function up(db: Database.Database): Promise<void> {
   db.transaction(() => {
     db.exec(`
       ALTER TABLE tasks
-      ADD COLUMN created_by_user_id INTEGER REFERENCES users(id)
+      ADD COLUMN created_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT
     `);
 
     db.exec(`
       ALTER TABLE tasks
-      ADD COLUMN assignee_user_id INTEGER REFERENCES users(id)
+      ADD COLUMN assignee_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT
     `);
 
     db.exec(`
       ALTER TABLE task_comments
-      ADD COLUMN author_user_id INTEGER REFERENCES users(id)
+      ADD COLUMN author_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT
     `);
 
     db.exec(
