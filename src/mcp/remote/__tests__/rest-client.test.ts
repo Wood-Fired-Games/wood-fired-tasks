@@ -57,6 +57,64 @@ describe('RestClient', () => {
     expect(headers['X-API-Key']).toBe('test-key');
   });
 
+  // ── Phase 31 Plan 03 Task 3 — MCP-01 ─────────────────────────────────────
+  //
+  // The remote MCP server is a thin stdio→HTTP proxy: every incoming JSON-
+  // RPC call becomes an outbound REST request. The auth header switches
+  // based on the WFB_API_KEY prefix so a single env var works for both
+  // legacy keys (`X-API-Key`) and PATs (`Authorization: Bearer`). Mirrors
+  // the same precedent that Phase 30 Plan 05 wired into `src/cli/api/client.ts`.
+
+  describe('auth header prefix detection (MCP-01)', () => {
+    it('uses Authorization: Bearer when apiKey starts with wfb_pat_', async () => {
+      const patClient = new RestClient(
+        'http://localhost:3000',
+        'wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+      );
+      fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
+      await patClient.listTasks();
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe(
+        'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+      );
+      // The PAT path MUST NOT also stamp X-API-Key — the server's auth
+      // chain treats X-API-Key as the legacy strategy and could log a
+      // deprecation warning for what should be a modern PAT request.
+      expect(headers['X-API-Key']).toBeUndefined();
+    });
+
+    it('uses X-API-Key when apiKey does NOT start with wfb_pat_ (legacy path)', async () => {
+      const legacyClient = new RestClient(
+        'http://localhost:3000',
+        'legacy-style-no-prefix',
+      );
+      fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
+      await legacyClient.listTasks();
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      expect(headers['X-API-Key']).toBe('legacy-style-no-prefix');
+      // The legacy path MUST NOT also stamp Authorization — keeping the
+      // headers mutually exclusive prevents the server's auth chain from
+      // first matching PAT (wrong-prefix → fail) before falling through
+      // to legacy.
+      expect(headers['Authorization']).toBeUndefined();
+    });
+
+    it('preserves apiKey verbatim in the Bearer body (no manipulation)', async () => {
+      // Defensive: ensure the prefix detection only switches the HEADER
+      // NAME and never mutates the token (e.g. strips the prefix). The
+      // server expects the full `wfb_pat_<body>` string for hash lookup.
+      const fullToken = 'wfb_pat_2222222222222222222222AAAAAAAAAA';
+      const patClient = new RestClient('http://localhost:3000', fullToken);
+      fetchMock.mockResolvedValue(ok({ id: 1 }));
+      await patClient.getTask(1);
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe(`Bearer ${fullToken}`);
+    });
+  });
+
   it('adds Content-Type header when sending a body', async () => {
     fetchMock.mockResolvedValue(ok({ id: 1, title: 't', status: 'open' }));
     await client.createTask({
