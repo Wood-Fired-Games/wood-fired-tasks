@@ -2661,6 +2661,42 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/auth/callback": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
+    "/auth/error": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
+    "/auth/login": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
+    "/auth/logout": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
     "/health/": {
       "get": {
         "description": "Minimal public health check (status + timestamp + version)",

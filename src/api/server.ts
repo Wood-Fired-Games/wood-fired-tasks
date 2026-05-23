@@ -334,6 +334,36 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   }
   // ─── end Phase 29 Plan 07 ───
 
+  // ─── Phase 29 Plan 08 — top-level /auth/* routes ───
+  // Conditional registration based on `app.oidcConfig`:
+  //   - non-null → real authRoutes plugin (Plan 6 handlers: /auth/login,
+  //     /auth/callback, /auth/logout, /auth/error). Driven by the
+  //     openid-client Configuration returned from `initOidc` at boot.
+  //   - null     → 501 stub at /auth/{login,callback,logout} with
+  //     `{ error: 'oidc_disabled', ... }`; /auth/error stays functional
+  //     because session-expiry / 403 destinations are still useful in
+  //     PAT-only mode.
+  //
+  // Either plugin is mounted at the SAME prefix `/auth` so links from
+  // Plan 7 HTML pages (e.g. /login → /auth/login) resolve regardless of
+  // mode — only the response shape differs.
+  if (app.oidcConfig) {
+    const authRoutes = (await import('./routes/auth/index.js')).default;
+    await server.register(authRoutes, {
+      prefix: '/auth',
+      oidcConfig: app.oidcConfig,
+      // OIDC_REDIRECT_URI is guaranteed non-null when oidcConfig is non-null
+      // — the env schema's all-or-nothing refine enforces this. The `!`
+      // assertion is documented at that refine.
+      redirectUri: config.OIDC_REDIRECT_URI as string,
+      scopes: config.OIDC_SCOPES,
+    });
+  } else {
+    const disabledStub = (await import('./routes/auth/disabled-stub.js')).default;
+    await server.register(disabledStub, { prefix: '/auth' });
+  }
+  // ─── end Phase 29 Plan 08 ───
+
   // task #185: authenticated detailed health check exposes the full
   // diagnostic payload (component checks + runtime stats). Gated by the
   // SAME canonical auth plugin used for /api/v1.
