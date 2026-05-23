@@ -177,8 +177,11 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                   },
                   "scopes": {
                     "items": {
+                      "maxLength": 64,
+                      "minLength": 1,
                       "type": "string",
                     },
+                    "maxItems": 32,
                     "type": "array",
                   },
                 },
