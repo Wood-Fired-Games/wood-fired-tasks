@@ -529,6 +529,13 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     const subscriptionRepo = new SlackChannelSubscriptionRepository(app.db);
 
     // Register slash command handlers (subscribe/unsubscribe now have repo access)
+    //
+    // Phase 31 (Plan 31-04): `userRepository` is now part of the Services
+    // contract — registerTasksCommand uses it to look up
+    // `findServiceAccountByName('slack-bot')` once at boot (cached for the
+    // lifetime of the handler) and `findBySlackUserId` per-message to resolve
+    // the actor. `server.log` is threaded through as the pino-style logger
+    // used to emit `slack_user_unmapped` warn events.
     registerTasksCommand(
       slackApp,
       {
@@ -536,9 +543,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         projectService: app.projectService,
         dependencyService: app.dependencyService,
         commentService: app.commentService,
+        userRepository: app.userRepository,
       },
       identityCache,
-      subscriptionRepo
+      subscriptionRepo,
+      server.log
     );
 
     // Create and start notification pipeline

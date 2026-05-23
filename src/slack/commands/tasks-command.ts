@@ -4,6 +4,7 @@ import type { TaskService } from '../../services/task.service.js';
 import type { ProjectService } from '../../services/project.service.js';
 import type { DependencyService } from '../../services/dependency.service.js';
 import type { CommentService } from '../../services/comment.service.js';
+import type { IUserRepository } from '../../repositories/interfaces.js';
 import type { UserIdentityCache } from '../user-identity.js';
 import type { SlackChannelSubscriptionRepository } from '../repositories/channel-subscription.repository.js';
 import { NotFoundError, ValidationError, BusinessError } from '../../services/errors.js';
@@ -18,11 +19,77 @@ import { ALLOWED_EVENT_TYPES, isAllowedEventType } from '../../events/types.js';
  */
 export const MAX_SUBSCRIPTIONS_PER_CHANNEL = 100;
 
+/**
+ * Minimal pino-style logger interface for the Slack write handlers.
+ *
+ * Mirrors the object-first shape used by identity-seeder.ts so pino,
+ * FastifyBaseLogger, and `vi.fn()` mocks all satisfy it. The Slack write
+ * handlers only need `warn` today (for the `slack_user_unmapped` event);
+ * `info`/`error` are included for future structured logging consistency.
+ */
+export interface SlackHandlerLogger {
+  info(obj: object, msg?: string): void;
+  warn(obj: object, msg?: string): void;
+  error(obj: object, msg?: string): void;
+}
+
+/**
+ * Default no-op logger used when registerTasksCommand is called without a
+ * logger (e.g. existing unit tests that don't care about warn logs).
+ */
+const noopLogger: SlackHandlerLogger = {
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 export interface Services {
   taskService: TaskService;
   projectService: ProjectService;
   dependencyService: DependencyService;
   commentService: CommentService;
+  /**
+   * Phase 31 (Plan 31-04): required for slack_user_id → user.id resolution
+   * on every Slack write. At registration time, registerTasksCommand resolves
+   * `findServiceAccountByName('slack-bot')` once and caches the id as the
+   * fallback for unmapped Slack users.
+   */
+  userRepository: IUserRepository;
+}
+
+/**
+ * resolveActorUserId — Plan 31-04 shim used by every Slack write handler.
+ *
+ * Looks up the incoming Slack user via `findBySlackUserId(command.user_id)`.
+ * On hit, returns the real `users.id`. On miss, returns the cached
+ * `slackBotUserId` AND emits a structured warn log with
+ * `event: 'slack_user_unmapped'` so operators can audit + provision the
+ * missing Slack user (admin UI deferred to post-v1.6).
+ *
+ * The `action` parameter is the originating handler name (e.g. `'create'`,
+ * `'comment-add'`) — included in the warn-log payload so operators can grep
+ * by the action that triggered the unmapped lookup.
+ */
+function resolveActorUserId(
+  services: Services,
+  command: SlashCommand,
+  slackBotUserId: number,
+  logger: SlackHandlerLogger,
+  action: string
+): number {
+  const slackUser = services.userRepository.findBySlackUserId(command.user_id);
+  if (slackUser) {
+    return slackUser.id;
+  }
+  logger.warn(
+    {
+      event: 'slack_user_unmapped',
+      slack_user_id: command.user_id,
+      action,
+    },
+    'slack_user_unmapped'
+  );
+  return slackBotUserId;
 }
 
 /**
@@ -286,13 +353,20 @@ async function handleShow(
 
 /**
  * handleCreate — /tasks create <title> --project <id> [--priority <p>] [--description <d>]
+ *
+ * Phase 31 (Plan 31-04): resolves `command.user_id` to a `users.id` via
+ * `findBySlackUserId`. On miss, falls back to the cached `slackBotUserId`
+ * AND emits a structured warn log so operators can provision the missing
+ * Slack user. The resolved id is passed to the service as `created_by_user_id`.
  */
 async function handleCreate(
   respond: RespondFn,
   services: Services,
   identityCache: UserIdentityCache,
   command: SlashCommand,
-  args: string[]
+  args: string[],
+  slackBotUserId: number,
+  logger: SlackHandlerLogger
 ): Promise<void> {
   const { positionals, flags } = parseArgs(args);
 
@@ -308,12 +382,14 @@ async function handleCreate(
 
   const title = positionals.join(' ');
   const createdBy = await identityCache.resolve(command.user_id);
+  const actorUserId = resolveActorUserId(services, command, slackBotUserId, logger, 'create');
 
   const task = services.taskService.createTask({
     title,
     project_id: parseInt(flags['project'], 10),
     priority: flags['priority'] || 'medium',
     created_by: createdBy,
+    created_by_user_id: actorUserId,
     description: flags['description'] || null,
   });
 
@@ -380,13 +456,19 @@ async function handleDelete(
 
 /**
  * handleClaim — /tasks claim <id>
+ *
+ * Phase 31 (Plan 31-04): the resolved user.id is passed as the 4th positional
+ * (`assigneeUserId`) on claimTask. The `source` arg is fixed to 'workflow'
+ * since Slack-originated claims are bot-mediated (not a direct human REST call).
  */
 async function handleClaim(
   respond: RespondFn,
   services: Services,
   identityCache: UserIdentityCache,
   command: SlashCommand,
-  args: string[]
+  args: string[],
+  slackBotUserId: number,
+  logger: SlackHandlerLogger
 ): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
@@ -395,7 +477,8 @@ async function handleClaim(
   }
 
   const displayName = await identityCache.resolve(command.user_id);
-  const task = services.taskService.claimTask(id, displayName);
+  const actorUserId = resolveActorUserId(services, command, slackBotUserId, logger, 'claim');
+  const task = services.taskService.claimTask(id, displayName, 'workflow', actorUserId);
   const blocks = formatTaskDetail(task);
   await respondBlocks(respond, blocks, `Task #${id} claimed by ${displayName}`);
 }
@@ -576,13 +659,17 @@ async function handleDepRemove(respond: RespondFn, services: Services, args: str
 
 /**
  * handleCommentAdd — /tasks comment-add <task_id> <content...>
+ *
+ * Phase 31 (Plan 31-04): resolves the Slack actor → `author_user_id`.
  */
 async function handleCommentAdd(
   respond: RespondFn,
   services: Services,
   identityCache: UserIdentityCache,
   command: SlashCommand,
-  args: string[]
+  args: string[],
+  slackBotUserId: number,
+  logger: SlackHandlerLogger
 ): Promise<void> {
   const taskId = parseInt(args[0] ?? '', 10);
   if (isNaN(taskId)) {
@@ -595,7 +682,8 @@ async function handleCommentAdd(
     return;
   }
   const author = await identityCache.resolve(command.user_id);
-  services.commentService.addComment({ task_id: taskId, author, content });
+  const actorUserId = resolveActorUserId(services, command, slackBotUserId, logger, 'comment-add');
+  services.commentService.addComment({ task_id: taskId, author, content, author_user_id: actorUserId });
   await respondBlocks(
     respond,
     [{
@@ -667,13 +755,19 @@ async function handleCommentDelete(respond: RespondFn, services: Services, args:
 
 /**
  * handleSubtaskCreate — /tasks subtask-create <parent_id> <title...> --project <id>
+ *
+ * Phase 31 (Plan 31-04): same actor-resolution shim as handleCreate. The
+ * subtask is just a task with `parent_task_id`, so the FK column populated
+ * is also `created_by_user_id`.
  */
 async function handleSubtaskCreate(
   respond: RespondFn,
   services: Services,
   identityCache: UserIdentityCache,
   command: SlashCommand,
-  args: string[]
+  args: string[],
+  slackBotUserId: number,
+  logger: SlackHandlerLogger
 ): Promise<void> {
   const parentId = parseInt(args[0] ?? '', 10);
   if (isNaN(parentId)) {
@@ -691,12 +785,14 @@ async function handleSubtaskCreate(
     return;
   }
   const createdBy = await identityCache.resolve(command.user_id);
+  const actorUserId = resolveActorUserId(services, command, slackBotUserId, logger, 'subtask-create');
   const task = services.taskService.createTask({
     title,
     project_id: parseInt(flags['project'], 10),
     parent_task_id: parentId,
     priority: flags['priority'] || 'medium',
     created_by: createdBy,
+    created_by_user_id: actorUserId,
   });
   const blocks = formatTaskDetail(task);
   await respondBlocks(respond, blocks, `Subtask created: ${task.title}`);
@@ -923,8 +1019,22 @@ export function registerTasksCommand(
   app: App,
   services: Services,
   identityCache: UserIdentityCache,
-  subscriptionRepo?: SlackChannelSubscriptionRepository
+  subscriptionRepo?: SlackChannelSubscriptionRepository,
+  logger: SlackHandlerLogger = noopLogger
 ): void {
+  // Phase 31 (Plan 31-04): Resolve the slack-bot service-account user ONCE at
+  // registration. This id is the fallback when an incoming command's user_id
+  // does not map to a real users row. Looking it up per-message would add an
+  // avoidable DB hit per slash command; the seeder always runs before
+  // createApp, so this row exists by the time Slack handlers register.
+  const slackBot = services.userRepository.findServiceAccountByName('slack-bot');
+  if (!slackBot) {
+    throw new Error(
+      'slack-bot service account not seeded — createApp must run identity-seeder first'
+    );
+  }
+  const slackBotUserId: number = slackBot.id;
+
   app.command('/tasks', async ({ ack, respond, command }: { ack: () => Promise<void>; respond: RespondFn; command: SlashCommand }) => {
     // FIRST: ack() — must complete within 3 seconds of Slack delivering the event.
     // Everything after this point has no time constraint (respond_url valid 30 min).
@@ -943,7 +1053,7 @@ export function registerTasksCommand(
           await handleShow(respond, services, args);
           break;
         case 'create':
-          await handleCreate(respond, services, identityCache, command, args);
+          await handleCreate(respond, services, identityCache, command, args, slackBotUserId, logger);
           break;
         case 'update':
           await handleUpdate(respond, services, args);
@@ -952,7 +1062,7 @@ export function registerTasksCommand(
           await handleDelete(respond, services, args);
           break;
         case 'claim':
-          await handleClaim(respond, services, identityCache, command, args);
+          await handleClaim(respond, services, identityCache, command, args, slackBotUserId, logger);
           break;
 
         // ── Project commands ───────────────────────────────────────────────────
@@ -985,7 +1095,7 @@ export function registerTasksCommand(
 
         // ── Comment commands ───────────────────────────────────────────────────
         case 'comment-add':
-          await handleCommentAdd(respond, services, identityCache, command, args);
+          await handleCommentAdd(respond, services, identityCache, command, args, slackBotUserId, logger);
           break;
         case 'comment-list':
           await handleCommentList(respond, services, args);
@@ -996,7 +1106,7 @@ export function registerTasksCommand(
 
         // ── Subtask commands ───────────────────────────────────────────────────
         case 'subtask-create':
-          await handleSubtaskCreate(respond, services, identityCache, command, args);
+          await handleSubtaskCreate(respond, services, identityCache, command, args, slackBotUserId, logger);
           break;
         case 'subtask-list':
           await handleSubtaskList(respond, services, args);

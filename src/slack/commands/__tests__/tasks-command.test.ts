@@ -1467,14 +1467,17 @@ describe('registerTasksCommand', () => {
       registerTasksCommand(app as unknown as App, services, identityCache);
     });
 
-    it('calls identityCache.resolve(user_id) then claimTask(42, displayName)', async () => {
+    it('calls identityCache.resolve(user_id) then claimTask(42, displayName, "workflow", slackBotUserId)', async () => {
       const handler = getHandler(app);
       const args = makeHandlerArgs('claim 42');
       await handler(args);
 
       expect(args.ack).toHaveBeenCalledOnce();
       expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
-      expect(services.taskService.claimTask).toHaveBeenCalledWith(42, 'Alice');
+      // Phase 31 (Plan 31-04): Slack claims pass source='workflow' and the
+      // resolved actor (slackBotUserId 999 here since the default mock
+      // findBySlackUserId returns null = unmapped).
+      expect(services.taskService.claimTask).toHaveBeenCalledWith(42, 'Alice', 'workflow', 999);
       expect(args.respond).toHaveBeenCalledOnce();
     });
 
