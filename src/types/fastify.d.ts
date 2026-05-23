@@ -75,3 +75,54 @@ declare module 'fastify' {
     apiTokenRepository: import('../repositories/api-token.repository.js').ApiTokenRepository;
   }
 }
+
+// Phase 29 (Plan 29-04): SessionData augmentation for @fastify/secure-session.
+//
+// The upstream module declares `interface SessionData {}` with no fields; we
+// merge per-key types here so call sites get inferred shapes from
+// `request.session.get(key)` without casts. Every key is optional — the
+// cookie is empty for unauthenticated callers and is populated piecewise as
+// the OIDC handshake progresses (`oidc.handshake` → `user` → `idToken`).
+declare module '@fastify/secure-session' {
+  interface SessionData {
+    /**
+     * Authenticated user identity, set after a successful OIDC callback.
+     * Mirrors AuthenticatedUser (src/types/identity.ts).
+     */
+    user: {
+      id: number;
+      displayName: string;
+      email: string | null;
+      isLegacy: boolean;
+      isServiceAccount: boolean;
+    };
+    /** Epoch milliseconds of the most recent successful sign-in. */
+    authenticatedAt: number;
+    /**
+     * Transient OIDC handshake state, cleared on successful callback.
+     * Survives the Google redirect via the cookie.
+     */
+    'oidc.handshake': {
+      pkceVerifier: string;
+      state: string;
+      nonce?: string;
+      redirectAfterLogin: string;
+    };
+    /**
+     * Raw ID token string stashed so /auth/logout can populate
+     * `id_token_hint` for RP-initiated logout (29-RESEARCH.md Pitfall 6).
+     * ~1 KB; well under the 4 KB cookie cap.
+     */
+    idToken: string;
+    /**
+     * One-shot minted-token payload. Set by POST /me/tokens (HTML path);
+     * read + cleared by GET /me/tokens via `getFlashAndClear`.
+     */
+    mintedToken: { id: number; token: string };
+    /**
+     * Per-session CSRF token (Plan 29-06 generates on first GET, Plan 29-07
+     * embeds in forms, Plan 29-06 validates on POST).
+     */
+    csrf: string;
+  }
+}
