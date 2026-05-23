@@ -144,21 +144,26 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   function insertProject(): number {
     const db = new Database(dbPath);
     try {
+      // Random suffix so distinct tests share the schema without UNIQUE(name)
+      // collisions. The migration sets `name UNIQUE`.
+      const suffix = Math.random().toString(36).slice(2, 8);
       const info = db
         .prepare(
-          `INSERT INTO projects (name, status) VALUES ('test-project', 'active')`,
+          `INSERT INTO projects (name) VALUES ('test-project-' || ?)`,
         )
-        .run();
+        .run(suffix);
       return Number(info.lastInsertRowid);
     } finally {
       db.close();
     }
   }
 
-  /** Insert a task row with arbitrary TEXT identity columns (and FK left NULL). */
+  /** Insert a task row with arbitrary TEXT identity columns (and FK left NULL).
+   * `created_by` is NOT NULL in the schema (migration 001); callers MUST
+   * supply a non-empty string. `assignee` is nullable. */
   function insertTask(opts: {
     projectId: number;
-    createdBy?: string | null;
+    createdBy?: string;
     assignee?: string | null;
     title?: string;
   }): number {
@@ -172,7 +177,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
         .run(
           opts.title ?? 'test-task',
           opts.projectId,
-          opts.createdBy ?? null,
+          opts.createdBy ?? 'unspecified-creator',
           opts.assignee ?? null,
         );
       return Number(info.lastInsertRowid);

@@ -8,7 +8,9 @@
  */
 import { Command } from 'commander';
 import { dbMintTokenCommand } from './db-mint-token.js';
+import { dbMigrateIdentitiesCommand } from './db-migrate-identities.js';
 
 export const dbCommand = new Command('db')
   .description('Database administration commands')
-  .addCommand(dbMintTokenCommand);
+  .addCommand(dbMintTokenCommand)
+  .addCommand(dbMigrateIdentitiesCommand);
