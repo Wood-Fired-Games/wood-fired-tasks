@@ -1152,10 +1152,24 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "nullable": true,
                     "type": "string",
                   },
+                  "assignee_user_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
+                  },
                   "created_by": {
                     "maxLength": 100,
                     "minLength": 1,
                     "type": "string",
+                  },
+                  "created_by_user_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
                   },
                   "description": {
                     "maxLength": 5000,
@@ -1787,6 +1801,13 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "maxLength": 100,
                     "nullable": true,
                     "type": "string",
+                  },
+                  "assignee_user_id": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer",
                   },
                   "description": {
                     "maxLength": 5000,

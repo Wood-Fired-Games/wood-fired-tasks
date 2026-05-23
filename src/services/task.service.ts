@@ -328,7 +328,15 @@ export class TaskService {
    * Claim a task atomically for an agent
    * Uses CAS (Compare-And-Swap) pattern with BEGIN IMMEDIATE for SQLite concurrency safety
    */
-  claimTask(taskId: number, assignee: string, source: 'user' | 'workflow' = 'user'): Task & { tags: string[] } {
+  claimTask(
+    taskId: number,
+    assignee: string,
+    source: 'user' | 'workflow' = 'user',
+    assigneeUserId?: number | null,
+  ): Task & { tags: string[] } {
+    // Phase 31 (Plan 31-01): the trailing `assigneeUserId` mirrors the
+    // additive-positional precedent set by `source`. All existing 3-arg
+    // callers continue to work; the repository binds NULL when undefined.
     // Validate task exists
     const existing = this.taskRepo.findById(taskId);
     if (!existing) {
@@ -345,7 +353,7 @@ export class TaskService {
     }
 
     // Attempt atomic claim via repository
-    const claimed = this.taskRepo.claimTask(taskId, assignee);
+    const claimed = this.taskRepo.claimTask(taskId, assignee, assigneeUserId ?? null);
     if (!claimed) {
       // CAS failed - another agent claimed it between our check and the update
       throw new BusinessError(`Task ${taskId} is already claimed (concurrent claim detected)`);

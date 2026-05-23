@@ -65,13 +65,20 @@ export class TaskRepository implements ITaskRepository {
 
   constructor(private db: Database.Database) {
     // Prepare reusable statements
+    // Phase 31 (Plan 31-01): the parallel FK columns
+    // `created_by_user_id` / `assignee_user_id` ride alongside the existing
+    // TEXT identity columns. Both are nullable and stay NULL when the caller
+    // does not pre-resolve the displayName -> users.id mapping (back-compat
+    // for every pre-Phase-31 call site).
     this.insertTaskStmt = db.prepare(`
       INSERT INTO tasks (
         title, description, status, priority, project_id, parent_task_id,
-        estimated_minutes, assignee, created_by, due_date, created_at, updated_at
+        estimated_minutes, assignee, created_by, due_date, created_at, updated_at,
+        created_by_user_id, assignee_user_id
       ) VALUES (
         @title, @description, @status, @priority, @project_id, @parent_task_id,
-        @estimated_minutes, @assignee, @created_by, @due_date, @created_at, @updated_at
+        @estimated_minutes, @assignee, @created_by, @due_date, @created_at, @updated_at,
+        @created_by_user_id, @assignee_user_id
       )
     `);
 
@@ -106,6 +113,11 @@ export class TaskRepository implements ITaskRepository {
         due_date: dto.due_date || null,
         created_at: now,
         updated_at: now,
+        // Phase 31 (Plan 31-01): both SQL columns and bindings change in
+        // the same edit (Pitfall 2 — SQL/binding skew). When the caller
+        // omits the FK fields, the column stays NULL.
+        created_by_user_id: dto.created_by_user_id ?? null,
+        assignee_user_id: dto.assignee_user_id ?? null,
       });
 
       const taskId = info.lastInsertRowid as number;
@@ -215,6 +227,14 @@ export class TaskRepository implements ITaskRepository {
       if (updates.assignee !== undefined) {
         fields.push('assignee = @assignee');
         params.assignee = updates.assignee;
+      }
+      // Phase 31 (Plan 31-01): assignee_user_id is independently optional —
+      // a TEXT-only update (legacy callers) does NOT clear the FK column,
+      // and an explicit `null` value DOES clear the FK column (so callers
+      // can deliberately unbind a user without removing the TEXT label).
+      if (updates.assignee_user_id !== undefined) {
+        fields.push('assignee_user_id = @assignee_user_id');
+        params.assignee_user_id = updates.assignee_user_id;
       }
       if (updates.due_date !== undefined) {
         fields.push('due_date = @due_date');
@@ -382,9 +402,18 @@ export class TaskRepository implements ITaskRepository {
     });
   }
 
-  claimTask(id: number, assignee: string): (Task & { tags: string[] }) | null {
+  claimTask(
+    id: number,
+    assignee: string,
+    assigneeUserId?: number | null,
+  ): (Task & { tags: string[] }) | null {
     // Use .immediate() to acquire write lock early (BEGIN IMMEDIATE)
     // This prevents SQLITE_BUSY when multiple agents try to claim simultaneously
+    //
+    // Phase 31 (Plan 31-01): the trailing `assigneeUserId` is the FK
+    // companion to `assignee`. When provided (including explicit null) it
+    // is bound to the new `assignee_user_id` column in the SAME CAS UPDATE;
+    // when omitted (legacy 2-arg callers) the column stays NULL.
     const claimTransaction = this.db.transaction(() => {
       // Read current task state
       const task = mapRow<import('../types/task.js').Task>(
@@ -396,11 +425,17 @@ export class TaskRepository implements ITaskRepository {
       // CAS: only claim if unassigned and status is 'open'
       const claimStmt = this.db.prepare(
         `UPDATE tasks
-         SET assignee = ?, status = 'in_progress', version = version + 1,
+         SET assignee = ?, assignee_user_id = ?, status = 'in_progress',
+             version = version + 1,
              claimed_at = datetime('now'), updated_at = datetime('now')
          WHERE id = ? AND assignee IS NULL AND status = 'open' AND version = ?`
       );
-      const info = claimStmt.run(assignee, id, task.version);
+      const info = claimStmt.run(
+        assignee,
+        assigneeUserId ?? null,
+        id,
+        task.version,
+      );
 
       if (info.changes === 0) {
         // CAS failed - task was already claimed or status changed

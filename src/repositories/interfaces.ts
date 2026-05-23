@@ -62,7 +62,18 @@ export interface ITaskRepository {
   count(filters?: TaskFilters): number;
   /** Total children count for a parent task, ignoring pagination. */
   countChildren(parentId: number): number;
-  claimTask(id: number, assignee: string): (Task & { tags: string[] }) | null;
+  /**
+   * Atomic claim. The trailing `assigneeUserId` is the Phase-31 FK companion
+   * to the existing TEXT `assignee`. When provided (including `null`), the
+   * repository writes `assignee_user_id` alongside `assignee` in the same
+   * CAS UPDATE; when omitted, the FK column stays NULL (matches legacy
+   * 2-arg callers).
+   */
+  claimTask(
+    id: number,
+    assignee: string,
+    assigneeUserId?: number | null,
+  ): (Task & { tags: string[] }) | null;
   findCompletedInRange(
     filters: CompletionRangeFilters
   ): Array<Task & { tags: string[] }>;
@@ -103,6 +114,15 @@ export interface IUserRepository {
   findBySlackUserId(slackUserId: string): User | null;
   /** Lookup an `is_legacy=1` user by display_name — idempotency key for seeder. */
   findLegacyByDisplayName(displayName: string): User | null;
+  /**
+   * Lookup an `is_service_account=1` user by display_name. Used by the MCP
+   * boot (`mcp-bot`) and Slack fallback (`slack-bot`) handlers to resolve
+   * their service-account `users.id` once at startup. Returns null when no
+   * row matches (and silently for null/undefined/empty input — these are
+   * treated as "no such name"). Backed by the partial UNIQUE index
+   * `idx_users_slack_bot` (covers any service-account display_name).
+   */
+  findServiceAccountByName(name: string): User | null;
   /**
    * Case-insensitive email lookup (`WHERE LOWER(email) = LOWER(?)`).
    * Returns the lowest-id row when duplicates exist (`ORDER BY id ASC LIMIT 1`);

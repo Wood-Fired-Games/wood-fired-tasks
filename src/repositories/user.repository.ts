@@ -19,6 +19,7 @@ export class UserRepository implements IUserRepository {
   private findBySlackUserIdStmt: Database.Statement;
   private findLegacyByDisplayNameStmt: Database.Statement;
   private findByEmailStmt: Database.Statement;
+  private findServiceAccountByNameStmt: Database.Statement;
   private listAllStmt: Database.Statement;
   private insertStmt: Database.Statement;
 
@@ -43,6 +44,14 @@ export class UserRepository implements IUserRepository {
     // column; until then, the lowest-id row is the canonical resolution.
     this.findByEmailStmt = db.prepare(
       'SELECT * FROM users WHERE LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1'
+    );
+
+    // Phase 31 (Plan 31-01): used by mcp-bot boot and slack-bot fallback to
+    // resolve their service-account `users.id` once at startup. Case-sensitive
+    // by design — display_name is a literal identifier ('mcp-bot',
+    // 'slack-bot'), not a user-typed handle.
+    this.findServiceAccountByNameStmt = db.prepare(
+      'SELECT * FROM users WHERE is_service_account = 1 AND display_name = ? LIMIT 1',
     );
 
     this.listAllStmt = db.prepare('SELECT * FROM users ORDER BY id ASC');
@@ -123,6 +132,25 @@ export class UserRepository implements IUserRepository {
 
   findLegacyByDisplayName(displayName: string): User | null {
     return mapRow<User>(this.findLegacyByDisplayNameStmt, displayName) ?? null;
+  }
+
+  /**
+   * Lookup an `is_service_account=1` user by display_name. Returns null
+   * silently for null/undefined/empty input — service-account names are
+   * literal identifiers passed in by trusted callers (MCP boot, Slack
+   * fallback) and an empty name simply means "no such service account".
+   * Throwing here would force boot-time wrappers to add try/catch for a
+   * condition that legitimately means "not seeded yet".
+   *
+   * Backed by the partial UNIQUE index `idx_users_slack_bot`
+   * (UNIQUE(display_name) WHERE is_service_account = 1, migration 010),
+   * so at most one row can match.
+   */
+  findServiceAccountByName(name: string): User | null {
+    if (name == null || name === '') {
+      return null;
+    }
+    return mapRow<User>(this.findServiceAccountByNameStmt, name) ?? null;
   }
 
   listAll(): User[] {
