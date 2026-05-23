@@ -10,7 +10,7 @@ Wood Fired Bugs exposes task management capabilities via the Model Context Proto
 
 The MCP server provides:
 
-- 21 tools for task, project, comment, dependency, reporting, and health operations
+- 22 tools for task, project, comment, dependency, reporting, health, and topology operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 11 pre-built skill files for common workflows
@@ -241,7 +241,7 @@ The remote server is at full tool parity with the local server. `completion_repo
 
 ## Tools Reference
 
-The MCP server exposes 21 tools organized by domain:
+The MCP server exposes 22 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -871,7 +871,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:bug-smash`
-- Explore the 21 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 22 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host
 - Read the `events://stream` resource for real-time event integration

@@ -41,6 +41,8 @@ const MCP_TOOL_FILES = [
   'src/mcp/tools/health-tools.ts',
   'src/mcp/tools/project-tools.ts',
   'src/mcp/tools/task-tools.ts',
+  // Wave 4.1 (#318): topology classifier.
+  'src/mcp/tools/topology-tools.ts',
 ] as const;
 
 const CLI_ENTRY = 'src/cli/bin/tasks.ts';
@@ -76,7 +78,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     ).toBe(22);
   });
 
-  it('MCP tool files together register exactly 21 tools', () => {
+  it('MCP tool files together register exactly 22 tools', () => {
     const perFile = MCP_TOOL_FILES.map((rel) => ({
       file: rel,
       count: countMatches(repoRoot, rel, MCP_TOOL_REGEX),
@@ -86,16 +88,16 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
       total,
       `MCP tool count drifted. Per-file: ${JSON.stringify(perFile)}. ` +
         'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(21);
+    ).toBe(22);
   });
 
-  it('CLI entry wires exactly 30 commands into Commander', () => {
+  it('CLI entry wires exactly 31 commands into Commander', () => {
     const count = countMatches(repoRoot, CLI_ENTRY, CLI_ADDCOMMAND_REGEX);
     expect(
       count,
       `CLI command count drifted in ${CLI_ENTRY}. ` +
         'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(30);
+    ).toBe(31);
   });
 
   it('docs/INTERFACES.md restates the verified totals so a drift is visible', () => {
@@ -105,13 +107,13 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     expect(doc, 'missing "Total: 22 routes" anchor').toContain(
       'Total: 22 routes',
     );
-    expect(doc, 'missing "Total: 21 tools" anchor').toContain(
-      'Total: 21 tools',
+    expect(doc, 'missing "Total: 22 tools" anchor').toContain(
+      'Total: 22 tools',
     );
     expect(
       doc,
-      'missing "Total: 30 commands" anchor (CLI subcommand count)',
-    ).toContain('Total: 30 commands');
+      'missing "Total: 31 commands" anchor (CLI subcommand count)',
+    ).toContain('Total: 31 commands');
   });
 
   it('every REST route source file is non-empty and parseable', () => {

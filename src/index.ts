@@ -12,6 +12,7 @@ import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
 import { DependencyService } from './services/dependency.service.js';
 import { CommentService } from './services/comment.service.js';
+import { TopologyService } from './services/topology.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
 import { eventBus } from './events/event-bus.js';
 import { initOidc, type OidcConfig } from './services/oidc-client.js';
@@ -27,6 +28,12 @@ export interface App {
   taskService: TaskService;
   dependencyService: DependencyService;
   commentService: CommentService;
+  /**
+   * Wave 4.1 (#318): per-project FLAT/DAG/DAG_CYCLIC classifier surfaced via
+   * the `topology_check` MCP tool and `tasks topology` CLI. Pure read-only
+   * over `task_dependencies` rows — no schema additions, no writes.
+   */
+  topologyService: TopologyService;
   /**
    * Identity-foundation repositories (Phase 27) decorated onto the Fastify
    * instance by `createServer` so the Phase 28 auth chain at
@@ -158,6 +165,7 @@ export async function createApp(dbPath?: string): Promise<App> {
   const taskService = new TaskService(taskRepo, projectRepo);
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
+  const topologyService = new TopologyService(taskRepo, dependencyRepo);
 
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(
@@ -207,6 +215,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     taskService,
     dependencyService,
     commentService,
+    topologyService,
     userRepository,
     apiTokenRepository,
     workflowEngine,

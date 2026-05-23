@@ -12,7 +12,7 @@ Wood Fired Bugs is a centralized task management service providing a REST API, C
 
 - REST API with 22 authenticated endpoints for full task lifecycle management
 - CLI (`tasks`) with 26 commands for terminal-based operations
-- MCP server with 21 tools for native Claude Code integration (local SQLite or remote HTTP modes)
+- MCP server with 22 tools for native Claude Code integration (local SQLite or remote HTTP modes)
 - 11 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
@@ -368,7 +368,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 21 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the full REST-backed tool surface (21 tools) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 22 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the full REST-backed tool surface (21 tools) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -601,7 +601,7 @@ slash-command reference, channel subscription model, error handling.
 ### Claude Code (MCP)
 
 The shipped MCP server registers as a stdio MCP target in `~/.claude.json`
-and exposes 21 tools plus the `/tasks:*` skill files. See
+and exposes 22 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 

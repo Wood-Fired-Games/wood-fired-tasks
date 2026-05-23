@@ -4,12 +4,14 @@ import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
 import { CommentService } from '../services/comment.service.js';
+import { TopologyService } from '../services/topology.service.js';
 import type { UserRepository } from '../repositories/user.repository.js';
 import { registerTaskTools } from './tools/task-tools.js';
 import { registerDependencyTools } from './tools/dependency-tools.js';
 import { registerCommentTools } from './tools/comment-tools.js';
 import { registerProjectTools } from './tools/project-tools.js';
 import { registerHealthTools } from './tools/health-tools.js';
+import { registerTopologyTools } from './tools/topology-tools.js';
 import {
   EVENTS_RESOURCE_URI,
   EVENTS_RESOURCE_NAME,
@@ -48,12 +50,13 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 21 tools and 1 resource:
+ * Factory function that creates an McpServer with 22 tools and 1 resource:
  * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
  * - 5 project tools (create, get, update, list, delete)
  * - 3 dependency tools (add, remove, list)
  * - 3 comment tools (add, list, delete)
  * - 1 health tool (check_health)
+ * - 1 topology tool (topology_check) — Wave 4.1 (#318), only registered when topologyService is provided
  * - 1 resource (events://stream - SSE event stream discovery)
  *
  * This pattern allows tests to instantiate servers without stdio transport.
@@ -76,6 +79,12 @@ export function createMcpServer(
   commentService: CommentService,
   db: Database,
   ctx: McpServerContext = DEFAULT_CTX,
+  // Wave 4.1 (#318): topologyService is optional so the dozens of pre-#318
+  // tests that call createMcpServer with the original 5-arg signature keep
+  // working. When omitted, the `topology_check` tool is simply not
+  // registered for that server instance (production boot always passes it
+  // — see src/mcp/index.ts).
+  topologyService?: TopologyService,
 ): McpServer {
   const server = new McpServer({
     name: 'wood-fired-bugs',
@@ -92,6 +101,9 @@ export function createMcpServer(
   registerDependencyTools(server, dependencyService);
   registerCommentTools(server, commentService, ctx);
   registerHealthTools(server, db);
+  if (topologyService) {
+    registerTopologyTools(server, topologyService);
+  }
 
   // Register resources
   // Note: the API key is intentionally not passed to the resource — it would

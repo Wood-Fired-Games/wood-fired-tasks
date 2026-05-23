@@ -746,7 +746,7 @@ Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
 - API route integration tests (all 20 authenticated endpoints + health)
-- MCP tool tests (all 21 tools)
+- MCP tool tests (all 22 tools)
 - CLI command tests
 - Event system tests (EventBus, SSEManager, events API)
 - Claim protocol tests (including 20-agent concurrency)

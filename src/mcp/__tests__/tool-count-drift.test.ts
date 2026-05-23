@@ -165,6 +165,8 @@ describe('MCP tool-count drift regression (task #260)', () => {
       app.dependencyService,
       app.commentService,
       app.db,
+      undefined,
+      app.topologyService,
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);

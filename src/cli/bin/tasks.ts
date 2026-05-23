@@ -15,6 +15,7 @@ import { projectDeleteCommand } from '../commands/project-delete.js';
 import { depAddCommand } from '../commands/dep-add.js';
 import { depRemoveCommand } from '../commands/dep-remove.js';
 import { depListCommand } from '../commands/dep-list.js';
+import { topologyCommand } from '../commands/topology.js';
 import { commentAddCommand } from '../commands/comment-add.js';
 import { commentListCommand } from '../commands/comment-list.js';
 import { commentDeleteCommand } from '../commands/comment-delete.js';
@@ -74,6 +75,9 @@ program.addCommand(projectDeleteCommand);
 program.addCommand(depAddCommand);
 program.addCommand(depRemoveCommand);
 program.addCommand(depListCommand);
+
+// Wave 4.1 (task #318): topology classifier — FLAT/DAG/DAG_CYCLIC advisory.
+program.addCommand(topologyCommand);
 
 // Register comment commands
 program.addCommand(commentAddCommand);

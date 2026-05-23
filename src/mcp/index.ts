@@ -81,6 +81,8 @@ async function main() {
     app.commentService,
     app.db,
     { actorUserId, userRepository: app.userRepository },
+    // Wave 4.1 (#318): topology classifier behind the `topology_check` tool.
+    app.topologyService,
   );
 
   // Create stdio transport
