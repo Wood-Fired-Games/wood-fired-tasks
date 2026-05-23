@@ -28,21 +28,45 @@ import {
   approve,
   deny,
   findByDeviceCode,
+  recordMintedToken,
   _resetForTests,
   type DeviceFlowSession,
 } from '../../../../services/device-flow-store.js';
+import { initDatabase } from '../../../../db/database.js';
+import { runMigrations } from '../../../../db/migrate.js';
+import { seedIdentities } from '../../../../services/identity-seeder.js';
+import { parseApiKeyEntries } from '../../../../config/env.js';
+import { UserRepository } from '../../../../repositories/user.repository.js';
+import type Database from 'better-sqlite3';
 
 const EXPECTED_CLIENT_ID = 'cli-test-client.example.com';
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 
-async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+interface BuildResult {
+  app: FastifyInstance;
+  db: Database.Database;
+  legacyUserId: number;
+}
+
+async function buildTestApp(): Promise<BuildResult> {
+  process.env.API_KEYS = 'device-token-test-key:device-token-key';
+  const db = initDatabase(':memory:');
+  await runMigrations(db);
+  const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
+  seedIdentities(db, apiKeyEntries, { info: () => {}, warn: () => {} });
+  const userRepo = new UserRepository(db);
+  const legacyUser = userRepo.findLegacyByDisplayName('device-token-key');
+  if (!legacyUser) throw new Error('test setup: legacy user not seeded');
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const app: any = Fastify({ logger: false });
+  app.decorate('userRepository', userRepo);
   await app.register(fastifyFormbody);
   await app.register(deviceTokenRoute, {
     expectedClientId: EXPECTED_CLIENT_ID,
   });
   await app.ready();
-  return app;
+  return { app, db, legacyUserId: legacyUser.id };
 }
 
 function pollJson(
@@ -59,15 +83,18 @@ function pollJson(
 
 describe('POST /auth/device/token', () => {
   let app: FastifyInstance;
+  let db: Database.Database;
+  let legacyUserId: number;
   let session: DeviceFlowSession;
 
   beforeEach(async () => {
     _resetForTests();
-    app = await buildTestApp();
+    ({ app, db, legacyUserId } = await buildTestApp());
     session = createSession({ clientId: EXPECTED_CLIENT_ID, hostname: null });
   });
   afterEach(async () => {
     await app.close();
+    db.close();
   });
 
   it('1. unsupported_grant_type: wrong grant_type → 400', async () => {
@@ -186,8 +213,12 @@ describe('POST /auth/device/token', () => {
     expect(after?.interval).toBe(15);
   });
 
-  it('8. approved session still returns authorization_pending (Plan 30-04 wires the mint)', async () => {
-    expect(approve(session.userCode, 42)).toBe(true);
+  it('8a. (Plan 30-04) approved but unminted → still authorization_pending', async () => {
+    // Narrow window: verify handler called approve() but the
+    // recordMintedToken step has not run yet (e.g. DB outage path).
+    // The CLI must continue polling rather than receiving a half-built
+    // response.
+    expect(approve(session.userCode, legacyUserId)).toBe(true);
     const r = await pollJson(app, {
       grant_type: GRANT_TYPE,
       device_code: session.deviceCode,
@@ -195,6 +226,50 @@ describe('POST /auth/device/token', () => {
     });
     expect(r.statusCode).toBe(400);
     expect(r.json()).toMatchObject({ error: 'authorization_pending' });
+  });
+
+  it('8b. (Plan 30-04) approved AND minted → 200 success envelope; replay → expired_token', async () => {
+    expect(approve(session.userCode, legacyUserId)).toBe(true);
+    expect(
+      recordMintedToken(session.userCode, {
+        tokenId: 999,
+        token: 'wfb_pat_MINTED1234567890ABCDEFGHIJKLMNOP',
+      }),
+    ).toBe(true);
+
+    const r = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as {
+      token: string;
+      token_type: string;
+      token_id: number;
+      user: {
+        id: number;
+        displayName: string;
+        email: string | null;
+        isLegacy: boolean;
+        isServiceAccount: boolean;
+      };
+    };
+    expect(body.token).toBe('wfb_pat_MINTED1234567890ABCDEFGHIJKLMNOP');
+    expect(body.token_type).toBe('PAT');
+    expect(body.token_id).toBe(999);
+    expect(body.user.id).toBe(legacyUserId);
+    expect(body.user.displayName).toBe('device-token-key');
+    expect(body.user.isLegacy).toBe(true);
+
+    // Replay rejected — session was removed after the 200.
+    const r2 = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r2.statusCode).toBe(400);
+    expect(r2.json()).toMatchObject({ error: 'expired_token' });
   });
 
   it('9. denied session → access_denied', async () => {
