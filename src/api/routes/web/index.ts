@@ -22,8 +22,30 @@ import type { FastifyPluginAsync } from 'fastify';
 import loginWeb from './login.js';
 import meWeb from './me.js';
 import tokensWeb from './tokens.js';
+import { HTML_SECURITY_HEADERS } from '../../../web/html.js';
 
 const webRoutes: FastifyPluginAsync = async (fastify) => {
+  // WR-04 fix — stamp X-Frame-Options + CSP + Referrer-Policy on every
+  // text/html response in this scope. Scoped to the web routes plugin
+  // (not the global server) so JSON API responses under /api/v1 are
+  // unaffected. The check inspects the outgoing Content-Type: applying
+  // the headers ONLY to HTML keeps JSON 4xx/5xx error envelopes free of
+  // CSP — JSON responses cannot be framed and the CSP would be noise.
+  fastify.addHook('onSend', async (_request, reply, payload) => {
+    const contentType = reply.getHeader('content-type');
+    const isHtml =
+      typeof contentType === 'string' && contentType.includes('text/html');
+    if (isHtml) {
+      for (const [name, value] of Object.entries(HTML_SECURITY_HEADERS)) {
+        // `header()` does not overwrite an existing header by default in
+        // Fastify; use the lower-level reply.header which we know is
+        // idempotent for our values (we always stamp the same constants).
+        reply.header(name, value);
+      }
+    }
+    return payload;
+  });
+
   await fastify.register(loginWeb);
   await fastify.register(meWeb);
   await fastify.register(tokensWeb);

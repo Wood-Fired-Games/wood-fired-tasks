@@ -134,6 +134,47 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // WR-04: security headers stamped on every HTML web response
+  // -------------------------------------------------------------------------
+  describe('WR-04: HTML security headers', () => {
+    it('stamps X-Frame-Options, CSP, Referrer-Policy on GET /login', async () => {
+      const res = await harness.server.inject({ method: 'GET', url: '/login' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['x-frame-options']).toBe('DENY');
+      expect(res.headers['referrer-policy']).toBe('same-origin');
+      expect(res.headers['content-security-policy']).toContain(
+        "frame-ancestors 'none'",
+      );
+    });
+
+    it('stamps the same headers on GET /me (authenticated)', async () => {
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/me',
+        headers: { cookie: sessionCookie },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['x-frame-options']).toBe('DENY');
+      expect(res.headers['content-security-policy']).toContain(
+        "default-src 'self'",
+      );
+    });
+
+    it('stamps the same headers on GET /me/tokens (authenticated)', async () => {
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/me/tokens',
+        headers: { cookie: sessionCookie },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['x-frame-options']).toBe('DENY');
+      expect(res.headers['content-security-policy']).toContain(
+        "frame-ancestors 'none'",
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // GET /login
   // -------------------------------------------------------------------------
   describe('GET /login', () => {

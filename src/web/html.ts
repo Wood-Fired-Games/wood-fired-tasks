@@ -105,6 +105,36 @@ export interface LayoutOptions {
 }
 
 /**
+ * WR-04 fix — security headers that every HTML response MUST stamp.
+ *
+ * - `X-Frame-Options: DENY` and `frame-ancestors 'none'` (defense-in-
+ *   depth): block clickjacking AND a same-origin iframe sink from
+ *   reading the `/me/tokens` page's freshly-minted PAT plaintext.
+ * - `default-src 'self'`, `script-src 'self' 'unsafe-inline'`,
+ *   `style-src 'self' 'unsafe-inline'`: the project intentionally uses
+ *   inline `<style>` and `<script>` (the clipboard `onclick` in
+ *   `pages/tokens.ts`), so 'unsafe-inline' is allowlisted. v1.7 could
+ *   tighten with nonces; for v1.6 the policy at least bounds script
+ *   sources to `self` + inline (no external CDNs).
+ * - `Referrer-Policy: same-origin`: prevents external referers from
+ *   learning that a user visited a Wood Fired Bugs page.
+ *
+ * Exported as a const object so consumers (the layout helper AND the
+ * Fastify onSend hook in server.ts, AND auth-error.ts) all stamp the
+ * SAME values. Adding a header here automatically updates every HTML
+ * response surface.
+ */
+export const HTML_SECURITY_HEADERS = {
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy':
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "frame-ancestors 'none'",
+  'Referrer-Policy': 'same-origin',
+} as const;
+
+/**
  * Minimal inline CSS. System font stack, light/dark color scheme, a
  * single 48-rem container. ~30 lines kept inline by design (project
  * developer profile: backend-focused; no extra files for styling).

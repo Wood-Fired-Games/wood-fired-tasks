@@ -19,6 +19,7 @@
  * final externally-visible path is `/auth/error`.
  */
 import type { FastifyPluginAsync } from 'fastify';
+import { HTML_SECURITY_HEADERS } from '../../../web/html.js';
 
 /**
  * Categorical reason codes the OIDC flow may emit. Anything outside this
@@ -75,11 +76,17 @@ ${footer}
 </body>
 </html>`;
 
-      return reply
+      // WR-04 fix: stamp X-Frame-Options / CSP / Referrer-Policy on the
+      // error page. The web-routes onSend hook does not run here (the
+      // error page lives under /auth, not /, and the hook is scoped to
+      // the web plugin), so we apply the constants explicitly.
+      const replyWithHeaders = reply
         .header('Content-Type', 'text/html; charset=utf-8')
-        .header('Cache-Control', 'no-store')
-        .code(200)
-        .send(body);
+        .header('Cache-Control', 'no-store');
+      for (const [name, value] of Object.entries(HTML_SECURITY_HEADERS)) {
+        replyWithHeaders.header(name, value);
+      }
+      return replyWithHeaders.code(200).send(body);
     },
   );
 };

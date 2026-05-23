@@ -48,6 +48,21 @@ describe('GET /auth/error', () => {
     expect(r.headers['cache-control']).toBe('no-store');
   });
 
+  it('WR-04: stamps X-Frame-Options, CSP, and Referrer-Policy on every response', async () => {
+    const r = await server.inject({ method: 'GET', url: '/auth/error' });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['x-frame-options']).toBe('DENY');
+    expect(r.headers['referrer-policy']).toBe('same-origin');
+    const csp = r.headers['content-security-policy'];
+    expect(typeof csp).toBe('string');
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    // Inline style/script are intentionally allowlisted in v1.6 (the
+    // project's pages use inline <style> + onclick clipboard handlers).
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+  });
+
   it('body contains the generic operator-friendly message', async () => {
     const r = await server.inject({ method: 'GET', url: '/auth/error' });
     expect(r.body).toContain(GENERIC_MESSAGE);
