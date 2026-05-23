@@ -2800,6 +2800,42 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         },
       },
     },
+    "/auth/device": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
+    "/auth/device/code": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
+    "/auth/device/token": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
+    "/auth/device/verify": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+          },
+        },
+      },
+    },
     "/auth/error": {
       "get": {
         "responses": {

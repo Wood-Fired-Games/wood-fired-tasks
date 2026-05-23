@@ -50,6 +50,21 @@ export interface AuthRoutesOptions {
    * (`request.hostname` / `request.protocol`).
    */
   postLogoutRedirectUri: string;
+  /**
+   * Phase 30 Plan 08 — OAuth client_id expected by the device-flow code
+   * endpoint. Sourced from `env.OIDC_CLIENT_ID` at the server.ts wiring
+   * site; threaded as a plugin option so tests can mount the barrel with
+   * a probe client_id without mutating process.env. Optional in the
+   * interface so Phase 29-era callers (oidc-test-setup.ts etc.) that
+   * never exercise the device-flow surface can omit it.
+   */
+  clientId?: string;
+  /**
+   * Phase 30 Plan 08 — server origin used to compose the absolute
+   * verification URIs the CLI prints. Sourced from `effectiveOrigin(env)`
+   * at the server.ts wiring site. Optional — see `clientId` above.
+   */
+  origin?: string;
 }
 
 const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
@@ -66,11 +81,36 @@ const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
     scopes: opts.scopes,
     sessionCookieName: opts.sessionCookieName,
     postLogoutRedirectUri: opts.postLogoutRedirectUri,
+    ...(opts.clientId !== undefined ? { clientId: opts.clientId } : {}),
+    ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
   };
   await fastify.register(loginRoute, childOpts);
   await fastify.register(callbackRoute, childOpts);
   await fastify.register(logoutRoute, childOpts);
   await fastify.register(authErrorRoute);
+
+  // NOTE — Phase 30 Plan 08 device-flow routes (POST /auth/device/code,
+  // POST /auth/device/token, GET /auth/device, POST /auth/device/verify)
+  // are NOT registered inside this barrel. The three plugin files
+  // (device-code.ts, device-token.ts, device-html.ts) register their
+  // handlers at ABSOLUTE paths (`/auth/device/code`, etc.) because Plan
+  // 30-01/02/04 tests mount them directly on a Fastify root WITHOUT a
+  // prefix. Fastify concatenates prefixes (no override), so mounting
+  // those plugins inside THIS barrel (which itself sits behind `prefix:
+  // '/auth'` at server.ts) would double-prefix them to
+  // `/auth/auth/device/code`.
+  //
+  // Plan 30-08 sidesteps the path collision by registering the device-flow
+  // routes DIRECTLY on the server at server.ts (top-level, no prefix) when
+  // `app.oidcConfig` is non-null. The OIDC-disabled branch registers
+  // `device-disabled-stub` under `prefix: '/auth'` (it uses RELATIVE paths
+  // `/device/code` etc., so the prefix wiring works there).
+  //
+  // The asymmetry (enabled = top-level absolute paths; disabled = prefixed
+  // relative paths) is documented in server.ts and is the only safe option
+  // without rewriting Plans 30-01/02/04. A future cleanup could normalize
+  // the device-* files to RELATIVE paths and mount both branches under
+  // prefix `/auth`; out of scope for this plan.
 };
 
 export default authRoutes;

@@ -143,6 +143,13 @@ export async function mountAuthRoutes(
     // smart default at server.ts.
     sessionCookieName: 'wfb_session',
     postLogoutRedirectUri: `${new URL(REDIRECT_URI).origin}/auth/login`,
+    // Plan 30-08 — device-flow routes now mounted by the barrel; thread
+    // origin + clientId through so this harness exercises the same wiring
+    // server.ts uses in production. The Phase 29 tests in this directory
+    // never hit /auth/device/* but the AuthRoutesOptions interface is
+    // single-shape, so the values must be supplied.
+    clientId: CLIENT_ID,
+    origin: new URL(REDIRECT_URI).origin,
   });
 
   // Pre-mount probes so tests can inspect session contents without

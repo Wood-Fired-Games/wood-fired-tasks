@@ -32,6 +32,9 @@ import nock from 'nock';
 import type Database from 'better-sqlite3';
 
 import authRoutes from '../index.js';
+import deviceCodeRoute from '../device-code.js';
+import deviceTokenRoute from '../device-token.js';
+import deviceHtmlRoute from '../device-html.js';
 import authPlugin from '../../../plugins/auth.js';
 import { initOidc } from '../../../../services/oidc-client.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
@@ -118,11 +121,23 @@ async function buildEnabledHarness(): Promise<Harness> {
     scopes: SCOPES,
     sessionCookieName: 'wfb_session',
     postLogoutRedirectUri: `${ORIGIN}/auth/login`,
-    // Plan 30-08 — new fields the barrel needs to thread through to
-    // device-code + device-html.
+    // Plan 30-08 — clientId + origin are part of AuthRoutesOptions even
+    // though the barrel itself does not register the device routes (the
+    // device-* plugins use absolute paths and are registered directly on
+    // the server below, mirroring server.ts).
     clientId: CLIENT_ID,
     origin: ORIGIN,
   });
+
+  // Mirror server.ts's Plan 30-08 wiring — device-flow plugins register
+  // ABSOLUTE paths (`/auth/device/code`, etc.) so they live at the top
+  // level, not under the /auth prefix that owns the OIDC routes.
+  await app.register(deviceCodeRoute, {
+    origin: ORIGIN,
+    expectedClientId: CLIENT_ID,
+  });
+  await app.register(deviceTokenRoute, { expectedClientId: CLIENT_ID });
+  await app.register(deviceHtmlRoute, { origin: ORIGIN });
 
   await app.ready();
   return { app, db };

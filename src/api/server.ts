@@ -349,6 +349,13 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // mode — only the response shape differs.
   if (app.oidcConfig) {
     const authRoutes = (await import('./routes/auth/index.js')).default;
+    const deviceCodeRoute = (await import('./routes/auth/device-code.js'))
+      .default;
+    const deviceTokenRoute = (await import('./routes/auth/device-token.js'))
+      .default;
+    const deviceHtmlRoute = (await import('./routes/auth/device-html.js'))
+      .default;
+    const { effectiveOrigin } = await import('../config/env.js');
     // WR-03 fix: post_logout_redirect_uri sourced from config (immune to
     // Host-header spoofing). Smart default: derive from
     // OIDC_REDIRECT_URI's origin + `/auth/login`. The env schema's
@@ -357,20 +364,61 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     const postLogoutRedirectUri =
       config.OIDC_POST_LOGOUT_REDIRECT_URI ??
       `${new URL(redirectUri).origin}/auth/login`;
+    // Plan 30-08 — device-flow routes need `origin` (verification_uri base)
+    // and `clientId` (RFC 8628 `client_id` validation). effectiveOrigin
+    // derives the origin from the same OIDC_REDIRECT_URI used above, so
+    // the value the CLI prints matches the browser leg's host exactly.
+    // OIDC_CLIENT_ID is guaranteed by the env schema's all-or-nothing
+    // refine on this branch.
+    const origin = effectiveOrigin(config);
+    const clientId = config.OIDC_CLIENT_ID as string;
     await server.register(authRoutes, {
       prefix: '/auth',
       oidcConfig: app.oidcConfig,
-      // OIDC_REDIRECT_URI is guaranteed non-null when oidcConfig is non-null
-      // — the env schema's all-or-nothing refine enforces this. The `!`
-      // assertion is documented at that refine.
       redirectUri,
       scopes: config.OIDC_SCOPES,
       sessionCookieName: config.SESSION_COOKIE_NAME,
       postLogoutRedirectUri,
+      // Pass clientId + origin through for the device-flow surface even
+      // though the barrel itself does NOT register the device routes (see
+      // note in src/api/routes/auth/index.ts). The fields are part of the
+      // single AuthRoutesOptions shape so OIDC-mode wiring stays a single
+      // register call.
+      clientId,
+      origin,
     });
+    // ── Plan 30-08 — device-flow routes registered DIRECTLY on the server
+    //
+    // The three plugin files (device-code.ts, device-token.ts,
+    // device-html.ts) register their handlers at ABSOLUTE paths
+    // (`/auth/device/code`, `/auth/device/token`, `/auth/device`,
+    // `/auth/device/verify`) — not relative — because Plan 30-01/02/04
+    // tests mount them on a bare Fastify root without a prefix. Mounting
+    // them inside the auth barrel above (which sits behind `prefix:
+    // '/auth'`) would double-prefix the routes to `/auth/auth/device/...`.
+    // Registering at the top-level here uses the routes' absolute paths
+    // verbatim, matching the CLI's expectations and the URLs printed in
+    // verification_uri.
+    await server.register(deviceCodeRoute, {
+      origin,
+      expectedClientId: clientId,
+    });
+    await server.register(deviceTokenRoute, { expectedClientId: clientId });
+    await server.register(deviceHtmlRoute, { origin });
   } else {
-    const disabledStub = (await import('./routes/auth/disabled-stub.js')).default;
+    const disabledStub = (await import('./routes/auth/disabled-stub.js'))
+      .default;
+    const deviceDisabledStub = (
+      await import('./routes/auth/device-disabled-stub.js')
+    ).default;
+    // Phase 29 disabled-stub covers /auth/{login,callback,logout,error};
+    // Plan 30-08 device-disabled-stub covers /auth/device/{code,token,verify}
+    // and GET /auth/device. Both mounted under the SAME `/auth` prefix —
+    // the disabled stubs use RELATIVE paths inside their plugins so prefix
+    // wiring is straightforward (unlike the enabled-mode device routes
+    // which use absolute paths and are registered at the top level above).
     await server.register(disabledStub, { prefix: '/auth' });
+    await server.register(deviceDisabledStub, { prefix: '/auth' });
   }
   // ─── end Phase 29 Plan 08 ───
 
