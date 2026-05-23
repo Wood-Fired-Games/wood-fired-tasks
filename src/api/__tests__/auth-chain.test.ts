@@ -369,6 +369,148 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
     });
   });
 
+  describe('WR-01: strategy DB errors → 500 INTERNAL_ERROR + auth.error log + auth.failure audit', () => {
+    // A throwing `apiTokenRepository.findByHash` (e.g. DB locked, connection
+    // lost, prepared-statement compile error from a runtime migration) must
+    // surface as a categorical 500 with:
+    //   - an `auth.error` log line carrying the underlying err object for
+    //     postmortem,
+    //   - an `auth.failure` audit line (strategy=legacy,
+    //     reasonCode=unknown_token) so aggregators watching the audit feed
+    //     stay aware of the outage,
+    //   - and a response body of `{ error: 'INTERNAL_ERROR' }` — NOT 401
+    //     (we should not pretend auth failed when it errored) and with no
+    //     token-shaped data.
+    //
+    // We need a separate harness with a throwing apiTokenRepository because
+    // `buildHarness` uses the real repository against an in-memory SQLite.
+    let throwHarness: TestHarness;
+
+    beforeAll(async () => {
+      // Reuse the buildHarness machinery but then swap the repository
+      // decoration with a throwing stub. The chain plugin reads the
+      // decoration at register time, so swap BEFORE register.
+      // Easier path: build a fresh harness that wires the throwing repo
+      // directly (avoid double-register).
+      process.env.API_KEYS = 'test-key';
+
+      const captured: string[] = [];
+      const dest = new Writable({
+        write(chunk, _enc, cb) {
+          captured.push(chunk.toString());
+          cb();
+        },
+      });
+      const logger = pino(
+        {
+          level: 'debug',
+          redact: {
+            paths: [...LOGGER_REDACT_CONFIG.paths],
+            censor: LOGGER_REDACT_CONFIG.censor,
+          },
+        },
+        dest,
+      );
+
+      const db = initDatabase(':memory:');
+      await runMigrations(db);
+      const entries = parseApiKeyEntries(process.env.API_KEYS);
+      seedIdentities(db, entries, { info: () => {}, warn: () => {} });
+      const userRepo = new UserRepository(db);
+
+      // Build a throwing api-token repo that mimics the real interface
+      // surface used by the PAT strategy + chain plugin.
+      const throwingApiTokenRepo = {
+        findByHash() {
+          throw new Error('database is locked');
+        },
+        touchLastUsed() {
+          /* no-op */
+        },
+        // Methods exercised by the routes module — unused here but kept so
+        // the structural shape matches.
+        insert() {
+          throw new Error('not implemented in throw-harness');
+        },
+        listByUser() {
+          return [];
+        },
+        revoke() {
+          return false;
+        },
+      };
+
+      const server: any = Fastify({ loggerInstance: logger as any });
+      server.decorate('userRepository', userRepo);
+      server.decorate('apiTokenRepository', throwingApiTokenRepo);
+      await server.register(authPlugin);
+
+      server.route({
+        method: 'GET',
+        url: '/api/v1/throw-probe',
+        config: {},
+        handler: async () => ({ ok: true }),
+      });
+
+      await server.ready();
+
+      throwHarness = {
+        server,
+        db,
+        legacyUserId: 0,
+        captured,
+        drain: () => {
+          captured.length = 0;
+        },
+      };
+    });
+
+    afterAll(async () => {
+      await throwHarness.server.close();
+      throwHarness.db.close();
+    });
+
+    beforeEach(() => {
+      throwHarness.drain();
+    });
+
+    it('throwing findByHash on a valid-shape Bearer PAT → 500 INTERNAL_ERROR', async () => {
+      const res = await throwHarness.server.inject({
+        method: 'GET',
+        url: '/api/v1/throw-probe',
+        headers: {
+          authorization: 'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+        },
+      });
+      expect(res.statusCode).toBe(500);
+      const body = JSON.parse(res.body);
+      expect(body).toEqual({ error: 'INTERNAL_ERROR' });
+      // Body MUST NOT leak the offending token bytes or stack.
+      expect(res.body).not.toContain('wfb_pat_');
+      expect(res.body).not.toContain('database is locked');
+    });
+
+    it('emits an auth.error log carrying err + requestId, AND an auth.failure audit line', async () => {
+      const res = await throwHarness.server.inject({
+        method: 'GET',
+        url: '/api/v1/throw-probe',
+        headers: {
+          authorization: 'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+        },
+      });
+      expect(res.statusCode).toBe(500);
+      const allLogs = throwHarness.captured.join('');
+      // auth.error structured log carries the underlying err object.
+      expect(allLogs).toMatch(/"msg":"auth\.error"/);
+      expect(allLogs).toMatch(/"message":"database is locked"/);
+      // auth.failure audit line — categorical reasonCode reused from the
+      // existing enum (not widened).
+      expect(allLogs).toMatch(/"tag":"auth\.failure"/);
+      expect(allLogs).toMatch(/"strategy":"legacy"/);
+      expect(allLogs).toMatch(/"reasonCode":"unknown_token"/);
+    });
+  });
+
   describe('full-stack regression — /health scope split preserved', () => {
     // The full createServer path is tested in auth.test.ts (legacy) and the
     // /health scope-split is exercised by rate-limit.test.ts +

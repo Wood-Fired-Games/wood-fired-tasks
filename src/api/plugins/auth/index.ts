@@ -199,6 +199,42 @@ function sendUnauthorized(
   });
 }
 
+/**
+ * Strategy chain threw (DB locked, connection lost, prepared-statement
+ * compile error from a runtime migration, etc.). Surface as a categorical
+ * 500 — explicitly NOT a 401, because pretending auth failed would
+ * mis-route operators and make a degraded DB indistinguishable from a
+ * brute-force probe. Two log lines:
+ *
+ *   1. `auth.error` (request.log.error) — carries the underlying `err`
+ *      object for postmortem.
+ *   2. `auth.failure` warn line via logAuthFailure — keeps the audit feed
+ *      aware that an authentication attempt did NOT succeed during the
+ *      outage window. Reuses the Phase 27 AuthFailureReason enum
+ *      ('unknown_token') so we don't widen the enum just to carry an
+ *      operational signal; the `auth.error` line above is where the
+ *      diagnostics live.
+ *
+ * Response body is `{ error: 'INTERNAL_ERROR' }` — no `reasonCode`, no
+ * stack, no token-shaped data. Threat T-28-04-02 still applies.
+ *
+ * WR-01 (Phase 28 review).
+ */
+function sendInternalError(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  err: unknown,
+): void {
+  request.log.error({ err, requestId: request.id }, 'auth.error');
+  logAuthFailure(request.log, {
+    strategy: 'legacy',
+    reasonCode: 'unknown_token',
+    requestId: request.id,
+    peerIp: request.ip,
+  });
+  reply.code(500).send({ error: 'INTERNAL_ERROR' });
+}
+
 const authChainImpl: FastifyPluginAsync = async (fastify) => {
   // Parse and (in production) validate API_KEYS at register time so a
   // misconfigured prod boot fails fast. Same fail-fast semantics as the
@@ -241,64 +277,85 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
         return;
       }
 
-      // 1. PAT
-      const patOutcome = await tryPat(request, patDeps);
-      if (patOutcome.kind === 'fail') {
-        return sendUnauthorized(request, reply, 'pat', patOutcome.reasonCode);
-      }
-      if (patOutcome.kind === 'match') {
-        applyPrincipal(request, patOutcome.result);
-        scheduleLastUsedTouch(
-          fastify,
-          patOutcome.result.tokenId,
-          request.log,
-        );
-        if (enforceSessionOnly(request, reply)) return;
-        return;
-      }
+      // WR-01 (Phase 28 review) — wrap the entire chain walk so that a
+      // throwing strategy (e.g. `apiTokenRepository.findByHash` raising
+      // because the DB is locked) becomes a categorical 500 with an
+      // `auth.error` log AND an `auth.failure` audit line, rather than
+      // a generic Fastify 500 that the audit aggregator never sees. We
+      // deliberately do NOT downgrade to 401 — a degraded DB should not
+      // look like a brute-force probe.
+      try {
+        // 1. PAT
+        const patOutcome = await tryPat(request, patDeps);
+        if (patOutcome.kind === 'fail') {
+          return sendUnauthorized(
+            request,
+            reply,
+            'pat',
+            patOutcome.reasonCode,
+          );
+        }
+        if (patOutcome.kind === 'match') {
+          applyPrincipal(request, patOutcome.result);
+          scheduleLastUsedTouch(
+            fastify,
+            patOutcome.result.tokenId,
+            request.log,
+          );
+          if (enforceSessionOnly(request, reply)) return;
+          return;
+        }
 
-      // 2. Session stub (Phase 28 always returns 'skip'; Phase 29 fills in)
-      const sessionOutcome = await trySession(request, {});
-      if (sessionOutcome.kind === 'fail') {
-        // Defensive — Phase 28 stub never returns fail. Keep the branch so
-        // Phase 29's swap doesn't need to add it.
-        return sendUnauthorized(
-          request,
-          reply,
-          'session',
-          sessionOutcome.reasonCode,
-        );
-      }
-      if (sessionOutcome.kind === 'match') {
-        applyPrincipal(request, sessionOutcome.result);
-        if (enforceSessionOnly(request, reply)) return;
-        return;
-      }
+        // 2. Session stub (Phase 28 always returns 'skip'; Phase 29 fills in)
+        const sessionOutcome = await trySession(request, {});
+        if (sessionOutcome.kind === 'fail') {
+          // Defensive — Phase 28 stub never returns fail. Keep the branch so
+          // Phase 29's swap doesn't need to add it.
+          return sendUnauthorized(
+            request,
+            reply,
+            'session',
+            sessionOutcome.reasonCode,
+          );
+        }
+        if (sessionOutcome.kind === 'match') {
+          applyPrincipal(request, sessionOutcome.result);
+          if (enforceSessionOnly(request, reply)) return;
+          return;
+        }
 
-      // 3. Legacy API_KEYS
-      const legacyOutcome = await tryLegacy(request, {
-        userRepository: fastify.userRepository,
-        hashedEntries,
-      });
-      if (legacyOutcome.kind === 'fail') {
+        // 3. Legacy API_KEYS
+        const legacyOutcome = await tryLegacy(request, {
+          userRepository: fastify.userRepository,
+          hashedEntries,
+        });
+        if (legacyOutcome.kind === 'fail') {
+          return sendUnauthorized(
+            request,
+            reply,
+            'legacy',
+            legacyOutcome.reasonCode,
+          );
+        }
+        if (legacyOutcome.kind === 'match') {
+          applyPrincipal(request, legacyOutcome.result, legacyOutcome.label);
+          if (enforceSessionOnly(request, reply)) return;
+          return;
+        }
+
+        // 4. Catch-all — no strategy saw a credential. Per Plan-04 Decision
+        // Q6, the audit log records `strategy: 'legacy', reasonCode:
+        // 'missing_credential'` so the failure mode matches the pre-split
+        // plugin's "missing X-API-Key" branch.
         return sendUnauthorized(
           request,
           reply,
           'legacy',
-          legacyOutcome.reasonCode,
+          'missing_credential',
         );
+      } catch (err) {
+        return sendInternalError(request, reply, err);
       }
-      if (legacyOutcome.kind === 'match') {
-        applyPrincipal(request, legacyOutcome.result, legacyOutcome.label);
-        if (enforceSessionOnly(request, reply)) return;
-        return;
-      }
-
-      // 4. Catch-all — no strategy saw a credential. Per Plan-04 Decision
-      // Q6, the audit log records `strategy: 'legacy', reasonCode:
-      // 'missing_credential'` so the failure mode matches the pre-split
-      // plugin's "missing X-API-Key" branch.
-      return sendUnauthorized(request, reply, 'legacy', 'missing_credential');
     },
   );
 };
