@@ -5,27 +5,27 @@
 //   GET    /api/v1/me/tokens         — list
 //   DELETE /api/v1/me/tokens/:id     — revoke
 //
-// SESSION STUB STRATEGY
-// ---------------------
-// There is no real session backend in Phase 28 (the session strategy at
-// src/api/plugins/auth/strategies/session.ts always returns `{ kind: 'skip' }`;
-// Phase 29 ships the real implementation). The chain plugin imports the
-// strategy's `tryAuth` statically at module-load time, so a plain
-// `vi.spyOn(sessionStrategy, 'tryAuth')` would NOT intercept calls — the
-// chain captures the function reference before the spy is installed.
+// PHASE 29 REFACTOR (Plan 29-09) — real session injection
+// -------------------------------------------------------
+// The Phase 28 version of this file used `vi.mock('...session.js', ...)`
+// because no real session backend existed (Phase 28's session strategy
+// returned `{ kind: 'skip' }` unconditionally). Phase 29 ships the real
+// strategy + @fastify/secure-session cookie plumbing, so this file now
+// uses the production cookie path end-to-end via `signInSessionFor`:
 //
-// Solution: `vi.mock('../plugins/auth/strategies/session.js', ...)` with a
-// module-level mutable `nextSessionResult` that individual tests toggle.
-// `beforeEach` resets it to `{ kind: 'skip' }` so a forgotten override in
-// one test cannot leak into the next.
+//   1. `SESSION_COOKIE_SECRET` is set in `beforeAll` so the boot-time
+//      conditional at `src/api/server.ts:301` registers secure-session.
+//   2. `signInSessionFor(harness.server, userId)` mounts a one-time
+//      `/__test/session-sign-in` probe route, calls it, and returns the
+//      production session cookie. Subsequent `inject()` calls attach the
+//      cookie via `headers.cookie`; the production session strategy in
+//      `src/api/plugins/auth/strategies/session.ts` reads it, calls
+//      `userRepository.findById`, and emits a real `{ kind: 'match' }`.
 //
-// PHASE-29 MIGRATION NOTE
-// -----------------------
-// When Phase 29 lands the real session backend, this `vi.mock(...)` block
-// becomes wrong (the production strategy will actually parse cookies). The
-// migration path is to replace the mock with a real cookie-injection
-// helper that round-trips through the production code; until then, the
-// stub here is the only way to exercise the sessionOnly enforcement gate.
+// Strictly stronger than the Phase 28 mock: exercises the real session
+// strategy + cookie crypto + auth chain instead of stubbing the strategy's
+// return value. The 21 existing test cases retain their original
+// assertions.
 
 import {
   describe,
@@ -36,28 +36,12 @@ import {
   beforeEach,
   vi,
 } from 'vitest';
+import { randomBytes } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 import type Database from 'better-sqlite3';
-import type {
-  AuthenticatedUser,
-  AuthResult,
-} from '../../types/identity.js';
-import type { StrategyOutcome } from '../plugins/auth/strategies/types.js';
-
-// ---------------------------------------------------------------------------
-// Session-strategy mock
-// ---------------------------------------------------------------------------
-// Module-level mutable knob the chain plugin's static `import {tryAuth as
-// trySession} from './strategies/session.js'` sees. Default `skip` so any
-// test that forgets to set a session falls through to the legacy / no-auth
-// branches as expected.
-let nextSessionResult: StrategyOutcome = { kind: 'skip' };
-
-vi.mock('../plugins/auth/strategies/session.js', () => ({
-  tryAuth: async () => nextSessionResult,
-}));
-
-import { createServer } from '../server.js';
+import type { AuthenticatedUser } from '../../types/identity.js';
+import { resetConfig } from '../../config/env.js';
+import { signInSessionFor } from '../../../tests/helpers/session-cookie.js';
 import { generateToken, hashToken } from '../../services/pat-hash.js';
 
 // ---------------------------------------------------------------------------
@@ -87,15 +71,6 @@ function asAuthenticated(row: {
     isLegacy: row.is_legacy === 1,
     isServiceAccount: row.is_service_account === 1,
   };
-}
-
-function sessionMatch(user: AuthenticatedUser): StrategyOutcome {
-  const result: AuthResult = {
-    user,
-    authMethod: 'session',
-    tokenId: null,
-  };
-  return { kind: 'match', result };
 }
 
 /**
@@ -171,9 +146,22 @@ function mintPatViaDb(
 
 describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   let harness: Harness;
+  // Per-test session cookie for the legacy user. Re-issued in beforeEach
+  // so a previous test's session-mutation can't leak across boundaries.
+  // The second user's cookie is intentionally NOT minted — cross-user
+  // isolation tests exercise the case where legacyUser holds the cookie
+  // and targets a row belonging to secondUser.
+  let legacyUserCookie: string;
 
   beforeAll(async () => {
     process.env.API_KEYS = 'test-key';
+    // Phase 29: enable @fastify/secure-session so the production session
+    // strategy can read `session.user`. The boot-time conditional at
+    // `src/api/server.ts:301` gates secure-session on this var.
+    process.env.SESSION_COOKIE_SECRET = randomBytes(32).toString('base64');
+    delete process.env.NODE_ENV;
+    resetConfig();
+    const { createServer } = await import('../server.js');
     const result = await createServer({ dbPath: ':memory:' });
     const server = result.server;
     const db = result.app.db;
@@ -228,17 +216,23 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   afterAll(async () => {
     await harness.server.close();
     harness.db.close();
+    delete process.env.SESSION_COOKIE_SECRET;
+    resetConfig();
     vi.restoreAllMocks();
   });
 
-  beforeEach(() => {
-    // Each test must explicitly opt-in to a session by setting
-    // nextSessionResult inside the test body. The default is `skip` so the
-    // chain falls through to legacy / no-auth as production does.
-    nextSessionResult = { kind: 'skip' };
+  beforeEach(async () => {
     // Wipe any leftover tokens so list / revoke counts are deterministic
     // per test.
     harness.db.prepare('DELETE FROM api_tokens').run();
+    // Re-mint the legacy user's session cookie via the production cookie
+    // path (signInSessionFor mounts a /__test/session-sign-in probe route
+    // on first call). Tests that need to be unauthenticated simply omit
+    // the cookie header.
+    legacyUserCookie = await signInSessionFor(
+      harness.server,
+      harness.legacyUser.id,
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -246,12 +240,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   // -------------------------------------------------------------------------
   describe('POST /api/v1/me/tokens', () => {
     it('1. mints a token with session auth and returns the full token exactly once', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
-
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: { name: 'laptop' },
       });
 
@@ -322,13 +314,12 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('4. persists scopes and expiresAt when supplied', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const expiresAt = '2099-01-01T00:00:00.000Z';
 
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: {
           name: 'with-scopes',
           scopes: ['a', 'b'],
@@ -361,22 +352,20 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('rejects invalid body (missing name) with 400', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: {},
       });
       expect(res.statusCode).toBe(400);
     });
 
     it('WR-02: rejects oversized scopes array (>32 elements) with 400', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: {
           name: 'too-many-scopes',
           scopes: Array.from({ length: 33 }, (_, i) => `scope${i}`),
@@ -391,11 +380,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('WR-02: rejects oversized scope string (>64 chars) with 400', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: {
           name: 'oversized-scope-elem',
           scopes: ['a'.repeat(65)],
@@ -409,11 +397,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('WR-02: accepts the cap exactly (32 scopes, 64-char elements)', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: {
           name: 'at-the-cap',
           scopes: Array.from({ length: 32 }, () => 'a'.repeat(64)),
@@ -426,11 +413,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('WR-02: rejects empty-string scope element (min(1)) with 400', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: {
           name: 'empty-scope',
           scopes: [''],
@@ -466,12 +452,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         createdAt: '2026-03-01T00:00:00.000Z',
       });
 
-      nextSessionResult = sessionMatch(harness.legacyUser);
-
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
 
       expect(res.statusCode).toBe(200);
@@ -519,11 +503,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('returns an empty array when the user has no tokens', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body)).toEqual([]);
@@ -539,12 +522,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         userId: harness.legacyUser.id,
       });
 
-      nextSessionResult = sessionMatch(harness.legacyUser);
-
       const res = await harness.server.inject({
         method: 'DELETE',
         url: `/api/v1/me/tokens/${id}`,
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(res.statusCode).toBe(204);
       expect(res.body).toBe('');
@@ -561,12 +542,11 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         name: 'belongs-to-user-b',
       });
 
-      nextSessionResult = sessionMatch(harness.legacyUser);
-
+      // Authenticate AS legacyUser; the target id belongs to secondUser.
       const res = await harness.server.inject({
         method: 'DELETE',
         url: `/api/v1/me/tokens/${id}`,
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
 
       expect(res.statusCode).toBe(404);
@@ -587,19 +567,17 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         userId: harness.legacyUser.id,
       });
 
-      nextSessionResult = sessionMatch(harness.legacyUser);
-
       const first = await harness.server.inject({
         method: 'DELETE',
         url: `/api/v1/me/tokens/${id}`,
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(first.statusCode).toBe(204);
 
       const second = await harness.server.inject({
         method: 'DELETE',
         url: `/api/v1/me/tokens/${id}`,
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(second.statusCode).toBe(404);
       const body = JSON.parse(second.body);
@@ -607,11 +585,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     });
 
     it('returns 404 for a nonexistent token id', async () => {
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const res = await harness.server.inject({
         method: 'DELETE',
         url: '/api/v1/me/tokens/999999',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(res.statusCode).toBe(404);
     });
@@ -648,11 +625,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   describe('end-to-end lifecycle (case 10)', () => {
     it('mint → use as PAT → list → revoke → re-use returns 401', async () => {
       // 1. Mint via session-authed POST.
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const mintRes = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
         payload: { name: 'lifecycle-token' },
       });
       expect(mintRes.statusCode).toBe(201);
@@ -662,8 +638,7 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
 
       // 2. Use the minted PAT to hit a non-sessionOnly route. /api/v1/tasks
       //    accepts any auth method; we expect 200 because the PAT now
-      //    resolves the legacy user.
-      nextSessionResult = { kind: 'skip' };
+      //    resolves the legacy user. No cookie — Bearer-only path.
       const tasksOk = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/tasks',
@@ -672,11 +647,10 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(tasksOk.statusCode).toBe(200);
 
       // 3. List my tokens via session — the minted token appears.
-      nextSessionResult = sessionMatch(harness.legacyUser);
       const listRes = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/me/tokens',
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(listRes.statusCode).toBe(200);
       const listBody = JSON.parse(listRes.body) as Array<{
@@ -689,13 +663,12 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       const revokeRes = await harness.server.inject({
         method: 'DELETE',
         url: `/api/v1/me/tokens/${tokenId}`,
-        headers: { cookie: 'wfb_session=stub' },
+        headers: { cookie: legacyUserCookie },
       });
       expect(revokeRes.statusCode).toBe(204);
 
       // 5. Re-authenticate with the (now revoked) token — auth chain
       //    short-circuits to 401 via the PAT strategy's revoked branch.
-      nextSessionResult = { kind: 'skip' };
       const tasksFail = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/tasks',
