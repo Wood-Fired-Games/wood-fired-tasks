@@ -95,3 +95,172 @@ Issues we will prioritize include, but are not limited to:
   read-only access to write access on either MCP transport.
 
 Thank you for helping keep wood-fired-bugs and its users safe.
+
+## Authentication Architecture
+
+As of v1.6, the REST API supports three authentication strategies, tried
+in order by a Fastify chain plugin (`src/api/plugins/auth/index.ts`). The
+first strategy that produces a valid `request.user` wins; the request
+proceeds with that user's id stamped onto every write (`created_by_user_id`,
+`assignee_user_id`, `author_user_id`) and surfaced in the per-request audit
+log (`user_id`, `token_id`, `auth_method`).
+
+| Order | Strategy | Credential | Wire format |
+|-------|----------|------------|-------------|
+| 1 | **PAT (Personal Access Token)** | A token row in `personal_access_tokens` | `Authorization: Bearer wfb_pat_<…>` |
+| 2 | **Session** | An OIDC-derived sealed-box session cookie | `Cookie: wfb_session=<…>` |
+| 3 | **Legacy** | An entry in the `API_KEYS` env list | `X-API-Key: <…>` |
+
+The three strategies coexist intentionally — legacy keeps existing
+deployments running while operators migrate; PAT is the recommended
+machine credential; session is the recommended user credential.
+
+### PAT lifecycle
+
+PATs are minted from a logged-in `/me` web session **or** offline via the
+CLI (`tasks db mint-token`, see [`docs/CLI.md`](docs/CLI.md)). The raw
+token value is shown **once at mint time** — the database only stores a
+SHA-256 hash, so a lost PAT cannot be recovered (only re-minted). PATs
+have no expiry; revocation is explicit via the `/me` UI, the
+`DELETE /me/tokens/:id` endpoint, or `tasks logout` (revokes the active
+PAT and removes the local credentials file). Revoked PATs are rejected
+immediately on the next request — there is no cache.
+
+The PAT prefix (`wfb_pat_`) is part of the wire format: the remote MCP
+server and the CLI HTTP client switch their auth header based on the
+prefix, so the same env var (`WFB_API_KEY` for MCP, `API_KEY` for CLI)
+transparently accepts a PAT or a legacy key.
+
+### Session lifecycle
+
+OIDC sign-in (`/auth/login` → Google → `/auth/callback`) creates a
+sealed-box-encrypted cookie containing the user id and a small set of
+claims. The cookie:
+
+- Uses `SESSION_COOKIE_SECRET` (32 bytes, generated via
+  `openssl rand -base64 32`) as the sodium sealed-box key.
+- Has `maxAge=8h`, `httpOnly=true`, `sameSite=lax`, and
+  `secure=true` in production (`NODE_ENV=production`).
+- Has **no DB-side sessions table** — the cookie is self-contained.
+  Rotating `SESSION_COOKIE_SECRET` invalidates every active session
+  immediately because the existing cookies can no longer be decrypted.
+
+The OIDC flow itself uses **PKCE + state** to prevent CSRF / replay
+against the callback endpoint, and validates the issuer + audience
+against `OIDC_ISSUER_URL` + `OIDC_CLIENT_ID` before binding the local
+session.
+
+### Per-request audit
+
+Every authenticated request emits a structured pino log line carrying:
+
+- `user_id` — the local `users.id` (NULL for service accounts like
+  `mcp-bot` / `slack-bot` only when the bot row is missing; the seed
+  guarantees they exist).
+- `token_id` — the `personal_access_tokens.id` when strategy=PAT; NULL
+  otherwise.
+- `auth_method` — one of `pat`, `session`, `legacy`.
+- `apiKeyLabel` — the human-friendly label for legacy keys, e.g.
+  `key_alice-laptop`. Absent for PAT / session.
+
+Failures emit a counterpart `tag: auth.failure` line with a coarse
+`reasonCode` (`missing_credential`, `unknown_token`, `revoked_token`, …)
+so secret values never appear in logs. The `auth-audit` helper enforces
+this — it is the **only** sanctioned way for the auth plugin to
+log into the request.
+
+## Legacy Auth Sunset Timeline
+
+The legacy `X-API-Key` strategy is deprecated as of v1.6 and scheduled for
+removal in v1.7. Every legacy-authed REST response carries two RFC 8594
+headers so clients can detect the deprecation programmatically:
+
+```
+Deprecation: true
+Sunset: 2026-12-31
+```
+
+The `Sunset` value comes from the `LEGACY_AUTH_SUNSET_DATE` env var
+(default `2026-12-31`, must be `YYYY-MM-DD`). PAT-authed and
+session-authed requests carry **neither** header — only legacy requests
+trigger the stamping.
+
+In addition, every legacy-authed request emits a `warn`-level log line:
+
+```json
+{
+  "level": 40,
+  "event": "legacy_auth_used",
+  "userId": 1,
+  "apiKeyLabel": "key_alice-laptop",
+  "requestId": "…",
+  "requestUrl": "/api/v1/tasks",
+  "sunset": "2026-12-31"
+}
+```
+
+Operators can aggregate the `legacy_auth_used` event over a rolling
+window to track sunset readiness — a steady decline to zero indicates
+clients have all migrated to PAT or session.
+
+**v1.6:** legacy keeps working; clients see the deprecation signals.
+**v1.7:** legacy strategy is removed from the chain; pre-flight refuses
+to boot if any legacy artefacts remain (see Runbook below).
+
+## v1.7 Sunset Runbook
+
+This runbook is the operator checklist for upgrading from v1.6 (legacy
++ PAT + session) to v1.7 (PAT + session only).
+
+### Pre-flight (run on v1.6 before upgrading)
+
+1. **Backfill identity FKs** for any historical rows still carrying
+   only the legacy TEXT identity columns. Idempotent; safe to re-run.
+
+   ```bash
+   # Dry-run first — review the per-mapping summary.
+   node dist/cli/bin/tasks.js db migrate-identities
+
+   # Apply.
+   node dist/cli/bin/tasks.js db migrate-identities --commit
+   ```
+
+   Unmatched TEXT values default to the lowest-id `is_legacy=1` user.
+   Override per-string with `--alias-map <file>` (JSON object,
+   `{"alice@example.com": 42, …}`) or pass `--user-fallback skip` to
+   leave NULLs in place for later manual review.
+
+2. **Audit `legacy_auth_used` log volume** over the past 7 days. Any
+   non-zero count indicates clients still using `X-API-Key` — they will
+   break on v1.7. Migrate them to PAT (`tasks login` → cache PAT, or
+   `tasks db mint-token` for headless agents) before proceeding.
+
+3. **Confirm all PATs are minted and distributed.** Each operator /
+   service account that needs API access should have a PAT in hand. The
+   `mcp-bot` and `slack-bot` service-account rows are seeded
+   automatically; their PATs (if any) are operator-minted via
+   `tasks db mint-token --user-display-name mcp-bot`.
+
+4. **Take a database backup.**
+
+   ```bash
+   node dist/cli/bin/tasks.js backup --out /var/backups/wfb-pre-v1.7.db
+   ```
+
+### v1.7 actions (applied by the v1.7 release)
+
+- Drops the legacy TEXT identity columns: `tasks.created_by`,
+  `tasks.assignee`, `task_comments.author`. The parallel `*_user_id`
+  FK columns become the only identity record.
+- Removes `API_KEYS` env support and the legacy strategy from the auth
+  chain. Requests carrying only `X-API-Key` will fail with `401`.
+- Adds a boot-time pre-flight check that refuses to start if any row
+  in `tasks` / `task_comments` has a NULL identity FK that was
+  previously populated via the TEXT column. Override with `--force`
+  only after acknowledging that those rows will lose their author
+  attribution.
+
+The `tasks db migrate-identities` tool is intentionally idempotent so
+the pre-flight backfill can be scripted and re-run safely up to (and
+including) the v1.7 upgrade window.
+

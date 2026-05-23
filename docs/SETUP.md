@@ -73,6 +73,142 @@ task data and Slack workspace.
    Do not try to "remember which value was where" — rotate first, audit
    later.
 
+## OIDC (Google) Configuration
+
+OIDC (OpenID Connect) is the **recommended** auth path as of v1.6. It
+replaces the legacy `X-API-Key` model with per-user identity, browser SSO
+via Google, and PATs (Personal Access Tokens) minted from a logged-in
+session. The legacy `X-API-Key` path keeps working through the v1.7 sunset
+date — see [`SECURITY.md`](../SECURITY.md) → **Legacy Auth Sunset
+Timeline**.
+
+OIDC is fully **optional**. Leaving all four `OIDC_*` env vars unset keeps
+the server in legacy mode; PAT minting + the web login UI are gated on the
+same env vars, so they simply do not register.
+
+### 1. Create the Google OAuth client
+
+1. Visit the [Google Cloud Console](https://console.cloud.google.com/) and
+   pick (or create) the project that will own the OAuth client.
+2. **APIs & Services → Credentials → Create Credentials → OAuth client
+   ID**.
+3. Application type: **Web application**.
+4. Authorised JavaScript origins: the public origin of your server,
+   e.g. `http://localhost:3000` for local dev or
+   `https://bugs.example.com` for production.
+5. Authorised redirect URIs: append `/auth/callback` to each origin,
+   e.g. `http://localhost:3000/auth/callback`.
+6. **Create** — copy the generated Client ID and Client Secret. The
+   secret is shown only once.
+
+### 2. Set the OIDC env vars
+
+Add the following to your `.env` (or your secret manager). All four
+`OIDC_*` vars are validated as a group — set all of them or none.
+
+```bash
+# Identity provider issuer URL. For Google this is fixed.
+OIDC_ISSUER_URL=https://accounts.google.com
+
+# From the Google Cloud Console step above.
+OIDC_CLIENT_ID=your-client-id.apps.googleusercontent.com
+OIDC_CLIENT_SECRET=your-client-secret
+
+# Must exactly match an entry on the "Authorised redirect URIs" list.
+OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
+
+# Optional — defaults to "openid email profile". The server requires at
+# minimum "openid email" to map the OIDC subject to a local user row.
+OIDC_SCOPES=openid email profile
+```
+
+### 3. Generate the session cookie secret
+
+Required whenever OIDC is enabled. The cookie is a sodium sealed-box,
+keyed on a 32-byte secret. Generate with:
+
+```bash
+openssl rand -base64 32
+```
+
+Then set:
+
+```bash
+# Must decode to exactly 32 bytes; the server refuses to boot otherwise.
+SESSION_COOKIE_SECRET=<output of openssl rand -base64 32>
+
+# Optional — the cookie name. Defaults to wfb_session.
+SESSION_COOKIE_NAME=wfb_session
+```
+
+[CRITICAL] Treat `SESSION_COOKIE_SECRET` as a production-grade secret.
+Rotating it invalidates every active session immediately — every user
+must log in again.
+
+### 4. (Optional) Set the legacy sunset date
+
+The server stamps `Deprecation: true` + `Sunset: <date>` headers on every
+REST request that authenticated via the legacy `X-API-Key` path. The
+default sunset date is `2026-12-31` (six months after v1.6 ship). Override
+with:
+
+```bash
+# Must be a valid calendar date in YYYY-MM-DD form.
+LEGACY_AUTH_SUNSET_DATE=2026-12-31
+```
+
+### 5. Verify the OIDC flow
+
+1. Restart the server (`npm run dev` locally).
+2. In a browser, visit `http://localhost:3000/auth/login`.
+3. You should be redirected to Google, complete consent, and land on
+   `/me`. The `/me` page shows your email, display name, and a list of
+   your PATs.
+4. From `/me` you can mint a new PAT (the value is shown **once**, copy
+   it then) or revoke an existing one.
+
+### 6. Bootstrap a PAT without a browser (servers, CI, headless agents)
+
+For deployments where no browser is available, mint the first PAT
+directly against the SQLite database:
+
+```bash
+# Adds a row to personal_access_tokens for the named user.
+node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
+```
+
+The command prints the raw PAT to stdout once. Use it as the
+`Authorization: Bearer wfb_pat_<…>` value on subsequent requests, or as
+the `WFB_API_KEY` env var in MCP and CLI clients (the REST client switches
+to `Authorization: Bearer …` automatically when the value starts with
+`wfb_pat_`). See [`SECURITY.md`](../SECURITY.md) →
+**Authentication Architecture** for the full chain.
+
+### 7. Migrating from an `API_KEYS`-only deployment
+
+Historical task / comment rows that pre-date v1.6 have NULL identity FKs
+(`tasks.created_by_user_id`, `tasks.assignee_user_id`,
+`task_comments.author_user_id`) because the legacy TEXT columns were the
+only identity record at the time. Backfill the FKs from the TEXT columns
+with:
+
+```bash
+# Dry-run — prints a per-mapping summary, no writes.
+node dist/cli/bin/tasks.js db migrate-identities
+
+# Apply. Idempotent: safe to re-run.
+node dist/cli/bin/tasks.js db migrate-identities --commit
+```
+
+Unmatched TEXT values default to the lowest-id `is_legacy=1` user.
+Override per-string with `--alias-map <file>`; pass
+`--user-fallback skip` to leave the FK NULL when no mapping is found.
+The CLI is detailed in [`CLI.md`](CLI.md).
+
+[NOTE] Re-running `migrate-identities --commit` is a no-op once every
+matchable row has been backfilled — the UPDATE is guarded by
+`AND <fk_col> IS NULL`.
+
 ## Development Setup
 
 ### 1. Clone and Install

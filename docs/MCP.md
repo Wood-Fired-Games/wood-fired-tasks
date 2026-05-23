@@ -112,6 +112,74 @@ installs](SETUP.md#migration-removing-an-unused-api-key-from-older-local-install
 if your existing `wood-fired-bugs` entry contains a leftover
 `WOOD_FIRED_BUGS_API_KEY` — it can be removed.
 
+## Authentication
+
+The MCP server has two transports, and they authenticate differently:
+
+| Transport | Auth surface | Credential source |
+|-----------|--------------|-------------------|
+| **Local stdio** (`dist/mcp/index.js`) | None at the wire (filesystem-trusted). On boot, the server resolves `WFB_API_KEY` to a local `users` row and threads `actorUserId` into every write tool. | `WFB_API_KEY` env var (optional) |
+| **Remote HTTP** (`dist/mcp/remote/index.js`) | `WFB_API_KEY` forwarded to the REST API on every tool call. | `WFB_API_KEY` env var (required) |
+
+### Local MCP — boot-time identity resolution
+
+`WFB_API_KEY` accepts two value shapes; the local MCP server resolves
+them at boot:
+
+1. **PAT** — values starting with `wfb_pat_` are hashed (SHA-256) and
+   looked up in `personal_access_tokens`. The matched row's
+   `user_id` becomes the actor for every subsequent write tool call.
+   Revoked / unknown PATs fall back to `mcp-bot` (see below).
+2. **Legacy key** — anything else is matched against the `API_KEYS`
+   env list on the server side. A matching entry resolves to the
+   corresponding `users` row (the same one the legacy REST strategy
+   would resolve).
+3. **Unset / unresolved** — if `WFB_API_KEY` is missing, empty, or
+   matches no PAT/legacy entry, the actor falls back to the seeded
+   `mcp-bot` service-account row. Writes are attributed to that bot.
+
+The fallback is opportunistic — the MCP server stays usable even
+without a credential — but the resulting writes lack per-operator
+attribution, so deployments that audit by user should always supply a
+real PAT.
+
+[NOTE] The `mcp-bot` row is seeded unconditionally on first boot.
+`tasks db mint-token --user-display-name mcp-bot` mints a PAT bound
+to that row if you'd rather have an explicit credential than rely on
+the fallback.
+
+### Remote MCP — header switching on prefix
+
+The remote bridge's REST client looks at the `WFB_API_KEY` value at
+startup and chooses the wire header by prefix:
+
+| `WFB_API_KEY` prefix | Outbound header |
+|----------------------|-----------------|
+| `wfb_pat_…` | `Authorization: Bearer wfb_pat_…` |
+| anything else | `X-API-Key: <value>` |
+
+The REST API's auth chain (PAT → session → legacy) decodes each
+appropriately. The remote bridge itself does not parse or validate the
+PAT — it forwards the credential and lets the server side enforce.
+
+### Recommended flow
+
+```bash
+# 1. Mint a PAT once via the web UI (/me) or the CLI for headless boxes:
+tasks login                           # browser flow on a workstation
+# or:
+node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
+
+# 2. Paste the PAT value into your MCP client config:
+#    "env": { "WFB_API_KEY": "wfb_pat_…" }
+
+# 3. Restart Claude Code. The MCP server (local or remote) picks up the
+#    PAT on next boot.
+```
+
+See [`../SECURITY.md`](../SECURITY.md) → **Authentication Architecture**
+for the full credential lifecycle (mint, hash storage, revocation).
+
 ## Remote MCP Server
 
 Wood Fired Bugs ships a **second** MCP server entry point (`npm run mcp:remote`, source under `src/mcp/remote/`) for the case where the bugs REST API runs on a different machine than the developer's MCP client. Instead of opening the SQLite file in-process, the remote server proxies every tool call to the deployed REST API over HTTP.

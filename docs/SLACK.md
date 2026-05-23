@@ -152,6 +152,63 @@ A handful of operational commands (`backup`, `doctor`, `stats`, `db-check`,
 recognises them and responds with a friendly "this is a CLI-only command,
 run `tasks <subcommand>` on the server" message rather than failing.
 
+## Identity mapping (Slack user → local user)
+
+Every `/tasks` slash command carries the invoking Slack user's id
+(`event.user_id`, format `U…`). As of v1.6 the handler maps that Slack
+id to a local `users` row via `UserRepository.findBySlackUserId`, and
+the resolved local user is stamped onto every write the command
+performs (`created_by_user_id`, `assignee_user_id`, etc.) — the same
+audit fields the REST and MCP surfaces populate.
+
+### How a Slack user gets bound
+
+There is no automatic Slack-side bootstrap. A local `users` row gets
+its `slack_user_id` column populated by an operator action — typically
+by editing the user row through the `/me` web UI (admin view) or by a
+one-off SQL update against the SQLite database.
+
+```sql
+-- Bind an existing local user (resolved by email) to a Slack id.
+UPDATE users
+   SET slack_user_id = 'U01ALICE'
+ WHERE email = 'alice@example.com';
+```
+
+After this update, the next `/tasks` command from `U01ALICE` resolves
+to the bound `users` row and every write is attributed to that user.
+
+### `slack-bot` fallback
+
+If `findBySlackUserId` returns no match — the Slack user has never
+been bound to a local user — the handler does **not** fail. It falls
+back to the seeded `slack-bot` service-account row and attributes the
+write to that bot, exactly mirroring the `mcp-bot` fallback on the MCP
+surface.
+
+The fallback emits a `warn`-level pino log line so operators can
+detect unbound Slack users:
+
+```json
+{
+  "level": 40,
+  "event": "slack_user_unmapped",
+  "slack_user_id": "U01UNKNOWN",
+  "fallback": "slack-bot"
+}
+```
+
+**Operator action when you see this log:** decide whether the Slack
+user should be a real local user (provision them via the web UI or
+direct DB update as shown above) or whether the fallback is intentional
+(e.g. a shared workspace bot). Repeated `slack_user_unmapped` lines for
+the same `slack_user_id` indicate a missing binding.
+
+[NOTE] The `slack-bot` row is seeded unconditionally on first boot
+alongside `mcp-bot`. Both are real `users` rows with `is_service=1`
+so foreign-key constraints from the identity columns always resolve,
+even before any operator binds a real user.
+
 ## Notifier behaviour
 
 The `SlackNotifier` ([`src/slack/notifier.ts`](../src/slack/notifier.ts))
