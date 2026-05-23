@@ -38,6 +38,11 @@ const ALLOWED_REASONS = new Set([
   'state_mismatch',
   'email_unverified',
   'exchange_failed',
+  // WR-05 fix: distinct reason for upsert/provisioning failures (DB
+  // error, FK violation, etc.). Surfaces operationally so operators can
+  // tell "Google bounced the user" (exchange_failed) from "our DB hiccupped
+  // during provisioning" (provisioning_failed) in logs and SLOs.
+  'provisioning_failed',
   'unknown',
 ]);
 

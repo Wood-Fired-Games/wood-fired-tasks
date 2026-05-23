@@ -102,4 +102,59 @@ describe('JIT provisioning (AUTH-02)', () => {
     const row = harness.userRepository.findByOidcSub('google', 'jit-unverified');
     expect(row).toBeNull();
   });
+
+  it('WR-05: upsertFromOidc throw clears handshake AND redirects to /auth/error?reason=provisioning_failed', async () => {
+    // Drive the login leg first so handshake state is in the session
+    // cookie, then patch the repository so the upsert throws on this
+    // request. The handler must catch, clear handshake, and bounce to
+    // /auth/error?reason=provisioning_failed (NOT Fastify's default 500
+    // with stale handshake still in the cookie).
+    const loginResp = await harness.server.inject({
+      method: 'GET',
+      url: '/auth/login',
+    });
+    expect(loginResp.statusCode).toBe(302);
+    const cookie = extractSessionCookie(loginResp);
+    expect(cookie).not.toBeNull();
+
+    const authorize = new URL(loginResp.headers.location as string);
+    const state = authorize.searchParams.get('state') ?? '';
+    const nonce = authorize.searchParams.get('nonce') ?? '';
+    await setupOidcHappyPath({ sub: 'jit-throw', state, nonce });
+
+    // Force upsertFromOidc -> userRepository.findByOidcSub to throw on
+    // this single request. Restored in the finally so subsequent tests
+    // see a clean repository.
+    const orig = harness.userRepository.findByOidcSub.bind(
+      harness.userRepository,
+    );
+    harness.userRepository.findByOidcSub = () => {
+      throw new Error('simulated DB outage');
+    };
+
+    try {
+      const cbResp = await harness.server.inject({
+        method: 'GET',
+        url: `/auth/callback?code=ac-jit-throw&state=${state}`,
+        headers: { cookie: cookie as string },
+      });
+      expect(cbResp.statusCode).toBe(302);
+      expect(cbResp.headers.location).toBe(
+        '/auth/error?reason=provisioning_failed',
+      );
+
+      // Handshake state must be cleared so a retry from /auth/login
+      // starts from a clean slate.
+      const post = extractSessionCookie(cbResp) ?? cookie;
+      const probe = await harness.server.inject({
+        method: 'GET',
+        url: '/_test/handshake',
+        headers: { cookie: post as string },
+      });
+      expect(probe.statusCode).toBe(200);
+      expect(JSON.parse(probe.body)).toEqual({ handshake: null });
+    } finally {
+      harness.userRepository.findByOidcSub = orig;
+    }
+  });
 });

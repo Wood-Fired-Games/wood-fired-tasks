@@ -161,15 +161,39 @@ const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
           ? claims.name
           : (emailClaim ?? claims.sub);
 
-      const row = upsertFromOidc(
-        { userRepository: fastify.userRepository },
-        {
-          provider: 'google',
-          sub: claims.sub,
-          email: emailClaim,
-          displayName,
-        },
-      );
+      // WR-05 fix — wrap upsert in try/catch. If the DB call throws
+      // (FK violation, constraint conflict, transient I/O error), we
+      // must clear the handshake before bouncing to the error page so
+      // a retry from /auth/login starts from a clean slate AND the user
+      // gets a documented retry UX (the /auth/error page) instead of
+      // Fastify's default 500 with stale handshake state still in the
+      // session cookie.
+      let row;
+      try {
+        row = upsertFromOidc(
+          { userRepository: fastify.userRepository },
+          {
+            provider: 'google',
+            sub: claims.sub,
+            email: emailClaim,
+            displayName,
+          },
+        );
+      } catch (err) {
+        request.log.error(
+          {
+            err,
+            requestId: request.id,
+            sub: claims.sub,
+            peerIp: request.ip,
+          },
+          'oidc.upsert_failed',
+        );
+        request.session.set('oidc.handshake', undefined);
+        return reply
+          .header('Cache-Control', 'no-store')
+          .redirect('/auth/error?reason=provisioning_failed', 302);
+      }
 
       // W4 — EXPLICITLY clear the handshake BEFORE writing the user.
       // Belt-and-braces: even if regenerate() is a no-op on this version
