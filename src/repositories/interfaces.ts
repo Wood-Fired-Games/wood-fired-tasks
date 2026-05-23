@@ -10,6 +10,7 @@ import type {
   Comment,
   CreateCommentDTO,
 } from '../types/task.js';
+import type { User, ApiToken } from '../types/identity.js';
 
 /**
  * Bounded pagination options accepted by every list-style repository call.
@@ -82,4 +83,41 @@ export interface ICommentRepository {
   findById(id: number): Comment | null;
   delete(id: number): boolean;
   countByTaskId(taskId: number): number;
+}
+
+/**
+ * Read-only repository for the `users` table (Phase 27 scope).
+ *
+ * Insert/update/delete methods are intentionally absent — write paths land
+ * in Phase 28 (PAT mint command) and Phase 29 (JIT OIDC provisioning).
+ */
+export interface IUserRepository {
+  /** Lookup a single user by primary key. */
+  findById(id: number): User | null;
+  /** Lookup by the composite (oidc_provider, oidc_sub) identity. */
+  findByOidcSub(provider: string, sub: string): User | null;
+  /** Lookup by the Slack user identifier (e.g. `U0123ABC`). */
+  findBySlackUserId(slackUserId: string): User | null;
+  /** Lookup an `is_legacy=1` user by display_name — idempotency key for seeder. */
+  findLegacyByDisplayName(displayName: string): User | null;
+  /** Admin: list every user, ordered by id ASC. */
+  listAll(): User[];
+}
+
+/**
+ * Read-only repository for the `api_tokens` table (Phase 27 scope).
+ *
+ * Insert/update/delete methods are intentionally absent — `mint` and
+ * `revoke` land in Phase 28.
+ */
+export interface IApiTokenRepository {
+  /** Lookup a single token row by primary key. */
+  findById(id: number): ApiToken | null;
+  /**
+   * Lookup by SHA-256 hash. Does NOT pre-filter `revoked_at IS NULL` —
+   * Phase 28's auth chain layers that check on top.
+   */
+  findByHash(hash: string): ApiToken | null;
+  /** List all tokens owned by a user, newest first (`created_at DESC`). */
+  listByUser(userId: number): ApiToken[];
 }
