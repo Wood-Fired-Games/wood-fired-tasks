@@ -173,6 +173,127 @@ describe('readCredentials', () => {
     if (POSIX) chmodSync(target, 0o600);
     expect(() => readCredentials(target)).toThrow(/malformed TOML/);
   });
+
+  // WR-05 (Phase 30 review) — shape validation post-parse.
+  describe('shape validation (WR-05)', () => {
+    it('throws actionable error when [active] table is absent', () => {
+      const target = join(tmpDir, 'no-active');
+      writeFileSync(
+        target,
+        '# Hand-edited - removed the active block\n',
+        { mode: 0o600 },
+      );
+      if (POSIX) chmodSync(target, 0o600);
+      expect(() => readCredentials(target)).toThrow(
+        /invalid shape at `active`/,
+      );
+      expect(() => readCredentials(target)).toThrow(/tasks login/);
+    });
+
+    it('throws when token is empty string', () => {
+      const target = join(tmpDir, 'empty-token');
+      writeFileSync(
+        target,
+        [
+          '[active]',
+          'token = ""',
+          'token_id = 1',
+          'server = "https://example.test"',
+          'user_id = 1',
+          'display_name = "X"',
+          'email = "x@example.test"',
+          'logged_in_at = "2026-05-23T00:00:00Z"',
+        ].join('\n'),
+        { mode: 0o600 },
+      );
+      if (POSIX) chmodSync(target, 0o600);
+      expect(() => readCredentials(target)).toThrow(
+        /invalid shape at `active\.token`/,
+      );
+    });
+
+    it('throws when token_id is not a positive integer', () => {
+      const target = join(tmpDir, 'bad-token-id');
+      writeFileSync(
+        target,
+        [
+          '[active]',
+          'token = "wfb_pat_x"',
+          'token_id = -3',
+          'server = "https://example.test"',
+          'user_id = 1',
+          'display_name = "X"',
+          'email = "x@example.test"',
+          'logged_in_at = "2026-05-23T00:00:00Z"',
+        ].join('\n'),
+        { mode: 0o600 },
+      );
+      if (POSIX) chmodSync(target, 0o600);
+      expect(() => readCredentials(target)).toThrow(
+        /invalid shape at `active\.token_id`/,
+      );
+    });
+
+    it('throws when user_id is missing entirely', () => {
+      const target = join(tmpDir, 'no-user-id');
+      writeFileSync(
+        target,
+        [
+          '[active]',
+          'token = "wfb_pat_x"',
+          'token_id = 1',
+          'server = "https://example.test"',
+          // user_id intentionally omitted
+          'display_name = "X"',
+          'email = "x@example.test"',
+          'logged_in_at = "2026-05-23T00:00:00Z"',
+        ].join('\n'),
+        { mode: 0o600 },
+      );
+      if (POSIX) chmodSync(target, 0o600);
+      expect(() => readCredentials(target)).toThrow(
+        /invalid shape at `active\.user_id`/,
+      );
+    });
+
+    it('accepts email = null (service-account / legacy user case)', () => {
+      const target = join(tmpDir, 'null-email');
+      writeFileSync(
+        target,
+        [
+          '[active]',
+          'token = "wfb_pat_x"',
+          'token_id = 1',
+          'server = "https://example.test"',
+          'user_id = 1',
+          'display_name = "X"',
+          // smol-toml encodes null as the absence of the key — we
+          // write the canonical sample via writeCredentials so the
+          // null is represented correctly.
+        ].join('\n'),
+        { mode: 0o600 },
+      );
+      // Use writeCredentials to produce a valid file with email=null
+      // rather than hand-rolling the TOML.
+      const validTarget = join(tmpDir, 'null-email-valid');
+      writeCredentials(
+        {
+          active: {
+            token: 'wfb_pat_x',
+            token_id: 1,
+            server: 'https://example.test',
+            user_id: 1,
+            display_name: 'X',
+            email: null,
+            logged_in_at: '2026-05-23T00:00:00Z',
+          },
+        },
+        validTarget,
+      );
+      const result = readCredentials(validTarget);
+      expect(result?.active.email).toBeNull();
+    });
+  });
 });
 
 describe('deleteCredentials', () => {

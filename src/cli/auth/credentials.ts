@@ -34,6 +34,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
+import { z } from 'zod';
 
 const POSIX = process.platform !== 'win32';
 
@@ -48,6 +49,47 @@ export interface Credentials {
     logged_in_at: string; // ISO 8601 UTC
   };
 }
+
+/**
+ * WR-05 (Phase 30 review) — Zod shape validator for the on-disk
+ * credentials file. Runs after `parse(body)` so a hand-edited file
+ * (missing `[active]`, mistyped key, wrong type) surfaces an actionable
+ * error message instead of a downstream `TypeError: Cannot destructure
+ * property 'server' of 'undefined'`.
+ *
+ * Field rules:
+ *   - `token`: non-empty string. PAT format `wfb_pat_<base64url>`; we
+ *     don't pin the prefix here because the legacy/raw-bearer migration
+ *     path (Phase 28 PATs) could in principle ship in different shapes.
+ *     "Non-empty" is the load-bearing invariant — anything else and the
+ *     API client would 401 anyway.
+ *   - `token_id`: positive integer. SQLite rowid is 1-based.
+ *   - `server`: non-empty string. We do NOT parse as a URL here because
+ *     historical credentials files survived without `--server` defaults;
+ *     downstream `apiRequest` validates the URL when it constructs the
+ *     fetch.
+ *   - `user_id`: positive integer.
+ *   - `display_name`: string (may be empty for service accounts).
+ *   - `email`: string or null.
+ *   - `logged_in_at`: string. We do NOT round-trip via Date.parse here
+ *     because `whoami` only displays the string; ISO 8601 conformance
+ *     is the writer's job (`tasks login`).
+ */
+const CredentialsSchema = z.object({
+  active: z.object({
+    token: z.string().min(1),
+    token_id: z.number().int().positive(),
+    server: z.string().min(1),
+    user_id: z.number().int().positive(),
+    display_name: z.string(),
+    // smol-toml omits keys whose value is null when serializing (TOML
+    // has no null literal), so after parse() the `email` slot can be
+    // EITHER a string OR `undefined`. Accept both shapes and normalize
+    // `undefined` → `null` below so callers see the documented union.
+    email: z.string().nullish(),
+    logged_in_at: z.string().min(1),
+  }),
+});
 
 export type AuthSource =
   | { kind: 'bearer'; token: string; origin: 'flag' | 'file' }
@@ -99,9 +141,34 @@ export function readCredentials(filePath: string = getCredentialsPath()): Creden
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`Credentials file is malformed TOML: ${msg}`);
   }
-  // Shape validation is deferred to callers — TOML structure guarantees an
-  // object with an `[active]` table when the file was written by us.
-  return parsed as Credentials;
+  // WR-05 (Phase 30 review) — validate shape AFTER TOML parse. A
+  // hand-edited file (missing [active], mistyped key, wrong type) used
+  // to surface as a downstream `TypeError: Cannot destructure property
+  // 'server' of 'undefined'` from whoami.ts / logout.ts. Replace that
+  // opaque message with an actionable one that tells the user how to
+  // recover.
+  const result = CredentialsSchema.safeParse(parsed);
+  if (!result.success) {
+    // z.ZodError exposes `.issues` — first issue's path + message is
+    // usually informative enough to point a user at the bad field.
+    const first = result.error.issues[0];
+    const fieldPath = first?.path.join('.') ?? '<root>';
+    const reason = first?.message ?? 'shape mismatch';
+    throw new Error(
+      `Credentials file ${filePath} has an invalid shape at \`${fieldPath}\`: ${reason}. ` +
+        `Run \`tasks login\` to regenerate the file.`,
+    );
+  }
+  // Normalize `email: undefined` → `email: null` so the Credentials
+  // interface contract (`email: string | null`) holds for callers.
+  // smol-toml's omit-on-null serialization is the reason undefined can
+  // appear here.
+  return {
+    active: {
+      ...result.data.active,
+      email: result.data.active.email ?? null,
+    },
+  };
 }
 
 export function writeCredentials(
