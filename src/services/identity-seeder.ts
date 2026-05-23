@@ -45,11 +45,15 @@ export interface IdentitySeedResult {
 /**
  * Idempotent boot-time seeder for legacy + service-account users.
  *
- * Behaviour (locked in 27-CONTEXT.md / 27-PLAN-CHECK.md):
+ * Behaviour (locked in 27-CONTEXT.md / 27-PLAN-CHECK.md, extended by
+ * Plan 31-01 to seed BOTH service-account rows):
  * - For each `API_KEYS` entry, ensures one `users` row with
  *   `display_name = entry.label, is_legacy = 1` exists.
- * - Unconditionally ensures one `users` row with
- *   `display_name = 'slack-bot', is_service_account = 1` exists.
+ * - Unconditionally ensures `users` rows with
+ *   `display_name = 'slack-bot', is_service_account = 1` AND
+ *   `display_name = 'mcp-bot',   is_service_account = 1` exist.
+ *   Both rows are seeded on every boot; `slack_user_id` stays NULL for both
+ *   (Slack-side identity is resolved at message time, not boot time).
  * - All writes occur inside ONE `db.transaction(() => {})()` -- crashing
  *   mid-seed leaves the table untouched.
  * - First-run: emits one INFO line per seeded row, tagged `event: 'identity-seeded'`.
@@ -86,11 +90,21 @@ export function seedIdentities(
      ON CONFLICT(display_name) WHERE is_legacy = 1 DO NOTHING`,
   );
 
+  // Phase 31 (Plan 31-01): parameterised so the same prepared statement
+  // seeds both 'slack-bot' AND 'mcp-bot'. The partial UNIQUE index
+  // idx_users_slack_bot covers ANY service-account display_name, so the
+  // conflict target works identically for both names.
   const insertServiceStmt = db.prepare(
     `INSERT INTO users (display_name, is_service_account)
-     VALUES ('slack-bot', 1)
+     VALUES (?, 1)
      ON CONFLICT(display_name) WHERE is_service_account = 1 DO NOTHING`,
   );
+
+  // The list of service-account display_names seeded on every boot. Order
+  // matters for log determinism (slack-bot first, mcp-bot second) and matches
+  // the historical 27-Phase ordering — slack-bot was seeded first, mcp-bot
+  // is the Phase-31 addition.
+  const SERVICE_ACCOUNT_NAMES = ['slack-bot', 'mcp-bot'] as const;
 
   // Buffer log events; emit AFTER the transaction commits so a rollback
   // doesn't leave misleading 'identity-seeded' lines in the log for rows
@@ -123,16 +137,21 @@ export function seedIdentities(
       }
     }
 
-    const serviceInfo = insertServiceStmt.run();
-    if (serviceInfo.changes > 0) {
-      result.seeded.service += 1;
-      pending.push({
-        kind: 'service',
-        userId: serviceInfo.lastInsertRowid,
-        displayName: 'slack-bot',
-      });
-    } else {
-      result.alreadyPresent.service += 1;
+    // Phase 31 (Plan 31-01): seed each service account by name. Each
+    // `info.changes` is reported independently so the per-row event log
+    // and seeded/alreadyPresent counters remain accurate.
+    for (const name of SERVICE_ACCOUNT_NAMES) {
+      const serviceInfo = insertServiceStmt.run(name);
+      if (serviceInfo.changes > 0) {
+        result.seeded.service += 1;
+        pending.push({
+          kind: 'service',
+          userId: serviceInfo.lastInsertRowid,
+          displayName: name,
+        });
+      } else {
+        result.alreadyPresent.service += 1;
+      }
     }
   })();
 

@@ -32,9 +32,13 @@ export class CommentRepository implements ICommentRepository {
 
   constructor(private db: Database.Database) {
     // Prepare reusable statements
+    // Phase 31 (Plan 31-01): `author_user_id` is the FK companion to the
+    // existing TEXT `author` column. Stays NULL when the caller does not
+    // pre-resolve the displayName -> users.id mapping (back-compat for
+    // every pre-Phase-31 call site).
     this.insertStmt = db.prepare(`
-      INSERT INTO task_comments (task_id, author, content, created_at)
-      VALUES (@task_id, @author, @content, @created_at)
+      INSERT INTO task_comments (task_id, author, content, created_at, author_user_id)
+      VALUES (@task_id, @author, @content, @created_at, @author_user_id)
     `);
 
     this.findByIdStmt = db.prepare(
@@ -60,6 +64,9 @@ export class CommentRepository implements ICommentRepository {
       author: dto.author,
       content: dto.content,
       created_at: now,
+      // Phase 31: bind the FK column. Same edit as the SQL above
+      // (Pitfall 2 — SQL/binding skew).
+      author_user_id: dto.author_user_id ?? null,
     });
 
     const commentId = info.lastInsertRowid as number;
