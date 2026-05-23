@@ -40,7 +40,34 @@ export class UserRepository implements IUserRepository {
     return mapRow<User>(this.findByIdStmt, id) ?? null;
   }
 
+  /**
+   * Looks up a user by their OIDC (provider, sub) pair.
+   *
+   * Both columns are nullable in the schema (legacy users with no OIDC binding
+   * keep them NULL). The TypeScript signature already requires non-null
+   * `string` params, but `oidc_provider = ? AND oidc_sub = ?` would silently
+   * return zero rows if a caller bypassed the types and passed `null`
+   * (because `NULL = NULL` is `NULL`, not true, in SQL). That silent
+   * zero-row match is the classic "find legacy user with no OIDC mapping"
+   * footgun called out in WR-03 of 27-REVIEW.md.
+   *
+   * Throw loudly on null/undefined/empty inputs so a type-bypass at the
+   * callsite (`as any`, dynamic JSON input, etc.) fails fast instead of
+   * leaking a meaningless "user not found".
+   *
+   * @throws TypeError when `provider` or `sub` is null, undefined, or empty.
+   */
   findByOidcSub(provider: string, sub: string): User | null {
+    if (provider == null || provider === '') {
+      throw new TypeError(
+        'UserRepository.findByOidcSub: provider must be a non-empty string',
+      );
+    }
+    if (sub == null || sub === '') {
+      throw new TypeError(
+        'UserRepository.findByOidcSub: sub must be a non-empty string',
+      );
+    }
     return mapRow<User>(this.findByOidcSubStmt, provider, sub) ?? null;
   }
 

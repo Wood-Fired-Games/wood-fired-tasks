@@ -105,6 +105,27 @@ describe('UserRepository', () => {
       expect(noMatch).toBeNull();
     });
 
+    it('throws TypeError when provider is null/undefined/empty (defensive type-bypass guard)', () => {
+      // WR-03 defense-in-depth: a caller that bypasses the TS signature
+      // (e.g. dynamic JSON input, `as any`) must NOT be able to perform a
+      // silent NULL-collision lookup that returns zero rows.
+      const repoAsAny = repo as unknown as {
+        findByOidcSub: (p: unknown, s: unknown) => unknown;
+      };
+      expect(() => repoAsAny.findByOidcSub(null, 'abc')).toThrow(TypeError);
+      expect(() => repoAsAny.findByOidcSub(undefined, 'abc')).toThrow(TypeError);
+      expect(() => repoAsAny.findByOidcSub('', 'abc')).toThrow(TypeError);
+    });
+
+    it('throws TypeError when sub is null/undefined/empty (defensive type-bypass guard)', () => {
+      const repoAsAny = repo as unknown as {
+        findByOidcSub: (p: unknown, s: unknown) => unknown;
+      };
+      expect(() => repoAsAny.findByOidcSub('google', null)).toThrow(TypeError);
+      expect(() => repoAsAny.findByOidcSub('google', undefined)).toThrow(TypeError);
+      expect(() => repoAsAny.findByOidcSub('google', '')).toThrow(TypeError);
+    });
+
     it('does NOT match across providers (provider isolation)', () => {
       insertUser(db, {
         display_name: 'google-user',
