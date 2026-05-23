@@ -6,10 +6,10 @@ import { mapRow, mapRows } from './row-mapper.js';
 /**
  * Read-only repository for the `users` table (Phase 27 scope).
  *
- * Write paths (insert/update/delete) intentionally absent — they land in
- * Phase 28 (PAT mint command) and Phase 29 (JIT OIDC provisioning). The
- * Phase 27 boot-time seeder (Plan 6) inserts via a separate code path that
- * does not require an `insert` method on this repository.
+ * Write paths are intentionally absent — they land in Phase 28 (PAT mint
+ * command) and Phase 29 (JIT OIDC provisioning). The Phase 27 boot-time
+ * seeder (Plan 6) writes via a separate code path that does not require
+ * any write methods on this repository.
  */
 export class UserRepository implements IUserRepository {
   private findByIdStmt: Database.Statement;
