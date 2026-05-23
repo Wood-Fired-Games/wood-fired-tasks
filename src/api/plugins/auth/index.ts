@@ -70,6 +70,7 @@ import {
   tryAuth as tryLegacy,
   precomputeHashedEntries,
 } from './strategies/legacy.js';
+import { shouldTouchLastUsed } from '../../../services/pat-touch-debounce.js';
 
 /**
  * Throws if `preHandler` has not run yet (or if `skipAuth` was set). Use in
@@ -145,10 +146,12 @@ function enforceSessionOnly(
 /**
  * Schedule the best-effort `last_used_at` update for a freshly-matched PAT.
  *
- * Plan 28-04 ships the naive unconditional `setImmediate(() => touchLastUsed)`
- * variant. Plan 28-06 replaces this body with a 10-minute in-process Map
- * debounce that satisfies REQUIREMENTS.md PAT-03's "≤ 1 write / 10 min / token"
- * cap. No-op for non-PAT matches (tokenId === null).
+ * Plan 28-06 gates the write through the in-process debounce module
+ * (`pat-touch-debounce.ts`) so each token id triggers at most one SQL UPDATE
+ * per 10-minute window — satisfying REQUIREMENTS.md PAT-03's
+ * "≤ 1 write / 10 min / token" cap. No-op for non-PAT matches
+ * (tokenId === null) or when the gate returns `false` (recent write within
+ * window).
  *
  * better-sqlite3 is synchronous, so `touchLastUsed` returns `void` — wrap in
  * try/catch (no `.catch(...)` on a void return). Errors are warn-logged but
@@ -160,6 +163,7 @@ function scheduleLastUsedTouch(
   log: FastifyRequest['log'],
 ): void {
   if (tokenId === null) return;
+  if (!shouldTouchLastUsed(tokenId)) return;
   setImmediate(() => {
     try {
       fastify.apiTokenRepository.touchLastUsed(tokenId);
