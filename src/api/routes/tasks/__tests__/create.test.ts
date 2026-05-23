@@ -96,8 +96,12 @@ describe('POST /api/v1/tasks — identity FK injection', () => {
     expect(row.created_by_user_id).toBe(legacyUserId);
   });
 
-  it('IGNORES body-supplied created_by_user_id (T-31-02 spoof attempt)', async () => {
-    // Client tries to spoof the FK by setting it directly. Server MUST overwrite.
+  it('REJECTS body-supplied created_by_user_id with 400 (WR-04: strict client schema)', async () => {
+    // Phase 31 review WR-04 hardening: the route's body schema
+    // (`CreateTaskClientSchema`) omits server-derived FK fields and uses
+    // `.strict()`, so a client supplying `created_by_user_id` now gets a
+    // 400 validation error instead of having the value silently stripped.
+    // Failing loud is the documented spoof barrier.
     const SPOOFED = 99999;
     const response = await server.inject({
       method: 'POST',
@@ -111,16 +115,16 @@ describe('POST /api/v1/tasks — identity FK injection', () => {
       },
     });
 
-    // The route should still succeed (we strip the field, not reject the request)
-    // — and the persisted FK must be request.user.id, NOT the spoof value.
-    expect(response.statusCode).toBe(201);
-    const body = JSON.parse(response.body);
-    const row = getTaskRow(body.id);
-    expect(row.created_by_user_id).toBe(legacyUserId);
-    expect(row.created_by_user_id).not.toBe(SPOOFED);
+    expect(response.statusCode).toBe(400);
+    // Confirm the spoofed value never landed in the DB (i.e. the row was
+    // never created).
+    const allRows = db
+      .prepare('SELECT id, created_by_user_id FROM tasks WHERE created_by_user_id = ?')
+      .all(SPOOFED) as Array<{ id: number; created_by_user_id: number | null }>;
+    expect(allRows).toHaveLength(0);
   });
 
-  it('IGNORES body-supplied assignee_user_id on create (T-31-02)', async () => {
+  it('REJECTS body-supplied assignee_user_id on create with 400 (WR-04)', async () => {
     const SPOOFED = 88888;
     const response = await server.inject({
       method: 'POST',
@@ -135,14 +139,11 @@ describe('POST /api/v1/tasks — identity FK injection', () => {
       },
     });
 
-    expect(response.statusCode).toBe(201);
-    const body = JSON.parse(response.body);
-    const row = getTaskRow(body.id);
-    // assignee_user_id on create: spoofed value must NOT survive. The route
-    // does not currently auto-resolve assignee_user_id on create (PATCH does);
-    // therefore, the stripped value should leave the column at NULL.
-    expect(row.assignee_user_id).not.toBe(SPOOFED);
-    expect(row.assignee_user_id).toBeNull();
+    expect(response.statusCode).toBe(400);
+    const allRows = db
+      .prepare('SELECT id, assignee_user_id FROM tasks WHERE assignee_user_id = ?')
+      .all(SPOOFED) as Array<{ id: number; assignee_user_id: number | null }>;
+    expect(allRows).toHaveLength(0);
   });
 
   it('legacy-key auth maps to the seeded legacy user (sanity check)', async () => {

@@ -28,6 +28,25 @@ export const CreateTaskSchema = z.object({
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
 
 /**
+ * Client-facing variant of CreateTaskSchema for MCP tool registration
+ * (Phase 31 review WR-04). Omits the server-derived FK fields
+ * (`created_by_user_id`, `assignee_user_id`) so a client supplying them
+ * gets a clear validation error instead of having the values silently
+ * stripped by the route handler.
+ *
+ * The service-layer `CreateTaskSchema` still accepts them because
+ * internal callers (routes, MCP handlers) populate them from
+ * request.user / boot-time context. This separation makes the public
+ * API surface honest about what fields clients control.
+ */
+export const CreateTaskClientSchema = CreateTaskSchema.omit({
+  created_by_user_id: true,
+  assignee_user_id: true,
+}).strict();
+
+export type CreateTaskClientInput = z.infer<typeof CreateTaskClientSchema>;
+
+/**
  * UpdateTaskSchema - validation for updating tasks
  * All fields are optional (partial updates)
  */
@@ -47,6 +66,27 @@ export const UpdateTaskSchema = z.object({
 }).partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
+
+/**
+ * Client-facing variant of UpdateTaskSchema for MCP tool registration
+ * (Phase 31 review WR-04). Omits the server-derived `assignee_user_id`
+ * FK; clients update the FK indirectly by supplying `assignee` (an email
+ * or display name), which the MCP handler resolves server-side via
+ * `resolveAssigneeUserId`.
+ */
+export const UpdateTaskClientSchema = z.object({
+  title: z.string().min(1).max(255),
+  description: z.string().max(5000).nullable(),
+  status: z.enum(TASK_STATUSES),
+  priority: z.enum(TASK_PRIORITIES),
+  parent_task_id: z.number().int().positive().nullable(),
+  estimated_minutes: z.number().int().min(0).max(10080).nullable(),
+  assignee: z.string().max(100).nullable(),
+  due_date: z.string().datetime().nullable(),
+  tags: z.array(z.string().min(1).max(50)).max(20),
+}).partial().strict();
+
+export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
 
 /**
  * CreateProjectSchema - validation for creating new projects

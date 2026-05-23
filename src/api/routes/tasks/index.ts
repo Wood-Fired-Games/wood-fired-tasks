@@ -1,6 +1,16 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { CreateTaskSchema, UpdateTaskSchema } from '../../../schemas/task.schema.js';
+import {
+  CreateTaskSchema,
+  UpdateTaskSchema,
+  // Phase 31 review WR-04: client-facing variants omit server-derived
+  // FK fields from the route input schema so OpenAPI/swagger no longer
+  // advertises them as accepted inputs. The route handlers still pass
+  // the service-layer FK values they derive themselves; the schemas just
+  // gate what clients can send.
+  CreateTaskClientSchema,
+  UpdateTaskClientSchema,
+} from '../../../schemas/task.schema.js';
 import { idempotencyKeyHeaderSchema } from '../../../schemas/idempotency.schema.js';
 import {
   TaskResponseSchema,
@@ -57,7 +67,10 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       schema: {
         tags: ['tasks'],
         description: 'Create a new task',
-        body: CreateTaskSchema,
+        // WR-04: body schema omits server-derived FKs (`created_by_user_id`,
+        // `assignee_user_id`). The handler still passes `created_by_user_id`
+        // to the service from request.user — that is internal-only.
+        body: CreateTaskClientSchema,
         response: {
           201: TaskResponseSchema,
         },
@@ -164,7 +177,10 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
         tags: ['tasks'],
         description: 'Update task by ID',
         params: z.object({ id: z.coerce.number().int().positive() }),
-        body: UpdateTaskSchema,
+        // WR-04: body schema omits server-derived `assignee_user_id`.
+        // Clients change assignment by passing `assignee` (email or
+        // display name); the handler resolves the FK server-side.
+        body: UpdateTaskClientSchema,
         response: {
           200: TaskResponseSchema,
         },

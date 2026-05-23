@@ -2,8 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TaskService } from '../../services/task.service.js';
 import { ProjectService } from '../../services/project.service.js';
 import {
-  CreateTaskSchema,
-  UpdateTaskSchema,
+  // Phase 31 review WR-04: MCP tool schemas advertise the *client-facing*
+  // variants which omit server-derived FK fields. A client supplying
+  // `created_by_user_id` / `assignee_user_id` now gets a Zod validation
+  // failure (clearer than silent stripping). Service-layer code paths
+  // continue to use the full CreateTaskSchema / UpdateTaskSchema.
+  CreateTaskClientSchema,
+  UpdateTaskClientSchema,
   ListTasksMcpSchema,
   CompletionReportSchema,
   toCompactTask,
@@ -82,7 +87,10 @@ export function registerTaskTools(
     'create_task',
     {
       description: 'Create a new task in a project',
-      inputSchema: CreateTaskSchema,
+      // WR-04: CreateTaskClientSchema omits server-derived FKs so a client
+      // attempting to set created_by_user_id / assignee_user_id sees a
+      // clear Zod error instead of getting the values silently stripped.
+      inputSchema: CreateTaskClientSchema,
     },
     async (args) => {
       const traceId = randomUUID();
@@ -174,9 +182,13 @@ export function registerTaskTools(
     {
       description:
         'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags.',
+      // WR-04: UpdateTaskClientSchema omits server-derived assignee_user_id.
+      // Clients change assignment by passing `assignee` (email or display
+      // name); the handler resolves the FK server-side via
+      // resolveAssigneeUserId.
       inputSchema: z.object({
         id: z.number().int().positive(),
-        updates: UpdateTaskSchema,
+        updates: UpdateTaskClientSchema,
       }),
     },
     async (args) => {

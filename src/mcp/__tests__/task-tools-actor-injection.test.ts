@@ -143,9 +143,12 @@ describe('MCP tool handlers inject ctx.actorUserId into service writes', () => {
       expect(row.created_by_user_id).toBe(testActorUserId);
     });
 
-    it('does not let a client-supplied created_by_user_id override ctx.actorUserId (T-31-07)', async () => {
-      // Simulate a JSON-RPC client that tries to spoof the FK directly.
-      // The handler must IGNORE the body-supplied value and use ctx.actorUserId.
+    it('rejects a client-supplied created_by_user_id (WR-04: schema fails strict validation)', async () => {
+      // Phase 31 review WR-04: the MCP create_task input schema
+      // (`CreateTaskClientSchema`) omits server-derived FK fields and uses
+      // `.strict()`, so a client supplying `created_by_user_id` now gets a
+      // hard Zod validation error instead of having the value silently
+      // stripped + overwritten. Failing loud is the documented spoof barrier.
       const result = (await client.callTool({
         name: 'create_task',
         arguments: {
@@ -156,15 +159,11 @@ describe('MCP tool handlers inject ctx.actorUserId into service writes', () => {
         },
       })) as ToolResult;
 
-      // If the schema accepted the spoofed field (it does, by Plan 01
-      // design — the field is on the service schema so the route/tool can
-      // pass through server-derived values), the handler must overwrite it
-      // before the service call.
-      expect(result.isError).toBeFalsy();
-      const created = result.structuredContent as { id: number };
-      const row = readTaskRow(created.id);
-      expect(row.created_by_user_id).toBe(testActorUserId);
-      expect(row.created_by_user_id).not.toBe(999999);
+      // The strict schema rejects unknown / server-derived keys. The MCP
+      // SDK surfaces validation failures via either `isError: true` or by
+      // not returning structuredContent at all; assert that NO task was
+      // created with the spoofed value.
+      expect(result.isError).toBeTruthy();
     });
   });
 

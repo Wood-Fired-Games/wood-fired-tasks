@@ -178,8 +178,13 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
     expect(row.assignee_user_id).toBeNull();
   });
 
-  it('IGNORES body-supplied assignee_user_id (T-31-02 spoof attempt)', async () => {
+  it('REJECTS body-supplied assignee_user_id with 400 (WR-04: strict client schema)', async () => {
+    // Phase 31 review WR-04: the route's PUT body schema
+    // (`UpdateTaskClientSchema`) omits server-derived `assignee_user_id`
+    // and uses `.strict()` — clients supplying it now get a 400 instead
+    // of having the value silently stripped + overridden.
     const task = createTaskRow('spoof attempt');
+    const ORIGINAL_FK: number | null = null;
     const SPOOFED = 99999;
     const response = await server.inject({
       method: 'PUT',
@@ -191,16 +196,14 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
       },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(400);
     const row = getTaskRow(task.id);
-    // Resolution from `assignee` wins; spoof must NOT survive.
-    expect(row.assignee_user_id).toBe(aliceUserId);
+    // No update happened — FK stays at its pre-request value.
+    expect(row.assignee_user_id).toBe(ORIGINAL_FK);
     expect(row.assignee_user_id).not.toBe(SPOOFED);
   });
 
-  it('IGNORES body-supplied assignee_user_id when assignee is also a free-form string', async () => {
-    // Confirms the spoofed FK doesn't accidentally land via the assignee=
-    // unresolved branch (which writes NULL).
+  it('REJECTS body-supplied assignee_user_id when assignee is also a free-form string (WR-04)', async () => {
     const task = createTaskRow('spoof + free-form');
     const SPOOFED = 99998;
     const response = await server.inject({
@@ -213,20 +216,21 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
       },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(400);
     const row = getTaskRow(task.id);
-    expect(row.assignee).toBe('Random Name');
+    // No update happened — assignee TEXT stays unchanged and FK stays null.
+    expect(row.assignee).toBeNull();
     expect(row.assignee_user_id).toBeNull();
     expect(row.assignee_user_id).not.toBe(SPOOFED);
   });
 
-  // WR-01: defense-in-depth — the PUT handler must explicitly strip
-  // `created_by_user_id` even though `UpdateTaskSchema` doesn't declare
-  // it. Today Zod-strip drops the field, but the route's destructure
-  // pattern (matching the POST handler) is the documented spoof barrier
-  // against future schema drift.
-  it('IGNORES body-supplied created_by_user_id (WR-01 defense-in-depth)', async () => {
-    // Seed an existing FK so the spoof attempt has something to overwrite.
+  // WR-01 + WR-04: defense-in-depth meets strict client schema. The PUT
+  // body schema doesn't declare `created_by_user_id` and is .strict(), so
+  // any client supplying that key gets a 400. The route's destructure
+  // pattern is still in place as a belt-and-suspenders against future
+  // schema drift.
+  it('REJECTS body-supplied created_by_user_id with 400 (WR-01 + WR-04)', async () => {
+    // Seed an existing FK so we can verify the spoof attempt didn't survive.
     const task = createTaskRow('spoof created_by_user_id');
     const ORIGINAL_CREATOR = aliceUserId;
     db.prepare(
@@ -239,13 +243,12 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
       url: `/api/v1/tasks/${task.id}`,
       headers,
       payload: {
-        // Title bump so the update is non-empty.
         title: 'updated-title',
         created_by_user_id: SPOOFED,
       },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(400);
     const row = db
       .prepare(
         'SELECT created_by_user_id FROM tasks WHERE id = ?',
