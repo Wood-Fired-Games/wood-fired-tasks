@@ -19,7 +19,7 @@
  * boundary. Test 8 locks that contract so Plan 30-04 has a failing test
  * to flip green.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyFormbody from '@fastify/formbody';
 import deviceTokenRoute from '../device-token.js';
@@ -127,63 +127,63 @@ describe('POST /auth/device/token', () => {
   });
 
   it('6. slow_down: second poll within (interval-1)s → 400 and interval bumped 5→10', async () => {
-    vi.useFakeTimers();
-    try {
-      // First poll: authorization_pending. Sets lastPollAt = now.
-      const r1 = await pollJson(app, {
-        grant_type: GRANT_TYPE,
-        device_code: session.deviceCode,
-        client_id: EXPECTED_CLIENT_ID,
-      });
-      expect(r1.json()).toMatchObject({ error: 'authorization_pending' });
-      const afterFirst = findByDeviceCode(session.deviceCode);
-      expect(afterFirst?.interval).toBe(5);
+    // Mutate lastPollAt directly instead of vi.useFakeTimers — the latter
+    // interferes with fastify.inject's promise scheduling and deadlocks
+    // the afterEach app.close(). The route reads Date.now() vs lastPollAt,
+    // so seeding lastPollAt to "1 second ago" is equivalent to "polled 1s ago".
+    const r1 = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r1.json()).toMatchObject({ error: 'authorization_pending' });
+    const afterFirst = findByDeviceCode(session.deviceCode);
+    expect(afterFirst?.interval).toBe(5);
+    // Pull lastPollAt back to (now - 1000) so the next poll lands inside
+    // the (5 - 1) = 4s cooldown window.
+    if (afterFirst) afterFirst.lastPollAt = Date.now() - 1000;
 
-      // Advance 1 second — well inside (5 - 1) = 4 second cooldown window.
-      vi.advanceTimersByTime(1000);
-
-      const r2 = await pollJson(app, {
-        grant_type: GRANT_TYPE,
-        device_code: session.deviceCode,
-        client_id: EXPECTED_CLIENT_ID,
-      });
-      expect(r2.statusCode).toBe(400);
-      expect(r2.json()).toMatchObject({ error: 'slow_down' });
-      const afterSecond = findByDeviceCode(session.deviceCode);
-      expect(afterSecond?.interval).toBe(10);
-    } finally {
-      vi.useRealTimers();
-    }
+    const r2 = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r2.statusCode).toBe(400);
+    expect(r2.json()).toMatchObject({ error: 'slow_down' });
+    const afterSecond = findByDeviceCode(session.deviceCode);
+    expect(afterSecond?.interval).toBe(10);
   });
 
   it('7. slow_down is additive: third poll within window bumps 10→15 (not 20)', async () => {
-    vi.useFakeTimers();
-    try {
-      await pollJson(app, {
-        grant_type: GRANT_TYPE,
-        device_code: session.deviceCode,
-        client_id: EXPECTED_CLIENT_ID,
-      });
-      vi.advanceTimersByTime(1000);
-      await pollJson(app, {
-        grant_type: GRANT_TYPE,
-        device_code: session.deviceCode,
-        client_id: EXPECTED_CLIENT_ID,
-      });
-      // Interval is now 10. Cooldown = (10 - 1) = 9s. Poll again at +1s → slow_down.
-      vi.advanceTimersByTime(1000);
-      const r3 = await pollJson(app, {
-        grant_type: GRANT_TYPE,
-        device_code: session.deviceCode,
-        client_id: EXPECTED_CLIENT_ID,
-      });
-      expect(r3.json()).toMatchObject({ error: 'slow_down' });
-      const after = findByDeviceCode(session.deviceCode);
-      // Additive: 10 + 5 = 15. NOT multiplicative (would be 20).
-      expect(after?.interval).toBe(15);
-    } finally {
-      vi.useRealTimers();
-    }
+    // First poll: authorization_pending, lastPollAt now.
+    await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    const ref1 = findByDeviceCode(session.deviceCode);
+    if (ref1) ref1.lastPollAt = Date.now() - 1000;
+
+    // Second poll: slow_down, interval 5→10.
+    await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    const ref2 = findByDeviceCode(session.deviceCode);
+    expect(ref2?.interval).toBe(10);
+    // Pull lastPollAt back again so the next poll is inside (10-1)=9s window.
+    if (ref2) ref2.lastPollAt = Date.now() - 1000;
+
+    const r3 = await pollJson(app, {
+      grant_type: GRANT_TYPE,
+      device_code: session.deviceCode,
+      client_id: EXPECTED_CLIENT_ID,
+    });
+    expect(r3.json()).toMatchObject({ error: 'slow_down' });
+    const after = findByDeviceCode(session.deviceCode);
+    // Additive: 10 + 5 = 15. NOT multiplicative (would be 20).
+    expect(after?.interval).toBe(15);
   });
 
   it('8. approved session still returns authorization_pending (Plan 30-04 wires the mint)', async () => {
