@@ -76,3 +76,19 @@ export interface AuthResult {
   authMethod: AuthMethod;
   tokenId: number | null;
 }
+
+/**
+ * Input for `UserRepository.insert` — the just-in-time provisioning shape
+ * the OIDC callback hands to the upsert service. `provider` and `sub` are
+ * required AND non-empty (the composite UNIQUE on (oidc_provider, oidc_sub)
+ * is the OIDC identity key); `email` may be null for providers that
+ * decline to share it; `displayName` is required because `users.display_name`
+ * is NOT NULL — the upsert service falls back to `email` when the IdP omits
+ * a `name` claim.
+ */
+export interface UserUpsertInput {
+  provider: string;
+  sub: string;
+  email: string | null;
+  displayName: string;
+}

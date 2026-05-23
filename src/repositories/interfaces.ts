@@ -10,7 +10,7 @@ import type {
   Comment,
   CreateCommentDTO,
 } from '../types/task.js';
-import type { User, ApiToken } from '../types/identity.js';
+import type { User, ApiToken, UserUpsertInput } from '../types/identity.js';
 
 /**
  * Bounded pagination options accepted by every list-style repository call.
@@ -113,6 +113,31 @@ export interface IUserRepository {
   findByEmail(email: string): User | null;
   /** Admin: list every user, ordered by id ASC. */
   listAll(): User[];
+  /**
+   * Insert a new user provisioned by OIDC just-in-time. The row's
+   * `oidc_provider` and `oidc_sub` columns are both set; `is_legacy` and
+   * `is_service_account` default to 0. Returns the freshly-inserted row
+   * with the database-assigned `id` and `created_at` populated.
+   *
+   * @throws TypeError when any required field is null/undefined/empty.
+   * @throws better-sqlite3 SqliteError on UNIQUE violation
+   *         (`oidc_provider`, `oidc_sub`) — caller handles the race with
+   *         findByOidcSub.
+   */
+  insert(input: UserUpsertInput): User;
+  /**
+   * Apply email + displayName drift to an existing row. Either field may
+   * be omitted from the patch (no-op for that column). Returns the fresh
+   * row after update; returns `null` when `id` does not exist (no row
+   * affected). Never mutates oidc_provider/oidc_sub/created_at/is_legacy/
+   * is_service_account/disabled_at.
+   *
+   * @throws TypeError when `id` is non-positive.
+   */
+  updateProfile(
+    id: number,
+    patch: { email?: string | null; displayName?: string },
+  ): User | null;
 }
 
 /**
