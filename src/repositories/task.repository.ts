@@ -82,7 +82,16 @@ export class TaskRepository implements ITaskRepository {
       )
     `);
 
-    this.findByIdStmt = db.prepare('SELECT * FROM tasks WHERE id = ?');
+    // Join projects so every Task row carries the project_name display
+     // field. INNER JOIN is safe because `tasks.project_id` is NOT NULL with
+     // a FK to projects(id) (orphan rows are impossible under
+     // `PRAGMA foreign_keys = ON`). The `tasks` columns are explicitly
+     // expanded by `t.*` and the join adds `p.name as project_name`.
+    this.findByIdStmt = db.prepare(
+      `SELECT t.*, p.name as project_name
+       FROM tasks t INNER JOIN projects p ON p.id = t.project_id
+       WHERE t.id = ?`,
+    );
     this.deleteStmt = db.prepare('DELETE FROM tasks WHERE id = ?');
     this.findTagsByTaskIdStmt = db.prepare(
       'SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag'
@@ -162,8 +171,10 @@ export class TaskRepository implements ITaskRepository {
         `
       SELECT
         t.*,
+        p.name as project_name,
         GROUP_CONCAT(tt.tag, ',') as tags_csv
       FROM tasks t
+      INNER JOIN projects p ON p.id = t.project_id
       LEFT JOIN task_tags tt ON tt.task_id = t.id
       GROUP BY t.id
       ORDER BY t.created_at DESC
@@ -368,8 +379,10 @@ export class TaskRepository implements ITaskRepository {
     const query = `
       SELECT
         t.*,
+        p.name as project_name,
         GROUP_CONCAT(tt.tag, ',') as tags_csv
       FROM tasks t
+      INNER JOIN projects p ON p.id = t.project_id
       LEFT JOIN task_tags tt ON tt.task_id = t.id
       ${whereClause}
       GROUP BY t.id
@@ -457,8 +470,10 @@ export class TaskRepository implements ITaskRepository {
     const query = `
       SELECT
         t.*,
+        p.name as project_name,
         GROUP_CONCAT(tt.tag, ',') as tags_csv
       FROM tasks t
+      INNER JOIN projects p ON p.id = t.project_id
       LEFT JOIN task_tags tt ON tt.task_id = t.id
       WHERE t.parent_task_id = ?
       GROUP BY t.id
@@ -617,8 +632,10 @@ export class TaskRepository implements ITaskRepository {
     const query = `
       SELECT
         t.*,
+        p.name as project_name,
         GROUP_CONCAT(tt.tag, ',') as tags_csv
       FROM tasks t
+      INNER JOIN projects p ON p.id = t.project_id
       LEFT JOIN task_tags tt ON tt.task_id = t.id
       WHERE ${whereClauses.join(' AND ')}
       GROUP BY t.id

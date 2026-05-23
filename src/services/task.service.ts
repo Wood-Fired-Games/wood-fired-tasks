@@ -42,6 +42,7 @@ export interface CompletionReportRow {
   id: number;
   title: string;
   project_id: number;
+  project_name: string;
   assignee: string | null;
   priority: TaskPriority;
   created_at: string;
@@ -407,6 +408,7 @@ export class TaskService {
         id: t.id,
         title: t.title,
         project_id: t.project_id,
+        project_name: t.project_name,
         assignee: t.assignee,
         priority: t.priority,
         created_at: t.created_at,

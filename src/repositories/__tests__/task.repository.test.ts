@@ -461,6 +461,23 @@ describe('TaskRepository', () => {
     });
   });
 
+  describe('project_name join', () => {
+    it('reflects project rename on next read (no denormalized cache)', () => {
+      // Acceptance: tasks include `project_name` from a live JOIN on
+      // projects.name — a project rename must surface on the next read.
+      const oldProject = projectRepo.create({ name: 'Old Name', description: null });
+      const task = taskRepo.create(createTestTask({ project_id: oldProject.id }));
+
+      const before = taskRepo.findById(task.id);
+      expect(before?.project_name).toBe('Old Name');
+
+      projectRepo.update(oldProject.id, { name: 'New Name' });
+
+      const after = taskRepo.findById(task.id);
+      expect(after?.project_name).toBe('New Name');
+    });
+  });
+
   describe('FTS5 search syntax errors', () => {
     beforeEach(() => {
       // Seed a few tasks so the FTS index has rows; the malformed-search

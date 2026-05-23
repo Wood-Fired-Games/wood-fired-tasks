@@ -174,6 +174,7 @@ export interface CompletionReportRow {
   id: number;
   title: string;
   project_id: number;
+  project_name: string;
   assignee: string | null;
   priority: string;
   created_at: string;

@@ -23,6 +23,13 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   project_id: number;
+  /**
+   * Display name of the parent project, joined from `projects.name` at read
+   * time. Returned by every repository SELECT that produces a Task row so
+   * dashboards/CLI/MCP consumers don't have to maintain their own id→name
+   * map. Renames are reflected on the next read (no denormalized copy).
+   */
+  project_name: string;
   parent_task_id: number | null;
   estimated_minutes: number | null;
   assignee: string | null;

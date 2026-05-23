@@ -1057,6 +1057,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "project_id": {
                             "type": "number",
                           },
+                          "project_name": {
+                            "type": "string",
+                          },
                           "status": {
                             "enum": [
                               "open",
@@ -1091,6 +1094,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "status",
                           "priority",
                           "project_id",
+                          "project_name",
                           "parent_task_id",
                           "estimated_minutes",
                           "assignee",
@@ -1277,6 +1281,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "project_id": {
                       "type": "number",
                     },
+                    "project_name": {
+                      "type": "string",
+                    },
                     "status": {
                       "enum": [
                         "open",
@@ -1311,6 +1318,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "status",
                     "priority",
                     "project_id",
+                    "project_name",
                     "parent_task_id",
                     "estimated_minutes",
                     "assignee",
@@ -1532,6 +1540,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "project_id": {
                             "type": "number",
                           },
+                          "project_name": {
+                            "type": "string",
+                          },
                           "time_to_complete_seconds": {
                             "type": "number",
                           },
@@ -1543,6 +1554,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "id",
                           "title",
                           "project_id",
+                          "project_name",
                           "assignee",
                           "priority",
                           "created_at",
@@ -1708,6 +1720,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "project_id": {
                       "type": "number",
                     },
+                    "project_name": {
+                      "type": "string",
+                    },
                     "status": {
                       "enum": [
                         "open",
@@ -1742,6 +1757,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "status",
                     "priority",
                     "project_id",
+                    "project_name",
                     "parent_task_id",
                     "estimated_minutes",
                     "assignee",
@@ -1907,6 +1923,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "project_id": {
                       "type": "number",
                     },
+                    "project_name": {
+                      "type": "string",
+                    },
                     "status": {
                       "enum": [
                         "open",
@@ -1941,6 +1960,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "status",
                     "priority",
                     "project_id",
+                    "project_name",
                     "parent_task_id",
                     "estimated_minutes",
                     "assignee",
@@ -2052,6 +2072,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "project_id": {
                       "type": "number",
                     },
+                    "project_name": {
+                      "type": "string",
+                    },
                     "status": {
                       "enum": [
                         "open",
@@ -2086,6 +2109,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "status",
                     "priority",
                     "project_id",
+                    "project_name",
                     "parent_task_id",
                     "estimated_minutes",
                     "assignee",
@@ -2709,6 +2733,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "project_id": {
                             "type": "number",
                           },
+                          "project_name": {
+                            "type": "string",
+                          },
                           "status": {
                             "enum": [
                               "open",
@@ -2743,6 +2770,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "status",
                           "priority",
                           "project_id",
+                          "project_name",
                           "parent_task_id",
                           "estimated_minutes",
                           "assignee",
