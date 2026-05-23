@@ -399,6 +399,20 @@ async function handleCreate(
 
 /**
  * handleUpdate — /tasks update <id> [--status <s>] [--title <t>] [--priority <p>] [--assignee <a>] [--due <d>] [--description <d>]
+ *
+ * Phase 31 (Plan 31-04 Task 3): when `--assignee` is supplied, also resolve
+ * `assignee_user_id` mirroring the REST PATCH pattern from Plan 31-02 — but
+ * email-only (Slack has no display-name resolver here; non-email values stay
+ * NULL for the `migrate-identities` CLI tool to backfill).
+ *
+ * Resolution rules:
+ *   - assignee = '' or null  → assignee_user_id = null (clearing)
+ *   - assignee contains '@'  → findByEmail; matched → user.id, else null
+ *   - assignee free-form     → assignee_user_id = null
+ *   - --assignee not supplied → assignee_user_id omitted (no FK write)
+ *
+ * No actor resolution here — the `tasks` table has no `updated_by_user_id`
+ * column in migration 009 per the plan threat-model / RESEARCH §1.
  */
 async function handleUpdate(
   respond: RespondFn,
@@ -424,6 +438,25 @@ async function handleUpdate(
   if (Object.keys(updates).length === 0) {
     await respondError(respond, 'No update fields provided.');
     return;
+  }
+
+  // Phase 31 (Plan 31-04 Task 3): derive assignee_user_id when the caller
+  // sets --assignee. Email matches resolve to a user.id; clearing or
+  // free-form values yield null (NOT undefined — the repo treats null as
+  // "explicitly clear the FK").
+  if (Object.prototype.hasOwnProperty.call(updates, 'assignee')) {
+    const a = updates['assignee'];
+    let assigneeUserId: number | null = null;
+    if (typeof a === 'string' && a.length > 0 && a.includes('@')) {
+      try {
+        const u = services.userRepository.findByEmail(a);
+        assigneeUserId = u?.id ?? null;
+      } catch {
+        // findByEmail throws on invalid input; treat as unresolved → null.
+        assigneeUserId = null;
+      }
+    }
+    updates['assignee_user_id'] = assigneeUserId;
   }
 
   const task = services.taskService.updateTask(id, updates);
