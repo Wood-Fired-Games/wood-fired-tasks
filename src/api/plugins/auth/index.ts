@@ -77,12 +77,24 @@ import { shouldTouchLastUsed } from '../../../services/pat-touch-debounce.js';
  * route handlers / tool helpers that need a non-null `request.user`. The
  * type narrowing is the entire point — once `requireUser` returns, the
  * caller has an `AuthenticatedUser` without further null checks.
+ *
+ * CR-01 (Phase 30 review) — belt-and-suspenders: check for BOTH `null`
+ * (the initialized default via `decorateRequest('user', null)`) AND
+ * `undefined` (the value the slot holds when the route was registered
+ * OUTSIDE any scope that ran the auth-chain plugin — e.g. a top-level
+ * device-flow route mounted as a sibling of the `/api/v1` scope). The
+ * scope-wiring fix in server.ts addresses the production wiring, but
+ * leaving the guard narrow would silently re-open the bug if a future
+ * refactor moved a sessionOnly route outside the chain again.
  */
-export function requireUser(request: FastifyRequest): AuthenticatedUser {
-  if (request.user === null) {
+export function requireUser(
+  request: FastifyRequest,
+): AuthenticatedUser {
+  if (request.user === null || request.user === undefined) {
     throw new Error(
-      'requireUser: request.user is null — auth preHandler did not run, ' +
-        'or the route is registered with config.skipAuth=true.',
+      'requireUser: request.user is null/undefined — auth preHandler did ' +
+        'not run, or the route is registered with config.skipAuth=true, ' +
+        'or the route is outside any scope that registered the auth chain.',
     );
   }
   return request.user;

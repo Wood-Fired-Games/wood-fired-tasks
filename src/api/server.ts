@@ -399,12 +399,35 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // Registering at the top-level here uses the routes' absolute paths
     // verbatim, matching the CLI's expectations and the URLs printed in
     // verification_uri.
-    await server.register(deviceCodeRoute, {
-      origin,
-      expectedClientId: clientId,
+    //
+    // CR-01 (Phase 30 review) — the device routes MUST run inside a scope
+    // that registered the Phase 28 auth-chain plugin. The chain's
+    // `decorateRequest('user', null)` and `preHandler` hook only apply to
+    // routes registered INSIDE the plugin's encapsulation scope (the fp()
+    // wrap lifts them one level — into THIS register lambda — but NOT into
+    // arbitrary sibling top-level registrations on `server`). Without this
+    // wrapping:
+    //   • POST /auth/device/verify (config.sessionOnly=true) would have
+    //     `request.user` === undefined, requireUser() would not throw
+    //     (its guard is `=== null`), and the handler would dereference
+    //     `undefined.id` → 500 in production.
+    //   • The chain's `enforceSessionOnly` post-auth gate would never run,
+    //     so a PAT-authed caller could in principle approve a device flow.
+    // Wrapping in a register(async (scope) => ...) lambda — mirroring the
+    // `/health/detailed` pattern below — gives the routes a parent scope
+    // that owns the auth chain. GET /auth/device and POST
+    // /auth/device/{code,token} carry `config: { skipAuth: true }` so the
+    // preHandler short-circuits for them; only POST /auth/device/verify
+    // exercises the session-auth path.
+    await server.register(async (scope) => {
+      await scope.register(authPlugin);
+      await scope.register(deviceCodeRoute, {
+        origin,
+        expectedClientId: clientId,
+      });
+      await scope.register(deviceTokenRoute, { expectedClientId: clientId });
+      await scope.register(deviceHtmlRoute, { origin });
     });
-    await server.register(deviceTokenRoute, { expectedClientId: clientId });
-    await server.register(deviceHtmlRoute, { origin });
   } else {
     const disabledStub = (await import('./routes/auth/disabled-stub.js'))
       .default;
