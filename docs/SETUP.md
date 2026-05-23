@@ -284,23 +284,11 @@ The API server will start with hot reload enabled. Any changes to TypeScript fil
 The `deploy/` scripts split host provisioning from app deployment: operators
 run `deploy/install.sh` **once** to create the service user, install dirs,
 and systemd unit, then run `deploy/upgrade.sh` **on every release** to
-backup, copy `dist/`, migrate, restart, and health-probe. Full self-hosting
-walkthrough is tracked separately; the manual steps below remain valid for
-operators not using the scripts.
-
-```bash
-# One-time host provisioning (creates user, dirs, installs systemd unit):
-sudo ./deploy/install.sh
-
-# Every release (build then deploy in place):
-npm ci && npm run build
-sudo ./deploy/upgrade.sh
-```
-
-If `upgrade.sh`'s post-deploy `/health` probe fails, the script prints the
-exact rollback commands (paths to the db + dist backup it captured at the
-start of the run) and exits non-zero. There is no automatic rollback in v1
-because migrations are involved -- the operator decides whether to restore.
+backup, copy `dist/`, migrate, restart, and health-probe. See
+[Self-hosting and upgrades](#self-hosting-and-upgrades) for the full
+walkthrough (first-time install, in-place upgrades, fork-and-deploy, manual
+rollback, migration safety contract). The manual steps below remain valid
+for operators not using the scripts.
 
 ### 1. Install and Build
 
@@ -355,6 +343,141 @@ pm2 start npm --name "wood-fired-bugs" -- start
 pm2 save
 pm2 startup
 ```
+
+## Self-hosting and upgrades
+
+This section is the operator contract for running Wood Fired Bugs on your
+own host with the shipped `deploy/install.sh` and `deploy/upgrade.sh`
+scripts. The scripts are the source of truth — every command below maps
+to a line in one of them.
+
+Two environment variables control where everything lands; both scripts
+honour them and `upgrade.sh` re-execs itself under `sudo` with these
+preserved:
+
+| Variable | Default | Used by |
+|----------|---------|---------|
+| `WFB_INSTALL_DIR` | `/opt/wood-fired-bugs` | `install.sh`, `upgrade.sh` |
+| `WFB_SERVICE_NAME` | `wood-fired-bugs` | `upgrade.sh` (systemd unit name) |
+| `WFB_SERVICE_USER` | `wood-fired-bugs` | `install.sh` (locked-down system account) |
+
+Prerequisites on the host: Node.js at `/usr/bin/node`, `sqlite3` CLI
+(`sudo apt-get install sqlite3`), and `curl` (used by the health probe).
+
+### First-time install
+
+Run `deploy/install.sh` **once** as root (or with `sudo`) to provision the
+host. It creates the `wood-fired-bugs` system user, lays out
+`$WFB_INSTALL_DIR/{data,backups,dist}`, seeds `.env` from
+`deploy/wood-fired-bugs.env.example` if absent, installs the systemd unit
+at `/etc/systemd/system/wood-fired-bugs.service`, writes a drop-in override
+when you have overridden the install dir or service user, and `enable`s
+the service (it does **not** start it — the first deploy starts it). After
+this completes, edit `$WFB_INSTALL_DIR/.env` to set `API_KEYS` (and any
+other server vars from the [Environment Variables](#environment-variables)
+table), then move on to the upgrade step.
+
+```bash
+sudo ./deploy/install.sh
+sudo $EDITOR /opt/wood-fired-bugs/.env   # set API_KEYS, etc.
+```
+
+### Upgrading an existing install
+
+Run `deploy/upgrade.sh` **on every release** to push a fresh build into
+`$WFB_INSTALL_DIR`. The script re-execs itself with `sudo` if invoked
+unprivileged (preserving `WFB_INSTALL_DIR` and `WFB_SERVICE_NAME`), so
+plain `./deploy/upgrade.sh` works. It refuses to run if `./dist/` is
+missing or any file under `./src/` is newer than `./dist/` (build first),
+then in order: copies `data/tasks.db` (+ `.db-wal` / `.db-shm` if present)
+to `$WFB_INSTALL_DIR/backups/pre-deploy-<UTC>.db[*]`, copies the live
+`dist/` to `$WFB_INSTALL_DIR/backups/dist-pre-deploy-<UTC>/`, stops the
+service, replaces `$WFB_INSTALL_DIR/dist`, copies `package.json` +
+`package-lock.json`, runs `npm ci --omit=dev` in the install dir, re-chowns
+the new files to the service user, runs `node dist/db/migrate.js`, starts
+the service, and polls `http://localhost:$PORT/health` (port read from
+`$WFB_INSTALL_DIR/.env`, defaulting to `3000`) for up to 30 seconds. On
+success it prints the DB and dist backup paths; on failure it prints the
+exact rollback commands (see [Manual rollback procedure](#manual-rollback-procedure))
+and exits non-zero. There is no automatic rollback — migrations make that
+unsafe.
+
+```bash
+npm ci && npm run build
+sudo ./deploy/upgrade.sh
+```
+
+Artifacts produced on every run:
+
+- **DB backup:** `${WFB_INSTALL_DIR}/backups/pre-deploy-<TS>.db` (plus
+  `.db-wal` / `.db-shm` if those existed). `<TS>` is a UTC timestamp like
+  `20260523T193059Z`.
+- **dist backup:** `${WFB_INSTALL_DIR}/backups/dist-pre-deploy-<TS>/`
+  (a full copy of the previous `dist/`).
+
+Backups are kept indefinitely; prune `$WFB_INSTALL_DIR/backups/` manually
+when no longer needed.
+
+### Deploying your fork
+
+If you have forked this repo and want to keep current with upstream
+releases while shipping your own changes, the workflow is a standard
+upstream-pull plus the same `upgrade.sh` step. From a checkout of your
+fork on the deploy host:
+
+```bash
+# One-time: register the upstream remote (skip if already set).
+git remote add upstream https://github.com/Wood-Fired-Games/wood-fired-bugs.git
+
+# Per release: pull upstream, resolve any conflicts, build, deploy.
+git fetch upstream
+git pull upstream main
+# Resolve conflicts here if git stops; commit the merge.
+npm ci && npm run build
+sudo ./deploy/upgrade.sh
+```
+
+If `upgrade.sh`'s `/health` probe passes, you are done. If it fails, the
+script prints the rollback recipe — follow it as written, then inspect
+`sudo journalctl -u wood-fired-bugs -n 200` to diagnose.
+
+### Manual rollback procedure
+
+`upgrade.sh` does not roll back automatically. If the post-deploy health
+probe fails (or if you notice a regression after the fact), restore from
+the artifacts captured at the start of the failed run. Substitute the
+real `<TS>` from the upgrade output (e.g. `20260523T193059Z`); the script
+also prints these exact commands to stderr on failure.
+
+```bash
+sudo systemctl stop wood-fired-bugs
+sudo rm -rf /opt/wood-fired-bugs/dist
+sudo cp -a /opt/wood-fired-bugs/backups/dist-pre-deploy-<TS> /opt/wood-fired-bugs/dist
+sudo cp /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db /opt/wood-fired-bugs/data/tasks.db
+[ -f /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-wal ] && \
+  sudo cp /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-wal /opt/wood-fired-bugs/data/tasks.db-wal
+[ -f /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-shm ] && \
+  sudo cp /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-shm /opt/wood-fired-bugs/data/tasks.db-shm
+sudo systemctl start wood-fired-bugs
+```
+
+Then check the service: `sudo journalctl -u wood-fired-bugs -n 200`. If
+you overrode `WFB_INSTALL_DIR` at install time, substitute that path
+everywhere `/opt/wood-fired-bugs` appears above.
+
+### Migration safety contract
+
+`upgrade.sh` runs `node dist/db/migrate.js` between copying the new
+artefacts and starting the service. The upgrade path assumes the
+migration is **reversible** — i.e. the matching `down` works and is
+covered by `migrations-roundtrip.test.ts`. For forward-only migrations,
+the rollback recipe above restores `tasks.db` from the pre-deploy backup
+**but** schema-only `down` revert via Umzug is not safe; treat the SQLite
+backup as the recovery surface. Re-read `docs/RELEASE.md`
+[Migration expectations](RELEASE.md#migration-expectations) before
+shipping any release that adds a migration — it spells out the
+serialized-flow, transactional, backfill-test, and `down`/backup-restore
+gates the release contract enforces.
 
 ## CLI Installation
 

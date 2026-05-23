@@ -56,7 +56,9 @@ tasks create --title "My first task" --project 1 --created-by "me"
 
 For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 
-For self-hosted production: operators provision a host once with `deploy/install.sh` and ship every subsequent release in place with `deploy/upgrade.sh` (atomic backup, migrate, restart, /health probe, rollback recipe on failure). See `docs/SETUP.md` for the walkthrough.
+## Self-hosting
+
+For self-hosted production deploys (including the fork-and-deploy workflow for OSS operators): provision a host once with `deploy/install.sh`, then ship every subsequent release in place with `deploy/upgrade.sh` (atomic backup, migrate, restart, `/health` probe, manual rollback recipe on failure). The full walkthrough — first-time install, in-place upgrades, deploying your fork, manual rollback, and the migration safety contract — lives at [Self-hosting and upgrades](docs/SETUP.md#self-hosting-and-upgrades).
 
 ## Security Model
 
