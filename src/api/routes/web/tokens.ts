@@ -28,13 +28,21 @@ import type { FastifyPluginAsync } from 'fastify';
 import { renderTokens } from '../../../web/pages/tokens.js';
 import { getOrCreateCsrfToken, verifyCsrfToken } from '../auth/csrf.js';
 import { getFlashAndClear } from '../../../web/session-flash.js';
+import { resolveActiveSessionUser } from '../../../web/session-user.js';
 
 const tokensWeb: FastifyPluginAsync = async (fastify) => {
   fastify.get(
     '/me/tokens',
     { config: { skipAuth: true } },
     async (request, reply) => {
-      const sessionUser = request.session?.get('user');
+      // CR-02 fix: re-validate the session user against the database on
+      // every request so a disabled user cannot continue browsing or
+      // revoking PATs through the web UI for the remainder of the 8h
+      // session lifetime.
+      const sessionUser = resolveActiveSessionUser(
+        request,
+        fastify.userRepository,
+      );
       if (!sessionUser) {
         return reply
           .header('Cache-Control', 'no-store')
@@ -68,7 +76,12 @@ const tokensWeb: FastifyPluginAsync = async (fastify) => {
     '/me/tokens/:id/revoke',
     { config: { skipAuth: true } },
     async (request, reply) => {
-      const sessionUser = request.session?.get('user');
+      // CR-02 fix: same defense as the GET handler. A disabled user must
+      // not be able to mutate token state through the web UI.
+      const sessionUser = resolveActiveSessionUser(
+        request,
+        fastify.userRepository,
+      );
       if (!sessionUser) {
         return reply
           .header('Cache-Control', 'no-store')

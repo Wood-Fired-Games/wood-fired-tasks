@@ -284,6 +284,47 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
       expect($('form[action="/api/v1/me/tokens"]').length).toBe(1);
     });
 
+    // CR-02 fix: disabling a user mid-session must lock them out of the
+    // web HTML routes immediately, not 8 hours from now. resolveActiveSessionUser
+    // re-reads the user row + checks disabled_at on every request.
+    it('CR-02: GET /me redirects to /auth/login when user is disabled mid-session', async () => {
+      // Disable the test user.
+      harness.db
+        .prepare("UPDATE users SET disabled_at = datetime('now') WHERE id = ?")
+        .run(harness.userId);
+
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/me',
+        headers: { cookie: sessionCookie },
+      });
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe('/auth/login?next=/me');
+
+      // Re-enable so subsequent tests reuse the user.
+      harness.db
+        .prepare('UPDATE users SET disabled_at = NULL WHERE id = ?')
+        .run(harness.userId);
+    });
+
+    it('CR-02: GET /me/tokens redirects to /auth/login when user is disabled mid-session', async () => {
+      harness.db
+        .prepare("UPDATE users SET disabled_at = datetime('now') WHERE id = ?")
+        .run(harness.userId);
+
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/me/tokens',
+        headers: { cookie: sessionCookie },
+      });
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe('/auth/login?next=/me/tokens');
+
+      harness.db
+        .prepare('UPDATE users SET disabled_at = NULL WHERE id = ?')
+        .run(harness.userId);
+    });
+
     it('renders revoked tokens in a separate section (greyed)', async () => {
       harness.db.prepare('DELETE FROM api_tokens').run();
       seedToken(harness.db, {

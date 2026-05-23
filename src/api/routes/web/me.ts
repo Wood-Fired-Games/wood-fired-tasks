@@ -7,8 +7,12 @@
  *
  * Behavior:
  *   - No session.user → 302 to /auth/login?next=/me
- *   - Session present → 200 + HTML with displayName + email + auth method
- *     + CSRF-protected logout form
+ *   - Session user disabled mid-session (CR-02) → session cleared, 302 to
+ *     /auth/login?next=/me. Re-validation runs on EVERY request via
+ *     resolveActiveSessionUser so a disabled user cannot continue browsing
+ *     the profile UI for the remainder of the 8-hour session lifetime.
+ *   - Session present + user active → 200 + HTML with displayName + email +
+ *     auth method + CSRF-protected logout form
  *
  * Cache-Control: no-store on every response (security pages must not
  * be cached — the personalized response would otherwise leak to a
@@ -17,13 +21,21 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { renderMe } from '../../../web/pages/me.js';
 import { getOrCreateCsrfToken } from '../auth/csrf.js';
+import { resolveActiveSessionUser } from '../../../web/session-user.js';
 
 const meWeb: FastifyPluginAsync = async (fastify) => {
   fastify.get(
     '/me',
     { config: { skipAuth: true } },
     async (request, reply) => {
-      const sessionUser = request.session?.get('user');
+      // CR-02 fix: re-read the user row + check disabled_at on every
+      // request. resolveActiveSessionUser clears the session if the user
+      // was disabled mid-session, mirroring the /api/v1 chain's behavior
+      // so the web UI cannot be used by a disabled user for up to 8h.
+      const sessionUser = resolveActiveSessionUser(
+        request,
+        fastify.userRepository,
+      );
       if (!sessionUser) {
         return reply
           .header('Cache-Control', 'no-store')
