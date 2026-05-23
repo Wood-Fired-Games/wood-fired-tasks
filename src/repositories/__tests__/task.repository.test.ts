@@ -42,6 +42,129 @@ describe('TaskRepository', () => {
     ...overrides,
   });
 
+  // Helper: insert a user row directly (no UserRepository write methods for
+  // legacy/service rows). Used by Phase-31 FK tests to satisfy the FK
+  // constraint (tasks.created_by_user_id REFERENCES users(id) ON DELETE RESTRICT).
+  const insertUser = (overrides: { id?: number; display_name: string }): number => {
+    const stmt = db.prepare(
+      `INSERT INTO users (id, display_name, is_legacy)
+       VALUES (?, ?, 1)`,
+    );
+    const info = stmt.run(overrides.id ?? null, overrides.display_name);
+    return info.lastInsertRowid as number;
+  };
+
+  // Helper: read raw FK columns from the tasks table (the row mapper returns
+  // them on the Task shape too, but reading directly keeps the assertion
+  // independent of the public type surface).
+  const readFkColumns = (
+    id: number,
+  ): { created_by_user_id: number | null; assignee_user_id: number | null } => {
+    const row = db
+      .prepare(
+        'SELECT created_by_user_id, assignee_user_id FROM tasks WHERE id = ?',
+      )
+      .get(id) as {
+      created_by_user_id: number | null;
+      assignee_user_id: number | null;
+    };
+    return row;
+  };
+
+  describe('Phase 31 FK columns', () => {
+    describe('create', () => {
+      it('persists created_by_user_id when supplied', () => {
+        const userId = insertUser({ display_name: 'alice-fk' });
+        const task = taskRepo.create(
+          createTestTask({ created_by: 'alice-fk', created_by_user_id: userId }),
+        );
+        const fks = readFkColumns(task.id);
+        expect(fks.created_by_user_id).toBe(userId);
+        expect(fks.assignee_user_id).toBeNull();
+      });
+
+      it('persists both created_by_user_id and assignee_user_id when both supplied', () => {
+        const aliceId = insertUser({ display_name: 'alice-creator' });
+        const bobId = insertUser({ display_name: 'bob-assignee' });
+        const task = taskRepo.create(
+          createTestTask({
+            created_by: 'alice-creator',
+            assignee: 'bob-assignee',
+            created_by_user_id: aliceId,
+            assignee_user_id: bobId,
+          }),
+        );
+        const fks = readFkColumns(task.id);
+        expect(fks.created_by_user_id).toBe(aliceId);
+        expect(fks.assignee_user_id).toBe(bobId);
+      });
+
+      it('leaves both FK columns NULL when fields are omitted (back-compat)', () => {
+        const task = taskRepo.create(createTestTask({}));
+        const fks = readFkColumns(task.id);
+        expect(fks.created_by_user_id).toBeNull();
+        expect(fks.assignee_user_id).toBeNull();
+      });
+    });
+
+    describe('update', () => {
+      it('sets assignee_user_id when supplied alongside TEXT assignee', () => {
+        const task = taskRepo.create(createTestTask({}));
+        const bobId = insertUser({ display_name: 'bob-update' });
+        taskRepo.update(task.id, { assignee: 'bob-update', assignee_user_id: bobId });
+        const fks = readFkColumns(task.id);
+        expect(fks.assignee_user_id).toBe(bobId);
+        const refreshed = taskRepo.findById(task.id);
+        expect(refreshed?.assignee).toBe('bob-update');
+      });
+
+      it('clears assignee_user_id when explicitly set to null', () => {
+        const carolId = insertUser({ display_name: 'carol' });
+        const task = taskRepo.create(
+          createTestTask({ assignee: 'carol', assignee_user_id: carolId }),
+        );
+        expect(readFkColumns(task.id).assignee_user_id).toBe(carolId);
+
+        taskRepo.update(task.id, { assignee: null, assignee_user_id: null });
+        const fks = readFkColumns(task.id);
+        expect(fks.assignee_user_id).toBeNull();
+      });
+
+      it('leaves assignee_user_id untouched when only TEXT assignee is updated', () => {
+        const danId = insertUser({ display_name: 'dan' });
+        const task = taskRepo.create(
+          createTestTask({ assignee: 'dan', assignee_user_id: danId }),
+        );
+        // Update only the TEXT assignee; FK must NOT be cleared.
+        taskRepo.update(task.id, { assignee: 'dan-renamed' });
+        const fks = readFkColumns(task.id);
+        expect(fks.assignee_user_id).toBe(danId);
+      });
+    });
+
+    describe('claimTask', () => {
+      it('writes assignee_user_id alongside assignee when trailing arg supplied', () => {
+        const task = taskRepo.create(createTestTask({ assignee: null }));
+        const eveId = insertUser({ display_name: 'eve' });
+        const claimed = taskRepo.claimTask(task.id, 'eve', eveId);
+        expect(claimed).not.toBeNull();
+        expect(claimed!.assignee).toBe('eve');
+        expect(claimed!.status).toBe('in_progress');
+        const fks = readFkColumns(task.id);
+        expect(fks.assignee_user_id).toBe(eveId);
+      });
+
+      it('leaves assignee_user_id NULL when trailing arg omitted (legacy signature)', () => {
+        const task = taskRepo.create(createTestTask({ assignee: null }));
+        const claimed = taskRepo.claimTask(task.id, 'frank');
+        expect(claimed).not.toBeNull();
+        expect(claimed!.assignee).toBe('frank');
+        const fks = readFkColumns(task.id);
+        expect(fks.assignee_user_id).toBeNull();
+      });
+    });
+  });
+
   describe('create', () => {
     it('should create task with all fields and return with id and timestamps', () => {
       const dto = createTestTask({

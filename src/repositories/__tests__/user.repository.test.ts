@@ -277,6 +277,65 @@ describe('UserRepository', () => {
     });
   });
 
+  describe('findServiceAccountByName (Phase 31)', () => {
+    it('returns the row for a seeded service account', () => {
+      insertUser(db, {
+        display_name: 'slack-bot',
+        is_service_account: 1,
+      });
+      insertUser(db, {
+        display_name: 'mcp-bot',
+        is_service_account: 1,
+      });
+
+      const slack = repo.findServiceAccountByName('slack-bot');
+      expect(slack).not.toBeNull();
+      expect(slack!.display_name).toBe('slack-bot');
+      expect(slack!.is_service_account).toBe(1);
+
+      const mcp = repo.findServiceAccountByName('mcp-bot');
+      expect(mcp).not.toBeNull();
+      expect(mcp!.display_name).toBe('mcp-bot');
+      expect(mcp!.is_service_account).toBe(1);
+    });
+
+    it('returns null for unknown service-account name', () => {
+      const result = repo.findServiceAccountByName('not-a-bot');
+      expect(result).toBeNull();
+    });
+
+    it('returns null when display_name matches a legacy row (is_service_account=0)', () => {
+      // A legacy row with display_name='mcp-bot' must NOT be returned —
+      // the predicate requires is_service_account = 1.
+      insertUser(db, {
+        display_name: 'mcp-bot',
+        is_legacy: 1,
+        is_service_account: 0,
+      });
+      const result = repo.findServiceAccountByName('mcp-bot');
+      expect(result).toBeNull();
+    });
+
+    it('returns null for null/undefined/empty name (defensive guard)', () => {
+      const repoAsAny = repo as unknown as {
+        findServiceAccountByName: (n: unknown) => unknown;
+      };
+      expect(repoAsAny.findServiceAccountByName(null)).toBeNull();
+      expect(repoAsAny.findServiceAccountByName(undefined)).toBeNull();
+      expect(repoAsAny.findServiceAccountByName('')).toBeNull();
+    });
+
+    it('is case-sensitive (exact match required)', () => {
+      insertUser(db, {
+        display_name: 'mcp-bot',
+        is_service_account: 1,
+      });
+      expect(repo.findServiceAccountByName('MCP-BOT')).toBeNull();
+      expect(repo.findServiceAccountByName('Mcp-Bot')).toBeNull();
+      expect(repo.findServiceAccountByName('mcp-bot')).not.toBeNull();
+    });
+  });
+
   describe('listAll', () => {
     it('returns rows in id ASC order', () => {
       // Insert out-of-order; SQLite assigns ids monotonically by INSERT order
