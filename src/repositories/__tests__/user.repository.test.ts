@@ -203,6 +203,80 @@ describe('UserRepository', () => {
     });
   });
 
+  describe('findByEmail', () => {
+    it('matches case-insensitively', () => {
+      insertUser(db, {
+        display_name: 'stuart',
+        email: 'Stuart@WoodfiredGames.com',
+      });
+
+      const lower = repo.findByEmail('stuart@woodfiredgames.com');
+      expect(lower).not.toBeNull();
+      expect(lower!.display_name).toBe('stuart');
+
+      const upper = repo.findByEmail('STUART@WOODFIREDGAMES.COM');
+      expect(upper).not.toBeNull();
+      expect(upper!.display_name).toBe('stuart');
+
+      const mixed = repo.findByEmail('Stuart@WoodfiredGames.com');
+      expect(mixed).not.toBeNull();
+      expect(mixed!.display_name).toBe('stuart');
+    });
+
+    it('returns null on miss', () => {
+      insertUser(db, {
+        display_name: 'present',
+        email: 'present@example.com',
+      });
+
+      const result = repo.findByEmail('nobody@example.com');
+      expect(result).toBeNull();
+    });
+
+    it('does NOT return rows with email=NULL (LOWER(NULL) = NULL semantics)', () => {
+      // A legacy user with no email must not match any non-null lookup.
+      insertUser(db, {
+        display_name: 'legacy-no-email',
+        email: null,
+        is_legacy: 1,
+      });
+
+      // Lookup with empty string should not match (empty string guard
+      // tested separately); use a benign non-empty value.
+      const result = repo.findByEmail('anything@example.com');
+      expect(result).toBeNull();
+    });
+
+    it('throws TypeError when email is null/undefined/empty (type-bypass guard)', () => {
+      const repoAsAny = repo as unknown as {
+        findByEmail: (e: unknown) => unknown;
+      };
+      expect(() => repoAsAny.findByEmail(null)).toThrow(TypeError);
+      expect(() => repoAsAny.findByEmail(undefined)).toThrow(TypeError);
+      expect(() => repoAsAny.findByEmail('')).toThrow(TypeError);
+    });
+
+    it('returns the lowest-id row deterministically when multiple rows share an email (no UNIQUE in v1.6)', () => {
+      // No UNIQUE constraint on `email` in migration 008; the contract
+      // requires ORDER BY id ASC LIMIT 1.
+      const firstId = insertUser(db, {
+        id: 100,
+        display_name: 'first-with-dup-email',
+        email: 'dup@example.com',
+      });
+      insertUser(db, {
+        id: 200,
+        display_name: 'second-with-dup-email',
+        email: 'dup@example.com',
+      });
+
+      const result = repo.findByEmail('dup@example.com');
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe(firstId);
+      expect(result!.display_name).toBe('first-with-dup-email');
+    });
+  });
+
   describe('listAll', () => {
     it('returns rows in id ASC order', () => {
       // Insert out-of-order; SQLite assigns ids monotonically by INSERT order
