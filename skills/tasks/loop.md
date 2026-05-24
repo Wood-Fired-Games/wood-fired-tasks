@@ -202,6 +202,8 @@ Per-runner filter syntax for excluding ONE test by FQN (the orchestrator selects
 
 **Reinforcement of the existing pre-existing-breakage policy.** A test that is NOT in `.flaky-tests.json` but FAILS in the §2c baseline still triggers the existing policy from the top of §2c (steps 1–3): surface the failure to the user, offer housekeeping-fix-first or abort, do NOT start the loop until green. `.flaky-tests.json` is opt-in suppression for KNOWN flakes only — it does not silence unknown failures.
 
+**Brief-template embedding rule.** When dispatching a Step 4 subagent, the orchestrator MUST embed the "Test filter cheat sheet" block from the brief template (see the brief template further down in this skill) in any brief whose target cwd matches the .NET (`.sln` / `.csproj` / `global.json`) or Node-vitest (`package.json` with `vitest` in deps) detection — the cheat sheet is what stops the subagent from guessing MTP filter syntax mid-run.
+
 ### 2d. Verify your own skill additions (if applicable)
 
 If you (the assistant) **added or modified `skills/tasks/*.md` or other repo files as part of this same session**, the very first validation run will tell you whether those additions broke something. Treat any failure here as a housekeeping commit (separate from any task in the project) before the loop proper. Example: a new skill that references an MCP tool the test suite's `KNOWN_*` set doesn't know about, or a hardcoded skill-file count that's now off-by-one.
@@ -350,6 +352,39 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 - Source tree shape: <one-line summary>
 - Validation memo path: `.tasks-loop-memo.md`
 - Known-flake exclusions: sourced from `<repo>/.flaky-tests.json` (schema v1; `fqn` + `reason` + `filed_at` + `tracking_issue` per entry). The listed tests have already been excluded from the baseline via `<runner's exclude-by-FQN flag>` and MUST remain excluded from the post-edit run using the same flag.
+
+## Test filter cheat sheet (per-runner exclusion syntax)
+
+Include this block in briefs whose target cwd contains a `.sln`, `.csproj`, or `global.json` (.NET) OR a `package.json` with vitest in deps (Node + vitest).
+
+For .NET xunit-v3 Microsoft Testing Platform repos, the orchestrator MUST embed this VERBATIM so the subagent reaches for the right flag on the first attempt instead of round-tripping through MTP help text (the `dotnet test` `--filter "FullyQualifiedName!~..."` syntax is xunit-v1/v2 and will be rejected by MTP):
+
+```
+.NET xunit-v3 MTP filter syntax (NOT the dotnet-test CLI's --filter):
+  --filter-method     <FQN>        # run one method
+  --filter-not-method <FQN>        # exclude one method
+  --filter-class      <FQTypeName> # run one class (wildcards * supported)
+  --filter-namespace  <ns>         # run a namespace
+  --filter-not-namespace <ns>      # exclude a namespace
+  --filter-trait      name=value   # run by trait
+  --filter-not-trait  name=value   # exclude by trait
+  --filter-query      <q>          # full xunit query-filter language
+  --filter-uid        <uid>        # by test UID
+Combine multiple --filter-not-* flags as AND. Pass after a `--` separator when invoking via `dotnet test`.
+```
+
+For Node repos that use vitest (detected by `vitest` appearing in `package.json` `dependencies` / `devDependencies` / a `test` script that invokes `vitest`), embed this parallel block:
+
+```
+vitest filter syntax:
+  -t '<grep>'            # run tests whose name matches the substring/regex (alias of --testNamePattern)
+  --testNamePattern <re> # same as -t, long form; regex matched against the full test name path
+  --exclude '<glob>'     # exclude FILES by glob (e.g. 'tests/e2e/**'); applied on top of `test.exclude` in vitest config
+  <positional pattern>   # positional args are FILE-name filters, not test-name filters
+Note: vitest has no `--skip` flag — skipping individual tests is a source-level concern (`it.skip`, `describe.skip`, `test.skipIf(...)`). To EXCLUDE a single test at the CLI, prefer a negated `-t` regex (e.g. `-t '^(?!FlakyName).*$'`) or move the file out of the run set with `--exclude`.
+```
+
+Other runners (pytest, jest, go test, cargo test) are not included here yet — add a parallel block per runner when the loop first encounters that stack. Absence from this cheat sheet means "not yet documented", NOT "the runner has no exclusion syntax".
 
 ## Baseline first (run BEFORE any code edits)
 
