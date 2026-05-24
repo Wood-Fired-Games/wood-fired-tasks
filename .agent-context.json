@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-23T23:10:40.168Z",
+    "generated_at": "2026-05-23T23:50:14.116Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -218,6 +218,21 @@
       "approx_token_budget": 8000,
       "actual_lines": 302,
       "sha256": "7968e321c0f52da90bfbde97a534c781f6afbb61e12d216932fcca29aa2c8476",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/tasks-decompose-design.md",
+      "role": "deep-doc",
+      "purpose": "Wave 5 (#320) /tasks:decompose design spec: contract, 9-step methodology, four guardrails, DECOMPOSITION.md artifact schema, verification-fixture sketches, and cost budget. Runtime implementation deferred to follow-on tasks.",
+      "when_to_read": "on-demand",
+      "line_budget": 500,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Design spec — single landing doc for the deferred /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when implementation peels content out into adjacent files.",
+      "approx_token_budget": 10000,
+      "actual_lines": 426,
+      "sha256": "e6733ed2ce74625cea12e2f28e6d4364ce04b782ebbe2f9c7c15336dc2c98e86",
       "actual_owner": "Repository maintainers"
     },
     {

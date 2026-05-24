@@ -429,16 +429,20 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (11 files)', () => {
+  it('skill file count matches expected (12 files)', () => {
     // Update this count when adding or removing a skill file in
     // `skills/tasks/`. The README ("N Claude Code skill files") and
     // docs/MCP.md ("N pre-built skill files") references should be
     // updated in the same change.
+    //
+    // Wave 5 (#320) bumped the count 11 → 12 when `decompose.md` landed
+    // as a design-only discovery stub. Runtime is deferred — see
+    // `docs/tasks-decompose-design.md` for the contract.
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'));
 
-    expect(skillFiles).toHaveLength(11);
+    expect(skillFiles).toHaveLength(12);
   });
 
   it('each skill file has workflow steps', () => {
