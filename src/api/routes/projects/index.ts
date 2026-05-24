@@ -5,6 +5,7 @@ import {
   ProjectResponseSchema,
   ProjectListPaginatedResponseSchema,
 } from './schemas.js';
+import dependencyGraphRoutes from './dependency-graph.js';
 
 // Pagination query schema for GET /projects. Mirrors task list bounds.
 const QueryProjectListSchema = z.object({
@@ -93,6 +94,11 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
       return reply.send(project);
     }
   );
+
+  // GET /:id/dependency-graph — task #342, dashboard tree-view backend.
+  // Registered as a child plugin so the colocated `schema:` block stays in
+  // its own file (the projects barrel was getting busy).
+  await fastify.register(dependencyGraphRoutes);
 
   // DELETE /:id - Delete project
   fastify.delete(

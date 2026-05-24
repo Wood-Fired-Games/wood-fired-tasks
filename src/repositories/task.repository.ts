@@ -466,7 +466,15 @@ export class TaskRepository implements ITaskRepository {
     params.__limit = limit;
     params.__offset = offset;
 
-    const query = `
+    // N7 (task #342 follow-up): when the caller explicitly opts out of tag
+    // hydration (`include_tags: false`), drop the `task_tags` LEFT JOIN and
+    // the GROUP BY. Graph builders (DependencyGraphService) never read the
+    // `tags` field; skipping the join shaves work proportional to the tag
+    // fanout. Default behaviour (`include_tags` undefined → true) is
+    // unchanged so existing list endpoints stay byte-identical.
+    const includeTags = filters.include_tags !== false;
+    const query = includeTags
+      ? `
       SELECT
         t.*,
         p.name as project_name,
@@ -478,6 +486,16 @@ export class TaskRepository implements ITaskRepository {
       GROUP BY t.id
       ORDER BY t.created_at DESC
       LIMIT @__limit OFFSET @__offset
+    `
+      : `
+      SELECT
+        t.*,
+        p.name as project_name
+      FROM tasks t
+      INNER JOIN projects p ON p.id = t.project_id
+      ${whereClause}
+      ORDER BY t.created_at DESC
+      LIMIT @__limit OFFSET @__offset
     `;
 
     // FTS5 MATCH parses user-supplied search syntax at query time. Malformed
@@ -485,24 +503,39 @@ export class TaskRepository implements ITaskRepository {
     // SQLITE_ERROR with raw parser text. Catch and re-throw as FtsSyntaxError
     // ONLY when the caller actually provided a search filter — otherwise
     // unrelated SQLITE_ERRORs would be misclassified.
-    let rows: Array<Task & { tags_csv: string | null }>;
+    if (includeTags) {
+      let rows: Array<Task & { tags_csv: string | null }>;
+      try {
+        rows = mapRows<Task & { tags_csv: string | null }>(
+          this.db.prepare(query),
+          params,
+        );
+      } catch (err) {
+        if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
+          throw new FtsSyntaxError((err as Error).message);
+        }
+        throw err;
+      }
+
+      return rows.map((row) => {
+        const { tags_csv, ...task } = row;
+        const tags = tags_csv ? tags_csv.split(',').sort() : [];
+        return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
+      });
+    }
+
+    let rowsNoTags: Task[];
     try {
-      rows = mapRows<Task & { tags_csv: string | null }>(
-        this.db.prepare(query),
-        params,
-      );
+      rowsNoTags = mapRows<Task>(this.db.prepare(query), params);
     } catch (err) {
       if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
         throw new FtsSyntaxError((err as Error).message);
       }
       throw err;
     }
-
-    return rows.map((row) => {
-      const { tags_csv, ...task } = row;
-      const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
-    });
+    return rowsNoTags.map((row) =>
+      normalizeTaskTimestamps(inflateVerificationEvidence({ ...row, tags: [] })),
+    );
   }
 
   claimTask(

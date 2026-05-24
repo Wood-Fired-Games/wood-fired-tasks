@@ -880,6 +880,279 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/projects/{id}/dependency-graph": {
+      "get": {
+        "description": "Return a project's task dependency structure in tree (default), graph, or text form. Performs a single bulk SQL pass over tasks and task_dependencies — safe for dashboard panels that would otherwise N+1 against /tasks/:id/dependencies.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "tree",
+              "enum": [
+                "tree",
+                "graph",
+                "text",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "format": {
+                          "enum": [
+                            "tree",
+                          ],
+                          "type": "string",
+                        },
+                        "roots": {
+                          "items": {
+                            "$ref": "#/components/schemas/schema0",
+                          },
+                          "type": "array",
+                        },
+                        "topology": {
+                          "enum": [
+                            "FLAT",
+                            "DAG",
+                            "DAG_CYCLIC",
+                          ],
+                          "type": "string",
+                        },
+                        "total_edges": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "total_tasks": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "truncated": {
+                          "type": "boolean",
+                        },
+                      },
+                      "required": [
+                        "format",
+                        "roots",
+                        "total_tasks",
+                        "total_edges",
+                        "topology",
+                        "truncated",
+                      ],
+                      "type": "object",
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "edges": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "from": {
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer",
+                              },
+                              "to": {
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer",
+                              },
+                            },
+                            "required": [
+                              "from",
+                              "to",
+                            ],
+                            "type": "object",
+                          },
+                          "type": "array",
+                        },
+                        "format": {
+                          "enum": [
+                            "graph",
+                          ],
+                          "type": "string",
+                        },
+                        "nodes": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer",
+                              },
+                              "priority": {
+                                "enum": [
+                                  "low",
+                                  "medium",
+                                  "high",
+                                  "urgent",
+                                ],
+                                "type": "string",
+                              },
+                              "status": {
+                                "enum": [
+                                  "open",
+                                  "in_progress",
+                                  "done",
+                                  "closed",
+                                  "blocked",
+                                  "backlogged",
+                                ],
+                                "type": "string",
+                              },
+                              "title": {
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "id",
+                              "title",
+                              "status",
+                              "priority",
+                            ],
+                            "type": "object",
+                          },
+                          "type": "array",
+                        },
+                        "topology": {
+                          "enum": [
+                            "FLAT",
+                            "DAG",
+                            "DAG_CYCLIC",
+                          ],
+                          "type": "string",
+                        },
+                        "total_edges": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "total_tasks": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                      },
+                      "required": [
+                        "format",
+                        "nodes",
+                        "edges",
+                        "topology",
+                        "total_tasks",
+                        "total_edges",
+                      ],
+                      "type": "object",
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "format": {
+                          "enum": [
+                            "text",
+                          ],
+                          "type": "string",
+                        },
+                        "lines": {
+                          "items": {
+                            "type": "string",
+                          },
+                          "type": "array",
+                        },
+                        "topology": {
+                          "enum": [
+                            "FLAT",
+                            "DAG",
+                            "DAG_CYCLIC",
+                          ],
+                          "type": "string",
+                        },
+                        "total_edges": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "total_tasks": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "truncated": {
+                          "type": "boolean",
+                        },
+                      },
+                      "required": [
+                        "format",
+                        "lines",
+                        "topology",
+                        "total_tasks",
+                        "total_edges",
+                        "truncated",
+                      ],
+                      "type": "object",
+                    },
+                  ],
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+    },
     "/api/v1/tasks/": {
       "get": {
         "description": "List tasks with optional filters (paginated). Returns \`{ data, total, limit, offset }\` — \`limit\` defaults to 50, max 500.",

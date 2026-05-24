@@ -13,6 +13,7 @@ import { TaskService } from './services/task.service.js';
 import { DependencyService } from './services/dependency.service.js';
 import { CommentService } from './services/comment.service.js';
 import { TopologyService } from './services/topology.service.js';
+import { DependencyGraphService } from './services/dependency-graph.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
 import { eventBus } from './events/event-bus.js';
 import { initOidc, type OidcConfig } from './services/oidc-client.js';
@@ -35,6 +36,13 @@ export interface App {
    * over `task_dependencies` rows — no schema additions, no writes.
    */
   topologyService: TopologyService;
+  /**
+   * Task #342: builds the tree/graph/text shapes for the Agent Overview
+   * dashboard's dependency-graph panel. Reads-only — performs a single
+   * tasks query and a single task_dependencies query per request and
+   * composes the requested shape in-memory.
+   */
+  dependencyGraphService: DependencyGraphService;
   /**
    * Identity-foundation repositories (Phase 27) decorated onto the Fastify
    * instance by `createServer` so the Phase 28 auth chain at
@@ -167,6 +175,17 @@ export async function createApp(dbPath?: string): Promise<App> {
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
   const topologyService = new TopologyService(taskRepo, dependencyRepo);
+  // N6: pass the better-sqlite3 handle so the bulk reads (count + paginated
+  // tasks + dependencies findAll) run inside a snapshot-isolated
+  // `db.transaction(() => {})()`. Service-layer unit tests still construct
+  // without `db` — the in-memory single-threaded SQLite they use makes the
+  // race impossible.
+  const dependencyGraphService = new DependencyGraphService(
+    taskRepo,
+    dependencyRepo,
+    projectRepo,
+    db,
+  );
 
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(
@@ -217,6 +236,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     dependencyService,
     commentService,
     topologyService,
+    dependencyGraphService,
     userRepository,
     apiTokenRepository,
     workflowEngine,

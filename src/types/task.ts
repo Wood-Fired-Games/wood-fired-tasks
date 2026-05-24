@@ -206,6 +206,15 @@ export interface TaskFilters {
   limit?: number;
   /** Pagination: zero-based row offset. Defaults to 0. */
   offset?: number;
+  /**
+   * Skip the `task_tags` LEFT JOIN + GROUP BY when the caller does not need
+   * tags. Default `true` for backward compat with existing list endpoints.
+   * Callers that only walk the graph structure (e.g. DependencyGraphService)
+   * can pass `false` to drop the join and the per-row tag splitting; the
+   * returned rows still carry a `tags: []` placeholder so the shape stays
+   * `Task & { tags: string[] }` for type-erasure callers.
+   */
+  include_tags?: boolean;
 }
 
 /**
