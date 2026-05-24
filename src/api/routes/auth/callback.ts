@@ -100,9 +100,20 @@ const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
       // the registered URL while letting us mount the query params
       // from the incoming request.
       const currentUrl = new URL(opts.redirectUri);
-      // Copy code+state (the only query params openid-client reads).
+      // Copy the query params openid-client v6 reads:
+      //   - code, state: RFC 6749 authorization-code grant.
+      //   - iss: RFC 9207 Authorization Server Issuer Identification.
+      //     openid-client v6 + oauth4webapi validateAuthResponse REQUIRES
+      //     this when the AS metadata advertises
+      //     `authorization_response_iss_parameter_supported: true`
+      //     (Google does), and fails with `OPE: response parameter "iss"
+      //     (issuer) missing` otherwise — even though the iss is right
+      //     there in `request.query`. Pre-v6 openid-client did not check
+      //     iss, hence the older comment that read "code+state are the
+      //     only params openid-client reads" — that statement is no
+      //     longer true.
       const incomingQuery = (request.query as Record<string, unknown>) ?? {};
-      for (const key of ['code', 'state']) {
+      for (const key of ['code', 'state', 'iss']) {
         const v = incomingQuery[key];
         if (typeof v === 'string') currentUrl.searchParams.set(key, v);
       }
