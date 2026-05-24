@@ -7,6 +7,10 @@ disable-model-invocation: false
 
 Retrieve and display comprehensive information about a specific task.
 
+## Preflight: MCP tools
+
+This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies`) and retry.
+
 ## Workflow
 
 1. Extract task ID from $ARGUMENTS[0]

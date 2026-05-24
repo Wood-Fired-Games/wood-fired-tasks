@@ -15,6 +15,12 @@ This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md).
 
 > **Mental model.** Think of yourself as a foreman scheduling a build crew across independent foundations on the same site. Each foundation (wave) is a set of tasks that have no remaining dependencies. While the wave's workers are pouring concrete in parallel, you (the orchestrator) plan the next wave. You never let a worker start before its supporting foundation has cured — that's what `blocked_by` enforces.
 
+## Preflight: identity + MCP tools
+
+**Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop-dag`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the per-worker brief / claim / comment sections below (and reused from `loop.md` / `loop-shared.md`) — this block is the canonical pointer.
+
+This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_projects,mcp__wood-fired-bugs__list_tasks,mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies,mcp__wood-fired-bugs__claim_task,mcp__wood-fired-bugs__update_task,mcp__wood-fired-bugs__add_comment,mcp__wood-fired-bugs__topology_check`) and retry.
+
 ---
 
 ## 1. Argument Parsing

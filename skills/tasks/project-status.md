@@ -6,6 +6,10 @@ disable-model-invocation: false
 
 # Project Status Overview
 
+## Preflight: MCP tools
+
+This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_projects,mcp__wood-fired-bugs__list_tasks`) and retry.
+
 ## Purpose
 Show high-level overview of all projects with task counts broken down by status and completion percentage.
 

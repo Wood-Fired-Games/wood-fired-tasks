@@ -9,6 +9,12 @@ disable-model-invocation: false
 
 Creates a new task in the Wood Fired Bugs system with full configuration options.
 
+## Preflight: identity + MCP tools
+
+**Resolve a real identity** before the `created_by` field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-create-task`). Pick once at top of invocation and capture as `$CREATED_BY`.
+
+This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__create_task,mcp__wood-fired-bugs__list_projects`) and retry.
+
 ## Steps
 
 1. **Parse Title**
@@ -37,7 +43,7 @@ Creates a new task in the Wood Fired Bugs system with full configuration options
    - estimated_minutes: [if provided]
    - due_date: [if provided]
    - tags: [if provided]
-   - created_by: 'user'
+   - created_by: `$CREATED_BY` from Preflight (NOT the literal "user")
 
 4. **Confirm Creation**
 

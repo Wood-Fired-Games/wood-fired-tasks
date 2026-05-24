@@ -19,6 +19,10 @@ the full design — contract, methodology, guardrails, artifact schema,
 verification fixtures, and cost budget. That document is the source of
 truth; this skill file intentionally restates only the navigation.
 
+## Preflight: MCP tools
+
+This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies`) and retry. (Runtime is a design-only stub today — tool calls listed here are what the implemented pipeline would call read-only; the stub does not actually call them.)
+
 ## On invocation
 
 While the design is the only artifact that has landed, the skill MUST:

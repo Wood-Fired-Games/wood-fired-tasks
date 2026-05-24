@@ -7,6 +7,10 @@ disable-model-invocation: false
 
 Search for tasks matching a keyword in titles and descriptions.
 
+## Preflight: MCP tools
+
+This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_tasks`) and retry.
+
 ## Workflow
 
 1. Extract search keyword from $ARGUMENTS

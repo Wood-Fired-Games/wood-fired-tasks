@@ -13,6 +13,12 @@ The loop is project-agnostic. Validation commands (`build`, `test`, `smoke`) and
 
 > **Mental model.** Think of yourself as the foreman, not the carpenter. Each task: hand a self-contained brief to a fresh subagent (the carpenter), then independently re-check the work before signing it off. Your context only holds the *plan, summaries, and verification results* — never raw build logs, file scans, or trial-and-error.
 
+## Preflight: identity + MCP tools
+
+**Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the worker-brief / claim / comment sections below — this block is the canonical pointer.
+
+This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_projects,mcp__wood-fired-bugs__list_tasks,mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies,mcp__wood-fired-bugs__claim_task,mcp__wood-fired-bugs__update_task,mcp__wood-fired-bugs__add_comment,mcp__wood-fired-bugs__topology_check`) and retry.
+
 ---
 
 ## 1. Argument Parsing
