@@ -99,7 +99,7 @@ describe('TopologyService', () => {
       depRepo.create({ task_id: a, blocks_task_id: b });
       const report = service.classify(projectId);
       expect(report.topology).toBe('DAG');
-      expect(report.advisory).toBe('/gsd-autonomous');
+      expect(report.advisory).toBe('/tasks:loop-dag');
       expect(report.edges).toEqual([{ from: a, to: b }]);
       expect(report.roots).toEqual([a]);
       expect(report.leaves).toEqual([b]);
@@ -122,7 +122,7 @@ describe('TopologyService', () => {
 
       const report = service.classify(projectId);
       expect(report.topology).toBe('DAG');
-      expect(report.advisory).toBe('/gsd-autonomous');
+      expect(report.advisory).toBe('/tasks:loop-dag');
       expect(report.roots).toEqual([n1]);
       expect(report.leaves).toEqual([n5]);
       // Edges sorted by (from, to)

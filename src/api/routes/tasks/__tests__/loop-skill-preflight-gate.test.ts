@@ -82,7 +82,7 @@ describe('/tasks:loop skill — topology pre-flight gate wiring (#319)', () => {
     // breaks the contract that callers (CI, downstream tools) rely on to
     // detect the halt path.
     const canonicalDagHalt =
-      'has <count> dependency edges. Use /gsd-autonomous (for a milestone) or run tasks individually in topological order. Override with --i-know-what-im-doing.';
+      'has <count> dependency edges. Use /tasks:loop-dag (for wave-by-wave parallel dispatch) or run tasks individually in topological order. Override with --i-know-what-im-doing.';
     expect(section2f.includes(canonicalDagHalt)).toBe(true);
   });
 

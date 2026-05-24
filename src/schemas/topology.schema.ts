@@ -9,7 +9,8 @@ import { z } from 'zod';
  *   - the `topology_check` MCP tool (structuredContent)
  *
  * The classifier decides whether a project is `/tasks:loop`-safe (parallelizable
- * leaves) or requires `/gsd-autonomous` (ordered phases) based on whether the
+ * leaves) or requires `/tasks:loop-dag` (wave-by-wave parallel dispatch
+ * respecting dependency edges; Wave 4.3 / task #341) based on whether the
  * project's `task_dependencies` rows form a flat set, an acyclic DAG, or a
  * cycle-bearing graph.
  *
@@ -26,7 +27,7 @@ import { z } from 'zod';
  *   - `leaves`: task IDs with zero out-degree (they block nothing). Sorted asc.
  *   - `advisory`:
  *       `/tasks:loop`        — recommended for FLAT projects.
- *       `/gsd-autonomous`    — recommended for DAG projects.
+ *       `/tasks:loop-dag`    — recommended for DAG projects (Wave 4.3 / #341).
  *       `BLOCKED`            — refuse to loop; manual intervention needed for
  *                              DAG_CYCLIC projects.
  *
@@ -45,7 +46,7 @@ export const TopologyReportSchema = z.object({
   ),
   roots: z.array(z.number().int().positive()),
   leaves: z.array(z.number().int().positive()),
-  advisory: z.enum(['/tasks:loop', '/gsd-autonomous', 'BLOCKED']),
+  advisory: z.enum(['/tasks:loop', '/tasks:loop-dag', 'BLOCKED']),
 });
 
 export type TopologyReport = z.infer<typeof TopologyReportSchema>;

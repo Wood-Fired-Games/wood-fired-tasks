@@ -1,6 +1,6 @@
 ---
 name: decompose
-description: Auto-breakdown of a project-level goal into independent leaf tasks (or a dependency DAG) ready for /tasks:loop or /gsd-autonomous. Pipeline: goal capture → codebase recon → candidate generation → independence check → topology decision → coverage check → sizing → materialize → DECOMPOSITION.md emit. Read-only orchestrator — does not execute the decomposed tasks itself. Bounded: ≤ $5 target / $15 hard cap per decomposition. Status — Wave 5 DESIGN landed; runtime implementation deferred.
+description: Auto-breakdown of a project-level goal into independent leaf tasks (or a dependency DAG) ready for /tasks:loop or /tasks:loop-dag. Pipeline: goal capture → codebase recon → candidate generation → independence check → topology decision → coverage check → sizing → materialize → DECOMPOSITION.md emit. Read-only orchestrator — does not execute the decomposed tasks itself. Bounded: ≤ $5 target / $15 hard cap per decomposition. Status — Wave 5 DESIGN landed; runtime implementation deferred.
 argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed]
 disable-model-invocation: false
 ---
@@ -61,7 +61,7 @@ full detail; this section is a one-line-per-step reminder.)
 2. **Codebase recon** — single Explore-agent subagent, ≤ 50 tool calls / ≤ 8 min, output cached.
 3. **Candidate generation** — planner subagent emits 8–25 drafts (title + description + acceptance_criteria + suspected_edges + estimated_minutes).
 4. **Independence check** — critic subagent does pairwise comparison; halt if ≥ 30% interdependent.
-5. **Topology decision** — apply `topology_check` (Wave 4.1 / #318); FLAT → `/tasks:loop`, DAG → `/gsd-autonomous` + phase grouping, DAG_CYCLIC → HALT.
+5. **Topology decision** — apply `topology_check` (Wave 4.1 / #318); FLAT → `/tasks:loop`, DAG → `/tasks:loop-dag` (Wave 4.3 / #341) + suggested wave grouping, DAG_CYCLIC → HALT.
 6. **Coverage check** — second critic; gaps → add candidates, duplicates → merge (≤ 2 Step 4 re-runs).
 7. **Sizing check** — each candidate ≤ 90 minutes; split oversize.
 8. **Materialize** — `create_task` + `add_dependency`, idempotent on `decomposition_id`.
@@ -86,4 +86,4 @@ weaken those tests without simultaneously updating
 - Schema tests: [`src/lib/decompose/__tests__/schema.test.ts`](../../src/lib/decompose/__tests__/schema.test.ts)
 - Design-doc tests: [`src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`](../../src/api/routes/tasks/__tests__/skill-decompose-design.test.ts)
 - Companion skill (consumer): [`skills/tasks/loop.md`](./loop.md) — drains `FLAT` advisories.
-- Companion orchestrator (consumer): `/gsd-autonomous` — drains `DAG` advisories.
+- Companion orchestrator (consumer): [`skills/tasks/loop-dag.md`](./loop-dag.md) — drains `DAG` advisories wave-by-wave (Wave 4.3 / #341).

@@ -23,7 +23,8 @@ export function registerTopologyTools(
     {
       description:
         'Classify a project as FLAT (parallelizable, /tasks:loop), DAG ' +
-        '(ordered phases, /gsd-autonomous), or DAG_CYCLIC (BLOCKED) based ' +
+        '(wave-by-wave parallel dispatch, /tasks:loop-dag), or DAG_CYCLIC ' +
+        '(BLOCKED) based ' +
         'on its task_dependencies graph. Returns roots, leaves, edges, and ' +
         'an execution advisory.',
       inputSchema: z.object({

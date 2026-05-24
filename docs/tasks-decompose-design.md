@@ -31,14 +31,15 @@ step of the pipeline.
 The Wave 4 readiness audit found a structural gap between the two
 autonomous orchestrators shipped to date:
 
-- **`/gsd-autonomous`** assumes a backlog that has already been
-  decomposed via `gsd new-milestone` → `gsd plan-phase`. Decomposition is
-  done by the human (or by gsd's own planning skills) *before* the
-  orchestrator ever runs.
+- **`/tasks:loop-dag`** (Wave 4.3 / #341) drains a wood-fired-bugs
+  project whose topology is `DAG` by computing the dependency frontier
+  wave-by-wave and dispatching workers in parallel within each wave. It
+  assumes the project is *already* populated with dependency-edged tasks
+  — it does not decompose a goal.
 - **`/tasks:loop`** assumes the wood-fired-bugs project is *already*
   populated with bug-sized tasks. The Wave 4.2 topology pre-flight gate
-  (#319) blocks the loop on `DAG` projects precisely because the loop has
-  no opinion on how to break apart a DAG — it just refuses to run.
+  (#319) routes `DAG` projects to `/tasks:loop-dag`; `/tasks:loop` itself
+  is the `FLAT`-topology executor.
 
 There is no equivalent of `plan-phase` for the bugs-db side. A user with
 a project-level goal ("ship OIDC SSO", "audit accessibility on the chat
@@ -47,8 +48,10 @@ orchestrator can drain them. That hand-authoring is the load-bearing
 step `/tasks:decompose` will own.
 
 The skill is intentionally a **planner, not an executor**. Separation of
-plan-and-execute is the central guardrail (§5) — the same separation
-gsd enforces between `plan-phase` and `execute-phase`.
+plan-and-execute is the central guardrail (§5) — `/tasks:decompose`
+designs the work, then hands off to `/tasks:loop` (FLAT) or
+`/tasks:loop-dag` (DAG) for execution; it never runs the tasks it
+materialised.
 
 ## Contract
 
@@ -139,13 +142,13 @@ directly to advisories:
 | Topology     | Advisory                                              |
 |--------------|-------------------------------------------------------|
 | `FLAT`       | `/tasks:loop` (no edges; drain in parallel)           |
-| `DAG`        | `/gsd-autonomous` + suggested phase grouping          |
+| `DAG`        | `/tasks:loop-dag` + suggested wave grouping (Wave 4.3 / #341) |
 | `DAG_CYCLIC` | **HALT** — emit a cycle report; do NOT materialize    |
 
 For `DAG`, the orchestrator additionally groups candidates into 1–4
-phases by computing connected components + a simple longest-path
+waves by computing connected components + a simple longest-path
 heuristic. The grouping is *advisory only* — the user reviews
-`DECOMPOSITION.md` before running `/gsd-autonomous`.
+`DECOMPOSITION.md` before running `/tasks:loop-dag`.
 
 ### Step 6 — Coverage check
 
@@ -208,9 +211,9 @@ plan and execute is the central design property.
 
 - **Why.** Mixing planning + execution in one orchestrator concentrates
   blast radius and makes failure attribution impossible (a bad plan
-  looks indistinguishable from a bad execution). gsd enforces the same
-  split between `plan-phase` and `execute-phase`; `/tasks:decompose` is
-  the bugs-db equivalent of `plan-phase`.
+  looks indistinguishable from a bad execution). `/tasks:decompose` is
+  the planner half; `/tasks:loop` and `/tasks:loop-dag` are the
+  executor halves — keep them separate.
 - **Enforcement mechanism.** The skill's documented tool surface is
   `list_projects`, `list_tasks`, `topology_check`, `create_task`, and
   `add_dependency`. It does **not** call `claim_task`, `update_task`
@@ -243,7 +246,8 @@ returns `ORDERED` or `MUTUALLY_EXCLUSIVE` for ≥ 30% of pairs).
 - **Why.** ≥ 30% interdependence is the empirical threshold above which
   the planner output is no longer a sensible decomposition — the goal
   is either a single epic, a roadmap, or a multi-phase migration that
-  belongs in gsd, not in bugs-db.
+  needs human-authored phase structure before the orchestrator can
+  safely materialise it as a bugs-db backlog.
 - **Enforcement mechanism.** Step 4 computes
   `interdependent_ratio = (ordered + mutually_exclusive) / total_pairs`.
   The orchestrator halts and asks the user when the ratio crosses 0.30.
@@ -283,7 +287,7 @@ by `DecompositionFrontmatterSchema` in `src/lib/decompose/schema.ts`:
 | `success_criteria`       | string[]    | 3–5 entries.                                                            |
 | `domain`                 | enum        | `frontend` \| `backend` \| `docs` \| `infra` \| `mixed`.                |
 | `topology`               | enum        | `FLAT` \| `DAG` \| `DAG_CYCLIC` (from §5 / `topology_check`).           |
-| `advisory`               | enum        | `/tasks:loop` \| `/gsd-autonomous` \| `BLOCKED`.                        |
+| `advisory`               | enum        | `/tasks:loop` \| `/tasks:loop-dag` \| `BLOCKED`.                        |
 | `candidate_count`        | int ≥ 0     | Count of materialized candidates.                                       |
 | `dependency_edge_count`  | int ≥ 0     | Count of edges added via `add_dependency`.                              |
 | `total_usd`              | number ≥ 0  | Cost across orchestrator + every subagent (cache-discounted).           |
@@ -332,10 +336,11 @@ Reuses the existing `topology_check` MCP tool (Wave 4.1, **task #318**)
 - `FLAT` (no dependency edges) ⇒ advisory `/tasks:loop`. The materialized
   tasks have no ordering, so the loop's `--max-tasks N` budget can drain
   them in any order. DECOMPOSITION.md records `advisory: /tasks:loop`.
-- `DAG` (acyclic with edges) ⇒ advisory `/gsd-autonomous` + a phase
-  grouping suggestion (1–4 phases derived from connected components +
-  longest-path heuristic). Grouping is rendered as a table in §4 of the
-  artifact body. DECOMPOSITION.md records `advisory: /gsd-autonomous`.
+- `DAG` (acyclic with edges) ⇒ advisory `/tasks:loop-dag` (Wave 4.3 /
+  #341) + a wave grouping suggestion (1–4 waves derived from connected
+  components + longest-path heuristic). Grouping is rendered as a table
+  in §4 of the artifact body. DECOMPOSITION.md records
+  `advisory: /tasks:loop-dag`.
 - `DAG_CYCLIC` ⇒ **HALT**. No materialization. The skill emits a
   partial DECOMPOSITION.md with `advisory: BLOCKED`,
   `aborted_reason: cycle`, and a cycle report listing the offending
@@ -356,8 +361,8 @@ follow-on cannot ship without them.
 2. **OIDC SSO DAG** — supply a synthetic OIDC SSO goal that the
    planner is known to decompose into a DAG (auth flow → token storage →
    session middleware → logout). Assert `topology=DAG`,
-   `advisory=/gsd-autonomous`, and that the suggested phase grouping
-   has ≥ 2 phases. Exercises Guardrail 3 at sub-30% interdependence.
+   `advisory=/tasks:loop-dag`, and that the suggested wave grouping
+   has ≥ 2 waves. Exercises Guardrail 3 at sub-30% interdependence.
 3. **Cyclic halt** — supply a goal whose planner output deliberately
    creates a cycle (e.g. "refactor user model to depend on auth which
    depends on user model"). Assert the run halts with

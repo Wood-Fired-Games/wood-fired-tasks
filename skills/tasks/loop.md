@@ -246,7 +246,7 @@ Record the branch outcome in orchestrator state as `gate_decision` for inclusion
     For backward-compatibility with pre-Wave-11 readers and tooling, the canonical pre-Wave-11 halt message remains documented here even though it is no longer emitted by default. It is preserved verbatim so downstream parsers that scan LOOP-RUN.md transcripts for the historical text still find it:
 
     ```
-    Project <id> has <count> dependency edges. Use /gsd-autonomous (for a milestone) or run tasks individually in topological order. Override with --i-know-what-im-doing.
+    Project <id> has <count> dependency edges. Use /tasks:loop-dag (for wave-by-wave parallel dispatch) or run tasks individually in topological order. Override with --i-know-what-im-doing.
     ```
 
 - **`topology: "DAG_CYCLIC"`** → set `gate_decision = "blocked"` unconditionally. HALT the loop immediately. Do NOT dispatch any worker. The `--i-know-what-im-doing` flag **MUST NOT override** this branch — a cycle in the dependency graph means there is no topological order any runner could follow, so cycles must be broken before any runner can proceed. Emit this message verbatim, substituting the real project id:
@@ -335,15 +335,9 @@ This is the load-bearing step. **Do not implement the fix yourself**, no matter 
 - Each iteration is independently auditable.
 - The orchestrator remains the single source of truth for what passed/failed.
 
-Use the `Agent` tool. Picking the agent type:
+Use the `Agent` tool with the Claude Code platform's default `general-purpose` subagent type. This skill deliberately does NOT pin the orchestrator to any third-party agent plugin — briefs are the load-bearing part, not the agent type, and depending on an external plugin would couple the skill's behaviour to a tool that may not be installed on every host. For read-only investigation steps where no edits are needed, the platform's `Explore` subagent type is the right choice.
 
-| Stack signal | Subagent |
-|--------------|----------|
-| `.csproj`, `.sln`, `*.cs` files | `dotnet-claude-kit:*` (pick by task shape — `code-review`, `test-engineer`, `build-error-resolver`, etc.) |
-| TS/JS/Node/Python/Go/Rust/anything else | `general-purpose` |
-| Read-only investigation (no edits) | `Explore` |
-
-If unsure, `general-purpose` is always safe. Don't over-specialise — the brief is the load-bearing part, not the agent type.
+If the user has installed third-party stack-specialist agents (e.g. a .NET-focused plugin) and wants the orchestrator to prefer them on matching stacks, the user should configure that routing themselves — the skill stays vendor-neutral by default.
 
 Brief template — adapt to the task. Brief size should scale with codebase quality: if you know the repo is already well-typed and well-tested, prefer thinner briefs (keep the constraint list intact but drop worked-example idioms); if the repo is messy, beef up the "decisions in the brief" and "preferred idioms" sections.
 
@@ -800,7 +794,7 @@ All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections us
 
 #### 9e. NOT committed (intentional)
 
-`.planning/` is gitignored per project policy — see the `.gitignore` line `Internal planning + agent workspaces (not for open-source distribution)`. This mirrors gsd convention (`MILESTONE-AUDIT.md` and similar gsd artifacts also live in gitignored `.planning/`). LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact. The trade-off: replay across machines requires manual sharing (copy the file out, attach to a bugs-db comment, or paste into a PR description). The benefit: open-source distribution stays clean, and per-run forensic detail never leaks into the public history of a fork.
+`.planning/` is gitignored per project policy — see the `.gitignore` line `Internal planning + agent workspaces (not for open-source distribution)`. LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact. The trade-off: replay across machines requires manual sharing (copy the file out, attach to a bugs-db comment, or paste into a PR description). The benefit: open-source distribution stays clean, and per-run forensic detail never leaks into the public history of a fork.
 
 The orchestrator MUST NOT `git add` the `.planning/loops/` artifact. It MUST NOT modify `.gitignore` to make `.planning/loops/` an exception.
 
@@ -808,7 +802,7 @@ Return to Step 1.
 
 ### Step 10 — Integration audit (run termination)
 
-This is the **terminal step**. It runs ONCE per loop run — never per iteration — after Step 1's "backlog empty" announcement OR after the `--max-tasks N` budget is hit. The goal is to catch the failure mode the per-task verifier cannot see: **ten green tasks that together break the system**. This is the same role gsd's `MILESTONE-AUDIT.md` plays for cross-phase integration; Step 10 is its `/tasks:loop` analogue. Subagent definition: [`skills/agents/integration-auditor.md`](../agents/integration-auditor.md). Inline schema: [`src/lib/loop-run/integration-audit-schema.ts`](../../src/lib/loop-run/integration-audit-schema.ts).
+This is the **terminal step**. It runs ONCE per loop run — never per iteration — after Step 1's "backlog empty" announcement OR after the `--max-tasks N` budget is hit. The goal is to catch the failure mode the per-task verifier cannot see: **ten green tasks that together break the system**. Per-task verifiers grade one task's diff in isolation; only a cross-task auditor sees the union of every worker's edits to the same symbol and can catch the composition bugs that emerge there. Subagent definition: [`skills/agents/integration-auditor.md`](../agents/integration-auditor.md). Inline schema: [`src/lib/loop-run/integration-audit-schema.ts`](../../src/lib/loop-run/integration-audit-schema.ts).
 
 #### 10a. When this step runs
 

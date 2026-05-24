@@ -34,7 +34,7 @@ const VALID_FRONTMATTER: DecompositionFrontmatter = {
   ],
   domain: 'backend',
   topology: 'DAG',
-  advisory: '/gsd-autonomous',
+  advisory: '/tasks:loop-dag',
   candidate_count: 12,
   dependency_edge_count: 7,
   total_usd: 4.18,

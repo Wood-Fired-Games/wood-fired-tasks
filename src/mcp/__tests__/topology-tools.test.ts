@@ -141,7 +141,7 @@ describe('MCP topology_check tool', () => {
         leaves: number[];
       };
       expect(report.topology).toBe('DAG');
-      expect(report.advisory).toBe('/gsd-autonomous');
+      expect(report.advisory).toBe('/tasks:loop-dag');
       expect(report.edges).toEqual([
         { from: dagTask1Id, to: dagTask2Id },
       ]);

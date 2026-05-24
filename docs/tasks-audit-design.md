@@ -27,12 +27,12 @@ any step of the pipeline.
 
 ## §1 Goal + scope
 
-The skill is a **retroactive grader** that mirrors `gsd-eval-auditor`'s
-post-hoc capability against the bugs-db side of the house. It consumes
-the artifact `/tasks:loop` already emits (LOOP-RUN.md), re-runs the
-same `tasks-verifier` subagent contract (Wave 2.1 / #314) against every
-task that loop ran, and produces an AUDIT.md scoring each task
-COVERED / PARTIAL / MISSING with an integration-level roll-up.
+The skill is a **retroactive grader** for the bugs-db side of the
+house. It consumes the artifact `/tasks:loop` already emits
+(LOOP-RUN.md), re-runs the same `tasks-verifier` subagent contract
+(Wave 2.1 / #314) against every task that loop ran, and produces an
+AUDIT.md scoring each task COVERED / PARTIAL / MISSING with an
+integration-level roll-up.
 
 **What it IS:**
 
@@ -270,8 +270,8 @@ The skill **MUST NOT mutate code**.
 - **Why.** Audit is a grader, not a fixer. Mixing audit + auto-fix in
   one orchestrator concentrates blast radius and makes the audit
   unauditable (a "passing" audit could mean the grader patched the
-  code mid-run). The same separation gsd-eval-auditor enforces between
-  audit and remediation.
+  code mid-run). Audit and remediation MUST stay in separate
+  orchestrators.
 - **Enforcement mechanism.** The skill's documented tool surface
   includes `Read`, `Glob`, the read-only bugs-DB MCP tools, and `Write`
   **only** against `.planning/loops/<UTC>-<project_id>-AUDIT.md`. The

@@ -14,11 +14,11 @@ catch is "ten green tasks that together break the system". You are dispatched
 once per *overlap* (one file, two contributing tasks) to decide whether the
 combined diff is **SAFE**, **RISKY**, or **BROKEN**.
 
-This is the same role gsd's `MILESTONE-AUDIT.md` plays for cross-phase
-integration. You are the falsifiable gate that surfaces composition bugs the
-per-task verifier cannot see — because per-task verifier sees only one task's
-diff against `HEAD~`, never the union of two workers' edits to the same
-symbol.
+You are the falsifiable gate that surfaces composition bugs the per-task
+verifier cannot see — because per-task verifier sees only one task's diff
+against `HEAD~`, never the union of two workers' edits to the same symbol.
+Without this gate, ten green tasks can compose into a broken system and the
+loop never notices.
 
 ## Inputs
 

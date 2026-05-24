@@ -166,7 +166,7 @@ describe('topology command', () => {
     const written = stdoutSpy.mock.calls.map((c) => String(c[0])).join('');
     const report = JSON.parse(written);
     expect(report.topology).toBe('DAG');
-    expect(report.advisory).toBe('/gsd-autonomous');
+    expect(report.advisory).toBe('/tasks:loop-dag');
     expect(report.edges).toHaveLength(5);
     expect(report.roots).toEqual([ids[0]]);
     expect(report.leaves).toEqual([ids[4]]);

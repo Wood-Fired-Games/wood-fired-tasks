@@ -429,7 +429,7 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (13 files)', () => {
+  it('skill file count matches expected (14 files)', () => {
     // Update this count when adding or removing a skill file in
     // `skills/tasks/`. The README ("N Claude Code skill files") and
     // docs/MCP.md ("N pre-built skill files") references should be
@@ -442,11 +442,16 @@ describe('Skill File Validation', () => {
     // Wave 7.1 (#323) bumped the count 12 → 13 when `audit.md` landed
     // as a design-only discovery stub. Runtime is deferred — see
     // `docs/tasks-audit-design.md` for the contract.
+    //
+    // Wave 4.3 (#341) bumped the count 13 → 14 when `loop-dag.md` landed
+    // as the native DAG executor sibling to `loop.md`. See the design
+    // contract in `skills/tasks/loop-dag.md` and the static gate at
+    // `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`.
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'));
 
-    expect(skillFiles).toHaveLength(13);
+    expect(skillFiles).toHaveLength(14);
   });
 
   it('each skill file has workflow steps', () => {

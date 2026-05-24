@@ -16,9 +16,9 @@ dispatches a subagent to fix it, re-verifies independently, closes the task,
 commits, pushes, and repeats — emits exactly one `LOOP-RUN.md` summarizing the
 entire run.
 
-This artifact parallels gsd's `PHASE-AUDIT.md`: a single durable markdown record
-of *what happened* on a discrete unit of automated work, with enough structure
-to support cost-attribution joins, replay, and downstream review.
+The artifact is a single durable markdown record of *what happened* on a
+discrete unit of automated work, with enough structure to support
+cost-attribution joins, replay, and downstream review.
 
 **LOOP-RUN.md is:**
 
@@ -43,9 +43,9 @@ to support cost-attribution joins, replay, and downstream review.
 .planning/loops/<UTC-timestamp>-<project_id>[-<slug>].md
 ```
 
-- **Directory:** Always `.planning/loops/`. Created on first emission; lives
-  alongside other gsd planning artifacts so existing review tooling that scans
-  `.planning/**/*.md` picks it up.
+- **Directory:** Always `.planning/loops/`. Created on first emission. Lives
+  under `.planning/` so review tooling that scans `.planning/**/*.md` picks
+  it up alongside any other planning artifacts the user keeps there.
 - **Timestamp:** ISO-8601 UTC with colons replaced by `-` for filesystem
   safety (`:` is reserved on Windows / NTFS, awkward in shell globs). The
   emitter MUST use the *start* time of the run.
@@ -185,7 +185,38 @@ collapsed by model) and a `TOTAL` row. Columns:
 Totals row: sum each numeric column. The `usd` total MUST equal frontmatter
 `total_usd` to ±$0.005; the token total MUST equal frontmatter `total_tokens`.
 
-### 4.5 `## Replay Instructions`
+### 4.5 `## Wave Summary` (`/tasks:loop-dag` only — Wave 4.3 / task #341)
+
+Emitted ONLY by `/tasks:loop-dag` (the DAG executor sibling of `/tasks:loop`).
+`/tasks:loop` MUST NOT emit this section. A markdown table, one row per
+dispatched wave in `wave_index` ascending order:
+
+| Column | Type | Notes |
+|---|---|---|
+| `wave_index` | integer ≥ 1 | 1-based wave counter; increments per `/tasks:loop-dag` §3a frontier recomputation |
+| `task_ids` | string | Comma-separated task ids dispatched in this wave (ascending) |
+| `started_at` | RFC 3339 UTC | Captured immediately before `/tasks:loop-dag` §3b parallel dispatch |
+| `ended_at` | RFC 3339 UTC | Captured immediately after the last verifier in §3d returned |
+| `wall_seconds` | integer ≥ 0 | `floor((ended_at − started_at).total_seconds())` |
+| `verdicts` | string | Comma-separated `task_id:verdict` pairs |
+
+The section is the on-disk audit surface of `/tasks:loop-dag` §3e
+`wave_summary` state — it is what makes a DAG run replayable wave-by-wave
+instead of as a flat task list. If `/tasks:loop-dag` was refused at the §2f
+gate (FLAT or DAG_CYCLIC topology), the section body is the sentinel
+paragraph `_No waves dispatched — gate refused at §2f._`.
+
+Companion section: `/tasks:loop-dag` ALSO emits a `## Stalled Tasks`
+section when its §3a stall-check fires (open tasks remain but the frontier
+is empty because of a FAIL/PARTIAL/NOT_VERIFIED upstream). See
+`skills/tasks/loop-dag.md` §5d for the bullet shape.
+
+`LoopRunFrontmatterSchema` is **NOT extended** by Wave 4.3 — the wave
+summary is a body-section-only extension, mirroring the Wave 3.2 / #317
+decision that integration-audit failure conveys via a body section
+(`## Integration Failure`) rather than a new frontmatter field.
+
+### 4.6 `## Replay Instructions`
 
 Exact shell commands a maintainer can run to re-grade this run. At minimum:
 

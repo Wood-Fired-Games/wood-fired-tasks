@@ -23,10 +23,10 @@ The verifier exists to catch:
 - **Cargo-cult workers** — touched files unrelated to the criteria and
   produced a closing commit that does not move the work forward.
 
-This mirrors the goal-backward analysis pattern from `gsd-verifier`: the
-verifier starts from the goal (acceptance criteria) and walks backward to
-the evidence (file content, test output, commit diff). It never starts
-from the diff and rationalises why it satisfies the goal.
+The verifier uses **goal-backward analysis**: it starts from the goal
+(acceptance criteria) and walks backward to the evidence (file content,
+test output, commit diff). It never starts from the diff and rationalises
+why it satisfies the goal.
 
 ## Inputs
 

@@ -61,13 +61,13 @@ export type Topology = z.infer<typeof TopologySchema>;
 /**
  * Downstream advisory recorded in DECOMPOSITION.md. Maps from `Topology`:
  *   FLAT       → '/tasks:loop'
- *   DAG        → '/gsd-autonomous'
+ *   DAG        → '/tasks:loop-dag'  (Wave 4.3 / task #341)
  *   DAG_CYCLIC → 'BLOCKED'
  * See `docs/tasks-decompose-design.md` §8.
  */
 export const AdvisorySchema = z.enum([
   '/tasks:loop',
-  '/gsd-autonomous',
+  '/tasks:loop-dag',
   'BLOCKED',
 ]);
 export type Advisory = z.infer<typeof AdvisorySchema>;

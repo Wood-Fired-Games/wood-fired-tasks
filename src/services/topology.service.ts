@@ -11,7 +11,8 @@ import { CycleDetector } from '../utils/cycle-detector.js';
  *
  * Classifies a project's task graph as FLAT, DAG, or DAG_CYCLIC so an
  * automated runner can pick between `/tasks:loop` (parallelizable leaves) and
- * `/gsd-autonomous` (ordered phases), and refuse to loop when a cycle is
+ * `/tasks:loop-dag` (wave-by-wave parallel dispatch respecting dependency
+ * edges; Wave 4.3 / task #341), and refuse to loop when a cycle is
  * present.
  *
  * Graph definition (per AC for #318):
@@ -31,7 +32,7 @@ import { CycleDetector } from '../utils/cycle-detector.js';
  *
  * Classification rules:
  *   - 0 edges                → FLAT,        advisory `/tasks:loop`
- *   - ≥1 edge, acyclic       → DAG,         advisory `/gsd-autonomous`
+ *   - ≥1 edge, acyclic       → DAG,         advisory `/tasks:loop-dag`
  *   - ≥1 edge, contains cycle → DAG_CYCLIC,  advisory `BLOCKED`
  *
  * FLAT special case: every task is both a root AND a leaf (in-degree 0,
@@ -177,7 +178,7 @@ export class TopologyService {
       edges: sortedEdges,
       roots,
       leaves,
-      advisory: '/gsd-autonomous',
+      advisory: '/tasks:loop-dag',
     };
   }
 }
