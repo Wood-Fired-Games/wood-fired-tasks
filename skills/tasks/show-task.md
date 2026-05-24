@@ -9,7 +9,7 @@ Retrieve and display comprehensive information about a specific task.
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies`) and retry.
+This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies,mcp__wood-fired-bugs__list_subtasks`) and retry.
 
 ## Workflow
 
@@ -17,10 +17,11 @@ This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shortha
    - Required: must be a positive integer
    - If missing or invalid, display error and exit
 
-2. Fetch task data in parallel:
+2. Fetch task data in parallel. Issue these calls in a SINGLE message with multiple function_calls blocks — that's the mechanism for parallel tool execution. Do NOT chain them with `await` semantics or list them sequentially across multiple messages.
    - Call `wood-fired-bugs:get_task` with id parameter
    - Call `wood-fired-bugs:get_comments` with task_id parameter
    - Call `wood-fired-bugs:get_dependencies` with task_id parameter
+   - Call `wood-fired-bugs:list_subtasks` with task_id parameter
 
 3. Handle task not found:
    - If get_task returns error, display "Task <id> not found"
@@ -49,6 +50,11 @@ This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shortha
    - Tasks this task blocks (if any)
    - Tasks blocking this task (if any)
    - Show ID, title, and status for each dependency
+
+   **Subtasks:**
+   - List subtasks from `list_subtasks` result
+   - For each: ID, title, and status
+   - If no subtasks, display "(no subtasks)"
 
    **Comments:**
    - Chronological list of comments
