@@ -362,7 +362,19 @@ When the subagent returns its summary:
 3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. The `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
 5. If validation now fails, send the subagent (or a new one) back with the failure output and a tight diagnostic prompt. Do *not* try to fix it inline in the orchestrator context — that defeats the pattern.
-6. If validation passes, proceed.
+6. **Narrow carve-out — inline orchestrator post-correction.** The rule above has one exception: the orchestrator MAY apply a mechanical fix in-context, without a SendMessage round-trip, when **ALL of** the following hold (conjunctive — miss one, dispatch a subagent):
+    - The issue was discovered by the orchestrator itself **during Step 5 verification** (not by delegated quality, not by the verifier in Step 7, not by user feedback).
+    - The fix is **purely mechanical**: a `git mv`, a path-string update, a missing trailing newline, a `.gitignore` addition, or a typo in commit-ready prose.
+    - The fix **does not alter any logic, data, or executable behavior** — diff is reviewable end-to-end without running code.
+    - The orchestrator would need to read **≤ 2 files** to make the change.
+
+    **Anti-criteria — still require subagent dispatch even if the four conditions look met:**
+    - Any change to source code (`.cs`, `.ts`, `.py`, `.js`, etc.).
+    - Any change to test files.
+    - Any change to acceptance-criteria-bearing artifacts (the schema doc itself, not its pointer).
+
+    When the carve-out fires, the inline fix MUST be documented in the Step 8 close-out comment under a separate **"Orchestrator post-correction:"** bullet so the audit trail is preserved. (Context: the 2026-05-23 #313 path-correction incident — a 2-line `git mv` + path-string Edit was force-routed through a SendMessage round-trip, costing ~3 minutes for zero quality gain.)
+7. If validation passes, proceed.
 
 If after 2 round-trips the task isn't validating green, **stop the loop and ask the user**. Don't burn through the backlog with half-broken commits.
 
@@ -386,6 +398,8 @@ git push
 ```
 
 If push fails because the branch has no upstream, run `git push --set-upstream origin <branch>` once. If push fails for any other reason (auth, conflict), note it in the task comment as a manual follow-up and continue to the next task — don't block the loop.
+
+If the Step 5 carve-out fired and the orchestrator took an inline post-correction, Step 8's close-out comment MUST include a separate **"Orchestrator post-correction:"** bullet listing the file(s) changed and a one-line rationale, so the audit trail survives.
 
 ### Step 7 — Dispatch tasks-verifier
 
