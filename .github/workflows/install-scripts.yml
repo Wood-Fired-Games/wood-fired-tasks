@@ -17,6 +17,11 @@ on:
       - 'tests/smoke/cli-surface-coverage.sh'
       # cli-tarball-install gate: tarball install + packaging-gap regression for #338.
       - 'tests/smoke/cli-tarball-install.sh'
+      # cli-e2e gate: REST API + DB round-trip against the published tarball for #339.
+      - 'tests/smoke/cli-e2e.sh'
+      - 'src/api/**'
+      - 'src/services/**'
+      - 'src/db/migrations/**'
       - 'src/cli/commands/**'
       - 'package.json'
   pull_request:
@@ -35,6 +40,11 @@ on:
       - 'tests/smoke/cli-surface-coverage.sh'
       # cli-tarball-install gate: tarball install + packaging-gap regression for #338.
       - 'tests/smoke/cli-tarball-install.sh'
+      # cli-e2e gate: REST API + DB round-trip against the published tarball for #339.
+      - 'tests/smoke/cli-e2e.sh'
+      - 'src/api/**'
+      - 'src/services/**'
+      - 'src/db/migrations/**'
       - 'src/cli/commands/**'
       - 'package.json'
 
@@ -526,3 +536,70 @@ jobs:
         #   5. Cleanup trap removes BOTH the tmpdir AND the tarball on exit
         # Local wall time ~10s; well under the 2-min AC budget.
         run: bash tests/smoke/cli-tarball-install.sh
+
+  # -------------------------------------------------------------------------
+  # End-to-end CLI functional gate — wood-fired-bugs #339.
+  #
+  # The four preceding gates (cli-smoke-link / cli-surface-coverage-link /
+  # cli-tarball-install) all validate the CLI's SURFACE — that --version,
+  # --help, and per-command --help render correctly across the link + tarball
+  # install shapes. None of them prove a command actually mutates server
+  # state. A regression of the class "tasks create silently no-ops but
+  # prints success" would pass all three.
+  #
+  # This job closes that gap with a real round-trip:
+  #   1. Pack + install the published tarball (same as #338).
+  #   2. Start the REST API server (from the tarball install) in the
+  #      background, pointed at an ephemeral SQLite DB.
+  #   3. Mint a PAT via `tasks db mint-token` against the same DB.
+  #   4. Run the CLI command matrix (project-create → create → list →
+  #      show → update → comment → dep → topology → delete → project-delete)
+  #      using --token "$PAT", asserting on the JSON envelope at each step.
+  #   5. Cross-check server state via direct SQLite reads at two key
+  #      points (task count after create; status after update) — so a CLI
+  #      that lies about success cannot fool the gate.
+  #
+  # The script enforces a cleanup trap that kills the server, removes the
+  # temp DB + tarball + tmp dir on ANY exit (success or failure). A leaked
+  # Node process on a CI runner would wedge the next job.
+  #
+  # Total runtime: ~10-15s locally, well under the 4-min AC budget.
+  # -------------------------------------------------------------------------
+  cli-e2e:
+    name: cli-e2e
+    needs: cli-tarball-install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Verify prerequisites
+        # jq is pre-installed on ubuntu-latest runners; this is a sanity
+        # check so a future image change that drops jq fails loud here
+        # rather than mid-round-trip.
+        run: |
+          jq --version
+          curl --version | head -1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dist artifacts (server entry, CLI bin, migrations)
+        run: |
+          npm run build
+          test -f dist/cli/bin/tasks.js || { echo "build did not produce dist/cli/bin/tasks.js"; exit 1; }
+          test -f dist/api/start.js    || { echo "build did not produce dist/api/start.js"; exit 1; }
+
+      - name: Run cli-e2e.sh
+        # The script:
+        #   1. `npm pack` → install into tmpdir; PATH-prepend its .bin
+        #   2. Start `dist/api/start.js` in background; poll /health (≤30s)
+        #   3. Mint a PAT; capture from stdout
+        #   4. Run the 10-step round-trip (a-j per AC) using --token "$PAT"
+        #   5. Direct-DB cross-checks via node + better-sqlite3 (no apt deps)
+        #   6. Cleanup trap kills server + removes DB + tarball + tmp dir
+        # Local wall time ~10s; well under the 4-min AC budget.
+        run: bash tests/smoke/cli-e2e.sh
