@@ -47,6 +47,28 @@ Look for one or more spec docs that the tasks reference:
 
 If the loop is non-trivial (≥ 2 tasks) and the spec doc is large (>200 lines), externalize the mental notes into a short cache file at the repo root (e.g. `.tasks-loop-spec-excerpts.md`) with one entry per likely-referenced section: doc path + line range + 1-line summary + which task IDs probably need it. Later loop iterations pull from the cache instead of re-deriving section/line refs from memory. Add the cache path to `.gitignore` if not already covered.
 
+**Cross-repo scope detection** (referenced by §2c, §2e, §2f, and Step 4). While reading the open task list, scan each task's `description` + `acceptance_criteria` for absolute paths that point OUTSIDE the CWD repo. The orchestrator looks up the project's **canonical sibling-repo set** — this is a project-level convention, NOT a hardcoded universal — from (in order):
+
+1. The repo's own `.tasks-loop-memo.md` (if §2b wrote one in a prior run).
+2. `AGENTS.md` / `CLAUDE.md` / `README.md` for an explicit "sibling repos" or "monorepo neighbours" section.
+3. The user, if neither source declares the set.
+
+For each candidate sibling path, match BOTH the leading-`~` form AND the expanded `$HOME/...` form (task descriptions often mix the two). A path match in either the `description` or `acceptance_criteria` field flags the task as **cross-repo** and records the target repo(s) alongside the task ID in the same mental notes / cache file from the previous paragraph (`cross_repo: [<abs path>, ...]` per task). A task may target more than one sibling repo — collect them all.
+
+> **Example** — Wood Fired Games' canonical sibling-repo set is the seven paths below. Substitute whatever set is documented in YOUR project's conventions; the list is illustrative, not a baked-in constant:
+>
+> ```
+> ~/wood-fired-engine            /home/<user>/wood-fired-engine
+> ~/wood-fired-platform          /home/<user>/wood-fired-platform
+> ~/wood-fired-docs              /home/<user>/wood-fired-docs
+> ~/project-brogue               /home/<user>/project-brogue
+> ~/wood-fired-thought-capture   /home/<user>/wood-fired-thought-capture
+> ~/.claude                      /home/<user>/.claude
+> ~/.local                       /home/<user>/.local
+> ```
+
+If the cross-repo classification ends up non-empty, §2c will baseline tests in EVERY detected repo (not just CWD) and Step 4 briefs will carry the per-repo working dir + baseline numbers. If the set is empty, the rest of the loop behaves as before — single-repo. Either way, record the outcome (even if it's "no cross-repo tasks detected") so future readers of the cache know the scan ran.
+
 ### 2b. Discover validation commands
 
 Read project conventions from (in order):
@@ -81,11 +103,36 @@ If the suite is already red:
 2. Ask whether to (a) fix the pre-existing breakage as a separate housekeeping commit before the loop starts, or (b) abort.
 3. Do not start the loop until the suite is green.
 
+**Cross-repo baselining (when §2a flagged ≥ 1 task as cross-repo).** The CWD baseline above is necessary but NOT sufficient. The orchestrator MUST baseline tests in EVERY repo that appears in any task's `cross_repo: [...]` set from §2a — not just CWD. Without this, pre-existing flakes in a sibling repo will get attributed to whichever subagent first cd's into it, and the loop will stall mid-flight when verification fails on a flake the orchestrator never saw coming. (Real-world failure mode: Wave 1 drain of project 15 was invoked from `wood-fired-bugs` but tasks #309 / #310 lived in `wood-fired-engine/tooling/wfg-cc-telemetry`; CWD baseline ran clean, sibling-repo baseline never ran, and 3 pre-existing E2E flakes — `RestartIdempotency`, `ShimSocket`, `ShimLatency` — only surfaced during #309 verification mid-loop.)
+
+For each unique sibling repo `R` in the union of all `cross_repo` sets:
+
+1. Discover that repo's `<build>` and `<test>` commands using the same §2b heuristics (`CLAUDE.md`/`AGENTS.md`, `package.json`/`*.sln`/`Makefile`, README, CI workflows). Do NOT assume CWD's commands transfer — sibling repos may use a different stack.
+2. Run the repo's `<build>` then `<test>` from `R` as cwd. Capture the exit codes and the headline pass/fail counts.
+3. Record the per-repo result alongside the cross-repo classification: `{repo: <abs path>, build_status: <ok|fail>, test_status: <ok|fail>, test_baseline: "<N passing, M failing>", known_flakes: [<test names>]}`. This becomes the "per-repo flake landscape" that Step 4 briefs cite.
+
+**Surface failures per-repo before dispatching the first worker.** If ANY sibling repo's baseline is red, the orchestrator MUST surface the failures grouped by repo (one section per repo, listing failing test names + one-line cause guess) and ask the user whether to (a) housekeeping-fix each red repo before the loop, (b) proceed with the failing tests pinned as `known_flakes` so Step 4 / Step 5 don't re-flag them, or (c) abort. Do NOT silently treat a sibling-repo failure as the worker's fault later — it isn't.
+
+**Pre-loop sibling-repo state concerns.** For each sibling repo `R` in the cross-repo set, ALSO check:
+
+1. `git -C <R> status --porcelain` — if non-empty, the repo has uncommitted local changes. Surface as a pre-loop concern (the loop may interact badly with the user's in-flight work — e.g. a worker may run `git stash` or commit alongside unrelated dirty files).
+2. `git -C <R> rev-parse --abbrev-ref HEAD` — if the result is NOT `main`, the repo is on a feature/topic branch. Surface as a pre-loop concern (the loop typically targets `main`; landing commits on an unintended branch is hard to undo).
+
+The orchestrator MUST NOT auto-stash, auto-switch branches, or otherwise mutate the sibling repo's working tree. Just surface the concerns grouped by repo with a one-line description each, and let the user decide whether to proceed, fix the state, or abort. Example surface:
+
+> Sibling-repo state concerns before loop start:
+> - `~/wood-fired-engine`: 3 uncommitted files (`tooling/wfg-cc-telemetry/...`); current branch is `feat/telemetry-redesign` (not `main`).
+> - `~/.claude`: clean tree, on `main` — no concerns.
+>
+> Proceed anyway (worker may interact with in-flight work), pause for user to clean up, or abort?
+
 ### 2d. Verify your own skill additions (if applicable)
 
 If you (the assistant) **added or modified `skills/tasks/*.md` or other repo files as part of this same session**, the very first validation run will tell you whether those additions broke something. Treat any failure here as a housekeeping commit (separate from any task in the project) before the loop proper. Example: a new skill that references an MCP tool the test suite's `KNOWN_*` set doesn't know about, or a hardcoded skill-file count that's now off-by-one.
 
 ### 2e. Identify task-size mismatch (advisory)
+
+> Cross-repo scope is detected separately in §2a (cross-repo scope detection) and baselined in §2c; this sub-section is only about epic vs. bug sizing within whatever repo set §2a produced.
 
 Scan the open task list for signals that tasks are **epic-sized rather than bug-sized**:
 
@@ -196,6 +243,19 @@ Brief template — adapt to the task. Brief size should scale with codebase qual
 ```
 You are implementing wood-fired-bugs task #<id> ("<title>") from project "<project_name>".
 Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit after verifying your work.
+
+## Working dir / Cross-repo context
+
+<for single-repo tasks: just restate the working dir line above; this subsection can be omitted.>
+<for cross-repo tasks (flagged in §2a, baselined in §2c) — REQUIRED:>
+
+- Primary working dir: `<absolute path to the sibling repo this task targets>` — `cd` here before any edits or validation runs.
+- Why this isn't CWD: this task's acceptance criteria reference files under `<that path>`, which is outside the orchestrator's CWD (`<orchestrator CWD>`).
+- Per-repo baseline (from §2c):
+  - Build: `<repo's build command>` — currently `<ok | fail>`.
+  - Tests: `<repo's test command>` — currently `<N passing, M failing>`.
+  - Known pre-existing flakes (do NOT attribute these to your changes): `<test names from §2c known_flakes>`.
+- Per-repo state at loop start: `<branch>` branch, `<clean | N uncommitted files>` working tree. If you need to add new commits, target `main` unless instructed otherwise.
 
 ## Acceptance criteria (from the bugs database, verbatim)
 
