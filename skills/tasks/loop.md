@@ -163,6 +163,45 @@ The orchestrator MUST NOT auto-stash, auto-switch branches, or otherwise mutate 
 >
 > Proceed anyway (worker may interact with in-flight work), pause for user to clean up, or abort?
 
+**Known-flake exclusions via `.flaky-tests.json`.** Repos with chronically flaky tests (timing-sensitive E2E, network-dependent integration) opt in to first-class flake handling by committing a `.flaky-tests.json` at the repo root. The orchestrator MUST read `<each-baselined-repo>/.flaky-tests.json` (if present) and feed the listed tests into the `known_flakes` field that §2c already records per repo — this is the canonical SOURCE for `known_flakes`, superseding ad-hoc user-confirmed flakes from the previous sub-block when both exist (union the two sets; the file is authoritative for the listed names).
+
+Schema (versioned envelope, one entry per known flake):
+
+```json
+{
+  "version": 1,
+  "tests": [
+    {
+      "fqn": "Namespace.ClassName.TestMethodName",
+      "reason": "one-line description of why this test is flaky",
+      "filed_at": "2026-05-24",
+      "tracking_issue": "#123 or https://github.com/org/repo/issues/123"
+    }
+  ]
+}
+```
+
+Per-runner filter syntax for excluding ONE test by FQN (the orchestrator selects based on the repo's stack detected in §2b):
+
+| Runner | Exclude-by-FQN flag |
+|---|---|
+| xunit-v3 MTP (`dotnet run --project ... -- ...`) | `--filter-not-method <FQN>` (repeat per test) |
+| xunit-v1/v2 / `dotnet test` | `--filter "FullyQualifiedName!=<FQN>"` (join with `&` for multiple) |
+| vitest | `--exclude '<file-or-pattern>'` (use the `fqn`'s file path; or `-t '!<test name>'` for name-based) |
+| pytest | `-k 'not <test_name> and not <other>'` (join with `and not`) |
+| jest | `--testPathIgnorePatterns='<pattern>'` or `-t '^(?!<name>).*$'` for name-based |
+
+**Auto-application rule.** When `.flaky-tests.json` is present in a baselined repo, the orchestrator MUST:
+
+1. Parse it once during §2c baselining; reject malformed JSON or `version != 1` and surface to the user (do NOT proceed with a half-parsed file).
+2. Populate that repo's `known_flakes: [...]` field in the per-repo baseline record (from the `fqn` of every entry).
+3. Apply the runner's exclude-by-FQN flag to BOTH the §2c baseline run AND the Step 5 post-edit re-run for that repo, so the same tests are suppressed end-to-end. This is the load-bearing guarantee: the baseline numbers the close-out cites and the post-edit numbers the verifier sees are produced under the same exclusion filter.
+4. Record the exclusion list verbatim in the orchestrator's mental notes / cache file (`.tasks-loop-memo.md`) so every Step 4 subagent brief for that repo carries the same list.
+
+**Candidate-for-promotion rule.** If the orchestrator detects (via an optional unfiltered re-run, OR via observation across multiple loop iterations) that a test listed in `.flaky-tests.json` PASSED consistently throughout this loop run, surface it in the Step 8 close-out comment under `**Candidate-for-promotion:**` so the user can remove the entry from the file. Do NOT auto-edit `.flaky-tests.json` — promotion is a human decision.
+
+**Reinforcement of the existing pre-existing-breakage policy.** A test that is NOT in `.flaky-tests.json` but FAILS in the §2c baseline still triggers the existing policy from the top of §2c (steps 1–3): surface the failure to the user, offer housekeeping-fix-first or abort, do NOT start the loop until green. `.flaky-tests.json` is opt-in suppression for KNOWN flakes only — it does not silence unknown failures.
+
 ### 2d. Verify your own skill additions (if applicable)
 
 If you (the assistant) **added or modified `skills/tasks/*.md` or other repo files as part of this same session**, the very first validation run will tell you whether those additions broke something. Treat any failure here as a housekeeping commit (separate from any task in the project) before the loop proper. Example: a new skill that references an MCP tool the test suite's `KNOWN_*` set doesn't know about, or a hardcoded skill-file count that's now off-by-one.
@@ -310,6 +349,7 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 - Existing CI patterns: <one-line summary>
 - Source tree shape: <one-line summary>
 - Validation memo path: `.tasks-loop-memo.md`
+- Known-flake exclusions: sourced from `<repo>/.flaky-tests.json` (schema v1; `fqn` + `reason` + `filed_at` + `tracking_issue` per entry). The listed tests have already been excluded from the baseline via `<runner's exclude-by-FQN flag>` and MUST remain excluded from the post-edit run using the same flag.
 
 ## Required deliverables
 
@@ -327,7 +367,7 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 ## Validation steps (run all before reporting back)
 
 1. `<build>`
-2. `<test>` — must still report <N> passing
+2. `<test>` — must still report <N> passing. Apply the same `.flaky-tests.json` exclusion filter the orchestrator used for the §2c baseline (verbatim list above) so post-edit numbers match the baseline shape.
 3. <task-specific check, e.g. `npm run lint` must be warning-free>
 
 Iterate until all pass. If you conclude a check can only be satisfied by relaxing rules / scope, relax and document the choice in the summary.
@@ -573,6 +613,10 @@ Resolved.
 **Validation (independently re-run by orchestrator):**
 - <command>: <pass/fail + headline numbers>
 - ...
+
+**Flake exclusions:** <N excluded from <repo> via `.flaky-tests.json`> _(always present when the union of `known_flakes` across baselined repos was non-empty; omit otherwise)_
+
+**Candidate-for-promotion:** <list of `.flaky-tests.json` entries that passed consistently across this loop run — user may remove from the file> _(only present when N > 0)_
 
 **Commit:** `<hash>` <subject>
 ```
