@@ -1,52 +1,18 @@
 name: Install Scripts
 
 on:
+  # Wood-fired-bugs #340 made cli-smoke-link / cli-surface-coverage-link /
+  # cli-tarball-install / cli-e2e REQUIRED status checks on branch protection
+  # for main. A required check that never fires (because a paths filter
+  # skipped the workflow) permanently blocks the merge under classic branch
+  # protection. The original install-scripts.yml `paths:` filter was therefore
+  # removed so EVERY PR triggers the workflow and every required check is
+  # reported. CI cost is ~3-4 minutes extra per PR; cheap insurance against
+  # the bug class wood-fired-bugs@1.0.0 shipped with.
   push:
     branches: [main]
-    paths:
-      - 'install.sh'
-      - 'install.ps1'
-      - 'deploy/*.sh'
-      - '.github/workflows/install-scripts.yml'
-      - 'skills/tasks/**'
-      # cli-smoke-link gate: regression net for wood-fired-bugs #334 / #335.
-      - 'src/cli/bin/tasks.ts'
-      - 'src/utils/is-main.ts'
-      - 'tests/smoke/cli-symlink-smoke.sh'
-      # cli-surface-coverage gate: per-command --help matrix for wood-fired-bugs #337.
-      - 'tests/smoke/cli-surface-coverage.sh'
-      # cli-tarball-install gate: tarball install + packaging-gap regression for #338.
-      - 'tests/smoke/cli-tarball-install.sh'
-      # cli-e2e gate: REST API + DB round-trip against the published tarball for #339.
-      - 'tests/smoke/cli-e2e.sh'
-      - 'src/api/**'
-      - 'src/services/**'
-      - 'src/db/migrations/**'
-      - 'src/cli/commands/**'
-      - 'package.json'
   pull_request:
     branches: [main]
-    paths:
-      - 'install.sh'
-      - 'install.ps1'
-      - 'deploy/*.sh'
-      - '.github/workflows/install-scripts.yml'
-      - 'skills/tasks/**'
-      # cli-smoke-link gate: regression net for wood-fired-bugs #334 / #335.
-      - 'src/cli/bin/tasks.ts'
-      - 'src/utils/is-main.ts'
-      - 'tests/smoke/cli-symlink-smoke.sh'
-      # cli-surface-coverage gate: per-command --help matrix for wood-fired-bugs #337.
-      - 'tests/smoke/cli-surface-coverage.sh'
-      # cli-tarball-install gate: tarball install + packaging-gap regression for #338.
-      - 'tests/smoke/cli-tarball-install.sh'
-      # cli-e2e gate: REST API + DB round-trip against the published tarball for #339.
-      - 'tests/smoke/cli-e2e.sh'
-      - 'src/api/**'
-      - 'src/services/**'
-      - 'src/db/migrations/**'
-      - 'src/cli/commands/**'
-      - 'package.json'
 
 # Note on workflow security: this workflow is scoped to lint + smoke-test
 # the installer scripts only. It does not consume any untrusted input

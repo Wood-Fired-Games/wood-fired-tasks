@@ -28,6 +28,46 @@ These run automatically on every PR and on `main`:
 | Secret scan           | `.github/workflows/secret-scan.yml`         | gitleaks full-history scan on PR + push + weekly cron                 |
 | Artifact hygiene      | `.github/workflows/secret-scan.yml`         | `npm pack --dry-run` clean + no tracked env/db/pem/key files          |
 
+## Required status checks (branch protection)
+
+The `main` branch is protected (configured via the GitHub branch-protection
+API; see wood-fired-bugs task #340). The merge button is disabled until
+every check below reports success. Admin override is allowed by policy
+(`enforce_admins: false`), but normal contributors cannot merge over a
+failing required check.
+
+| Required check                       | Source workflow + job                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `test`                               | `.github/workflows/ci.yml` (`test`)                                    |
+| `coverage`                           | `.github/workflows/ci.yml` (`coverage`)                                |
+| `build`                              | `.github/workflows/ci.yml` (`build`)                                   |
+| `lint`                               | `.github/workflows/ci.yml` (`lint`)                                    |
+| `deps`                               | `.github/workflows/ci.yml` (`deps`)                                    |
+| `depcruise`                          | `.github/workflows/ci.yml` (`depcruise`)                               |
+| `audit`                              | `.github/workflows/ci.yml` (`audit`)                                   |
+| `agent-context`                      | `.github/workflows/ci.yml` (`agent-context`)                           |
+| `cli-smoke-link`                     | `.github/workflows/install-scripts.yml` (#335 — version/help/no-args)  |
+| `cli-surface-coverage-link (node 22)`| `.github/workflows/install-scripts.yml` (#337 — per-command --help)    |
+| `cli-tarball-install`                | `.github/workflows/install-scripts.yml` (#338 — `npm pack` install)    |
+| `cli-e2e`                            | `.github/workflows/install-scripts.yml` (#339 — REST round-trip)       |
+
+`required_pull_request_reviews` is intentionally null — review enforcement
+happens via CODEOWNERS + repository policy, not via the branch-protection
+review-count check.
+
+`strict: true` (require branches up to date before merging) is on so a PR
+re-runs the gates against the latest `main`.
+
+The `install-scripts.yml` workflow no longer uses a `paths:` filter
+(removed in #340) so every PR triggers every required check. Otherwise a
+required check that never fires (because the workflow was skipped by the
+filter) would permanently block merges.
+
+If you need to add or remove a required check, update both this table AND
+the branch-protection rule via `gh api -X PUT
+repos/.../branches/main/protection`. Keeping the two in sync is the
+operator's responsibility — there is no automated drift detector yet.
+
 ## Pre-publish smoke test (manual)
 
 Before `npm publish`:
