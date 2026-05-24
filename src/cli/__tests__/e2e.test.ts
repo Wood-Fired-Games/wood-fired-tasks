@@ -80,6 +80,13 @@ function runCli(
           ...env,
           API_BASE_URL: baseUrl,
           API_KEY: apiKey,
+          // Force resolveAuth to the legacy API_KEY branch by pointing
+          // WFB_CREDENTIALS_PATH at a path that does not exist. Without
+          // this, the child inherits any real ~/.config/wood-fired-bugs/
+          // credentials file from the developer's home and the CLI sends
+          // its bearer token to the ephemeral test server, which rejects
+          // it (401).
+          WFB_CREDENTIALS_PATH: '/nonexistent/wfb-credentials-for-e2e-test',
           // Force non-TTY so the spinner/prompt code paths stay quiet and
           // the JSON envelope is the only thing on stdout.
           FORCE_COLOR: '0',
