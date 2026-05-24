@@ -67,7 +67,44 @@ For each candidate sibling path, match BOTH the leading-`~` form AND the expande
 > ~/.local                       /home/<user>/.local
 > ```
 
-If the cross-repo classification ends up non-empty, §2c will baseline tests in EVERY detected repo (not just CWD) and Step 4 briefs will carry the per-repo working dir + baseline numbers. If the set is empty, the rest of the loop behaves as before — single-repo. Either way, record the outcome (even if it's "no cross-repo tasks detected") so future readers of the cache know the scan ran.
+If the cross-repo classification ends up non-empty — including via user-confirmed soft-signal matches from the next sub-block — §2c will baseline tests in EVERY detected repo (not just CWD) and Step 4 briefs will carry the per-repo working dir + baseline numbers. If the set is empty, the rest of the loop behaves as before — single-repo. Either way, record the outcome (even if it's "no cross-repo tasks detected") so future readers of the cache know the scan ran.
+
+**Soft-signal matching for schema-coupled identifiers** (extends the absolute-path scan above). Real-world cross-repo dependence often hides behind schema-coupled identifiers that never literally appear as a path in the task text:
+
+- DB **view names** (frequently a `*_v` suffix convention).
+- DB **table names** (often a domain prefix like `agent_`, `task_`, `analytics_`).
+- **Migration file references** of the form `<timestamp>-<slug>.up.sql`.
+- Shared **schema versions**, **package identifiers**, or **service names** that the project's conventions tie to a sibling repo.
+
+In addition to the absolute-path matching above, the orchestrator SHOULD do a second-pass scan of each task's `description` + `acceptance_criteria` for schema-coupled identifiers using patterns documented in the project's own conventions. Look up the patterns in the same order as the sibling-repo set: (1) the repo's `.tasks-loop-memo.md` (if §2b wrote one in a prior run), (2) `AGENTS.md` / `CLAUDE.md` / `README.md` for an explicit "schema conventions" or "sibling-repo identifiers" section, (3) the user, if neither source declares the patterns.
+
+**Soft-signal matches are weaker than path matches — they do NOT automatically classify the task as cross-repo.** Instead, the orchestrator MUST surface each soft-signal match to the user with a one-line confirmation prompt before classifying:
+
+> "Task #<id> may be cross-repo (matched `<identifier>` against `<convention>` from `<source>`); is it?"
+
+Only after the user confirms YES does the orchestrator record the match in the same mental notes / cache file under `cross_repo: [<abs path>, ...]` for that task. A NO answer is recorded too (so the same identifier doesn't re-prompt on the next loop iteration).
+
+> **Example** — illustrative, not a baked-in pattern: Wood Fired Games' analytics DB uses a `*_v` view-name convention (e.g. `agent_events_v`, `agent_transactions_v`, `loop_runs_v`), and those views live in `~/wood-fired-engine/tooling/wfg-cc-telemetry`. A task description that mentions `agent_events_v` without spelling out the absolute path would soft-match this convention and prompt: *"Task #<id> mentions `agent_events_v` — this matches the `*_v` analytics-DB view convention (source: `AGENTS.md`); does this task touch `~/wood-fired-engine/tooling/wfg-cc-telemetry`?"* Substitute whatever schema-coupling conventions are documented in YOUR project — the `*_v` pattern is shown as an example the orchestrator looks up from project conventions, not a hardcoded universal.
+
+**Declared scope narrowing detection (design-only landings, slice-of-epic, etc.)** A task's *intent* may be narrower than its acceptance-criteria text suggests. Two precedents:
+
+- Wave 5 / #320 (`/tasks:decompose`) landed deliberately as **design-only**: a full design contract + schemas + falsifiable test gates, with runtime implementation deferred to a documented follow-on task. The AC text described runtime behaviour, but the intent was the design spec.
+- Wave 7.1 / #323 (`/tasks:audit`) followed the same pattern.
+
+When the orchestrator decides at planning time (Step 3) to narrow scope — most often to design-only, but the same applies to "slice-of-epic" landings where only a subset of bullets are actually attempted in this iteration — it MUST record the scope decision as a `scope:` annotation against that task in the SAME mental notes / cache file used by the cross-repo scan. The annotation records:
+
+- (a) the **scope label** (e.g. `scope: design-only`, `scope: slice-of-epic`),
+- (b) which AC bullets are **in-scope** for THIS attempt (verbatim copy of the bullet text — quoting matters; the verifier will be graded against this exact list in Step 7a),
+- (c) which AC bullets are **out-of-scope / deferred** to runtime follow-on,
+- (d) **where the follow-on tasks are tracked** — existing bugs-DB task IDs if they already exist, or the literal string `to be created at close-out` if the follow-on tasks will be opened during the §7d carve-out (see below).
+
+Detection signals — these are the orchestrator's *planning judgment cues*, NOT auto-classification triggers:
+
+- The AC text uses runtime-y verbs ("Dispatches X", "Produces Y", "Runs against Z") BUT the task is part of a wave-numbered epic whose prior peers landed design-only (e.g. #320 sets the precedent for #323).
+- The AC's own verification step requires runtime infrastructure that does not yet exist.
+- The AC explicitly contains a "FOLLOW-UP TASKS", "DEPS", or "RUNTIME DEFERRED TO" note pointing at a separate implementation task.
+
+The orchestrator MUST NOT silently narrow scope. The decision is logged twice: once in the orchestrator's close-out comment for the audit trail, and — more importantly — the narrowed AC set is passed to the verifier in Step 7a so the verifier grades only what's in-scope for this attempt. Cross-reference: this annotation is the prerequisite for the Step 7d "declared scope narrowing closes the task" carve-out — without it, the carve-out does NOT apply.
 
 ### 2b. Discover validation commands
 
@@ -378,6 +415,16 @@ const verifierInputs = {
 
 **Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
 
+**Scope-narrowed envelope for declared design-only / slice-of-epic tasks.** If §2a annotated this task with `scope: design-only` (or any other scope-narrowing label — `slice-of-epic`, etc.), the orchestrator MUST narrow `acceptance_criteria` in the envelope to the **in-scope AC bullets only** (the verbatim list recorded in §2a annotation field (b)). The out-of-scope / deferred bullets from §2a annotation field (c) MUST NOT appear in the envelope's `acceptance_criteria` field — the verifier never sees criteria it cannot honestly grade.
+
+The orchestrator MUST also populate `additional_observations` in the envelope with a single entry of the form:
+
+> `"SCOPE: <label>. This task is intentionally landing <label> per the orchestrator's planning decision. Runtime ACs are deferred to follow-on tasks (<list of task IDs OR 'to be created at close-out'>). Grade only the in-scope ACs listed above; do NOT add SKIP checks for the deferred runtime ACs."`
+
+The `additional_observations` array tells the verifier that the narrowing is *deliberate* (an orchestrator planning decision), not a discovery gap the verifier should flag as UNCHECKABLE. Without this observation, the verifier may try to grade the missing AC bullets and emit spurious SKIP checks.
+
+**Cross-reference: this is the ONLY legitimate path for an intentional narrowed-scope closure to reach PASS.** Without §2a's scope annotation, the orchestrator passes the full AC list and accepts whatever verdict the verifier returns — there is no inline shortcut, and §7c's "no upgrades" rule still binds. The §7d declared-scope carve-out (below) is a status-level decision predicated on this envelope construction; it does NOT bypass it.
+
 #### 7b. Dispatch the verifier subagent
 
 Use the `Agent` tool. **Default to `subagent_type: "general-purpose"` with the verifier prompt embedded in the brief** — this works regardless of how the user installed the project. The named `subagent_type: "tasks-verifier"` is only registered for sessions started AFTER the user ran `install.sh`; in any fresh session the named agent is typically unavailable, and an Agent call with an unknown subagent_type FAILS the entire dispatch. Defaulting to general-purpose + embedded prompt is the reliable path.
@@ -450,6 +497,29 @@ The verdict controls whether the task closes, blocks, or stays in_progress. **Do
     "verification_evidence": <full evidence object>
   }
   ```
+
+  - **Carve-out — declared scope narrowing closes the task.** When §2a annotated the task with `scope: design-only` (or any similar narrowing label) AND Step 7a passed `additional_observations` to the verifier per the "Scope-narrowed envelope" sub-block, the EXPECTED verdict is either **PASS** (all in-scope ACs cleanly observable) or **PARTIAL** (the verifier could not observe one or more in-scope ACs and emitted SKIP-UNCHECKABLE for them).
+
+    If the rollup is **PARTIAL** AND every SKIP check cites an *in-scope* AC (i.e. an AC bullet the orchestrator passed in the narrowed `acceptance_criteria` envelope — NOT a deferred runtime AC the orchestrator already removed in §7a), the orchestrator MAY transition `status` to `done` provided ALL of these hold:
+
+    1. **No FAIL checks.** Any FAIL → the task stays `in_progress` exactly as the default PARTIAL branch above requires. The carve-out is a SKIP-only relaxation.
+    2. **Follow-on tracking is recorded.** The orchestrator has either (a) referenced existing follow-on bugs-DB task IDs in the close-out comment, OR (b) created a new bugs-DB task tracking the deferred runtime ACs (and that task ID is cited in the close-out comment).
+    3. **Audit trail is intact.** The close-out comment quotes the §2a scope decision verbatim — the scope label, the in-scope AC bullets, the deferred bullets, and the follow-on task IDs — so a future reader sees exactly what was deferred and why.
+
+    Verdict stays **`PARTIAL`** inside `verification_evidence` — verdict honesty is preserved, the orchestrator NEVER upgrades. Only `status` moves to `done`. Verdict and status are decoupled deliberately: the verdict reflects what the verifier could observe in this attempt; the status reflects whether the orchestrator considers the task complete relative to its **declared scope** (the §2a annotation).
+
+    Note: creating the follow-on bugs-DB task in step 2 of this carve-out is a deliberate exception to the "Don't create new tasks during the loop" rule under Important Rules — the new task is the entire mechanism that makes this closure honest, so it MUST be permitted here.
+
+    **Cross-reference: this carve-out closes the loop opened by the post-#320 orchestrator-upgrade hardening (commit `6b26fc5`).** It is NOT a verdict upgrade — `verdict: "PARTIAL"` is preserved in `verification_evidence` exactly as the verifier emitted it. The orchestrator is making a *status* decision (done vs in_progress) based on the declared-scope contract from §2a + §7a, while the verdict accurately reflects what the verifier could grade. Without §2a's `scope:` annotation upstream, this carve-out does NOT apply and the default PARTIAL branch (task stays `in_progress`) is the only path.
+
+    ```
+    wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+      "Verifier verdict: PARTIAL (declared scope: <label>).\n\n§2a scope decision: <verbatim quote of scope label + in-scope bullets + deferred bullets>.\n\nFollow-on tasks tracking deferred runtime ACs: #<id_1>, #<id_2>.\n\nIn-scope ACs the verifier could not observe (acknowledged as deferred, not blocking closure):\n- <check.name>: <check.evidence_url_or_text>\n- ..."
+    wood-fired-bugs:update_task with id=<id>, updates={
+      "status": "done",
+      "verification_evidence": <full evidence object — verdict stays PARTIAL>
+    }
+    ```
 
 - **`verdict: "NOT_VERIFIED"`** → treat as PARTIAL but with a comment noting the verifier produced no checks (no acceptance criteria to grade against, or the verifier's output failed schema validation). Status stays `in_progress`. This is the documented no-acceptance-criteria escape hatch — surface it so the user can backfill criteria and re-queue.
 
