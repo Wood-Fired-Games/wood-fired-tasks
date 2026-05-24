@@ -21,7 +21,7 @@ Parse `$ARGUMENTS` — or, when invoked via natural language ("loop the backlog 
 
 - `[project-name-or-id]` — if the value starts with `#` or is a bare integer, treat it as the project ID and skip the name match. Otherwise, do a case-insensitive partial match against project names.
 - `--max-tasks N` — optional. Stop the loop after N successful task closures and check in with the user before continuing. Default is **3**. Pass `--max-tasks 0` to loop until the backlog is empty (only do this if the user explicitly asks for unattended drain). If the user invokes via natural language and doesn't state a budget, default to **3** but propose an adjustment in Section 2e if the backlog looks epic-sized.
-- `--i-know-what-im-doing` — optional escape hatch for the §2f topology pre-flight gate (Wave 4.2 / task #319). When the project's `topology_check` returns `DAG` (acyclic dependency edges exist), `/tasks:loop` halts by default — looping over a DAG is the wrong tool; the user should use `/gsd-autonomous` for a milestone or run tasks individually in topological order. Pass `--i-know-what-im-doing` to override the DAG halt and proceed anyway (the override decision is logged in the orchestrator's first prompt and recorded as `gate_decision: overridden` in the LOOP-RUN.md frontmatter). The flag is **tolerated for `DAG`** topology only. It is **explicitly rejected for `DAG_CYCLIC`** — a cycle must be broken before any runner can proceed, no exceptions.
+- `--i-know-what-im-doing` — optional opt-out of §2f's auto-ordering. When the project's `topology_check` returns `DAG` (acyclic dependency edges), the loop by default computes a topological execution order and proceeds (Wave 11; supersedes the Wave 4.2 / #319 halt behaviour). Pass `--i-know-what-im-doing` to **skip** the topological sort and fall back to plain priority + ID ordering — recorded as `gate_decision: overridden` in the LOOP-RUN.md frontmatter, with a loud warning in the first prompt. The flag is **tolerated for `DAG`** topology only. It is **explicitly rejected for `DAG_CYCLIC`** — a cycle must be broken before any runner can proceed, no exceptions. (The flag's original purpose — override the pre-Wave-11 halt — is moot now that the DAG branch auto-resolves; the flag is retained so existing invocations keep parsing and so users can force flat ordering for diagnostic runs.)
 
 **If no project name/ID is provided:** ask the user. Do not pick one silently.
 
@@ -229,17 +229,21 @@ In the non-self-identifying case (you discovered the epic shape but the user did
 
 ### 2f. Topology pre-flight gate
 
-Wave 4.2 (task #319). Before entering §3 The Loop and BEFORE dispatching any worker, the orchestrator MUST call the `topology_check` MCP tool with `{project_id}` and branch on the returned `topology` field. `/tasks:loop` is the right tool ONLY when the project is **FLAT** (zero dependency edges). When edges exist, the loop is the wrong shape — `/gsd-autonomous` (for an ordered milestone) or running tasks individually in topological order is correct instead.
+Wave 4.2 (task #319) introduced this gate as a halt-on-DAG safety net. Wave 11 makes the DAG branch **auto-resolve**: when the project has dependency edges, the orchestrator computes a topological execution order and proceeds rather than halting. Cycles still halt unconditionally — they are unresolvable. The historical halt message remains documented below for diagnostic continuity and is exercised when the user opts out via `--i-know-what-im-doing`.
+
+Before entering §3 The Loop and BEFORE dispatching any worker, the orchestrator MUST call the `topology_check` MCP tool with `{project_id}` and branch on the returned `topology` field.
 
 Record the branch outcome in orchestrator state as `gate_decision` for inclusion in the LOOP-RUN.md frontmatter (Step 9). Log the gate decision in the orchestrator's first prompt so a transcript reader sees what was decided and why.
 
 **Branches:**
 
-- **`topology: "FLAT"`** → set `gate_decision = "allowed"`. Proceed to §3 The Loop. No warning needed; this is the canonical case.
+- **`topology: "FLAT"`** → set `gate_decision = "allowed"`. Proceed to §3 The Loop. Step 1 uses the default priority + ID ordering. No topological sort needed; this is the canonical zero-edges case.
 
-- **`topology: "DAG"`** → check whether the invocation arguments include the `--i-know-what-im-doing` flag (see §1 Argument Parsing).
-  - If the flag IS present → set `gate_decision = "overridden"`. Proceed to §3 The Loop with a **loud warning** in the orchestrator's first prompt (e.g. `"WARNING: --i-know-what-im-doing override accepted; looping over a DAG with K dependency edges. Tasks may run out of dependency order."`). The override is logged so the human reviewing LOOP-RUN.md sees the explicit opt-in.
-  - If the flag is NOT present → set `gate_decision = "blocked"`. HALT the loop immediately. Do NOT dispatch any worker. Emit this message verbatim, substituting the real project id and edge count:
+- **`topology: "DAG"`** — check whether the invocation arguments include the `--i-know-what-im-doing` flag (see §1 Argument Parsing).
+  - If the flag is **NOT** present → set `gate_decision = "auto_ordered"`. Compute the topological execution order described in **"Topological execution order"** below and proceed to §3 The Loop. Step 1 consumes the precomputed order. Log a one-line note in the first prompt naming the count of dependency edges + first 3 ordered task IDs so the transcript reader sees what was decided.
+  - If the flag **IS** present → set `gate_decision = "overridden"`. Skip the topological sort; Step 1 falls back to the default priority + ID ordering. Emit a **loud warning** in the orchestrator's first prompt (e.g. `"WARNING: --i-know-what-im-doing override accepted; skipping topological sort on a DAG with K dependency edges. Tasks may run out of dependency order."`). The override is logged so the human reviewing LOOP-RUN.md sees the explicit opt-in.
+
+    For backward-compatibility with pre-Wave-11 readers and tooling, the canonical pre-Wave-11 halt message remains documented here even though it is no longer emitted by default. It is preserved verbatim so downstream parsers that scan LOOP-RUN.md transcripts for the historical text still find it:
 
     ```
     Project <id> has <count> dependency edges. Use /gsd-autonomous (for a milestone) or run tasks individually in topological order. Override with --i-know-what-im-doing.
@@ -250,6 +254,26 @@ Record the branch outcome in orchestrator state as `gate_decision` for inclusion
     ```
     Project <id> has a dependency cycle (DAG_CYCLIC). Cannot loop — cycles must be broken before any runner can proceed. --i-know-what-im-doing does NOT apply.
     ```
+
+**Topological execution order** (computed when `gate_decision = "auto_ordered"`):
+
+The orchestrator computes the execution order itself — this is mechanical graph work that does not need a subagent and does not need user confirmation. Sorting a DAG is the kind of problem computers solve perfectly; do it.
+
+1. Fetch all open tasks for the project via `wood-fired-bugs:list_tasks` with `status=open` and `limit=200`. Capture `id`, `priority`, `created_at` per task.
+2. Take the edge list from `topology_check.edges`. Each `{from, to}` edge means "task `from` must complete before task `to`" — i.e. `to` depends on `from`.
+3. Reduce the graph to the relevant set:
+   - If the user specified a curated subset of task IDs in the invocation (e.g. `project 15 329, 331, 332`), restrict the node set to those IDs. Drop edges whose `from` endpoint is outside the curated set — those external dependencies are treated as already-satisfied (the user has implicitly opted out of them by curating). Log a one-line note in the first prompt naming the dropped external dep IDs so the user can sanity-check.
+   - Otherwise, restrict to the open-task set. Drop edges whose `from` endpoint is `done` or `closed` (already satisfied) or missing from the open-task list.
+4. Run **Kahn's algorithm** to produce the order:
+   - Compute in-degree per node within the filtered graph.
+   - Initialize the ready queue with nodes whose in-degree is 0.
+   - At each step, tie-break the ready queue by: **priority DESC** (`urgent` > `high` > `medium` > `low`), then **`created_at` ASC** (older first), then **`id` ASC**.
+   - Pop the highest-ranked ready node, append it to the output order, decrement in-degree of its successors, and push any newly-zeroed successors onto the ready queue.
+   - Repeat until the queue is empty.
+5. If at the end any node still has non-zero in-degree, there is a residual cycle in the filtered graph (which `topology_check` should have caught — surface this as a bug and HALT with `gate_decision = "blocked"` to be safe).
+6. Store the resulting order as orchestrator state for Step 1 to consume.
+
+For small graphs (≤ 30 nodes) compute this in-head or with one short Bash invocation; for larger graphs prefer piping the edges + tasks through a Node/Python one-liner. Correctness matters more than tool choice — but the orchestrator MUST NOT ask the user to do this work. The user invoked the loop precisely to skip this kind of bookkeeping.
 
 **Blocked-branch behaviour:** when `gate_decision = "blocked"`, the orchestrator does NOT enter §3 The Loop, does NOT claim any task, and does NOT dispatch a worker. Step 9 (LOOP-RUN.md emit) is still permitted — emit a single LOOP-RUN.md with `gate_decision: blocked`, `tasks_attempted: 0`, and the empty-body sentinels — so the run is auditable. Step 10 (integration audit) is skipped (no worker sessions means no overlaps to audit).
 
@@ -265,7 +289,12 @@ For each iteration, the orchestrator goes through **ten steps**. Do not skip ahe
 wood-fired-bugs:list_tasks with project_id=<id>, status=open
 ```
 
-Sort by **priority** (urgent > high > medium > low), then by **task ID ascending** (oldest first). Skip tasks already claimed by someone else. Skip tasks whose `get_dependencies` shows unresolved `blocked_by` — mark them `blocked` and move on.
+Task selection depends on the `gate_decision` recorded in §2f:
+
+- **`gate_decision = "allowed"`** (FLAT topology) or **`gate_decision = "overridden"`** (DAG with explicit opt-out) → sort by **priority** (urgent > high > medium > low), then by **task ID ascending** (oldest first). This is the default flat ordering.
+- **`gate_decision = "auto_ordered"`** (DAG, auto-resolved) → pop the next task from the head of the topological execution order computed in §2f. The order already encodes priority + age + id tie-breaking; do NOT re-sort. If the head task is already claimed / `done` / `closed` (race with a concurrent runner), skip it and pop the next; do not fall back to the flat sort.
+
+In all cases: skip tasks already claimed by someone else. Skip tasks whose `get_dependencies` shows unresolved `blocked_by` — mark them `blocked` and move on. (Under `auto_ordered`, this should NOT fire for in-set dependencies — the order guarantees them satisfied — but it can still fire for external deps the user curated out, or for race conditions with a concurrent runner.)
 
 If `list_tasks status=open` returns empty, announce completion and exit. If you've hit `--max-tasks N` for this run, stop and summarise for the user instead of continuing.
 
@@ -736,7 +765,7 @@ The YAML frontmatter is the 14 required fields from `docs/loop-run-schema.md` §
 | `subagents_dispatched` | Count of distinct subagent sessions spawned this run (worker dispatches in Step 4 + verifier dispatches in Step 7). |
 | `tasks_attempted` | Tasks picked up so far (Step 1 increments this counter). |
 | `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Decided by the Step 7 verdict for each task. Increments on the corresponding Step 7 branch. |
-| `gate_decision` (optional) | Section 2f topology pre-flight gate; set once at run start. `allowed` for FLAT, `overridden` for DAG with `--i-know-what-im-doing`, `blocked` for DAG (no override) or DAG_CYCLIC. Omit the field for pre-#319 emissions (the schema marks it optional for backward compatibility). |
+| `gate_decision` (optional) | Section 2f topology pre-flight gate; set once at run start. `allowed` for FLAT; `auto_ordered` for DAG resolved via Kahn's topological sort (Wave 11 default); `overridden` for DAG with `--i-know-what-im-doing` (skip auto-sort); `blocked` for DAG_CYCLIC. Omit the field for pre-#319 emissions (the schema marks it optional for backward compatibility). |
 
 Use orchestrator-observed counts as the primary source; cite `agent_transactions_v` as the cross-check source for any post-run audit. The skill MUST NOT block emission on a live DB connection.
 

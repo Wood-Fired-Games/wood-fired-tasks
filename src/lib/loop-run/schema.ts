@@ -42,20 +42,28 @@ export const LoopRunFrontmatterSchema = z.object({
   tasks_not_verified: z.number().int().nonnegative(),
   /**
    * Wave 4.2 (task #319) — outcome of the §2f topology pre-flight gate.
+   * Wave 11 added `auto_ordered` for the auto-resolving DAG branch.
    *
-   *   - `allowed`    — topology=FLAT; the loop proceeded normally.
-   *   - `overridden` — topology=DAG and the invocation included
-   *                    `--i-know-what-im-doing`; the loop proceeded with a
-   *                    loud warning in the orchestrator's first prompt.
-   *   - `blocked`    — topology=DAG without override OR topology=DAG_CYCLIC
-   *                    (which cannot be overridden); the loop halted before
-   *                    dispatching any worker.
+   *   - `allowed`      — topology=FLAT; the loop proceeded with default
+   *                      priority + ID ordering.
+   *   - `auto_ordered` — topology=DAG (no override flag); the loop computed
+   *                      a topological execution order via Kahn's algorithm
+   *                      and proceeded. Tie-breaking: priority DESC,
+   *                      created_at ASC, id ASC.
+   *   - `overridden`   — topology=DAG and the invocation included
+   *                      `--i-know-what-im-doing`; the loop skipped the
+   *                      topological sort and used the default flat
+   *                      ordering, with a loud warning in the first prompt.
+   *   - `blocked`      — topology=DAG_CYCLIC (cannot be overridden); the
+   *                      loop halted before dispatching any worker. Also
+   *                      used by the pre-Wave-11 DAG-without-override
+   *                      behaviour, retained for backward compatibility.
    *
    * Optional to preserve backward compatibility with the pre-#319
    * LOOP-RUN.md emissions locked in by task #316's reference example +
    * schema tests. Emissions WITHOUT this field still parse.
    */
-  gate_decision: z.enum(['allowed', 'overridden', 'blocked']).optional(),
+  gate_decision: z.enum(['allowed', 'auto_ordered', 'overridden', 'blocked']).optional(),
 });
 
 export type LoopRunFrontmatter = z.infer<typeof LoopRunFrontmatterSchema>;

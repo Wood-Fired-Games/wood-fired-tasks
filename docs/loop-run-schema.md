@@ -82,7 +82,7 @@ delimited by `---` lines, and MUST appear first in the file.
 | `tasks_failed` | integer | ≥ 0 | Subset with verdict `FAIL`. | `1` |
 | `tasks_partial` | integer | ≥ 0 | Subset with verdict `PARTIAL`. | `1` |
 | `tasks_not_verified` | integer | ≥ 0 | Subset with verdict `NOT_VERIFIED`. | `1` |
-| `gate_decision` | string (optional) | `allowed` \| `overridden` \| `blocked` | Wave 4.2 (task #319). Outcome of the §2f topology pre-flight gate in `skills/tasks/loop.md`. `allowed` when `topology=FLAT`; `overridden` when `topology=DAG` and the invocation included `--i-know-what-im-doing`; `blocked` when `topology=DAG` without override OR `topology=DAG_CYCLIC` (which cannot be overridden). Optional for backward compatibility with pre-#319 emissions. | `allowed` |
+| `gate_decision` | string (optional) | `allowed` \| `auto_ordered` \| `overridden` \| `blocked` | Wave 4.2 (#319) + Wave 11. Outcome of the §2f topology pre-flight gate in `skills/tasks/loop.md`. `allowed` when `topology=FLAT`; `auto_ordered` when `topology=DAG` and the loop auto-computed a Kahn-based topological execution order (Wave 11 default); `overridden` when `topology=DAG` and the invocation included `--i-know-what-im-doing` (skip auto-sort, use flat ordering); `blocked` when `topology=DAG_CYCLIC` (which cannot be overridden), or for the pre-Wave-11 DAG-without-override halt. Optional for backward compatibility with pre-#319 emissions. | `auto_ordered` |
 
 Invariant (checked by the validator and re-checked by replay):
 `tasks_attempted == tasks_passed + tasks_failed + tasks_partial + tasks_not_verified`.

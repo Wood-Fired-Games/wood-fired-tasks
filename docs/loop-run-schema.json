@@ -94,8 +94,8 @@
     },
     "gate_decision": {
       "type": "string",
-      "enum": ["allowed", "overridden", "blocked"],
-      "description": "Wave 4.2 (task #319) — outcome of the §2f topology pre-flight gate. `allowed` = topology=FLAT, loop proceeded. `overridden` = topology=DAG plus `--i-know-what-im-doing`, loop proceeded with warning. `blocked` = topology=DAG (no override) OR DAG_CYCLIC (cannot be overridden); loop halted before any worker dispatch. Optional for backward compatibility with pre-#319 emissions."
+      "enum": ["allowed", "auto_ordered", "overridden", "blocked"],
+      "description": "Wave 4.2 (#319) + Wave 11 — outcome of the §2f topology pre-flight gate. `allowed` = topology=FLAT, default flat ordering. `auto_ordered` = topology=DAG, loop auto-computed a Kahn topological execution order (Wave 11 default). `overridden` = topology=DAG plus `--i-know-what-im-doing`, loop skipped the auto-sort and used flat ordering with warning. `blocked` = topology=DAG_CYCLIC (cannot be overridden), or the pre-Wave-11 DAG-without-override halt; loop halted before any worker dispatch. Optional for backward compatibility with pre-#319 emissions."
     }
   }
 }

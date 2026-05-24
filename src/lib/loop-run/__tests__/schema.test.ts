@@ -140,6 +140,14 @@ describe('LoopRunFrontmatterSchema', () => {
       expect(result.success).toBe(true);
     });
 
+    it('accepts gate_decision: "auto_ordered" (Wave 11 DAG auto-resolution)', () => {
+      const result = LoopRunFrontmatterSchema.safeParse({
+        ...VALID,
+        gate_decision: 'auto_ordered',
+      });
+      expect(result.success).toBe(true);
+    });
+
     it('accepts gate_decision: "overridden"', () => {
       const result = LoopRunFrontmatterSchema.safeParse({
         ...VALID,

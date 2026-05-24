@@ -67,10 +67,12 @@ describe('/tasks:loop skill — topology pre-flight gate wiring (#319)', () => {
     expect(section2f).toMatch(/DAG_CYCLIC/);
   });
 
-  it('§2f records all three gate_decision values (allowed, overridden, blocked)', () => {
-    // The three values mirror LoopRunFrontmatterSchema's enum exactly.
-    // Removing any branch desyncs the skill from the schema.
+  it('§2f records all four gate_decision values (allowed, auto_ordered, overridden, blocked)', () => {
+    // The four values mirror LoopRunFrontmatterSchema's enum exactly.
+    // Removing any branch desyncs the skill from the schema. Wave 11 added
+    // `auto_ordered` for the auto-resolving DAG branch (Kahn's algorithm).
     expect(section2f).toMatch(/gate_decision\s*=\s*["']allowed["']/);
+    expect(section2f).toMatch(/gate_decision\s*=\s*["']auto_ordered["']/);
     expect(section2f).toMatch(/gate_decision\s*=\s*["']overridden["']/);
     expect(section2f).toMatch(/gate_decision\s*=\s*["']blocked["']/);
   });
