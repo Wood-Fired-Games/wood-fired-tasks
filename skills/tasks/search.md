@@ -13,32 +13,37 @@ This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shortha
 
 ## Workflow
 
-1. Extract search keyword from $ARGUMENTS
-   - Required: at least 1 character
-   - If missing or empty, display error: "Error: Search keyword required"
+1. **Parse `$ARGUMENTS`** — the first positional token is the keyword; remaining tokens are flags:
+   - `--limit N` (optional integer, max 200, default 50). On an invalid value: "Error: --limit must be an integer between 1 and 200".
+   - `--project <name-or-id>` (optional). Scopes the search to one project. If numeric or `#`-prefixed → treat as project ID. Otherwise → case-insensitive partial match against project names (call `wood-fired-bugs:list_projects` and pick the unique match; if 0 or >1 match: error).
+   - `--all` (optional flag). Bypasses the 3-character minimum below.
 
-2. Call `wood-fired-bugs:list_tasks` with filter parameter:
-   - filter: { search: keyword }
-   - This searches across both title and description fields
+2. **Validate keyword length** — minimum 3 characters unless `--all` is set.
+   - If keyword is missing or empty: "Error: Search keyword required".
+   - If keyword length < 3 and `--all` is NOT set: "Error: keyword must be at least 3 chars (or use --all)". Stop.
+   - `--all` allows a 1-2 char or empty keyword for full-scan use cases (e.g. `--project 15 --all` to list every task in a project).
 
-3. Format search results:
-   - For each matching task, display:
-     - Task ID
-     - Title
-     - Status (open, in_progress, blocked, done, closed, backlogged)
-     - Priority (low, medium, high, urgent)
-     - Assignee (or "Unassigned" if null)
+3. **Build filter** — `{ search: keyword, limit: <limit>, project_id?: <project-id> }`. The `limit` is the resolved cap (user's `--limit` value or 50 default). When `--project` was given as a name, substitute the resolved ID from step 1.
+
+4. **Call** `wood-fired-bugs:list_tasks` with the filter built in step 3.
+
+5. **Format search results** — for each matching task:
+   - Task ID
+   - Title
+   - Status (open, in_progress, blocked, done, closed, backlogged)
+   - Priority (low, medium, high, urgent)
+   - Assignee (or "Unassigned" if null)
 
    See [_enums.md](_enums.md) for canonical status + priority values (source: `src/types/task.ts`).
 
-4. Display summary:
-   - Total count of matching tasks
-   - Example: "Found 5 tasks matching 'authentication'"
+6. **Display summary** — distinguish capped from total:
+   - If `tasks.length < limit`: `"Found <N> tasks matching '<keyword>'"`.
+   - If `tasks.length === limit` AND `total > limit` (the response carries a total/pagination signal): `"Showing <limit> of <total> matches for '<keyword>' — use --limit to see more"`.
+   - If a `--project <name-or-id>` filter was applied, append `(scoped to project <name>)`.
 
-5. Handle no results:
-   - If list_tasks returns empty array:
-     - Display: "No tasks found matching '<keyword>'"
-     - Suggest: "Try a broader search term or different keyword"
+7. **Handle no results** — if list_tasks returns empty array:
+   - Display: `"No tasks found matching '<keyword>'"` (with project scope appended if applicable).
+   - Suggest: `"Try a broader search term, drop --project, or use --all to include 1-2 char keywords."`
 
 ## Example Output
 
