@@ -576,11 +576,14 @@ The `additional_observations` array tells the verifier that the narrowing is *de
 
 Use the `Agent` tool. **Default to `subagent_type: "general-purpose"` with the verifier prompt embedded in the brief** — this works regardless of how the user installed the project. The named `subagent_type: "tasks-verifier"` is only registered for sessions started AFTER the user ran `install.sh`; in any fresh session the named agent is typically unavailable, and an Agent call with an unknown subagent_type FAILS the entire dispatch. Defaulting to general-purpose + embedded prompt is the reliable path.
 
+**REQUIRED: pass `name: "verifier-task-<id>"` on every verifier Agent call.** The `name:` parameter makes the agent addressable via `SendMessage` after its first message returns, which is what §7c's auto-repair path needs to round-trip schema fixes WITHOUT losing the verifier's context. A verifier dispatched without a `name:` is unreachable for repair; if it emits a schema-violating envelope (wrong field names, extra strict-mode fields, etc.) the orchestrator has no choice but to synthesize NOT_VERIFIED and silently drop real findings. That is the failure mode this rule prevents. Re-dispatching a fresh verifier via `Agent` is **NOT** an acceptable fallback — the fresh subagent has no context and will fabricate checks (observed once in Wave 11; #332 incident); per §7c the unreachable-verifier path is now "synthesize NOT_VERIFIED + log the §7b violation", never "dispatch fresh and hope".
+
 Embed the full body of [`skills/agents/tasks-verifier.md`](../agents/tasks-verifier.md) as the Agent's prompt prefix (the orchestrator reads the file at run time so prompt updates flow automatically), followed by a fenced JSON block containing the `VerifierInputs` envelope. The contract requires the verifier's FINAL message to be a single JSON object parseable as `VerificationEvidence` — restate this hard constraint at the bottom of the brief so the model doesn't wrap the JSON in prose or a markdown fence.
 
 ```
 Agent(
   subagent_type: "tasks-verifier",  // or "general-purpose" + embedded prompt body
+  name: "verifier-task-<id>",       // REQUIRED — makes SendMessage repair reachable (§7c)
   description: "Grade task #<id> against acceptance criteria",
   prompt: <<-EOF
 Here is your VerifierInputs envelope. Follow docs/verifier-contract.md and the tasks-verifier subagent definition exactly. Your final message MUST be a single JSON object parseable as VerificationEvidence.
@@ -600,9 +603,25 @@ The verifier subagent's `tools:` frontmatter is restricted to read-only operatio
 
 Parse the verifier's final message as JSON. Validate against `VerificationEvidenceSchema` (`src/schemas/task.schema.ts`). Reject anything that does not match the schema.
 
-**Common verifier emission bug — auto-repair, do NOT silently accept:** the schema's `checks[i].status` enum is `PASS | FAIL | SKIP` only; `PARTIAL` is a TOP-LEVEL `verdict` value, NEVER a per-check status. If the verifier emits `status: "PARTIAL"` (observed twice in early runs — known model failure mode), the orchestrator MUST re-dispatch the SAME verifier session via `SendMessage` with a tight diagnostic: "you emitted `status: \"PARTIAL\"` on check N — that's invalid (enum is PASS|FAIL|SKIP). Re-emit with `status: \"SKIP\"` and `evidence_url_or_text` starting `UNCHECKABLE: <reason>`, then recompute the top-level verdict per the rollup table." If the verifier wasn't dispatched with a `name:` (and thus is unreachable via SendMessage), dispatch a fresh verifier with the same envelope plus an explicit "your predecessor emitted invalid status='PARTIAL' — use SKIP+UNCHECKABLE instead" guardrail at the top of the brief.
+**Common verifier emission bugs — auto-repair via `SendMessage`, do NOT silently accept.** The verifier model frequently emits semantically-correct findings inside a schema-violating envelope. The schema is `.strict()` (extra keys rejected) and pins specific field names, so several emission patterns parse-fail despite the underlying judgment being sound. Silently dropping a verifier's real findings is forbidden — the orchestrator MUST attempt repair before falling through to `NOT_VERIFIED`. Repair always goes via `SendMessage` to the SAME verifier session (which §7b mandates was dispatched with a `name:`) — the session retains its tool-call evidence and check decisions, so a tight diagnostic flips the shape without re-doing the work.
 
-On any other parse failure (malformed JSON, missing required fields, etc.), synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and proceed to the `NOT_VERIFIED` branch below.
+Known parse-failure patterns and the diagnostic to send (one per failure class):
+
+1. **`status: "PARTIAL"` on a per-check entry** — enum violation. The schema's `checks[i].status` is `PASS | FAIL | SKIP` only; `PARTIAL` is a top-level `verdict` value only. Diagnostic: `"you emitted status: \"PARTIAL\" on check N — that's invalid (enum is PASS|FAIL|SKIP). Re-emit with status: \"SKIP\" and evidence_url_or_text starting UNCHECKABLE: <reason>, then recompute the top-level verdict per the rollup table."`
+
+2. **Wrong per-check field name** — most often `criterion` instead of `name` (observed in Wave 11 / #332). The schema requires `name: string` (1-200 chars), `status`, and `evidence_url_or_text`. Diagnostic: `"per-check field name mismatch — schema requires name (not criterion / description / title). Rename the field for every check and re-emit."`
+
+3. **Extra strict-mode fields rejected** — top-level keys like `task_id`, `notes`, `summary`, or per-check keys like `artifacts`, `tags`, `confidence`. The schema is `.strict()` — only the documented keys parse. Diagnostic: `"VerificationEvidenceSchema is .strict(); your envelope has unknown keys: <list>. Drop them and re-emit. Top-level allowed: verdict, checks, verifier_session_id, verifier_request_id, verified_at. Per check allowed: name, status, evidence_url_or_text."`
+
+4. **Missing required field** — most often `evidence_url_or_text` omitted on a check, or `verdict` missing at top level. Diagnostic: `"check N is missing required field <name> — schema requires it on every check (max 2000 chars). Add the evidence citation and re-emit."`
+
+5. **Malformed JSON** — markdown fence, prose preamble, trailing commentary, unescaped quotes. Diagnostic: `"your output wasn't parseable as a single JSON object — fence/preamble/trailing prose detected. Re-emit ONLY the JSON object as your final message, no fence, no prose."`
+
+For each pattern, the orchestrator sends `SendMessage(to: "verifier-task-<id>", message: <diagnostic>)` and re-parses the new final message. Cap auto-repair at **2 SendMessage round-trips per verifier session** — if the second repair still fails to parse, synthesize NOT_VERIFIED and stop. Beyond two attempts the verifier is genuinely broken and further repair is throwing tokens at the wall.
+
+**Hard fallback (verifier unreachable for repair):** if the verifier was dispatched WITHOUT a `name:` (a §7b violation), `SendMessage` cannot reach it. Do NOT re-dispatch a fresh verifier — fresh dispatches lack the original verifier's tool-call context and **will fabricate checks** (observed once in Wave 11 / #332; fresh verifier invented entirely new check names for a different task). Instead, synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }`, add a bugs-DB comment explicitly citing the §7b violation ("verifier dispatched without `name:` — schema-repair was unreachable; original findings preserved below for audit"), and preserve the original verifier's parse-failed output verbatim in the comment so a human reviewer can recover the findings.
+
+On parse failures NOT in the known-pattern list above (or after 2 failed repair round-trips), synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and proceed to the `NOT_VERIFIED` branch below. Always preserve the verifier's parse-failed output in a bugs-DB comment so the findings are not silently lost.
 
 **Sanity-check the verdict against the rollup table** (contract §Verdict rollup rules). The orchestrator is allowed exactly ONE class of override: **rollup-driven DOWNGRADES**. Examples:
 - Verifier emitted `verdict: "PASS"` but a check has `status: "FAIL"` → override `verdict` to `FAIL`.
