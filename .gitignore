@@ -54,3 +54,4 @@ coverage/
 
 # Bug-smash skill caches (local-only orchestrator memos)
 .bug-smash-*.md
+.tasks-loop-memo.md
