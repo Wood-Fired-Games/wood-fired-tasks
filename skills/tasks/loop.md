@@ -351,6 +351,19 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 - Validation memo path: `.tasks-loop-memo.md`
 - Known-flake exclusions: sourced from `<repo>/.flaky-tests.json` (schema v1; `fqn` + `reason` + `filed_at` + `tracking_issue` per entry). The listed tests have already been excluded from the baseline via `<runner's exclude-by-FQN flag>` and MUST remain excluded from the post-edit run using the same flag.
 
+## Baseline first (run BEFORE any code edits)
+
+Before touching any source files, run the test runner exactly as the orchestrator did in §2c — using the same `.flaky-tests.json` exclusion filter — and record the pre-edit pass/fail set. This baseline is what the orchestrator's Step 5 will diff against to compute regressions introduced by your change. The `.flaky-tests.json` filter is applied BEFORE this report (the orchestrator already supplied the exclusion list above), so the failing-FQN list below reflects "real" failures only — not known flakes.
+
+Report the following block VERBATIM at the top of your "Reporting back" summary, before any edits:
+
+- **Command + flags:** `<test>` `<exclusion flags, if any — copy from "Known-flake exclusions" line above; empty if the repo has no .flaky-tests.json>`
+- **Pass count:** `<N> / <total>`
+- **Failing FQNs:** `none` OR a bulleted list of the failing test fully-qualified names. **Cap the list at 20 entries.** If the baseline has more than 20 failing tests, DO NOT truncate silently — surface it as a discovered concern, stop, and report back without editing. A baseline that red is itself the issue and the orchestrator must address it before you proceed.
+- **Skipped / ignored count:** `<count>`
+
+If the baseline contradicts what the orchestrator's brief told you to expect (e.g. brief says "expect 2493 passing, none failing" but you see 2491 passing with 2 failures), STOP and surface it in your reporting block — do NOT start editing on top of an unexpected baseline.
+
 ## Required deliverables
 
 <concrete list — files to create, scripts to add, exact CLI entry points>
@@ -374,7 +387,21 @@ Iterate until all pass. If you conclude a check can only be satisfied by relaxin
 
 ## Reporting back
 
-Return a tight summary (under 400 words):
+Return a tight summary (under 400 words). The first two subsections (**Baseline (pre-edit)** and **Post-edit**) are LOAD-BEARING — the orchestrator's Step 5 diffs them to detect regressions. Keep them as separate blocks with the exact field labels below so the diff is mechanical.
+
+**Baseline (pre-edit)** — copied verbatim from the "Baseline first" block you ran before any edits:
+- Command + flags: `<test>` `<exclusion flags or empty>`
+- Pass count: `<N> / <total>`
+- Failing FQNs: `none` OR bulleted list (≤20 entries; if more, you should already have stopped per "Baseline first").
+- Skipped / ignored: `<count>`
+
+**Post-edit** — same fields, captured after the final validation re-run:
+- Command + flags: `<test>` `<exclusion flags or empty>` (MUST match Baseline exactly)
+- Pass count: `<N> / <total>`
+- Failing FQNs: `none` OR bulleted list.
+- Skipped / ignored: `<count>`
+
+Then the standard fields:
 - Tooling / version chosen (if a choice was made).
 - Files created or modified (full paths).
 - Decisions and trade-offs (with one-line rationale each).
@@ -400,6 +427,8 @@ When the subagent returns its summary:
 1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it.
 2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted). **Watch specifically for silent-pass gates**: a new CI job, npm script, or assertion that passes trivially (no-op, always-true condition, doesn't actually run the underlying tool). A gate that doesn't exercise the real check is worse than no gate — it gives false confidence forever. If you see one, re-brief and remove it (don't accept the compromise just because validation passed).
 3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. The `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines.
+
+    **Regression-delta computation (load-bearing — no stash dance required).** The subagent's "Reporting back" block now contains two FQN sets: **Baseline (pre-edit)** and **Post-edit**. Compute `regressions_introduced_by_this_change = post_edit_failures - baseline_failures` (set difference on the FQN strings, applied AFTER the §2c `.flaky-tests.json` exclusion filter both sets were captured under). If the delta is empty, the subagent's work is clean (modulo any new tests added in this change — those count separately). If the delta is non-empty, those FQNs are real regressions introduced by this change and trigger the re-brief loop in item #5 below — the orchestrator does NOT need to stash the working tree and re-baseline to determine pre-existing-vs-new, because the subagent already captured the pre-edit set before touching code. If the subagent's report is missing either FQN block (or the two blocks were captured under different exclusion flags), treat that as a brief-deviation per Step 5's error-handling clause and re-brief.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
 5. If validation now fails, send the subagent (or a new one) back with the failure output and a tight diagnostic prompt. Do *not* try to fix it inline in the orchestrator context — that defeats the pattern.
 6. **Narrow carve-out — inline orchestrator post-correction.** The rule above has one exception: the orchestrator MAY apply a mechanical fix in-context, without a SendMessage round-trip, when **ALL of** the following hold (conjunctive — miss one, dispatch a subagent):
