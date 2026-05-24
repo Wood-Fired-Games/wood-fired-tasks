@@ -13,6 +13,9 @@ on:
       - 'src/cli/bin/tasks.ts'
       - 'src/utils/is-main.ts'
       - 'tests/smoke/cli-symlink-smoke.sh'
+      # cli-surface-coverage gate: per-command --help matrix for wood-fired-bugs #337.
+      - 'tests/smoke/cli-surface-coverage.sh'
+      - 'src/cli/commands/**'
       - 'package.json'
   pull_request:
     branches: [main]
@@ -26,6 +29,9 @@ on:
       - 'src/cli/bin/tasks.ts'
       - 'src/utils/is-main.ts'
       - 'tests/smoke/cli-symlink-smoke.sh'
+      # cli-surface-coverage gate: per-command --help matrix for wood-fired-bugs #337.
+      - 'tests/smoke/cli-surface-coverage.sh'
+      - 'src/cli/commands/**'
       - 'package.json'
 
 # Note on workflow security: this workflow is scoped to lint + smoke-test
@@ -400,3 +406,61 @@ jobs:
         #   2. `tasks --help` exits 0 with >= 10 lines
         #   3. `tasks` (no args) exits != 0 and stderr contains "Usage:"
         run: bash tests/smoke/cli-symlink-smoke.sh
+
+  # -------------------------------------------------------------------------
+  # Per-command surface coverage matrix — wood-fired-bugs #337.
+  #
+  # Where cli-smoke-link covers the top-level binary (--version / --help /
+  # no-args), this job extends coverage DOWN to every individual Commander
+  # subcommand. The script (tests/smoke/cli-surface-coverage.sh) discovers
+  # the registered command list dynamically by parsing `tasks --help`, so
+  # any future addCommand() call automatically lands in the matrix without
+  # a CI edit. For each command (and one level of nesting where applicable,
+  # e.g. `tasks db mint-token`), it asserts that `tasks <cmd> --help`
+  # exits 0, produces non-empty stdout, and begins with the literal
+  # "Usage: tasks <cmd>" line — proof that Commander rendered the help
+  # and the CLI did not silent-no-op (the same regression family as #334).
+  #
+  # Node matrix: package.json's engines.node is ">=22" and Node 22 is the
+  # active LTS line at the time of writing (24 is Current, not LTS). So
+  # "minimum supported" and "latest LTS" collapse to the same number; the
+  # matrix is a single-entry [22] for now. The matrix syntax is preserved
+  # so a future LTS bump is a one-line edit. Branch protection (task #340)
+  # wires onto the job key `cli-surface-coverage-link`; do not rename it
+  # without updating that ruleset.
+  # -------------------------------------------------------------------------
+  cli-surface-coverage-link:
+    name: cli-surface-coverage-link (node ${{ matrix.node-version }})
+    needs: cli-smoke-link
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dist artifacts (CLI bin lives at dist/cli/bin/tasks.js)
+        run: |
+          npm run build
+          test -f dist/cli/bin/tasks.js || { echo "build did not produce dist/cli/bin/tasks.js"; exit 1; }
+
+      - name: Run cli-surface-coverage.sh
+        # The script does its own `npm link`, cleans up on exit, parses
+        # `tasks --help` to discover commands, recurses one level on any
+        # command that exposes a nested Commands: block, and asserts on
+        # every command:
+        #   - exit code == 0
+        #   - stdout non-empty
+        #   - stdout contains "Usage: tasks <cmd>"
+        # It continues past failures and exits non-zero with a list of
+        # failing commands (so we see ALL regressions in one run, not just
+        # the first). Total runtime target <= 90s per Node version.
+        run: bash tests/smoke/cli-surface-coverage.sh
