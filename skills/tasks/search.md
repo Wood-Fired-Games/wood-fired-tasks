@@ -21,9 +21,11 @@ Search for tasks matching a keyword in titles and descriptions.
    - For each matching task, display:
      - Task ID
      - Title
-     - Status (open, in_progress, blocked, done)
-     - Priority (critical, high, normal, low)
+     - Status (open, in_progress, blocked, done, closed, backlogged)
+     - Priority (low, medium, high, urgent)
      - Assignee (or "Unassigned" if null)
+
+   See [_enums.md](_enums.md) for canonical status + priority values (source: `src/types/task.ts`).
 
 4. Display summary:
    - Total count of matching tasks
@@ -40,8 +42,8 @@ Search for tasks matching a keyword in titles and descriptions.
 Search results for 'auth':
 
 #42  [in_progress] HIGH   Implement JWT authentication     (alice)
-#55  [open]        NORMAL Add OAuth provider support       (Unassigned)
-#67  [done]        NORMAL Fix auth token expiration bug    (bob)
+#55  [open]        MEDIUM Add OAuth provider support       (Unassigned)
+#67  [done]        MEDIUM Fix auth token expiration bug    (bob)
 
 Found 3 tasks matching 'auth'
 ```

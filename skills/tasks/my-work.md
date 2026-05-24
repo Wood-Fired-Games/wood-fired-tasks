@@ -19,11 +19,15 @@ Lists all tasks assigned to the current user, organized by status.
 
 3. **Group Results by Status**
 
+   See [_enums.md](_enums.md) for canonical status values (source: `src/types/task.ts`).
+
    Organize tasks in this priority order:
    - **in_progress**: Active work currently being done
    - **blocked**: Needs attention, cannot proceed
    - **open**: Ready to start, not yet begun
    - **done**: Recently completed tasks
+   - **backlogged**: Deprioritized — not abandoned, can be picked back up
+   - **closed**: Terminal (skipped from active display by default)
 
 4. **Format Output**
 

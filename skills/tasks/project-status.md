@@ -24,12 +24,13 @@ For every project returned:
 
 a. Call `wood-fired-bugs:list_tasks` with filter: { project_id: project.id }
 
-b. Group tasks by status:
+b. Group tasks by status (canonical values: `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged` — see [_enums.md](_enums.md), source: `src/types/task.ts`). Display labels are title-cased for readability:
 - Open
 - In Progress
 - Done
 - Blocked
 - Closed
+- Backlogged
 
 c. Calculate completion percentage: (done + closed) / total * 100
 
@@ -44,6 +45,7 @@ Total: <count> tasks | Completion: <percentage>%
 - Done: <count>
 - Blocked: <count>
 - Closed: <count>
+- Backlogged: <count>
 ```
 
 ### 5. Generate highlights section

@@ -25,6 +25,7 @@ This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fire
    - **`in_progress`** with different assignee → warn "Task <id> is claimed by <other>. Steal? (y/N)". Default abort on no response.
    - **`blocked`** → warn "Task <id> is blocked: <reason from last BLOCKED comment>. Unblock and start? (y/N)". On Y, set status to `in_progress` AND add comment `"UNBLOCKED via /tasks:pick-up by $ASSIGNEE"`.
    - **`done`** OR **`closed`** → **require explicit confirmation**: "Task <id> is `<status>`. Reopen? Type `reopen <id>` to confirm." Plain `y` is not enough — typos on done tasks are too costly to allow loose confirmation.
+   - **`backlogged`** → confirm "Task <id> was deprioritized (`backlogged`). Pick up and reactivate? (y/N)". On Y, set status to `in_progress` and proceed.
    - **Any other status** → report verbatim and exit; defensive.
 
 4. **Atomic claim via `claim_task` (NOT `update_task`)** — the dedicated tool encodes race-condition protection that `update_task` does not:
@@ -37,8 +38,11 @@ This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fire
 
 ## Valid Status Transitions
 
+See [_enums.md](_enums.md) for canonical status values (source: `src/types/task.ts`).
+
 - `open` → `in_progress` — normal pickup.
 - `blocked` → `in_progress` — requires confirm + audit comment.
+- `backlogged` → `in_progress` — requires `(y/N)` confirm (reactivation).
 - `in_progress` (self) → `in_progress` — idempotent no-op.
 - `in_progress` (other) → `in_progress` (self) — requires `(y/N)` confirm.
 - `done` / `closed` → `in_progress` — requires typed `reopen <id>` confirmation.

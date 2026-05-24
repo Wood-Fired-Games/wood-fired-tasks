@@ -47,7 +47,7 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
 
 ## Priority values
 
-Canonical enum (from `src/schemas/task.schema.ts`): `low | medium | high | urgent`. Default for new bugs is `high`; `urgent` is for prod-down / data-loss scenarios.
+Canonical enum (from [`src/types/task.ts`](../../src/types/task.ts), re-exported via `src/schemas/task.schema.ts`): `low | medium | high | urgent`. See [_enums.md](_enums.md) for the central reference. Default for new bugs is `high`; `urgent` is for prod-down / data-loss scenarios.
 
 ## Notes
 

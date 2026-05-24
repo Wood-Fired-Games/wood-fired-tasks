@@ -25,7 +25,8 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
 
 4. **MANDATORY pre-check** — call `wood-fired-bugs:get_task` with `id=<id>`. Reject illegal transitions BEFORE mutating:
    - **`done`** → refuse: "Task <id> is `done`. Blocking a done task would regress it — reopen with `/tasks:pick-up` first if that's what you meant." Stop.
-   - **`closed`** / **`cancelled`** → refuse: "Task <id> is terminal (`<status>`). Cannot block. Open a new task if needed." Stop.
+   - **`closed`** → refuse: "Task <id> is terminal (`<status>`). Cannot block. Open a new task if needed." Stop.
+   - **`backlogged`** → refuse: "Task <id> is deprioritized (`backlogged`). Move it back to `open` first if you want to block it." Stop.
    - **`blocked`** → idempotency guard: check last comment. If it's `BLOCKED: <same reason>` from the same author within last 60s, abort with "Already blocked by <author> with this reason at <created_at>." Otherwise warn "Already blocked — append additional reason? (y/N)".
    - **`open`** / **`in_progress`** → proceed to step 5.
 
@@ -46,9 +47,12 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
 
 ## Valid Status Transitions to Blocked
 
+See [_enums.md](_enums.md) for canonical status values (source: `src/types/task.ts`).
+
 - `open` → `blocked`
 - `in_progress` → `blocked`
-- (REFUSED) `done` / `closed` / `cancelled` → `blocked` (would regress)
+- (REFUSED) `done` / `closed` → `blocked` (would regress terminal state)
+- (REFUSED) `backlogged` → `blocked` (move back to `open` first)
 - (IDEMPOTENT) `blocked` → `blocked` with same author + same reason within 60s
 
 ## Example Usage

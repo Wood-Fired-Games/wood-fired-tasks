@@ -429,7 +429,7 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (14 files)', () => {
+  it('skill file count matches expected (14 invocable files)', () => {
     // Update this count when adding or removing a skill file in
     // `skills/tasks/`. The README ("N Claude Code skill files") and
     // docs/MCP.md ("N pre-built skill files") references should be
@@ -447,9 +447,15 @@ describe('Skill File Validation', () => {
     // as the native DAG executor sibling to `loop.md`. See the design
     // contract in `skills/tasks/loop-dag.md` and the static gate at
     // `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`.
+    //
+    // Task #347 added `_enums.md` as a NON-invocable
+    // (`disable-model-invocation: true`) documentation pointer for the
+    // canonical status + priority enums. It is intentionally excluded
+    // here — the count tracks invocable skills.
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
-      .filter((f) => f.endsWith('.md'));
+      .filter((f) => f.endsWith('.md'))
+      .filter((f) => !f.startsWith('_'));
 
     expect(skillFiles).toHaveLength(14);
   });
@@ -457,7 +463,8 @@ describe('Skill File Validation', () => {
   it('each skill file has workflow steps', () => {
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
-      .filter((f) => f.endsWith('.md'));
+      .filter((f) => f.endsWith('.md'))
+      .filter((f) => !f.startsWith('_'));
 
     for (const filename of skillFiles) {
       const filepath = path.join(SKILLS_DIR, filename);

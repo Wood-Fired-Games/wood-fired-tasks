@@ -52,6 +52,8 @@ Creates a new task in the Wood Fired Bugs system with full configuration options
 
 Valid priority values: low, medium, high, urgent
 
+See [_enums.md](_enums.md) for the canonical priority list (source: `src/types/task.ts`).
+
 ## Notes
 
 - Default priority is medium

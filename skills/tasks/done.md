@@ -26,7 +26,8 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
    - **`in_progress`** → proceed (normal flow).
    - **`blocked`** → refuse: "Task <id> is `blocked` (reason: <last BLOCKED comment>). Marking blocked → done would bypass the unblock signal. Either: (a) `/tasks:pick-up <id>` to unblock and start, then `/tasks:done`, OR (b) if the blocker was resolved without work, run `/tasks:add-comment <id> 'unblocked: <why>'` first, then `/tasks:done <id>` once the status moves." Stop.
    - **`done`** → idempotent no-op: "Task <id> already done." Exit 0.
-   - **`closed`** / **`cancelled`** → refuse: "Task <id> is terminal (`<status>`). Cannot mark done." Stop.
+   - **`closed`** → refuse: "Task <id> is terminal (`closed`). Cannot mark done." Stop.
+   - **`backlogged`** → refuse: "Task <id> is deprioritized (`backlogged`). Pick it back up via `/tasks:pick-up <id>` first, then mark done." Stop.
    - **Any other status** → report verbatim and exit; defensive.
 
 3. **Close-out comment** (optional but recommended for audit trail)
@@ -41,13 +42,16 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
 
 ## Valid Status Transitions to Done
 
+See [_enums.md](_enums.md) for canonical status values (source: `src/types/task.ts`).
+
 The transitions BELOW are enforced by step 2's pre-check — the skill refuses anything else:
 
 - `open` → `done` ✅ (task completed without formal pickup)
 - `in_progress` → `done` ✅ (normal completion flow)
 - `blocked` → `done` ❌ REFUSED — must unblock first via `/tasks:pick-up` or `/tasks:add-comment`
 - `done` → `done` ✅ IDEMPOTENT no-op
-- `closed` / `cancelled` → `done` ❌ REFUSED — terminal states cannot be revived; open a new task
+- `closed` → `done` ❌ REFUSED — terminal state cannot be revived; open a new task
+- `backlogged` → `done` ❌ REFUSED — pick it up first via `/tasks:pick-up`
 
 ## Example Usage
 
