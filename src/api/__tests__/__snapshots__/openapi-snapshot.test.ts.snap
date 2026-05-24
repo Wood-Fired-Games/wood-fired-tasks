@@ -915,7 +915,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
+                  "oneOf": [
                     {
                       "additionalProperties": false,
                       "properties": {
@@ -949,13 +949,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "minimum": 0,
                           "type": "integer",
                         },
+                        "truncated": {
+                          "type": "boolean",
+                        },
                       },
                       "required": [
+                        "format",
                         "roots",
                         "total_tasks",
                         "total_edges",
                         "topology",
-                        "format",
+                        "truncated",
                       ],
                       "type": "object",
                     },
@@ -1057,12 +1061,12 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         },
                       },
                       "required": [
+                        "format",
                         "nodes",
                         "edges",
                         "topology",
                         "total_tasks",
                         "total_edges",
-                        "format",
                       ],
                       "type": "object",
                     },
@@ -1099,13 +1103,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "minimum": 0,
                           "type": "integer",
                         },
+                        "truncated": {
+                          "type": "boolean",
+                        },
                       },
                       "required": [
+                        "format",
                         "lines",
                         "topology",
                         "total_tasks",
                         "total_edges",
-                        "format",
+                        "truncated",
                       ],
                       "type": "object",
                     },

@@ -268,7 +268,7 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
         .run(t3.id, t1.id);
     });
 
-    it('flags topology=DAG_CYCLIC without hanging the tree request', async () => {
+    it('flags topology=DAG_CYCLIC and emits a synthetic root (N1)', async () => {
       const response = await server.inject({
         method: 'GET',
         url: `/api/v1/projects/${cyclicProjectId}/dependency-graph?format=tree`,
@@ -279,9 +279,14 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
       expect(body.topology).toBe('DAG_CYCLIC');
       expect(body.total_tasks).toBe(3);
       expect(body.total_edges).toBe(3);
+      // N1: cyclic-only projects now get a synthetic root so the dashboard
+      // panel doesn't render blank. Per-branch visited-set still bounds
+      // the walk on the 3-cycle (3 visits, no infinite recursion).
+      expect(body.roots.length).toBe(1);
+      expect(body.truncated).toBe(false);
     });
 
-    it('flags topology=DAG_CYCLIC without hanging the text request', async () => {
+    it('flags topology=DAG_CYCLIC and emits synthetic-root text (N1)', async () => {
       const response = await server.inject({
         method: 'GET',
         url: `/api/v1/projects/${cyclicProjectId}/dependency-graph?format=text`,
@@ -290,6 +295,11 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
       expect(body.topology).toBe('DAG_CYCLIC');
+      // N1: synthetic root walked under per-branch visited-set bounds the
+      // text output at 4 lines (root + 2 fresh descendants + 1 terminal
+      // "already-visited" emit closing the 3-cycle).
+      expect(body.lines.length).toBe(4);
+      expect(body.truncated).toBe(false);
     });
 
     it('graph shape still returns all nodes + edges with DAG_CYCLIC flag', async () => {

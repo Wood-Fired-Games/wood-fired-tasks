@@ -80,7 +80,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.format).toBe('tree');
       expect(r.roots).toEqual([]);
       expect(r.total_tasks).toBe(0);
@@ -92,7 +92,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'graph',
-      ) as { format: 'graph' } & DependencyGraphGraphResponse;
+      ) as DependencyGraphGraphResponse;
       expect(r.format).toBe('graph');
       expect(r.nodes).toEqual([]);
       expect(r.edges).toEqual([]);
@@ -105,7 +105,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'text',
-      ) as { format: 'text' } & DependencyGraphTextResponse;
+      ) as DependencyGraphTextResponse;
       expect(r.format).toBe('text');
       expect(r.lines).toEqual([]);
       expect(r.total_tasks).toBe(0);
@@ -120,7 +120,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.topology).toBe('FLAT');
       expect(r.roots).toHaveLength(1);
       expect(r.roots[0].id).toBe(id);
@@ -138,7 +138,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'graph',
-      ) as { format: 'graph' } & DependencyGraphGraphResponse;
+      ) as DependencyGraphGraphResponse;
       expect(r.nodes).toEqual([
         {
           id,
@@ -156,7 +156,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'text',
-      ) as { format: 'text' } & DependencyGraphTextResponse;
+      ) as DependencyGraphTextResponse;
       expect(r.lines).toHaveLength(1);
       // Status glyph for `open` is `○`; priority shown in parens.
       expect(r.lines[0]).toContain(`#${id}`);
@@ -173,7 +173,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.roots.map((n) => n.id)).toEqual([urgent, medium, low]);
     });
   });
@@ -194,7 +194,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.topology).toBe('DAG');
       expect(r.roots).toHaveLength(1);
       const rootA = r.roots[0];
@@ -220,7 +220,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'graph',
-      ) as { format: 'graph' } & DependencyGraphGraphResponse;
+      ) as DependencyGraphGraphResponse;
       expect(r.nodes).toHaveLength(3);
       // Sorted by id ascending.
       expect(r.nodes.map((n) => n.id)).toEqual([a, b, c]);
@@ -235,7 +235,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'text',
-      ) as { format: 'text' } & DependencyGraphTextResponse;
+      ) as DependencyGraphTextResponse;
       expect(r.lines).toHaveLength(3);
       // Root line has no connector.
       expect(r.lines[0]).toMatch(/^#\d+ ○ a \(medium\)$/);
@@ -268,7 +268,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.topology).toBe('DAG');
       // Single root: n1.
       expect(r.roots).toHaveLength(1);
@@ -295,7 +295,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'graph',
-      ) as { format: 'graph' } & DependencyGraphGraphResponse;
+      ) as DependencyGraphGraphResponse;
       expect(r.nodes).toHaveLength(4);
       const ids = new Set(r.nodes.map((n) => n.id));
       expect(ids.size).toBe(4); // each task exactly once
@@ -315,7 +315,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'text',
-      ) as { format: 'text' } & DependencyGraphTextResponse;
+      ) as DependencyGraphTextResponse;
       // 5 lines = root + 2 children + 2 duplicated grandchildren.
       expect(r.lines).toHaveLength(5);
       const n4Lines = r.lines.filter((l) => l.includes(`#${n4} `));
@@ -338,40 +338,57 @@ describe('DependencyGraphService', () => {
       depRepo.create({ task_id: c, blocks_task_id: a });
     });
 
-    it('classifies as DAG_CYCLIC and halts tree expansion at first revisit', () => {
+    it('classifies as DAG_CYCLIC and emits a synthetic-root tree (N1)', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.topology).toBe('DAG_CYCLIC');
-      // Every node has in-degree ≥ 1, so the strict roots-from-in-degree-0
-      // rule would give an empty array — but for the tree shape we still
-      // need SOMETHING to walk, so the service uses in-degree 0. The cycle
-      // case has no such node, so `roots` is empty here. The dashboard's
-      // contract is that the `topology` flag warns the consumer.
-      expect(r.roots).toEqual([]);
+      // N1 fix: cyclic-only projects used to return `roots: []` and silently
+      // render nothing. The service now picks a SINGLE synthetic root using
+      // the priority-desc / created_at-desc / id-asc ordering so the
+      // consumer always has something to walk. All three tasks are
+      // 'medium' priority — created_at desc breaks the tie newest-first;
+      // SQLite resolution can make those identical too, in which case
+      // id-asc decides. Either way exactly ONE root is emitted.
+      expect(r.roots.length).toBe(1);
       // total counts still reflect the underlying graph.
       expect(r.total_tasks).toBe(3);
       expect(r.total_edges).toBe(3);
+      // Per-branch visited-set still bounds recursion on the 3-cycle:
+      // walk the synthetic root through 2 descendants, then the next hop
+      // is already-visited → emitted with empty children (one extra
+      // terminal visit). That gives exactly 4 visits for a 3-cycle.
+      const countNodes = (n: {
+        children: Array<{ children: unknown[] }>;
+      }): number =>
+        1 +
+        n.children.reduce(
+          (acc, c) => acc + countNodes(c as typeof n),
+          0,
+        );
+      expect(countNodes(r.roots[0])).toBe(4);
+      expect(r.truncated).toBe(false);
     });
 
-    it('does not infinite-recurse in text output for a cycle', () => {
+    it('emits synthetic-root text output for a cycle (N1)', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'text',
-      ) as { format: 'text' } & DependencyGraphTextResponse;
-      // With zero in-degree-0 roots, the text shape emits zero lines —
-      // the cycle is unreachable from the standard root set. Topology
-      // still flags DAG_CYCLIC.
+      ) as DependencyGraphTextResponse;
+      // N1 fix: cyclic-only projects now render via synthetic root. The
+      // per-branch visited-set bounds the walk at 4 lines (root + 2 fresh
+      // descendants + 1 terminal "already-visited" emit).
       expect(r.topology).toBe('DAG_CYCLIC');
-      expect(r.lines).toEqual([]);
+      expect(r.lines.length).toBe(4);
+      expect(r.truncated).toBe(false);
     });
 
     it('still emits all nodes + all edges (graph)', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'graph',
-      ) as { format: 'graph' } & DependencyGraphGraphResponse;
+      ) as DependencyGraphGraphResponse;
       expect(r.topology).toBe('DAG_CYCLIC');
       expect(r.nodes).toHaveLength(3);
       expect(r.edges).toHaveLength(3);
@@ -387,7 +404,7 @@ describe('DependencyGraphService', () => {
       const r = service.buildDependencyGraph(
         projectId,
         'tree',
-      ) as { format: 'tree' } & DependencyGraphTreeResponse;
+      ) as DependencyGraphTreeResponse;
       expect(r.topology).toBe('DAG_CYCLIC');
       // x is the only in-degree-0 node now.
       expect(r.roots).toHaveLength(1);
@@ -428,6 +445,124 @@ describe('DependencyGraphService', () => {
       // pass `tree` explicitly. We verify here that `tree` is the correct
       // service-layer name.
       expect(explicit.format).toBe('tree');
+    });
+  });
+
+  /**
+   * N2 — Bounded tree expansion. A deep stacked-diamond chain (K diamonds
+   * stacked tip-to-tip) explodes the duplicated-subtree shape to 2^K
+   * leaves. The service caps total node emission at MAX_TREE_NODES (1000)
+   * and flips `truncated: true` when the cap is hit.
+   */
+  describe('Tree expansion cap (N2)', () => {
+    it('halts at MAX_TREE_NODES and reports truncated:true on a deep diamond chain', () => {
+      // Build a chain of K stacked diamonds. Each "diamond" introduces 4 new
+      // nodes: top, leftMid, rightMid, bottom; both mids feed the bottom,
+      // and the bottom is the top of the NEXT diamond. K=12 → 2^12 = 4096
+      // duplicated paths at the bottom, well above the 1000-node cap.
+      const K = 12;
+      // We pre-allocate top of the first diamond, then K iterations.
+      let top = createTask(`d0-top`, 'medium');
+      for (let i = 0; i < K; i++) {
+        const left = createTask(`d${i}-L`, 'medium');
+        const right = createTask(`d${i}-R`, 'medium');
+        const bottom = createTask(`d${i}-B`, 'medium');
+        depRepo.create({ task_id: top, blocks_task_id: left });
+        depRepo.create({ task_id: top, blocks_task_id: right });
+        depRepo.create({ task_id: left, blocks_task_id: bottom });
+        depRepo.create({ task_id: right, blocks_task_id: bottom });
+        top = bottom; // chain continues
+      }
+
+      const r = service.buildDependencyGraph(
+        projectId,
+        'tree',
+      ) as DependencyGraphTreeResponse;
+      // Truncation flips on, total visits stay <= cap.
+      expect(r.truncated).toBe(true);
+      const countNodes = (n: {
+        children: Array<{ children: unknown[] }>;
+      }): number =>
+        1 +
+        n.children.reduce(
+          (acc, c) => acc + countNodes(c as typeof n),
+          0,
+        );
+      const visits = r.roots.reduce((acc, n) => acc + countNodes(n), 0);
+      expect(visits).toBeLessThanOrEqual(1000);
+      // total_tasks is the underlying graph size — the cap doesn't lie about
+      // how many real tasks exist.
+      expect(r.total_tasks).toBe(1 + K * 3);
+    });
+
+    it('reports truncated:false for graphs that fit under the cap', () => {
+      const a = createTask('a');
+      const b = createTask('b');
+      depRepo.create({ task_id: a, blocks_task_id: b });
+      const r = service.buildDependencyGraph(
+        projectId,
+        'tree',
+      ) as DependencyGraphTreeResponse;
+      expect(r.truncated).toBe(false);
+    });
+
+    it('also caps text rendering and reports truncated:true', () => {
+      // Same stacked-diamond shape as above, smaller K — text walker uses
+      // the same MAX_TREE_NODES cap, just emits one line per visit instead
+      // of one tree node.
+      const K = 12;
+      let top = createTask(`td0`, 'medium');
+      for (let i = 0; i < K; i++) {
+        const left = createTask(`td${i}-L`, 'medium');
+        const right = createTask(`td${i}-R`, 'medium');
+        const bottom = createTask(`td${i}-B`, 'medium');
+        depRepo.create({ task_id: top, blocks_task_id: left });
+        depRepo.create({ task_id: top, blocks_task_id: right });
+        depRepo.create({ task_id: left, blocks_task_id: bottom });
+        depRepo.create({ task_id: right, blocks_task_id: bottom });
+        top = bottom;
+      }
+      const r = service.buildDependencyGraph(
+        projectId,
+        'text',
+      ) as DependencyGraphTextResponse;
+      expect(r.truncated).toBe(true);
+      expect(r.lines.length).toBeLessThanOrEqual(1000);
+    });
+  });
+
+  /**
+   * N3 — Inline topology classifier. Confirms each of the three branches
+   * (FLAT, DAG, DAG_CYCLIC) lights up through the dependency-graph endpoint
+   * WITHOUT requiring a TopologyService round trip.
+   */
+  describe('Inline topology classifier (N3)', () => {
+    it('returns FLAT when there are no edges', () => {
+      createTask('a');
+      createTask('b');
+      const r = service.buildDependencyGraph(projectId, 'graph');
+      expect(r.topology).toBe('FLAT');
+    });
+
+    it('returns DAG for an acyclic chain', () => {
+      const a = createTask('a');
+      const b = createTask('b');
+      const c = createTask('c');
+      depRepo.create({ task_id: a, blocks_task_id: b });
+      depRepo.create({ task_id: b, blocks_task_id: c });
+      const r = service.buildDependencyGraph(projectId, 'graph');
+      expect(r.topology).toBe('DAG');
+    });
+
+    it('returns DAG_CYCLIC when the graph contains a cycle', () => {
+      const a = createTask('a');
+      const b = createTask('b');
+      const c = createTask('c');
+      depRepo.create({ task_id: a, blocks_task_id: b });
+      depRepo.create({ task_id: b, blocks_task_id: c });
+      depRepo.create({ task_id: c, blocks_task_id: a });
+      const r = service.buildDependencyGraph(projectId, 'graph');
+      expect(r.topology).toBe('DAG_CYCLIC');
     });
   });
 });

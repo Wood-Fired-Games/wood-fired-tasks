@@ -175,10 +175,16 @@ export async function createApp(dbPath?: string): Promise<App> {
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
   const topologyService = new TopologyService(taskRepo, dependencyRepo);
+  // N6: pass the better-sqlite3 handle so the bulk reads (count + paginated
+  // tasks + dependencies findAll) run inside a snapshot-isolated
+  // `db.transaction(() => {})()`. Service-layer unit tests still construct
+  // without `db` — the in-memory single-threaded SQLite they use makes the
+  // race impossible.
   const dependencyGraphService = new DependencyGraphService(
     taskRepo,
     dependencyRepo,
     projectRepo,
+    db,
   );
 
   // Create and start WorkflowEngine (with db for transaction atomicity)

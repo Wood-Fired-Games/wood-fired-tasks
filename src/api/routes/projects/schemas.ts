@@ -5,6 +5,7 @@ export {
   DependencyGraphTreeResponseSchema,
   DependencyGraphGraphResponseSchema,
   DependencyGraphTextResponseSchema,
+  DependencyGraphResponseSchema,
   DependencyGraphFormatSchema,
 } from '../../../schemas/dependency-graph.schema.js';
 

@@ -2,9 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   DependencyGraphFormatSchema,
-  DependencyGraphTreeResponseSchema,
-  DependencyGraphGraphResponseSchema,
-  DependencyGraphTextResponseSchema,
+  DependencyGraphResponseSchema,
 } from './schemas.js';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
 
@@ -27,9 +25,9 @@ import { ErrorResponseSchema } from '../tasks/schemas.js';
  *
  * Schema registration is automatic — the `schema:` block below is picked
  * up by `@fastify/swagger`'s `jsonSchemaTransform` and rendered in the
- * Scalar UI at `/docs`. The three discriminated response shapes are
- * declared together so the OpenAPI document advertises ALL of them under
- * the 200 status.
+ * Scalar UI at `/docs`. The 200 response is a discriminated union keyed
+ * on the `format` literal so the OpenAPI document advertises all three
+ * shapes with a clear discriminator.
  */
 const dependencyGraphRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
@@ -47,22 +45,13 @@ const dependencyGraphRoutes: FastifyPluginAsyncZod = async (fastify) => {
           format: DependencyGraphFormatSchema,
         }),
         response: {
-          // We expose a discriminated union under 200 — the active shape is
-          // dictated by `?format=`. Zod's `z.discriminatedUnion` requires a
-          // discriminator that is a literal/enum in every variant; we add a
-          // `format` literal on each branch so consumers can narrow without
-          // peeking at the other fields.
-          200: z.union([
-            DependencyGraphTreeResponseSchema.extend({
-              format: z.literal('tree'),
-            }),
-            DependencyGraphGraphResponseSchema.extend({
-              format: z.literal('graph'),
-            }),
-            DependencyGraphTextResponseSchema.extend({
-              format: z.literal('text'),
-            }),
-          ]),
+          // The shared response schema is a `z.discriminatedUnion('format',
+          // [...])` exported by the schema module — each variant carries a
+          // `format` literal as its first field, so callers can narrow the
+          // union without inspecting any other property. We use the union
+          // directly here (no `.extend({ format })` wrapper) so the runtime
+          // shape and the OpenAPI document stay in lockstep.
+          200: DependencyGraphResponseSchema,
           404: ErrorResponseSchema,
         },
       },
