@@ -26,7 +26,7 @@ If $ARGUMENTS contains a project name or ID:
 ### 3. For each project, aggregate task data
 For every project returned:
 
-a. Call `wood-fired-bugs:list_tasks` with filter: { project_id: project.id }
+a. **Issue all `wood-fired-bugs:list_tasks` calls in a SINGLE message with multiple function_calls blocks** — that's the mechanism for parallel tool execution. Do NOT chain them with `await` semantics or list them sequentially across multiple messages. One call per project with filter: `{ project_id: project.id }`. On a workspace with N projects this is one round-trip wave instead of N sequential round-trips.
 
 b. Group tasks by status (canonical values: `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged` — see [_enums.md](_enums.md), source: `src/types/task.ts`). Display labels are title-cased for readability:
 - Open
@@ -36,11 +36,12 @@ b. Group tasks by status (canonical values: `open`, `in_progress`, `done`, `clos
 - Closed
 - Backlogged
 
-c. Calculate completion percentage: (done + closed) / total * 100
+c. Calculate completion percentage: `(done + closed) / total * 100`. **Guard against division-by-zero**: when `total === 0`, the percentage is undefined — render `—` (em dash) instead of `0%`. 0% means "work exists but none done"; `—` means "no work exists yet" — the user MUST be able to distinguish.
 
 ### 4. Format project output
 For each project, display:
 
+**Non-empty project (total > 0):**
 ```
 ## <Project Name>
 Total: <count> tasks | Completion: <percentage>%
@@ -51,6 +52,13 @@ Total: <count> tasks | Completion: <percentage>%
 - Closed: <count>
 - Backlogged: <count>
 ```
+
+**Empty project (total = 0):**
+```
+## <Project Name>
+(no tasks) | Completion: —
+```
+Do NOT render the per-status breakdown for empty projects (every line would be `0` — noise). The single `(no tasks)` line is the entire body.
 
 ### 5. Generate highlights section
 After all projects are shown, add highlights:
