@@ -18,6 +18,7 @@ import { eventBus } from './events/event-bus.js';
 import { initOidc, type OidcConfig } from './services/oidc-client.js';
 import { startCleanup as startDeviceFlowCleanup } from './services/device-flow-store.js';
 import type Database from 'better-sqlite3';
+import { isMain } from './utils/is-main.js';
 
 /**
  * Application interface returned by createApp
@@ -234,7 +235,7 @@ export async function createTestApp(): Promise<App> {
 /**
  * CLI entry point
  */
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const app = await createApp();
   console.log('Wood Fired Bugs initialized');
   app.db.close();

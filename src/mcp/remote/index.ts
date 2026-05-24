@@ -8,6 +8,7 @@ import {
   EVENTS_RESOURCE_DESCRIPTION,
   getEventsResourceContent,
 } from '../resources/events.js';
+import { isMain } from '../../utils/is-main.js';
 
 /**
  * Remote MCP server entry point.
@@ -113,12 +114,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // Only auto-start when executed directly (node dist/mcp/remote/index.js),
-// not when imported by unit tests.
-const isDirectExecution =
-  import.meta.url === `file://${process.argv[1]}` ||
-  import.meta.url.endsWith(process.argv[1] ?? '');
-
-if (isDirectExecution) {
+// not when imported by unit tests. isMain() resolves symlinks so this works
+// under `npm link` / `npm install -g` — see wood-fired-bugs #334.
+if (isMain(import.meta.url)) {
   main().catch((error) => {
     console.error('Fatal error during remote MCP startup:', error);
     process.exit(1);

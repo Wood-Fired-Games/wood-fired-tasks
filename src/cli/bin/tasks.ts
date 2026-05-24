@@ -33,6 +33,7 @@ import { createCompletionsCommand } from '../commands/completions.js';
 import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
+import { isMain } from '../../utils/is-main.js';
 
 // Configure CLI program
 program
@@ -127,9 +128,11 @@ program.addCommand(whoamiCommand);
 export { program };
 
 // Parse command-line arguments (async to support async command handlers).
-// Guarded by import.meta.url === `file://${process.argv[1]}` so that
-// importing this module from a test does NOT execute the CLI.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Guarded by isMain(import.meta.url) so that importing this module from a
+// test does NOT execute the CLI. The helper resolves symlinks (npm link /
+// npm install -g) which a raw string compare against process.argv[1] does
+// not — see src/utils/is-main.ts and wood-fired-bugs #334.
+if (isMain(import.meta.url)) {
   // Plan 30-05: top-level catch surfaces NotAuthenticatedError as the
   // friendly "Not authenticated. Run: tasks login" + exit 1 contract,
   // rather than the default Commander "unhandled rejection" dump.

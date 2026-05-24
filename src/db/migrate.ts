@@ -4,6 +4,7 @@ import { readdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './database.js';
+import { isMain } from '../utils/is-main.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -130,7 +131,7 @@ export async function runMigrations(db: Database.Database): Promise<void> {
 /**
  * CLI entry point: run migrations on the default database.
  */
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const dataDir = join(process.cwd(), 'data');
   const dbPath = join(dataDir, 'tasks.db');
 
