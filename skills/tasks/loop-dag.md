@@ -57,7 +57,45 @@ Record the branch outcome in orchestrator state as `gate_decision` for inclusion
     Project <id> has a dependency cycle (DAG_CYCLIC). Cannot loop — cycles must be broken before any runner can proceed. Cycle members (from topology_check): <list of task ids>. No override flag applies; the cycle must be resolved (split a task, drop an edge, or close the offending tasks) before /tasks:loop-dag will accept this project.
     ```
 
-**Blocked-branch behaviour:** when `gate_decision = "blocked"` (FLAT or DAG_CYCLIC), the orchestrator does NOT enter §3 The Wave Loop, does NOT claim any task, and does NOT dispatch a worker. §5 (LOOP-RUN.md emit) is still permitted — emit a single LOOP-RUN.md with `gate_decision: blocked`, `tasks_attempted: 0`, and an empty `wave_summary` section (sentinel paragraph below) so the refused run is auditable. §4 (per-wave integration audit) is skipped (no worker sessions means no overlaps to audit).
+**Blocked-branch behaviour:** when `gate_decision = "blocked"` (FLAT or DAG_CYCLIC), the orchestrator does NOT enter §3 The Wave Loop, does NOT claim any task, and does NOT dispatch a worker. §5f (termination emit) still fires — write a single LOOP-RUN.md with `gate_decision: blocked`, `tasks_attempted: 0`, an empty `wave_summary` section (sentinel paragraph below), and a `## Aborted` body section naming the gate reason. §4 (per-wave integration audit) is skipped (no worker sessions means no overlaps to audit).
+
+**`gate_decision` value domain for `/tasks:loop-dag`.** This skill writes `gate_decision ∈ {"allowed", "blocked"}` and nothing else. The `LoopRunFrontmatterSchema` (`src/lib/loop-run/schema.ts`) ALSO accepts `"auto_ordered"` and `"overridden"`, but those values are exclusively `/tasks:loop`'s — they describe DAG handling decisions that `/tasks:loop-dag` never makes (this skill does not auto-order DAGs because it dispatches them in parallel waves, and it does not accept a topology override because the FLAT / DAG_CYCLIC refusals are unconditional). The orchestrator MUST NOT write `auto_ordered` or `overridden` even though the schema would accept them — doing so silently mislabels which executor ran and corrupts cross-skill audit-trail queries.
+
+### 2g. Worker-feasibility gate (refuses tasks no autonomous worker can drive)
+
+After §2f passes and BEFORE the heavy §2a–§2e pre-loop discovery, scan every open task in the project for hand-replay / cross-context indicators. Tasks that match are NOT dispatch-eligible regardless of dependency satisfaction. This gate exists because the §2f topology gate filters by edge structure but NOT by "is this a sensible thing for an autonomous worker subagent to attempt." Tasks that explicitly need a human-in-the-loop OR a separate orchestrator context to verify (e.g. "observe a live /tasks:loop run apply the exclusion") cannot produce a PASS-able evidence shape from a worker; dispatching them wastes budget and noise-floors the verdict distribution with guaranteed NOT_VERIFIED outcomes.
+
+Run this scan via a single `wood-fired-bugs:list_tasks` (already done in §3a step 1 — reuse the result rather than re-fetching) plus per-task `wood-fired-bugs:get_task` only for the tasks whose tag list contains a candidate match (cheap pre-filter). Build the orchestrator-state set `not_dispatchable_this_run` (task id → reason).
+
+**Indicators (any one triggers the gate):**
+
+1. **Tag-based** — `tags` field contains any of:
+   - `hand-replay`
+   - `manual-verification`
+   - `requires-live-replay`
+   - `observe-in-loop`
+   - `cross-context-observation`
+2. **AC / description phrase-based** — `acceptance_criteria` column OR `description` field contains any of (case-insensitive substring):
+   - `"observe the orchestrator"`
+   - `"manually inspect"`
+   - `"hand-replay"` / `"hand replay"`
+   - `"live cross-context"`
+   - `"observed in a live /tasks:loop"`
+   - `"by observing"`
+   - `"hand-driven verification"`
+
+**Action on match (per task):**
+
+1. Add `not_dispatchable_this_run[<id>] = "feasibility: <which indicator matched>"`.
+2. Add a comment to the task via `wood-fired-bugs:add_comment` (once per loop run — guard with a check that no prior `/tasks:loop-dag worker-feasibility gate` comment exists for this `verified_at`-equivalent run-id):
+
+   > `"/tasks:loop-dag worker-feasibility gate (run_id=<run_id>): task tagged/described as requiring hand-replay or live cross-context observation (matched indicator: <X>). An autonomous worker subagent cannot produce evidence for criteria of this shape. Marking as not-dispatchable for THIS run only — the task remains open for human-driven closure, or for a future loop run after the acceptance criteria are reshaped to be worker-checkable."`
+
+3. The task is reported in the final LOOP-RUN.md `## Not-Dispatchable Tasks` body section (§5d).
+
+**Override:** none. If you want to attempt one of these tasks anyway, edit the task to remove the indicator tag/phrase, then re-run. The skill intentionally has no `--include-manual-tasks` flag — adding one would invite agents under pressure to flip it on rather than reshape the task, defeating the gate's purpose.
+
+**Wipeout case:** if the §2g scan flags every open task in the project (i.e. the entire backlog is hand-replay-tagged), §3a's frontier will be empty after step 6. Skip §2a–§2e (no point doing baselines for a wipeout) and route directly to §5f termination emit with a `## Aborted` section naming "feasibility wipeout: N/N open tasks gated". This is the optimization that addresses friction F6 — the cheap §2g scan runs BEFORE the expensive §2a–§2e baselines, so a doomed pool is detected for ~one MCP round-trip instead of after a full baseline-tests run.
 
 ---
 
@@ -78,14 +116,16 @@ The **frontier** is the set of open tasks whose `blocked_by` edges are ALL close
 Algorithm:
 
 1. Fetch all open tasks for the project via `wood-fired-bugs:list_tasks` with `status=open` and `limit=200`.
-2. For each open task, call `wood-fired-bugs:get_dependencies` to read its `blocked_by` set. Cache the result per task ID for the duration of this loop run (the dependency graph is stable; re-fetching per wave wastes round-trips).
+2. **Build the `blocked_by` index from `topology_check.edges` (already fetched in §2f).** For each edge `from → to` in the response, append `from` to `blocked_by[to]`. **Do NOT call `wood-fired-bugs:get_dependencies` per task** — `topology_check` is the authoritative single-call source-of-truth and per-task fetches are N+1 round-trips that the §2f call has already eliminated. The only exception: if §2f's `topology_check` was unavailable or returned a malformed response (defensive halt path), fall back to per-task `wood-fired-bugs:get_dependencies` here and cache per task id.
 3. A task is **on the frontier** iff every `blocked_by` task id either (a) has `status` in {`done`, `closed`}, (b) is missing from the project (cross-project or dangling edge — drop defensively, matching `src/services/topology.service.ts`'s same-project filter), or (c) has been already-closed by a prior wave in THIS loop run (track this in orchestrator state — a task closed in wave N is satisfied for wave N+1's frontier calculation even if the bugs-DB write hasn't been re-read).
 4. **Skip tasks already claimed by someone else.** If a task is on the frontier but its `claimed_at` is non-null and the assignee is not this orchestrator's agent name, drop it from this wave's dispatch set and re-evaluate it on the next frontier recomputation (it may still be claimed; that's fine — eventually it closes or is released).
 5. **Skip tasks the orchestrator already dispatched in a prior wave of THIS run.** A worker that returned FAIL → blocked stays blocked; do NOT silently re-attempt within the same loop run. Track these in orchestrator state by task id.
-6. Sort the resulting frontier by **priority DESC** (`urgent` > `high` > `medium` > `low`), then **`created_at` ASC** (older first), then **`id` ASC**. The first `--concurrency K` tasks of the sorted frontier are the wave's dispatch set.
-7. If the resulting frontier is empty, do one final check: are there any open tasks left at all? If YES, those tasks are all transitively blocked by something that either failed (verdict=FAIL → blocked) or was never closed — emit a `## Stalled Tasks` block in the final LOOP-RUN.md naming them and exit. If NO, the backlog is drained — announce completion, run §4 (integration audit) ONCE, then exit.
+6. **Skip tasks flagged by §2g feasibility gate.** If a task id is in `not_dispatchable_this_run` (set built in §2g and extended below), drop it. The task remains open in the bugs DB; it just doesn't enter THIS run's frontier.
+7. **Skip tasks with stale-PARTIAL evidence (previously-PARTIAL guard).** If a task has `verification_evidence.verdict = "PARTIAL"` from a prior loop run AND no new commits have touched any of the files in `verification_evidence.file_changes` since `verification_evidence.verified_at`, add the task id to `not_dispatchable_this_run` with reason `"previously-PARTIAL, no new evidence"` and skip it. Add a one-time comment to the task: `"/tasks:loop-dag previously-PARTIAL guard: task graded PARTIAL on <verified_at> by verifier <verifier_session_id>; no new commits have touched its tracked files since. Re-dispatch would re-grade the same evidence and produce the same PARTIAL. Skipping. Either commit progress toward the UNCHECKABLE criteria first, or close the task manually."` (Check `git log --since=<verified_at> -- <files>` to determine staleness; if `file_changes` is empty in the prior evidence, treat as stale — there's no signal that anything has moved.)
+8. Sort the resulting frontier by **priority DESC** (`urgent` > `high` > `medium` > `low`), then **`created_at` ASC** (older first), then **`id` ASC**. The first `--concurrency K` tasks of the sorted frontier are the wave's dispatch set.
+9. If the resulting frontier is empty, do one final check: are there any open tasks left at all? If YES, those tasks are all transitively blocked by something that either failed (verdict=FAIL → blocked), was never closed, or was filtered by §2g / step 7 — emit `## Stalled Tasks` AND `## Not-Dispatchable Tasks` blocks in the final LOOP-RUN.md (per §5d) and exit. If NO, the backlog is drained — announce completion, run §4 (integration audit) ONCE, then exit.
 
-**Frontier correctness invariant (fixture-graded):** for the canonical fixture `edges = {334→337, 335→337, 337→338, 337→339}` on an open-task set `{334, 335, 337, 338, 339}`, the frontier algorithm MUST produce the waves `{334, 335}` (wave 1) / `{337}` (wave 2) / `{338, 339}` (wave 3). This is the load-bearing correctness contract for §3a — any change to the algorithm MUST preserve this fixture's wave shape. Tested by `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`.
+**Frontier correctness invariant (test fixture — not a real task set).** The canonical *test fixture* lives in `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`; the IDs 334/335/337/338/339 are fictional and need not be looked up in the live bugs DB. Given edges `{334→337, 335→337, 337→338, 337→339}` on an open-task set `{334, 335, 337, 338, 339}`, the frontier algorithm MUST produce waves `{334, 335}` (wave 1) / `{337}` (wave 2) / `{338, 339}` (wave 3). This is the load-bearing correctness contract for §3a — any change to the algorithm MUST preserve this fixture's wave shape.
 
 ### Step 3b — Claim and dispatch in parallel
 
@@ -94,7 +134,7 @@ For each task in the wave's dispatch set (up to `--concurrency K`):
 1. Claim the task: `wood-fired-bugs:claim_task with task_id=<id>, assignee=<your agent name>`. If the claim fails (another runner won the race), drop the task from this wave's dispatch set and re-evaluate on the next frontier recomputation.
 2. Read context: `wood-fired-bugs:get_task with id=<id>`, `wood-fired-bugs:get_comments with task_id=<id>`. Extract acceptance criteria, linked docs, constraints — exactly as `loop.md` §Step 2 (Claim and read) describes.
 3. Plan validation depth and pre-scan scope — exactly as `loop.md` §Step 3 (Plan the validation depth and pre-scan scope) describes. The pre-scan happens in the orchestrator, BEFORE dispatching the worker.
-4. Dispatch the worker subagent. **The dispatch contract is identical to `loop.md` §Step 4 — Dispatch a subagent**: same brief template, same `Agent` tool, same `subagent_type` selection table, same "Do NOT commit" trailer. Re-read `loop.md` §Step 4 for the full brief shape rather than duplicating it here.
+4. Dispatch the worker subagent via the `Agent` tool. **Default `subagent_type: "general-purpose"`** — this is the universally-available type that works in every fresh session, regardless of whether the project's `install.sh` registered named subagents. Named types (e.g. `tasks-worker`) only exist in sessions started AFTER `install.sh` ran in that session; an `Agent` call with an unregistered `subagent_type` FAILS the whole dispatch silently, costing the wave. `general-purpose` + an embedded brief is the reliable path; the worker still operates the same MCP tools and reads the same files. The full brief shape (subject, goal, context, AC, validation depth, **"Do NOT commit" trailer**) is summarized inline in §6a — read that before composing your first dispatch. (Full text remains in `loop.md` §Step 4 as the authoritative source.)
 
 **Parallel dispatch shape.** When `--concurrency K >= 2` and the wave has ≥ 2 tasks, the orchestrator MUST issue the `Agent` tool calls for the wave in a **single message** so they execute concurrently — per the platform's parallel-tool-call semantics. Each `Agent` call gets its own `name: "worker-task-<id>"` so it is independently addressable via `SendMessage` later (mirrors `loop.md` §7b's `name:` requirement for verifiers — the same reasoning applies to workers, since the orchestrator may need to send a tight diagnostic back to a single worker without disturbing the others mid-wave).
 
@@ -211,9 +251,45 @@ All sections from `loop.md` §9d apply: `## Tasks Closed`, `## Verifier Findings
 
 - **`## Stalled Tasks`** — populated when §3a's final stall check fires (open tasks remain but the frontier is empty — every remaining task is transitively blocked by a FAIL/PARTIAL/NOT_VERIFIED in this run). One bullet per stalled task: `#<id> — <title> — blocked transitively by #<blocker_id> (verdict=<verdict>)`. Sentinel `_No stalled tasks._` when empty.
 
+- **`## Not-Dispatchable Tasks`** — populated when §2g (feasibility gate) or §3a step 7 (previously-PARTIAL guard) flagged tasks as not dispatch-eligible for this run. One bullet per task: `#<id> — <title> — reason: <feasibility|previously-PARTIAL> — <indicator that matched>`. Distinct from `## Stalled Tasks`: stalled = transitively blocked by a FAIL verdict this run; not-dispatchable = filtered out before any dispatch attempt. Sentinel `_No non-dispatchable tasks._` when empty.
+
+- **`## Aborted`** — present ONLY for non-graceful terminations (per §5f). Absent on clean backlog-drain runs and on clean `--max-waves N` checkpoints. When present, the body holds: `**Termination reason:**`, `**Termination step:**` (§ identifier), `**State at abort:**` (bullet list of MCP calls / claims / commits made), `**Recommended next step:**` (one-line). Format defined in §5f.
+
 ### 5e. NOT committed (intentional)
 
 Same rationale as `loop.md` §9e — `.planning/` is gitignored per project policy. LOOP-RUN.md and the per-wave / run-termination integration-audit artifacts are local-machine per-run audit trails, not versioned artifacts. The orchestrator MUST NOT `git add` any `.planning/loops/` artifact. It MUST NOT modify `.gitignore`.
+
+### 5f. Termination emit (unconditional)
+
+Whatever path the orchestrator takes to termination — §2f gate refusal (FLAT / DAG_CYCLIC), §2g feasibility wipeout (no tasks dispatch-eligible), §3a stall (frontier empty with open tasks remaining), `--max-waves N` checkpoint, clean backlog drain, user-initiated abort, or an unexpected error in any sub-step — the orchestrator MUST emit a final LOOP-RUN.md before exiting. **The audit trail of WHY a run did not complete is at least as valuable as the audit trail of what it did.**
+
+**Mandatory `## Aborted` section** (per §5d) is emitted whenever termination happens via any path EXCEPT:
+- Clean backlog-drain (all open tasks reached `done`/`closed`).
+- Clean `--max-waves N` checkpoint where N waves all completed without abort signals.
+
+For every other path, the body MUST include:
+
+```markdown
+## Aborted
+
+**Termination reason:** <one-line summary>
+**Termination step:** <§ identifier — e.g. §2f, §2g, §3a step 9, user-abort-at-§3b>
+**State at abort:**
+- topology_check calls: <n>
+- list_tasks calls: <n>
+- get_task calls: <n>
+- claim_task calls: <n>
+- worker dispatches: <n>
+- verifier dispatches: <n>
+- commits made: <n>
+**Recommended next step:** <one-line — e.g. "Edit tasks tagged `hand-replay` and re-invoke", "Decompose epic-sized task #X via /tasks:decompose before re-running", "Resolve cycle in DAG (members: …) and re-invoke">
+```
+
+For abort paths that fire *after* one or more waves have completed, the `## Aborted` section is APPENDED to the existing body sections; the `## Wave Summary` table keeps its real rows. For abort paths that fire BEFORE any wave (gate refusal, feasibility wipeout, pre-dispatch user abort), `wave_summary` is empty and shows its sentinel paragraph.
+
+**`tasks_attempted` accounting on abort paths:** only counts tasks the orchestrator actually `claim_task`'d (not tasks it merely fetched). A pure §2f-refusal run reports `tasks_attempted: 0`. A run aborted after claiming 2 tasks reports `tasks_attempted: 2` even if no commits landed.
+
+**Crash-tolerance.** The same per-wave incremental rewrite from §5b protects against mid-run kills, BUT termination emit MUST be wrapped in a `try/finally`-equivalent guard so even an exception in the orchestrator code path (e.g. an MCP call throwing) still produces a final LOOP-RUN.md with `## Aborted` set. The orchestrator's "final exit" code MUST be the LOOP-RUN.md write, not any earlier return.
 
 ---
 
@@ -270,3 +346,99 @@ Defensive halt. Emit a comment in the bugs-DB project's top-level discussion (`a
 - **Be honest about manual steps.** If smoke/UAT/deploy was skipped, say so in the comment (same as `loop.md`).
 - **Stop when `--max-waves N` is hit** (default 3) and check in with the user — don't silently keep going.
 - **Stop when the backlog drains.** Announce completion, run §4 integration audit, emit final LOOP-RUN.md, exit. No polling.
+
+---
+
+## 6. Inline Reference Summaries (so this skill stands alone)
+
+This skill inherits much of its contract from `skills/tasks/loop.md` (94 KB / ~1034 lines). To prevent the orchestrator from needing to round-trip into that sibling file mid-run, the load-bearing patterns are summarized below. **The full text in `loop.md` remains authoritative for edge cases** — these summaries are the 80% you need to execute a wave; consult `loop.md` only when an edge case actually fires.
+
+### 6a. Worker brief template (summary of `loop.md` §Step 4)
+
+Every worker dispatch (via `Agent` with `subagent_type: "general-purpose"`, `name: "worker-task-<id>"`) MUST include in its prompt:
+
+1. **Subject line:** `Task #<id>: <title>`
+2. **Goal:** one-paragraph restatement of the task's GOAL section (from `description`).
+3. **Context:** the task's CONTEXT section verbatim. If §2d detected cross-repo scope, include per-repo working-directory paths and baseline test numbers.
+4. **Acceptance criteria:** the resolved AC per §6b (column → description block → "no AC, NOT_VERIFIED").
+5. **Validation depth & pre-scan:** from §2c — which test runners apply, which files are in scope. For `.NET` targets, include the xunit-v3 MTP filter cheat sheet (`--filter-not-method <FQN>`) so the worker doesn't waste round-trips on legacy `dotnet test --filter "FullyQualifiedName!~..."` patterns.
+6. **Closing rules (verbatim):**
+   > *"You are the worker. Use your own tool calls; the orchestrator will not pre-execute. Report a structured summary at the end (subject line, files changed, validation commands run + exit codes, any blocking observations). **Do NOT run `git commit` or `git push`.** The orchestrator owns the commit so the verifier sees a stable commit SHA. Report what you changed and what would be staged; do not stage or commit yourself."*
+
+### 6b. VerifierInputs envelope (summary of `loop.md` §7a)
+
+```ts
+const verifierInputs = {
+  task_id: <id>,
+  acceptance_criteria: <string>,         // resolution order below
+  worker_subagent_session_id: <string>,  // opaque handle from the §3b Agent call
+  commit_shas: <string[]>,               // git rev-parse HEAD after the §6c PASS commit
+  file_changes: <string[]>,              // git diff --name-only <prev>..HEAD
+  additional_observations: <string[]>,   // scope-narrowing notes (see scope carve-out below)
+};
+```
+
+**`acceptance_criteria` resolution order:** (1) task's `acceptance_criteria` column via `wood-fired-bugs:get_task`; (2) extract `ACCEPTANCE CRITERIA:` block from `description`; (3) if neither, SKIP the verifier dispatch and write `verdict: "NOT_VERIFIED"` directly with `verifier_session_id: "skipped-no-ac"` and a comment noting "no acceptance criteria to grade against."
+
+**Scope-narrowing carve-out:** if the task is annotated `scope: design-only` (or `slice-of-epic`, etc.) in §2a/§2e analysis, the envelope's `acceptance_criteria` field MUST list ONLY the in-scope AC bullets. Add an `additional_observations` entry:
+
+> `"SCOPE: <label>. This task intentionally lands <label> per orchestrator planning decision. Runtime ACs are deferred to follow-on tasks (<list of task IDs OR 'to be created at close-out'>). Grade only the in-scope ACs listed above; do NOT add SKIP checks for deferred runtime ACs."`
+
+Without this observation, the verifier will fabricate spurious SKIP checks for the missing AC bullets.
+
+**Verifier dispatch:** same `Agent` shape as workers (`subagent_type: "general-purpose"`), but `name: "verifier-task-<id>"`. The name field is REQUIRED so the orchestrator can `SendMessage` for parse-repair when the verifier returns malformed JSON.
+
+### 6c. Verdict branch outcomes (summary of `loop.md` §7d)
+
+| Verdict | Bugs-DB update | Commit action | Downstream effect |
+|---------|----------------|---------------|-------------------|
+| **PASS** | `update_task → status=done`, write full `verification_evidence` | `git add <files>` + `git commit -m "..."` + `git push` | Downstream tasks become frontier-eligible. |
+| **FAIL** | `update_task → status=blocked`, write evidence with failed-checks bullets | none | Downstream stays open, never frontier-eligible this run. |
+| **PARTIAL** | `update_task` (status stays `in_progress`), write evidence | none | Downstream stays open. PARTIAL is NOT satisfaction. |
+| **NOT_VERIFIED** | `update_task → status=blocked`, write synthesized evidence | none | Same as FAIL. |
+
+**Commit message template (PASS branch):**
+
+```
+<subject from worker>
+
+<body from worker>
+
+Verifier verdict: PASS (session=<verifier_session_id>) — <N>/<N> checks passed
+Resolves task #<id>: <title>
+```
+
+**Close-out comment template (every verdict):** orchestrator MUST `wood-fired-bugs:add_comment` with the verdict, the checks-passed-of-total count, and for FAIL/PARTIAL the specific failed/UNCHECKABLE criteria. For PASS, include the commit SHA(s).
+
+**Generator/critic separation (load-bearing):** orchestrator MUST NOT grade the worker's own output. UPGRADES (FAIL→PASS, PARTIAL→PASS) MUST come from a freshly re-dispatched `tasks-verifier`, never from orchestrator observation. The orchestrator's only judgement role is the §3a frontier algorithm; everything else is verifier territory.
+
+### 6d. LOOP-RUN.md frontmatter (14 required fields, summary of `loop.md` §9c)
+
+| Field | Source |
+|---|---|
+| `run_id` | UUIDv4 minted at run start; reused across every re-emission. |
+| `project_id` | The id resolved in §1. |
+| `started_at` | RFC 3339 UTC, captured at top of §2. |
+| `ended_at` | RFC 3339 UTC, `now()` at this emission. |
+| `wall_seconds` | `floor((ended_at - started_at).total_seconds())`. |
+| `orchestrator_session_id` | `$CLAUDE_SESSION_ID` env var, or literal `"unknown"`. |
+| `total_tokens` | Sum across orchestrator + every subagent's `<usage>` block from `Agent` calls. |
+| `total_usd` | Same source, cache-discounted. |
+| `subagents_dispatched` | Count of distinct subagent sessions spawned (workers + verifiers + integration-auditors). |
+| `tasks_attempted` | Tasks actually `claim_task`'d (per §5f, excludes §2g / §3a step 7 skips). |
+| `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Increment per §6c branch. |
+| `gate_decision` | §2f decision (`allowed`/`blocked`). Per B1 above, this skill NEVER writes `auto_ordered`/`overridden`. |
+
+### 6e. Integration-auditor overlap detection (summary of `loop.md` §10b–§10e)
+
+**Overlap definition:** two worker sessions overlap if their `git diff --name-only <pre-worker-sha>..<post-worker-sha>` sets intersect on at least one file. Compute pairwise across the wave's PASS-committed workers.
+
+**Generated-file exclusion list (default):** `dist/**`, `*.lock`, `**/__generated__/**`, `**/*.snap`, `**/*.min.js`, `package-lock.json`. A repo's `.tasks-loop-memo.md` may add more.
+
+**Per non-empty overlap:** dispatch one `integration-auditor` subagent (also `subagent_type: "general-purpose"`) with the overlapping file list + both workers' commit SHAs in its brief. Auditor returns `verdict: "PASS" | "BROKEN" | "INCONCLUSIVE"`.
+
+**BROKEN-revert protocol:** if any pairwise auditor returns BROKEN, the orchestrator MUST flip the affected tasks from `done` back to `in_progress` (`update_task → status=in_progress`), preserve their original PASS `verification_evidence` (do NOT delete it — append an `integration_concern` field instead), and add an `## Integration Failure` body section to LOOP-RUN.md citing the auditor's BROKEN reason verbatim. Subsequent waves WILL re-encounter the reverted tasks on the next frontier (they're back to `in_progress`/`open` with satisfied `blocked_by`), so the loop re-attempts them — BROKEN overlaps are retryable failures, not permanent ones.
+
+**Empty-overlap suppression:** if a wave has only one PASS worker, OR no pairwise overlap exists, no per-wave integration-audit artifact is emitted under `.planning/loops/`. Keep that directory scannable.
+
+---

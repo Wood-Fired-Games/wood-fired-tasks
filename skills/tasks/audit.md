@@ -1,8 +1,8 @@
 ---
 name: audit
-description: Retroactive grader for a completed /tasks:loop run. Takes a LOOP-RUN.md path OR a project_id (auto-finds the most recent loop run), dispatches one read-only `tasks-verifier` subagent per closed task, then emits an AUDIT.md scoring each task COVERED / PARTIAL / MISSING against its acceptance_criteria plus an integration-level verdict. Read-only — never mutates code, never mutates the bugs DB. Bounded: ≤ $5 hard cap per audited run. Status — Wave 7.1 DESIGN landed; runtime implementation deferred.
+description: DESIGN-ONLY STUB. Wave 7.1 design landed (see docs/tasks-audit-design.md); runtime not implemented. When run, would retroactively grade a /tasks:loop run by dispatching one read-only tasks-verifier subagent per closed task and emit AUDIT.md scoring tasks COVERED/PARTIAL/MISSING against their acceptance_criteria. Bounded ≤ $5 per audited run. Skill is gated (`disable-model-invocation: true`) until the runtime ships — explicit user invocation surfaces the design pointer instead of pretending to execute.
 argument-hint: --loop-run <path> | --project <id>
-disable-model-invocation: false
+disable-model-invocation: true
 ---
 
 # /tasks:audit

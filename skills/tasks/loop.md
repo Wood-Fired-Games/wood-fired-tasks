@@ -888,7 +888,9 @@ safe_count: <non-negative integer>
 
 For EACH overlap in the deduplicated list, dispatch a separate `integration-auditor` invocation. **One auditor per overlap, NOT one per file** — every (file, task-pair) overlap gets its own verdict and evidence trail.
 
-Use the `Agent` tool. Prefer `subagent_type: "integration-auditor"` if available — `install.sh` copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md`, so a user who ran the installer has the named agent registered. If the named agent is unavailable, fall back to `subagent_type: "general-purpose"` and embed the full body of `skills/agents/integration-auditor.md` as the Agent's prompt prefix, followed by a fenced JSON block containing the per-overlap envelope.
+Use the `Agent` tool. **Default to `subagent_type: "general-purpose"` with the auditor prompt embedded in the brief** — same rule as Step 7's verifier dispatch (line 571). The named `subagent_type: "integration-auditor"` is only registered for sessions started AFTER the user ran `install.sh`; in any fresh session the named agent is typically unavailable, and an `Agent` call with an unknown `subagent_type` FAILS the entire dispatch (the orchestrator then can't audit the overlap and §10e's BROKEN-revert protocol won't fire — silent loss of the cross-task safety net). Defaulting to `general-purpose` + embedded prompt is the reliable path.
+
+**Recommendation for repeat users:** run `install.sh` once on the workstation. It copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md` and registers the named agent. The named agent's `tools:` frontmatter enforces a read-only tool surface (Read, Grep, Glob, restricted Bash, read-only wood-fired-bugs MCP tools), preventing an auditor from accidentally mutating code or the bugs DB. The general-purpose fallback honors the read-only contract via prompt-only constraint — equivalent functional contract, but no harness-level enforcement. Both paths satisfy §10e; the named agent is strictly safer.
 
 ```
 Agent(

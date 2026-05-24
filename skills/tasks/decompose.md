@@ -1,8 +1,8 @@
 ---
 name: decompose
-description: Auto-breakdown of a project-level goal into independent leaf tasks (or a dependency DAG) ready for /tasks:loop or /tasks:loop-dag. Pipeline: goal capture → codebase recon → candidate generation → independence check → topology decision → coverage check → sizing → materialize → DECOMPOSITION.md emit. Read-only orchestrator — does not execute the decomposed tasks itself. Bounded: ≤ $5 target / $15 hard cap per decomposition. Status — Wave 5 DESIGN landed; runtime implementation deferred.
+description: DESIGN-ONLY STUB. Wave 5 design landed (see docs/tasks-decompose-design.md); runtime not implemented. When run, would auto-break a project-level goal into independent leaf tasks (or a dependency DAG) ready for /tasks:loop or /tasks:loop-dag. Pipeline: goal capture → codebase recon → candidate generation → independence check → topology decision → coverage check → sizing → materialize → DECOMPOSITION.md emit. Bounded ≤ $5 target / $15 hard cap. Skill is gated (`disable-model-invocation: true`) until the runtime ships — explicit user invocation surfaces the design pointer instead of pretending to execute.
 argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed]
-disable-model-invocation: false
+disable-model-invocation: true
 ---
 
 # /tasks:decompose
