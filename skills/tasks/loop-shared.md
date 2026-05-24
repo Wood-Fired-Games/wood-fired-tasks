@@ -439,3 +439,25 @@ The default rule (Step 5 item #5) is: validation regressions go back to the suba
 - Any change to acceptance-criteria-bearing artifacts (the schema doc itself, not its pointer).
 
 When the carve-out fires, the inline fix MUST be documented in the Step 8 close-out comment under a separate **"Orchestrator post-correction:"** bullet so the audit trail is preserved. (Context: the 2026-05-23 #313 path-correction incident — a 2-line `git mv` + path-string Edit was force-routed through a SendMessage round-trip, costing ~3 minutes for zero quality gain.)
+
+## §K. Harness TodoWrite preload (TaskCreate + TaskUpdate + TaskList bundling)
+
+> **Why this section exists.** F9 friction finding from the 2026-05-24 `/tasks:loop-dag` first-use audit: in Claude Code's deferred-tool model, `TaskCreate` (the in-conversation TodoWrite-family create-todo tool) is auto-promoted by the harness in some contexts, but `TaskUpdate` and `TaskList` are typically deferred and require a separate `ToolSearch` round-trip to load before they're callable. The pairing is asymmetric — you can create a todo and then discover you can't mark it `in_progress` / `completed` without another round-trip. Tracked in [task #352](https://github.com/Wood-Fired-Games/wood-fired-bugs/) (this project).
+
+**Rule for orchestrator skills (this skill, `/tasks:loop`, `/tasks:loop-dag`, and any future sibling that uses TodoWrite-family tooling):** load the trio in a single preflight `ToolSearch` rather than one-by-one. The canonical incantation:
+
+```
+ToolSearch with query "select:TaskCreate,TaskUpdate,TaskList"
+```
+
+Run this once near the top of the orchestrator turn (alongside any wood-fired-bugs MCP loads). The trio is small — loading all three costs almost nothing — and avoids the cache-miss penalty of discovering the dependency mid-run when you've already minted a todo and need to flip its status.
+
+**For skills that only READ todos** (rarer — e.g. a status-check helper), load `TaskList` alone:
+
+```
+ToolSearch with query "select:TaskList"
+```
+
+**For skills that only WRITE todos without follow-up updates** (rarer still — e.g. a one-shot capture into TodoWrite from another tool's output): load `TaskCreate` alone. But prefer the bundled trio unless you're certain follow-up isn't needed.
+
+**Upstream-issue status:** the asymmetric promotion is a Claude Code harness concern, not actionable from a wood-fired-bugs skill. File a feedback note at <https://github.com/anthropics/claude-code/issues> if you hit it (suggested title: "TaskUpdate not auto-promoted alongside TaskCreate — extra ToolSearch round-trip required"). Until that lands, this bundling rule is the workaround.
