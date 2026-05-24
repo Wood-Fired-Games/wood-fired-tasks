@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest';
 
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const LOOP_SKILL_PATH = resolve(REPO_ROOT, 'skills/tasks/loop.md');
+const LOOP_SHARED_PATH = resolve(REPO_ROOT, 'skills/tasks/loop-shared.md');
 
 function section2fBody(skill: string): string {
   const lines = skill.split('\n');
@@ -134,9 +135,11 @@ describe('/tasks:loop skill — topology pre-flight gate wiring (#319)', () => {
 
   it('§9c frontmatter sources table documents the gate_decision row', () => {
     // The gate decision flows into the LOOP-RUN.md frontmatter via Step 9.
-    // The sources table in §9c must enumerate gate_decision so a reader
-    // tracing field origins can find the §2f link.
-    expect(skill).toMatch(/`gate_decision`[^|]*\|[^|]*Section 2f/);
+    // The sources table moved to loop-shared.md §C in task #346 (refactor),
+    // but the gate_decision → Section 2f anchor is preserved verbatim there
+    // so a reader tracing field origins can still find the §2f link.
+    const loopShared = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(loopShared).toMatch(/`gate_decision`[^|]*\|[^|]*Section 2f/);
   });
 
   it('Step 9 cross-check from #316 still present (verifier wiring not silently weakened)', () => {

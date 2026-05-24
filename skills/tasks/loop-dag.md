@@ -9,7 +9,9 @@ disable-model-invocation: false
 
 You are the **orchestrator** of an autonomous backlog-drain for a **DAG-topology** project. The wood-fired-bugs project you target has dependency edges; tasks must run in an order that respects them, but tasks on the same frontier (no unsatisfied dependencies) MAY run in parallel.
 
-This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md). The two skills share most of the contract — pre-loop discovery, worker briefs, the mandatory `tasks-verifier` dispatch, the LOOP-RUN.md artifact, and the integration-auditor — and this file deliberately points at `loop.md` for the shared sections rather than duplicating them. What this skill adds is **wave-by-wave parallel dispatch** instead of single-task sequential ordering.
+> See [loop-shared.md](loop-shared.md) for the worker brief template (§A), VerifierInputs envelope (§B), and LOOP-RUN.md frontmatter (§C) — same contracts as /tasks:loop. Also: INTEGRATION-AUDIT.md schema (§D), declared scope narrowing carve-out (§E), `.flaky-tests.json` handling (§F), verifier parse-failure patterns (§G), declared scope narrowing detection (§H), Step 8 close-out comment (§I), Step 5 post-correction carve-out (§J).
+
+This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md). The two skills share most of the contract — pre-loop discovery, worker briefs, the mandatory `tasks-verifier` dispatch, the LOOP-RUN.md artifact, and the integration-auditor — and this file deliberately points at `loop.md` (and `loop-shared.md` for the shared templates) for the shared sections rather than duplicating them. What this skill adds is **wave-by-wave parallel dispatch** instead of single-task sequential ordering.
 
 > **Mental model.** Think of yourself as a foreman scheduling a build crew across independent foundations on the same site. Each foundation (wave) is a set of tasks that have no remaining dependencies. While the wave's workers are pouring concrete in parallel, you (the orchestrator) plan the next wave. You never let a worker start before its supporting foundation has cured — that's what `blocked_by` enforces.
 
@@ -349,96 +351,35 @@ Defensive halt. Emit a comment in the bugs-DB project's top-level discussion (`a
 
 ---
 
-## 6. Inline Reference Summaries (so this skill stands alone)
+## 6. Inline Reference Summaries (compressed — point at canonical sources)
 
-This skill inherits much of its contract from `skills/tasks/loop.md` (94 KB / ~1034 lines). To prevent the orchestrator from needing to round-trip into that sibling file mid-run, the load-bearing patterns are summarized below. **The full text in `loop.md` remains authoritative for edge cases** — these summaries are the 80% you need to execute a wave; consult `loop.md` only when an edge case actually fires.
+The load-bearing templates this skill needs are owned by **[loop-shared.md](loop-shared.md)** (shared with `/tasks:loop`); the per-wave control flow is owned by **`loop.md`**. The 1-3 line summaries below tell the orchestrator WHERE to look mid-run without having to re-derive the structure.
 
-### 6a. Worker brief template (summary of `loop.md` §Step 4)
+### 6a. Worker brief template
 
-Every worker dispatch (via `Agent` with `subagent_type: "general-purpose"`, `name: "worker-task-<id>"`) MUST include in its prompt:
+Dispatch via `Agent` with `subagent_type: "general-purpose"` and `name: "worker-task-<id>"` (the `name:` is REQUIRED — mirrors `loop.md` §7b's verifier-`name:` rule so SendMessage can reach a single worker mid-wave). Brief body: **[loop-shared.md §A](loop-shared.md#a-worker-brief-template)** verbatim, adapted to the task. Closing rule MUST include "Do NOT run `git commit` or `git push`" so the orchestrator owns the commit SHA the verifier will reference.
 
-1. **Subject line:** `Task #<id>: <title>`
-2. **Goal:** one-paragraph restatement of the task's GOAL section (from `description`).
-3. **Context:** the task's CONTEXT section verbatim. If §2d detected cross-repo scope, include per-repo working-directory paths and baseline test numbers.
-4. **Acceptance criteria:** the resolved AC per §6b (column → description block → "no AC, NOT_VERIFIED").
-5. **Validation depth & pre-scan:** from §2c — which test runners apply, which files are in scope. For `.NET` targets, include the xunit-v3 MTP filter cheat sheet (`--filter-not-method <FQN>`) so the worker doesn't waste round-trips on legacy `dotnet test --filter "FullyQualifiedName!~..."` patterns.
-6. **Closing rules (verbatim):**
-   > *"You are the worker. Use your own tool calls; the orchestrator will not pre-execute. Report a structured summary at the end (subject line, files changed, validation commands run + exit codes, any blocking observations). **Do NOT run `git commit` or `git push`.** The orchestrator owns the commit so the verifier sees a stable commit SHA. Report what you changed and what would be staged; do not stage or commit yourself."*
+### 6b. VerifierInputs envelope
 
-### 6b. VerifierInputs envelope (summary of `loop.md` §7a)
+Envelope construction + `acceptance_criteria` resolution order + scope-narrowing carve-out: **[loop-shared.md §B](loop-shared.md#b-verifierinputs-envelope-spec)**. Verifier dispatch is `subagent_type: "general-purpose"` with `name: "verifier-task-<id>"` (REQUIRED for SendMessage parse-repair, per `loop.md` §7b). Parse-failure auto-repair patterns: **[loop-shared.md §G](loop-shared.md#g-verifier-parse-failure-patterns)**.
 
-```ts
-const verifierInputs = {
-  task_id: <id>,
-  acceptance_criteria: <string>,         // resolution order below
-  worker_subagent_session_id: <string>,  // opaque handle from the §3b Agent call
-  commit_shas: <string[]>,               // git rev-parse HEAD after the §6c PASS commit
-  file_changes: <string[]>,              // git diff --name-only <prev>..HEAD
-  additional_observations: <string[]>,   // scope-narrowing notes (see scope carve-out below)
-};
-```
-
-**`acceptance_criteria` resolution order:** (1) task's `acceptance_criteria` column via `wood-fired-bugs:get_task`; (2) extract `ACCEPTANCE CRITERIA:` block from `description`; (3) if neither, SKIP the verifier dispatch and write `verdict: "NOT_VERIFIED"` directly with `verifier_session_id: "skipped-no-ac"` and a comment noting "no acceptance criteria to grade against."
-
-**Scope-narrowing carve-out:** if the task is annotated `scope: design-only` (or `slice-of-epic`, etc.) in §2a/§2e analysis, the envelope's `acceptance_criteria` field MUST list ONLY the in-scope AC bullets. Add an `additional_observations` entry:
-
-> `"SCOPE: <label>. This task intentionally lands <label> per orchestrator planning decision. Runtime ACs are deferred to follow-on tasks (<list of task IDs OR 'to be created at close-out'>). Grade only the in-scope ACs listed above; do NOT add SKIP checks for deferred runtime ACs."`
-
-Without this observation, the verifier will fabricate spurious SKIP checks for the missing AC bullets.
-
-**Verifier dispatch:** same `Agent` shape as workers (`subagent_type: "general-purpose"`), but `name: "verifier-task-<id>"`. The name field is REQUIRED so the orchestrator can `SendMessage` for parse-repair when the verifier returns malformed JSON.
-
-### 6c. Verdict branch outcomes (summary of `loop.md` §7d)
+### 6c. Verdict branch outcomes
 
 | Verdict | Bugs-DB update | Commit action | Downstream effect |
 |---------|----------------|---------------|-------------------|
-| **PASS** | `update_task → status=done`, write full `verification_evidence` | `git add <files>` + `git commit -m "..."` + `git push` | Downstream tasks become frontier-eligible. |
-| **FAIL** | `update_task → status=blocked`, write evidence with failed-checks bullets | none | Downstream stays open, never frontier-eligible this run. |
-| **PARTIAL** | `update_task` (status stays `in_progress`), write evidence | none | Downstream stays open. PARTIAL is NOT satisfaction. |
+| **PASS** | `update_task → status=done`, write evidence | `git add` + `git commit` + `git push` | Downstream becomes frontier-eligible. |
+| **FAIL** | `update_task → status=blocked`, write evidence | none | Downstream stays open, never frontier-eligible this run. |
+| **PARTIAL** | `update_task` (status stays `in_progress`), write evidence | none | Downstream stays open. PARTIAL ≠ satisfaction. |
 | **NOT_VERIFIED** | `update_task → status=blocked`, write synthesized evidence | none | Same as FAIL. |
 
-**Commit message template (PASS branch):**
+Full PASS commit-message template, close-out comment shape, and declared-scope carve-out: see `loop.md` §Step 6 / §Step 8 / §7d and **[loop-shared.md §E](loop-shared.md#e-declared-scope-narrowing-carve-out)** + **[loop-shared.md §I](loop-shared.md#i-step-8-close-out-comment-template)**. **Generator/critic separation (load-bearing):** orchestrator MUST NOT grade the worker's output; UPGRADES (FAIL→PASS, etc.) MUST come from a freshly re-dispatched `tasks-verifier`.
 
-```
-<subject from worker>
+### 6d. LOOP-RUN.md frontmatter
 
-<body from worker>
+14 required fields enumerated in **[loop-shared.md §C](loop-shared.md#c-loop-runmd-frontmatter-required-fields)**. Two skill-specific notes: `subagents_dispatched` counts workers + verifiers + integration-auditors across ALL waves; `gate_decision ∈ {"allowed", "blocked"}` only — this skill NEVER writes `auto_ordered`/`overridden` (those are `/tasks:loop`-only per B1 in §2f).
 
-Verifier verdict: PASS (session=<verifier_session_id>) — <N>/<N> checks passed
-Resolves task #<id>: <title>
-```
+### 6e. Integration-auditor overlap detection
 
-**Close-out comment template (every verdict):** orchestrator MUST `wood-fired-bugs:add_comment` with the verdict, the checks-passed-of-total count, and for FAIL/PARTIAL the specific failed/UNCHECKABLE criteria. For PASS, include the commit SHA(s).
-
-**Generator/critic separation (load-bearing):** orchestrator MUST NOT grade the worker's own output. UPGRADES (FAIL→PASS, PARTIAL→PASS) MUST come from a freshly re-dispatched `tasks-verifier`, never from orchestrator observation. The orchestrator's only judgement role is the §3a frontier algorithm; everything else is verifier territory.
-
-### 6d. LOOP-RUN.md frontmatter (14 required fields, summary of `loop.md` §9c)
-
-| Field | Source |
-|---|---|
-| `run_id` | UUIDv4 minted at run start; reused across every re-emission. |
-| `project_id` | The id resolved in §1. |
-| `started_at` | RFC 3339 UTC, captured at top of §2. |
-| `ended_at` | RFC 3339 UTC, `now()` at this emission. |
-| `wall_seconds` | `floor((ended_at - started_at).total_seconds())`. |
-| `orchestrator_session_id` | `$CLAUDE_SESSION_ID` env var, or literal `"unknown"`. |
-| `total_tokens` | Sum across orchestrator + every subagent's `<usage>` block from `Agent` calls. |
-| `total_usd` | Same source, cache-discounted. |
-| `subagents_dispatched` | Count of distinct subagent sessions spawned (workers + verifiers + integration-auditors). |
-| `tasks_attempted` | Tasks actually `claim_task`'d (per §5f, excludes §2g / §3a step 7 skips). |
-| `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Increment per §6c branch. |
-| `gate_decision` | §2f decision (`allowed`/`blocked`). Per B1 above, this skill NEVER writes `auto_ordered`/`overridden`. |
-
-### 6e. Integration-auditor overlap detection (summary of `loop.md` §10b–§10e)
-
-**Overlap definition:** two worker sessions overlap if their `git diff --name-only <pre-worker-sha>..<post-worker-sha>` sets intersect on at least one file. Compute pairwise across the wave's PASS-committed workers.
-
-**Generated-file exclusion list (default):** `dist/**`, `*.lock`, `**/__generated__/**`, `**/*.snap`, `**/*.min.js`, `package-lock.json`. A repo's `.tasks-loop-memo.md` may add more.
-
-**Per non-empty overlap:** dispatch one `integration-auditor` subagent (also `subagent_type: "general-purpose"`) with the overlapping file list + both workers' commit SHAs in its brief. Auditor returns `verdict: "PASS" | "BROKEN" | "INCONCLUSIVE"`.
-
-**BROKEN-revert protocol:** if any pairwise auditor returns BROKEN, the orchestrator MUST flip the affected tasks from `done` back to `in_progress` (`update_task → status=in_progress`), preserve their original PASS `verification_evidence` (do NOT delete it — append an `integration_concern` field instead), and add an `## Integration Failure` body section to LOOP-RUN.md citing the auditor's BROKEN reason verbatim. Subsequent waves WILL re-encounter the reverted tasks on the next frontier (they're back to `in_progress`/`open` with satisfied `blocked_by`), so the loop re-attempts them — BROKEN overlaps are retryable failures, not permanent ones.
-
-**Empty-overlap suppression:** if a wave has only one PASS worker, OR no pairwise overlap exists, no per-wave integration-audit artifact is emitted under `.planning/loops/`. Keep that directory scannable.
+INTEGRATION-AUDIT.md artifact schema (frontmatter + per-overlap body block): **[loop-shared.md §D](loop-shared.md#d-integration-auditmd-schema)**. Overlap definition + generated-file exclusion list + per-overlap dispatch + BROKEN-revert protocol + empty-overlap suppression: see `loop.md` §10b–§10e (the contract `/tasks:loop-dag` §3f / §4 reuses verbatim, scoped per-wave for §3f and run-wide for §4).
 
 ---

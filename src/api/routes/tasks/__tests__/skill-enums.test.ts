@@ -110,9 +110,17 @@ function scanSkillFile(filePath: string): SkillFinding[] {
 }
 
 describe('skill enum-value consistency (#347)', () => {
+  // Non-invocable doc files (frontmatter `disable-model-invocation: true`) are
+  // filtered from the invocable-skill surface. `_enums.md` is the original
+  // precedent; `loop-shared.md` was added in task #346 (loop.md refactor) to
+  // host shared reference contracts between `/tasks:loop` and `/tasks:loop-dag`.
+  const NON_INVOCABLE_DOCS: ReadonlySet<string> = new Set([
+    '_enums.md',
+    'loop-shared.md',
+  ]);
   const skillFiles = readdirSync(SKILLS_DIR)
     .filter((name) => name.endsWith('.md'))
-    .filter((name) => name !== '_enums.md');
+    .filter((name) => !NON_INVOCABLE_DOCS.has(name));
 
   it('discovers all 14 shipped skill files (sanity: install.sh source set)', () => {
     expect(skillFiles.length).toBe(14);

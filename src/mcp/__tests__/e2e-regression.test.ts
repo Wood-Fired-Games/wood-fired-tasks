@@ -452,19 +452,35 @@ describe('Skill File Validation', () => {
     // (`disable-model-invocation: true`) documentation pointer for the
     // canonical status + priority enums. It is intentionally excluded
     // here — the count tracks invocable skills.
+    // Task #346 added `loop-shared.md` as a NON-invocable
+    // (`disable-model-invocation: true`) documentation file holding the
+    // shared worker brief template + verifier envelope spec + LOOP-RUN.md
+    // frontmatter table that both `/tasks:loop` and `/tasks:loop-dag`
+    // reference. Excluded here for the same reason `_enums.md` is — the
+    // count tracks invocable skills only.
+    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'))
-      .filter((f) => !f.startsWith('_'));
+      .filter((f) => !f.startsWith('_'))
+      .filter((f) => !NON_INVOCABLE_DOCS.has(f));
 
     expect(skillFiles).toHaveLength(14);
   });
 
   it('each skill file has workflow steps', () => {
+    // Task #346 added `loop-shared.md` as a NON-invocable
+    // (`disable-model-invocation: true`) documentation file holding the
+    // shared worker brief template + verifier envelope spec + LOOP-RUN.md
+    // frontmatter table that both `/tasks:loop` and `/tasks:loop-dag`
+    // reference. Excluded here for the same reason `_enums.md` is — the
+    // count tracks invocable skills only.
+    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'))
-      .filter((f) => !f.startsWith('_'));
+      .filter((f) => !f.startsWith('_'))
+      .filter((f) => !NON_INVOCABLE_DOCS.has(f));
 
     for (const filename of skillFiles) {
       const filepath = path.join(SKILLS_DIR, filename);
