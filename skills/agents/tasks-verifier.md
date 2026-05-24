@@ -42,13 +42,57 @@ message as JSON and validates it against `VerificationEvidenceSchema` at
 `src/schemas/task.schema.ts`. Anything that does not parse → orchestrator
 treats your run as `verdict: "NOT_VERIFIED"`.
 
-Shape:
+### ⚠ TWO different enums — do NOT confuse them
+
+| field | allowed values | who emits PARTIAL? |
+|---|---|---|
+| **top-level `verdict`** | `PASS`, `FAIL`, `PARTIAL`, `NOT_VERIFIED` | YES — you emit `verdict: "PARTIAL"` per the rollup rules. |
+| **per-check `checks[i].status`** | `PASS`, `FAIL`, `SKIP` | **NO. There is no `PARTIAL` at the check level.** Use `SKIP` with `evidence_url_or_text` starting `UNCHECKABLE: <reason>`. |
+
+`PARTIAL` is a *derived* top-level verdict the rollup table below computes
+from a check population that mixes PASS + SKIP. Individual checks are
+atomic: each one PASSed, FAILed, or was SKIPped (UNCHECKABLE).
+
+**WRONG — `VerificationEvidenceSchema` will REJECT this (status enum
+violation), and the orchestrator will treat your entire run as
+`NOT_VERIFIED`:**
+
+```json
+{
+  "verdict": "PASS",
+  "checks": [
+    { "name": "live DB smoke", "status": "PARTIAL", "evidence_url_or_text": "couldn't observe" }
+  ]
+}
+```
+
+**RIGHT — SKIP + UNCHECKABLE prefix at the check, PARTIAL at the verdict:**
+
+```json
+{
+  "verdict": "PARTIAL",
+  "checks": [
+    { "name": "live DB smoke", "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: read-only verifier cannot invoke the live DB." }
+  ]
+}
+```
+
+**Self-check before emitting:** if any `checks[i].status` is not one of
+`PASS` / `FAIL` / `SKIP` (case-sensitive), fix it before emitting. If you
+catch yourself typing `"PARTIAL"` inside a check, you mean `"SKIP"` with
+the `UNCHECKABLE: ` prefix.
+
+### Full output shape
 
 ```json
 {
   "verdict": "PASS" | "FAIL" | "PARTIAL" | "NOT_VERIFIED",
   "checks": [
-    { "name": "<criterion>", "status": "PASS" | "FAIL" | "SKIP", "evidence_url_or_text": "<citation>" }
+    {
+      "name": "<criterion>",
+      "status": "PASS" | "FAIL" | "SKIP",
+      "evidence_url_or_text": "<file:line | $cmd + output | git excerpt | UNCHECKABLE: reason>"
+    }
   ],
   "verifier_session_id": "<your subagent session id>",
   "verified_at": "<ISO8601 now>"

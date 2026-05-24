@@ -320,7 +320,9 @@ const verifierInputs = {
 
 #### 7b. Dispatch the verifier subagent
 
-Use the `Agent` tool. Prefer `subagent_type: "tasks-verifier"` if available — `install.sh` copies `skills/agents/tasks-verifier.md` to `~/.claude/agents/tasks-verifier.md`, so a user who ran the installer has the named agent registered. If the named agent is unavailable (user has not yet run `install.sh`), fall back to `subagent_type: "general-purpose"` and embed the full body of `skills/agents/tasks-verifier.md` as the Agent's prompt prefix, followed by a fenced JSON block containing the `VerifierInputs` envelope. Either path produces the same contract-compliant output.
+Use the `Agent` tool. **Default to `subagent_type: "general-purpose"` with the verifier prompt embedded in the brief** — this works regardless of how the user installed the project. The named `subagent_type: "tasks-verifier"` is only registered for sessions started AFTER the user ran `install.sh`; in any fresh session the named agent is typically unavailable, and an Agent call with an unknown subagent_type FAILS the entire dispatch. Defaulting to general-purpose + embedded prompt is the reliable path.
+
+Embed the full body of [`skills/agents/tasks-verifier.md`](../agents/tasks-verifier.md) as the Agent's prompt prefix (the orchestrator reads the file at run time so prompt updates flow automatically), followed by a fenced JSON block containing the `VerifierInputs` envelope. The contract requires the verifier's FINAL message to be a single JSON object parseable as `VerificationEvidence` — restate this hard constraint at the bottom of the brief so the model doesn't wrap the JSON in prose or a markdown fence.
 
 ```
 Agent(
@@ -342,9 +344,19 @@ The verifier subagent's `tools:` frontmatter is restricted to read-only operatio
 
 #### 7c. Parse + validate the verifier's output
 
-Parse the verifier's final message as JSON. Reject anything that does not match `VerificationEvidenceSchema` (`src/schemas/task.schema.ts`). On parse failure, synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and treat the verifier run as if it never produced a verdict — proceed to the `NOT_VERIFIED` branch below.
+Parse the verifier's final message as JSON. Validate against `VerificationEvidenceSchema` (`src/schemas/task.schema.ts`). Reject anything that does not match the schema.
 
-Sanity-check the parsed verdict against the rollup table in the contract (§Verdict rollup rules). If the verifier emitted, say, `verdict: "PASS"` but one of the checks is `status: "FAIL"`, the verifier violated the deterministic rollup — override the top-level verdict to `FAIL` locally before branching.
+**Common verifier emission bug — auto-repair, do NOT silently accept:** the schema's `checks[i].status` enum is `PASS | FAIL | SKIP` only; `PARTIAL` is a TOP-LEVEL `verdict` value, NEVER a per-check status. If the verifier emits `status: "PARTIAL"` (observed twice in early runs — known model failure mode), the orchestrator MUST re-dispatch the SAME verifier session via `SendMessage` with a tight diagnostic: "you emitted `status: \"PARTIAL\"` on check N — that's invalid (enum is PASS|FAIL|SKIP). Re-emit with `status: \"SKIP\"` and `evidence_url_or_text` starting `UNCHECKABLE: <reason>`, then recompute the top-level verdict per the rollup table." If the verifier wasn't dispatched with a `name:` (and thus is unreachable via SendMessage), dispatch a fresh verifier with the same envelope plus an explicit "your predecessor emitted invalid status='PARTIAL' — use SKIP+UNCHECKABLE instead" guardrail at the top of the brief.
+
+On any other parse failure (malformed JSON, missing required fields, etc.), synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and proceed to the `NOT_VERIFIED` branch below.
+
+**Sanity-check the verdict against the rollup table** (contract §Verdict rollup rules). The orchestrator is allowed exactly ONE class of override: **rollup-driven DOWNGRADES**. Examples:
+- Verifier emitted `verdict: "PASS"` but a check has `status: "FAIL"` → override `verdict` to `FAIL`.
+- Verifier emitted `verdict: "PASS"` but a check has `status: "SKIP"` → override `verdict` to `PARTIAL`.
+
+**Orchestrator MUST NOT upgrade a verdict** (FAIL→PARTIAL, FAIL→PASS, PARTIAL→PASS, NOT_VERIFIED→anything) on its own observation. If new evidence appears that would warrant an upgrade (e.g. the orchestrator runs a live smoke the verifier could not), the orchestrator MUST re-dispatch a fresh verifier with the new evidence embedded in the envelope (`additional_observations: ["<orchestrator-observed evidence>", ...]`). The fresh verifier's verdict is authoritative — the orchestrator never grades. **This is the load-bearing guarantee of the Generator/critic separation rule under Important Rules.**
+
+If a verifier's verdict is wrong because the verifier mis-scoped the ACs (e.g. counted runtime-only criteria against a design-only task), the orchestrator MUST re-dispatch with a tighter `acceptance_criteria` scoping note — never silently drop checks the verifier emitted.
 
 #### 7d. Branch on verdict
 
@@ -713,7 +725,7 @@ After 2–3 honest subagent round-trips, set the task to `blocked` with a commen
 
 ## Important Rules
 
-- **Generator/critic separation.** The orchestrator MUST dispatch a SEPARATE `tasks-verifier` subagent to grade each closed task. The orchestrator MUST NOT grade its own dispatches — the verifier's read-only context window is the entire point. Orchestrator validation (Step 5: build/test/lint) is necessary but not sufficient; the verifier checks the ACCEPTANCE CRITERIA, not the build. See Step 7 and [`docs/verifier-contract.md`](../../docs/verifier-contract.md) for the contract; `skills/agents/tasks-verifier.md` enforces the read-only tool surface.
+- **Generator/critic separation.** The orchestrator MUST dispatch a SEPARATE `tasks-verifier` subagent to grade each closed task. The orchestrator MUST NOT grade its own dispatches — the verifier's read-only context window is the entire point. Orchestrator validation (Step 5: build/test/lint) is necessary but not sufficient; the verifier checks the ACCEPTANCE CRITERIA, not the build. See Step 7 and [`docs/verifier-contract.md`](../../docs/verifier-contract.md) for the contract; `skills/agents/tasks-verifier.md` enforces the read-only tool surface. **The orchestrator's ONLY allowed local override is a rollup-driven DOWNGRADE** (e.g. `verdict: "PASS"` with a `FAIL` check → override to `FAIL`). UPGRADES (FAIL→PASS, PARTIAL→PASS, NOT_VERIFIED→anything) MUST come from a freshly re-dispatched verifier with the additional evidence in its envelope — never from the orchestrator's own judgment. Silently dropping checks the verifier emitted, or upgrading verdicts on observation, is forbidden.
 - **You are the orchestrator, not the carpenter.** Every implementation goes through a subagent, even small ones. Exceptions only when the user explicitly asks for an inline fix.
 - **One task at a time.** Plan → dispatch → verify → commit → close → repeat. No parallel task dispatch within a single project unless tasks are explicitly independent (rare).
 - **Validation runs in the orchestrator, not just the subagent.** Re-run; never trust reported numbers.

@@ -114,6 +114,36 @@ Bounds enforced by the storage-layer schema:
 - Identifier strings (`verifier_session_id`, `verifier_request_id`) capped
   at 200 characters.
 
+### ⚠ Two enums — do NOT conflate
+
+The top-level `verdict` and the per-check `status` are SEPARATE enums:
+
+| field                       | allowed values                                  | `PARTIAL` allowed? |
+|-----------------------------|-------------------------------------------------|--------------------|
+| `verdict` (top-level)       | `PASS` \| `FAIL` \| `PARTIAL` \| `NOT_VERIFIED` | YES (derived)      |
+| `checks[i].status` (per check) | `PASS` \| `FAIL` \| `SKIP`                   | **NO**             |
+
+A check's `status` is **never** `PARTIAL`. `PARTIAL` only appears at the
+top level as a *derived* verdict when the rollup table (below) sees a
+check population that mixes `PASS` + `SKIP`. Use `status: "SKIP"` with
+`evidence_url_or_text` starting `UNCHECKABLE: <reason>` for criteria the
+verifier could not observe — never `status: "PARTIAL"`. A `status:
+"PARTIAL"` will fail `VerificationEvidenceSchema.safeParse(...)`, and
+the orchestrator will then treat the entire run as `NOT_VERIFIED`.
+
+Wrong (rejected by schema):
+
+```json
+{ "name": "live DB smoke", "status": "PARTIAL", "evidence_url_or_text": "couldn't observe" }
+```
+
+Right (the verifier observed it cannot observe, and emits SKIP +
+UNCHECKABLE):
+
+```json
+{ "name": "live DB smoke", "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: read-only verifier cannot invoke the live DB." }
+```
+
 Example PASS output:
 
 ```json
