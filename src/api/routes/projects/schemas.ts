@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
 
+export {
+  DependencyGraphTreeResponseSchema,
+  DependencyGraphGraphResponseSchema,
+  DependencyGraphTextResponseSchema,
+  DependencyGraphFormatSchema,
+} from '../../../schemas/dependency-graph.schema.js';
+
 /**
  * ProjectResponseSchema - Zod schema for project response
  */

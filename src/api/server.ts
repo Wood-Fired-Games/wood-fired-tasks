@@ -17,6 +17,7 @@ import { SESSION_LIFETIME_SECONDS } from '../web/session-constants.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
+import { DependencyGraphService } from '../services/dependency-graph.service.js';
 import { CommentService } from '../services/comment.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
@@ -63,6 +64,7 @@ declare module 'fastify' {
     taskService: TaskService;
     projectService: ProjectService;
     dependencyService: DependencyService;
+    dependencyGraphService: DependencyGraphService;
     commentService: CommentService;
     idempotencyService: IdempotencyService;
     db: Database.Database;
@@ -123,6 +125,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('taskService', app.taskService);
   server.decorate('projectService', app.projectService);
   server.decorate('dependencyService', app.dependencyService);
+  server.decorate('dependencyGraphService', app.dependencyGraphService);
   server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
 
