@@ -43,6 +43,26 @@ regexes = [
   '''xoxb-your-bot-token-here''',
   '''xapp-your-app-token-here''',
   '''xoxb-EXAMPLE-NOT-A-REAL-TOKEN''',
+  # JS identifiers used as test-fixture variable names in session /
+  # env tests. Each is a `Buffer.alloc(N).toString('base64')` constant
+  # bound to a JS identifier; gitleaks flags the mixed-case +
+  # digit-suffix IDENTIFIER itself as generic-api-key (entropy 3.5),
+  # not the actual base64 payload. Never appears outside test files.
+  # (2026-05-24 — 8 historic findings across cfa480d / 919d2f9 /
+  # a5c0a7c in session-plugins / env / pages / tokens-mint-html tests.)
+  '''validSecret32''',
+  '''tooShortSecret31''',
+  '''tooLongSecret33''',
+  # Test PAT fixtures matching wfb_pat_<obvious-placeholder> in auth
+  # tests (device-flow, credentials, device-token). The prefix
+  # `wfb_pat_` is the project's real PAT format — only the specific
+  # placeholder bodies are allowlisted, NOT the prefix itself, so a
+  # real `wfb_pat_<random-hex>` accidentally landing in a test still
+  # trips the gate. (2026-05-24 — 3 historic findings across 079d033 /
+  # b80606b / be54656.)
+  '''wfb_pat_secret123''',
+  '''wfb_pat_ABCDEFG1234567890''',
+  '''wfb_pat_MINTED1234567890ABCDEFGHIJKLMNOP''',
 ]
 
 stopwords = [
