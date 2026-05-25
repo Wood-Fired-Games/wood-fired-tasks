@@ -9,35 +9,55 @@ disable-model-invocation: false
 
 Marks a task as complete by updating its status to `done`.
 
+## Preflight: identity + MCP tools
+
+**Resolve a real identity** for the optional close-out comment `author` field — do NOT pass the literal `"user"`. Priority: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>`. Capture as `$AUTHOR`.
+
+Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__add_comment`) and retry.
+
 ## Workflow
 
-1. **Validate task ID**
-   - Extract task ID from `$ARGUMENTS[0]` (required)
-   - Must be a positive integer
-   - If missing or invalid, inform user: "Please provide a valid task ID"
+1. **Parse args**
+   - Task ID from `$ARGUMENTS[0]` (positive integer). On missing/invalid: "Please provide a valid task ID." Stop.
+   - Optional close-out reason from remaining `$ARGUMENTS` (e.g. `/tasks:done 42 "verified in commit abc123, ship in v1.6.5"`).
 
-2. **Update task status**
-   - Call `wood-fired-tasks:update_task` with:
-     - `id`: task ID from step 1
-     - `updates`: `{ "status": "done" }`
+2. **MANDATORY pre-check** — call `wood-fired-tasks:get_task` with `id=<id>`. Enforce the documented transition rules below BEFORE mutating:
+   - **`open`** → proceed (task closed without formal pickup; common for tiny tasks).
+   - **`in_progress`** → proceed (normal flow).
+   - **`blocked`** → refuse: "Task <id> is `blocked` (reason: <last BLOCKED comment>). Marking blocked → done would bypass the unblock signal. Either: (a) `/tasks:pick-up <id>` to unblock and start, then `/tasks:done`, OR (b) if the blocker was resolved without work, run `/tasks:add-comment <id> 'unblocked: <why>'` first, then `/tasks:done <id>` once the status moves." Stop.
+   - **`done`** → idempotent no-op: "Task <id> already done." Exit 0.
+   - **`closed`** → refuse: "Task <id> is terminal (`closed`). Cannot mark done." Stop.
+   - **`backlogged`** → refuse: "Task <id> is deprioritized (`backlogged`). Pick it back up via `/tasks:pick-up <id>` first, then mark done." Stop.
+   - **Any other status** → report verbatim and exit; defensive.
 
-3. **Confirm completion**
-   - On success: "Task <id> marked as done: <title>"
-   - On error: Report the error message from the server
+3. **Close-out comment** (optional but recommended for audit trail)
+   - If a reason was provided in step 1, call `wood-fired-tasks:add_comment` with `task_id=<id>, author=$AUTHOR, content="DONE: <reason>"` BEFORE the status update. (Same comment-first ordering as `/tasks:blocked` — if the status update fails, the reason is still recorded.)
+
+4. **Update task status**
+   - Call `wood-fired-tasks:update_task` with `id=<id>, updates={ "status": "done" }`.
+
+5. **Confirm completion**
+   - On success: "Task <id> marked as done by <$AUTHOR>: <title>".
+   - On error: report server message; note that the comment (if step 3 ran) WAS recorded, so manual flip is the only outstanding action.
 
 ## Valid Status Transitions to Done
 
-The following transitions are valid:
-- `open` → `done` (task completed without formal pickup)
-- `in_progress` → `done` (normal completion flow)
-- `blocked` → `in_progress` → `done` (requires unblocking first)
+Canonical task statuses: `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged`.
 
-If the task is currently `blocked`, it must be moved to `open` or `in_progress` before marking as done.
+The transitions BELOW are enforced by step 2's pre-check — the skill refuses anything else:
+
+- `open` → `done` ✅ (task completed without formal pickup)
+- `in_progress` → `done` ✅ (normal completion flow)
+- `blocked` → `done` ❌ REFUSED — must unblock first via `/tasks:pick-up` or `/tasks:add-comment`
+- `done` → `done` ✅ IDEMPOTENT no-op
+- `closed` → `done` ❌ REFUSED — terminal state cannot be revived; open a new task
+- `backlogged` → `done` ❌ REFUSED — pick it up first via `/tasks:pick-up`
 
 ## Example Usage
 
 ```
 /tasks:done 42
+/tasks:done 42 "shipped in v1.6.5, commit abc123"
 ```
 
-Result: "Task 42 marked as done: Implement authentication"
+Result: "Task 42 marked as done by <author>: Implement authentication" (with a close-out comment recorded if a reason was given).

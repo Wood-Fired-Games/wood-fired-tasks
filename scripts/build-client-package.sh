@@ -92,8 +92,50 @@ cp "$PROJECT_ROOT/client-package/uninstall.bat"  "$PACKAGE_DIR/"
 cp "$PROJECT_ROOT/client-package/uninstall.ps1"  "$PACKAGE_DIR/"
 chmod +x "$PACKAGE_DIR/setup.sh"
 
-# Skills
+# Skills / client commands.
+#
+# NOTE ON SOURCE-OF-TRUTH: the client commands are NOT a plain copy of
+# skills/tasks/. The skills originals contain dev-only relative links
+# (`_enums.md`, `../../src/types/task.ts`, ...) that 404 once installed
+# standalone under ~/.claude/commands/tasks/. The committed copies in
+# client-package/commands/tasks/ are the SELF-CONTAINED, link-stripped source
+# of truth that ships to clients. They must stay in sync with the skills
+# originals semantically (verified by src/api/routes/tasks/__tests__/
+# client-commands.test.ts), but are intentionally not byte-identical.
 cp "$PROJECT_ROOT/client-package/commands/tasks/"*.md  "$PACKAGE_DIR/commands/tasks/"
+
+# Defense-in-depth: refuse to ship if a client command regressed to a known
+# anti-pattern (non-canonical enum token, hardcoded "user" identity value, or a
+# dev-only relative link). This mirrors the vitest gate so a build run from a
+# stale checkout still fails loudly instead of shipping bad docs.
+echo "  Verifying client commands are hardened..."
+client_scan_fail=0
+for f in "$PACKAGE_DIR/commands/tasks/"*.md; do
+    bn=$(basename "$f")
+    # 1. non-canonical enum tokens used as VALUES (allow inline "no `critical`"
+    #    guidance prose). Flag e.g. `priority: critical`, `[critical]`, `NORMAL`.
+    if grep -nE "(:[[:space:]]*(critical|normal|cancelled)\b|\b(critical|normal|cancelled)\b[[:space:]]*[,|])|\[(critical|normal|cancelled)\]|\b(CRITICAL|NORMAL|CANCELLED)\b" "$f" \
+        | grep -vE "no \`(critical|normal)\`" >/dev/null 2>&1; then
+        echo "  ERROR: $bn references a non-canonical enum value (critical/normal/cancelled)."
+        client_scan_fail=1
+    fi
+    # 2. hardcoded "user" identity VALUE (not the warning prose).
+    if grep -niE "\b(author|created_by|assignee)\b[[:space:]]*[:=][[:space:]]*['\"]user['\"]" "$f" >/dev/null 2>&1; then
+        echo "  ERROR: $bn hardcodes the literal \"user\" as an identity value."
+        client_scan_fail=1
+    fi
+    # 3. dev-only relative links that break a standalone install.
+    if grep -nE "_enums\.md|\.\./\.\./src/|\.\./\.\./docs/|\.\./agents/|src/types/task\.ts|src/schemas" "$f" >/dev/null 2>&1; then
+        echo "  ERROR: $bn contains a dev-only relative link/path that 404s on a client machine."
+        client_scan_fail=1
+    fi
+done
+if [[ "$client_scan_fail" -ne 0 ]]; then
+    echo "ERROR: client command hardening check failed. Re-sync client-package/commands/tasks/ from skills/tasks/ (link-stripped). See src/api/routes/tasks/__tests__/client-commands.test.ts."
+    rm -rf "$STAGING_DIR"
+    exit 1
+fi
+echo "  OK: client commands hardened"
 
 # MCP server compiled JS
 cp "$PROJECT_ROOT/dist/mcp/remote/"*.js        "$MCP_SERVER_DIR/dist/mcp/remote/" 2>/dev/null || true

@@ -8,22 +8,31 @@ disable-model-invocation: false
 
 Lists all tasks assigned to the current user, organized by status.
 
+## Preflight: identity + MCP tools
+
+**Resolve a real identity** before the `assignee` filter — do NOT pass the literal `"user"` (that turns every machine's `/tasks:my-work` into a noise-floor of "everyone's tasks"). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-my-work`). Pick once at top of invocation and capture as `$ME`.
+
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_tasks`) and retry.
+
 ## Steps
 
-1. **Get Current User**
-   - Use 'user' as current user identity placeholder
+1. **Resolve identity** (per Preflight above) → `$ME`.
 
 2. **Retrieve Assigned Tasks**
    - Call `wood-fired-tasks:list_tasks` with filter:
-     - assignee: 'user'
+     - assignee: `$ME` (NOT the literal "user")
 
 3. **Group Results by Status**
+
+   Canonical task statuses: `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged`.
 
    Organize tasks in this priority order:
    - **in_progress**: Active work currently being done
    - **blocked**: Needs attention, cannot proceed
    - **open**: Ready to start, not yet begun
    - **done**: Recently completed tasks
+   - **backlogged**: Deprioritized — not abandoned, can be picked back up
+   - **closed**: Terminal (skipped from active display by default)
 
 4. **Format Output**
 

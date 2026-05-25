@@ -7,16 +7,21 @@ disable-model-invocation: false
 
 Retrieve and display comprehensive information about a specific task.
 
+## Preflight: MCP tools
+
+This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__list_subtasks`) and retry.
+
 ## Workflow
 
 1. Extract task ID from $ARGUMENTS[0]
    - Required: must be a positive integer
    - If missing or invalid, display error and exit
 
-2. Fetch task data in parallel:
+2. Fetch task data in parallel. Issue these calls in a SINGLE message with multiple function_calls blocks — that's the mechanism for parallel tool execution. Do NOT chain them with `await` semantics or list them sequentially across multiple messages.
    - Call `wood-fired-tasks:get_task` with id parameter
    - Call `wood-fired-tasks:get_comments` with task_id parameter
    - Call `wood-fired-tasks:get_dependencies` with task_id parameter
+   - Call `wood-fired-tasks:list_subtasks` with task_id parameter
 
 3. Handle task not found:
    - If get_task returns error, display "Task <id> not found"
@@ -45,6 +50,11 @@ Retrieve and display comprehensive information about a specific task.
    - Tasks this task blocks (if any)
    - Tasks blocking this task (if any)
    - Show ID, title, and status for each dependency
+
+   **Subtasks:**
+   - List subtasks from `list_subtasks` result
+   - For each: ID, title, and status
+   - If no subtasks, display "(no subtasks)"
 
    **Comments:**
    - Chronological list of comments
