@@ -1,6 +1,6 @@
 ---
 name: decompose
-description: Operational planner that breaks a project-level goal into 8–25 independent leaf tasks (FLAT) or a dependency DAG, ready for /tasks:loop or /tasks:loop-dag. Runs a 9-step pipeline — goal capture → codebase recon (one Explore agent) → candidate generation (planner) → independence check (critic) → topology decision (topology_check) → coverage check (critic) → sizing → materialize (create_task + add_dependency) → DECOMPOSITION.md emit. PLANS only; never executes the tasks it materializes. Bounded ≤ $5 soft target / $15 hard cap. Refuses blast-radius goals (deploy / migrate production / delete data).
+description: Operational planner that breaks a project-level goal into 8–25 independent leaf tasks (FLAT) or a dependency DAG, ready for /tasks:loop or /tasks:loop-dag. Runs a 9-step pipeline — goal capture → codebase recon (one Explore agent) → candidate generation (planner) → independence check (critic) → topology decision (topology_check) → coverage check (critic) → sizing → materialize (create_task + add_dependency) → DECOMPOSITION.md emit. PLANS only; never executes the tasks it materializes. Bounded ≤ 5 USD soft target / 15 USD hard cap. Refuses blast-radius goals (deploy / migrate production / delete data).
 argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed] [--dry-run]
 disable-model-invocation: false
 ---
@@ -63,6 +63,14 @@ Parse `$ARGUMENTS`. Supported flags: `--project <id>`, `--goal "..."`,
 `--success "..."` (repeatable), `--domain <enum>`, `--dry-run`. Validate
 (design §3 Step 1):
 
+> **Input model — read before you start.** Decompose consumes a *distilled*
+> brief: a `--goal` (≤ 200 words) plus 3–5 `--success` criteria. It does
+> **not** ingest a plan document — it re-derives the task breakdown from its
+> own Step-2 recon. If you are handed a long external plan, compress its
+> intent into the `--goal` and pin the acceptance bar with the success
+> criteria; the file-by-file detail is the executor's job downstream, not an
+> input here.
+
 - `--project <id>` — required, positive integer. Confirm it resolves via
   `wood-fired-tasks:list_projects`; refuse with a usage error if it does
   not exist.
@@ -115,11 +123,12 @@ only the subtree relevant to the goal + `--domain` (e.g. `frontend` →
 directory-first heuristic).
 
 Brief the agent to return a **structured recon summary, ≤ 2 KB markdown**
-(entry points, relevant modules, existing tests, integration seams). Cache
-the summary at
-`.planning/decompositions/.cache/<decomposition_id>-recon.md` so Step 3
-does **not** re-read source files. Hold only the summary in your context,
-never the agent's transcript.
+(entry points, relevant modules, existing tests, integration seams). The
+`Explore` subagent_type is **read-only and has no `Write` tool**, so it
+returns the summary in its final message and **YOU (the orchestrator) write
+it** to `.planning/decompositions/.cache/<decomposition_id>-recon.md` (create
+the `.cache/` dir if absent) so Step 3 does **not** re-read source files.
+Hold only the summary in your context, never the agent's transcript.
 
 This is the ONLY step that reads the source tree, and it is strictly
 read-only (Guardrail 1). Do NOT dispatch workers that mutate the tree.
@@ -198,9 +207,12 @@ The wave grouping is **advisory only** — the user reviews
 `DECOMPOSITION.md` before running `/tasks:loop-dag`.
 
 **`topology_check` fallback (mirror `loop-dag.md` §2f / §3a step 2).**
-`topology_check` is conditionally registered; it is now wired on BOTH the
-stdio and remote MCP servers, but still guard for its absence. If the call
-raises `InputValidationError`, first try the `ToolSearch` load
+`topology_check` is conditionally registered. It is wired on both the stdio
+and remote MCP servers **in the codebase**, but a *deployed* server can lag
+the code — a freshly built tool stays absent until the server is redeployed —
+so always guard for its absence (the preflight `ToolSearch` load may return
+no match). If the call raises `InputValidationError`, first try the
+`ToolSearch` load
 (`select:mcp__wood-fired-tasks__topology_check`) and retry. If it is still
 unavailable or returns a malformed response, **fall back** to classifying
 the edge set locally from Step 4: zero edges ⇒ `FLAT`; edges with no cycle
@@ -239,12 +251,16 @@ Step 4 once on the splits** to fold the new edges into the edge set.
 candidates in wood-fired-tasks via `wood-fired-tasks:create_task`, then add
 the dependency edges via `wood-fired-tasks:add_dependency`.
 
-**Idempotent on `decomposition_id`.** Before creating, `list_tasks` on the
-project and skip any candidate already materialized under this
-`decomposition_id` (re-running the same goal + project + `decomposition_id`
-MUST NOT duplicate tasks). Record the `(draft_id → task_id)` mapping for the
-artifact body §5. Materialization NEVER transitions a task's status,
-claims it, or comments on it (Guardrail 1) — it only creates and edges.
+**Idempotent on `decomposition_id` (tag-carried).** `create_task` has no
+`decomposition_id` field, so the id rides on a **tag**: stamp every created
+task with `decomp-<decomposition_id>` (and echo the id in the description).
+Before creating, call
+`list_tasks(project_id, tags=["decomp-<decomposition_id>"])` and **skip any
+draft whose title already exists** under that tag — re-running the same goal
++ project + `decomposition_id` MUST NOT duplicate tasks. Record the
+`(draft_id → task_id)` mapping for the artifact body §5. Materialization
+NEVER transitions a task's status, claims it, or comments on it
+(Guardrail 1) — it only creates and edges.
 
 ## Step 9 — Emit `DECOMPOSITION.md`
 
@@ -286,12 +302,21 @@ Set `generated_at`-paired end time immediately before the final write.
 Track running cost across the orchestrator + every subagent dispatch
 (cache-discounted USD, same formula as `LOOP-RUN.md` §4.4). After each
 subagent returns, read its `usage` block and increment an in-memory
-counter — that counter is the source of truth for both thresholds.
+counter — that counter is the source of truth for both thresholds. **If a
+subagent returns no `usage` block** (some agent types omit it), estimate its
+cost from its tool-call count and output size, add the estimate to the
+counter, and mark the artifact's `total_usd` approximate (prefix `~`) so a
+reader knows the cap was enforced against an estimate.
 
-- **$5 soft target** — when running cost crosses **$5**, emit a checkpoint
-  to stdout and record `checkpoint_5usd_at_step: <step>` (optional
+Amounts below are written without a leading `$`-then-digit on purpose: a
+bare `$` immediately followed by a digit in a skill body is captured by
+argument substitution at load time (read as a positional arg) and renders
+corrupted — write the USD figure instead.
+
+- **5 USD soft target** — when running cost crosses **5 USD**, emit a
+  checkpoint to stdout and record `checkpoint_5usd_at_step: <step>` (optional
   frontmatter field). The run **continues**.
-- **$15 hard cap** — when running cost crosses **$15**, **HALT
+- **15 USD hard cap** — when running cost crosses **15 USD**, **HALT
   immediately**. Preserve all work completed up to that step (materialized
   tasks stay; do NOT roll back), write a partial `DECOMPOSITION.md` with
   `cost_cap_hit: true`, and report the halt to the user. The user re-runs
