@@ -206,18 +206,24 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
     );
   });
 
-  it('skill file explicitly says it is design-only', () => {
-    const hasDesignOnly =
-      skill.includes('design-only') || skill.includes('Design spec landed');
-    expect(hasDesignOnly).toBe(true);
+  it('skill file is now operational (not a design-only stub)', () => {
+    // The runtime landed: the skill must NOT be gated, and its body must
+    // name the operational pipeline (the 6 step names + the AUDIT.md emit).
+    expect(skill.includes('disable-model-invocation: true')).toBe(false);
+    expect(skill.includes('Resolve LOOP-RUN.md')).toBe(true);
+    expect(skill.includes('Enumerate closed tasks')).toBe(true);
+    expect(skill.includes('Emit AUDIT.md')).toBe(true);
   });
 
-  it('skill file explicitly says no subagent will be dispatched on invocation', () => {
-    const hasRefusal =
-      /No subagent dispatched|none of the above will fire on invocation|Refuse to dispatch|refuse to dispatch/.test(
+  it('skill file dispatches a tasks-verifier per task on invocation', () => {
+    // The operational skill DOES dispatch a read-only tasks-verifier per
+    // closed task (no longer refuses to dispatch).
+    expect(skill.includes('tasks-verifier')).toBe(true);
+    const hasDispatch =
+      /Dispatch one `tasks-verifier` per task|dispatch one\s+`tasks-verifier`|Agent\(/.test(
         skill,
       );
-    expect(hasRefusal).toBe(true);
+    expect(hasDispatch).toBe(true);
   });
 
   it('skill file points readers at docs/tasks-audit-design.md', () => {

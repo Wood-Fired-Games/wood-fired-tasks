@@ -11,19 +11,19 @@ Owner: Repository maintainers
 ## Status
 
 Wave 7.1 DESIGN landed by wood-fired-tasks task **#323** (2026-05-23).
-Runtime orchestration is **deferred** — the skill file at
-[`skills/tasks/audit.md`](../skills/tasks/audit.md) is a discovery stub
-that points users at this design and refuses to dispatch any subagent or
-mutate the bugs database. The follow-on tasks listed in §8 will:
+Runtime landed — [`skills/tasks/audit.md`](../skills/tasks/audit.md) is
+operational. The skill implements the full §3 pipeline (resolve
+LOOP-RUN.md → enumerate closed tasks with AC reconstruction → dispatch
+one read-only `tasks-verifier` per task → score → roll up → emit
+AUDIT.md), enforces the four §5 guardrails as live rules, and halts on
+the §6 $5 hard cost cap. The remaining follow-on tasks listed in §8 are
+still open:
 
-1. Implement the runtime orchestration pipeline (§3).
-2. Author the three verification fixtures sketched in §7.
-3. Integrate `/tasks:audit` into onboarding docs (AGENTS.md,
+1. Author the three verification fixtures sketched in §7.
+2. Integrate `/tasks:audit` into onboarding docs (AGENTS.md,
    docs/NAVIGATION.md, README quickstart) next to `/tasks:loop`.
-
-Until those tasks land, invoking `/tasks:audit` MUST emit a
-"design-only — implementation deferred" message rather than executing
-any step of the pipeline.
+3. Benchmark the AC-reconstruction heuristic (Guardrail 4) and write the
+   AUDIT.md reference example.
 
 ## §1 Goal + scope
 
@@ -403,12 +403,12 @@ extra blast radius to refuse against.
 
 To be created in wood-fired-tasks project 15 *after* this design lands:
 
-- **Implement /tasks:audit runtime** — replace the discovery stub in
-  `skills/tasks/audit.md` with the full pipeline. Wire Step 1
-  (LOOP-RUN.md resolver), Step 2 (closed-task enumerator + AC
-  reconstruction), Step 3 (per-task `tasks-verifier` dispatcher),
-  Step 4–5 (score + roll-up), Step 6 (AUDIT.md emitter), and the
-  $5 cost-cap guard.
+- **Implement /tasks:audit runtime** — ✅ **DONE / landed.** The
+  discovery stub in `skills/tasks/audit.md` is replaced with the full
+  operational pipeline: Step 1 (LOOP-RUN.md resolver), Step 2
+  (closed-task enumerator + AC reconstruction), Step 3 (per-task
+  `tasks-verifier` dispatcher), Step 4–5 (score + roll-up), Step 6
+  (AUDIT.md emitter), and the $5 cost-cap guard.
 - **Author verification fixtures** — write the three fixtures sketched
   in §7 (real PASS, falsified completion, historical-grade Project 12)
   plus a smoke fixture that asserts the orchestrator refuses both
