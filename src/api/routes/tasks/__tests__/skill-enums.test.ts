@@ -110,20 +110,73 @@ function scanSkillFile(filePath: string): SkillFinding[] {
 }
 
 describe('skill enum-value consistency (#347)', () => {
-  // Non-invocable doc files (frontmatter `disable-model-invocation: true`) are
-  // filtered from the invocable-skill surface. `_enums.md` is the original
-  // precedent; `loop-shared.md` was added in task #346 (loop.md refactor) to
-  // host shared reference contracts between `/tasks:loop` and `/tasks:loop-dag`.
-  const NON_INVOCABLE_DOCS: ReadonlySet<string> = new Set([
+  // Non-invocable doc files carry frontmatter `disable-model-invocation: true`
+  // and are filtered from the invocable-skill surface. `_enums.md` is the
+  // original precedent; `loop-shared.md` was added in task #346 (loop.md
+  // refactor) to host shared reference contracts between `/tasks:loop` and
+  // `/tasks:loop-dag`. NOTE: this set is derived from the ACTUAL flag value
+  // in each file (see `flagFor` below), NOT hardcoded — flipping a skill's
+  // `disable-model-invocation` is what moves it between the two buckets, so
+  // the count assertions below cannot drift silently from reality.
+  //
+  // History: `decompose.md` shipped gated (`true`) as a design-only stub in
+  // Wave 5 / #320 and was flipped to `false` when its runtime landed
+  // (Wave 8). That flip moved it from the non-invocable bucket into the
+  // invocable bucket; the counts below reflect the post-flip reality.
+  const EXPECTED_NON_INVOCABLE: ReadonlySet<string> = new Set([
     '_enums.md',
     'loop-shared.md',
   ]);
-  const skillFiles = readdirSync(SKILLS_DIR)
-    .filter((name) => name.endsWith('.md'))
-    .filter((name) => !NON_INVOCABLE_DOCS.has(name));
 
-  it('discovers all 14 shipped skill files (sanity: install.sh source set)', () => {
-    expect(skillFiles.length).toBe(14);
+  function flagFor(fileName: string): 'true' | 'false' | 'missing' {
+    const text = readFileSync(resolve(SKILLS_DIR, fileName), 'utf8');
+    const m = text.match(/^disable-model-invocation:\s*(true|false)\s*$/m);
+    return m ? (m[1] as 'true' | 'false') : 'missing';
+  }
+
+  const allSkillFiles = readdirSync(SKILLS_DIR).filter((name) =>
+    name.endsWith('.md'),
+  );
+
+  // Every shipped skill MUST declare the boolean (a separate e2e gate
+  // requires the field to be present on every skill). Catch a missing /
+  // malformed flag before the count math below.
+  const missingFlag = allSkillFiles.filter(
+    (name) => flagFor(name) === 'missing',
+  );
+
+  const nonInvocableByFlag = allSkillFiles.filter(
+    (name) => flagFor(name) === 'true',
+  );
+  const invocableByFlag = allSkillFiles.filter(
+    (name) => flagFor(name) === 'false',
+  );
+
+  // The enum-scan below runs over the invocable surface only (the gated
+  // docs are reference material, not commands installed to ~/.claude/).
+  const skillFiles = invocableByFlag;
+
+  it('every shipped skill declares an explicit disable-model-invocation boolean', () => {
+    expect(missingFlag).toEqual([]);
+  });
+
+  it('discovers all 16 shipped skill files (sanity: install.sh source set)', () => {
+    expect(allSkillFiles.length).toBe(16);
+  });
+
+  it('partitions into 14 invocable + 2 non-invocable by actual flag value', () => {
+    // decompose.md flipped from gated→invocable when its runtime landed,
+    // so the invocable bucket is 14 and the non-invocable bucket is 2.
+    expect(invocableByFlag.length).toBe(14);
+    expect(nonInvocableByFlag.length).toBe(2);
+  });
+
+  it('the non-invocable bucket is exactly {_enums.md, loop-shared.md}', () => {
+    expect(new Set(nonInvocableByFlag)).toEqual(EXPECTED_NON_INVOCABLE);
+  });
+
+  it('decompose.md is invocable (its runtime landed — no longer gated)', () => {
+    expect(flagFor('decompose.md')).toBe('false');
   });
 
   it('every status/priority token in skills/tasks/*.md is a subset of canonical enums', () => {

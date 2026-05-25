@@ -117,6 +117,31 @@ Source-of-truth code is in `src/`. Everything else is regenerated or installed:
 - **Tests:** existing release-related tests under `scripts/__tests__/`; CI workflow is the integration gate.
 - **Docs:** `docs/RELEASE.md`, `README.md` install section, `CONTRIBUTING.md`.
 
+### 18. Break down a project goal into tasks
+
+If you want to turn a project-level goal ("ship OIDC SSO", "audit the chat
+surface") into a backlog an executor can drain — rather than hand-authoring
+8–25 tasks yourself — use the **`/tasks:decompose`** skill.
+
+- **Skill:** [`skills/tasks/decompose.md`](../skills/tasks/decompose.md) —
+  the operational 9-step pipeline (goal capture → codebase recon →
+  candidate generation → independence check → topology decision → coverage
+  check → sizing → materialize → `DECOMPOSITION.md` emit).
+- **Design / contract:** [`docs/tasks-decompose-design.md`](tasks-decompose-design.md)
+  (source of truth — guardrails, artifact schema, cost budget).
+- **Schema:** [`src/lib/decompose/schema.ts`](../src/lib/decompose/schema.ts)
+  (`CandidateTaskSchema`, `DecompositionFrontmatterSchema`).
+- **Tests:** `src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`,
+  `src/api/routes/tasks/__tests__/skill-decompose-fixtures.test.ts`,
+  `src/lib/decompose/__tests__/schema.test.ts`.
+- **Hand-off:** decompose is a **planner, not an executor**. It materializes
+  tasks + dependency edges and advises a downstream executor —
+  [`/tasks:loop`](../skills/tasks/loop.md) for a FLAT result or
+  [`/tasks:loop-dag`](../skills/tasks/loop-dag.md) for a DAG. It refuses
+  blast-radius goals (`deploy` / `migrate production` / `delete data`) and
+  halts on ≥ 30% interdependence. Use `--dry-run` to preview the candidate
+  set without writing to the bugs DB.
+
 ## Cross-cutting reminders
 
 - Schemas in `src/schemas/` are imported by **every** surface — a one-line change ripples to REST, MCP, CLI types simultaneously. Search consumers before editing.

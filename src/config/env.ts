@@ -97,6 +97,16 @@ export const configSchema = z.object({
   // Host header.
   OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   OIDC_SCOPES: z.string().min(1).default('openid email profile'),
+  // Task #357: boot-time OIDC discovery retry policy. A transient network
+  // blip (or a network stack not yet up at systemd boot) no longer hard-exits
+  // the process — discovery retries with bounded exponential backoff and, on
+  // persistent failure, the server boots in a DEGRADED mode (OIDC login down,
+  // PAT/legacy auth still up) that `/health/detailed` reports loudly.
+  //   Worst-case boot wait with defaults (5 attempts, base 500ms, cap 10s):
+  //   500 + 1000 + 2000 + 4000 = 7.5s before declaring degraded.
+  OIDC_DISCOVERY_MAX_ATTEMPTS: z.string().min(1).default('5').transform(Number),
+  OIDC_DISCOVERY_BASE_DELAY_MS: z.string().min(1).default('500').transform(Number),
+  OIDC_DISCOVERY_MAX_DELAY_MS: z.string().min(1).default('10000').transform(Number),
   SESSION_COOKIE_NAME: z.string().min(1).default('wft_session'),
   // SESSION_COOKIE_SECRET is the sealed-box key for @fastify/secure-session.
   // sodium requires exactly 32 bytes; the refine enforces that strictly so

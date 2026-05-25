@@ -4,21 +4,26 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Wave 5 (task #320) — /tasks:decompose DESIGN gate.
+ * Wave 8 (task #321) — /tasks:decompose OPERATIONAL gate.
  *
- * Falsifiable static manifest that pins the design contract emitted by
- * #320 into BOTH:
+ * The runtime landed: `skills/tasks/decompose.md` is no longer a
+ * design-only stub, it is the executable 9-step pipeline. This test is
+ * the FALSIFIABLE gate that pins the OPERATIONAL contract into BOTH:
  *
- *   - `docs/tasks-decompose-design.md` (the source-of-truth spec), AND
- *   - `skills/tasks/decompose.md` (the discovery stub that points at it).
+ *   - `docs/tasks-decompose-design.md` (the source-of-truth spec, LOCKED), AND
+ *   - `skills/tasks/decompose.md` (the operational skill that implements it).
  *
- * The runtime orchestration is deferred to follow-on tasks (listed in
- * the design doc's §11). This test is the FALSIFIABLE gate that protects
- * the design + the skeleton + the schema cross-references against
- * silent drift in the meantime.
+ * Mirrors `skill-audit-design.test.ts` (which flipped /tasks:audit from
+ * stub→runtime in #323). The assertions below verify the REAL design
+ * contract — each cites a specific behavior or phrase the design §3/§5/§6
+ * mandates, NOT arbitrary text that would trivially pass. The design-doc
+ * half of the gate is unchanged (the doc is LOCKED); the skill half now
+ * asserts operational behavior, not the old "refuses to dispatch" stub.
  *
- * Pairs with `src/lib/decompose/__tests__/schema.test.ts` which locks
- * down the zod schemas the runtime will consume.
+ * Pairs with:
+ *   - `src/lib/decompose/__tests__/schema.test.ts` — zod schemas the
+ *     runtime consumes.
+ *   - `skill-decompose-fixtures.test.ts` — the four §9 behavioral fixtures.
  */
 
 const REPO_ROOT = resolve(__dirname, '../../../../..');
@@ -170,42 +175,205 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Skill skeleton — frontmatter shape + design-only stub markers
+  // Skill — frontmatter shape (still-valid assertions, kept)
   // -------------------------------------------------------------------------
 
   it('skill file frontmatter declares name: decompose', () => {
     expect(skill).toMatch(/^---[\s\S]*?\nname: decompose\b/);
   });
 
-  it('skill file frontmatter declares the argument-hint', () => {
+  it('skill file frontmatter declares the argument-hint (incl. --dry-run)', () => {
     expect(skill).toMatch(/argument-hint:\s*--project <id> --goal/);
-  });
-
-  it('skill file carries the design-only status caveat', () => {
-    const hasCaveat =
-      skill.includes('design-only') ||
-      skill.includes('DESIGN landed') ||
-      skill.includes('Design spec landed');
-    expect(hasCaveat).toBe(true);
+    // The operational skill supports --dry-run (design §2 Contract).
+    expect(/argument-hint:[^\n]*--dry-run/.test(skill)).toBe(true);
   });
 
   it('skill file points readers at docs/tasks-decompose-design.md', () => {
     expect(skill.includes('docs/tasks-decompose-design.md')).toBe(true);
   });
 
-  it('skill file refuses to dispatch subagents while implementation is deferred', () => {
-    const hasRefusal =
-      /refuse to dispatch|Refuse to dispatch|No subagent dispatched/.test(
-        skill,
-      );
-    expect(hasRefusal).toBe(true);
+  it('design doc references src/lib/decompose/schema.ts as the in-tree zod mirror', () => {
+    expect(design.includes('src/lib/decompose/schema.ts')).toBe(true);
+  });
+
+  it('skill file links to src/lib/decompose/schema.ts as the zod schema', () => {
+    expect(skill.includes('src/lib/decompose/schema.ts')).toBe(true);
   });
 
   // -------------------------------------------------------------------------
-  // Cross-reference — schema lives where the design says it does
+  // Skill is now OPERATIONAL (the #320 stub → #321 runtime flip).
+  // Mirrors skill-audit-design.test.ts "skill file is now operational".
   // -------------------------------------------------------------------------
 
-  it('design doc references src/lib/decompose/schema.ts as the in-tree zod mirror', () => {
-    expect(design.includes('src/lib/decompose/schema.ts')).toBe(true);
+  it('skill file is now operational (NOT gated, NOT a design-only stub)', () => {
+    // The flag MUST be present (separate e2e gate) but set to false.
+    expect(/disable-model-invocation:\s*false/.test(skill)).toBe(true);
+    expect(skill.includes('disable-model-invocation: true')).toBe(false);
+    // The old stub's "design-only" / "implementation deferred" framing and
+    // its "No subagent dispatched. No tasks materialized. No artifacts
+    // written." sign-off must be gone — those are the markers that the
+    // skill refused to run.
+    expect(skill.includes('DESIGN-ONLY STUB')).toBe(false);
+    expect(skill.includes('design-only as of #320')).toBe(false);
+    expect(
+      /No subagent dispatched\. No tasks materialized\. No artifacts written\./.test(
+        skill,
+      ),
+    ).toBe(false);
+  });
+
+  it('skill file encodes all 9 operational pipeline step sections', () => {
+    // Each step appears as an executable "## Step N — <name>" heading
+    // (operational form), not a one-liner glance list.
+    const requiredStepHeadings = [
+      /## Step 1 — Goal capture/,
+      /## Step 2 — Codebase recon/,
+      /## Step 3 — Candidate task generation/,
+      /## Step 4 — Independence check/,
+      /## Step 5 — Topology decision/,
+      /## Step 6 — Coverage check/,
+      /## Step 7 — Sizing check/,
+      /## Step 8 — Materialize/,
+      /## Step 9 — Emit `DECOMPOSITION\.md`/,
+    ];
+    for (const re of requiredStepHeadings) {
+      expect(re.test(skill)).toBe(true);
+    }
+  });
+
+  it('skill file uses the correct mcp__wood-fired-tasks__ namespace in Preflight', () => {
+    expect(
+      skill.includes('mcp__wood-fired-tasks__create_task') &&
+        skill.includes('mcp__wood-fired-tasks__add_dependency') &&
+        skill.includes('mcp__wood-fired-tasks__topology_check'),
+    ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Operational behaviors — each ties to a SPECIFIC design mandate so the
+  // gate is not circular (it would fail if the skill dropped the behavior).
+  // -------------------------------------------------------------------------
+
+  it('Step 2 dispatches exactly ONE Explore agent, bounded ≤50 calls / ≤8 min (design §3 Step 2)', () => {
+    // Explore subagent_type + the documented bounds must both appear.
+    expect(/subagent_type: ?"Explore"/.test(skill)).toBe(true);
+    expect(/≤ ?50 tool calls/.test(skill)).toBe(true);
+    expect(/≤ ?8 min/.test(skill)).toBe(true);
+  });
+
+  it('Step 3 dispatches a planner via general-purpose with INLINE instructions, 8–25 drafts (design §3 Step 3)', () => {
+    // The design mandates an out-of-the-box dispatch: general-purpose +
+    // embedded planner brief, producing 8–25 CandidateTaskSchema drafts.
+    expect(skill.includes('general-purpose')).toBe(true);
+    expect(skill.includes('CandidateTaskSchema')).toBe(true);
+    expect(/8.{0,3}25/.test(skill)).toBe(true);
+    // < 8 ⇒ single-task ask; > 25 ⇒ split ask (both branches present).
+    expect(/< ?8/.test(skill) && /single task/.test(skill)).toBe(true);
+    expect(/> ?25/.test(skill) && /split/.test(skill)).toBe(true);
+  });
+
+  it('Step 4 critic returns INDEPENDENT|ORDERED|MUTUALLY_EXCLUSIVE verdicts (design §3 Step 4)', () => {
+    expect(skill.includes('INDEPENDENT')).toBe(true);
+    expect(skill.includes('ORDERED')).toBe(true);
+    expect(skill.includes('MUTUALLY_EXCLUSIVE')).toBe(true);
+  });
+
+  it('Step 5 calls topology_check WITH a fallback path when the tool is absent (mirror loop-dag)', () => {
+    expect(skill.includes('topology_check')).toBe(true);
+    // The fallback (local FLAT/DAG/DAG_CYCLIC classification) MUST be
+    // documented — topology_check is conditionally registered.
+    expect(/fallback/i.test(skill)).toBe(true);
+    expect(skill.includes('FLAT')).toBe(true);
+    expect(skill.includes('DAG_CYCLIC')).toBe(true);
+  });
+
+  it('Step 5 maps FLAT→/tasks:loop and DAG→/tasks:loop-dag with 1–4 wave grouping (design §8)', () => {
+    expect(skill.includes('/tasks:loop')).toBe(true);
+    expect(skill.includes('/tasks:loop-dag')).toBe(true);
+    expect(/1.{0,3}4 waves/.test(skill)).toBe(true);
+  });
+
+  it('Step 6 coverage critic returns COMPLETE|GAPS|DUPLICATES, bounded ≤2 re-runs (design §3 Step 6)', () => {
+    expect(skill.includes('COMPLETE')).toBe(true);
+    expect(skill.includes('GAPS')).toBe(true);
+    expect(skill.includes('DUPLICATES')).toBe(true);
+    expect(/at most 2|≤ ?2 .*re-run|2 Step.4 re-run/i.test(skill)).toBe(true);
+  });
+
+  it('Step 7 enforces the ≤90-minute sizing cap and splits oversize candidates (design §3 Step 7)', () => {
+    expect(/≤ ?90/.test(skill)).toBe(true);
+    expect(/split/i.test(skill)).toBe(true);
+  });
+
+  it('Step 8 materializes via create_task + add_dependency, idempotent on decomposition_id, SKIPPED on --dry-run', () => {
+    expect(skill.includes('create_task')).toBe(true);
+    expect(skill.includes('add_dependency')).toBe(true);
+    expect(/idempoten/i.test(skill)).toBe(true);
+    expect(skill.includes('decomposition_id')).toBe(true);
+    expect(/dry-run/.test(skill) && /[Ss]kip/.test(skill)).toBe(true);
+  });
+
+  it('Step 9 emits the .planning/decompositions/<UTC>-<project_id>.md artifact (gitignored)', () => {
+    expect(skill.includes('.planning/decompositions/')).toBe(true);
+    expect(/<UTC[^>]*>-<project_id>\.md/.test(skill)).toBe(true);
+    expect(/gitignored/i.test(skill)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Guardrails — all four present as LIVE runtime rules (not stub prose).
+  // -------------------------------------------------------------------------
+
+  it('Guardrail 1 (plan/execute separation): skill NEVER calls claim_task or status transitions', () => {
+    expect(skill.includes('MUST NOT execute the decomposed tasks')).toBe(true);
+    expect(skill.includes('claim_task')).toBe(true);
+    // claim_task / update_task must be named in the FORBIDDEN set.
+    expect(
+      /NOT permitted|NOT call|does NOT call|never calls/i.test(skill),
+    ).toBe(true);
+  });
+
+  it('Guardrail 2 (no self-rewrite): refuses Edit/Write against decompose.md / design doc / src/lib/decompose', () => {
+    expect(skill.includes('MUST NOT modify itself')).toBe(true);
+    expect(skill.includes('skills/tasks/decompose.md')).toBe(true);
+    expect(skill.includes('docs/tasks-decompose-design.md')).toBe(true);
+    expect(skill.includes('src/lib/decompose/')).toBe(true);
+  });
+
+  it('Guardrail 3 (≥30% interdependence halt) is a live rule with the high_interdependence abort reason', () => {
+    const hasThreshold = /≥ ?30%|30 ?percent|0\.30/.test(skill);
+    expect(hasThreshold).toBe(true);
+    expect(skill.includes('high_interdependence')).toBe(true);
+    expect(/halt/i.test(skill)).toBe(true);
+  });
+
+  it('Guardrail 4 (blast-radius refusal) lists all three keywords and fires BEFORE dispatch', () => {
+    expect(skill.includes('deploy')).toBe(true);
+    expect(skill.includes('migrate production')).toBe(true);
+    expect(skill.includes('delete data')).toBe(true);
+    // whole-word case-insensitive regex documented + must precede dispatch.
+    expect(
+      skill.includes('\\b(deploy|migrate production|delete data)\\b'),
+    ).toBe(true);
+    expect(/before any subagent dispatch|BEFORE any.*dispatch/i.test(skill)).toBe(
+      true,
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Cost cap — $5 checkpoint (run continues) + $15 hard halt (cost_cap_hit).
+  // -------------------------------------------------------------------------
+
+  it('skill encodes the 5 USD soft checkpoint (run continues) and the 15 USD hard cap halt', () => {
+    // The skill body must NOT carry a literal `$5`/`$15`: those are captured
+    // by argument substitution at skill-load time (`$5` → 5th positional arg)
+    // and render corrupted. The cost figures are written as USD instead.
+    expect(skill.includes('$5')).toBe(false);
+    expect(skill.includes('$15')).toBe(false);
+    expect(/5 ?USD/.test(skill)).toBe(true);
+    expect(/15 ?USD/.test(skill)).toBe(true);
+    expect(skill.includes('cost_cap_hit')).toBe(true);
+    // 5 USD = checkpoint/continue; 15 USD = halt. Both semantics present.
+    expect(/checkpoint/i.test(skill)).toBe(true);
+    expect(/HALT|halt/.test(skill)).toBe(true);
   });
 });

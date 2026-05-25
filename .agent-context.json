@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-25T13:16:05.329Z",
+    "generated_at": "2026-05-25T17:18:27.916Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 94,
-      "sha256": "4e32dd975e2a30dbc4ec61e274b1f085c724a389be879ed3b58ae43f30ee1156",
+      "actual_lines": 112,
+      "sha256": "77b2e5ef4fbd2a1d396003c75eb9423bdb5e0b984f198cc6b089bc66e37bd3d1",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -106,8 +106,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 6000,
-      "actual_lines": 140,
-      "sha256": "43e1adfc9716dccecbe98493b7feabce2294668ce3d1814180d12977e983e568",
+      "actual_lines": 165,
+      "sha256": "31da109a739d7c6b682e2d59fa10a7cec54c13e84c3181e01fc92804ee24caf0",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -301,8 +301,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
-      "actual_lines": 619,
-      "sha256": "d343a30df4e529e777e77a1e0c5776eb9e1921e734c0c82d358108fe88d12177"
+      "actual_lines": 630,
+      "sha256": "6373f8a63338ebae2ace84eaad1a2bb0a1e8407667916490f8306fee54c8627f"
     },
     {
       "path": "SECURITY.md",

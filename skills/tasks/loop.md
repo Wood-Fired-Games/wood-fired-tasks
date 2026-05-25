@@ -172,9 +172,9 @@ In the non-self-identifying case (you discovered the epic shape but the user did
 
 ### 2f. Topology pre-flight gate
 
-Wave 4.2 (task #319) introduced this gate as a halt-on-DAG safety net. Wave 11 makes the DAG branch **auto-resolve**: when the project has dependency edges, the orchestrator computes a topological execution order and proceeds rather than halting. Cycles still halt unconditionally — they are unresolvable. The historical halt message remains documented below for diagnostic continuity and is exercised when the user opts out via `--i-know-what-im-doing`.
+Wave 4.2 (task #319) introduced this gate as a halt-on-DAG safety net; Wave 11 makes the DAG branch **auto-resolve** (compute a topological execution order and proceed rather than halt). Cycles still halt unconditionally — they are unresolvable. The historical halt message remains documented below for diagnostic continuity and is exercised when the user opts out via `--i-know-what-im-doing`.
 
-Before entering §3 The Loop and BEFORE dispatching any worker, the orchestrator MUST call the `topology_check` MCP tool with `{project_id}` and branch on the returned `topology` field.
+Before entering §3 The Loop and BEFORE dispatching any worker, the orchestrator MUST call the `topology_check` MCP tool with `{project_id}` and branch on the returned `topology` field. **Fallback when `topology_check` is unavailable** (the tool is CONDITIONALLY registered — `src/mcp/server.ts` omits it when no `topologyService` is wired): do NOT assume a value was returned. Derive the topology yourself from per-task `wood-fired-tasks:get_dependencies` edges (or the `tasks topology` CLI), classify it as FLAT / DAG / DAG_CYCLIC, and branch identically; cache the derived edge list for §2f's Kahn sort so it is not re-fetched.
 
 Record the branch outcome in orchestrator state as `gate_decision` for inclusion in the LOOP-RUN.md frontmatter (Step 9). Log the gate decision in the orchestrator's first prompt so a transcript reader sees what was decided and why.
 
@@ -678,20 +678,21 @@ If smoke requires privileged access (sudo, GPU, paid API, interactive UAT) and y
 
 After 2–3 honest subagent round-trips, set the task to `blocked` with a comment explaining what was tried and what's still failing. Move on.
 
+### `topology_check` returns something other than FLAT / DAG / DAG_CYCLIC
+
+Defensive halt. Emit a comment in the bugs-DB project's top-level discussion (`add_comment` on the highest-ID open task as a proxy — there is no project-level comment API) citing the unexpected topology value verbatim, then exit. This should be impossible per `TopologyService`'s contract; if it happens it is a data-shape bug worth a separate task.
+
 ---
 
 ## Important Rules
 
 - **Generator/critic separation.** The orchestrator MUST dispatch a SEPARATE `tasks-verifier` subagent to grade each closed task. The orchestrator MUST NOT grade its own dispatches — the verifier's read-only context window is the entire point. Orchestrator validation (Step 5: build/test/lint) is necessary but not sufficient; the verifier checks the ACCEPTANCE CRITERIA, not the build. See Step 7 and [`docs/verifier-contract.md`](../../docs/verifier-contract.md) for the contract; `skills/agents/tasks-verifier.md` enforces the read-only tool surface. **The orchestrator's ONLY allowed local override is a rollup-driven DOWNGRADE** (e.g. `verdict: "PASS"` with a `FAIL` check → override to `FAIL`). UPGRADES (FAIL→PASS, PARTIAL→PASS, NOT_VERIFIED→anything) MUST come from a freshly re-dispatched verifier with the additional evidence in its envelope — never from the orchestrator's own judgment. Silently dropping checks the verifier emitted, or upgrading verdicts on observation, is forbidden.
 - **You are the orchestrator, not the carpenter.** Every implementation goes through a subagent, even small ones. Exceptions only when the user explicitly asks for an inline fix.
-- **One task at a time.** Plan → dispatch → verify → commit → close → repeat. No parallel task dispatch within a single project unless tasks are explicitly independent (rare).
+- **One task at a time.** Plan → dispatch → verify → commit → close → repeat. No parallel task dispatch within a single project unless tasks are explicitly independent (rare). Respect priority order (urgent > high > medium > low; ties broken by lowest ID).
 - **Validation runs in the orchestrator, not just the subagent.** Re-run; never trust reported numbers.
-- **Commit per task.** One task = one commit (plus an optional pre-loop housekeeping commit).
+- **Commit per task.** One task = one commit (plus an optional pre-loop housekeeping commit). Push after each commit; use `-u <remote> <branch>` on the first push if needed.
 - **Epic-sized tasks → largest coherent slice, defer the rest.** When a task's own acceptance criteria say "incrementally" or "one X per PR" and span more work than fits in a single commit, the orchestrator picks the largest coherent slice that lands cleanly in one commit. Document what was deferred in the close-out comment so the user can promote follow-on tasks. Do *not* let an epic-sized task block the loop, and do *not* split into multiple commits within one task closure. **Inverse:** if all sub-deliverables are small independent config tweaks (each 5-15 lines, no shared touch points), they CAN fit in one commit together — that IS the largest coherent slice. Don't artificially fragment a task whose deliverables don't conflict.
-- **Push after each commit.** Use `-u <remote> <branch>` on the first push if needed.
 - **Close duplicates** with a back-reference.
 - **Don't create new tasks during the loop.** Note discoveries in comments on related tasks; the user promotes them later.
-- **Respect priority order** (urgent > high > medium > low; ties broken by lowest ID).
 - **Be honest about manual steps.** If smoke/UAT/deploy was skipped, say so in the comment.
-- **Stop when the budget is hit** (default 3 tasks) and check in with the user — don't silently keep going.
-- **Stop when the backlog is empty.** Announce completion and exit; no polling.
+- **Stop when the budget is hit** (default 3 tasks) and check in with the user — don't silently keep going. **Stop when the backlog is empty:** announce completion and exit; no polling.

@@ -1153,6 +1153,132 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/projects/{id}/topology": {
+      "get": {
+        "description": "Classify a project as FLAT (parallelizable, /tasks:loop), DAG (wave-by-wave parallel dispatch, /tasks:loop-dag), or DAG_CYCLIC (BLOCKED) based on its task_dependencies graph. Returns topology, edges, roots, leaves, and an execution advisory.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "advisory": {
+                      "enum": [
+                        "/tasks:loop",
+                        "/tasks:loop-dag",
+                        "BLOCKED",
+                      ],
+                      "type": "string",
+                    },
+                    "edges": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "from": {
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                          "to": {
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                        },
+                        "required": [
+                          "from",
+                          "to",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "leaves": {
+                      "items": {
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer",
+                      },
+                      "type": "array",
+                    },
+                    "roots": {
+                      "items": {
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer",
+                      },
+                      "type": "array",
+                    },
+                    "topology": {
+                      "enum": [
+                        "FLAT",
+                        "DAG",
+                        "DAG_CYCLIC",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "topology",
+                    "edges",
+                    "roots",
+                    "leaves",
+                    "advisory",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+    },
     "/api/v1/tasks/": {
       "get": {
         "description": "List tasks with optional filters (paginated). Returns \`{ data, total, limit, offset }\` — \`limit\` defaults to 50, max 500.",
@@ -3785,6 +3911,14 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           ],
                           "type": "string",
                         },
+                        "oidc": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
                         "sseManager": {
                           "enum": [
                             "ok",
@@ -3798,6 +3932,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "database",
                         "eventBus",
                         "sseManager",
+                        "oidc",
                       ],
                       "type": "object",
                     },
@@ -3824,6 +3959,32 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "projects",
                         "maxTaskId",
                         "latestActivity",
+                      ],
+                      "type": "object",
+                    },
+                    "oidc": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attempts": {
+                          "type": "number",
+                        },
+                        "error": {
+                          "type": "string",
+                        },
+                        "issuer": {
+                          "type": "string",
+                        },
+                        "state": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "state",
                       ],
                       "type": "object",
                     },
@@ -3881,6 +4042,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "database",
                     "checks",
+                    "oidc",
                   ],
                   "type": "object",
                 },
@@ -3912,6 +4074,14 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           ],
                           "type": "string",
                         },
+                        "oidc": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
                         "sseManager": {
                           "enum": [
                             "ok",
@@ -3925,6 +4095,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "database",
                         "eventBus",
                         "sseManager",
+                        "oidc",
                       ],
                       "type": "object",
                     },
@@ -3951,6 +4122,32 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "projects",
                         "maxTaskId",
                         "latestActivity",
+                      ],
+                      "type": "object",
+                    },
+                    "oidc": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attempts": {
+                          "type": "number",
+                        },
+                        "error": {
+                          "type": "string",
+                        },
+                        "issuer": {
+                          "type": "string",
+                        },
+                        "state": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "state",
                       ],
                       "type": "object",
                     },
@@ -4008,6 +4205,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "database",
                     "checks",
+                    "oidc",
                   ],
                   "type": "object",
                 },

@@ -11,13 +11,14 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyCookie from '@fastify/cookie';
 import fastifySecureSession from '@fastify/secure-session';
 import fastifyFormbody from '@fastify/formbody';
-import { createApp, App } from '../index.js';
+import { createApp, App, type OidcStatus } from '../index.js';
 import { config } from '../config/env.js';
 import { SESSION_LIFETIME_SECONDS } from '../web/session-constants.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
 import { DependencyGraphService } from '../services/dependency-graph.service.js';
+import { TopologyService } from '../services/topology.service.js';
 import { CommentService } from '../services/comment.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
@@ -65,10 +66,13 @@ declare module 'fastify' {
     projectService: ProjectService;
     dependencyService: DependencyService;
     dependencyGraphService: DependencyGraphService;
+    topologyService: TopologyService;
     commentService: CommentService;
     idempotencyService: IdempotencyService;
     db: Database.Database;
     sseManager: SSEManager;
+    /** Task #357: OIDC subsystem state for the /health/detailed signal. */
+    oidcStatus: OidcStatus;
   }
 }
 
@@ -126,8 +130,14 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('projectService', app.projectService);
   server.decorate('dependencyService', app.dependencyService);
   server.decorate('dependencyGraphService', app.dependencyGraphService);
+  server.decorate('topologyService', app.topologyService);
   server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
+  // Task #357: expose OIDC boot state to /health/detailed so a degraded
+  // discovery is a queryable signal, not just a one-time boot log line.
+  // Explicit generic: `decorate` otherwise infers the value type from the
+  // runtime object and narrows the OidcStatus union to a single variant.
+  server.decorate<OidcStatus>('oidcStatus', app.oidcStatus);
 
   // Phase 28 (Plan 28-04): identity repositories decorated for the auth
   // chain plugin's per-request PAT lookups (`findByHash`) and legacy
