@@ -174,7 +174,9 @@ directly against the SQLite database:
 
 ```bash
 # Adds a row to personal_access_tokens for the named user.
-node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
+# --user accepts a numeric id, email (case-insensitive), or legacy display_name.
+# --name is a required human-readable label for the token.
+node dist/cli/bin/tasks.js db mint-token --user you@example.com --name my-laptop
 ```
 
 The command prints the raw PAT to stdout once. Use it as the
@@ -576,7 +578,7 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 
 ### What the Installer Does
 
-1. **Copies skill files** to `~/.claude/commands/tasks/` (10 skill files)
+1. **Copies skill files** to `~/.claude/commands/tasks/` (every `.md` file in `skills/tasks/`; currently 16)
 2. **Updates MCP server configuration** in `~/.claude.json`:
    - Local: adds/updates the `wood-fired-tasks` entry pointing at `dist/mcp/index.js`
    - Remote: adds/updates the `wood-fired-tasks-remote` entry pointing at `dist/mcp/remote/index.js`
@@ -686,7 +688,7 @@ backward compatibility with older `~/.claude.json` installs.
 
 ### Migrations
 
-Seven migration files in `src/db/migrations/`:
+Twelve migration files in `src/db/migrations/`:
 
 1. `001-initial-schema.ts` — Creates `projects`, `tasks`, `task_tags`, `dependencies`, `comments` tables.
 2. `002-task-hierarchy-and-dependencies.ts` — Task hierarchy (`parent_task_id`) and dependency tracking.
@@ -695,6 +697,11 @@ Seven migration files in `src/db/migrations/`:
 5. `005-backlogged-status.ts` — Adds `backlogged` to the task status CHECK constraint (rebuilds `tasks` table; preserves FTS triggers).
 6. `006-slack-channel-subscriptions.ts` — New `slack_channel_subscriptions` table for the Slack notifier (channel × project × event_type).
 7. `007-completed-at.ts` — Adds `completed_at` timestamp populated on transition into `done` (backfilled from `updated_at` for existing done rows).
+8. `008-identity-tables.ts` — Creates the `users` and `api_tokens` tables (plus their indexes) backing OIDC/PAT identity (v1.6).
+9. `009-parallel-fk-columns.ts` — Adds the `*_user_id` FK columns (`tasks.created_by_user_id`, `tasks.assignee_user_id`, `task_comments.author_user_id`) alongside the legacy TEXT identity columns.
+10. `010-identity-uniqueness-indexes.ts` — Adds uniqueness indexes for the legacy `display_name` and the seeded `slack-bot` service account.
+11. `011-acceptance-criteria.ts` — Adds the `tasks.acceptance_criteria` column.
+12. `012-verification-evidence.ts` — Adds the `tasks.verification_evidence` column.
 
 ### Task statuses
 
@@ -730,7 +737,7 @@ All connections use the same schema and WAL mode.
 npm test
 ```
 
-Runs the full test suite with Vitest (1084 tests across 87 files).
+Runs the full test suite with Vitest (2640 tests across 204 files).
 
 ### Watch Mode
 
@@ -745,7 +752,7 @@ Runs tests in watch mode for active development.
 Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
-- API route integration tests (all 20 authenticated endpoints + health)
+- API route integration tests (all 22 REST routes: 1 public health + 21 authenticated)
 - MCP tool tests (all 22 tools)
 - CLI command tests
 - Event system tests (EventBus, SSEManager, events API)
