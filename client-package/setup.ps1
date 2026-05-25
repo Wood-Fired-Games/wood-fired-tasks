@@ -18,7 +18,7 @@
     - Configures the Wood Fired Tasks MCP server in Claude Code settings
     - Stores the API key in a per-user secret file (user-only ACL) so the
       generated tasks.cmd wrapper never embeds the key in cleartext
-    - Validates that Node.js 18+ is installed
+    - Validates that Node.js 22+ is installed
 
 .PARAMETER ServerUrl
     Base URL of the Wood Fired Tasks backend server.
@@ -143,17 +143,17 @@ try {
         throw "node command failed"
     }
 
-    # Parse major version (e.g., "v20.11.0" -> 20)
+    # Parse major version (e.g., "v22.11.0" -> 22)
     $majorVersion = [int]($nodeVersion -replace '^v(\d+)\..*', '$1')
-    if ($majorVersion -lt 18) {
-        Write-Host "ERROR: Node.js 18+ is required. Found: $nodeVersion" -ForegroundColor Red
+    if ($majorVersion -lt 22) {
+        Write-Host "ERROR: Node.js 22+ is required. Found: $nodeVersion" -ForegroundColor Red
         Write-Host "Download from https://nodejs.org/" -ForegroundColor Red
         exit 1
     }
 
     Write-Host "OK: Node.js $nodeVersion" -ForegroundColor Green
 } catch {
-    Write-Host "ERROR: Node.js 18+ is required but was not found." -ForegroundColor Red
+    Write-Host "ERROR: Node.js 22+ is required but was not found." -ForegroundColor Red
     Write-Host "Download from https://nodejs.org/" -ForegroundColor Red
     exit 1
 }
