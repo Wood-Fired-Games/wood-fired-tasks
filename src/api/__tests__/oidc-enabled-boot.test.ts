@@ -51,9 +51,12 @@ function setEnabledEnv(): void {
   process.env.OIDC_REDIRECT_URI = REDIRECT_URI;
   process.env.OIDC_SCOPES = SCOPES;
   process.env.SESSION_COOKIE_SECRET = SESSION_SECRET;
-  // NODE_ENV must be 'test' so initOidc rethrows on discovery failure
-  // instead of process.exit(78).
   process.env.NODE_ENV = 'test';
+  // Task #357: keep boot-time discovery retries fast in tests. Real defaults
+  // (5 attempts, 500ms base) would make the degraded-path test wait seconds.
+  process.env.OIDC_DISCOVERY_MAX_ATTEMPTS = '3';
+  process.env.OIDC_DISCOVERY_BASE_DELAY_MS = '1';
+  process.env.OIDC_DISCOVERY_MAX_DELAY_MS = '2';
   resetConfig();
 }
 
@@ -63,6 +66,9 @@ function clearEnabledEnv(): void {
   delete process.env.OIDC_CLIENT_SECRET;
   delete process.env.OIDC_REDIRECT_URI;
   delete process.env.SESSION_COOKIE_SECRET;
+  delete process.env.OIDC_DISCOVERY_MAX_ATTEMPTS;
+  delete process.env.OIDC_DISCOVERY_BASE_DELAY_MS;
+  delete process.env.OIDC_DISCOVERY_MAX_DELAY_MS;
   resetConfig();
 }
 
@@ -100,6 +106,8 @@ describe('OIDC enabled boot — happy path', () => {
   it('App.oidcConfig is populated after boot discovery', () => {
     expect(app.oidcConfig).not.toBeNull();
     expect(app.oidcConfig).toBeDefined();
+    // Task #357: status reflects a clean first-attempt success.
+    expect(app.oidcStatus.state).toBe('ready');
   });
 
   it('GET /auth/login → 302 to the IdP authorize endpoint with PKCE+state+scopes', async () => {
@@ -130,29 +138,113 @@ describe('OIDC enabled boot — happy path', () => {
   });
 });
 
-describe('OIDC enabled boot — discovery failure exits via thrown error', () => {
-  beforeEach(() => {
+describe('OIDC enabled boot — transient discovery failure recovers (Task #357)', () => {
+  let server: FastifyInstance;
+  let app: App;
+  let db: Database.Database;
+
+  beforeAll(async () => {
     setEnabledEnv();
     nock.disableNetConnect();
     nock.enableNetConnect('127.0.0.1');
+
+    // First discovery attempt 500s (transient blip), second succeeds. With
+    // retry/backoff the boot must recover rather than exit. nock consumes
+    // interceptors in declaration order, so attempt 1 → 500, attempt 2 → 200.
+    nock(ISSUER)
+      .get('/.well-known/openid-configuration')
+      .reply(500, 'transient IdP blip');
+    nock(ISSUER)
+      .get('/.well-known/openid-configuration')
+      .reply(200, getDiscoveryFixture());
+
+    const { createServer } = await import('../server.js');
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    app = result.app;
+    db = result.app.db;
   });
 
-  afterEach(() => {
+  afterAll(async () => {
+    await server.close();
+    db.close();
     nock.cleanAll();
     nock.enableNetConnect();
     clearEnabledEnv();
   });
 
-  it('createServer rejects with "OIDC discovery failed" when discovery 500s (proxy for exit 78)', async () => {
-    // Simulate IdP outage at boot — the well-known endpoint returns 500.
+  it('recovers to ready after a transient failure (oidcConfig populated, status ready)', () => {
+    expect(app.oidcConfig).not.toBeNull();
+    expect(app.oidcStatus.state).toBe('ready');
+  });
+
+  it('serves the real /auth/login (302), not the 501 stub', async () => {
+    const r = await server.inject({ method: 'GET', url: '/auth/login' });
+    expect(r.statusCode).toBe(302);
+  });
+});
+
+describe('OIDC enabled boot — persistent discovery failure boots DEGRADED (Task #357)', () => {
+  let server: FastifyInstance;
+  let app: App;
+  let db: Database.Database;
+
+  beforeAll(async () => {
+    setEnabledEnv();
+    nock.disableNetConnect();
+    nock.enableNetConnect('127.0.0.1');
+
+    // Every attempt 500s — a persistent IdP outage. The old behavior was
+    // process.exit(78) / a thrown Error; the new behavior is a degraded boot.
     nock(ISSUER)
+      .persist()
       .get('/.well-known/openid-configuration')
       .reply(500, 'IdP unavailable');
 
     const { createServer } = await import('../server.js');
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(
-      /OIDC discovery failed/,
-    );
+    // MUST resolve — no throw, no exit.
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    app = result.app;
+    db = result.app.db;
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+    nock.cleanAll();
+    nock.enableNetConnect();
+    clearEnabledEnv();
+  });
+
+  it('createServer resolves instead of exiting; oidcConfig is null and status is degraded', () => {
+    expect(app.oidcConfig).toBeNull();
+    expect(app.oidcStatus.state).toBe('degraded');
+    if (app.oidcStatus.state === 'degraded') {
+      expect(app.oidcStatus.issuer).toBe(ISSUER);
+      expect(app.oidcStatus.attempts).toBe(3); // OIDC_DISCOVERY_MAX_ATTEMPTS
+      expect(app.oidcStatus.error).toMatch(/OIDC discovery failed/);
+    }
+  });
+
+  it('/auth/login falls back to the 501 stub in degraded mode', async () => {
+    const r = await server.inject({ method: 'GET', url: '/auth/login' });
+    expect(r.statusCode).toBe(501);
+    expect(r.json()).toMatchObject({ error: 'oidc_disabled' });
+  });
+
+  it('/health/detailed surfaces oidc=degraded (the health signal)', async () => {
+    const r = await server.inject({
+      method: 'GET',
+      url: '/health/detailed',
+      headers: { 'x-api-key': 'test-key' },
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json();
+    expect(body.checks.oidc).toBe('degraded');
+    expect(body.oidc.state).toBe('degraded');
+    expect(body.oidc.issuer).toBe(ISSUER);
+    expect(body.oidc.attempts).toBe(3);
   });
 });
 

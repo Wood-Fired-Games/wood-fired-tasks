@@ -3785,6 +3785,14 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           ],
                           "type": "string",
                         },
+                        "oidc": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
                         "sseManager": {
                           "enum": [
                             "ok",
@@ -3798,6 +3806,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "database",
                         "eventBus",
                         "sseManager",
+                        "oidc",
                       ],
                       "type": "object",
                     },
@@ -3824,6 +3833,32 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "projects",
                         "maxTaskId",
                         "latestActivity",
+                      ],
+                      "type": "object",
+                    },
+                    "oidc": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attempts": {
+                          "type": "number",
+                        },
+                        "error": {
+                          "type": "string",
+                        },
+                        "issuer": {
+                          "type": "string",
+                        },
+                        "state": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "state",
                       ],
                       "type": "object",
                     },
@@ -3881,6 +3916,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "database",
                     "checks",
+                    "oidc",
                   ],
                   "type": "object",
                 },
@@ -3912,6 +3948,14 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           ],
                           "type": "string",
                         },
+                        "oidc": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
                         "sseManager": {
                           "enum": [
                             "ok",
@@ -3925,6 +3969,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "database",
                         "eventBus",
                         "sseManager",
+                        "oidc",
                       ],
                       "type": "object",
                     },
@@ -3951,6 +3996,32 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         "projects",
                         "maxTaskId",
                         "latestActivity",
+                      ],
+                      "type": "object",
+                    },
+                    "oidc": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attempts": {
+                          "type": "number",
+                        },
+                        "error": {
+                          "type": "string",
+                        },
+                        "issuer": {
+                          "type": "string",
+                        },
+                        "state": {
+                          "enum": [
+                            "disabled",
+                            "ready",
+                            "degraded",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "state",
                       ],
                       "type": "object",
                     },
@@ -4008,6 +4079,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "version",
                     "database",
                     "checks",
+                    "oidc",
                   ],
                   "type": "object",
                 },

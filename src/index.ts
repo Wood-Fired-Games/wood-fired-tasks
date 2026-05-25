@@ -16,10 +16,28 @@ import { TopologyService } from './services/topology.service.js';
 import { DependencyGraphService } from './services/dependency-graph.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
 import { eventBus } from './events/event-bus.js';
-import { initOidc, type OidcConfig } from './services/oidc-client.js';
+import { type OidcConfig } from './services/oidc-client.js';
+import { discoverOidcWithRetry } from './services/oidc-boot.js';
 import { startCleanup as startDeviceFlowCleanup } from './services/device-flow-store.js';
 import type Database from 'better-sqlite3';
 import { isMain } from './utils/is-main.js';
+
+/**
+ * Task #357: OIDC subsystem state captured at boot, surfaced on
+ * `/health/detailed` so a discovery failure is a loud, queryable signal
+ * rather than a silent 501 or a crash-looped process.
+ *
+ *   - `disabled`  — OIDC_ISSUER_URL unset. /auth/* serve the 501 stub by design.
+ *   - `ready`     — discovery succeeded; the real auth routes are live.
+ *   - `degraded`  — OIDC was configured but discovery failed after all retry
+ *                   attempts. The server booted anyway (PAT/legacy auth still
+ *                   works); OIDC login is unavailable until a restart re-runs
+ *                   discovery. `error`/`attempts` explain why and how hard we tried.
+ */
+export type OidcStatus =
+  | { state: 'disabled' }
+  | { state: 'ready'; issuer: string }
+  | { state: 'degraded'; issuer: string; error: string; attempts: number };
 
 /**
  * Application interface returned by createApp
@@ -62,11 +80,18 @@ export interface App {
    *   - non-null → `createServer` registers the real authRoutes plugin
    *     with this config (and the configured redirect URI + scopes).
    *
-   * Discovery failure at boot is mapped to `process.exit(78)` (or, in
-   * NODE_ENV=test, a thrown Error so the test process is not killed) —
-   * see the boot block in `createApp` below.
+   * Task #357: discovery failure at boot NO LONGER exits the process. After
+   * bounded-retry backoff, a persistent failure leaves this `null` and sets
+   * `oidcStatus` to `degraded` — the server boots in degraded mode instead of
+   * crash-looping. See the boot block in `createApp` below.
    */
   oidcConfig: OidcConfig | null;
+  /**
+   * Task #357: coarse OIDC subsystem state for `/health/detailed`. Decoupled
+   * from `oidcConfig` (which is null in BOTH disabled and degraded modes) so
+   * an operator can tell "OIDC is off by design" apart from "OIDC is broken".
+   */
+  oidcStatus: OidcStatus;
   /**
    * Tear down everything `createApp` started: stops the WorkflowEngine
    * (releasing its EventBus subscription) and closes the SQLite handle.
@@ -106,16 +131,16 @@ export async function createApp(dbPath?: string): Promise<App> {
   // returns []; the slack-bot row is seeded unconditionally regardless.
   seedIdentities(db, parseApiKeyEntries(process.env.API_KEYS));
 
-  // Phase 29 Plan 08 — OIDC discovery.
-  //   - Returns null when OIDC is intentionally disabled (no OIDC_ISSUER_URL).
-  //     Boot logs `oidc.disabled` and continues; createServer will register
-  //     the 501 stub at /auth/*.
-  //   - Returns a Configuration on success. Boot logs `oidc.ready { issuer }`;
-  //     createServer registers the full authRoutes plugin.
-  //   - THROWS on discovery failure (configured-but-broken). Boot logs
-  //     `oidc.discovery_failed { issuer, err }` and maps to process.exit(78)
-  //     (EX_CONFIG). In NODE_ENV=test we rethrow instead so tests can catch
-  //     the failure without killing the test process.
+  // Phase 29 Plan 08 / Task #357 — OIDC discovery (bounded-retry, non-fatal).
+  //   - Disabled (no OIDC_ISSUER_URL): logs `oidc.disabled`, status `disabled`;
+  //     createServer registers the 501 stub at /auth/*.
+  //   - Success (possibly after retries): logs `oidc.ready { issuer, attempts }`,
+  //     status `ready`; createServer registers the full authRoutes plugin.
+  //   - Persistent failure: logs `oidc.discovery_failed` with an actionable
+  //     message and boots in DEGRADED mode (status `degraded`, oidcConfig null
+  //     → 501 stub). We DO NOT `process.exit(78)` anymore: a transient network
+  //     blip or a not-yet-up network stack at systemd boot must not crash-loop
+  //     the tracker. Each failed attempt logs `oidc.discovery_retry`.
   //
   // We use console.error with a small JSON shape here because the Fastify
   // request-scoped logger is not yet constructed at this boot stage. The
@@ -131,36 +156,64 @@ export async function createApp(dbPath?: string): Promise<App> {
   // unrelated callers (matches the old `parseApiKeyEntries(process.env.API_KEYS)`
   // pattern earlier in this function).
   let oidcConfig: OidcConfig | null = null;
+  let oidcStatus: OidcStatus = { state: 'disabled' };
   const issuerEnv = process.env.OIDC_ISSUER_URL;
   if (issuerEnv && issuerEnv.length > 0) {
     // OIDC is requested — NOW load the validated config (this triggers the
     // env schema's all-or-nothing OIDC refine AND validates API_KEYS etc.).
     const { config } = await import('./config/env.js');
-    try {
-      oidcConfig = await initOidc(config);
-      // initOidc cannot return null on this branch (issuer is set), but the
-      // type narrows the same way either way.
+    const result = await discoverOidcWithRetry(config, {
+      maxAttempts: config.OIDC_DISCOVERY_MAX_ATTEMPTS,
+      baseDelayMs: config.OIDC_DISCOVERY_BASE_DELAY_MS,
+      maxDelayMs: config.OIDC_DISCOVERY_MAX_DELAY_MS,
+      onRetry: ({ attempt, delayMs, error }) => {
+        console.error(
+          JSON.stringify({
+            level: 'warn',
+            msg: 'oidc.discovery_retry',
+            issuer: config.OIDC_ISSUER_URL,
+            attempt,
+            nextDelayMs: delayMs,
+            err: error.message,
+          }),
+        );
+      },
+    });
+    const issuer = config.OIDC_ISSUER_URL as string;
+    if (result.ok) {
+      oidcConfig = result.config;
+      oidcStatus = { state: 'ready', issuer };
       console.error(
         JSON.stringify({
           level: 'info',
           msg: 'oidc.ready',
-          issuer: config.OIDC_ISSUER_URL,
+          issuer,
+          attempts: result.attempts,
         }),
       );
-    } catch (err) {
-      const errMessage = err instanceof Error ? err.message : String(err);
+    } else {
+      // Persistent failure — boot DEGRADED rather than exit. oidcConfig stays
+      // null so /auth/* falls back to the 501 stub; oidcStatus carries the
+      // reason so /health/detailed (and operators) see it loudly.
+      oidcStatus = {
+        state: 'degraded',
+        issuer,
+        error: result.error.message,
+        attempts: result.attempts,
+      };
       console.error(
         JSON.stringify({
           level: 'error',
           msg: 'oidc.discovery_failed',
-          issuer: config.OIDC_ISSUER_URL,
-          err: errMessage,
+          issuer,
+          attempts: result.attempts,
+          err: result.error.message,
+          action:
+            'Server booted in DEGRADED mode: OIDC login is unavailable but ' +
+            'PAT/legacy auth still works. Check IdP reachability + network, ' +
+            'then restart to re-run discovery. /health/detailed reports oidc=degraded.',
         }),
       );
-      // Close the DB so the failure path does not leak the handle.
-      if (db.open) db.close();
-      if (config.NODE_ENV === 'test') throw err;
-      process.exit(78);
     }
   } else {
     console.error(JSON.stringify({ level: 'info', msg: 'oidc.disabled' }));
@@ -249,6 +302,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     apiTokenRepository,
     workflowEngine,
     oidcConfig,
+    oidcStatus,
     dispose,
   };
 }
