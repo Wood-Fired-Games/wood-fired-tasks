@@ -28,10 +28,15 @@ fails, regenerate this doc. Deep references live in
 
 ## REST routes (Fastify)
 
-All authenticated routes mount under `/api/v1` and require `X-API-Key`
-(validated by `src/api/plugins/auth.ts`). `/health` is public; `/health/detailed`
-is gated by the same auth plugin. Source: the six files under
-`src/api/routes/`. Registration prefixes are in `src/api/server.ts`.
+Authenticated `/api/v1/**` routes require `X-API-Key` (validated by
+`src/api/plugins/auth.ts`). `/health` is public; `/health/detailed` is gated by
+the same auth plugin. The `/auth/*` and `/web/*` surfaces are the OAuth /
+device-flow / browser-login layer and carry their own session/CSRF handling
+rather than `X-API-Key`. Source: the files under `src/api/routes/` (auth,
+web, me, tasks, projects, comments, dependencies, events, health). Registration
+prefixes are in `src/api/server.ts`.
+
+The core task/project/comment/dependency CRUD surface:
 
 | Method | Path | Source | Purpose | Auth |
 |---|---|---|---|---|
@@ -51,6 +56,8 @@ is gated by the same auth plugin. Source: the six files under
 | GET | `/api/v1/projects/:id` | `routes/projects/index.ts` | Get project by id. | Yes |
 | PUT | `/api/v1/projects/:id` | `routes/projects/index.ts` | Update project by id. | Yes |
 | DELETE | `/api/v1/projects/:id` | `routes/projects/index.ts` | Delete project by id. | Yes |
+| GET | `/api/v1/projects/:id/topology` | `routes/projects/topology.ts` | Topology classification (FLAT/DAG/DAG_CYCLIC). | Yes |
+| GET | `/api/v1/projects/:id/dependency-graph` | `routes/projects/dependency-graph.ts` | Dependency-graph tree view (#342). | Yes |
 | POST | `/api/v1/tasks/:id/comments` | `routes/comments/index.ts` | Add a comment to a task. | Yes |
 | GET | `/api/v1/tasks/:id/comments` | `routes/comments/index.ts` | List comments for a task. | Yes |
 | DELETE | `/api/v1/tasks/:id/comments/:commentId` | `routes/comments/index.ts` | Delete a comment. | Yes |
@@ -58,10 +65,51 @@ is gated by the same auth plugin. Source: the six files under
 | GET | `/api/v1/tasks/:id/dependencies` | `routes/dependencies/index.ts` | Get all dependencies for a task. | Yes |
 | DELETE | `/api/v1/tasks/:id/dependencies/:blocksTaskId` | `routes/dependencies/index.ts` | Remove a dependency. | Yes |
 
-**Total: 22 routes.** Counted by the regex
-`/(fastify|server)\.(get|post|put|patch|delete)\(/g` across the six files
-above. README's "20 authenticated endpoints" claim is stale — see follow-up
-task #283.
+The identity / auth / web surface (`src/api/routes/me/`, `auth/`, `web/`):
+
+| Method | Path | Source | Purpose | Auth |
+|---|---|---|---|---|
+| GET | `/api/v1/me` | `routes/me/profile.ts` | Current authenticated identity. | Yes |
+| POST | `/api/v1/me/tokens` | `routes/me/tokens.ts` | Mint a PAT (registered via `fastify.route`). | Yes |
+| GET | `/api/v1/me/tokens` | `routes/me/tokens.ts` | List the caller's PATs. | Yes |
+| DELETE | `/api/v1/me/tokens/active` | `routes/me/tokens.ts` | Revoke the currently-presented PAT. | Yes |
+| DELETE | `/api/v1/me/tokens/:id` | `routes/me/tokens.ts` | Revoke a PAT by id. | Yes |
+| GET | `/auth/login` | `routes/auth/login.ts` | Begin OAuth login. | OIDC |
+| GET | `/auth/callback` | `routes/auth/callback.ts` | OAuth provider redirect target. | OIDC |
+| GET | `/auth/error` | `routes/auth/auth-error.ts` | OAuth error landing page. | OIDC |
+| POST | `/auth/logout` | `routes/auth/logout.ts` | End the browser session. | OIDC |
+| POST | `/auth/device/code` | `routes/auth/device-code.ts` | Device-flow: request a device + user code. | OIDC |
+| POST | `/auth/device/token` | `routes/auth/device-token.ts` | Device-flow: poll/exchange for a token. | OIDC |
+| GET | `/auth/device` | `routes/auth/device-html.ts` | Device-flow: code-entry HTML page. | OIDC |
+| POST | `/auth/device/verify` | `routes/auth/device-html.ts` | Device-flow: submit the user code. | OIDC |
+| GET | `/web/login` | `routes/web/login.ts` | Browser login page. | OIDC |
+| GET | `/web/me` | `routes/web/me.ts` | Browser account page. | Session |
+| GET | `/web/me/tokens` | `routes/web/tokens.ts` | Browser PAT management page. | Session |
+| POST | `/web/me/tokens/:id/revoke` | `routes/web/tokens.ts` | Browser PAT revoke action. | Session |
+
+When OIDC is disabled, the 7 verb-registered handlers in
+`routes/auth/disabled-stub.ts` (GET `/auth/login`, GET `/auth/callback`,
+POST `/auth/logout`) and `routes/auth/device-disabled-stub.ts` (POST
+`/auth/device/code`, POST `/auth/device/token`, GET `/auth/device`, POST
+`/auth/device/verify`) replace the live `/auth/*` handlers above — the two
+sets are mutually exclusive at runtime.
+
+**Core CRUD subtotal — Total: 22 routes** across the six
+`{health,events}` + `{tasks,projects,comments,dependencies}/index.ts` files
+(the drift-detection anchor counted by
+`scripts/agent-context/__tests__/interfaces-counts.test.ts`); the `topology`
+and `dependency-graph` rows above live in their own sibling files and are
+counted in the full-surface total below.
+
+**Full surface — Total: 47 route handlers; up to 40 reachable in any single
+running instance.** Counted by
+`/(fastify|server|app)\.(get|post|put|patch|delete)\(/g` across
+`src/api/routes/` (excluding `__tests__`). The 7 OIDC-disabled stub handlers
+are mutually exclusive with the 8 live `/auth/*` routes, so a given instance
+serves 47 − 7 = 40. This matches README's "47 route handlers (40 reachable
+per running instance)". (The POST `/api/v1/me/tokens` route is registered via
+`fastify.route` rather than a verb method, so it is *not* part of the 47 verb
+count; the table lists it for completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
 `/docs` when `npm run dev` runs (production opt-in via
@@ -154,8 +202,7 @@ call.
 | advisory | `topology` | `commands/topology.ts` | Wave 4.1 (#318): classify a project as FLAT/DAG/DAG_CYCLIC and emit an execution advisory. |
 
 **Total: 31 commands wired into Commander** (counted by
-`program.addCommand` calls in `src/cli/bin/tasks.ts`). README's "20
-commands" claim is stale — see follow-up task #283.
+`program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine
 output), `--no-input` (fail on missing args), `--force` (skip confirms).
