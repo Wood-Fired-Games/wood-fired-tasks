@@ -74,10 +74,11 @@ loss.**
 - The service reads `DATABASE_PATH` (or legacy `DB_PATH`) from its
   `EnvironmentFile` (`/opt/wood-fired-bugs/.env` by default). `systemctl cat
   wood-fired-bugs` shows the effective config.
-- Ask the running service what it opened: `GET /health` reports the resolved DB
-  path plus a fingerprint (project count, max task id, latest activity), and the
-  MCP `check_health` tool surfaces the same. Compare that fingerprint to what
-  you expect *before* concluding anything is lost.
+- Ask the running service what it opened: the authenticated `GET /health/detailed`
+  (send your `X-API-Key`) reports the resolved DB path plus a fingerprint (project
+  count, max task id, latest activity), and the MCP `check_health` tool surfaces the
+  same. Compare that fingerprint to what you expect *before* concluding anything is
+  lost. (The public `GET /health` stays intentionally minimal — task #185.)
 - A quick read-only peek (does **not** modify the file):
 
 ```bash

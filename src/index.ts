@@ -90,6 +90,14 @@ export async function createApp(dbPath?: string): Promise<App> {
   // Initialize database
   const db = initDatabase(dbPath || './data/tasks.db');
 
+  // Log the resolved DB path once at boot. This is the single most useful
+  // diagnostic for "which database did this process actually open?" — the
+  // question that turned the 2026-05-25 incident into a multi-hour
+  // investigation. Skipped for the in-memory test DB to keep test output clean.
+  if (db.name !== ':memory:') {
+    console.error(JSON.stringify({ level: 'info', msg: 'db.opened', path: db.name }));
+  }
+
   // Run migrations
   await runMigrations(db);
 

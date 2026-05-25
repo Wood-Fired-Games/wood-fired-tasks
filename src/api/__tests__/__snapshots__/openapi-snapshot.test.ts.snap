@@ -3801,6 +3801,32 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       ],
                       "type": "object",
                     },
+                    "database": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "latestActivity": {
+                          "nullable": true,
+                          "type": "string",
+                        },
+                        "maxTaskId": {
+                          "nullable": true,
+                          "type": "number",
+                        },
+                        "path": {
+                          "type": "string",
+                        },
+                        "projects": {
+                          "type": "number",
+                        },
+                      },
+                      "required": [
+                        "path",
+                        "projects",
+                        "maxTaskId",
+                        "latestActivity",
+                      ],
+                      "type": "object",
+                    },
                     "stats": {
                       "additionalProperties": false,
                       "properties": {
@@ -3853,6 +3879,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "status",
                     "timestamp",
                     "version",
+                    "database",
                     "checks",
                   ],
                   "type": "object",
@@ -3901,6 +3928,32 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       ],
                       "type": "object",
                     },
+                    "database": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "latestActivity": {
+                          "nullable": true,
+                          "type": "string",
+                        },
+                        "maxTaskId": {
+                          "nullable": true,
+                          "type": "number",
+                        },
+                        "path": {
+                          "type": "string",
+                        },
+                        "projects": {
+                          "type": "number",
+                        },
+                      },
+                      "required": [
+                        "path",
+                        "projects",
+                        "maxTaskId",
+                        "latestActivity",
+                      ],
+                      "type": "object",
+                    },
                     "stats": {
                       "additionalProperties": false,
                       "properties": {
@@ -3953,6 +4006,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "status",
                     "timestamp",
                     "version",
+                    "database",
                     "checks",
                   ],
                   "type": "object",
