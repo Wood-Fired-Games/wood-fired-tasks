@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-25T11:59:32.295Z",
+    "generated_at": "2026-05-25T12:48:25.528Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -22,7 +22,7 @@
       "status": "present",
       "approx_token_budget": 3000,
       "actual_lines": 94,
-      "sha256": "1e1e862daec03b5bb299cc8bbf1ba75b63543744c4107cd264395e2656df1165",
+      "sha256": "4e32dd975e2a30dbc4ec61e274b1f085c724a389be879ed3b58ae43f30ee1156",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -36,7 +36,7 @@
       "status": "present",
       "approx_token_budget": 8000,
       "actual_lines": 280,
-      "sha256": "038895a355743f5e72ef872a5e8c5c1909a286058ac0f0dedc97ceadc1317e7e",
+      "sha256": "142b9e95c32025d3220b406254b1df46b80b2b475a518f5fce43daf27a4638b8",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -64,7 +64,7 @@
       "status": "present",
       "approx_token_budget": 7000,
       "actual_lines": 300,
-      "sha256": "a058e41bbbed1e31992b887590f3b51febdcbe896f2af9131a925a320183cbb6",
+      "sha256": "0d8aaf3531407de656002cb560d94fde553ace23094b57f6739029697e6652bf",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -78,7 +78,7 @@
       "status": "present",
       "approx_token_budget": 5000,
       "actual_lines": 192,
-      "sha256": "fef67bda5f34d383827b177413813fe79e22db04ee57883d19291fa30d5754bc",
+      "sha256": "cffd8ba2b87c4b923daffcc8dc05f2fcf5a220afb663f7ff6052fbb06471744b",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -107,7 +107,7 @@
       "status": "present",
       "approx_token_budget": 6000,
       "actual_lines": 140,
-      "sha256": "4fee8c26ba12fc9cccd70fc950e287a7ecb64b4175ea046a489487a5932ecfea",
+      "sha256": "43e1adfc9716dccecbe98493b7feabce2294668ce3d1814180d12977e983e568",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -122,7 +122,7 @@
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 1058,
-      "sha256": "f9365721e38510abae4ea5389f99dc739620bfe1fc28d26fc80fa838a883e614"
+      "sha256": "1564002b765650d12d300f62121d156c00e046e24e2714e257816c223d542338"
     },
     {
       "path": "docs/MCP.md",
@@ -136,7 +136,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 927,
-      "sha256": "2d9ef6a7155125bc1654703cf628ef3b183508597466f6a2c1ee73f221270379"
+      "sha256": "2fd848a1301dde41b183d4386db8d3db9978f6bed596d43f180172eacbd478ad"
     },
     {
       "path": "docs/CLI.md",
@@ -150,7 +150,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 1235,
-      "sha256": "c2d84fca5d5e4eb82069a2788f106bdc48fd3ef51d95175f8a26a69ba5fd7ef0"
+      "sha256": "88f4775e3cfb8698478ae990cc4bd03d8a98b50fd4e5190ed3520467192b52a6"
     },
     {
       "path": "docs/SETUP.md",
@@ -164,7 +164,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 896,
-      "sha256": "5cb905bc75812127ba121bb0448fd7cedc0ae814095a4b1db646b9cb1536fca6"
+      "sha256": "e701dee219c9713c6b69671864a2b6ef5dfb3e5a3ecfb9ae938aa35c7fd0b48b"
     },
     {
       "path": "docs/SLACK.md",
@@ -177,7 +177,7 @@
       "status": "present",
       "approx_token_budget": 16000,
       "actual_lines": 286,
-      "sha256": "29e5a70286bfc03e4818cc7a5d6f092cacf412c6f319a1c8d1f9afedd4fc5bfe"
+      "sha256": "48dc5651972498447f5fa49c1453fa0c9baf77d1d98854e07121ccd8fd7e3e57"
     },
     {
       "path": "docs/RELEASE.md",
@@ -190,7 +190,7 @@
       "status": "present",
       "approx_token_budget": 12000,
       "actual_lines": 210,
-      "sha256": "1d9b98cbe50ced31023eec668ff5d2e959c7dd8b4480907b5662db6c95793e0c"
+      "sha256": "57cd0a1ccc5793791cda9c3c25188e61fe9187f03177a2c2dce383fdc5cf35e8"
     },
     {
       "path": "docs/TROUBLESHOOTING.md",
@@ -203,7 +203,7 @@
       "status": "present",
       "approx_token_budget": 5000,
       "actual_lines": 105,
-      "sha256": "65e03ddaaa6c8ba1e68e48fca8f4e8e52888bf7aa83f13b24159a1f42dad46c8",
+      "sha256": "b1c31dcc1aa3e7bfb64bb22bb1b2beecfe36a144b7b4299178c2fb6f22d2cd4c",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -218,7 +218,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 666,
-      "sha256": "d0ffbcb15513a55a5f37b9d9edaf06d183bd2b6e7e63e5b49dd4ad0bf2c7b1b1"
+      "sha256": "5d03247f96473af3387462ffc35ea55970a9812732ec5fe18fbdf5afadc81e85"
     },
     {
       "path": "docs/verifier-contract.md",
@@ -231,7 +231,7 @@
       "status": "present",
       "approx_token_budget": 8000,
       "actual_lines": 332,
-      "sha256": "ccda71282413c4fcc52416ab800eaafb166e24f58336f9fe3d9a0a4811ee95f3",
+      "sha256": "1b5bdbf9823fa5d33e248ac8c116526c10ec54a5ccde2bcc17e670d20ebeda8c",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -246,7 +246,7 @@
       "notes": "Design spec — single landing doc for the deferred /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when implementation peels content out into adjacent files.",
       "approx_token_budget": 10000,
       "actual_lines": 431,
-      "sha256": "583c6be217c44bf697f3509e8784cd353b817e0c44bf323507efe3ceea278592",
+      "sha256": "5597ebe87fab913b68e3ecc86a0670b21c56ca886a55d522605854f313f5fa29",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -274,7 +274,7 @@
       "status": "present",
       "approx_token_budget": 1800,
       "actual_lines": 49,
-      "sha256": "31e9f202e5d15bf2511acd640a16a7985ca59c489a8701efae118413ce4aa88d",
+      "sha256": "14784098ac2c94809e3576d237e11b370e86027d6814bca356e407f6d210a041",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -288,7 +288,7 @@
       "status": "present",
       "approx_token_budget": 12000,
       "actual_lines": 412,
-      "sha256": "23aaa25653646f0b980abeffc8733cdd843a64092310058d1612bbf838a2f3f9"
+      "sha256": "0bc6e64f329be3ab073886e2204b75b57b98625fc7c8f788dbc7ebba89a5e54e"
     },
     {
       "path": "README.md",
@@ -302,7 +302,7 @@
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
       "actual_lines": 619,
-      "sha256": "7d34810495e19eed1b10011f4d03d3130f88ea6104321ab9ba1a6f981efac9ba"
+      "sha256": "d343a30df4e529e777e77a1e0c5776eb9e1921e734c0c82d358108fe88d12177"
     },
     {
       "path": "SECURITY.md",
@@ -316,7 +316,7 @@
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
       "actual_lines": 266,
-      "sha256": "91658d90533f72ecbb59ce42c833e3310a576efccab05eb6e4b679672fe9f69e"
+      "sha256": "fa1a9d00661129480a4f182d4049c46a41afbd841f9eb167b5e8635758643966"
     },
     {
       "path": "llms.txt",
@@ -330,7 +330,7 @@
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
       "actual_lines": 33,
-      "sha256": "77b68dffe319faae95659f049dba0d99b42d3209e3a95954efc211a21876390d"
+      "sha256": "babd566869b96aeae4906855a976faea7057d8f05ff170730d5be420cd16c337"
     },
     {
       "path": "CLAUDE.md",
