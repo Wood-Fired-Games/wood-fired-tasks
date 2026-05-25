@@ -47,9 +47,9 @@ We will:
 - The Fastify REST API (TypeScript, Node ≥22) under `src/api/` — routes,
   plugins (auth, rate-limit, SSE), and request/response validation.
 - The MCP server under `src/mcp/` — both transports: the **stdio** server
-  (`npm run mcp` / installed Claude Code stdio target) and the **remote
-  HTTP** server (`npm run mcp:remote`), including its tool implementations
-  and prompt/resource handlers.
+  (`npm run mcp:start` / `npm run mcp:dev` / installed Claude Code stdio
+  target) and the **remote HTTP** server (`npm run mcp:remote`), including
+  its tool implementations and prompt/resource handlers.
 - The `tasks` CLI under `src/cli/` — command parsers, HTTP client, and the
   small set of offline subcommands that touch SQLite directly
   (`backup`, `doctor`, `stats`, `db-check`, `completed`).
