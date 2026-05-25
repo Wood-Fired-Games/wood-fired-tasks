@@ -10,10 +10,10 @@ Wood Fired Tasks is a centralized task management service providing a REST API, 
 
 **Key capabilities:**
 
-- REST API with 22 authenticated endpoints for full task lifecycle management
-- CLI (`tasks`) with 26 commands for terminal-based operations
+- REST API with 22 endpoints (1 public `/health` + 21 authenticated) for full task lifecycle management
+- CLI (`tasks`) with 31 commands for terminal-based operations
 - MCP server with 22 tools for native Claude Code integration (local SQLite or remote HTTP modes)
-- 11 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
+- 16 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
 - Workflow automation: parent auto-complete and dependency auto-unblock
