@@ -32,7 +32,7 @@ Pick your intent, read the files in order. Files marked `(reserved)` are slots d
 | Release / docs update | `docs/RELEASE.md` → `CHANGELOG.md` → `package.json` |
 | Deploying your fork to production | `docs/SETUP.md` (Self-hosting and upgrades) → `deploy/install.sh` → `deploy/upgrade.sh` → `docs/RELEASE.md` (Migration expectations) |
 
-For per-surface change recipes (17 task shapes with files / tests / docs), see [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
+For per-surface change recipes (18 task shapes with files / tests / docs), see [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
 
 ## Essential commands
 
