@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-25T19:58:25.618Z",
+    "generated_at": "2026-05-25T20:28:59.221Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -301,8 +301,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
-      "actual_lines": 630,
-      "sha256": "d7f4e1faadfff7b9429ef0035f4b7bd4bdd1aa4813d0ccafdeacf21476711f14"
+      "actual_lines": 676,
+      "sha256": "b3a1d464858ff31ac75a972546f6d217693a1b30afdc2202be9ca086bb9e30e7"
     },
     {
       "path": "SECURITY.md",
