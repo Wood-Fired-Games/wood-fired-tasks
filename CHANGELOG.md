@@ -24,7 +24,7 @@ OSS-launch readiness and CI sharding work landed since v1.11.
 - OSS package metadata + npm `files` allowlist (task 255).
 - Installer split into local vs. remote MCP paths; unused API key flag dropped (task 258).
 - Stryker mutation tests sharded across 4 parallel CI jobs; threshold raised to 75; workflow timeout extended (tasks 250, 252).
-- Shipped systemd unit (`deploy/wood-fired-bugs.service`) now orders after `network-online.target` so OIDC discovery doesn't crash-loop the service on a cold boot; `StartLimitBurst` raised to 5 (task 353).
+- Shipped systemd unit (`deploy/wood-fired-tasks.service`) now orders after `network-online.target` so OIDC discovery doesn't crash-loop the service on a cold boot; `StartLimitBurst` raised to 5 (task 353).
 - `docs/MCP.md` now recommends the remote (REST) variant as the single-writer default, warns that the local direct-SQLite variant silently serves stale data, and documents a launcher-wrapper that keeps the API key out of client config (task 356).
 
 ### Fixed
@@ -75,7 +75,7 @@ Documentation sweep for OSS launch — README, CONTRIBUTING, CHANGELOG, API/CLI/
 - CLI docs document 6 previously-missing commands; fixed `claim` JSON shape (task 223).
 - API docs corrected: endpoint surface, `/health` & swagger, env, filters (task 227).
 - Test fixtures de-personalized with generic names (task 237).
-- Deploy scripts de-personalized via `WFB_SERVICE_USER` (task 236).
+- Deploy scripts de-personalized via `WFT_SERVICE_USER` (task 236).
 
 ## [v1.8] - 2026-05-20
 
@@ -254,16 +254,16 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.11...HEAD
-[v1.11]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.10...v1.11
-[v1.10]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.9...v1.10
-[v1.9]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.8...v1.9
-[v1.8]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.7...v1.8
-[v1.7]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.6...v1.7
-[v1.6]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.5...v1.6
-[v1.5]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.4...v1.5
-[v1.4]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.3...v1.4
-[v1.3]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.2...v1.3
-[v1.2]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.1...v1.2
-[v1.1]: https://github.com/Wood-Fired-Games/wood-fired-bugs/compare/v1.0...v1.1
-[v1.0]: https://github.com/Wood-Fired-Games/wood-fired-bugs/releases/tag/v1.0
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.11...HEAD
+[v1.11]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.10...v1.11
+[v1.10]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.9...v1.10
+[v1.9]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.8...v1.9
+[v1.8]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.7...v1.8
+[v1.7]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.6...v1.7
+[v1.6]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.5...v1.6
+[v1.5]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.4...v1.5
+[v1.4]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.3...v1.4
+[v1.3]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.2...v1.3
+[v1.2]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.1...v1.2
+[v1.1]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.0...v1.1
+[v1.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/releases/tag/v1.0

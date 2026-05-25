@@ -43,17 +43,17 @@ async function main() {
   // resolver's contract aligned with the REST path so future callers
   // (tests, multi-instance harnesses) inherit the same discipline.
   //
-  // WR-02: WFB_MCP_ALLOW_BAD_PAT=1 is the documented opt-in escape hatch
-  // for operators who want to keep MCP booting even when WFB_API_KEY is
+  // WR-02: WFT_MCP_ALLOW_BAD_PAT=1 is the documented opt-in escape hatch
+  // for operators who want to keep MCP booting even when WFT_API_KEY is
   // a PAT that is unknown/revoked/expired or belongs to a disabled user.
   // The default (unset / '0' / anything else) fails closed at the
   // resolver level so a revoked PAT cannot silently demote to mcp-bot
   // and mask a kill-signal.
   const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
   const hashedEntries = precomputeHashedEntries(apiKeyEntries);
-  const allowBadPat = process.env.WFB_MCP_ALLOW_BAD_PAT === '1';
+  const allowBadPat = process.env.WFT_MCP_ALLOW_BAD_PAT === '1';
   const { actorUserId, path: resolutionPath } = resolveActorUserIdWithPath({
-    apiKey: process.env.WFB_API_KEY,
+    apiKey: process.env.WFT_API_KEY,
     apiTokenRepo: app.apiTokenRepository,
     userRepo: app.userRepository,
     hashedEntries,
@@ -61,7 +61,7 @@ async function main() {
   });
 
   // One-line INFO log so operators can see which credential class
-  // authenticated this MCP process. WFB_API_KEY value is NEVER logged —
+  // authenticated this MCP process. WFT_API_KEY value is NEVER logged —
   // only the resolution path tag (T-31-08 mitigation). console.error so
   // we don't corrupt the JSON-RPC stdout stream (Pitfall 5).
   console.error(
@@ -92,7 +92,7 @@ async function main() {
   await server.connect(transport);
 
   // Log to stderr (stdout reserved for JSON-RPC)
-  console.error('Wood Fired Bugs MCP Server running on stdio');
+  console.error('Wood Fired Tasks MCP Server running on stdio');
 }
 
 /**

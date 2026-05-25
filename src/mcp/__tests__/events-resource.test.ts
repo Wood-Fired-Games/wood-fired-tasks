@@ -92,7 +92,7 @@ describe('MCP Events Resource', () => {
       // Authentication section must use a placeholder, never the configured key.
       expect(text).toContain('X-API-Key: <your-api-key>');
       // Guide the reader to the env var they actually configured.
-      expect(text).toContain('WFB_API_KEY');
+      expect(text).toContain('WFT_API_KEY');
     });
 
     it('does NOT leak the configured API key into resource content (task #196)', async () => {

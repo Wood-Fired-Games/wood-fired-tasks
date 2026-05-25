@@ -77,7 +77,7 @@ async function buildHarness(): Promise<Harness> {
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
     sessionName: 'session',
-    cookieName: 'wfb_session',
+    cookieName: 'wft_session',
     key: randomBytes(32),
     expiry: SESSION_LIFETIME_SECONDS,
     cookie: {
@@ -273,7 +273,7 @@ describe('device-flow end-to-end (server side)', () => {
         isServiceAccount: boolean;
       };
     };
-    expect(successBody.token).toMatch(/^wfb_pat_[A-Z2-7]{32}$/);
+    expect(successBody.token).toMatch(/^wft_pat_[A-Z2-7]{32}$/);
     expect(successBody.token_type).toBe('PAT');
     expect(successBody.token_id).toBe(dbRow?.id);
     expect(successBody.user.id).toBe(h.legacyUserId);

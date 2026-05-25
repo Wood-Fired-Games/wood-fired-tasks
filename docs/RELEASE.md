@@ -1,7 +1,7 @@
 # Release Process
 
 This document covers the pre-publication checks that gate every npm release
-of `wood-fired-bugs`, plus the open-source launch checklist. Run through this
+of `wood-fired-tasks`, plus the open-source launch checklist. Run through this
 the first time you publish to npm, and again whenever a major version cuts.
 
 See [`docs/CODE_QUALITY_ROADMAP.md`](./CODE_QUALITY_ROADMAP.md) for the full
@@ -31,7 +31,7 @@ These run automatically on every PR and on `main`:
 ## Required status checks (branch protection)
 
 The `main` branch is protected (configured via the GitHub branch-protection
-API; see wood-fired-bugs task #340). The merge button is disabled until
+API; see wood-fired-tasks task #340). The merge button is disabled until
 every check below reports success. Admin override is allowed by policy
 (`enforce_admins: false`), but normal contributors cannot merge over a
 failing required check.
@@ -90,7 +90,7 @@ today (Biome formatter is disabled in `biome.json`); see
 `npm run pack:check` is the most important manual step — it surfaces any
 file accidentally added to the publish set. The tarball should contain:
 
-- `dist/` (excluding `dist/wood-fired-bugs-client.zip`)
+- `dist/` (excluding `dist/wood-fired-tasks-client.zip`)
 - `LICENSE`
 - `README.md`
 - `CHANGELOG.md`
@@ -172,8 +172,8 @@ swap, repo transfer, ownership change).
 Once the repo is public, surface these on `README.md`:
 
 ```markdown
-![CI](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml/badge.svg)
-![Secret Scan](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/secret-scan.yml/badge.svg)
+![CI](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/ci.yml/badge.svg)
+![Secret Scan](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/secret-scan.yml/badge.svg)
 ```
 
 ## Manual gitleaks scan (one-shot)

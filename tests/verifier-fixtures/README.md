@@ -40,7 +40,7 @@ dispatch the verifier subagent against real task closures.
 ## Manually dispatching the verifier on a fixture
 
 ```text
-1. Open Claude Code in the wood-fired-bugs repo.
+1. Open Claude Code in the wood-fired-tasks repo.
 2. Use the Task tool with subagent_type="tasks-verifier".
 3. Pass the contents of <fixture>/input.json as the prompt body.
 4. Compare the verifier's final JSON message against <fixture>/expected.json.

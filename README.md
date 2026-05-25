@@ -1,12 +1,12 @@
-# Wood Fired Bugs
+# Wood Fired Tasks
 
-[![CI](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/ci.yml)
-[![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-bugs/actions/workflows/install-scripts.yml)
+[![CI](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/ci.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/ci.yml)
+[![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Open-source task tracking system from Wood Fired Games.
 
-Wood Fired Bugs is a centralized task management service providing a REST API, CLI tool, and MCP server for managing work items across all projects. LLM agents interact via REST or MCP; humans interact via CLI. All three interfaces share a common service layer and SQLite database with full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation.
+Wood Fired Tasks is a centralized task management service providing a REST API, CLI tool, and MCP server for managing work items across all projects. LLM agents interact via REST or MCP; humans interact via CLI. All three interfaces share a common service layer and SQLite database with full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation.
 
 **Key capabilities:**
 
@@ -34,8 +34,8 @@ Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are adapt
 
 ```bash
 # Clone and install
-git clone https://github.com/Wood-Fired-Games/wood-fired-bugs.git
-cd wood-fired-bugs
+git clone https://github.com/Wood-Fired-Games/wood-fired-tasks.git
+cd wood-fired-tasks
 npm install
 npm run build
 
@@ -62,7 +62,7 @@ For self-hosted production deploys (including the fork-and-deploy workflow for O
 
 ## Security Model
 
-**Read this before deploying.** Wood Fired Bugs is designed for trusted multi-agent coordination on a private network. The auth model is intentionally simple and reflects that scope. OSS operators who assume "API key = user login" will mis-deploy this service.
+**Read this before deploying.** Wood Fired Tasks is designed for trusted multi-agent coordination on a private network. The auth model is intentionally simple and reflects that scope. OSS operators who assume "API key = user login" will mis-deploy this service.
 
 ### Every valid API key has full admin power
 
@@ -426,7 +426,7 @@ For detailed MCP documentation including tool schemas and Claude Code skill file
 
 ## Real-Time Events
 
-Wood Fired Bugs streams real-time task and project change notifications via Server-Sent Events (SSE).
+Wood Fired Tasks streams real-time task and project change notifications via Server-Sent Events (SSE).
 
 ### Event Types
 
@@ -585,7 +585,7 @@ quality checklist work.
 
 ### Slack
 
-Wood Fired Bugs ships an **optional** Slack integration:
+Wood Fired Tasks ships an **optional** Slack integration:
 
 - `/tasks` slash command (read, create, update, claim, subscribe channels to notifications, …)
 - A notifier that posts Block Kit messages to subscribed channels when

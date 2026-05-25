@@ -1,38 +1,38 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Wood Fired Bugs client setup script for Windows.
+    Wood Fired Tasks client setup script for Windows.
 
 .DESCRIPTION
-    Configures Claude Code on this machine to connect to the Wood Fired Bugs
+    Configures Claude Code on this machine to connect to the Wood Fired Tasks
     task management system running on the local network.
 
     API key resolution order (most secure first):
       1. -ApiKey parameter (DEPRECATED -- leaks via shell history and Get-Process)
-      2. WFB_API_KEY environment variable
-      3. Per-user secret file ($env:LOCALAPPDATA\wood-fired-bugs\api-key)
+      2. WFT_API_KEY environment variable
+      3. Per-user secret file ($env:LOCALAPPDATA\wood-fired-tasks\api-key)
       4. Masked interactive prompt
 
     This script:
     - Copies the /tasks: skill files to your Claude Code commands directory
-    - Configures the Wood Fired Bugs MCP server in Claude Code settings
+    - Configures the Wood Fired Tasks MCP server in Claude Code settings
     - Stores the API key in a per-user secret file (user-only ACL) so the
       generated tasks.cmd wrapper never embeds the key in cleartext
     - Validates that Node.js 18+ is installed
 
 .PARAMETER ServerUrl
-    Base URL of the Wood Fired Bugs backend server.
+    Base URL of the Wood Fired Tasks backend server.
     Default: http://localhost:3000
-    Override with -ServerUrl or the WFB_API_URL env var when the backend
+    Override with -ServerUrl or the WFT_API_URL env var when the backend
     runs on a different host.
 
 .PARAMETER ApiKey
-    API key for authenticating with the Wood Fired Bugs backend.
-    DEPRECATED -- prefer WFB_API_KEY env var, the secret file, or the prompt.
+    API key for authenticating with the Wood Fired Tasks backend.
+    DEPRECATED -- prefer WFT_API_KEY env var, the secret file, or the prompt.
 
 .EXAMPLE
     # Recommended: set the env var first, then run with no key on argv.
-    $env:WFB_API_KEY = "your-api-key-here"
+    $env:WFT_API_KEY = "your-api-key-here"
     .\setup.ps1
 
 .EXAMPLE
@@ -40,7 +40,7 @@
 #>
 
 param(
-    [string]$ServerUrl = $(if ($env:WFB_API_URL) { $env:WFB_API_URL } else { "http://localhost:3000" }),
+    [string]$ServerUrl = $(if ($env:WFT_API_URL) { $env:WFT_API_URL } else { "http://localhost:3000" }),
     [string]$ApiKey
 )
 
@@ -49,7 +49,7 @@ $ApiKeyFromArgv = $PSBoundParameters.ContainsKey('ApiKey') -and -not [string]::I
 
 # Per-user secret file. Stored under LOCALAPPDATA (machine-local, not roamed)
 # with a user-only ACL applied via icacls.
-$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-bugs" } else { Join-Path $env:USERPROFILE ".wood-fired-bugs" }
+$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-tasks" } else { Join-Path $env:USERPROFILE ".wood-fired-tasks" }
 $SecretFile = Join-Path $SecretDir "api-key"
 
 function Set-UserOnlyAcl {
@@ -63,7 +63,7 @@ function Set-UserOnlyAcl {
 }
 
 Write-Host ""
-Write-Host "Wood Fired Bugs - Client Setup" -ForegroundColor Cyan
+Write-Host "Wood Fired Tasks - Client Setup" -ForegroundColor Cyan
 Write-Host "================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -79,14 +79,14 @@ Write-Host ""
 if ($ApiKeyFromArgv) {
     Write-Host "[WARN] -ApiKey on the command line is DEPRECATED." -ForegroundColor Yellow
     Write-Host "[WARN] Command-line secrets leak via shell history and Get-Process." -ForegroundColor Yellow
-    Write-Host "[WARN] Prefer the WFB_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
+    Write-Host "[WARN] Prefer the WFT_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
     Write-Host "[WARN] or the interactive prompt. This flag will be removed in a future release." -ForegroundColor Yellow
 }
 
 if (-not $ApiKey) {
-    if ($env:WFB_API_KEY) {
-        $ApiKey = $env:WFB_API_KEY
-        Write-Host "[INFO] Using API key from WFB_API_KEY environment variable" -ForegroundColor Yellow
+    if ($env:WFT_API_KEY) {
+        $ApiKey = $env:WFT_API_KEY
+        Write-Host "[INFO] Using API key from WFT_API_KEY environment variable" -ForegroundColor Yellow
     } elseif (Test-Path $SecretFile) {
         $acl = Get-Acl $SecretFile
         $foreignAce = $acl.Access | Where-Object {
@@ -105,7 +105,7 @@ if (-not $ApiKey) {
         }
     }
     if (-not $ApiKey) {
-        $secureKey = Read-Host "Enter Wood Fired Bugs API key" -AsSecureString
+        $secureKey = Read-Host "Enter Wood Fired Tasks API key" -AsSecureString
         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
         try {
             $ApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
@@ -117,7 +117,7 @@ if (-not $ApiKey) {
 
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
     Write-Host "ERROR: API key is required." -ForegroundColor Red
-    Write-Host "Set WFB_API_KEY, populate $SecretFile, or supply it at the prompt." -ForegroundColor Red
+    Write-Host "Set WFT_API_KEY, populate $SecretFile, or supply it at the prompt." -ForegroundColor Red
     exit 1
 }
 
@@ -199,12 +199,12 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 
 # Remove any prior user-scope entry so re-running setup is idempotent.
 # 'claude mcp remove' exits non-zero when the entry is absent — that's fine.
-& claude mcp remove wood-fired-bugs --scope user 2>&1 | Out-Null
+& claude mcp remove wood-fired-tasks --scope user 2>&1 | Out-Null
 
-& claude mcp add wood-fired-bugs `
+& claude mcp add wood-fired-tasks `
     --scope user `
-    -e "WFB_API_URL=$ServerUrl" `
-    -e "WFB_API_KEY=$ApiKey" `
+    -e "WFT_API_URL=$ServerUrl" `
+    -e "WFT_API_KEY=$ApiKey" `
     -- node $McpEntryPoint
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: 'claude mcp add' failed (exit code $LASTEXITCODE)." -ForegroundColor Red
@@ -213,7 +213,7 @@ if ($LASTEXITCODE -ne 0) {
 # claude mcp add writes the API key into ~/.claude.json. Tighten its ACL.
 $ClaudeConfig = Join-Path $env:USERPROFILE ".claude.json"
 Set-UserOnlyAcl -Path $ClaudeConfig
-Write-Host "OK: Registered wood-fired-bugs at user scope (~/.claude.json, user-only ACL)" -ForegroundColor Green
+Write-Host "OK: Registered wood-fired-tasks at user scope (~/.claude.json, user-only ACL)" -ForegroundColor Green
 
 # ── 5. Install tasks CLI to PATH ────────────────────────────────────────────
 Write-Host ""
@@ -237,17 +237,17 @@ $wrapper = @"
 @echo off
 setlocal
 set "API_BASE_URL=$ServerUrl"
-if not defined WFB_API_KEY (
+if not defined WFT_API_KEY (
     if exist "$SecretFile" (
-        for /f "usebackq delims=" %%K in ("$SecretFile") do set "WFB_API_KEY=%%K"
+        for /f "usebackq delims=" %%K in ("$SecretFile") do set "WFT_API_KEY=%%K"
     )
 )
-if not defined WFB_API_KEY (
-    echo ERROR: Wood Fired Bugs API key not found.
-    echo Set WFB_API_KEY, populate $SecretFile, or re-run setup.ps1.
+if not defined WFT_API_KEY (
+    echo ERROR: Wood Fired Tasks API key not found.
+    echo Set WFT_API_KEY, populate $SecretFile, or re-run setup.ps1.
     exit /b 1
 )
-set "API_KEY=%WFB_API_KEY%"
+set "API_KEY=%WFT_API_KEY%"
 node "$CliEntryPoint" %*
 "@
 $wrapper | Set-Content -Path $TasksCmd -Encoding ASCII

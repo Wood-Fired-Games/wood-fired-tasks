@@ -35,7 +35,7 @@ import type { Config } from '../../config/env.js';
 const ISSUER = 'https://accounts.example.com';
 const CLIENT_ID = 'test-client-id.example.com';
 const CLIENT_SECRET = 'test-client-secret';
-const REDIRECT_URI = 'https://wfb.example.com/auth/callback';
+const REDIRECT_URI = 'https://wft.example.com/auth/callback';
 
 /**
  * Minimal Config shape sufficient for the wrapper. Cast through unknown
@@ -247,14 +247,14 @@ describe('buildEndSessionUrl', () => {
 
     const url = buildEndSessionUrl(config!, {
       idTokenHint: 'opaque-id-token',
-      postLogoutRedirectUri: 'https://wfb.example.com/auth/login',
+      postLogoutRedirectUri: 'https://wft.example.com/auth/login',
     });
 
     expect(url).not.toBeNull();
     expect(url).toBeInstanceOf(URL);
     expect(url!.searchParams.get('id_token_hint')).toBe('opaque-id-token');
     expect(url!.searchParams.get('post_logout_redirect_uri')).toBe(
-      'https://wfb.example.com/auth/login',
+      'https://wft.example.com/auth/login',
     );
   });
 
@@ -272,7 +272,7 @@ describe('buildEndSessionUrl', () => {
 
     const url = buildEndSessionUrl(config!, {
       idTokenHint: 'opaque-id-token',
-      postLogoutRedirectUri: 'https://wfb.example.com/auth/login',
+      postLogoutRedirectUri: 'https://wft.example.com/auth/login',
     });
     expect(url).toBeNull();
   });

@@ -2,11 +2,11 @@
 
 Agents: start at [`AGENTS.md`](../AGENTS.md); the full read-order contract is in [`docs/AGENT_CONTEXT.md`](AGENT_CONTEXT.md).
 
-Complete reference for the Wood Fired Bugs MCP server and Claude Code skill files.
+Complete reference for the Wood Fired Tasks MCP server and Claude Code skill files.
 
 ## Overview
 
-Wood Fired Bugs exposes task management capabilities via the Model Context Protocol (MCP), enabling direct integration with Claude Code and other MCP-compatible clients.
+Wood Fired Tasks exposes task management capabilities via the Model Context Protocol (MCP), enabling direct integration with Claude Code and other MCP-compatible clients.
 
 The MCP server provides:
 
@@ -44,7 +44,7 @@ npm run mcp:dev
 
 ### Server Name
 
-`wood-fired-bugs`
+`wood-fired-tasks`
 
 ### Environment Variables
 
@@ -78,11 +78,11 @@ Add this configuration to `~/.claude.json` in the `mcpServers` section:
 ```json
 {
   "mcpServers": {
-    "wood-fired-bugs": {
+    "wood-fired-tasks": {
       "command": "node",
-      "args": ["/absolute/path/to/wood-fired-bugs/dist/mcp/index.js"],
+      "args": ["/absolute/path/to/wood-fired-tasks/dist/mcp/index.js"],
       "env": {
-        "DATABASE_PATH": "/absolute/path/to/wood-fired-bugs/data/tasks.db"
+        "DATABASE_PATH": "/absolute/path/to/wood-fired-tasks/data/tasks.db"
       }
     }
   }
@@ -94,7 +94,7 @@ Add this configuration to `~/.claude.json` in the `mcpServers` section:
 ### Automatic Installation
 
 The provided installers handle configuration automatically. Both default to
-`--mode local`, which writes a `wood-fired-bugs` entry that holds only
+`--mode local`, which writes a `wood-fired-tasks` entry that holds only
 `DATABASE_PATH` — no API key is collected, persisted, or written, because the
 local MCP server does not use one (task #258).
 
@@ -102,7 +102,7 @@ local MCP server does not use one (task #258).
 
 ```bash
 ./install.sh                 # local (default) — no API key
-./install.sh --mode remote   # remote — prompts/reads WFB_API_KEY
+./install.sh --mode remote   # remote — prompts/reads WFT_API_KEY
 ```
 
 **Windows:**
@@ -115,16 +115,16 @@ local MCP server does not use one (task #258).
 Both installers:
 1. Copy skill files to `~/.claude/commands/tasks/`
 2. Add or update the MCP server configuration in `~/.claude.json`:
-   - local mode adds/updates `wood-fired-bugs` (points at `dist/mcp/index.js`)
-   - remote mode adds/updates `wood-fired-bugs-remote` (points at `dist/mcp/remote/index.js`)
+   - local mode adds/updates `wood-fired-tasks` (points at `dist/mcp/index.js`)
+   - remote mode adds/updates `wood-fired-tasks-remote` (points at `dist/mcp/remote/index.js`)
 3. Set the `DATABASE_PATH` environment variable for the local server, or
-   `WFB_API_URL` + `WFB_API_KEY` for the remote server. Older local installs
+   `WFT_API_URL` + `WFT_API_KEY` for the remote server. Older local installs
    may have `DB_PATH`; both are accepted, with `DATABASE_PATH` taking precedence.
 
 See [docs/SETUP.md → Migration: removing an unused API key from older local
 installs](SETUP.md#migration-removing-an-unused-api-key-from-older-local-installs-task-258)
-if your existing `wood-fired-bugs` entry contains a leftover
-`WOOD_FIRED_BUGS_API_KEY` — it can be removed.
+if your existing `wood-fired-tasks` entry contains a leftover
+`WOOD_FIRED_TASKS_API_KEY` — it can be removed.
 
 ## Authentication
 
@@ -132,15 +132,15 @@ The MCP server has two transports, and they authenticate differently:
 
 | Transport | Auth surface | Credential source |
 |-----------|--------------|-------------------|
-| **Local stdio** (`dist/mcp/index.js`) | None at the wire (filesystem-trusted). On boot, the server resolves `WFB_API_KEY` to a local `users` row and threads `actorUserId` into every write tool. | `WFB_API_KEY` env var (optional) |
-| **Remote HTTP** (`dist/mcp/remote/index.js`) | `WFB_API_KEY` forwarded to the REST API on every tool call. | `WFB_API_KEY` env var (required) |
+| **Local stdio** (`dist/mcp/index.js`) | None at the wire (filesystem-trusted). On boot, the server resolves `WFT_API_KEY` to a local `users` row and threads `actorUserId` into every write tool. | `WFT_API_KEY` env var (optional) |
+| **Remote HTTP** (`dist/mcp/remote/index.js`) | `WFT_API_KEY` forwarded to the REST API on every tool call. | `WFT_API_KEY` env var (required) |
 
 ### Local MCP — boot-time identity resolution
 
-`WFB_API_KEY` accepts two value shapes; the local MCP server resolves
+`WFT_API_KEY` accepts two value shapes; the local MCP server resolves
 them at boot:
 
-1. **PAT** — values starting with `wfb_pat_` are hashed (SHA-256) and
+1. **PAT** — values starting with `wft_pat_` are hashed (SHA-256) and
    looked up in `personal_access_tokens`. The matched row's
    `user_id` becomes the actor for every subsequent write tool call.
    Revoked / unknown PATs fall back to `mcp-bot` (see below).
@@ -148,7 +148,7 @@ them at boot:
    env list on the server side. A matching entry resolves to the
    corresponding `users` row (the same one the legacy REST strategy
    would resolve).
-3. **Unset / unresolved** — if `WFB_API_KEY` is missing, empty, or
+3. **Unset / unresolved** — if `WFT_API_KEY` is missing, empty, or
    matches no PAT/legacy entry, the actor falls back to the seeded
    `mcp-bot` service-account row. Writes are attributed to that bot.
 
@@ -164,12 +164,12 @@ the fallback.
 
 ### Remote MCP — header switching on prefix
 
-The remote bridge's REST client looks at the `WFB_API_KEY` value at
+The remote bridge's REST client looks at the `WFT_API_KEY` value at
 startup and chooses the wire header by prefix:
 
-| `WFB_API_KEY` prefix | Outbound header |
+| `WFT_API_KEY` prefix | Outbound header |
 |----------------------|-----------------|
-| `wfb_pat_…` | `Authorization: Bearer wfb_pat_…` |
+| `wft_pat_…` | `Authorization: Bearer wft_pat_…` |
 | anything else | `X-API-Key: <value>` |
 
 The REST API's auth chain (PAT → session → legacy) decodes each
@@ -185,7 +185,7 @@ tasks login                           # browser flow on a workstation
 node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
 
 # 2. Paste the PAT value into your MCP client config:
-#    "env": { "WFB_API_KEY": "wfb_pat_…" }
+#    "env": { "WFT_API_KEY": "wft_pat_…" }
 
 # 3. Restart Claude Code. The MCP server (local or remote) picks up the
 #    PAT on next boot.
@@ -196,7 +196,7 @@ for the full credential lifecycle (mint, hash storage, revocation).
 
 ## Remote MCP Server
 
-Wood Fired Bugs ships a **second** MCP server entry point (`npm run mcp:remote`, source under `src/mcp/remote/`) for the case where the bugs REST API runs on a different machine than the developer's MCP client. Instead of opening the SQLite file in-process, the remote server proxies every tool call to the deployed REST API over HTTP.
+Wood Fired Tasks ships a **second** MCP server entry point (`npm run mcp:remote`, source under `src/mcp/remote/`) for the case where the bugs REST API runs on a different machine than the developer's MCP client. Instead of opening the SQLite file in-process, the remote server proxies every tool call to the deployed REST API over HTTP.
 
 ### When to use the remote server
 
@@ -212,39 +212,39 @@ The remote server is configured entirely via environment variables and fails fas
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `WFB_API_URL` | yes | Base URL of the deployed bugs API, e.g. `http://your-server.local:3000` or `https://bugs.example.com`. The remote server appends `/api/v1` itself — supply the host root. No default; setting nothing fails startup so a misconfigured client never silently hits `localhost`. |
-| `WFB_API_KEY` | yes | API key the remote server uses for every outbound REST call. Must match a key on the API's `API_KEYS` list. |
+| `WFT_API_URL` | yes | Base URL of the deployed bugs API, e.g. `http://your-server.local:3000` or `https://bugs.example.com`. The remote server appends `/api/v1` itself — supply the host root. No default; setting nothing fails startup so a misconfigured client never silently hits `localhost`. |
+| `WFT_API_KEY` | yes | API key the remote server uses for every outbound REST call. Must match a key on the API's `API_KEYS` list. |
 
 ### Claude Code config snippet
 
-Add this alongside (or instead of) the local `wood-fired-bugs` entry in `~/.claude.json`:
+Add this alongside (or instead of) the local `wood-fired-tasks` entry in `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
-    "wood-fired-bugs-remote": {
+    "wood-fired-tasks-remote": {
       "command": "node",
-      "args": ["/absolute/path/to/wood-fired-bugs/dist/mcp/remote/index.js"],
+      "args": ["/absolute/path/to/wood-fired-tasks/dist/mcp/remote/index.js"],
       "env": {
-        "WFB_API_URL": "https://bugs.example.com",
-        "WFB_API_KEY": "your-api-key-here"
+        "WFT_API_URL": "https://bugs.example.com",
+        "WFT_API_KEY": "your-api-key-here"
       }
     }
   }
 }
 ```
 
-> Prefer the [launcher-wrapper below](#keeping-the-api-key-out-of-client-config-recommended) over an inline `WFB_API_KEY` — it keeps the secret out of `~/.claude.json`.
+> Prefer the [launcher-wrapper below](#keeping-the-api-key-out-of-client-config-recommended) over an inline `WFT_API_KEY` — it keeps the secret out of `~/.claude.json`.
 
 For development you can also run it via `tsx`:
 
 ```bash
-WFB_API_URL=http://localhost:3000 WFB_API_KEY=dev-key npm run mcp:remote
+WFT_API_URL=http://localhost:3000 WFT_API_KEY=dev-key npm run mcp:remote
 ```
 
 ### Keeping the API key out of client config (recommended)
 
-Pasting `WFB_API_KEY` straight into `~/.claude.json` works, but it leaves a
+Pasting `WFT_API_KEY` straight into `~/.claude.json` works, but it leaves a
 long-lived secret in a file your agent reads and writes constantly. Prefer a
 thin launcher script as the MCP `command` that injects the key at spawn time
 from the server's own environment file, so the client config holds **no
@@ -252,12 +252,12 @@ secret**:
 
 ```bash
 #!/usr/bin/env bash
-# ~/.local/bin/wfb-mcp — reads the key from the server's .env at spawn time.
+# ~/.local/bin/wft-mcp — reads the key from the server's .env at spawn time.
 set -euo pipefail
-WFB_API_KEY="$(grep -m1 '^API_KEYS=' /opt/wood-fired-bugs/.env | cut -d= -f2- | cut -d, -f1)"
-export WFB_API_KEY
-export WFB_API_URL="${WFB_API_URL:-http://localhost:3000}"
-exec node /opt/wood-fired-bugs/dist/mcp/remote/index.js
+WFT_API_KEY="$(grep -m1 '^API_KEYS=' /opt/wood-fired-tasks/.env | cut -d= -f2- | cut -d, -f1)"
+export WFT_API_KEY
+export WFT_API_URL="${WFT_API_URL:-http://localhost:3000}"
+exec node /opt/wood-fired-tasks/dist/mcp/remote/index.js
 ```
 
 The client entry then carries only the command — no `env` block, no key:
@@ -265,7 +265,7 @@ The client entry then carries only the command — no `env` block, no key:
 ```json
 {
   "mcpServers": {
-    "wood-fired-bugs": { "command": "/home/you/.local/bin/wfb-mcp", "args": [] }
+    "wood-fired-tasks": { "command": "/home/you/.local/bin/wft-mcp", "args": [] }
   }
 }
 ```
@@ -280,10 +280,10 @@ revocation.
 |--------|-------------------------------|----------------------------------|
 | Source | `src/mcp/index.ts` → `src/mcp/server.ts` | `src/mcp/remote/index.ts` → `src/mcp/remote/register-tools.ts` |
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
-| Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFB_API_URL` + `WFB_API_KEY` (both required, no defaults) |
+| Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
 | Tool count | 21 (full set including `completion_report`) | 21 (full parity — `completion_report` proxies `GET /api/v1/tasks/completion-report`) |
-| `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFB_API_URL/api/v1` |
+| `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
 The remote server is at full tool parity with the local server. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces.
 
@@ -741,11 +741,11 @@ The resource description and the server's emitted events MUST stay in sync. The 
 
 If you add or rename a domain event, update `ALLOWED_EVENT_TYPES` in `src/events/types.ts`, the table in `src/mcp/resources/events.ts`, and this table together. The `events-resource` MCP test (`src/mcp/__tests__/events-resource.test.ts`) is the canonical regression guard.
 
-**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. After reading this resource, agents open the SSE connection over HTTP (or via `curl -N`) using their `WFB_API_KEY` / local `API_KEYS` value.
+**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. After reading this resource, agents open the SSE connection over HTTP (or via `curl -N`) using their `WFT_API_KEY` / local `API_KEYS` value.
 
 ## Skill Files
 
-Wood Fired Bugs provides 11 pre-built skill files in the `/tasks:` namespace.
+Wood Fired Tasks provides 11 pre-built skill files in the `/tasks:` namespace.
 
 After installation, these skills are available as slash commands in Claude Code.
 

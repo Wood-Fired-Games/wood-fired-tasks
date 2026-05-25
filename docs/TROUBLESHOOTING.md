@@ -17,8 +17,8 @@ scripts and the systemd unit) and [`MCP.md`](MCP.md) (MCP server wiring).
 is `failed`:
 
 ```bash
-systemctl status wood-fired-bugs   # Active: failed (Result: exit-code) ... status=78/CONFIG
-journalctl -u wood-fired-bugs -b | grep -i oidc
+systemctl status wood-fired-tasks   # Active: failed (Result: exit-code) ... status=78/CONFIG
+journalctl -u wood-fired-tasks -b | grep -i oidc
 # ... oidc.discovery_failed ... issuer=https://accounts.google.com ... "fetch failed"
 ```
 
@@ -31,7 +31,7 @@ crash-loops it past the start limit, latching `failed`. This is a
 **Fix (immediate).** Once connectivity is back, clear the latch and start:
 
 ```bash
-sudo systemctl reset-failed wood-fired-bugs && sudo systemctl start wood-fired-bugs
+sudo systemctl reset-failed wood-fired-tasks && sudo systemctl start wood-fired-tasks
 ```
 
 **Fix (durable).** Make the unit wait for real connectivity. The shipped unit
@@ -72,8 +72,8 @@ loss.**
 **Identify the live DB.**
 
 - The service reads `DATABASE_PATH` (or legacy `DB_PATH`) from its
-  `EnvironmentFile` (`/opt/wood-fired-bugs/.env` by default). `systemctl cat
-  wood-fired-bugs` shows the effective config.
+  `EnvironmentFile` (`/opt/wood-fired-tasks/.env` by default). `systemctl cat
+  wood-fired-tasks` shows the effective config.
 - Ask the running service what it opened: the authenticated `GET /health/detailed`
   (send your `X-API-Key`) reports the resolved DB path plus a fingerprint (project
   count, max task id, latest activity), and the MCP `check_health` tool surfaces the
@@ -82,7 +82,7 @@ loss.**
 - A quick read-only peek (does **not** modify the file):
 
 ```bash
-sqlite3 "file:/opt/wood-fired-bugs/data/tasks.db?mode=ro" \
+sqlite3 "file:/opt/wood-fired-tasks/data/tasks.db?mode=ro" \
   "SELECT count(*) FROM projects; SELECT max(id) FROM tasks;"
 ```
 

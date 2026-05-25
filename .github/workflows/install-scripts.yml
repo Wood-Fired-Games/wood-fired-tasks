@@ -1,14 +1,14 @@
 name: Install Scripts
 
 on:
-  # Wood-fired-bugs #340 made cli-smoke-link / cli-surface-coverage-link /
+  # Wood-fired-tasks #340 made cli-smoke-link / cli-surface-coverage-link /
   # cli-tarball-install / cli-e2e REQUIRED status checks on branch protection
   # for main. A required check that never fires (because a paths filter
   # skipped the workflow) permanently blocks the merge under classic branch
   # protection. The original install-scripts.yml `paths:` filter was therefore
   # removed so EVERY PR triggers the workflow and every required check is
   # reported. CI cost is ~3-4 minutes extra per PR; cheap insurance against
-  # the bug class wood-fired-bugs@1.0.0 shipped with.
+  # the bug class wood-fired-tasks@1.0.0 shipped with.
   push:
     branches: [main]
   pull_request:
@@ -100,15 +100,15 @@ jobs:
   # installer into local (default) vs remote modes, this job exercises both:
   #
   #   Local mode (default):
-  #     1. run install.sh — should NOT prompt, NOT read WOOD_FIRED_BUGS_API_KEY
-  #     2. assert ~/.claude.json's 'wood-fired-bugs' MCP entry has DATABASE_PATH
-  #     3. assert that entry has NO WFB_API_KEY / WOOD_FIRED_BUGS_API_KEY env
+  #     1. run install.sh — should NOT prompt, NOT read WOOD_FIRED_TASKS_API_KEY
+  #     2. assert ~/.claude.json's 'wood-fired-tasks' MCP entry has DATABASE_PATH
+  #     3. assert that entry has NO WFT_API_KEY / WOOD_FIRED_TASKS_API_KEY env
   #     4. assert no secret file was written (local mode never touches it)
   #
   #   Remote mode:
-  #     1. run install.sh --mode remote with WOOD_FIRED_BUGS_API_KEY env var
-  #     2. assert ~/.claude.json's 'wood-fired-bugs-remote' MCP entry has
-  #        WFB_API_URL + WFB_API_KEY
+  #     1. run install.sh --mode remote with WOOD_FIRED_TASKS_API_KEY env var
+  #     2. assert ~/.claude.json's 'wood-fired-tasks-remote' MCP entry has
+  #        WFT_API_URL + WFT_API_KEY
   #     3. assert secret file is mode 0600
   #
   # Alpine / Debian / Fedora are intentionally skipped — they would
@@ -154,9 +154,9 @@ jobs:
           # Intentionally set the env var: local mode must silently ignore it
           # so existing users who leave it exported don't end up with a key
           # in ~/.claude.json. Task #258.
-          WOOD_FIRED_BUGS_API_KEY: ci-smoke-test-key-must-NOT-leak-into-config
+          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-must-NOT-leak-into-config
           # Skip the health probe — no service is running in CI.
-          WOOD_FIRED_BUGS_URL: http://127.0.0.1:1
+          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
         run: bash install.sh
 
       - name: Assert skill files were copied (local)
@@ -170,18 +170,18 @@ jobs:
       - name: Assert local MCP entry has DATABASE_PATH and NO API key
         run: |
           test -f "$HOME/.claude.json" || { echo "~/.claude.json missing"; exit 1; }
-          jq -e '.mcpServers["wood-fired-bugs"].command == "node"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs"].args[0] | startswith("/") and endswith("/dist/mcp/index.js")' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs"].env.DATABASE_PATH | startswith("/") and endswith("/data/tasks.db")' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks"].command == "node"' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks"].args[0] | startswith("/") and endswith("/dist/mcp/index.js")' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks"].env.DATABASE_PATH | startswith("/") and endswith("/data/tasks.db")' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
           # Task #258: local MCP must NOT carry any API key in its env.
-          jq -e '.mcpServers["wood-fired-bugs"].env | has("WFB_API_KEY") | not' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs"].env | has("WOOD_FIRED_BUGS_API_KEY") | not' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks"].env | has("WFT_API_KEY") | not' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks"].env | has("WOOD_FIRED_TASKS_API_KEY") | not' "$HOME/.claude.json" >/dev/null
           echo "local MCP entry has DATABASE_PATH and no API key — OK"
 
       - name: Assert no secret file written by local mode
         run: |
-          secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs/api-key"
+          secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-tasks/api-key"
           if [ -f "$secret" ]; then
             echo "ERROR: local mode wrote $secret — it must not"
             exit 1
@@ -194,22 +194,22 @@ jobs:
       # ----- REMOTE MODE ----------------------------------------------------
       - name: Run install.sh --mode remote with env-var API key
         env:
-          WOOD_FIRED_BUGS_API_KEY: ci-smoke-test-key-not-a-real-secret
-          WOOD_FIRED_BUGS_URL: http://127.0.0.1:1
+          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-not-a-real-secret
+          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
         run: bash install.sh --mode remote
 
-      - name: Assert remote MCP entry has WFB_API_URL + WFB_API_KEY
+      - name: Assert remote MCP entry has WFT_API_URL + WFT_API_KEY
         run: |
-          jq -e '.mcpServers["wood-fired-bugs-remote"].command == "node"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs-remote"].args[0] | startswith("/") and endswith("/dist/mcp/remote/index.js")' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs-remote"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs-remote"].env.WFB_API_KEY | length > 0' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-bugs-remote"].env.WFB_API_URL | length > 0' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks-remote"].command == "node"' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks-remote"].args[0] | startswith("/") and endswith("/dist/mcp/remote/index.js")' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks-remote"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks-remote"].env.WFT_API_KEY | length > 0' "$HOME/.claude.json" >/dev/null
+          jq -e '.mcpServers["wood-fired-tasks-remote"].env.WFT_API_URL | length > 0' "$HOME/.claude.json" >/dev/null
           echo "remote MCP entry present and well-formed"
 
       - name: Assert secret file permissions are 0600 (remote)
         run: |
-          secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs/api-key"
+          secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-tasks/api-key"
           test -f "$secret" || { echo "secret file missing: $secret"; exit 1; }
           mode=$(stat -c '%a' "$secret" 2>/dev/null || stat -f '%Lp' "$secret")
           echo "secret file mode: $mode"
@@ -261,8 +261,8 @@ jobs:
         shell: pwsh
         env:
           # Intentionally set: local mode must silently drop it. Task #258.
-          WOOD_FIRED_BUGS_API_KEY: ci-smoke-test-key-must-NOT-leak-into-config
-          WOOD_FIRED_BUGS_URL: http://127.0.0.1:1
+          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-must-NOT-leak-into-config
+          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
         run: ./install.ps1
 
       - name: Assert skill files were copied (local)
@@ -280,7 +280,7 @@ jobs:
           $cfg = Join-Path $env:USERPROFILE '.claude.json'
           if (-not (Test-Path $cfg)) { Write-Error "$cfg missing"; exit 1 }
           $json = Get-Content $cfg -Raw | ConvertFrom-Json
-          $entry = $json.mcpServers.'wood-fired-bugs'
+          $entry = $json.mcpServers.'wood-fired-tasks'
           if ($entry.command -ne 'node') { Write-Error "local MCP command mismatch"; exit 1 }
           # args[0] must be an ABSOLUTE path ending in dist/mcp/index.js — Claude
           # Code ignores the `cwd` field, so a relative path breaks the MCP server.
@@ -288,12 +288,12 @@ jobs:
           if (-not ($entry.args[0] -like '*dist\mcp\index.js' -or $entry.args[0] -like '*dist/mcp/index.js')) { Write-Error "local MCP args[0] mismatch: $($entry.args[0])"; exit 1 }
           if (-not ([System.IO.Path]::IsPathRooted($entry.env.DATABASE_PATH))) { Write-Error "DATABASE_PATH not absolute: $($entry.env.DATABASE_PATH)"; exit 1 }
           if ($entry.PSObject.Properties.Name -contains 'cwd') { Write-Error "local MCP entry contains cwd — Claude Code ignores it; installer must not write it"; exit 1 }
-          if ($entry.env.PSObject.Properties.Name -contains 'WFB_API_KEY') {
-            Write-Error "local MCP entry contains WFB_API_KEY — task #258 forbids this"
+          if ($entry.env.PSObject.Properties.Name -contains 'WFT_API_KEY') {
+            Write-Error "local MCP entry contains WFT_API_KEY — task #258 forbids this"
             exit 1
           }
-          if ($entry.env.PSObject.Properties.Name -contains 'WOOD_FIRED_BUGS_API_KEY') {
-            Write-Error "local MCP entry contains WOOD_FIRED_BUGS_API_KEY — task #258 forbids this"
+          if ($entry.env.PSObject.Properties.Name -contains 'WOOD_FIRED_TASKS_API_KEY') {
+            Write-Error "local MCP entry contains WOOD_FIRED_TASKS_API_KEY — task #258 forbids this"
             exit 1
           }
           Write-Host "local MCP entry has DATABASE_PATH and no API key — OK"
@@ -301,7 +301,7 @@ jobs:
       - name: Assert no secret file written by local mode
         shell: pwsh
         run: |
-          $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-bugs\api-key'
+          $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-tasks\api-key'
           if (Test-Path $secret) {
             Write-Error "local mode wrote $secret — it must not"
             exit 1
@@ -312,28 +312,28 @@ jobs:
       - name: Run install.ps1 -Mode remote with env-var API key
         shell: pwsh
         env:
-          WOOD_FIRED_BUGS_API_KEY: ci-smoke-test-key-not-a-real-secret
-          WOOD_FIRED_BUGS_URL: http://127.0.0.1:1
+          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-not-a-real-secret
+          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
         run: ./install.ps1 -Mode remote
 
-      - name: Assert remote MCP entry has WFB_API_URL + WFB_API_KEY
+      - name: Assert remote MCP entry has WFT_API_URL + WFT_API_KEY
         shell: pwsh
         run: |
           $cfg = Join-Path $env:USERPROFILE '.claude.json'
           $json = Get-Content $cfg -Raw | ConvertFrom-Json
-          $entry = $json.mcpServers.'wood-fired-bugs-remote'
+          $entry = $json.mcpServers.'wood-fired-tasks-remote'
           if ($entry.command -ne 'node') { Write-Error "remote MCP command mismatch"; exit 1 }
           if (-not ([System.IO.Path]::IsPathRooted($entry.args[0]))) { Write-Error "remote MCP args[0] not absolute: $($entry.args[0])"; exit 1 }
           if (-not ($entry.args[0] -like '*dist\mcp\remote\index.js' -or $entry.args[0] -like '*dist/mcp/remote/index.js')) { Write-Error "remote MCP args[0] mismatch: $($entry.args[0])"; exit 1 }
           if ($entry.PSObject.Properties.Name -contains 'cwd') { Write-Error "remote MCP entry contains cwd — Claude Code ignores it; installer must not write it"; exit 1 }
-          if ([string]::IsNullOrWhiteSpace($entry.env.WFB_API_KEY)) { Write-Error "WFB_API_KEY missing"; exit 1 }
-          if ([string]::IsNullOrWhiteSpace($entry.env.WFB_API_URL)) { Write-Error "WFB_API_URL missing"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($entry.env.WFT_API_KEY)) { Write-Error "WFT_API_KEY missing"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($entry.env.WFT_API_URL)) { Write-Error "WFT_API_URL missing"; exit 1 }
           Write-Host "remote MCP entry present and well-formed"
 
       - name: Assert secret file exists (remote)
         shell: pwsh
         run: |
-          $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-bugs\api-key'
+          $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-tasks\api-key'
           if (-not (Test-Path $secret)) { Write-Error "secret file missing: $secret"; exit 1 }
           $content = Get-Content $secret -Raw
           if ([string]::IsNullOrWhiteSpace($content)) { Write-Error "secret file empty"; exit 1 }
@@ -342,7 +342,7 @@ jobs:
   # -------------------------------------------------------------------------
   # Regression smoke for the globally-linked `tasks` CLI.
   #
-  # Background: wood-fired-bugs #334 fixed a silent-CLI bug where the
+  # Background: wood-fired-tasks #334 fixed a silent-CLI bug where the
   # `npm link`-ed `tasks` binary produced NO output because the entry guard
   # `import.meta.url === \`file://${process.argv[1]}\`` did not match when
   # Node resolved process.argv[1] through the link's symlink. The fix routes
@@ -388,7 +388,7 @@ jobs:
         run: bash tests/smoke/cli-symlink-smoke.sh
 
   # -------------------------------------------------------------------------
-  # Per-command surface coverage matrix — wood-fired-bugs #337.
+  # Per-command surface coverage matrix — wood-fired-tasks #337.
   #
   # Where cli-smoke-link covers the top-level binary (--version / --help /
   # no-args), this job extends coverage DOWN to every individual Commander
@@ -446,7 +446,7 @@ jobs:
         run: bash tests/smoke/cli-surface-coverage.sh
 
   # -------------------------------------------------------------------------
-  # Tarball-install gate — wood-fired-bugs #338.
+  # Tarball-install gate — wood-fired-tasks #338.
   #
   # The two preceding CLI gates (#335 cli-smoke-link, #337
   # cli-surface-coverage-link) both run against `npm link`, which symlinks
@@ -491,7 +491,7 @@ jobs:
 
       - name: Run cli-tarball-install.sh
         # The script:
-        #   1. `npm pack` → wood-fired-bugs-X.Y.Z.tgz at repo root
+        #   1. `npm pack` → wood-fired-tasks-X.Y.Z.tgz at repo root
         #   2. `npm install --prefix <tmp> --omit=dev <tarball>`
         #   3. Prepend <tmp>/node_modules/.bin to PATH; assert realpath of
         #      `tasks` lives under <tmp>/node_modules/<pkg>/dist/
@@ -504,7 +504,7 @@ jobs:
         run: bash tests/smoke/cli-tarball-install.sh
 
   # -------------------------------------------------------------------------
-  # End-to-end CLI functional gate — wood-fired-bugs #339.
+  # End-to-end CLI functional gate — wood-fired-tasks #339.
   #
   # The four preceding gates (cli-smoke-link / cli-surface-coverage-link /
   # cli-tarball-install) all validate the CLI's SURFACE — that --version,

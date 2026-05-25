@@ -1,6 +1,6 @@
 # Setup Guide
 
-Complete setup instructions for Wood Fired Bugs in development, production, and Claude Code environments.
+Complete setup instructions for Wood Fired Tasks in development, production, and Claude Code environments.
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ task data and Slack workspace.
 4. **Rotation requires a server restart.** Both the API server and the
    Slack subprocess read `.env` on boot only. After changing any value,
    restart with `npm run dev` (development) or your process manager
-   (`pm2 restart wood-fired-bugs`, `systemctl restart …`) so the new
+   (`pm2 restart wood-fired-tasks`, `systemctl restart …`) so the new
    value takes effect.
 
 5. **Use a secret manager in production.** A flat `.env` file is fine
@@ -137,8 +137,8 @@ Then set:
 # Must decode to exactly 32 bytes; the server refuses to boot otherwise.
 SESSION_COOKIE_SECRET=<output of openssl rand -base64 32>
 
-# Optional — the cookie name. Defaults to wfb_session.
-SESSION_COOKIE_NAME=wfb_session
+# Optional — the cookie name. Defaults to wft_session.
+SESSION_COOKIE_NAME=wft_session
 ```
 
 [CRITICAL] Treat `SESSION_COOKIE_SECRET` as a production-grade secret.
@@ -178,10 +178,10 @@ node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
 ```
 
 The command prints the raw PAT to stdout once. Use it as the
-`Authorization: Bearer wfb_pat_<…>` value on subsequent requests, or as
-the `WFB_API_KEY` env var in MCP and CLI clients (the REST client switches
+`Authorization: Bearer wft_pat_<…>` value on subsequent requests, or as
+the `WFT_API_KEY` env var in MCP and CLI clients (the REST client switches
 to `Authorization: Bearer …` automatically when the value starts with
-`wfb_pat_`). See [`SECURITY.md`](../SECURITY.md) →
+`wft_pat_`). See [`SECURITY.md`](../SECURITY.md) →
 **Authentication Architecture** for the full chain.
 
 ### 7. Migrating from an `API_KEYS`-only deployment
@@ -214,8 +214,8 @@ matchable row has been backfilled — the UPDATE is guarded by
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/Wood-Fired-Games/wood-fired-bugs.git
-cd wood-fired-bugs
+git clone https://github.com/Wood-Fired-Games/wood-fired-tasks.git
+cd wood-fired-tasks
 npm install
 ```
 
@@ -310,7 +310,7 @@ export PORT=3000
 export HOST=0.0.0.0
 export LOG_LEVEL=warn
 export API_KEYS=your-production-key-here
-export DATABASE_PATH=/var/lib/wood-fired-bugs/tasks.db
+export DATABASE_PATH=/var/lib/wood-fired-tasks/tasks.db
 ```
 
 [IMPORTANT] Use strong, unique API keys in production. These keys provide full access to your task data.
@@ -339,14 +339,14 @@ This runs the compiled JavaScript from `dist/api/start.js`.
 Example with PM2:
 
 ```bash
-pm2 start npm --name "wood-fired-bugs" -- start
+pm2 start npm --name "wood-fired-tasks" -- start
 pm2 save
 pm2 startup
 ```
 
 ## Self-hosting and upgrades
 
-This section is the operator contract for running Wood Fired Bugs on your
+This section is the operator contract for running Wood Fired Tasks on your
 own host with the shipped `deploy/install.sh` and `deploy/upgrade.sh`
 scripts. The scripts are the source of truth — every command below maps
 to a line in one of them.
@@ -357,9 +357,9 @@ preserved:
 
 | Variable | Default | Used by |
 |----------|---------|---------|
-| `WFB_INSTALL_DIR` | `/opt/wood-fired-bugs` | `install.sh`, `upgrade.sh` |
-| `WFB_SERVICE_NAME` | `wood-fired-bugs` | `upgrade.sh` (systemd unit name) |
-| `WFB_SERVICE_USER` | `wood-fired-bugs` | `install.sh` (locked-down system account) |
+| `WFT_INSTALL_DIR` | `/opt/wood-fired-tasks` | `install.sh`, `upgrade.sh` |
+| `WFT_SERVICE_NAME` | `wood-fired-tasks` | `upgrade.sh` (systemd unit name) |
+| `WFT_SERVICE_USER` | `wood-fired-tasks` | `install.sh` (locked-down system account) |
 
 Prerequisites on the host: Node.js at `/usr/bin/node`, `sqlite3` CLI
 (`sudo apt-get install sqlite3`), and `curl` (used by the health probe).
@@ -367,36 +367,36 @@ Prerequisites on the host: Node.js at `/usr/bin/node`, `sqlite3` CLI
 ### First-time install
 
 Run `deploy/install.sh` **once** as root (or with `sudo`) to provision the
-host. It creates the `wood-fired-bugs` system user, lays out
-`$WFB_INSTALL_DIR/{data,backups,dist}`, seeds `.env` from
-`deploy/wood-fired-bugs.env.example` if absent, installs the systemd unit
-at `/etc/systemd/system/wood-fired-bugs.service`, writes a drop-in override
+host. It creates the `wood-fired-tasks` system user, lays out
+`$WFT_INSTALL_DIR/{data,backups,dist}`, seeds `.env` from
+`deploy/wood-fired-tasks.env.example` if absent, installs the systemd unit
+at `/etc/systemd/system/wood-fired-tasks.service`, writes a drop-in override
 when you have overridden the install dir or service user, and `enable`s
 the service (it does **not** start it — the first deploy starts it). After
-this completes, edit `$WFB_INSTALL_DIR/.env` to set `API_KEYS` (and any
+this completes, edit `$WFT_INSTALL_DIR/.env` to set `API_KEYS` (and any
 other server vars from the [Environment Variables](#environment-variables)
 table), then move on to the upgrade step.
 
 ```bash
 sudo ./deploy/install.sh
-sudo $EDITOR /opt/wood-fired-bugs/.env   # set API_KEYS, etc.
+sudo $EDITOR /opt/wood-fired-tasks/.env   # set API_KEYS, etc.
 ```
 
 ### Upgrading an existing install
 
 Run `deploy/upgrade.sh` **on every release** to push a fresh build into
-`$WFB_INSTALL_DIR`. The script re-execs itself with `sudo` if invoked
-unprivileged (preserving `WFB_INSTALL_DIR` and `WFB_SERVICE_NAME`), so
+`$WFT_INSTALL_DIR`. The script re-execs itself with `sudo` if invoked
+unprivileged (preserving `WFT_INSTALL_DIR` and `WFT_SERVICE_NAME`), so
 plain `./deploy/upgrade.sh` works. It refuses to run if `./dist/` is
 missing or any file under `./src/` is newer than `./dist/` (build first),
 then in order: copies `data/tasks.db` (+ `.db-wal` / `.db-shm` if present)
-to `$WFB_INSTALL_DIR/backups/pre-deploy-<UTC>.db[*]`, copies the live
-`dist/` to `$WFB_INSTALL_DIR/backups/dist-pre-deploy-<UTC>/`, stops the
-service, replaces `$WFB_INSTALL_DIR/dist`, copies `package.json` +
+to `$WFT_INSTALL_DIR/backups/pre-deploy-<UTC>.db[*]`, copies the live
+`dist/` to `$WFT_INSTALL_DIR/backups/dist-pre-deploy-<UTC>/`, stops the
+service, replaces `$WFT_INSTALL_DIR/dist`, copies `package.json` +
 `package-lock.json`, runs `npm ci --omit=dev` in the install dir, re-chowns
 the new files to the service user, runs `node dist/db/migrate.js`, starts
 the service, and polls `http://localhost:$PORT/health` (port read from
-`$WFB_INSTALL_DIR/.env`, defaulting to `3000`) for up to 30 seconds. On
+`$WFT_INSTALL_DIR/.env`, defaulting to `3000`) for up to 30 seconds. On
 success it prints the DB and dist backup paths; on failure it prints the
 exact rollback commands (see [Manual rollback procedure](#manual-rollback-procedure))
 and exits non-zero. There is no automatic rollback — migrations make that
@@ -409,13 +409,13 @@ sudo ./deploy/upgrade.sh
 
 Artifacts produced on every run:
 
-- **DB backup:** `${WFB_INSTALL_DIR}/backups/pre-deploy-<TS>.db` (plus
+- **DB backup:** `${WFT_INSTALL_DIR}/backups/pre-deploy-<TS>.db` (plus
   `.db-wal` / `.db-shm` if those existed). `<TS>` is a UTC timestamp like
   `20260523T193059Z`.
-- **dist backup:** `${WFB_INSTALL_DIR}/backups/dist-pre-deploy-<TS>/`
+- **dist backup:** `${WFT_INSTALL_DIR}/backups/dist-pre-deploy-<TS>/`
   (a full copy of the previous `dist/`).
 
-Backups are kept indefinitely; prune `$WFB_INSTALL_DIR/backups/` manually
+Backups are kept indefinitely; prune `$WFT_INSTALL_DIR/backups/` manually
 when no longer needed.
 
 ### Deploying your fork
@@ -427,7 +427,7 @@ fork on the deploy host:
 
 ```bash
 # One-time: register the upstream remote (skip if already set).
-git remote add upstream https://github.com/Wood-Fired-Games/wood-fired-bugs.git
+git remote add upstream https://github.com/Wood-Fired-Games/wood-fired-tasks.git
 
 # Per release: pull upstream, resolve any conflicts, build, deploy.
 git fetch upstream
@@ -439,7 +439,7 @@ sudo ./deploy/upgrade.sh
 
 If `upgrade.sh`'s `/health` probe passes, you are done. If it fails, the
 script prints the rollback recipe — follow it as written, then inspect
-`sudo journalctl -u wood-fired-bugs -n 200` to diagnose.
+`sudo journalctl -u wood-fired-tasks -n 200` to diagnose.
 
 ### Manual rollback procedure
 
@@ -450,20 +450,20 @@ real `<TS>` from the upgrade output (e.g. `20260523T193059Z`); the script
 also prints these exact commands to stderr on failure.
 
 ```bash
-sudo systemctl stop wood-fired-bugs
-sudo rm -rf /opt/wood-fired-bugs/dist
-sudo cp -a /opt/wood-fired-bugs/backups/dist-pre-deploy-<TS> /opt/wood-fired-bugs/dist
-sudo cp /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db /opt/wood-fired-bugs/data/tasks.db
-[ -f /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-wal ] && \
-  sudo cp /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-wal /opt/wood-fired-bugs/data/tasks.db-wal
-[ -f /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-shm ] && \
-  sudo cp /opt/wood-fired-bugs/backups/pre-deploy-<TS>.db-shm /opt/wood-fired-bugs/data/tasks.db-shm
-sudo systemctl start wood-fired-bugs
+sudo systemctl stop wood-fired-tasks
+sudo rm -rf /opt/wood-fired-tasks/dist
+sudo cp -a /opt/wood-fired-tasks/backups/dist-pre-deploy-<TS> /opt/wood-fired-tasks/dist
+sudo cp /opt/wood-fired-tasks/backups/pre-deploy-<TS>.db /opt/wood-fired-tasks/data/tasks.db
+[ -f /opt/wood-fired-tasks/backups/pre-deploy-<TS>.db-wal ] && \
+  sudo cp /opt/wood-fired-tasks/backups/pre-deploy-<TS>.db-wal /opt/wood-fired-tasks/data/tasks.db-wal
+[ -f /opt/wood-fired-tasks/backups/pre-deploy-<TS>.db-shm ] && \
+  sudo cp /opt/wood-fired-tasks/backups/pre-deploy-<TS>.db-shm /opt/wood-fired-tasks/data/tasks.db-shm
+sudo systemctl start wood-fired-tasks
 ```
 
-Then check the service: `sudo journalctl -u wood-fired-bugs -n 200`. If
-you overrode `WFB_INSTALL_DIR` at install time, substitute that path
-everywhere `/opt/wood-fired-bugs` appears above.
+Then check the service: `sudo journalctl -u wood-fired-tasks -n 200`. If
+you overrode `WFT_INSTALL_DIR` at install time, substitute that path
+everywhere `/opt/wood-fired-tasks` appears above.
 
 ### Migration safety contract
 
@@ -520,7 +520,7 @@ npm run cli -- <command>
 
 ## Claude Code Integration
 
-Wood Fired Bugs includes installers for seamless Claude Code integration on Linux/macOS and Windows.
+Wood Fired Tasks includes installers for seamless Claude Code integration on Linux/macOS and Windows.
 
 ### Install modes
 
@@ -528,8 +528,8 @@ The installer supports two modes:
 
 | Mode | Server name written to `~/.claude.json` | What it does | API key |
 |------|-----------------------------------------|--------------|---------|
-| `local` (default) | `wood-fired-bugs` | Spawns the stdio MCP server (`dist/mcp/index.js`) that opens the SQLite database in-process. | **Not used.** Local MCP only needs `DATABASE_PATH`; no key is collected, persisted, or written. |
-| `remote` | `wood-fired-bugs-remote` | Spawns the stdio bridge (`dist/mcp/remote/index.js`) that proxies every tool call to a deployed REST API. | Required. Written as `WFB_API_KEY` in the MCP entry's `env`. |
+| `local` (default) | `wood-fired-tasks` | Spawns the stdio MCP server (`dist/mcp/index.js`) that opens the SQLite database in-process. | **Not used.** Local MCP only needs `DATABASE_PATH`; no key is collected, persisted, or written. |
+| `remote` | `wood-fired-tasks-remote` | Spawns the stdio bridge (`dist/mcp/remote/index.js`) that proxies every tool call to a deployed REST API. | Required. Written as `WFT_API_KEY` in the MCP entry's `env`. |
 
 Both modes write independent entries, so it is safe to run the installer in
 local mode and later add a remote entry with `--mode remote` — they coexist
@@ -541,20 +541,20 @@ under different server names in `~/.claude.json`.
 # Local mode (default) — no key prompt, no key in ~/.claude.json:
 ./install.sh
 
-# Remote mode — resolves WFB_API_KEY from env, secret file, or prompt:
-WOOD_FIRED_BUGS_API_KEY="your-key-here" ./install.sh --mode remote
+# Remote mode — resolves WFT_API_KEY from env, secret file, or prompt:
+WOOD_FIRED_TASKS_API_KEY="your-key-here" ./install.sh --mode remote
 ```
 
 In `--mode remote`, the installer resolves the API key in this order:
-`WOOD_FIRED_BUGS_API_KEY` env var → `~/.config/wood-fired-bugs/api-key`
+`WOOD_FIRED_TASKS_API_KEY` env var → `~/.config/wood-fired-tasks/api-key`
 (mode 600) → masked interactive prompt → `--api-key` argv flag (deprecated).
-The key is then cached at `~/.config/wood-fired-bugs/api-key` (mode 600)
-and written into the `wood-fired-bugs-remote` MCP entry's `env` as
-`WFB_API_KEY`. `~/.claude.json` (and any timestamped backup) is also
+The key is then cached at `~/.config/wood-fired-tasks/api-key` (mode 600)
+and written into the `wood-fired-tasks-remote` MCP entry's `env` as
+`WFT_API_KEY`. `~/.claude.json` (and any timestamped backup) is also
 chmod'd to 0600.
 
 In `--mode local`, none of those paths execute — even if
-`WOOD_FIRED_BUGS_API_KEY` is exported in your shell, the installer silently
+`WOOD_FIRED_TASKS_API_KEY` is exported in your shell, the installer silently
 ignores it.
 
 ### Windows
@@ -564,12 +564,12 @@ ignores it.
 .\install.ps1
 
 # Remote mode:
-$env:WOOD_FIRED_BUGS_API_KEY = "your-key-here"
+$env:WOOD_FIRED_TASKS_API_KEY = "your-key-here"
 .\install.ps1 -Mode remote
 ```
 
 Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
-`WOOD_FIRED_BUGS_API_KEY` env var → `%LOCALAPPDATA%\wood-fired-bugs\api-key`
+`WOOD_FIRED_TASKS_API_KEY` env var → `%LOCALAPPDATA%\wood-fired-tasks\api-key`
 (user-only ACL) → masked prompt. The installer tightens the ACL on
 `~/.claude.json` (and any timestamped backup) to the current user only via
 `icacls`. `-Mode local` collects no key.
@@ -578,9 +578,9 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 
 1. **Copies skill files** to `~/.claude/commands/tasks/` (10 skill files)
 2. **Updates MCP server configuration** in `~/.claude.json`:
-   - Local: adds/updates the `wood-fired-bugs` entry pointing at `dist/mcp/index.js`
-   - Remote: adds/updates the `wood-fired-bugs-remote` entry pointing at `dist/mcp/remote/index.js`
-3. **Configures environment** — `DATABASE_PATH` for local, `WFB_API_URL` + `WFB_API_KEY` for remote
+   - Local: adds/updates the `wood-fired-tasks` entry pointing at `dist/mcp/index.js`
+   - Remote: adds/updates the `wood-fired-tasks-remote` entry pointing at `dist/mcp/remote/index.js`
+3. **Configures environment** — `DATABASE_PATH` for local, `WFT_API_URL` + `WFT_API_KEY` for remote
 
 ### Resulting MCP Configuration
 
@@ -589,10 +589,10 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 ```json
 {
   "mcpServers": {
-    "wood-fired-bugs": {
+    "wood-fired-tasks": {
       "command": "node",
       "args": ["dist/mcp/index.js"],
-      "cwd": "/path/to/wood-fired-bugs",
+      "cwd": "/path/to/wood-fired-tasks",
       "env": {
         "DATABASE_PATH": "./data/tasks.db"
       }
@@ -606,13 +606,13 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 ```json
 {
   "mcpServers": {
-    "wood-fired-bugs-remote": {
+    "wood-fired-tasks-remote": {
       "command": "node",
       "args": ["dist/mcp/remote/index.js"],
-      "cwd": "/path/to/wood-fired-bugs",
+      "cwd": "/path/to/wood-fired-tasks",
       "env": {
-        "WFB_API_URL": "http://localhost:3000",
-        "WFB_API_KEY": "your-api-key-here"
+        "WFT_API_URL": "http://localhost:3000",
+        "WFT_API_KEY": "your-api-key-here"
       }
     }
   }
@@ -629,27 +629,27 @@ its own database connection and does NOT call the REST API.
 
 #### Migration: removing an unused API key from older local installs (task #258)
 
-Versions of the installer before task #258 wrote `WOOD_FIRED_BUGS_API_KEY`
-into the `wood-fired-bugs` MCP entry even though the **local** MCP server
+Versions of the installer before task #258 wrote `WOOD_FIRED_TASKS_API_KEY`
+into the `wood-fired-tasks` MCP entry even though the **local** MCP server
 never reads it (it only consumes `DATABASE_PATH`). The key sat there as
 dead weight and as a needless leak surface.
 
 If you previously ran `./install.sh` or `.\install.ps1` and your
-`~/.claude.json` looks like this under `mcpServers."wood-fired-bugs".env`:
+`~/.claude.json` looks like this under `mcpServers."wood-fired-tasks".env`:
 
 ```json
 {
-  "WOOD_FIRED_BUGS_API_KEY": "...",
+  "WOOD_FIRED_TASKS_API_KEY": "...",
   "DATABASE_PATH": "./data/tasks.db"
 }
 ```
 
-…you can safely **delete the `WOOD_FIRED_BUGS_API_KEY` line** by hand. The
+…you can safely **delete the `WOOD_FIRED_TASKS_API_KEY` line** by hand. The
 local MCP server will keep working with only `DATABASE_PATH`. Re-running
 `./install.sh` (default `--mode local`) also rewrites the entry without the
 key. If you also want the remote bridge, run `./install.sh --mode remote`
-to add a separate `wood-fired-bugs-remote` entry that carries
-`WFB_API_KEY` — that's where the key belongs.
+to add a separate `wood-fired-tasks-remote` entry that carries
+`WFT_API_KEY` — that's where the key belongs.
 
 ### Skill Files
 
@@ -825,15 +825,15 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `DATABASE_PATH` | no | `./data/tasks.db` | Path to the SQLite database opened on stdio startup. Canonical name. |
 | `DB_PATH` | no | — | **Deprecated alias** for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs produced by pre-task-#217 versions of `install.sh` / `install.ps1`. |
 | `API_URL` | no | `http://localhost:3000/api/v1` | Only used by the optional remote MCP transport (`src/mcp/server.ts`). |
-| `WOOD_FIRED_BUGS_API_KEY` | no | — | Read by the installer in `--mode remote` to populate the `WFB_API_KEY` env on the `wood-fired-bugs-remote` MCP entry. Ignored by `--mode local` (task #258) and never read by the local MCP server itself. |
+| `WOOD_FIRED_TASKS_API_KEY` | no | — | Read by the installer in `--mode remote` to populate the `WFT_API_KEY` env on the `wood-fired-tasks-remote` MCP entry. Ignored by `--mode local` (task #258) and never read by the local MCP server itself. |
 
 ### Installer (read by `install.sh` and `install.ps1` only)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `WOOD_FIRED_BUGS_API_KEY` | no | — | API key consumed by the installer **only in `--mode remote`**. Resolution order: env var > on-disk secret file > masked prompt > deprecated `--api-key` flag. Silently ignored in local mode (default) since the local MCP server does not use a key. |
-| `WOOD_FIRED_BUGS_URL` | no | `http://localhost:3000` | Health-check URL the installer pings after writing `~/.claude.json`. |
-| `XDG_CONFIG_HOME` | no | `$HOME/.config` | Standard XDG variable; the installer caches the API key under `$XDG_CONFIG_HOME/wood-fired-bugs/api-key` (mode 600). |
+| `WOOD_FIRED_TASKS_API_KEY` | no | — | API key consumed by the installer **only in `--mode remote`**. Resolution order: env var > on-disk secret file > masked prompt > deprecated `--api-key` flag. Silently ignored in local mode (default) since the local MCP server does not use a key. |
+| `WOOD_FIRED_TASKS_URL` | no | `http://localhost:3000` | Health-check URL the installer pings after writing `~/.claude.json`. |
+| `XDG_CONFIG_HOME` | no | `$HOME/.config` | Standard XDG variable; the installer caches the API key under `$XDG_CONFIG_HOME/wood-fired-tasks/api-key` (mode 600). |
 
 [TIP] In production, source these from a secret manager (1Password CLI, AWS
 Secrets Manager, Vault, Doppler, Infisical) — see the "Secrets" section at
@@ -867,7 +867,7 @@ Check that:
 
 Check that:
 1. The installer completed successfully
-2. `~/.claude.json` contains the wood-fired-bugs MCP server configuration
+2. `~/.claude.json` contains the wood-fired-tasks MCP server configuration
 3. The `DATABASE_PATH` (or legacy `DB_PATH`) in the MCP config points to a valid database
 4. The `command` path points to the compiled MCP server (`dist/mcp/index.js`)
 

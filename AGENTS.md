@@ -2,11 +2,11 @@
 
 Owner: Repository maintainers
 
-First-read navigation hub for any AI coding agent working on `wood-fired-bugs`. Vendor-neutral. Points at deeper docs; does not duplicate them. The full contract is in [docs/AGENT_CONTEXT.md](docs/AGENT_CONTEXT.md).
+First-read navigation hub for any AI coding agent working on `wood-fired-tasks`. Vendor-neutral. Points at deeper docs; does not duplicate them. The full contract is in [docs/AGENT_CONTEXT.md](docs/AGENT_CONTEXT.md).
 
-## What is wood-fired-bugs
+## What is wood-fired-tasks
 
-`wood-fired-bugs` is a single-repo TypeScript task-tracking system that exposes the same underlying data through three surfaces and one notification channel:
+`wood-fired-tasks` is a single-repo TypeScript task-tracking system that exposes the same underlying data through three surfaces and one notification channel:
 
 - A **Fastify REST API** (`src/api/`) for HTTP clients.
 - An **MCP server** (`src/mcp/`, `@modelcontextprotocol/sdk`) so AI agents can read and mutate tasks as tools.

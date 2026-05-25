@@ -2,14 +2,14 @@
 #
 # cli-surface-coverage.sh — per-command surface coverage matrix.
 #
-# Background: wood-fired-bugs #334 fixed a silent-CLI bug; #335 added the
+# Background: wood-fired-tasks #334 fixed a silent-CLI bug; #335 added the
 # top-level smoke (cli-symlink-smoke.sh) covering `tasks --version|--help|<no args>`.
 # THIS script (#337) extends coverage to EVERY registered subcommand: it parses
 # the help banner to discover commands dynamically (so the matrix can't drift
 # from the source) and asserts that each `tasks <cmd> --help` (and one level
 # of nesting where applicable) renders without going silent.
 #
-# Acceptance criteria (wood-fired-bugs #337):
+# Acceptance criteria (wood-fired-tasks #337):
 #   1. Discover the registered command list by parsing `tasks --help` (no
 #      hardcoded list).
 #   2. For each top-level command: assert `tasks <cmd> --help` exits 0,

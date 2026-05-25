@@ -21,12 +21,12 @@ Marks a task as blocked and records the blocking reason as a comment.
    - If not provided, ask user: "Please provide a reason for the blocker"
 
 3. **Update task status**
-   - Call `wood-fired-bugs:update_task` with:
+   - Call `wood-fired-tasks:update_task` with:
      - `id`: task ID from step 1
      - `updates`: `{ "status": "blocked" }`
 
 4. **Record blocking reason**
-   - Call `wood-fired-bugs:add_comment` with:
+   - Call `wood-fired-tasks:add_comment` with:
      - `task_id`: task ID from step 1
      - `author`: `"user"`
      - `content`: `"BLOCKED: <reason>"`

@@ -21,7 +21,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 const successEnvelope = {
-  token: 'wfb_pat_secret123',
+  token: 'wft_pat_secret123',
   token_type: 'PAT' as const,
   token_id: 42,
   user: {
@@ -47,7 +47,7 @@ describe('requestDeviceCode', () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, codeEnvelope));
     const res = await requestDeviceCode({
       baseUrl: 'https://example.test',
-      clientId: 'wfb-cli',
+      clientId: 'wft-cli',
       hostname: 'box',
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
@@ -58,14 +58,14 @@ describe('requestDeviceCode', () => {
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/json');
     const body = JSON.parse(init.body);
-    expect(body).toEqual({ client_id: 'wfb-cli', hostname: 'box' });
+    expect(body).toEqual({ client_id: 'wft-cli', hostname: 'box' });
   });
 
   it('includes token_name when supplied', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, codeEnvelope));
     await requestDeviceCode({
       baseUrl: 'https://example.test',
-      clientId: 'wfb-cli',
+      clientId: 'wft-cli',
       hostname: 'box',
       tokenName: 'cli-box-2026-05-22',
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -94,7 +94,7 @@ describe('pollForToken', () => {
     return {
       baseUrl: 'https://example.test',
       deviceCode: 'dc-12345',
-      clientId: 'wfb-cli',
+      clientId: 'wft-cli',
       initialInterval: 5,
       expiresIn: 600,
       sleepImpl: vi.fn().mockResolvedValue(undefined),
@@ -114,7 +114,7 @@ describe('pollForToken', () => {
     );
     expect(res.kind).toBe('ok');
     if (res.kind === 'ok') {
-      expect(res.response.token).toBe('wfb_pat_secret123');
+      expect(res.response.token).toBe('wft_pat_secret123');
     }
     expect(sleepImpl).toHaveBeenCalledTimes(1);
     expect(sleepImpl).toHaveBeenCalledWith(5000);
@@ -325,6 +325,6 @@ describe('pollForToken', () => {
     const parsed = new URLSearchParams(bodyStr);
     expect(parsed.get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code');
     expect(parsed.get('device_code')).toBe('dc-12345');
-    expect(parsed.get('client_id')).toBe('wfb-cli');
+    expect(parsed.get('client_id')).toBe('wft-cli');
   });
 });

@@ -29,11 +29,11 @@ function fakeRequest(initial: Record<string, unknown>): FastifyRequest {
 
 describe('getFlashAndClear', () => {
   it('returns the value and clears it when the key is present', () => {
-    const req = fakeRequest({ mintedToken: { id: 42, token: 'wfb_pat_xyz' } });
+    const req = fakeRequest({ mintedToken: { id: 42, token: 'wft_pat_xyz' } });
 
     const value = getFlashAndClear(req, 'mintedToken');
 
-    expect(value).toEqual({ id: 42, token: 'wfb_pat_xyz' });
+    expect(value).toEqual({ id: 42, token: 'wft_pat_xyz' });
     // After read, the key must be cleared (one-shot semantics).
     expect(req.session.get('mintedToken')).toBeUndefined();
   });
@@ -62,14 +62,14 @@ describe('getFlashAndClear', () => {
     // Type-level check: the return type narrows to the SessionData[K] shape.
     // If the augmentation drifts, this assertion fails to compile.
     const req = fakeRequest({
-      mintedToken: { id: 7, token: 'wfb_pat_demo' },
+      mintedToken: { id: 7, token: 'wft_pat_demo' },
     });
 
     const value = getFlashAndClear(req, 'mintedToken');
 
     // At runtime: the value preserves its structural shape.
     expect(value?.id).toBe(7);
-    expect(value?.token).toBe('wfb_pat_demo');
+    expect(value?.token).toBe('wft_pat_demo');
   });
 
   it('clears the key when the stored value is falsy-but-defined', () => {

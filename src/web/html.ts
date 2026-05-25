@@ -117,7 +117,7 @@ export interface LayoutOptions {
  *   tighten with nonces; for v1.6 the policy at least bounds script
  *   sources to `self` + inline (no external CDNs).
  * - `Referrer-Policy: same-origin`: prevents external referers from
- *   learning that a user visited a Wood Fired Bugs page.
+ *   learning that a user visited a Wood Fired Tasks page.
  *
  * Exported as a const object so consumers (the layout helper AND the
  * Fastify onSend hook in server.ts, AND auth-error.ts) all stamp the

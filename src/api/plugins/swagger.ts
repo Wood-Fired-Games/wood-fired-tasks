@@ -17,7 +17,7 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
   await fastify.register(fastifySwagger, {
     openapi: {
       info: {
-        title: 'Wood Fired Bugs API',
+        title: 'Wood Fired Tasks API',
         description: 'Task management REST API for Wood Fired Games. Designed for LLM agent consumption.',
         version: '1.0.0',
       },
@@ -34,15 +34,15 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
           // Phase 28 Plan 06: document the Personal Access Token surface
           // alongside the legacy X-API-Key. Routes accept EITHER scheme — the
           // chain auth plugin (src/api/plugins/auth/index.ts) tries
-          // Authorization: Bearer wfb_pat_* first, then falls through to
+          // Authorization: Bearer wft_pat_* first, then falls through to
           // X-API-Key. Both schemes are listed in the top-level `security`
           // array so generated client code can pick either.
           bearerAuth: {
             type: 'http',
             scheme: 'bearer',
-            bearerFormat: 'wfb_pat_<base32>',
+            bearerFormat: 'wft_pat_<base32>',
             description:
-              'Personal Access Token. Format: `wfb_pat_<32 base32 chars>`. ' +
+              'Personal Access Token. Format: `wft_pat_<32 base32 chars>`. ' +
               'Mint via POST /api/v1/me/tokens (session-only).',
           },
         },

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wood Fired Bugs - Linux/macOS Installer
+# Wood Fired Tasks - Linux/macOS Installer
 # Installs Claude Code skills and MCP server configuration
 
 # ============================================================================
@@ -18,10 +18,10 @@ SKILLS_DEST="$HOME/.claude/commands/tasks"
 # by Claude Code. Empty directory is non-fatal (logged + skipped).
 SKILLS_AGENT_SOURCE="$SCRIPT_DIR/skills/agents"
 SKILLS_AGENT_DEST="$HOME/.claude/agents"
-SERVICE_URL="${WOOD_FIRED_BUGS_URL:-http://localhost:3000}"
+SERVICE_URL="${WOOD_FIRED_TASKS_URL:-http://localhost:3000}"
 
 # Per-user secret file for the API key. Strict 0600 permissions.
-SECRET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs"
+SECRET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-tasks"
 SECRET_FILE="$SECRET_DIR/api-key"
 
 # chmod helper — silent if file is missing so we never block install on it.
@@ -99,7 +99,7 @@ fi
 # Verify skills source directory exists
 if [ ! -d "$SKILLS_SOURCE" ]; then
   echo "[ERROR] Skills directory not found at $SKILLS_SOURCE"
-  echo "[INFO] Make sure you are running this script from the wood-fired-bugs project directory"
+  echo "[INFO] Make sure you are running this script from the wood-fired-tasks project directory"
   exit 1
 fi
 
@@ -118,8 +118,8 @@ echo "[OK] Found $SKILL_COUNT skill files"
 
 # Install mode: 'local' (default) writes a stdio MCP server entry that opens
 # the SQLite database directly and needs only DATABASE_PATH. 'remote' writes
-# an MCP entry that talks to a deployed REST API and needs WFB_API_URL +
-# WFB_API_KEY. Local mode does NOT touch the API key at all (no prompt, no
+# an MCP entry that talks to a deployed REST API and needs WFT_API_URL +
+# WFT_API_KEY. Local mode does NOT touch the API key at all (no prompt, no
 # argv flag, no env-var read, no secret-file write).
 MODE="local"
 MODE_EXPLICIT=0
@@ -129,7 +129,7 @@ FORCE=0
 
 # Parse command line flags.
 # --api-key is DEPRECATED — secrets on argv leak via shell history and `ps`.
-# Prefer WOOD_FIRED_BUGS_API_KEY, the per-user secret file, or the interactive prompt.
+# Prefer WOOD_FIRED_TASKS_API_KEY, the per-user secret file, or the interactive prompt.
 while [[ $# -gt 0 ]]; do
   case $1 in
     --mode)
@@ -155,21 +155,21 @@ Modes:
                    Needs only DATABASE_PATH. No API key is collected, stored, or
                    written to ~/.claude.json — local MCP does not use one.
   remote           Write an MCP entry that proxies calls to a deployed REST API.
-                   Requires an API key (WFB_API_KEY) and WFB_API_URL.
+                   Requires an API key (WFT_API_KEY) and WFT_API_URL.
 
 Re-run safety:
   By default, if an MCP entry for the target server name already exists in
   ~/.claude.json, the installer preserves it and exits without changes. To
   intentionally change an existing entry, either pass explicit flags/env
-  (--mode, --api-key, WOOD_FIRED_BUGS_URL, WOOD_FIRED_BUGS_API_KEY) — which
+  (--mode, --api-key, WOOD_FIRED_TASKS_URL, WOOD_FIRED_TASKS_API_KEY) — which
   triggers an interactive confirmation prompt — or pass --force to skip the
   prompt entirely.
 
   --force, -y, --yes   Overwrite an existing MCP entry without prompting.
 
 API key resolution order in --mode remote (most secure first):
-  1. WOOD_FIRED_BUGS_API_KEY environment variable
-  2. Secret file at \$XDG_CONFIG_HOME/wood-fired-bugs/api-key (default ~/.config/wood-fired-bugs/api-key)
+  1. WOOD_FIRED_TASKS_API_KEY environment variable
+  2. Secret file at \$XDG_CONFIG_HOME/wood-fired-tasks/api-key (default ~/.config/wood-fired-tasks/api-key)
   3. Masked interactive prompt
   4. --api-key KEY argument (DEPRECATED — leaks via shell history and process listings)
 EOF
@@ -198,9 +198,9 @@ echo "[INFO] Install mode: $MODE"
 # whether an entry already exists in ~/.claude.json before doing anything
 # destructive. Local and remote modes use different keys so both can coexist.
 if [ "$MODE" = "local" ]; then
-  SERVER_NAME="wood-fired-bugs"
+  SERVER_NAME="wood-fired-tasks"
 else
-  SERVER_NAME="wood-fired-bugs-remote"
+  SERVER_NAME="wood-fired-tasks-remote"
 fi
 
 # Count any explicit user intent to change configuration. Presence (not value)
@@ -209,10 +209,10 @@ fi
 # the installer is non-destructive and preserves an existing entry untouched.
 URL_FROM_ENV=0
 API_KEY_FROM_ENV=0
-if [ -n "${WOOD_FIRED_BUGS_URL:-}" ]; then
+if [ -n "${WOOD_FIRED_TASKS_URL:-}" ]; then
   URL_FROM_ENV=1
 fi
-if [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
+if [ -n "${WOOD_FIRED_TASKS_API_KEY:-}" ]; then
   API_KEY_FROM_ENV=1
 fi
 
@@ -236,8 +236,8 @@ if [ -n "$EXISTING_ENTRY" ]; then
   elif [ "$ANY_EXPLICIT" -eq 0 ]; then
     PRESERVE_EXISTING=1
     echo "[OK] Existing '$SERVER_NAME' MCP entry detected — preserving it (no flags supplied)."
-    echo "[INFO] Re-run with --force, or with explicit --mode/--api-key/WOOD_FIRED_BUGS_URL/"
-    echo "       WOOD_FIRED_BUGS_API_KEY, to intentionally change the entry."
+    echo "[INFO] Re-run with --force, or with explicit --mode/--api-key/WOOD_FIRED_TASKS_URL/"
+    echo "       WOOD_FIRED_TASKS_API_KEY, to intentionally change the entry."
   else
     echo ""
     echo "[WARN] An MCP entry for '$SERVER_NAME' is already configured in $CONFIG_FILE:"
@@ -275,9 +275,9 @@ if [ "$PRESERVE_EXISTING" -eq 1 ]; then
   API_KEY=""
 elif [ "$MODE" = "local" ]; then
   # Local mode: silently ignore any API-key inputs. The local MCP server reads
-  # DATABASE_PATH and never reads WFB_API_KEY / WOOD_FIRED_BUGS_API_KEY, so
+  # DATABASE_PATH and never reads WFT_API_KEY / WOOD_FIRED_TASKS_API_KEY, so
   # keeping a key in ~/.claude.json would be dead weight (and a leak surface).
-  if [ "$API_KEY_FROM_ARGV" -eq 1 ] || [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
+  if [ "$API_KEY_FROM_ARGV" -eq 1 ] || [ -n "${WOOD_FIRED_TASKS_API_KEY:-}" ]; then
     echo "[INFO] Ignoring API key input — local mode does not use one."
   fi
   API_KEY=""
@@ -286,14 +286,14 @@ else
   if [ "$API_KEY_FROM_ARGV" -eq 1 ]; then
     echo "[WARN] --api-key on the command line is DEPRECATED."
     echo "[WARN] Command-line secrets leak via shell history and 'ps -ef'."
-    echo "[WARN] Prefer WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SECRET_FILE),"
+    echo "[WARN] Prefer WOOD_FIRED_TASKS_API_KEY env var, the secret file ($SECRET_FILE),"
     echo "[WARN] or the interactive prompt. This flag will be removed in a future release."
   fi
 
   # Check for API key from environment variable
-  if [ -z "$API_KEY" ] && [ -n "${WOOD_FIRED_BUGS_API_KEY:-}" ]; then
-    API_KEY="$WOOD_FIRED_BUGS_API_KEY"
-    echo "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable"
+  if [ -z "$API_KEY" ] && [ -n "${WOOD_FIRED_TASKS_API_KEY:-}" ]; then
+    API_KEY="$WOOD_FIRED_TASKS_API_KEY"
+    echo "[INFO] Using API key from WOOD_FIRED_TASKS_API_KEY environment variable"
   fi
 
   # Check for API key from per-user secret file
@@ -313,7 +313,7 @@ else
   # Prompt for API key if still not provided
   if [ -z "$API_KEY" ]; then
     echo ""
-    read -rsp "Enter Wood Fired Bugs API key: " API_KEY
+    read -rsp "Enter Wood Fired Tasks API key: " API_KEY
     echo ""
   fi
 
@@ -452,7 +452,7 @@ if [ "$MODE" = "local" ]; then
     --arg db   "$SCRIPT_DIR/data/tasks.db" \
     '{
       mcpServers: {
-        "wood-fired-bugs": {
+        "wood-fired-tasks": {
           command: "node",
           args: [$entry],
           env: {
@@ -463,7 +463,7 @@ if [ "$MODE" = "local" ]; then
     }' > "$NEW_SERVER_CONFIG"
 else
   # Remote: stdio bridge that proxies tools to a REST backend. Requires
-  # WFB_API_URL + WFB_API_KEY. Server name 'wood-fired-bugs-remote' matches
+  # WFT_API_URL + WFT_API_KEY. Server name 'wood-fired-tasks-remote' matches
   # docs/MCP.md so both entries can coexist in ~/.claude.json.
   #
   # Same absolute-path rule as the local branch — Claude Code ignores `cwd`.
@@ -473,12 +473,12 @@ else
     --arg entry "$SCRIPT_DIR/dist/mcp/remote/index.js" \
     '{
       mcpServers: {
-        "wood-fired-bugs-remote": {
+        "wood-fired-tasks-remote": {
           command: "node",
           args: [$entry],
           env: {
-            WFB_API_URL: $url,
-            WFB_API_KEY: $key
+            WFT_API_URL: $url,
+            WFT_API_KEY: $key
           }
         }
       }
@@ -541,7 +541,7 @@ echo "  - Service URL: $SERVICE_URL"
 echo ""
 echo "Next steps:"
 echo "  1. Restart Claude Code to apply configuration changes"
-echo "  2. Ensure the wood-fired-bugs service is running (npm start)"
+echo "  2. Ensure the wood-fired-tasks service is running (npm start)"
 echo "  3. Run /tasks: in Claude Code to get started"
 echo ""
 echo "[OK] Installation complete"

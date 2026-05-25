@@ -231,7 +231,7 @@ const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
       // the browser silently rejects it. Most browsers cap individual
       // cookies at 4 KB; some intermediaries (proxies, WAFs) drop
       // headers above 4 KB without notice. The Google id_token plus
-      // sealed-box overhead plus base64 inflation can put `wfb_session`
+      // sealed-box overhead plus base64 inflation can put `wft_session`
       // in the 2.5–4 KB range; a custom-claim-laden id_token (group
       // memberships, etc.) can push past the limit. The warn fires
       // EARLY so operators see the problem in logs before users start

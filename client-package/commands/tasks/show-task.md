@@ -14,9 +14,9 @@ Retrieve and display comprehensive information about a specific task.
    - If missing or invalid, display error and exit
 
 2. Fetch task data in parallel:
-   - Call `wood-fired-bugs:get_task` with id parameter
-   - Call `wood-fired-bugs:get_comments` with task_id parameter
-   - Call `wood-fired-bugs:get_dependencies` with task_id parameter
+   - Call `wood-fired-tasks:get_task` with id parameter
+   - Call `wood-fired-tasks:get_comments` with task_id parameter
+   - Call `wood-fired-tasks:get_dependencies` with task_id parameter
 
 3. Handle task not found:
    - If get_task returns error, display "Task <id> not found"

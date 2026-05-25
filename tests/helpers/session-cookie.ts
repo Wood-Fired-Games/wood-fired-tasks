@@ -23,7 +23,7 @@ import type { Response } from 'light-my-request';
  */
 export function extractSessionCookie(
   response: Pick<Response, 'headers'>,
-  cookieName = 'wfb_session',
+  cookieName = 'wft_session',
 ): string | null {
   const raw = response.headers['set-cookie'];
   if (!raw) return null;

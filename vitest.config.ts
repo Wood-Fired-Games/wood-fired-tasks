@@ -5,6 +5,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     fileParallelism: false, // Run test files sequentially to avoid env var conflicts
+    // Strip inherited OIDC_* env vars before each file so a developer shell that
+    // exports a partial set (e.g. ~/.bashrc's lone OIDC_CLIENT_ID for `tasks
+    // login`) can't trip loadConfig's all-or-nothing OIDC rule. See vitest.setup.ts.
+    setupFiles: ['./vitest.setup.ts'],
     // task #212: keep *.bench.ts out of the normal `npm test` run. Vitest still
     // discovers them when invoked via `vitest bench` because that mode uses its
     // own includeBench glob (defaulting to `**/*.bench.{js,ts}`) which ignores

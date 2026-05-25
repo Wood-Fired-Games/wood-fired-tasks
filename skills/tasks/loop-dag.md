@@ -1,13 +1,13 @@
 ---
 name: loop-dag
-description: Wave-by-wave parallel executor for DAG-topology wood-fired-bugs projects. Computes the dependency frontier (open tasks whose blocked_by edges are all satisfied), dispatches a worker subagent per frontier task in parallel under a concurrency cap, runs the mandatory tasks-verifier per worker, recomputes the frontier wave-by-wave until the backlog drains, runs INTEGRATION-AUDIT per wave on file overlaps, and emits LOOP-RUN.md with an extended wave_summary section. Refuses FLAT (use /tasks:loop) and DAG_CYCLIC (cycles must be broken first). Sibling executor to /tasks:loop; differs by exploiting parallelism across independent frontier tasks instead of running a single topological order sequentially.
+description: Wave-by-wave parallel executor for DAG-topology wood-fired-tasks projects. Computes the dependency frontier (open tasks whose blocked_by edges are all satisfied), dispatches a worker subagent per frontier task in parallel under a concurrency cap, runs the mandatory tasks-verifier per worker, recomputes the frontier wave-by-wave until the backlog drains, runs INTEGRATION-AUDIT per wave on file overlaps, and emits LOOP-RUN.md with an extended wave_summary section. Refuses FLAT (use /tasks:loop) and DAG_CYCLIC (cycles must be broken first). Sibling executor to /tasks:loop; differs by exploiting parallelism across independent frontier tasks instead of running a single topological order sequentially.
 argument-hint: [project-name] [--max-waves N] [--concurrency K]
 disable-model-invocation: false
 ---
 
 # Task Loop-DAG Workflow (Wave 4.3 / task #341)
 
-You are the **orchestrator** of an autonomous backlog-drain for a **DAG-topology** project. The wood-fired-bugs project you target has dependency edges; tasks must run in an order that respects them, but tasks on the same frontier (no unsatisfied dependencies) MAY run in parallel.
+You are the **orchestrator** of an autonomous backlog-drain for a **DAG-topology** project. The wood-fired-tasks project you target has dependency edges; tasks must run in an order that respects them, but tasks on the same frontier (no unsatisfied dependencies) MAY run in parallel.
 
 > See [loop-shared.md](loop-shared.md) for the worker brief template (§A), VerifierInputs envelope (§B), and LOOP-RUN.md frontmatter (§C) — same contracts as /tasks:loop. Also: INTEGRATION-AUDIT.md schema (§D), declared scope narrowing carve-out (§E), `.flaky-tests.json` handling (§F), verifier parse-failure patterns (§G), declared scope narrowing detection (§H), Step 8 close-out comment (§I), Step 5 post-correction carve-out (§J).
 
@@ -19,7 +19,7 @@ This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md).
 
 **Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop-dag`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the per-worker brief / claim / comment sections below (and reused from `loop.md` / `loop-shared.md`) — this block is the canonical pointer.
 
-This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_projects,mcp__wood-fired-bugs__list_tasks,mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies,mcp__wood-fired-bugs__claim_task,mcp__wood-fired-bugs__update_task,mcp__wood-fired-bugs__add_comment,mcp__wood-fired-bugs__topology_check`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check`) and retry.
 
 ---
 
@@ -35,7 +35,7 @@ Parse `$ARGUMENTS` — or, when invoked via natural language ("drain DAG project
 
 ### Resolve Project ID
 
-Reuse `loop.md` §1 Resolve Project ID verbatim. Same `wood-fired-bugs:list_projects` call, same match precedence (ID first, then case-insensitive partial name match), same "list available projects and stop" fallback when nothing matches.
+Reuse `loop.md` §1 Resolve Project ID verbatim. Same `wood-fired-tasks:list_projects` call, same match precedence (ID first, then case-insensitive partial name match), same "list available projects and stop" fallback when nothing matches.
 
 ---
 
@@ -73,7 +73,7 @@ Record the branch outcome in orchestrator state as `gate_decision` for inclusion
 
 After §2f passes and BEFORE the heavy §2a–§2e pre-loop discovery, scan every open task in the project for hand-replay / cross-context indicators. Tasks that match are NOT dispatch-eligible regardless of dependency satisfaction. This gate exists because the §2f topology gate filters by edge structure but NOT by "is this a sensible thing for an autonomous worker subagent to attempt." Tasks that explicitly need a human-in-the-loop OR a separate orchestrator context to verify (e.g. "observe a live /tasks:loop run apply the exclusion") cannot produce a PASS-able evidence shape from a worker; dispatching them wastes budget and noise-floors the verdict distribution with guaranteed NOT_VERIFIED outcomes.
 
-Run this scan via a single `wood-fired-bugs:list_tasks` (already done in §3a step 1 — reuse the result rather than re-fetching) plus per-task `wood-fired-bugs:get_task` only for the tasks whose tag list contains a candidate match (cheap pre-filter). Build the orchestrator-state set `not_dispatchable_this_run` (task id → reason).
+Run this scan via a single `wood-fired-tasks:list_tasks` (already done in §3a step 1 — reuse the result rather than re-fetching) plus per-task `wood-fired-tasks:get_task` only for the tasks whose tag list contains a candidate match (cheap pre-filter). Build the orchestrator-state set `not_dispatchable_this_run` (task id → reason).
 
 **Indicators (any one triggers the gate):**
 
@@ -95,7 +95,7 @@ Run this scan via a single `wood-fired-bugs:list_tasks` (already done in §3a st
 **Action on match (per task):**
 
 1. Add `not_dispatchable_this_run[<id>] = "feasibility: <which indicator matched>"`.
-2. Add a comment to the task via `wood-fired-bugs:add_comment` (once per loop run — guard with a check that no prior `/tasks:loop-dag worker-feasibility gate` comment exists for this `verified_at`-equivalent run-id):
+2. Add a comment to the task via `wood-fired-tasks:add_comment` (once per loop run — guard with a check that no prior `/tasks:loop-dag worker-feasibility gate` comment exists for this `verified_at`-equivalent run-id):
 
    > `"/tasks:loop-dag worker-feasibility gate (run_id=<run_id>): task tagged/described as requiring hand-replay or live cross-context observation (matched indicator: <X>). An autonomous worker subagent cannot produce evidence for criteria of this shape. Marking as not-dispatchable for THIS run only — the task remains open for human-driven closure, or for a future loop run after the acceptance criteria are reshaped to be worker-checkable."`
 
@@ -116,15 +116,15 @@ Each wave goes through **six sub-steps**: 3a (compute frontier), 3b (claim + dis
 ### Step 3a — Compute the frontier
 
 ```
-wood-fired-bugs:list_tasks with project_id=<id>, status=open
+wood-fired-tasks:list_tasks with project_id=<id>, status=open
 ```
 
 The **frontier** is the set of open tasks whose `blocked_by` edges are ALL closed (`status` in {`done`, `closed`}) OR satisfied (the blocking task is missing from the project — defensive treatment of orphaned edges, mirroring `TopologyService`'s same-project edge filter).
 
 Algorithm:
 
-1. Fetch all open tasks for the project via `wood-fired-bugs:list_tasks` with `status=open` and `limit=200`.
-2. **Build the `blocked_by` index from `topology_check.edges` (already fetched in §2f).** For each edge `from → to` in the response, append `from` to `blocked_by[to]`. **Do NOT call `wood-fired-bugs:get_dependencies` per task** — `topology_check` is the authoritative single-call source-of-truth and per-task fetches are N+1 round-trips that the §2f call has already eliminated. The only exception: if §2f's `topology_check` was unavailable or returned a malformed response (defensive halt path), fall back to per-task `wood-fired-bugs:get_dependencies` here and cache per task id.
+1. Fetch all open tasks for the project via `wood-fired-tasks:list_tasks` with `status=open` and `limit=200`.
+2. **Build the `blocked_by` index from `topology_check.edges` (already fetched in §2f).** For each edge `from → to` in the response, append `from` to `blocked_by[to]`. **Do NOT call `wood-fired-tasks:get_dependencies` per task** — `topology_check` is the authoritative single-call source-of-truth and per-task fetches are N+1 round-trips that the §2f call has already eliminated. The only exception: if §2f's `topology_check` was unavailable or returned a malformed response (defensive halt path), fall back to per-task `wood-fired-tasks:get_dependencies` here and cache per task id.
 3. A task is **on the frontier** iff every `blocked_by` task id either (a) has `status` in {`done`, `closed`}, (b) is missing from the project (cross-project or dangling edge — drop defensively, matching `src/services/topology.service.ts`'s same-project filter), or (c) has been already-closed by a prior wave in THIS loop run (track this in orchestrator state — a task closed in wave N is satisfied for wave N+1's frontier calculation even if the bugs-DB write hasn't been re-read).
 4. **Skip tasks already claimed by someone else.** If a task is on the frontier but its `claimed_at` is non-null and the assignee is not this orchestrator's agent name, drop it from this wave's dispatch set and re-evaluate it on the next frontier recomputation (it may still be claimed; that's fine — eventually it closes or is released).
 5. **Skip tasks the orchestrator already dispatched in a prior wave of THIS run.** A worker that returned FAIL → blocked stays blocked; do NOT silently re-attempt within the same loop run. Track these in orchestrator state by task id.
@@ -139,8 +139,8 @@ Algorithm:
 
 For each task in the wave's dispatch set (up to `--concurrency K`):
 
-1. Claim the task: `wood-fired-bugs:claim_task with task_id=<id>, assignee=<your agent name>`. If the claim fails (another runner won the race), drop the task from this wave's dispatch set and re-evaluate on the next frontier recomputation.
-2. Read context: `wood-fired-bugs:get_task with id=<id>`, `wood-fired-bugs:get_comments with task_id=<id>`. Extract acceptance criteria, linked docs, constraints — exactly as `loop.md` §Step 2 (Claim and read) describes.
+1. Claim the task: `wood-fired-tasks:claim_task with task_id=<id>, assignee=<your agent name>`. If the claim fails (another runner won the race), drop the task from this wave's dispatch set and re-evaluate on the next frontier recomputation.
+2. Read context: `wood-fired-tasks:get_task with id=<id>`, `wood-fired-tasks:get_comments with task_id=<id>`. Extract acceptance criteria, linked docs, constraints — exactly as `loop.md` §Step 2 (Claim and read) describes.
 3. Plan validation depth and pre-scan scope — exactly as `loop.md` §Step 3 (Plan the validation depth and pre-scan scope) describes. The pre-scan happens in the orchestrator, BEFORE dispatching the worker.
 4. Dispatch the worker subagent via the `Agent` tool. **Default `subagent_type: "general-purpose"`** — this is the universally-available type that works in every fresh session, regardless of whether the project's `install.sh` registered named subagents. Named types (e.g. `tasks-worker`) only exist in sessions started AFTER `install.sh` ran in that session; an `Agent` call with an unregistered `subagent_type` FAILS the whole dispatch silently, costing the wave. `general-purpose` + an embedded brief is the reliable path; the worker still operates the same MCP tools and reads the same files. The full brief shape (subject, goal, context, AC, validation depth, **"Do NOT commit" trailer**) is summarized inline in §6a — read that before composing your first dispatch. (Full text remains in `loop.md` §Step 4 as the authoritative source.)
 
@@ -155,8 +155,8 @@ The orchestrator waits for ALL worker subagents dispatched in this wave to retur
 If a worker times out, crashes, or returns an unparseable summary, treat that worker's task as a failed dispatch:
 
 1. Synthesize a `verdict: "NOT_VERIFIED"` evidence object for the verifier slot in §3d (no verifier dispatch for this task — there's nothing to grade against).
-2. Add a `wood-fired-bugs:add_comment` citing the worker failure mode (timeout, crash, parse failure) verbatim.
-3. Call `wood-fired-bugs:update_task with updates={ "status": "blocked", "verification_evidence": <the NOT_VERIFIED object> }`. The task stays blocked for this loop run; downstream tasks remain open and will surface in §3a's stalled-tasks check at the end.
+2. Add a `wood-fired-tasks:add_comment` citing the worker failure mode (timeout, crash, parse failure) verbatim.
+3. Call `wood-fired-tasks:update_task with updates={ "status": "blocked", "verification_evidence": <the NOT_VERIFIED object> }`. The task stays blocked for this loop run; downstream tasks remain open and will surface in §3a's stalled-tasks check at the end.
 
 ### Step 3d — Verify each worker via `tasks-verifier`
 
@@ -168,9 +168,9 @@ Re-read `loop.md` §Step 7 in full — the verifier dispatch shape (§7a build e
 
 **Branch outcomes per task (same rollup table as `loop.md` §7d):**
 
-- `verdict: "PASS"` → commit the worker's changes if not already committed (mirrors `loop.md` §Step 6 — Commit + push), call `wood-fired-bugs:update_task with updates={ "status": "done", "verification_evidence": <full evidence> }`. Add the bugs-DB close-out comment per `loop.md` §Step 8 template.
-- `verdict: "FAIL"` → call `wood-fired-bugs:add_comment` with the failed-checks bullet list, then `wood-fired-bugs:update_task with updates={ "status": "blocked", "verification_evidence": <full evidence> }`. **Downstream tasks (those whose `blocked_by` includes this task) MUST stay `open` and untouched — they will simply never appear on a future frontier** because their `blocked_by` is no longer satisfied. The orchestrator MUST NOT silently re-attempt the failed task within the same loop run. The §3a stalled-tasks check at the end will surface the downstream stall.
-- `verdict: "PARTIAL"` → call `wood-fired-bugs:add_comment` listing the UNCHECKABLE criteria, then `wood-fired-bugs:update_task with updates={ "verification_evidence": <full evidence> }` only — status stays `in_progress`. Same load-bearing rule as FAIL: downstream tasks stay open and will not appear on the next frontier (PARTIAL is not the same as `done`/`closed`; `blocked_by` is not satisfied).
+- `verdict: "PASS"` → commit the worker's changes if not already committed (mirrors `loop.md` §Step 6 — Commit + push), call `wood-fired-tasks:update_task with updates={ "status": "done", "verification_evidence": <full evidence> }`. Add the bugs-DB close-out comment per `loop.md` §Step 8 template.
+- `verdict: "FAIL"` → call `wood-fired-tasks:add_comment` with the failed-checks bullet list, then `wood-fired-tasks:update_task with updates={ "status": "blocked", "verification_evidence": <full evidence> }`. **Downstream tasks (those whose `blocked_by` includes this task) MUST stay `open` and untouched — they will simply never appear on a future frontier** because their `blocked_by` is no longer satisfied. The orchestrator MUST NOT silently re-attempt the failed task within the same loop run. The §3a stalled-tasks check at the end will surface the downstream stall.
+- `verdict: "PARTIAL"` → call `wood-fired-tasks:add_comment` listing the UNCHECKABLE criteria, then `wood-fired-tasks:update_task with updates={ "verification_evidence": <full evidence> }` only — status stays `in_progress`. Same load-bearing rule as FAIL: downstream tasks stay open and will not appear on the next frontier (PARTIAL is not the same as `done`/`closed`; `blocked_by` is not satisfied).
 - `verdict: "NOT_VERIFIED"` → same handling as `loop.md` §7d NOT_VERIFIED branch. Same downstream-stays-open rule applies.
 
 **Verifier=FAIL is a hard stop for the dependency chain.** The whole reason `/tasks:loop-dag` enforces wave-by-wave frontier recomputation is so a failure surfaces immediately and downstream work is NEVER attempted on top of a broken foundation. This is the dependency-respecting contract the task topology gate (#318) exists to guarantee.

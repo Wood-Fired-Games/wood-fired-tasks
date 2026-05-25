@@ -49,14 +49,14 @@ describe('OpenAPI Documentation', () => {
     expect(spec.openapi).toMatch(/^3\.(0|1)\./); // OpenAPI 3.0.x or 3.1.x
   });
 
-  it('The spec has info.title = Wood Fired Bugs API', async () => {
+  it('The spec has info.title = Wood Fired Tasks API', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/docs/json',
     });
 
     const spec = JSON.parse(response.payload);
-    expect(spec.info?.title).toBe('Wood Fired Bugs API');
+    expect(spec.info?.title).toBe('Wood Fired Tasks API');
   });
 
   it('The spec has paths for /api/v1/tasks (POST, GET)', async () => {
@@ -143,7 +143,7 @@ describe('OpenAPI Documentation', () => {
 
   // Phase 28 Plan 06 (PAT-04 surface documentation): the OpenAPI document
   // must publish BOTH the legacy apiKey scheme AND the new bearerAuth
-  // (Authorization: Bearer wfb_pat_*) scheme. The chain plugin already
+  // (Authorization: Bearer wft_pat_*) scheme. The chain plugin already
   // accepts either; the spec is the only client-facing surface that
   // describes it.
   it('The spec has securitySchemes.bearerAuth defined (Phase 28 PAT surface)', async () => {
@@ -158,11 +158,11 @@ describe('OpenAPI Documentation', () => {
     expect(spec.components.securitySchemes.bearerAuth.scheme).toBe('bearer');
     // bearerFormat names the prefix so client tooling can validate
     expect(spec.components.securitySchemes.bearerAuth.bearerFormat).toContain(
-      'wfb_pat_',
+      'wft_pat_',
     );
     // Description points at the public prefix and the mint endpoint
     expect(spec.components.securitySchemes.bearerAuth.description).toContain(
-      'wfb_pat_',
+      'wft_pat_',
     );
   });
 

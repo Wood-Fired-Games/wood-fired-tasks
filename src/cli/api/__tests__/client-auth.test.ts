@@ -30,7 +30,7 @@ let origEnv: Record<string, string | undefined>;
 
 const sampleCreds: Credentials = {
   active: {
-    token: 'wfb_pat_FILE_TOKEN_123',
+    token: 'wft_pat_FILE_TOKEN_123',
     token_id: 17,
     server: 'http://localhost:3000',
     user_id: 1,
@@ -42,7 +42,7 @@ const sampleCreds: Credentials = {
 
 function snapshotEnv() {
   return {
-    WFB_CREDENTIALS_PATH: process.env.WFB_CREDENTIALS_PATH,
+    WFT_CREDENTIALS_PATH: process.env.WFT_CREDENTIALS_PATH,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
     API_KEY: process.env.API_KEY,
   };
@@ -57,9 +57,9 @@ function restoreEnv(snap: typeof origEnv) {
 
 beforeEach(() => {
   origEnv = snapshotEnv();
-  tmpDir = mkdtempSync(join(tmpdir(), 'wfb-auth-'));
+  tmpDir = mkdtempSync(join(tmpdir(), 'wft-auth-'));
   // Route every test's credentials file into the per-test tmp dir.
-  process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'credentials');
+  process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'credentials');
   delete process.env.API_KEY;
   setTokenOverride(null);
   vi.restoreAllMocks();
@@ -121,12 +121,12 @@ describe('apiRequest auth precedence', () => {
   });
 
   it('uses Bearer auth from --token flag override', async () => {
-    setTokenOverride('wfb_pat_FLAG_OVERRIDE');
+    setTokenOverride('wft_pat_FLAG_OVERRIDE');
     const { captured } = captureFetch();
     const { checkHealth } = await import('../client.js');
     await checkHealth();
     const h = flatHeaders(captured.init);
-    expect(h['authorization'] ?? h['Authorization']).toBe('Bearer wfb_pat_FLAG_OVERRIDE');
+    expect(h['authorization'] ?? h['Authorization']).toBe('Bearer wft_pat_FLAG_OVERRIDE');
     expect(h['x-api-key'] ?? h['X-API-Key']).toBeUndefined();
   });
 
@@ -142,12 +142,12 @@ describe('apiRequest auth precedence', () => {
 
   it('--token flag wins over credentials file', async () => {
     writeCredentials(sampleCreds);
-    setTokenOverride('wfb_pat_FLAG_OVERRIDE');
+    setTokenOverride('wft_pat_FLAG_OVERRIDE');
     const { captured } = captureFetch();
     const { checkHealth } = await import('../client.js');
     await checkHealth();
     const h = flatHeaders(captured.init);
-    expect(h['authorization'] ?? h['Authorization']).toBe('Bearer wfb_pat_FLAG_OVERRIDE');
+    expect(h['authorization'] ?? h['Authorization']).toBe('Bearer wft_pat_FLAG_OVERRIDE');
   });
 
   it('credentials file wins over env.API_KEY (file > env)', async () => {

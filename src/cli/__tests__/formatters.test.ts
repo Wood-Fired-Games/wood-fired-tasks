@@ -319,7 +319,7 @@ describe('formatters: task renderers', () => {
 
 const baseProject = {
   id: 7,
-  name: 'wood-fired-bugs',
+  name: 'wood-fired-tasks',
   description: 'An example project',
   created_at: '2026-05-21T10:00:00Z',
   updated_at: '2026-05-21T10:00:00Z',
@@ -344,7 +344,7 @@ describe('formatters: project renderers', () => {
   it('formatProjectTable shows project rows', async () => {
     const { formatProjectTable } = await loadModule();
     const out = formatProjectTable([baseProject]);
-    expect(out).toContain('wood-fired-bugs');
+    expect(out).toContain('wood-fired-tasks');
     expect(out).toContain('An example project');
   });
 
@@ -366,7 +366,7 @@ describe('formatters: project renderers', () => {
     const out = formatProjectDetail(baseProject);
     expect(out).toContain('ID:');
     expect(out).toContain('Name:');
-    expect(out).toContain('wood-fired-bugs');
+    expect(out).toContain('wood-fired-tasks');
     expect(out).toContain('Description:');
     expect(out).toContain('Created:');
     expect(out).toContain('Updated:');

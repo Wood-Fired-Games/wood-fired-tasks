@@ -1,12 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Uninstalls Wood Fired Bugs client configuration from this machine.
+    Uninstalls Wood Fired Tasks client configuration from this machine.
 
 .DESCRIPTION
     Removes all configuration added by setup.ps1:
     - /tasks: skill files from Claude Code commands directory
-    - wood-fired-bugs MCP server entry from Claude Code settings
+    - wood-fired-tasks MCP server entry from Claude Code settings
     - tasks.cmd CLI wrapper
     - bin directory from user PATH
 #>
@@ -14,7 +14,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "Wood Fired Bugs - Uninstall" -ForegroundColor Cyan
+Write-Host "Wood Fired Tasks - Uninstall" -ForegroundColor Cyan
 Write-Host "===========================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -37,15 +37,15 @@ Write-Host ""
 Write-Host "Removing MCP server from Claude Code..." -ForegroundColor Yellow
 
 if (Get-Command claude -ErrorAction SilentlyContinue) {
-    $removeOutput = & claude mcp remove wood-fired-bugs --scope user 2>&1
+    $removeOutput = & claude mcp remove wood-fired-tasks --scope user 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "OK: Removed wood-fired-bugs (user scope)" -ForegroundColor Green
+        Write-Host "OK: Removed wood-fired-tasks (user scope)" -ForegroundColor Green
     } else {
         Write-Host "OK: MCP server entry not found (already removed)" -ForegroundColor Green
     }
 } else {
     Write-Host "WARNING: 'claude' CLI not found on PATH; skipping MCP removal." -ForegroundColor Yellow
-    Write-Host "         If installed previously, run: claude mcp remove wood-fired-bugs --scope user" -ForegroundColor Yellow
+    Write-Host "         If installed previously, run: claude mcp remove wood-fired-tasks --scope user" -ForegroundColor Yellow
 }
 
 # ── 3. Remove tasks.cmd ──────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ if ($UserPath -like "*$BinDir*") {
 Write-Host ""
 Write-Host "Removing cached API key..." -ForegroundColor Yellow
 
-$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-bugs" } else { Join-Path $env:USERPROFILE ".wood-fired-bugs" }
+$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-tasks" } else { Join-Path $env:USERPROFILE ".wood-fired-tasks" }
 $SecretFile = Join-Path $SecretDir "api-key"
 if (Test-Path $SecretFile) {
     Remove-Item -Path $SecretFile -Force

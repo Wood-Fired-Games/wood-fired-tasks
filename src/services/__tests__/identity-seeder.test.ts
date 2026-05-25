@@ -368,7 +368,7 @@ describe('seedIdentities', () => {
       // Each connection serialises its own transactions; the DB-level
       // partial UNIQUE indexes from migration 010 guarantee the second
       // boot's INSERTs no-op rather than produce duplicates.
-      const tmp = mkdtempSync(join(tmpdir(), 'wfb-seeder-race-'));
+      const tmp = mkdtempSync(join(tmpdir(), 'wft-seeder-race-'));
       const dbPath = join(tmp, 'race.db');
       let dbA: Database.Database | undefined;
       let dbB: Database.Database | undefined;

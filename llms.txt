@@ -1,4 +1,4 @@
-# wood-fired-bugs
+# wood-fired-tasks
 
 > Network-wide task tracking with REST, MCP, and CLI surfaces. Vendor-neutral
 > agent context — start with AGENTS.md.

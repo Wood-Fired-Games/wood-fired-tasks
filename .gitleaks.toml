@@ -1,4 +1,4 @@
-# gitleaks config for wood-fired-bugs
+# gitleaks config for wood-fired-tasks
 # Inherits all default rules from gitleaks v8.x; only adds allowlists
 # for known false positives (test fixtures, documentation placeholders,
 # and internal planning docs that ship outside the npm tarball).
@@ -10,7 +10,7 @@
 useDefault = true
 
 [allowlist]
-description = "wood-fired-bugs false-positive allowlist (see task #256)"
+description = "wood-fired-tasks false-positive allowlist (see task #256)"
 
 paths = [
   # Internal planning workspaces — never published to npm, not part of
@@ -53,16 +53,21 @@ regexes = [
   '''validSecret32''',
   '''tooShortSecret31''',
   '''tooLongSecret33''',
-  # Test PAT fixtures matching wfb_pat_<obvious-placeholder> in auth
-  # tests (device-flow, credentials, device-token). The prefix
-  # `wfb_pat_` is the project's real PAT format — only the specific
-  # placeholder bodies are allowlisted, NOT the prefix itself, so a
-  # real `wfb_pat_<random-hex>` accidentally landing in a test still
-  # trips the gate. (2026-05-24 — 3 historic findings across 079d033 /
-  # b80606b / be54656.)
+  # Test PAT fixtures matching <prefix>_pat_<obvious-placeholder> in auth
+  # tests (device-flow, credentials, device-token). The prefix `wft_pat_`
+  # is the project's real PAT format (renamed from `wfb_pat_` in the
+  # project-13 rename) — only the specific placeholder bodies are
+  # allowlisted, NOT the prefix itself, so a real `wft_pat_<random-hex>`
+  # accidentally landing in a test still trips the gate. Both prefixes are
+  # listed because the full-history scan still sees the pre-rename
+  # `wfb_pat_` fixtures in historic commits. (2026-05-24 — 3 historic
+  # findings across 079d033 / b80606b / be54656; renamed 2026-05-25.)
   '''wfb_pat_secret123''',
   '''wfb_pat_ABCDEFG1234567890''',
   '''wfb_pat_MINTED1234567890ABCDEFGHIJKLMNOP''',
+  '''wft_pat_secret123''',
+  '''wft_pat_ABCDEFG1234567890''',
+  '''wft_pat_MINTED1234567890ABCDEFGHIJKLMNOP''',
 ]
 
 stopwords = [

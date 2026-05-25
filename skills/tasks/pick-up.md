@@ -11,7 +11,7 @@ Assign a task to the current user and transition it to in_progress status.
 
 **Resolve a real identity** before the `assignee` field — do NOT pass the literal `"user"` (that turns every machine's `/tasks:my-work` into a noise-floor of "everyone's tasks"). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>`. Pick once at top of invocation and capture as `$ASSIGNEE`.
 
-This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__claim_task,mcp__wood-fired-bugs__get_task`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__get_task`) and retry.
 
 ## Workflow
 
@@ -19,7 +19,7 @@ This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fire
 
 2. **Resolve assignee** per Preflight → `$ASSIGNEE`.
 
-3. **MANDATORY pre-check** — call `wood-fired-bugs:get_task` with `id=<id>`. Branch on current status:
+3. **MANDATORY pre-check** — call `wood-fired-tasks:get_task` with `id=<id>`. Branch on current status:
    - **`open`** → proceed to step 4.
    - **`in_progress`** with assignee == `$ASSIGNEE` → idempotent re-pickup; just print "Already yours" and exit.
    - **`in_progress`** with different assignee → warn "Task <id> is claimed by <other>. Steal? (y/N)". Default abort on no response.
@@ -29,7 +29,7 @@ This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fire
    - **Any other status** → report verbatim and exit; defensive.
 
 4. **Atomic claim via `claim_task` (NOT `update_task`)** — the dedicated tool encodes race-condition protection that `update_task` does not:
-   - Call `wood-fired-bugs:claim_task` with `task_id=<id>, assignee=$ASSIGNEE`.
+   - Call `wood-fired-tasks:claim_task` with `task_id=<id>, assignee=$ASSIGNEE`.
    - On race-loss (another runner won the claim between our get_task and claim_task): re-fetch and re-evaluate — do NOT force.
 
 5. **Confirm successful pickup:**

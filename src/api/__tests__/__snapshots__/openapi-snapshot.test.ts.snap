@@ -11,8 +11,8 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         "type": "apiKey",
       },
       "bearerAuth": {
-        "bearerFormat": "wfb_pat_<base32>",
-        "description": "Personal Access Token. Format: \`wfb_pat_<32 base32 chars>\`. Mint via POST /api/v1/me/tokens (session-only).",
+        "bearerFormat": "wft_pat_<base32>",
+        "description": "Personal Access Token. Format: \`wft_pat_<32 base32 chars>\`. Mint via POST /api/v1/me/tokens (session-only).",
         "scheme": "bearer",
         "type": "http",
       },
@@ -20,7 +20,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
   },
   "info": {
     "description": "Task management REST API for Wood Fired Games. Designed for LLM agent consumption.",
-    "title": "Wood Fired Bugs API",
+    "title": "Wood Fired Tasks API",
     "version": "<pinned>",
   },
   "openapi": "3.0.3",
@@ -212,7 +212,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
       "post": {
-        "description": "Mint a new Personal Access Token. The full \`wfb_pat_...\` token is returned EXACTLY ONCE in the response body — store it securely; it cannot be retrieved later.",
+        "description": "Mint a new Personal Access Token. The full \`wft_pat_...\` token is returned EXACTLY ONCE in the response body — store it securely; it cannot be retrieved later.",
         "responses": {
           "201": {
             "content": {

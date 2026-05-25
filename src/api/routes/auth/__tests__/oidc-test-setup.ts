@@ -38,7 +38,7 @@ import type { Config } from '../../../../config/env.js';
 const ISSUER = 'https://accounts.example.com';
 export const CLIENT_ID = 'test-client-id.example.com';
 const CLIENT_SECRET = 'test-client-secret';
-export const REDIRECT_URI = 'https://wfb.example.com/auth/callback';
+export const REDIRECT_URI = 'https://wft.example.com/auth/callback';
 export const SCOPES = 'openid email profile';
 
 declare module 'fastify' {
@@ -117,7 +117,7 @@ export async function mountAuthRoutes(
   await server.register(fastifyCookie);
   await server.register(fastifySecureSession, {
     sessionName: 'session',
-    cookieName: 'wfb_session',
+    cookieName: 'wft_session',
     // 32-byte sodium key, fresh per call for test isolation.
     key: randomBytes(32),
     expiry: SESSION_LIFETIME_SECONDS,
@@ -138,10 +138,10 @@ export async function mountAuthRoutes(
     scopes: SCOPES,
     // WR-02 / WR-03 fix: pass concrete values for the new
     // AuthRoutesOptions fields. The cookie name matches what the harness
-    // registers above (`cookieName: 'wfb_session'`); the post-logout URI
+    // registers above (`cookieName: 'wft_session'`); the post-logout URI
     // is derived from REDIRECT_URI's origin to mirror the production
     // smart default at server.ts.
-    sessionCookieName: 'wfb_session',
+    sessionCookieName: 'wft_session',
     postLogoutRedirectUri: `${new URL(REDIRECT_URI).origin}/auth/login`,
     // Plan 30-08 — device-flow routes now mounted by the barrel; thread
     // origin + clientId through so this harness exercises the same wiring

@@ -7,11 +7,11 @@ Owner: Repository maintainers
 > a future reference example at
 > `docs/decomposition-reference-example.md` (deferred to the implementation
 > follow-on tasks). This document is the design-of-record landed by
-> wood-fired-bugs task **#320**.
+> wood-fired-tasks task **#320**.
 
 ## Status
 
-Wave 5 DESIGN landed by wood-fired-bugs task **#320** (2026-05-23).
+Wave 5 DESIGN landed by wood-fired-tasks task **#320** (2026-05-23).
 Runtime orchestration is **deferred** — the skill file at
 [`skills/tasks/decompose.md`](../skills/tasks/decompose.md) is a discovery
 stub that points users at this design and refuses to dispatch any subagent
@@ -31,19 +31,19 @@ step of the pipeline.
 The Wave 4 readiness audit found a structural gap between the two
 autonomous orchestrators shipped to date:
 
-- **`/tasks:loop-dag`** (Wave 4.3 / #341) drains a wood-fired-bugs
+- **`/tasks:loop-dag`** (Wave 4.3 / #341) drains a wood-fired-tasks
   project whose topology is `DAG` by computing the dependency frontier
   wave-by-wave and dispatching workers in parallel within each wave. It
   assumes the project is *already* populated with dependency-edged tasks
   — it does not decompose a goal.
-- **`/tasks:loop`** assumes the wood-fired-bugs project is *already*
+- **`/tasks:loop`** assumes the wood-fired-tasks project is *already*
   populated with bug-sized tasks. The Wave 4.2 topology pre-flight gate
   (#319) routes `DAG` projects to `/tasks:loop-dag`; `/tasks:loop` itself
   is the `FLAT`-topology executor.
 
 There is no equivalent of `plan-phase` for the bugs-db side. A user with
 a project-level goal ("ship OIDC SSO", "audit accessibility on the chat
-surface") today has to hand-author 8–25 wood-fired-bugs tasks before any
+surface") today has to hand-author 8–25 wood-fired-tasks tasks before any
 orchestrator can drain them. That hand-authoring is the load-bearing
 step `/tasks:decompose` will own.
 
@@ -63,14 +63,14 @@ triggers:
   - "break down this goal"
   - "/tasks:decompose"
 required-args:
-  --project <id>          # wood-fired-bugs project id (positive integer)
+  --project <id>          # wood-fired-tasks project id (positive integer)
   --goal "..."            # one sentence, ≤ 200 words
 optional-args:
   --success "..."         # repeatable bullet; 3–5 total required by §1
   --domain <enum>         # frontend | backend | docs | infra | mixed
   --dry-run               # run §1–§7, emit DECOMPOSITION.md, skip §8 materialize
 outputs:
-  - N candidate tasks created in wood-fired-bugs via create_task
+  - N candidate tasks created in wood-fired-tasks via create_task
   - K dependency edges added via add_dependency
   - DECOMPOSITION.md emitted to .planning/decompositions/<UTC>-<project_id>.md
     (NOT committed — .planning/ is gitignored, same rationale as LOOP-RUN.md)
@@ -175,7 +175,7 @@ re-run Step 4 once on the splits.
 
 ### Step 8 — Materialize
 
-Create the surviving candidates in wood-fired-bugs via `create_task`,
+Create the surviving candidates in wood-fired-tasks via `create_task`,
 then add the dependency edges via `add_dependency`. Materialization is
 idempotent on `decomposition_id` — re-running the same decomposition
 (same goal + same project + same `decomposition_id`) MUST NOT duplicate
@@ -281,7 +281,7 @@ by `DecompositionFrontmatterSchema` in `src/lib/decompose/schema.ts`:
 | Field                    | Type        | Notes                                                                   |
 |--------------------------|-------------|-------------------------------------------------------------------------|
 | `decomposition_id`       | UUIDv4      | Stable across re-runs; dedup key for §8 materialization.                |
-| `project_id`             | int ≥ 1     | wood-fired-bugs project id.                                             |
+| `project_id`             | int ≥ 1     | wood-fired-tasks project id.                                             |
 | `generated_at`           | RFC 3339    | UTC start time.                                                         |
 | `goal`                   | string      | Non-empty, ≤ ~1500 chars (200-word cap).                                |
 | `success_criteria`       | string[]    | 3–5 entries.                                                            |
@@ -402,7 +402,7 @@ subagent dispatch.
 
 ## Follow-on tasks
 
-To be created in wood-fired-bugs project 15 *after* this design lands:
+To be created in wood-fired-tasks project 15 *after* this design lands:
 
 - **Implement /tasks:decompose runtime** — replace the discovery stub
   in `skills/tasks/decompose.md` with the full pipeline. Wire Step 2

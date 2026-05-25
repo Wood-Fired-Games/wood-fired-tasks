@@ -31,7 +31,7 @@ describe('doctor command', () => {
   }
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-doctor-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-doctor-'));
     dbPath = join(tmpDir, 'tasks.db');
 
     // A trivial valid DB.

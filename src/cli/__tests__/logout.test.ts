@@ -108,11 +108,11 @@ function seedCredentials(
     logged_in_at?: string;
   },
 ): string {
-  const dir = path.join(tmpDir, 'wood-fired-bugs');
+  const dir = path.join(tmpDir, 'wood-fired-tasks');
   mkdirSync(dir, { recursive: true });
   const credPath = path.join(dir, 'credentials');
   const body =
-    '# Wood Fired Bugs CLI credentials. Created by `tasks login`.\n' +
+    '# Wood Fired Tasks CLI credentials. Created by `tasks login`.\n' +
     '# Do NOT commit this file to version control.\n\n' +
     '[active]\n' +
     `token = "${active.token}"\n` +
@@ -129,14 +129,14 @@ function seedCredentials(
   return credPath;
 }
 
-const TEST_TOKEN = 'wfb_pat_TESTTOKEN1234567890';
+const TEST_TOKEN = 'wft_pat_TESTTOKEN1234567890';
 
 describe('tasks logout (subprocess)', () => {
   let server: LogoutWhoamiServer | null = null;
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(path.join(tmpdir(), 'wfb-logout-test-'));
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wft-logout-test-'));
   });
 
   afterEach(async () => {
@@ -156,7 +156,7 @@ describe('tasks logout (subprocess)', () => {
     expect(res.exitCode).toBe(0);
     expect(res.stderr).toContain('Not logged in');
     // No credentials file was created or left behind.
-    const credPath = path.join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     expect(existsSync(credPath)).toBe(false);
   });
 
@@ -326,7 +326,7 @@ describe('tasks logout (subprocess)', () => {
     const res = await runLogout(['--json'], { XDG_CONFIG_HOME: tmpDir });
     expect(res.exitCode).toBe(0);
     const combined = res.stdout + res.stderr;
-    expect(combined).not.toContain('wfb_pat_');
+    expect(combined).not.toContain('wft_pat_');
     expect(combined).not.toContain(TEST_TOKEN);
   });
 });

@@ -1,7 +1,7 @@
 ---
 name: integration-auditor
 description: Read-only auditor that grades a single file × two-hunk overlap produced by /tasks:loop when multiple worker subagents touched the same file. Emits a structured SAFE / RISKY / BROKEN verdict with cited evidence for that one overlap. Dispatched by the orchestrator at loop termination — one auditor invocation per overlap, not per file. Never edits code, never mutates the bugs database.
-tools: Read, Grep, Glob, Bash, mcp__wood-fired-bugs__get_task, mcp__wood-fired-bugs__get_comments, mcp__wood-fired-bugs__get_dependencies, mcp__wood-fired-bugs__list_tasks, mcp__wood-fired-bugs__list_projects
+tools: Read, Grep, Glob, Bash, mcp__wood-fired-tasks__get_task, mcp__wood-fired-tasks__get_comments, mcp__wood-fired-tasks__get_dependencies, mcp__wood-fired-tasks__list_tasks, mcp__wood-fired-tasks__list_projects
 ---
 
 # integration-auditor subagent
@@ -104,7 +104,7 @@ Frontmatter `tools:` line declares what you can call:
 
 - `Read`, `Grep`, `Glob` — file inspection (read-only).
 - `Bash` — restricted to the read-only allowlist below.
-- `mcp__wood-fired-bugs__get_task`, `get_comments`, `get_dependencies`,
+- `mcp__wood-fired-tasks__get_task`, `get_comments`, `get_dependencies`,
   `list_tasks`, `list_projects` — read-only bugs queries (use sparingly —
   the overlap diff usually has everything you need).
 

@@ -5,7 +5,7 @@
  * chain, plus RFC 4648 base32 token generation for Phase 28's mint command.
  *
  * Token format (locked by 27-CONTEXT.md):
- *   wfb_pat_<32 chars of RFC 4648 base32 (A-Z, 2-7), no padding>
+ *   wft_pat_<32 chars of RFC 4648 base32 (A-Z, 2-7), no padding>
  *
  * 20 random bytes = 160 bits of entropy = exactly 32 base32 chars (aligned,
  * so no `=` padding is needed).
@@ -16,7 +16,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 /** Literal token prefix; used by Phase 28's auth dispatcher to short-circuit. */
-export const PAT_PREFIX = 'wfb_pat_';
+export const PAT_PREFIX = 'wft_pat_';
 
 /** RFC 4648 base32 alphabet: 26 uppercase letters + digits 2..7 (32 symbols). */
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -61,7 +61,7 @@ export function hashToken(token: string): string {
  * Mint a new PAT. Caller (Phase 28's mint endpoint) displays `token` exactly
  * once and stores `{ prefix, suffix, hash }` on the `api_tokens` row.
  *
- *   prefix — literal `wfb_pat_` (for safe display + dispatcher prefix match)
+ *   prefix — literal `wft_pat_` (for safe display + dispatcher prefix match)
  *   suffix — last 4 chars of the base32 body (for safe display in `tokens list`)
  *   hash   — SHA-256 hex of the full token string (the only lookup key)
  */

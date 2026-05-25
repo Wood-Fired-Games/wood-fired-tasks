@@ -29,7 +29,7 @@ describe('db-check command', () => {
       .spyOn(process.stdout, 'write')
       .mockImplementation(() => true);
 
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-dbcheck-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-dbcheck-'));
     dbPath = join(tmpDir, 'tasks.db');
 
     const db = new Database(dbPath);

@@ -32,7 +32,7 @@ describe('completed command', () => {
   }
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-completed-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-completed-'));
     dbPath = join(tmpDir, 'tasks.db');
     app = await createApp(dbPath);
 

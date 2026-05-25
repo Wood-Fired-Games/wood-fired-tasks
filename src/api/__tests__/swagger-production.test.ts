@@ -102,7 +102,7 @@ describe('Swagger production gating (task #185)', () => {
       expect(r.statusCode).toBe(200);
       const spec = JSON.parse(r.payload);
       expect(spec.openapi).toBeDefined();
-      expect(spec.info.title).toBe('Wood Fired Bugs API');
+      expect(spec.info.title).toBe('Wood Fired Tasks API');
     } finally {
       await server?.close();
     }

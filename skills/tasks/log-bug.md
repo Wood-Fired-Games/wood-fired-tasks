@@ -7,13 +7,13 @@ disable-model-invocation: false
 
 # Log Bug Workflow
 
-Creates a high-priority bug task in the Wood Fired Bugs system.
+Creates a high-priority bug task in the Wood Fired Tasks system.
 
 ## Preflight: identity + MCP tools
 
 **Resolve a real identity** for `created_by` — do NOT pass the literal `"user"`. In priority: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>`. Capture as `$CREATED_BY`.
 
-Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__create_task,mcp__wood-fired-bugs__list_tasks,mcp__wood-fired-bugs__list_projects`) and retry.
+Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__list_projects`) and retry.
 
 ## Steps
 
@@ -24,16 +24,16 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
 
 2. **Select project**
    - If a `--project <id>` arg is present, use it directly.
-   - Otherwise call `wood-fired-bugs:list_projects`, present the list, ask user to pick. If only one project exists, default to it without prompting.
-   - On empty project list: "No projects exist — create one first with the wood-fired-bugs UI or API. Cannot log a bug into nothing." Stop.
+   - Otherwise call `wood-fired-tasks:list_projects`, present the list, ask user to pick. If only one project exists, default to it without prompting.
+   - On empty project list: "No projects exist — create one first with the wood-fired-tasks UI or API. Cannot log a bug into nothing." Stop.
 
 3. **Duplicate / reopen check**
-   - Call `wood-fired-bugs:list_tasks` with `project_id=<id>` and a title-keyword filter (first 3 significant words of the parsed title).
+   - Call `wood-fired-tasks:list_tasks` with `project_id=<id>` and a title-keyword filter (first 3 significant words of the parsed title).
    - If a matching task exists in `open`, `in_progress`, or `blocked` status: "Possible duplicate: #<existing_id> '<title>' (status=<status>). Reopen / comment on it instead? (y/N/new)". `y` → pivot to `/tasks:add-comment` on the existing task. `N` → create the new one. `new` → also create (override duplicate guard).
    - If matching task exists in `done` / `closed`: same prompt with "Reopen" framing → pivot to `/tasks:pick-up`.
 
 4. **Create bug task**
-   - Call `wood-fired-bugs:create_task` with:
+   - Call `wood-fired-tasks:create_task` with:
      - `title`: parsed title
      - `description`: parsed description (if any)
      - `priority`: from step 1 override or default `'high'`

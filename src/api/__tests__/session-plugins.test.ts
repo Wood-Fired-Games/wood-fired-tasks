@@ -125,8 +125,8 @@ describe('session plugins — enabled mode', () => {
     expect(maxAgeMatch).not.toBeNull();
     expect(Number(maxAgeMatch![1])).toBe(SESSION_LIFETIME_SECONDS);
 
-    // The cookie name must be the configured default ('wfb_session').
-    expect(setCookie).toMatch(/^wfb_session=/);
+    // The cookie name must be the configured default ('wft_session').
+    expect(setCookie).toMatch(/^wft_session=/);
   });
 
   it('cookie roundtrip: a value written via set() survives a Set-Cookie → cookie replay', async () => {
@@ -226,7 +226,7 @@ describe('session plugins — option-level R4 dual-assert (spy on server.registe
     await probe.register(fastifyCookie);
     await probe.register(fastifySecureSession, {
       sessionName: 'session',
-      cookieName: 'wfb_session',
+      cookieName: 'wft_session',
       key: Buffer.from(validSecret32, 'base64'),
       expiry: SESSION_LIFETIME_SECONDS,
       cookie: {

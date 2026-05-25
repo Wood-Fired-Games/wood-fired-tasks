@@ -414,9 +414,9 @@ describe('Skill File Validation', () => {
       const filepath = path.join(SKILLS_DIR, filename);
       const content = fs.readFileSync(filepath, 'utf-8');
 
-      // Extract all wood-fired-bugs:TOOL_NAME references
+      // Extract all wood-fired-tasks:TOOL_NAME references
       const toolReferences = content.matchAll(
-        /wood-fired-bugs:([a-z_]+)/g
+        /wood-fired-tasks:([a-z_]+)/g
       );
 
       for (const match of toolReferences) {

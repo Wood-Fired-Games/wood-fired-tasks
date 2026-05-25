@@ -13,7 +13,7 @@ Marks a task as complete by updating its status to `done`.
 
 **Resolve a real identity** for the optional close-out comment `author` field — do NOT pass the literal `"user"`. Priority: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>`. Capture as `$AUTHOR`.
 
-Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__update_task,mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__add_comment`) and retry.
+Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__add_comment`) and retry.
 
 ## Workflow
 
@@ -21,7 +21,7 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
    - Task ID from `$ARGUMENTS[0]` (positive integer). On missing/invalid: "Please provide a valid task ID." Stop.
    - Optional close-out reason from remaining `$ARGUMENTS` (e.g. `/tasks:done 42 "verified in commit abc123, ship in v1.6.5"`).
 
-2. **MANDATORY pre-check** — call `wood-fired-bugs:get_task` with `id=<id>`. Enforce the documented transition rules below BEFORE mutating:
+2. **MANDATORY pre-check** — call `wood-fired-tasks:get_task` with `id=<id>`. Enforce the documented transition rules below BEFORE mutating:
    - **`open`** → proceed (task closed without formal pickup; common for tiny tasks).
    - **`in_progress`** → proceed (normal flow).
    - **`blocked`** → refuse: "Task <id> is `blocked` (reason: <last BLOCKED comment>). Marking blocked → done would bypass the unblock signal. Either: (a) `/tasks:pick-up <id>` to unblock and start, then `/tasks:done`, OR (b) if the blocker was resolved without work, run `/tasks:add-comment <id> 'unblocked: <why>'` first, then `/tasks:done <id>` once the status moves." Stop.
@@ -31,10 +31,10 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
    - **Any other status** → report verbatim and exit; defensive.
 
 3. **Close-out comment** (optional but recommended for audit trail)
-   - If a reason was provided in step 1, call `wood-fired-bugs:add_comment` with `task_id=<id>, author=$AUTHOR, content="DONE: <reason>"` BEFORE the status update. (Same comment-first ordering as `/tasks:blocked` — if the status update fails, the reason is still recorded.)
+   - If a reason was provided in step 1, call `wood-fired-tasks:add_comment` with `task_id=<id>, author=$AUTHOR, content="DONE: <reason>"` BEFORE the status update. (Same comment-first ordering as `/tasks:blocked` — if the status update fails, the reason is still recorded.)
 
 4. **Update task status**
-   - Call `wood-fired-bugs:update_task` with `id=<id>, updates={ "status": "done" }`.
+   - Call `wood-fired-tasks:update_task` with `id=<id>, updates={ "status": "done" }`.
 
 5. **Confirm completion**
    - On success: "Task <id> marked as done by <$AUTHOR>: <title>".

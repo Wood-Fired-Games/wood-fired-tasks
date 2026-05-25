@@ -1,11 +1,11 @@
-# Contributing to wood-fired-bugs
+# Contributing to wood-fired-tasks
 
 Thanks for your interest in contributing! This document describes how to get
 set up, what we expect in PRs, and the quality gates that gate merges.
 
 ## Welcome / Overview
 
-`wood-fired-bugs` is a network-wide task tracking system with three surfaces:
+`wood-fired-tasks` is a network-wide task tracking system with three surfaces:
 
 - A **REST API** (Fastify) — see `docs/API.md`.
 - A **CLI** (`tasks ...`) — see `docs/CLI.md`.
@@ -50,8 +50,8 @@ maintainers privately, and we will work with you on a coordinated patch.
 ### Clone and install
 
 ```bash
-git clone https://github.com/<org>/wood-fired-bugs.git
-cd wood-fired-bugs
+git clone https://github.com/<org>/wood-fired-tasks.git
+cd wood-fired-tasks
 npm ci
 npm test
 ```

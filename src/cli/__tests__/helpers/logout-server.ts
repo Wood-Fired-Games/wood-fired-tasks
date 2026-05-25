@@ -1,5 +1,5 @@
 /**
- * Test helper: minimal Fastify server that emulates the WFB server endpoints
+ * Test helper: minimal Fastify server that emulates the WFT server endpoints
  * used by `tasks logout` (Plan 30-07) and `tasks whoami` (Plan 30-07 Task 2).
  *
  * Wires only the three routes the CLI commands hit on a successful flow:

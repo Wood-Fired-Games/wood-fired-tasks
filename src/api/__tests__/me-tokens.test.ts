@@ -251,9 +251,9 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       const body = JSON.parse(res.body);
       expect(body.id).toBeTypeOf('number');
       expect(typeof body.token).toBe('string');
-      expect(body.token).toMatch(/^wfb_pat_[A-Z2-7]{32}$/);
+      expect(body.token).toMatch(/^wft_pat_[A-Z2-7]{32}$/);
       expect(body.name).toBe('laptop');
-      expect(body.prefix).toBe('wfb_pat_');
+      expect(body.prefix).toBe('wft_pat_');
       expect(body.suffix).toHaveLength(4);
       expect(body.scopes).toEqual([]);
       expect(body.expiresAt).toBeNull();
@@ -470,7 +470,7 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       for (const item of list) {
         expect(item).not.toHaveProperty('hash');
         expect(item).not.toHaveProperty('token');
-        expect(item.prefix).toBe('wfb_pat_');
+        expect(item.prefix).toBe('wft_pat_');
         expect(item.suffix).toHaveLength(4);
         expect(item.scopes).toEqual([]);
         expect(item).toHaveProperty('createdAt');

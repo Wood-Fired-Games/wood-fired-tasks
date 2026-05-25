@@ -265,6 +265,6 @@ export async function createTestApp(): Promise<App> {
  */
 if (isMain(import.meta.url)) {
   const app = await createApp();
-  console.log('Wood Fired Bugs initialized');
+  console.log('Wood Fired Tasks initialized');
   app.db.close();
 }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Zod schemas for the `/tasks:decompose` skill (Wave 5 / wood-fired-bugs
+ * Zod schemas for the `/tasks:decompose` skill (Wave 5 / wood-fired-tasks
  * task #320).
  *
  * Contract source of truth: `docs/tasks-decompose-design.md`. This module
@@ -140,7 +140,7 @@ export type SuspectedEdge = z.infer<typeof SuspectedEdgeSchema>;
  * are split before materialization.
  *
  * `description` upper bound: 1000 chars accommodates the documented 2–3
- * sentences. `title` upper bound: 255 chars matches the wood-fired-bugs
+ * sentences. `title` upper bound: 255 chars matches the wood-fired-tasks
  * `tasks.title` column constraint so a materialization round-trip never
  * loses data.
  */

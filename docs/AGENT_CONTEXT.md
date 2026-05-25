@@ -5,7 +5,7 @@ Status: Authoritative contract. Defines structure; does not document the project
 
 ## 1. Mission
 
-Any AI coding agent, from any vendor, must be able to do useful work on a freshly cloned `wood-fired-bugs` repository using only files committed to that repo. No chat transcript, no task tracker, no proprietary memory, no vendor account, and no local machine context are required. This document is the contract the rest of the project (tasks #273–#286) implements; it specifies what files exist, what they must contain, how big they may be, who owns them, and how they stay fresh.
+Any AI coding agent, from any vendor, must be able to do useful work on a freshly cloned `wood-fired-tasks` repository using only files committed to that repo. No chat transcript, no task tracker, no proprietary memory, no vendor account, and no local machine context are required. This document is the contract the rest of the project (tasks #273–#286) implements; it specifies what files exist, what they must contain, how big they may be, who owns them, and how they stay fresh.
 
 ## 2. Canonical files and read order
 

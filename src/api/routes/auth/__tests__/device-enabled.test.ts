@@ -50,10 +50,10 @@ import { getDiscoveryFixture } from '../../../../../tests/helpers/oidc-fixtures.
 import type { Config } from '../../../../config/env.js';
 
 const ISSUER = 'https://accounts.example.com';
-const CLIENT_ID = 'wfb-cli-test-client.example.com';
+const CLIENT_ID = 'wft-cli-test-client.example.com';
 const CLIENT_SECRET = 'test-client-secret';
-const REDIRECT_URI = 'https://wfb.example.com/auth/callback';
-const ORIGIN = 'https://wfb.example.com';
+const REDIRECT_URI = 'https://wft.example.com/auth/callback';
+const ORIGIN = 'https://wft.example.com';
 const SCOPES = 'openid email profile';
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 
@@ -98,7 +98,7 @@ async function buildEnabledHarness(): Promise<Harness> {
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
     sessionName: 'session',
-    cookieName: 'wfb_session',
+    cookieName: 'wft_session',
     key: randomBytes(32),
     expiry: SESSION_LIFETIME_SECONDS,
     cookie: {
@@ -120,7 +120,7 @@ async function buildEnabledHarness(): Promise<Harness> {
     oidcConfig,
     redirectUri: REDIRECT_URI,
     scopes: SCOPES,
-    sessionCookieName: 'wfb_session',
+    sessionCookieName: 'wft_session',
     postLogoutRedirectUri: `${ORIGIN}/auth/login`,
     // Plan 30-08 — clientId + origin are part of AuthRoutesOptions even
     // though the barrel itself does not register the device routes (the

@@ -34,7 +34,7 @@ The orchestrator calls the verifier with a single JSON object:
 
 ```ts
 interface VerifierInputs {
-  /** Numeric wood-fired-bugs task id (e.g. 314). */
+  /** Numeric wood-fired-tasks task id (e.g. 314). */
   task_id: number;
 
   /**
@@ -158,7 +158,7 @@ Example PASS output:
     {
       "name": "Subagent definition uses only read-only tools",
       "status": "PASS",
-      "evidence_url_or_text": "skills/agents/tasks-verifier.md:4 — tools: Read, Grep, Glob, Bash, mcp__wood-fired-bugs__get_task, mcp__wood-fired-bugs__get_comments, mcp__wood-fired-bugs__get_dependencies, mcp__wood-fired-bugs__list_tasks, mcp__wood-fired-bugs__list_projects (no Edit/Write/MultiEdit/NotebookEdit)."
+      "evidence_url_or_text": "skills/agents/tasks-verifier.md:4 — tools: Read, Grep, Glob, Bash, mcp__wood-fired-tasks__get_task, mcp__wood-fired-tasks__get_comments, mcp__wood-fired-tasks__get_dependencies, mcp__wood-fired-tasks__list_tasks, mcp__wood-fired-tasks__list_projects (no Edit/Write/MultiEdit/NotebookEdit)."
     }
   ],
   "verifier_session_id": "sess_verifier_2026_05_23_xyz",
@@ -240,11 +240,11 @@ The verifier subagent is read-only. The frontmatter `tools:` list at
 - `Grep` — search file contents.
 - `Glob` — enumerate files matching a pattern.
 - `Bash` — restricted to the commands below.
-- `mcp__wood-fired-bugs__get_task` — read-only task lookup.
-- `mcp__wood-fired-bugs__get_comments` — read-only comment lookup.
-- `mcp__wood-fired-bugs__get_dependencies` — read-only dependency lookup.
-- `mcp__wood-fired-bugs__list_tasks` — read-only list query.
-- `mcp__wood-fired-bugs__list_projects` — read-only project list.
+- `mcp__wood-fired-tasks__get_task` — read-only task lookup.
+- `mcp__wood-fired-tasks__get_comments` — read-only comment lookup.
+- `mcp__wood-fired-tasks__get_dependencies` — read-only dependency lookup.
+- `mcp__wood-fired-tasks__list_tasks` — read-only list query.
+- `mcp__wood-fired-tasks__list_projects` — read-only project list.
 
 Bash commands the verifier MAY invoke:
 
@@ -267,11 +267,11 @@ The verifier subagent MUST NOT invoke any of:
 - `Edit`, `Write`, `MultiEdit`, `NotebookEdit` — code mutation.
 - `npm install`, `npm ci`, `git commit`, `git push`, `git checkout`,
   `git reset`, `git rebase`, `mv`, `rm`, `chmod`, `chown` — state mutation.
-- Any wood-fired-bugs MCP tool that mutates state: `update_task`,
+- Any wood-fired-tasks MCP tool that mutates state: `update_task`,
   `add_comment`, `delete_comment`, `claim_task`, `create_task`,
   `create_project`, `update_project`, `delete_project`, `delete_task`,
   `add_dependency`, `remove_dependency`, `completion_report` writes.
-- Any MCP tool from a non-wood-fired-bugs server (defence-in-depth — the
+- Any MCP tool from a non-wood-fired-tasks server (defence-in-depth — the
   verifier has no business calling external services).
 
 The frontmatter `tools:` list at `skills/agents/tasks-verifier.md`

@@ -14,7 +14,7 @@ Lists all tasks assigned to the current user, organized by status.
    - Use 'user' as current user identity placeholder
 
 2. **Retrieve Assigned Tasks**
-   - Call `wood-fired-bugs:list_tasks` with filter:
+   - Call `wood-fired-tasks:list_tasks` with filter:
      - assignee: 'user'
 
 3. **Group Results by Status**

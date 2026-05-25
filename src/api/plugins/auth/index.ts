@@ -41,7 +41,7 @@
  *   - The chain NEVER logs successful auth (no `auth.success` line); the
  *     re-childed request logger is the canonical audit trail.
  *
- * fp() wrap with `{ name: 'wfb-auth', fastify: '5.x' }` is non-negotiable —
+ * fp() wrap with `{ name: 'wft-auth', fastify: '5.x' }` is non-negotiable —
  * without it, sibling routes registered in the same parent scope (the
  * `/api/v1` block in server.ts) bypass the hook entirely. Existing
  * rate-limit.test.ts would catch a regression, but the comment block at the
@@ -427,12 +427,12 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
  * Wrap with fastify-plugin to escape the encapsulated scope. Without `fp()`
  * the preHandler hook only fires for routes registered INSIDE this plugin —
  * every sibling under `/api/v1/*` would bypass auth entirely. The
- * `{ name: 'wfb-auth', fastify: '5.x' }` options match the pre-split
- * plugin's identity so any downstream `fastify.hasPlugin('wfb-auth')`
+ * `{ name: 'wft-auth', fastify: '5.x' }` options match the pre-split
+ * plugin's identity so any downstream `fastify.hasPlugin('wft-auth')`
  * checks keep working.
  */
 const authChain = fp(authChainImpl, {
-  name: 'wfb-auth',
+  name: 'wft-auth',
   fastify: '5.x',
 });
 

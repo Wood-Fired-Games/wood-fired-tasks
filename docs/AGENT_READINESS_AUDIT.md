@@ -1,11 +1,11 @@
 # Agent Readiness Audit — Improving Agent Visibility (project #12)
 
 Owner: Repository maintainers
-Status: Point-in-time audit report. Not part of the canonical agent-facing surface; not listed in `.agent-context.json`. Generated as the deliverable for wood-fired-bugs task #286.
+Status: Point-in-time audit report. Not part of the canonical agent-facing surface; not listed in `.agent-context.json`. Generated as the deliverable for wood-fired-tasks task #286.
 
 ## Mission
 
-Final audit for the Improving Agent Visibility milestone (project #12). Verifies that a vendor-neutral agent can navigate a fresh clone of `wood-fired-bugs` using only committed files — no chat transcript, no private task DB, no local MCP config, no production credentials, and no vendor-specific skill files.
+Final audit for the Improving Agent Visibility milestone (project #12). Verifies that a vendor-neutral agent can navigate a fresh clone of `wood-fired-tasks` using only committed files — no chat transcript, no private task DB, no local MCP config, no production credentials, and no vendor-specific skill files.
 
 ## 1. Coverage matrix
 

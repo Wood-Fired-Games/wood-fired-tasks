@@ -29,7 +29,7 @@ Source-of-truth code is in `src/`. Everything else is regenerated or installed:
 
 ### 3. Change remote MCP proxy behavior
 
-- **Files:** `src/mcp/remote/index.ts`, `src/mcp/remote/register-tools.ts`, `src/mcp/remote/rest-client.ts`. Required env: `WFB_API_URL`, `WFB_API_KEY`.
+- **Files:** `src/mcp/remote/index.ts`, `src/mcp/remote/register-tools.ts`, `src/mcp/remote/rest-client.ts`. Required env: `WFT_API_URL`, `WFT_API_KEY`.
 - **Tests:** `src/mcp/__tests__/remote-*.test.ts`, `src/mcp/__tests__/register-tools.test.ts`.
 - **Docs:** `docs/MCP.md`, `docs/SETUP.md`, `docs/AGENT_CONTEXT.md`.
 

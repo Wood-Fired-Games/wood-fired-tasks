@@ -40,7 +40,7 @@ export interface AuthRoutesOptions {
    * Used by the WR-02 cookie-size warn line in callback.ts so the
    * lookup against `reply.getHeader('set-cookie')` matches the
    * concrete cookie name configured on the secure-session plugin.
-   * Defaults to `wfb_session` at the server.ts wiring site.
+   * Defaults to `wft_session` at the server.ts wiring site.
    */
   sessionCookieName: string;
   /**

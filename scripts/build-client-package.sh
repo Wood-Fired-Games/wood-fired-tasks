@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build script: produces dist/wood-fired-bugs-client.zip
+# Build script: produces dist/wood-fired-tasks-client.zip
 #
 # The zip contains:
-#   wood-fired-bugs-client/
+#   wood-fired-tasks-client/
 #     README.md
 #     setup.bat
 #     setup.ps1
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo ""
-echo "Wood Fired Bugs - Build Client Package"
+echo "Wood Fired Tasks - Build Client Package"
 echo "======================================="
 echo "Project root: $PROJECT_ROOT"
 echo ""
@@ -68,7 +68,7 @@ echo ""
 echo "Creating staging directory..."
 
 STAGING_DIR=$(mktemp -d)
-PACKAGE_DIR="$STAGING_DIR/wood-fired-bugs-client"
+PACKAGE_DIR="$STAGING_DIR/wood-fired-tasks-client"
 MCP_SERVER_DIR="$PACKAGE_DIR/mcp-server"
 
 mkdir -p "$PACKAGE_DIR/commands/tasks"
@@ -171,7 +171,7 @@ CLACK_VERSION=$(node -e "const p=require('$PROJECT_ROOT/node_modules/@clack/prom
 
 cat > "$MCP_SERVER_DIR/package.json" <<PKGJSON
 {
-  "name": "wood-fired-bugs-client",
+  "name": "wood-fired-tasks-client",
   "version": "1.0.0",
   "type": "module",
   "private": true,
@@ -195,7 +195,7 @@ echo "OK: All files copied"
 
 # ── 5. Create output directory ────────────────────────────────────────────────
 mkdir -p "$PROJECT_ROOT/dist"
-OUTPUT_ZIP="$PROJECT_ROOT/dist/wood-fired-bugs-client.zip"
+OUTPUT_ZIP="$PROJECT_ROOT/dist/wood-fired-tasks-client.zip"
 
 # Remove previous build if exists
 rm -f "$OUTPUT_ZIP"
@@ -210,7 +210,7 @@ if ! command -v zip &>/dev/null; then
     exit 1
 fi
 
-(cd "$STAGING_DIR" && zip -r "$OUTPUT_ZIP" "wood-fired-bugs-client/" -x "*.DS_Store" -x "__pycache__/*" -x "*.pyc")
+(cd "$STAGING_DIR" && zip -r "$OUTPUT_ZIP" "wood-fired-tasks-client/" -x "*.DS_Store" -x "__pycache__/*" -x "*.pyc")
 
 # ── 7. Cleanup and report ─────────────────────────────────────────────────────
 rm -rf "$STAGING_DIR"

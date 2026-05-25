@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wood Fired Bugs - SQLite Database Restore
+# Wood Fired Tasks - SQLite Database Restore
 # Restores a gzipped backup to the database path
 #
 # Usage: ./restore-sqlite.sh <backup_file.db.gz> [db_path]
-# Default db_path: ${WFB_INSTALL_DIR}/data/tasks.db (default install dir: /opt/wood-fired-bugs)
+# Default db_path: ${WFT_INSTALL_DIR}/data/tasks.db (default install dir: /opt/wood-fired-tasks)
 #
 # Configurable env vars (see deploy/README.md):
-#   WFB_INSTALL_DIR   Install path  (default: /opt/wood-fired-bugs)
-#   WFB_SERVICE_USER  Service user  (default: wood-fired-bugs)
+#   WFT_INSTALL_DIR   Install path  (default: /opt/wood-fired-tasks)
+#   WFT_SERVICE_USER  Service user  (default: wood-fired-tasks)
 #
 # IMPORTANT: Stop the service before restoring!
-#   sudo systemctl stop wood-fired-bugs
+#   sudo systemctl stop wood-fired-tasks
 #   ./restore-sqlite.sh backups/tasks-2026-02-13_020000.db.gz
-#   sudo systemctl start wood-fired-bugs
+#   sudo systemctl start wood-fired-tasks
 
-INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
-SERVICE_USER="${WFB_SERVICE_USER:-wood-fired-bugs}"
+INSTALL_DIR="${WFT_INSTALL_DIR:-/opt/wood-fired-tasks}"
+SERVICE_USER="${WFT_SERVICE_USER:-wood-fired-tasks}"
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <backup_file.db.gz> [db_path]" >&2
@@ -38,9 +38,9 @@ if [ ! -f "$BACKUP_FILE" ]; then
 fi
 
 # Check if service is running (warn but don't block)
-if systemctl is-active --quiet wood-fired-bugs 2>/dev/null; then
-  echo "WARNING: wood-fired-bugs service is still running!" >&2
-  echo "Stop it first: sudo systemctl stop wood-fired-bugs" >&2
+if systemctl is-active --quiet wood-fired-tasks 2>/dev/null; then
+  echo "WARNING: wood-fired-tasks service is still running!" >&2
+  echo "Stop it first: sudo systemctl stop wood-fired-tasks" >&2
   exit 1
 fi
 
@@ -80,4 +80,4 @@ if id "$SERVICE_USER" &>/dev/null; then
 fi
 
 echo "Restore complete. Start the service:"
-echo "  sudo systemctl start wood-fired-bugs"
+echo "  sudo systemctl start wood-fired-tasks"

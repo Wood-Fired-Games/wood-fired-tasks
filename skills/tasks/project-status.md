@@ -8,7 +8,7 @@ disable-model-invocation: false
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_projects,mcp__wood-fired-bugs__list_tasks`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks`) and retry.
 
 ## Purpose
 Show high-level overview of all projects with task counts broken down by status and completion percentage.
@@ -16,7 +16,7 @@ Show high-level overview of all projects with task counts broken down by status 
 ## Process
 
 ### 1. Retrieve all projects
-Call `wood-fired-bugs:list_projects` with empty parameters to get all projects.
+Call `wood-fired-tasks:list_projects` with empty parameters to get all projects.
 
 ### 2. Check for project filter
 If $ARGUMENTS contains a project name or ID:
@@ -26,7 +26,7 @@ If $ARGUMENTS contains a project name or ID:
 ### 3. For each project, aggregate task data
 For every project returned:
 
-a. **Issue all `wood-fired-bugs:list_tasks` calls in a SINGLE message with multiple function_calls blocks** — that's the mechanism for parallel tool execution. Do NOT chain them with `await` semantics or list them sequentially across multiple messages. One call per project with filter: `{ project_id: project.id }`. On a workspace with N projects this is one round-trip wave instead of N sequential round-trips.
+a. **Issue all `wood-fired-tasks:list_tasks` calls in a SINGLE message with multiple function_calls blocks** — that's the mechanism for parallel tool execution. Do NOT chain them with `await` semantics or list them sequentially across multiple messages. One call per project with filter: `{ project_id: project.id }`. On a workspace with N projects this is one round-trip wave instead of N sequential round-trips.
 
 b. Group tasks by status (canonical values: `open`, `in_progress`, `done`, `closed`, `blocked`, `backlogged` — see [_enums.md](_enums.md), source: `src/types/task.ts`). Display labels are title-cased for readability:
 - Open

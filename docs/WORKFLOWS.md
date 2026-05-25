@@ -5,7 +5,7 @@ Status: Authoritative command sheet. See [docs/AGENT_CONTEXT.md](AGENT_CONTEXT.m
 
 ## Mission
 
-This is the canonical command sheet for `wood-fired-bugs`. Use it together
+This is the canonical command sheet for `wood-fired-tasks`. Use it together
 with [AGENTS.md](../AGENTS.md) (navigation hub) and
 [docs/AGENT_CONTEXT.md](AGENT_CONTEXT.md) (the contract). When a recipe needs
 deeper setup detail, follow the pointer to [docs/SETUP.md](SETUP.md). Every
@@ -78,8 +78,8 @@ follow-up PR before re-adding the gate.
 ### Remote MCP server
 
 - Start: `npm run build && npm run mcp:remote`.
-- Required env: `WFB_API_URL` (e.g. `https://your-server.example/`) and
-  `WFB_API_KEY` (sent as `X-API-Key`). The server fails fast if either is
+- Required env: `WFT_API_URL` (e.g. `https://your-server.example/`) and
+  `WFT_API_KEY` (sent as `X-API-Key`). The server fails fast if either is
   missing.
 - This points at a running API. Confirm which API instance you are targeting
   before running — see the network/secrets flags below.
@@ -96,8 +96,8 @@ follow-up PR before re-adding the gate.
 
 - Migrate: `npm run migrate` runs all pending migrations against
   `DATABASE_PATH`. Idempotent — safe to re-run.
-- Backup (production): `bash deploy/backup-sqlite.sh`. Uses `WFB_INSTALL_DIR`
-  (default `/opt/wood-fired-bugs`). Run this before any destructive op.
+- Backup (production): `bash deploy/backup-sqlite.sh`. Uses `WFT_INSTALL_DIR`
+  (default `/opt/wood-fired-tasks`). Run this before any destructive op.
 - Restore (production): `bash deploy/restore-sqlite.sh <backup-file>`.
   Destructive — replaces the running DB in place. Requires explicit user
   approval.
@@ -148,11 +148,11 @@ group (bot + app + signing) or not at all.
 | `NODE_ENV=production`      | REQUIRED  | Enables production hardening.                                      |
 | `HOST=0.0.0.0`             | typical   | Behind firewall / reverse proxy.                                   |
 | `API_KEYS`                 | REQUIRED  | Generate with `openssl rand -hex 32`. Min 32 chars enforced.       |
-| `DATABASE_PATH=/opt/wood-fired-bugs/data/tasks.db` | typical | Matches the installer default.                  |
-| `WFB_INSTALL_DIR`          | optional  | Installer root. Default `/opt/wood-fired-bugs`.                    |
-| `WFB_SERVICE_USER`         | optional  | Installer service user. See `deploy/README.md`.                    |
-| `WFB_API_URL`              | REQUIRED (remote MCP) | URL of the running API.                                |
-| `WFB_API_KEY`              | REQUIRED (remote MCP) | Sent as `X-API-Key`.                                   |
+| `DATABASE_PATH=/opt/wood-fired-tasks/data/tasks.db` | typical | Matches the installer default.                  |
+| `WFT_INSTALL_DIR`          | optional  | Installer root. Default `/opt/wood-fired-tasks`.                    |
+| `WFT_SERVICE_USER`         | optional  | Installer service user. See `deploy/README.md`.                    |
+| `WFT_API_URL`              | REQUIRED (remote MCP) | URL of the running API.                                |
+| `WFT_API_KEY`              | REQUIRED (remote MCP) | Sent as `X-API-Key`.                                   |
 
 ## Network / secrets / running-API / writable-DB / approval flags
 
@@ -162,11 +162,11 @@ group (bot + app + signing) or not at all.
   `API_KEYS`, serves real data from `DATABASE_PATH`. Do not expose without
   intent.
 - `npm run mcp:dev` — reads `DATABASE_PATH`; no network egress.
-- `npm run mcp:remote` — network egress to `WFB_API_URL`. Requires explicit
+- `npm run mcp:remote` — network egress to `WFT_API_URL`. Requires explicit
   user approval before running against any non-local URL.
 - `npm run migrate` — writes to `DATABASE_PATH`. Always back up first in
   production.
-- `deploy/backup-sqlite.sh` — reads `DATABASE_PATH` and `WFB_INSTALL_DIR`;
+- `deploy/backup-sqlite.sh` — reads `DATABASE_PATH` and `WFT_INSTALL_DIR`;
   writes a backup file under the install root.
 - `deploy/restore-sqlite.sh` — destructive: replaces the running DB.
   Explicit user approval.

@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # /tasks:decompose
 
-> **Status (2026-05-23):** Design spec landed via wood-fired-bugs task
+> **Status (2026-05-23):** Design spec landed via wood-fired-tasks task
 > **#320**. Runtime orchestration is **not implemented yet** — see the
 > follow-on tasks listed at the bottom of
 > [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md).
@@ -21,7 +21,7 @@ truth; this skill file intentionally restates only the navigation.
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__create_task,mcp__wood-fired-bugs__add_dependency,mcp__wood-fired-bugs__topology_check`) and retry. (Runtime is a design-only stub today — tool calls listed here are what the implemented pipeline would call; the stub does not actually call them.)
+This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__add_dependency,mcp__wood-fired-tasks__topology_check`) and retry. (Runtime is a design-only stub today — tool calls listed here are what the implemented pipeline would call; the stub does not actually call them.)
 
 ## On invocation
 
@@ -33,7 +33,7 @@ While the design is the only artifact that has landed, the skill MUST:
    refuse to call `add_dependency`, and refuse to write under
    `.planning/decompositions/`. The runtime is deferred — these tool
    calls would silently violate the contract.
-3. **Remind the user** that follow-on wood-fired-bugs tasks must be
+3. **Remind the user** that follow-on wood-fired-tasks tasks must be
    created to implement the pipeline (Explore-agent wiring, planner +
    critic subagent definitions, cost tracker, fixtures) before this
    skill becomes operational.
@@ -50,7 +50,7 @@ budget, and verification-fixture sketches) lives at:
 
 Runtime orchestration is deferred. The follow-on tasks needed to
 implement it are listed at the bottom of that design doc — they must
-be created in wood-fired-bugs project 15 before /tasks:decompose
+be created in wood-fired-tasks project 15 before /tasks:decompose
 can be invoked operationally.
 
 No subagent dispatched. No tasks materialized. No artifacts written.

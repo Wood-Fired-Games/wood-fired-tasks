@@ -87,7 +87,7 @@ export function createMcpServer(
   topologyService?: TopologyService,
 ): McpServer {
   const server = new McpServer({
-    name: 'wood-fired-bugs',
+    name: 'wood-fired-tasks',
     version: '1.0.0',
   });
 

@@ -2,15 +2,15 @@
  * Tests for the MCP boot-time actor identity resolver (Phase 31 Plan 03,
  * Task 1).
  *
- * The resolver is the bridge between `process.env.WFB_API_KEY` and the
+ * The resolver is the bridge between `process.env.WFT_API_KEY` and the
  * `actorUserId: number` that downstream MCP tool handlers inject into every
  * service write. Three input shapes are valid:
  *
- *   1. `WFB_API_KEY=wfb_pat_<…>`     → resolve via apiTokenRepository.findByHash
- *   2. `WFB_API_KEY=<legacy-key>`    → match against parsed API_KEYS entries
+ *   1. `WFT_API_KEY=wft_pat_<…>`     → resolve via apiTokenRepository.findByHash
+ *   2. `WFT_API_KEY=<legacy-key>`    → match against parsed API_KEYS entries
  *                                       (hash compare) and look up the legacy
  *                                       user by label
- *   3. `WFB_API_KEY` absent / unresolved → fall back to the seeded `mcp-bot`
+ *   3. `WFT_API_KEY` absent / unresolved → fall back to the seeded `mcp-bot`
  *                                          service-account row
  *
  * Every miss / revoked / unknown branch falls back to mcp-bot. If mcp-bot
@@ -80,7 +80,7 @@ describe('resolveActorUserId', () => {
     return { token };
   }
 
-  it('PAT path: returns token.user_id when WFB_API_KEY is a valid non-revoked PAT', () => {
+  it('PAT path: returns token.user_id when WFT_API_KEY is a valid non-revoked PAT', () => {
     // Insert a real users row that the PAT will resolve to.
     const insertUser = db
       .prepare(
@@ -100,7 +100,7 @@ describe('resolveActorUserId', () => {
   });
 
   // WR-02: by default, a revoked PAT now throws (fail-closed). Opt-in
-  // fallback via `allowBadPat: true` (i.e. WFB_MCP_ALLOW_BAD_PAT=1 in
+  // fallback via `allowBadPat: true` (i.e. WFT_MCP_ALLOW_BAD_PAT=1 in
   // production) restores the legacy mcp-bot-fallback behavior with a
   // distinct path tag.
   it('PAT path: THROWS when the PAT row exists but is revoked (fail-closed default — WR-02)', () => {
@@ -148,7 +148,7 @@ describe('resolveActorUserId', () => {
 
   it('PAT path: THROWS when the PAT has the prefix but no matching row (fail-closed default — WR-02)', () => {
     // A correctly-prefixed but never-inserted PAT.
-    const unknownPat = 'wfb_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const unknownPat = 'wft_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
     expect(() =>
       resolveActorUserId({
@@ -163,7 +163,7 @@ describe('resolveActorUserId', () => {
   });
 
   it('PAT path: falls back to mcp-bot when unknown + allowBadPat=true (WR-02 opt-in)', () => {
-    const unknownPat = 'wfb_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const unknownPat = 'wft_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
     const actor = resolveActorUserId({
       apiKey: unknownPat,
@@ -307,7 +307,7 @@ describe('resolveActorUserId', () => {
     expect(actor).toBe(getMcpBotId());
   });
 
-  it('legacy path: returns the legacy user.id when WFB_API_KEY matches an API_KEYS entry', () => {
+  it('legacy path: returns the legacy user.id when WFT_API_KEY matches an API_KEYS entry', () => {
     const actor = resolveActorUserId({
       apiKey: 'topsecret-key-1', // matches label 'laptop' from API_KEYS
       apiTokenRepo,
@@ -320,7 +320,7 @@ describe('resolveActorUserId', () => {
     expect(actor).toBe(laptop!.id);
   });
 
-  it('legacy path: falls back to mcp-bot when WFB_API_KEY matches NO API_KEYS entry', () => {
+  it('legacy path: falls back to mcp-bot when WFT_API_KEY matches NO API_KEYS entry', () => {
     const actor = resolveActorUserId({
       apiKey: 'not-a-configured-key',
       apiTokenRepo,
@@ -331,7 +331,7 @@ describe('resolveActorUserId', () => {
     expect(actor).toBe(getMcpBotId());
   });
 
-  it('absent path: falls back to mcp-bot when WFB_API_KEY is undefined', () => {
+  it('absent path: falls back to mcp-bot when WFT_API_KEY is undefined', () => {
     const actor = resolveActorUserId({
       apiKey: undefined,
       apiTokenRepo,
@@ -342,7 +342,7 @@ describe('resolveActorUserId', () => {
     expect(actor).toBe(getMcpBotId());
   });
 
-  it('absent path: falls back to mcp-bot when WFB_API_KEY is empty string', () => {
+  it('absent path: falls back to mcp-bot when WFT_API_KEY is empty string', () => {
     const actor = resolveActorUserId({
       apiKey: '',
       apiTokenRepo,

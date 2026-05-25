@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Zod schemas for the `/tasks:audit` skill (Wave 7.1 / wood-fired-bugs
+ * Zod schemas for the `/tasks:audit` skill (Wave 7.1 / wood-fired-tasks
  * task #323).
  *
  * Contract source of truth: `docs/tasks-audit-design.md`. This module

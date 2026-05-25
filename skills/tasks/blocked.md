@@ -13,7 +13,7 @@ Marks a task as blocked and records the blocking reason as a comment.
 
 **Resolve a real identity** before the comment `author` field — do NOT pass the literal `"user"`. In priority: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>`. Capture once as `$AUTHOR`.
 
-Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__update_task,mcp__wood-fired-bugs__add_comment,mcp__wood-fired-bugs__get_task`) and retry.
+Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__get_task`) and retry.
 
 ## Workflow
 
@@ -23,7 +23,7 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
 
 3. **Resolve `$AUTHOR`** per Preflight.
 
-4. **MANDATORY pre-check** — call `wood-fired-bugs:get_task` with `id=<id>`. Reject illegal transitions BEFORE mutating:
+4. **MANDATORY pre-check** — call `wood-fired-tasks:get_task` with `id=<id>`. Reject illegal transitions BEFORE mutating:
    - **`done`** → refuse: "Task <id> is `done`. Blocking a done task would regress it — reopen with `/tasks:pick-up` first if that's what you meant." Stop.
    - **`closed`** → refuse: "Task <id> is terminal (`<status>`). Cannot block. Open a new task if needed." Stop.
    - **`backlogged`** → refuse: "Task <id> is deprioritized (`backlogged`). Move it back to `open` first if you want to block it." Stop.
@@ -31,14 +31,14 @@ Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool
    - **`open`** / **`in_progress`** → proceed to step 5.
 
 5. **Comment-first ordering** (audit trail before state change — if step 6 fails, the reason is still on record):
-   - Call `wood-fired-bugs:add_comment` with:
+   - Call `wood-fired-tasks:add_comment` with:
      - `task_id`: task ID
      - `author`: `$AUTHOR` (NOT the literal "user")
      - `content`: `"BLOCKED: <reason>"`
    - If comment fails: report error, do NOT proceed to step 6 (task stays in current state, user retries).
 
 6. **Update task status**
-   - Call `wood-fired-bugs:update_task` with `id=<id>, updates={ "status": "blocked" }`.
+   - Call `wood-fired-tasks:update_task` with `id=<id>, updates={ "status": "blocked" }`.
    - On failure: surface error AND note "Reason comment WAS recorded — manual status flip needed."
 
 7. **Confirm completion**

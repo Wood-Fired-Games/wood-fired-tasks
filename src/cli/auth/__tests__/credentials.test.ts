@@ -14,7 +14,7 @@ import {
   type Credentials,
 } from '../credentials.js';
 
-// Each test gets a fresh tmp dir so XDG_CONFIG_HOME or WFB_CREDENTIALS_PATH
+// Each test gets a fresh tmp dir so XDG_CONFIG_HOME or WFT_CREDENTIALS_PATH
 // resolves into an isolated location — no cross-test bleed.
 let tmpDir: string;
 let origEnv: Record<string, string | undefined>;
@@ -23,7 +23,7 @@ const POSIX = process.platform !== 'win32';
 
 function snapshotEnv() {
   return {
-    WFB_CREDENTIALS_PATH: process.env.WFB_CREDENTIALS_PATH,
+    WFT_CREDENTIALS_PATH: process.env.WFT_CREDENTIALS_PATH,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
     API_KEY: process.env.API_KEY,
     HOME: process.env.HOME,
@@ -39,7 +39,7 @@ function restoreEnv(snap: typeof origEnv) {
 
 const sampleCreds: Credentials = {
   active: {
-    token: 'wfb_pat_ABCDEFG1234567890',
+    token: 'wft_pat_ABCDEFG1234567890',
     token_id: 17,
     server: 'https://woodfiredbugs.local',
     user_id: 1,
@@ -51,9 +51,9 @@ const sampleCreds: Credentials = {
 
 beforeEach(() => {
   origEnv = snapshotEnv();
-  tmpDir = mkdtempSync(join(tmpdir(), 'wfb-creds-'));
+  tmpDir = mkdtempSync(join(tmpdir(), 'wft-creds-'));
   // Strip any env that could leak into getCredentialsPath / resolveAuth.
-  delete process.env.WFB_CREDENTIALS_PATH;
+  delete process.env.WFT_CREDENTIALS_PATH;
   delete process.env.XDG_CONFIG_HOME;
   delete process.env.API_KEY;
   setTokenOverride(null);
@@ -70,31 +70,31 @@ afterEach(() => {
 });
 
 describe('getCredentialsPath', () => {
-  it('returns WFB_CREDENTIALS_PATH verbatim when set', () => {
-    process.env.WFB_CREDENTIALS_PATH = '/var/secret/creds';
+  it('returns WFT_CREDENTIALS_PATH verbatim when set', () => {
+    process.env.WFT_CREDENTIALS_PATH = '/var/secret/creds';
     expect(getCredentialsPath()).toBe('/var/secret/creds');
   });
 
   it('uses XDG_CONFIG_HOME when absolute', () => {
     process.env.XDG_CONFIG_HOME = '/tmp/xdg-abs';
-    expect(getCredentialsPath()).toBe('/tmp/xdg-abs/wood-fired-bugs/credentials');
+    expect(getCredentialsPath()).toBe('/tmp/xdg-abs/wood-fired-tasks/credentials');
   });
 
   it('falls through to $HOME/.config when XDG_CONFIG_HOME is relative (POSIX spec)', () => {
     process.env.XDG_CONFIG_HOME = 'relative-path';
-    const expected = join(os.homedir(), '.config', 'wood-fired-bugs', 'credentials');
+    const expected = join(os.homedir(), '.config', 'wood-fired-tasks', 'credentials');
     expect(getCredentialsPath()).toBe(expected);
   });
 
   it('falls back to $HOME/.config when no env vars are set', () => {
-    const expected = join(os.homedir(), '.config', 'wood-fired-bugs', 'credentials');
+    const expected = join(os.homedir(), '.config', 'wood-fired-tasks', 'credentials');
     expect(getCredentialsPath()).toBe(expected);
   });
 });
 
 describe('writeCredentials', () => {
   it('writes a TOML file with mode 0600 on POSIX', () => {
-    const target = join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const target = join(tmpDir, 'wood-fired-tasks', 'credentials');
     writeCredentials(sampleCreds, target);
     expect(existsSync(target)).toBe(true);
     if (POSIX) {
@@ -107,7 +107,7 @@ describe('writeCredentials', () => {
     const target = join(tmpDir, 'cred-with-header');
     writeCredentials(sampleCreds, target);
     const body = readFileSync(target, 'utf8');
-    expect(body).toMatch(/^# Wood Fired Bugs CLI credentials/);
+    expect(body).toMatch(/^# Wood Fired Tasks CLI credentials/);
     expect(body).toContain("# Do NOT commit this file to version control.");
     expect(body).toContain('[active]');
   });
@@ -218,7 +218,7 @@ describe('readCredentials', () => {
         target,
         [
           '[active]',
-          'token = "wfb_pat_x"',
+          'token = "wft_pat_x"',
           'token_id = -3',
           'server = "https://example.test"',
           'user_id = 1',
@@ -240,7 +240,7 @@ describe('readCredentials', () => {
         target,
         [
           '[active]',
-          'token = "wfb_pat_x"',
+          'token = "wft_pat_x"',
           'token_id = 1',
           'server = "https://example.test"',
           // user_id intentionally omitted
@@ -262,7 +262,7 @@ describe('readCredentials', () => {
         target,
         [
           '[active]',
-          'token = "wfb_pat_x"',
+          'token = "wft_pat_x"',
           'token_id = 1',
           'server = "https://example.test"',
           'user_id = 1',
@@ -279,7 +279,7 @@ describe('readCredentials', () => {
       writeCredentials(
         {
           active: {
-            token: 'wfb_pat_x',
+            token: 'wft_pat_x',
             token_id: 1,
             server: 'https://example.test',
             user_id: 1,
@@ -312,39 +312,39 @@ describe('deleteCredentials', () => {
 
 describe('resolveAuth precedence', () => {
   it('--token override wins (kind=bearer, origin=flag)', async () => {
-    process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'creds');
-    writeCredentials(sampleCreds, process.env.WFB_CREDENTIALS_PATH);
+    process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'creds');
+    writeCredentials(sampleCreds, process.env.WFT_CREDENTIALS_PATH);
     process.env.API_KEY = 'legacykey';
-    setTokenOverride('wfb_pat_FLAG_OVERRIDE');
+    setTokenOverride('wft_pat_FLAG_OVERRIDE');
     const auth = await resolveAuth();
-    expect(auth).toEqual({ kind: 'bearer', token: 'wfb_pat_FLAG_OVERRIDE', origin: 'flag' });
+    expect(auth).toEqual({ kind: 'bearer', token: 'wft_pat_FLAG_OVERRIDE', origin: 'flag' });
   });
 
   it('credentials file is used when no override (kind=bearer, origin=file)', async () => {
-    process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'creds');
-    writeCredentials(sampleCreds, process.env.WFB_CREDENTIALS_PATH);
+    process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'creds');
+    writeCredentials(sampleCreds, process.env.WFT_CREDENTIALS_PATH);
     process.env.API_KEY = 'legacykey';
     const auth = await resolveAuth();
     expect(auth).toEqual({ kind: 'bearer', token: sampleCreds.active.token, origin: 'file' });
   });
 
   it('falls back to env.API_KEY when no override and no file (kind=legacy)', async () => {
-    process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'missing-file');
+    process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'missing-file');
     process.env.API_KEY = 'legacykey';
     const auth = await resolveAuth();
     expect(auth).toEqual({ kind: 'legacy', key: 'legacykey' });
   });
 
   it('returns kind=none when nothing is set', async () => {
-    process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'missing-file');
+    process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'missing-file');
     const auth = await resolveAuth();
     expect(auth).toEqual({ kind: 'none' });
   });
 
   it('propagates readCredentials errors (does not fall through to env)', async () => {
-    process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'broken');
-    writeFileSync(process.env.WFB_CREDENTIALS_PATH, 'this is = not valid toml [[[', { mode: 0o600 });
-    if (POSIX) chmodSync(process.env.WFB_CREDENTIALS_PATH, 0o600);
+    process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'broken');
+    writeFileSync(process.env.WFT_CREDENTIALS_PATH, 'this is = not valid toml [[[', { mode: 0o600 });
+    if (POSIX) chmodSync(process.env.WFT_CREDENTIALS_PATH, 0o600);
     process.env.API_KEY = 'should-not-be-used';
     await expect(resolveAuth()).rejects.toThrow(/malformed TOML/);
   });

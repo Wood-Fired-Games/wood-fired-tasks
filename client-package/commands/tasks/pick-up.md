@@ -18,13 +18,13 @@ Assign a task to the current user and transition it to in_progress status.
    - In production, this would be the authenticated user's identifier
 
 3. Check current task status (optional but recommended):
-   - Call `wood-fired-bugs:get_task` to retrieve current state
+   - Call `wood-fired-tasks:get_task` to retrieve current state
    - If task is already in_progress or done, inform user before updating:
      - "Task <id> is already <status>"
      - Ask for confirmation to proceed
 
 4. Update task assignment and status:
-   - Call `wood-fired-bugs:update_task` with:
+   - Call `wood-fired-tasks:update_task` with:
      - id: task ID from arguments
      - updates: {
          assignee: 'user',
