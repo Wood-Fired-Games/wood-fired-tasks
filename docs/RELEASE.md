@@ -200,14 +200,69 @@ Inspect `.gitleaks-report.json` for findings. Add justified false
 positives to `.gitleaks.toml`; remediate real findings before publish.
 The `.gitleaks-report.json` artifact is git-ignored (see `.gitignore`).
 
+## Versioning and tag convention
+
+There are two version identifiers in play, and they use **different
+segment counts on purpose**. This section is the canonical reconciliation
+so they never silently diverge again (the divergence that triggered this
+doc: `package.json` sat at `1.0.0` while git tags had already advanced to
+the `v1.x` line).
+
+### npm package version — 3-segment SemVer
+
+`package.json` `version` is full [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html):
+`MAJOR.MINOR.PATCH`, e.g. **`1.11.0`**. All three segments are always
+present. This is the version npm publishes and the version
+`CHANGELOG.md` documents.
+
+### git tag — 2-segment `vMAJOR.MINOR`
+
+Release tags are annotated tags of the form **`vMAJOR.MINOR`**, e.g.
+`v1.11`. They are *not* 3-segment. The current tag history is:
+
+```
+v1.0  v1.1  v1.2  v1.3  v1.4  v1.5
+v1.6  v1.7  v1.8  v1.9  v1.10 v1.11
+```
+
+CHANGELOG release headings mirror this 2-segment form (e.g.
+`## [v1.11] - 2026-05-21`).
+
+### Reconciliation rule (keep these in sync)
+
+> **git tag `vX.Y` corresponds to `package.json` version `X.Y.Z`** — the
+> tag drops the PATCH segment, the package version always keeps it.
+> Concretely, tag `v1.11` is cut from a tree whose `package.json` reads
+> `1.11.0` (or a later `1.11.Z` patch). The MAJOR and MINOR of the tag
+> MUST equal the MAJOR and MINOR of `package.json` at the tagged commit.
+
+Practical consequences:
+
+- Before tagging, confirm `package.json` `version` MAJOR.MINOR matches the
+  tag you are about to cut:
+  `node -p "require('./package.json').version"` → must be `X.Y.Z`
+  before you run `git tag vX.Y`.
+- PATCH releases (`X.Y.1`, `X.Y.2`, …) bump `package.json` but reuse /
+  move forward under the same `vX.Y` tag line; if you need a distinct git
+  marker for a patch, append the patch segment (`vX.Y.Z`) — but the
+  default house style is 2-segment `vX.Y` to match the existing history.
+- Never bump one without the other. A tag whose MAJOR.MINOR does not
+  match `package.json` is the divergence this section exists to prevent.
+
 ## Release tagging
 
 After all checklist items above are checked, and assuming you are
-publishing version `X.Y.Z`:
+publishing `package.json` version `X.Y.Z` (3-segment SemVer):
 
 ```bash
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin vX.Y.Z
+# 1. Verify the package version is what you intend to release.
+node -p "require('./package.json').version"   # e.g. 1.11.0
+
+# 2. Cut the 2-segment annotated tag (MAJOR.MINOR of the version above).
+git tag -a vX.Y -m "Release vX.Y"              # e.g. git tag -a v1.11 -m "Release v1.11"
+git push origin vX.Y
+
+# 3. Publish the 3-segment npm version.
 npm publish
 ```
 
