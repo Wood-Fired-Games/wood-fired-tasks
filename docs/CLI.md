@@ -530,6 +530,32 @@ tasks dep-list 42 --json
 }
 ```
 
+## Topology Command
+
+### tasks topology
+
+Classify a project's task graph as `FLAT`, `DAG`, or `DAG_CYCLIC` and emit an execution advisory. Opens a read-only handle on the configured `DATABASE_PATH` and runs the classifier in-process (no API round-trip).
+
+**Example:**
+
+```bash
+tasks topology --project 1
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --project | number | Project ID (positive integer, required) |
+
+**Output:**
+
+Always emits the bare `TopologyReport` JSON object on stdout (no `{success, data}` envelope) — this is a machine-readable advisory, not a human dashboard. Pipe through `jq` to extract fields, e.g. `jq .topology`.
+
+**Exit codes:**
+
+Returns `0` on every successful classification, **including `DAG_CYCLIC`** (the classifier reporting a hostile topology is not itself a failure). Returns `1` only on argument-parse failures (invalid `--project`) or service-layer exceptions.
+
 ## Comment Commands
 
 ### tasks comment-add <taskId>
@@ -736,6 +762,79 @@ The `data` object wraps the full task under the `task` key. The `metadata` block
 **Error handling:**
 
 If the task is already claimed or not in a claimable state, the command exits with code 1 and displays the conflict message.
+
+## Authentication Commands
+
+These commands manage the local credentials file used for Bearer (PAT) authentication against the WFT server. They are the recommended path for interactive use; the `API_KEY` environment variable and `--token` global flag remain supported for scripting and CI.
+
+### tasks login
+
+Authenticate with the WFT server via the OAuth device flow. Requests a device code, surfaces a verification URL and user code, best-effort opens a browser, then polls until you approve. On success the minted Personal Access Token is written to the credentials file. The PAT value itself is never printed.
+
+**Examples:**
+
+```bash
+# Standard interactive login
+tasks login
+
+# Don't auto-open a browser (print the URL only)
+tasks login --no-browser
+
+# Override the server for this login (stored in the credentials file)
+tasks login --server https://tasks.example.com
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --token-name | string | Name for the minted PAT (advisory in v1.6; reserved for v1.7 explicit naming) |
+| --no-browser | flag | Skip auto-opening the verification URL in a browser |
+| --server | string | Override `API_BASE_URL` for this invocation (persisted to the credentials file) |
+
+**Output:**
+
+In text mode, login chrome (verification URL, user code, progress) is written to **stderr**, so `tasks login && tasks list` keeps stdout clean. On success it prints `Logged in as <displayName>`. With `--json`, a sequence of newline-separated JSON event envelopes is written to stdout (`{event:"pending"}`, optional `{event:"slow_down"}`, then `{event:"logged_in"}` or `{event:"failed"}`).
+
+**Exit codes:**
+
+Returns `0` on a successful login. Returns `1` on an invalid server URL, a failed device-code request, a terminal polling error, or a credentials-write failure.
+
+### tasks logout
+
+Revoke the active PAT server-side and remove the local credentials file. The local credentials are always deleted regardless of the server's response, so the machine is left logged out even if the revoke call fails.
+
+**Example:**
+
+```bash
+tasks logout
+```
+
+**Output:**
+
+In text mode, prints `Logged out` to stderr on success. Running with no credentials file present is **not** an error — it prints `Not logged in` and exits `0` (idempotent, safe to call in CI teardown). If the server-side revoke fails (5xx or network error) the local file is still cleared and a warning tells you to revoke the stranded token id via the web UI. With `--json`, emits a single `{event:"logged_out", ...}` envelope on stdout.
+
+**Exit codes:**
+
+Returns `0` in all cases (including no-credentials and server-side revoke failures — local intent is satisfied).
+
+### tasks whoami
+
+Show the currently logged-in user. Fetches `/api/v1/me` (authoritative identity) and `/api/v1/me/tokens` (best-effort enrichment for the active token's name and last-used timestamp) in parallel.
+
+**Example:**
+
+```bash
+tasks whoami
+```
+
+**Output:**
+
+Text mode prints aligned fields on stdout: `Display name`, `Email`, `Active token` (name + id), `Last used`, and `Server`. If both the `API_KEY` env var and the credentials file are set, a footer notes the credentials file took precedence. With `--json`, emits a single envelope `{user, server, token?, fallback?}` on stdout (the `token` field is omitted if the token listing fetch failed).
+
+**Exit codes:**
+
+Returns `0` on success. Returns `1` if not logged in (no credentials file), the stored token is invalid (`401`), or the server is unreachable.
 
 ## Health Command
 
@@ -1017,6 +1116,90 @@ tasks stats --json
   }
 }
 ```
+
+## Database Administration Commands
+
+The `tasks db` parent command groups DB-admin subcommands that operate directly on the local SQLite database (read from `DATABASE_PATH`, default `./data/tasks.db`). They do not contact the API server. The flat `tasks db-check` command (documented above) coexists with this namespace by design.
+
+### tasks db mint-token
+
+Mint a Personal Access Token by direct DB access. This is the bootstrap path for the first PAT before browser sessions are available — it bypasses the API, auth chain, and HTTP entirely. Pending migrations are applied automatically before the insert. **The token is printed exactly once and cannot be retrieved later.**
+
+**Examples:**
+
+```bash
+# Mint a token for the legacy user, no expiry
+tasks db mint-token --user 1 --name "ci-runner"
+
+# Mint with scopes and an expiry
+tasks db mint-token \
+  --user alice@example.com \
+  --name "deploy-bot" \
+  --scopes "admin,reader" \
+  --expires-at 2027-05-22T00:00:00Z
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --user | string | User identifier — numeric id, email (case-insensitive), or legacy display_name (required) |
+| --name | string | Human-readable token label (required) |
+| --scopes | string | Comma-separated scope list (advisory in v1.6; not enforced) |
+| --expires-at | string | ISO-8601 expiry timestamp with explicit timezone (e.g. `2027-05-22T00:00:00Z`). Bare dates and timezone-less stamps are rejected. |
+
+**Output:**
+
+```
+Token: wft_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Id: 17
+User: 1 (legacy-key)
+Scopes: [admin, reader]
+Expires: 2027-05-22T00:00:00Z
+```
+
+`Scopes` is always printed (`[]` when empty). `Expires` is omitted entirely when `--expires-at` was not supplied.
+
+**Exit codes:**
+
+Returns `0` on success. Returns `1` if the user cannot be resolved (`User '<arg>' not found.`) or `--expires-at` is not a valid strict ISO-8601 timestamp.
+
+### tasks db migrate-identities
+
+Backfill the identity foreign-key columns (`tasks.created_by_user_id`, `tasks.assignee_user_id`, `task_comments.author_user_id`) from the legacy TEXT columns. **Dry-run by default**; pass `--commit` to apply. Idempotent on re-run. Resolution order per value: alias-map override → email match → exact display_name → fallback strategy.
+
+**Examples:**
+
+```bash
+# Preview the migration plan (read-only)
+tasks db migrate-identities
+
+# Apply, defaulting unmatched values to the first-seeded legacy user
+tasks db migrate-identities --commit
+
+# Use an operator-supplied alias map and skip unmatched values
+tasks db migrate-identities \
+  --alias-map ./aliases.json \
+  --user-fallback skip \
+  --commit
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --alias-map | string | Path to a JSON file mapping legacy TEXT values to user IDs (values must be positive integers and exist in `users`) |
+| --commit | flag | Apply changes. Without it the command is a read-only dry-run. |
+| --user-fallback | string | How to handle unmatched values: `legacy` (default — pin to the lowest-id legacy user) or `skip` (leave the FK NULL) |
+| --limit | number | Cap rows processed **per table** (not per mapping). Testing aid. |
+
+**Output:**
+
+Prints a per-table plan (sorted by row count, highest impact first) in both modes. Dry-run ends with `Total rows that would be updated: N` and `Run with --commit to apply.`. Commit mode prints `Updated N rows in <table> (<textCol> → <fkCol>)` per table and a final `Done. Total rows updated: N.`.
+
+**Exit codes:**
+
+Returns `0` on success. Returns `1` on an invalid `--user-fallback` value, a malformed/unreadable `--alias-map`, an alias-map user id missing from `users`, or `--user-fallback legacy` when no legacy user is seeded.
 
 ## Reporting Commands
 
