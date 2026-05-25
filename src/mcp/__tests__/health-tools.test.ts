@@ -55,7 +55,7 @@ describe('MCP Health Tools', () => {
       if (result.content[0].type === 'text') {
         expect(result.content[0].text).toContain('healthy');
         expect(result.content[0].text).toContain('ok');
-        expect(result.content[0].text).toContain('1.11.0');
+        expect(result.content[0].text).toContain('1.12.0');
       }
 
       expect(result.structuredContent).toBeDefined();
@@ -72,7 +72,7 @@ describe('MCP Health Tools', () => {
           checks: { database: string };
         };
         expect(health.status).toBe('healthy');
-        expect(health.version).toBe('1.11.0');
+        expect(health.version).toBe('1.12.0');
         expect(health.checks.database).toBe('ok');
         // DB fingerprint (task #354).
         expect(typeof health.database.path).toBe('string');

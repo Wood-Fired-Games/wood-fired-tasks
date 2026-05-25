@@ -81,7 +81,7 @@ describe('Public /health (minimal)', () => {
     const body = JSON.parse(response.payload);
     expect(body.version).toBeDefined();
     expect(typeof body.version).toBe('string');
-    expect(body.version).toBe('1.11.0');
+    expect(body.version).toBe('1.12.0');
   });
 
   /**

@@ -14,11 +14,11 @@ security updates. Older tags are provided as-is.
 | Version           | Supported          |
 | ----------------- | ------------------ |
 | `main` (HEAD)     | :white_check_mark: |
-| `v1.11` (latest)  | :white_check_mark: |
-| `v1.0` – `v1.10`  | :x:                |
+| `v1.12` (latest)  | :white_check_mark: |
+| `v1.0` – `v1.11`  | :x:                |
 
 "Latest" tracks whichever tag is most recent on GitHub; at the time of
-writing that is `v1.11`. If you are reading this on an older checkout,
+writing that is `v1.12`. If you are reading this on an older checkout,
 verify the current latest release via
 `git tag --sort=-creatordate | head -1` or the GitHub Releases page.
 

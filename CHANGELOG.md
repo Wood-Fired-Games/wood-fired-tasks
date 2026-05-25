@@ -11,7 +11,9 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-OSS-launch readiness and CI sharding work landed since v1.11.
+## [v1.12] - 2026-05-25
+
+First public open-source release. OSS-launch readiness and CI sharding work landed since v1.11.
 
 ### Added
 - `docs/TROUBLESHOOTING.md` operator recovery runbook (boot failures, wrong/stale DB, safe backup/restore); linked from AGENTS.md, README, and the docs index (task 355).
