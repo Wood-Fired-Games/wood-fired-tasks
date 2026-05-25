@@ -43,6 +43,35 @@ sudo systemctl status wood-fired-bugs
 `install.sh` will create the `wood-fired-bugs` system user (locked shell,
 `--no-create-home`) if it doesn't already exist.
 
+## Network ordering (required when OIDC is enabled)
+
+The shipped unit orders after `network-online.target` (and pulls it in with
+`Wants=`) so the service waits for real connectivity before starting. This
+matters because OIDC discovery runs at startup: without it, a cold boot can
+start the service before the network is up, discovery fails (`fetch failed`),
+and the service exits `78/CONFIG` and crash-loops past its start limit —
+looking, alarmingly, like a missing database when it is really just a boot race.
+
+`network-online.target` only actually *waits* if a wait-online service is
+enabled. Most hosts already have one; verify with:
+
+```bash
+systemctl is-enabled NetworkManager-wait-online.service \
+  systemd-networkd-wait-online.service
+```
+
+If neither is enabled, enable the one matching your network stack (e.g.
+`sudo systemctl enable NetworkManager-wait-online.service`).
+
+If the service is already stuck in `failed` from this race, clear the latch and
+start it once connectivity is back:
+
+```bash
+sudo systemctl reset-failed wood-fired-bugs && sudo systemctl start wood-fired-bugs
+```
+
+See [`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md) for the full recovery runbook.
+
 ## Custom install path or service user
 
 Export the env vars before invoking `install.sh`. They are propagated through

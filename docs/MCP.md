@@ -57,6 +57,20 @@ npm run mcp:dev
 
 ## Configuration
 
+> **Recommended setup (single-writer).** For anything beyond a single-user,
+> same-host dev box, wire your MCP client to the **remote (REST) variant**
+> (`dist/mcp/remote/index.js`) rather than the local SQLite variant. Only one
+> process should ever own the database file — the API service. The remote
+> variant proxies every tool call through that service over HTTP, so the service
+> stays the single writer. The local variant (`dist/mcp/index.js` +
+> `DATABASE_PATH`) opens the SQLite file **directly**: point two long-lived
+> processes at the same file and you get write contention, and point it at the
+> wrong file and it **silently serves stale data with no warning** — a common
+> "my tasks disappeared!" cause (see
+> [TROUBLESHOOTING.md](TROUBLESHOOTING.md)). Use the local variant only when your
+> client and the database are on the same host and nothing else writes that
+> file. See [Remote MCP Server](#remote-mcp-server) for the recommended config.
+
 ### Claude Code Setup
 
 Add this configuration to `~/.claude.json` in the `mcpServers` section:
@@ -220,11 +234,45 @@ Add this alongside (or instead of) the local `wood-fired-bugs` entry in `~/.clau
 }
 ```
 
+> Prefer the [launcher-wrapper below](#keeping-the-api-key-out-of-client-config-recommended) over an inline `WFB_API_KEY` — it keeps the secret out of `~/.claude.json`.
+
 For development you can also run it via `tsx`:
 
 ```bash
 WFB_API_URL=http://localhost:3000 WFB_API_KEY=dev-key npm run mcp:remote
 ```
+
+### Keeping the API key out of client config (recommended)
+
+Pasting `WFB_API_KEY` straight into `~/.claude.json` works, but it leaves a
+long-lived secret in a file your agent reads and writes constantly. Prefer a
+thin launcher script as the MCP `command` that injects the key at spawn time
+from the server's own environment file, so the client config holds **no
+secret**:
+
+```bash
+#!/usr/bin/env bash
+# ~/.local/bin/wfb-mcp — reads the key from the server's .env at spawn time.
+set -euo pipefail
+WFB_API_KEY="$(grep -m1 '^API_KEYS=' /opt/wood-fired-bugs/.env | cut -d= -f2- | cut -d, -f1)"
+export WFB_API_KEY
+export WFB_API_URL="${WFB_API_URL:-http://localhost:3000}"
+exec node /opt/wood-fired-bugs/dist/mcp/remote/index.js
+```
+
+The client entry then carries only the command — no `env` block, no key:
+
+```json
+{
+  "mcpServers": {
+    "wood-fired-bugs": { "command": "/home/you/.local/bin/wfb-mcp", "args": [] }
+  }
+}
+```
+
+Mint a dedicated PAT (`tasks login` / `db mint-token`) instead of reusing a
+master `API_KEYS` value when you want per-operator attribution and easy
+revocation.
 
 ### Local vs remote at a glance
 
