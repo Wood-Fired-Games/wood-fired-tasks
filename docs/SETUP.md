@@ -173,7 +173,7 @@ For deployments where no browser is available, mint the first PAT
 directly against the SQLite database:
 
 ```bash
-# Adds a row to personal_access_tokens for the named user.
+# Adds a row to api_tokens for the named user.
 # --user accepts a numeric id, email (case-insensitive), or legacy display_name.
 # --name is a required human-readable label for the token.
 node dist/cli/bin/tasks.js db mint-token --user you@example.com --name my-laptop

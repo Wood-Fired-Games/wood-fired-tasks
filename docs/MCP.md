@@ -141,7 +141,7 @@ The MCP server has two transports, and they authenticate differently:
 them at boot:
 
 1. **PAT** — values starting with `wft_pat_` are hashed (SHA-256) and
-   looked up in `personal_access_tokens`. The matched row's
+   looked up in `api_tokens`. The matched row's
    `user_id` becomes the actor for every subsequent write tool call.
    Revoked / unknown PATs fall back to `mcp-bot` (see below).
 2. **Legacy key** — anything else is matched against the `API_KEYS`
