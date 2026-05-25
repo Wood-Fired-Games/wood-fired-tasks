@@ -6,7 +6,7 @@ Wood Fired Tasks task management system via Claude Code and the `tasks` CLI.
 Once set up, you get:
 - **10 `/tasks:*` slash commands** in Claude Code (`/tasks:create-task`, `/tasks:my-work`, etc.)
 - **`tasks` CLI** in your terminal (`tasks list`, `tasks show 1`, `tasks create`, etc.)
-- **MCP server** providing all 26 tools to Claude Code
+- **MCP server** providing all 22 tools to Claude Code
 
 ---
 
@@ -291,7 +291,7 @@ Your Machine                               Linux Backend
 │  ┌───────────────────────────┐   │       └──────────────────────┘
 │  │  Remote MCP Server        │───┼──────>│
 │  │  (mcp-server/)            │   │ HTTP
-│  │  Proxies all 26 tools     │   │
+│  │  Proxies all 22 tools     │   │
 │  └───────────────────────────┘   │
 │                                  │
 │  /tasks: slash commands          │
