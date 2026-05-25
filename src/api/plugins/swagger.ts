@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUI from '@fastify/swagger-ui';
 import { jsonSchemaTransform } from 'fastify-type-provider-zod';
+import { VERSION } from '../../utils/version.js';
 
 /**
  * Register the OpenAPI spec collector (`@fastify/swagger`).
@@ -19,7 +20,7 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
       info: {
         title: 'Wood Fired Tasks API',
         description: 'Task management REST API for Wood Fired Games. Designed for LLM agent consumption.',
-        version: '1.0.0',
+        version: VERSION,
       },
       servers: [
         { url: 'http://localhost:3000', description: 'Development' },

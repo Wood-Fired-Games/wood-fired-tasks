@@ -50,7 +50,7 @@ vi.mock('../output/formatters.js', () => ({
 const mockHealthOk = {
   status: 'healthy' as const,
   timestamp: '2024-01-15T10:30:00Z',
-  version: '1.0.0',
+  version: '1.11.0',
   checks: {
     database: 'ok' as const,
   },
@@ -59,7 +59,7 @@ const mockHealthOk = {
 const mockHealthError = {
   status: 'unhealthy' as const,
   timestamp: '2024-01-15T10:30:00Z',
-  version: '1.0.0',
+  version: '1.11.0',
   checks: {
     database: 'failed' as const,
   },
@@ -138,7 +138,7 @@ describe('health command', () => {
 
     await program.parseAsync(['node', 'test', 'health']);
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('1.0.0'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('1.11.0'));
   });
 
   it('handles API connection errors', async () => {

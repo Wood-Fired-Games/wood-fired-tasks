@@ -34,12 +34,13 @@ import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
 import { isMain } from '../../utils/is-main.js';
+import { VERSION } from '../../utils/version.js';
 
 // Configure CLI program
 program
   .name('tasks')
   .description('Wood Fired Tasks - Task management CLI')
-  .version('1.0.0');
+  .version(VERSION);
 
 // Global options must be registered before subcommands to inherit properly
 // Commands access via program.optsWithGlobals() or process.argv check

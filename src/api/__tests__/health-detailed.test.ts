@@ -61,7 +61,7 @@ describe('Authenticated /health/detailed', () => {
     // Same shape as the pre-task-#185 /health route
     expect(body.status).toBe('healthy');
     expect(body.timestamp).toBeDefined();
-    expect(body.version).toBe('1.0.0');
+    expect(body.version).toBe('1.11.0');
 
     // Component checks
     expect(body.checks).toBeDefined();

@@ -10,6 +10,7 @@ import {
   CompletionReportSchema,
   toCompactTask,
 } from '../../schemas/task.schema.js';
+import { VERSION } from '../../utils/version.js';
 
 /**
  * Register all 22 MCP tools backed by REST API calls via RestClient.
@@ -852,7 +853,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       try {
         const health = await client.checkHealth();
         const status = health.status ?? 'unknown';
-        const version = health.version ?? '1.0.0';
+        const version = health.version ?? VERSION;
         const timestamp = health.timestamp ?? new Date().toISOString();
         const dbStatus = health.checks?.database ?? 'unknown';
         const fp = health.database;
@@ -870,7 +871,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         };
       } catch (error) {
         const timestamp = new Date().toISOString();
-        const version = '1.0.0';
+        const version = VERSION;
         return {
           content: [
             {

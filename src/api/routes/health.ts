@@ -1,6 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eventBus } from '../../events/event-bus.js';
+import { VERSION } from '../../utils/version.js';
 
 /**
  * Public, unauthenticated health check.
@@ -38,7 +39,7 @@ const healthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     async (request, reply) => {
       const timestamp = new Date().toISOString();
-      const version = '1.0.0';
+      const version = VERSION;
 
       // Check database connectivity (the only critical check on the
       // public endpoint — if it fails, return 503 in the minimal shape).
@@ -160,7 +161,7 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     async (request, reply) => {
       const timestamp = new Date().toISOString();
-      const version = '1.0.0';
+      const version = VERSION;
 
       // Check database connectivity and capture a fingerprint so an operator
       // can confirm WHICH database this process opened (resolved path + cheap

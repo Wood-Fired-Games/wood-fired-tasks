@@ -388,7 +388,7 @@ describe('RestClient', () => {
       ok({
         status: 'healthy',
         timestamp: 't',
-        version: '1.0.0',
+        version: '1.11.0',
         database: { path: '/tmp/tasks.db', projects: 2, maxTaskId: 9, latestActivity: '2026-05-25T00:00:00.000Z' },
         checks: { database: 'ok' },
       })

@@ -56,6 +56,6 @@ describe('bin/tasks.ts side-effect guard', () => {
       expect(code).toBe('commander.version');
     }
 
-    expect(versionOut.trim()).toBe('1.0.0');
+    expect(versionOut.trim()).toBe('1.11.0');
   });
 });

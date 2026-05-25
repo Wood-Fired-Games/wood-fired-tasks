@@ -12,6 +12,7 @@ import { registerCommentTools } from './tools/comment-tools.js';
 import { registerProjectTools } from './tools/project-tools.js';
 import { registerHealthTools } from './tools/health-tools.js';
 import { registerTopologyTools } from './tools/topology-tools.js';
+import { VERSION } from '../utils/version.js';
 import {
   EVENTS_RESOURCE_URI,
   EVENTS_RESOURCE_NAME,
@@ -88,7 +89,7 @@ export function createMcpServer(
 ): McpServer {
   const server = new McpServer({
     name: 'wood-fired-tasks',
-    version: '1.0.0',
+    version: VERSION,
   });
 
   // Register all tools — ctx is threaded into every tool group so create /

@@ -32,11 +32,12 @@ import { createCompletionsCommand } from '../commands/completions.js';
 import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
+import { VERSION } from '../../utils/version.js';
 
 program
   .name('tasks')
   .description('Wood Fired Tasks - Task management CLI (remote client)')
-  .version('1.0.0');
+  .version(VERSION);
 
 program.option('--json', 'Output as JSON (machine-readable)');
 program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');

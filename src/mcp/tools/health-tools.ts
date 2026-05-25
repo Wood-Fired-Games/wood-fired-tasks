@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import { VERSION } from '../../utils/version.js';
 
 /**
  * Register health check MCP tool
@@ -20,7 +21,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
     async () => {
       const traceId = randomUUID();
       const timestamp = new Date().toISOString();
-      const version = '1.0.0';
+      const version = VERSION;
       console.error(JSON.stringify({ level: 'info', traceId, tool: 'check_health', event: 'start', timestamp }));
 
       try {

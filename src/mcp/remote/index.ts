@@ -9,6 +9,7 @@ import {
   getEventsResourceContent,
 } from '../resources/events.js';
 import { isMain } from '../../utils/is-main.js';
+import { VERSION } from '../../utils/version.js';
 
 /**
  * Remote MCP server entry point.
@@ -71,7 +72,7 @@ async function main() {
   // Create MCP server (same name/version as local server)
   const server = new McpServer({
     name: 'wood-fired-tasks',
-    version: '1.0.0',
+    version: VERSION,
   });
 
   // Register all 21 tools backed by REST API

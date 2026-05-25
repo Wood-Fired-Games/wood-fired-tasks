@@ -570,7 +570,7 @@ describe('registerRemoteTools', () => {
     client.checkHealth.mockResolvedValue({
       status: 'healthy',
       timestamp: '2026-05-21T10:00:00Z',
-      version: '1.0.0',
+      version: '1.11.0',
       checks: { database: 'ok' },
     });
     const r = await handlers.get('check_health')!({});
