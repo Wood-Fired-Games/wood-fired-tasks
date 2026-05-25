@@ -7,6 +7,7 @@ import {
   ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import fastifySSE, { SSEPluginOptions } from '@fastify/sse';
+import fastifyHelmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import fastifyCookie from '@fastify/cookie';
 import fastifySecureSession from '@fastify/secure-session';
@@ -231,6 +232,26 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
   // Set custom error handler (must be set before routes)
   server.setErrorHandler(errorHandler);
+
+  // Task #383: register @fastify/helmet ONCE at the top level so the JSON
+  // API surface (and every other response) carries the standard security
+  // headers — most importantly `x-content-type-options: nosniff`, plus
+  // `x-frame-options` and HSTS (`strict-transport-security`).
+  //
+  // contentSecurityPolicy is DISABLED here on purpose: the server-rendered
+  // HTML surface (web routes, /auth/error) manages its OWN Content-Security-
+  // Policy / X-Frame-Options / Referrer-Policy via a scoped onSend hook
+  // (see src/api/routes/web/index.ts and HTML_SECURITY_HEADERS in
+  // src/web/html.js, audit C5). Letting helmet emit a global default-src
+  // 'none' CSP would either fight those routes' inline-style/script needs or
+  // produce duplicate/conflicting CSP headers. Leaving CSP to the HTML
+  // routes keeps a single source of truth for the framed surfaces while
+  // helmet still hardens the JSON API (which cannot be framed and needs no
+  // CSP). All other helmet defaults — including X-Content-Type-Options,
+  // X-Frame-Options, and Strict-Transport-Security — remain enabled.
+  await server.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+  });
 
   // Register Swagger/OpenAPI spec collector (must be before routes so it can
   // capture their schemas). task #185: the spec collector itself does not
