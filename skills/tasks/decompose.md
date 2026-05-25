@@ -1,93 +1,334 @@
 ---
 name: decompose
-description: DESIGN-ONLY STUB. Wave 5 design landed (see docs/tasks-decompose-design.md); runtime not implemented. When run, would auto-break a project-level goal into independent leaf tasks (or a dependency DAG) ready for /tasks:loop or /tasks:loop-dag. Pipeline: goal capture → codebase recon → candidate generation → independence check → topology decision → coverage check → sizing → materialize → DECOMPOSITION.md emit. Bounded ≤ $5 target / $15 hard cap. Skill is gated (`disable-model-invocation: true`) until the runtime ships — explicit user invocation surfaces the design pointer instead of pretending to execute.
-argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed]
-disable-model-invocation: true
+description: Operational planner that breaks a project-level goal into 8–25 independent leaf tasks (FLAT) or a dependency DAG, ready for /tasks:loop or /tasks:loop-dag. Runs a 9-step pipeline — goal capture → codebase recon (one Explore agent) → candidate generation (planner) → independence check (critic) → topology decision (topology_check) → coverage check (critic) → sizing → materialize (create_task + add_dependency) → DECOMPOSITION.md emit. PLANS only; never executes the tasks it materializes. Bounded ≤ $5 soft target / $15 hard cap. Refuses blast-radius goals (deploy / migrate production / delete data).
+argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed] [--dry-run]
+disable-model-invocation: false
 ---
 
 # /tasks:decompose
 
-> **Status (2026-05-23):** Design spec landed via wood-fired-tasks task
-> **#320**. Runtime orchestration is **not implemented yet** — see the
-> follow-on tasks listed at the bottom of
-> [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md).
-> This skill file is a **discovery stub**: invocation should read the
-> design spec and report back rather than executing the pipeline.
+You are the **orchestrator** of a goal decomposition. Your job is to turn
+one project-level goal into a backlog of well-formed wood-fired-tasks tasks
+(plus the dependency edges between them), then hand off to a *separate*
+executor — `/tasks:loop` (FLAT) or `/tasks:loop-dag` (DAG). You are the
+**planner half**; you NEVER execute the tasks you materialize (Guardrail 1).
 
-See [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md)
-for the full design — contract, methodology, guardrails, artifact schema,
-verification fixtures, and cost budget. That document is the source of
-truth; this skill file intentionally restates only the navigation.
+The full design — contract, methodology, guardrails, artifact schema,
+verification fixtures, and cost budget — is the source of truth at
+[`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md).
+This skill is the executable implementation of that design; where they
+could drift, the design doc wins. Section references below (§N) point
+into it.
+
+> **Mental model.** You are the architect drafting the work breakdown, not
+> the crew that builds it. Each step hands the *next* step a small summary
+> (recon summary, candidate drafts, edge set, coverage verdict) — never the
+> raw subagent transcript — so your working context stays bounded across
+> the whole run. The only writes you perform are bugs-DB `create_task` /
+> `add_dependency` calls (Step 8) and the single `DECOMPOSITION.md` emit
+> (Step 9). You touch the source tree **read-only**, and only during Step 2
+> recon.
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__add_dependency,mcp__wood-fired-tasks__topology_check`) and retry. (Runtime is a design-only stub today — tool calls listed here are what the implemented pipeline would call; the stub does not actually call them.)
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand
+`wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`.
+On `InputValidationError`, load via `ToolSearch`
+(`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__add_dependency`)
+and retry.
 
-## On invocation
+**Allowed MCP tool surface (Guardrail 1 — planner, not executor):**
 
-While the design is the only artifact that has landed, the skill MUST:
+- `list_projects` — resolve / validate the `--project` id (read-only).
+- `list_tasks` — read existing backlog for idempotency dedup (read-only).
+- `topology_check` — classify the Step-4 edge set (read-only; Wave 4.1 / #318).
+- `create_task` — materialize a surviving candidate (Step 8 only).
+- `add_dependency` — materialize a dependency edge (Step 8 only).
 
-1. **Tell the user the skill is design-only** and point at
-   `docs/tasks-decompose-design.md`. Do NOT pretend to start the pipeline.
-2. **Refuse to dispatch any subagent**, refuse to call `create_task`,
-   refuse to call `add_dependency`, and refuse to write under
-   `.planning/decompositions/`. The runtime is deferred — these tool
-   calls would silently violate the contract.
-3. **Remind the user** that follow-on wood-fired-tasks tasks must be
-   created to implement the pipeline (Explore-agent wiring, planner +
-   critic subagent definitions, cost tracker, fixtures) before this
-   skill becomes operational.
+**The execution-side mutating tools are NOT permitted (Guardrail 1):**
+`claim_task`, `update_task` (status transitions), `add_comment`,
+`completion_report`, `delete_task`, `remove_dependency`,
+`update_project`, `delete_project`. An orchestrator that claimed or
+status-transitioned a task it just planned would be executing its own
+plan — exactly the plan/execute fusion this skill exists to prevent. If a
+step seems to need one of these, you have misread the design — stop and
+re-read §5 Guardrail 1. `create_task` and `add_dependency` are the ONLY
+mutating tools, and ONLY in Step 8 (skipped under `--dry-run`).
 
-A representative response shape:
+---
+
+## Step 1 — Goal capture
+
+Parse `$ARGUMENTS`. Supported flags: `--project <id>`, `--goal "..."`,
+`--success "..."` (repeatable), `--domain <enum>`, `--dry-run`. Validate
+(design §3 Step 1):
+
+- `--project <id>` — required, positive integer. Confirm it resolves via
+  `wood-fired-tasks:list_projects`; refuse with a usage error if it does
+  not exist.
+- `--goal "..."` — required, non-empty, **≤ 200 words** (~≤ 1500 chars).
+  Over the cap ⇒ refuse and ask the user to tighten the goal.
+- `--success "..."` — **3–5 entries required**. Fewer than 3 or more than
+  5 ⇒ ask the user to add/trim (or collect interactively until 3–5).
+- `--domain <enum>` — one of `frontend | backend | docs | infra | mixed`.
+  Defaults to `mixed` if omitted. Any other value ⇒ refuse.
+- `--dry-run` — optional. When set, run §1–§7 and §9 but **SKIP §8
+  materialize** (no `create_task` / `add_dependency`); the artifact records
+  `candidate_count` of the would-be tasks with `task_id: (dry-run)`.
+
+### Guardrail 4 — blast-radius keyword refusal (BEFORE any dispatch)
+
+Before Step 2 dispatches anything, scan `--goal` (and every `--success`
+entry) for blast-radius keywords. The match is **whole-word,
+case-insensitive**, regex `\b(deploy|migrate production|delete data)\b`.
+If ANY of `deploy`, `migrate production`, or `delete data` matches, **REFUSE
+immediately** — emit the message below and STOP. Do **not** dispatch the
+Explore agent, the planner, or any critic; do **not** call `create_task`.
+The refusal MUST happen in Step 1, before any subagent dispatch (design §5
+Guardrail 4). If you write a partial artifact at all, it carries
+`advisory: BLOCKED` and `aborted_reason: blast_radius_keyword`.
 
 ```
-/tasks:decompose is design-only as of #320 (Wave 5).
+/tasks:decompose refuses this goal: it contains a blast-radius keyword
+(deploy / migrate production / delete data). Those phrases name
+irreversible operations whose blast radius is customer impact, not test
+failures. Auto-decomposition would hide one of those operations inside a
+candidate task — exactly the wrong automation. Author a human plan with
+explicit rollback steps instead.
 
-The design (contract, methodology, guardrails, artifact schema, cost
-budget, and verification-fixture sketches) lives at:
-
-  docs/tasks-decompose-design.md
-
-Runtime orchestration is deferred. The follow-on tasks needed to
-implement it are listed at the bottom of that design doc — they must
-be created in wood-fired-tasks project 15 before /tasks:decompose
-can be invoked operationally.
-
-No subagent dispatched. No tasks materialized. No artifacts written.
+No subagent dispatched. No tasks materialized.
 ```
 
-## The 9-step pipeline at a glance
+Mint a fresh `decomposition_id` (UUIDv4) now — it is the idempotency /
+dedup key reused by Step 8 and recorded in the Step 9 frontmatter. Record
+`generated_at = <now UTC, RFC 3339>`.
 
-(See [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md) §4 for the
-full detail; this section is a one-line-per-step reminder.)
+## Step 2 — Codebase recon
 
-1. **Goal capture** — `--goal` (≤ 200 words), `--success` (3–5), `--domain`, blast-radius keyword check.
-2. **Codebase recon** — single Explore-agent subagent, ≤ 50 tool calls / ≤ 8 min, output cached.
-3. **Candidate generation** — planner subagent emits 8–25 drafts (title + description + acceptance_criteria + suspected_edges + estimated_minutes).
-4. **Independence check** — critic subagent does pairwise comparison; halt if ≥ 30% interdependent.
-5. **Topology decision** — apply `topology_check` (Wave 4.1 / #318); FLAT → `/tasks:loop`, DAG → `/tasks:loop-dag` (Wave 4.3 / #341) + suggested wave grouping, DAG_CYCLIC → HALT.
-6. **Coverage check** — second critic; gaps → add candidates, duplicates → merge (≤ 2 Step 4 re-runs).
-7. **Sizing check** — each candidate ≤ 90 minutes; split oversize.
-8. **Materialize** — `create_task` + `add_dependency`, idempotent on `decomposition_id`.
-9. **Emit `DECOMPOSITION.md`** — `.planning/decompositions/<UTC>-<project_id>.md` (gitignored, same rationale as `LOOP-RUN.md`).
+Dispatch **exactly ONE** Explore-agent subagent, bounded
+`≤ 50 tool calls` and `≤ 8 minutes wall time` (design §3 Step 2). Use the
+`Agent` tool with `subagent_type: "Explore"` and
+`name: "decompose-recon"`. The Explore agent reads `AGENTS.md` /
+`CLAUDE.md` / `docs/REPO_MAP.md` first to find entry points, then walks
+only the subtree relevant to the goal + `--domain` (e.g. `frontend` →
+`src/web/**` first; `infra` → `deploy/**` first; `mixed` disables the
+directory-first heuristic).
 
-## Guardrails (do NOT remove)
+Brief the agent to return a **structured recon summary, ≤ 2 KB markdown**
+(entry points, relevant modules, existing tests, integration seams). Cache
+the summary at
+`.planning/decompositions/.cache/<decomposition_id>-recon.md` so Step 3
+does **not** re-read source files. Hold only the summary in your context,
+never the agent's transcript.
 
-1. The skill MUST NOT execute the decomposed tasks (plan/execute separation).
-2. The skill MUST NOT modify itself.
-3. The skill MUST halt + ask if Step 4 rejects ≥ 30% of candidate pairs.
-4. The skill MUST refuse goals containing `deploy`, `migrate production`, or `delete data`.
+This is the ONLY step that reads the source tree, and it is strictly
+read-only (Guardrail 1). Do NOT dispatch workers that mutate the tree.
+
+## Step 3 — Candidate task generation
+
+Dispatch a **planner** subagent with `(goal, success_criteria, recon
+summary)`. **Default `subagent_type: "general-purpose"`** with the planner
+instructions embedded inline in the dispatch brief (the named planner
+subagent type is only registered for sessions started after `install.sh`;
+an `Agent` call with an unknown `subagent_type` FAILS the whole dispatch).
+Pass `name: "decompose-planner"` so it is addressable for repair
+round-trips. Bounds: `≤ 30 tool calls / ≤ 6 minutes` (design Subagents
+table).
+
+**Inline planner brief (embed verbatim, then append the inputs):**
+
+> You are a task-decomposition planner. Given a goal, 3–5 success criteria,
+> and a codebase recon summary, emit **8–25 candidate task drafts** as a
+> JSON array. Each element MUST validate against `CandidateTaskSchema`
+> (`src/lib/decompose/schema.ts`):
+> - `draft_id` — positive integer, unique within the array.
+> - `title` — single line, ≤ 255 chars, imperative voice.
+> - `description` — 2–3 sentences, ≤ ~1000 chars; scope + intended approach,
+>   NOT a step-by-step execution plan (that is the worker's job downstream).
+> - `acceptance_criteria` — ≥ 1 bullet, each independently verifiable (a
+>   test name, a build flag, a file-existence assertion, a log line).
+> - `suspected_edges` — array of `{from_draft_id, to_draft_id}` for any
+>   inter-draft dependency you notice while authoring (hints for Step 4,
+>   not authoritative).
+> - `estimated_minutes` — integer in [1, 90].
+> Prefer independent leaf tasks. Only assert an edge when one draft truly
+> cannot start until another completes. Return ONLY the JSON array.
+
+Validate the returned array against `CandidateTaskSchema`.
+**< 8 candidates** ⇒ the goal is too small; ask the user whether to file a
+single task instead of decomposing, and STOP.
+**> 25 candidates** ⇒ the goal is too broad; ask whether to split the goal
+first, and STOP.
+
+## Step 4 — Independence check
+
+Dispatch a **critic** subagent (default `subagent_type:
+"general-purpose"`, `name: "decompose-critic-independence"`, bounds
+`≤ pairs(N) tool calls / ≤ 4 minutes`) to do **pairwise** comparison of the
+candidates: for each pair return `INDEPENDENT` | `ORDERED(a→b)` |
+`MUTUALLY_EXCLUSIVE`. Aggregate the verdicts into a dependency **edge set**
+(one directed edge per `ORDERED` verdict; `MUTUALLY_EXCLUSIVE` pairs are
+flagged for user attention).
+
+### Guardrail 3 — halt on high interdependence
+
+Compute
+`interdependent_ratio = (ordered + mutually_exclusive) / total_pairs`.
+**If `interdependent_ratio ≥ 0.30`, HALT and ask the user** whether the
+goal needs re-scoping before proceeding (design §5 Guardrail 3). ≥ 30%
+interdependence means the planner output is no longer a sensible
+decomposition — the goal is an epic / roadmap / multi-phase migration that
+needs human-authored phase structure first. On halt, write a partial
+artifact with `aborted_reason: high_interdependence` and STOP — do not
+proceed to Step 5.
+
+## Step 5 — Topology decision
+
+Call the `topology_check` MCP tool on the Step-4 edge set (Wave 4.1 / #318
+— **no new tool is added by this skill**). Branch on the returned
+`topology`:
+
+| Topology     | Advisory          | Action                                                       |
+|--------------|-------------------|--------------------------------------------------------------|
+| `FLAT`       | `/tasks:loop`     | No edges; tasks drain in any order. Proceed to §6.           |
+| `DAG`        | `/tasks:loop-dag` | Group candidates into **1–4 waves** (connected components + longest-path heuristic), render the grouping in artifact body §4. Proceed to §6. |
+| `DAG_CYCLIC` | `BLOCKED`         | **HALT** — do NOT materialize. Emit a partial artifact with `advisory: BLOCKED`, `aborted_reason: cycle`, and a cycle report listing the offending `draft_id` chain. STOP. |
+
+The wave grouping is **advisory only** — the user reviews
+`DECOMPOSITION.md` before running `/tasks:loop-dag`.
+
+**`topology_check` fallback (mirror `loop-dag.md` §2f / §3a step 2).**
+`topology_check` is conditionally registered; it is now wired on BOTH the
+stdio and remote MCP servers, but still guard for its absence. If the call
+raises `InputValidationError`, first try the `ToolSearch` load
+(`select:mcp__wood-fired-tasks__topology_check`) and retry. If it is still
+unavailable or returns a malformed response, **fall back** to classifying
+the edge set locally from Step 4: zero edges ⇒ `FLAT`; edges with no cycle
+(run a DFS / Kahn check on the `draft_id` graph) ⇒ `DAG`; a detected cycle
+⇒ `DAG_CYCLIC`. Record `topology_check_fallback: true` in the artifact's
+Topology Verdict section so a reader knows the classification was local.
+
+## Step 6 — Coverage check
+
+Dispatch a second **critic** subagent (default `subagent_type:
+"general-purpose"`, `name: "decompose-critic-coverage"`, bounds
+`≤ 20 tool calls / ≤ 3 minutes`) with `(success_criteria, union of
+candidate acceptance_criteria)`. It returns exactly one of:
+
+- `COMPLETE` — every success criterion is covered by ≥ 1 acceptance
+  criterion. Proceed to §7.
+- `GAPS([criterion, …])` — add candidate tasks to cover the missing
+  criteria, then **re-run Step 4** (independence) on the additions.
+- `DUPLICATES([(id_a, id_b), …])` — merge the listed candidate pairs and
+  **re-run Step 4** on the survivors.
+
+**Bounded re-entry: at most 2 Step-4 re-runs.** After the second re-run,
+halt and ask the user rather than looping further.
+
+## Step 7 — Sizing check
+
+Each candidate's `estimated_minutes` MUST be **≤ 90** (enforced by
+`CandidateTaskSchema`; a value > 90 fails validation and halts the run).
+Split any candidate over 90 minutes into ≤ 90-minute sub-candidates. Splits
+create new dependency edges (split children → split-parent stub); **re-run
+Step 4 once on the splits** to fold the new edges into the edge set.
+
+## Step 8 — Materialize
+
+**Skipped entirely under `--dry-run`.** Otherwise, create the surviving
+candidates in wood-fired-tasks via `wood-fired-tasks:create_task`, then add
+the dependency edges via `wood-fired-tasks:add_dependency`.
+
+**Idempotent on `decomposition_id`.** Before creating, `list_tasks` on the
+project and skip any candidate already materialized under this
+`decomposition_id` (re-running the same goal + project + `decomposition_id`
+MUST NOT duplicate tasks). Record the `(draft_id → task_id)` mapping for the
+artifact body §5. Materialization NEVER transitions a task's status,
+claims it, or comments on it (Guardrail 1) — it only creates and edges.
+
+## Step 9 — Emit `DECOMPOSITION.md`
+
+Write the artifact to
+`.planning/decompositions/<UTC-timestamp>-<project_id>.md` (timestamp
+format `YYYY-MM-DDTHH-MM-SSZ`, same convention as `docs/loop-run-schema.md`
+§2). Create `.planning/decompositions/` if absent. The file is
+**gitignored** — `.planning/` is in the repo's `.gitignore`, same rationale
+as `LOOP-RUN.md`. **Do NOT `git add` it**, and do NOT modify `.gitignore`
+to make it an exception. This `Write` (plus the recon cache write in §2) is
+the only filesystem mutation the skill performs.
+
+**Frontmatter (YAML)** — mirror `DecompositionFrontmatterSchema` in
+`src/lib/decompose/schema.ts` field-for-field: `decomposition_id`,
+`project_id`, `generated_at`, `goal`, `success_criteria`, `domain`,
+`topology`, `advisory`, `candidate_count`, `dependency_edge_count`,
+`total_usd`, `cost_cap_hit`, and the optional `aborted_reason` (set only on
+the `cycle` / `high_interdependence` / `blast_radius_keyword` halt paths).
+
+**Body sections (in order — design §6):**
+
+1. `## Goal` — verbatim user input.
+2. `## Recon Summary` — the Step 2 output.
+3. `## Coverage Matrix` — rows = success criteria, columns = candidate
+   titles; cell ✓ when covered.
+4. `## Topology Verdict` — `topology_check` output + advisory rationale
+   (+ `topology_check_fallback: true` if the §5 fallback fired; + the wave
+   grouping table for `DAG`).
+5. `## Candidates` — one block per candidate: `draft_id`, `task_id` (or
+   `(dry-run)`), `title`, `description`, `acceptance_criteria`, rationale
+   linking back to the success criteria it covers.
+6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason).
+7. `## Cost Breakdown` — orchestrator + per-subagent cost rows + TOTAL.
+
+Set `generated_at`-paired end time immediately before the final write.
+
+## Cost budget (Guardrail-adjacent — LIVE rule)
+
+Track running cost across the orchestrator + every subagent dispatch
+(cache-discounted USD, same formula as `LOOP-RUN.md` §4.4). After each
+subagent returns, read its `usage` block and increment an in-memory
+counter — that counter is the source of truth for both thresholds.
+
+- **$5 soft target** — when running cost crosses **$5**, emit a checkpoint
+  to stdout and record `checkpoint_5usd_at_step: <step>` (optional
+  frontmatter field). The run **continues**.
+- **$15 hard cap** — when running cost crosses **$15**, **HALT
+  immediately**. Preserve all work completed up to that step (materialized
+  tasks stay; do NOT roll back), write a partial `DECOMPOSITION.md` with
+  `cost_cap_hit: true`, and report the halt to the user. The user re-runs
+  with `--resume <decomposition_id>` (idempotent on `decomposition_id`) to
+  continue from the last completed step.
+
+## Guardrails (LIVE rules — do NOT remove)
 
 Each guardrail is enforced by a falsifiable test gate in
-`src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`. Do not
-weaken those tests without simultaneously updating
-`docs/tasks-decompose-design.md` §5.
+[`src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`](../../src/api/routes/tasks/__tests__/skill-decompose-design.test.ts)
+and the sibling fixtures test. Do not weaken those tests without
+simultaneously updating `docs/tasks-decompose-design.md` §5.
+
+1. **MUST NOT execute the decomposed tasks** (plan/execute separation). The
+   skill does NOT call `claim_task`, `update_task` status transitions, or
+   dispatch worker subagents that mutate the source tree beyond the Step-2
+   read-only recon. Materialization (`create_task` / `add_dependency`) is
+   creation only — never execution. `/tasks:loop` and `/tasks:loop-dag` are
+   the executor halves; keep them separate.
+2. **MUST NOT modify itself** (no self-rewrite). Refuse any `Edit` /
+   `Write` / `MultiEdit` against `skills/tasks/decompose.md`,
+   `docs/tasks-decompose-design.md`, and `src/lib/decompose/**`. A
+   self-modifying skill cannot be audited statically — the moment the skill
+   file is mutable from inside the run, guardrails 1, 3, and 4 stop being
+   load-bearing.
+3. **MUST halt + ask the user if Step 4 rejects ≥ 30% of candidate pairs**
+   as inter-dependent (`interdependent_ratio ≥ 0.30`). Write
+   `aborted_reason: high_interdependence` and stop before Step 5.
+4. **MUST refuse goals containing `deploy`, `migrate production`, or
+   `delete data`** (whole-word, case-insensitive `\b(...)\b`). The refusal
+   fires in Step 1 input validation, **before any subagent dispatch**.
 
 ## Links
 
-- Design spec: [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md)
+- Design spec (source of truth): [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md)
 - Schema (zod): [`src/lib/decompose/schema.ts`](../../src/lib/decompose/schema.ts)
 - Schema tests: [`src/lib/decompose/__tests__/schema.test.ts`](../../src/lib/decompose/__tests__/schema.test.ts)
-- Design-doc tests: [`src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`](../../src/api/routes/tasks/__tests__/skill-decompose-design.test.ts)
-- Companion skill (consumer): [`skills/tasks/loop.md`](./loop.md) — drains `FLAT` advisories.
-- Companion orchestrator (consumer): [`skills/tasks/loop-dag.md`](./loop-dag.md) — drains `DAG` advisories wave-by-wave (Wave 4.3 / #341).
+- Design-doc / skill tests: [`src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`](../../src/api/routes/tasks/__tests__/skill-decompose-design.test.ts)
+- Companion executor (FLAT advisory): [`skills/tasks/loop.md`](./loop.md)
+- Companion executor (DAG advisory): [`skills/tasks/loop-dag.md`](./loop-dag.md)

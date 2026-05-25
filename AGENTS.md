@@ -89,6 +89,24 @@ Treat these as off-limits unless your task explicitly requires touching them.
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Operator recovery runbook: boot failures, wrong/stale DB, safe backup/restore |
 | [.agent-context.json](.agent-context.json) | Machine-readable manifest of the files above |
 
+## Task-orchestration skills (`/tasks:*`)
+
+This repo ships agent skills under `skills/tasks/` that automate the
+plan→execute→audit loop over a wood-fired-tasks project. They install to
+`~/.claude/commands/tasks/` via `install.sh`. The orchestration set:
+
+| Skill | Status | One-line purpose |
+|---|---|---|
+| `/tasks:decompose` | OPERATIONAL | Break a project-level goal into 8–25 leaf tasks (or a dependency DAG) ready for an executor. Planner only — never executes. See [`skills/tasks/decompose.md`](skills/tasks/decompose.md) and the design at [`docs/tasks-decompose-design.md`](docs/tasks-decompose-design.md). |
+| `/tasks:loop` | OPERATIONAL | Drain a FLAT-topology backlog sequentially. See [`skills/tasks/loop.md`](skills/tasks/loop.md). |
+| `/tasks:loop-dag` | OPERATIONAL | Drain a DAG-topology backlog wave-by-wave in parallel. See [`skills/tasks/loop-dag.md`](skills/tasks/loop-dag.md). |
+| `/tasks:audit` | OPERATIONAL | Retroactively grade a completed loop run. See [`skills/tasks/audit.md`](skills/tasks/audit.md). |
+
+Typical flow: `/tasks:decompose` a goal → run `/tasks:loop` (FLAT advisory)
+or `/tasks:loop-dag` (DAG advisory) → `/tasks:audit` the run. Decompose
+plans and hands off; the executors run; the auditor grades — three separate
+orchestrators by design.
+
 ## Vendor neutrality
 
 `AGENTS.md` is the authoritative entry point for every agent, regardless of vendor. Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`, any future `.<vendor>/`) MAY exist but MUST be either thin pointers back here or vendor-only configuration (slash commands, MCP client wiring, tool allow-lists). They MUST NOT carry unique project facts; if you find one that does, move the content into the authoritative tier (`AGENTS.md` or `docs/**`) and replace the vendor file with a pointer. The full boundary rules are in [docs/AGENT_CONTEXT.md §6](docs/AGENT_CONTEXT.md).
