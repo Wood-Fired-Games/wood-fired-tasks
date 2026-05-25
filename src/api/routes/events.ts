@@ -11,9 +11,66 @@ import { hashKey } from '../plugins/auth.js';
  * comparison) + 16 hex chars = 64 bits of fingerprint space — more than
  * enough collision resistance for the small set of configured keys, and
  * short enough that a heap dump reveals nothing actionable.
+ *
+ * task #393: retained ONLY as the legacy-principal fallback inside
+ * `derivePrincipalId` for the (in practice impossible) case where a legacy
+ * match somehow lacks an `apiKeyLabel`. The cap-attribution path no longer
+ * reads the raw `x-api-key` header — see `derivePrincipalId`.
  */
 function fingerprintApiKey(apiKey: string): string {
   return hashKey(apiKey).toString('hex').slice(0, 16);
+}
+
+/**
+ * task #393: derive a stable per-principal identity from the AUTHENTICATED
+ * request state populated by the auth chain (src/api/plugins/auth/index.ts),
+ * NOT from the raw `x-api-key` header.
+ *
+ * Before this fix the SSE cap preHandler fingerprinted `request.headers
+ * ['x-api-key']` directly. But the auth chain also accepts PAT
+ * (`Authorization: Bearer wft_pat_...`) and session-cookie principals, which
+ * send NO `x-api-key` header at all — so every such client collapsed to
+ * `fingerprintApiKey('')`, sharing ONE cap bucket and defeating per-principal
+ * caps entirely (Codex P0.1).
+ *
+ * Identity by auth method (the chain guarantees these slots are populated on
+ * a successful match — events runs inside the authenticated `/api/v1` scope):
+ *   - PAT     → `pat:<tokenId>`        (api_tokens.id; unique per token)
+ *   - session → `session:<user.id>`    (users.id; unique per user)
+ *   - legacy  → `legacy:<apiKeyLabel>` (derived API_KEYS label, e.g.
+ *               `key_test-key`); falls back to `legacy:<keyHash>` ONLY if the
+ *               label is somehow absent — the legacy strategy always supplies
+ *               one, so this is belt-and-suspenders.
+ *
+ * The returned string is opaque to the SSEManager — it is stored as
+ * `apiKeyFingerprint` (the existing per-principal cap key) and never logged
+ * with the raw credential. PAT ids / user ids / labels are non-sensitive
+ * audit identifiers, so no hashing is needed for those branches.
+ */
+function derivePrincipalId(request: FastifyRequest): string {
+  switch (request.authMethod) {
+    case 'pat':
+      // tokenId is the api_tokens.id for a PAT match (never null here).
+      return `pat:${request.tokenId ?? 'unknown'}`;
+    case 'session':
+      return `session:${request.user?.id ?? 'unknown'}`;
+    case 'legacy': {
+      if (request.apiKeyLabel !== undefined && request.apiKeyLabel.length > 0) {
+        return `legacy:${request.apiKeyLabel}`;
+      }
+      // Fallback: hash the raw key so distinct unlabeled legacy keys still
+      // get distinct buckets. The legacy strategy derives a label for every
+      // configured entry, so this branch is defensive only.
+      const apiKey = (request.headers['x-api-key'] as string) ?? '';
+      return `legacy:${fingerprintApiKey(apiKey)}`;
+    }
+    default:
+      // No recognised principal — the auth chain would have rejected the
+      // request before this preHandler runs, so this is unreachable in
+      // practice. Use a stable sentinel so an unexpected anonymous path does
+      // not silently share the empty-string bucket of the old behaviour.
+      return 'anonymous:unknown';
+  }
 }
 
 const EventFiltersSchema = z.object({
@@ -45,12 +102,12 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
       // hang under `inject()` because the SSE context tries to keep the
       // stream open. The preHandler runs strictly before the SSE wrap.
       preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
-        // Auth plugin has already validated X-API-Key — it's guaranteed
-        // to be a non-empty string at this point.
-        // task #194: hash to a fingerprint immediately; the raw key never
-        // enters the SSEManager.
-        const apiKey = (request.headers['x-api-key'] as string) ?? '';
-        const apiKeyFingerprint = fingerprintApiKey(apiKey);
+        // task #393: the auth chain has already populated the principal slots
+        // (request.authMethod / tokenId / user / apiKeyLabel). Derive the
+        // per-principal cap identity from that authenticated state — NOT from
+        // the raw x-api-key header, which is absent for PAT and session
+        // principals (they previously all collapsed to one shared bucket).
+        const apiKeyFingerprint = derivePrincipalId(request);
         const ip = request.ip;
         const decision = server.sseManager.canAccept(apiKeyFingerprint, ip);
         if (!decision.ok) {
@@ -80,10 +137,9 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
       }
 
       // Cap check already passed in preHandler — proceed to register the
-      // connection. Re-derive the fingerprint (cheap, sync) so the raw key
-      // is never persisted in the SSEManager — see task #194.
-      const apiKey = (request.headers['x-api-key'] as string) ?? '';
-      const apiKeyFingerprint = fingerprintApiKey(apiKey);
+      // connection. Re-derive the per-principal identity (cheap, sync) so the
+      // raw key is never persisted in the SSEManager — see task #194 / #393.
+      const apiKeyFingerprint = derivePrincipalId(request);
       const ip = request.ip;
 
       const filters: { project_id?: number; event_types?: string[] } = request.query as any;
