@@ -56,6 +56,7 @@ function makeMockClient() {
     getCommentsPaginated: vi.fn(),
     deleteComment: vi.fn(),
     checkHealth: vi.fn(),
+    getTopology: vi.fn(),
   };
 }
 
@@ -98,6 +99,7 @@ describe('registerRemoteTools', () => {
       'get_comments',
       'delete_comment',
       'check_health',
+      'topology_check',
     ];
     for (const name of expected) {
       expect(handlers.has(name)).toBe(true);
@@ -600,5 +602,54 @@ describe('registerRemoteTools', () => {
     const r = await handlers.get('check_health')!({});
     expect(r.content[0].text).toContain('Service Status: unhealthy');
     expect(r.content[0].text).toContain('Unknown error');
+  });
+
+  // ── Topology tool ─────────────────────────────────────────────────────────
+
+  it('topology_check is registered (parity with stdio MCP)', () => {
+    expect(handlers.has('topology_check')).toBe(true);
+  });
+
+  it('topology_check formats summary + passes report through as structuredContent', async () => {
+    const report = {
+      topology: 'DAG',
+      edges: [
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+      ],
+      roots: [1],
+      leaves: [3],
+      advisory: '/tasks:loop-dag',
+    };
+    client.getTopology.mockResolvedValue(report);
+    const r = await handlers.get('topology_check')!({ project_id: 42 });
+    expect(client.getTopology).toHaveBeenCalledWith(42);
+    expect(r.content[0].text).toBe(
+      'Project 42: topology=DAG, advisory=/tasks:loop-dag, edges=2, roots=1, leaves=1'
+    );
+    // structuredContent must be the raw TopologyReport, unchanged — this is
+    // what makes the remote tool indistinguishable from the stdio one.
+    expect(r.structuredContent).toEqual(report);
+  });
+
+  it('topology_check FLAT project renders /tasks:loop advisory', async () => {
+    client.getTopology.mockResolvedValue({
+      topology: 'FLAT',
+      edges: [],
+      roots: [1, 2],
+      leaves: [1, 2],
+      advisory: '/tasks:loop',
+    });
+    const r = await handlers.get('topology_check')!({ project_id: 7 });
+    expect(r.content[0].text).toContain('topology=FLAT');
+    expect(r.content[0].text).toContain('advisory=/tasks:loop');
+    expect(r.content[0].text).toContain('edges=0');
+  });
+
+  it('topology_check error path wraps in McpError', async () => {
+    client.getTopology.mockRejectedValue(new Error('boom'));
+    await expect(
+      handlers.get('topology_check')!({ project_id: 1 })
+    ).rejects.toBeInstanceOf(McpError);
   });
 });

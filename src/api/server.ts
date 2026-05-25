@@ -18,6 +18,7 @@ import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';
 import { DependencyGraphService } from '../services/dependency-graph.service.js';
+import { TopologyService } from '../services/topology.service.js';
 import { CommentService } from '../services/comment.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
@@ -65,6 +66,7 @@ declare module 'fastify' {
     projectService: ProjectService;
     dependencyService: DependencyService;
     dependencyGraphService: DependencyGraphService;
+    topologyService: TopologyService;
     commentService: CommentService;
     idempotencyService: IdempotencyService;
     db: Database.Database;
@@ -128,6 +130,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('projectService', app.projectService);
   server.decorate('dependencyService', app.dependencyService);
   server.decorate('dependencyGraphService', app.dependencyGraphService);
+  server.decorate('topologyService', app.topologyService);
   server.decorate('commentService', app.commentService);
   server.decorate('db', app.db);
   // Task #357: expose OIDC boot state to /health/detailed so a degraded

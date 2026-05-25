@@ -6,6 +6,7 @@ import {
   ProjectListPaginatedResponseSchema,
 } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
+import topologyRoutes from './topology.js';
 
 // Pagination query schema for GET /projects. Mirrors task list bounds.
 const QueryProjectListSchema = z.object({
@@ -99,6 +100,11 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // Registered as a child plugin so the colocated `schema:` block stays in
   // its own file (the projects barrel was getting busy).
   await fastify.register(dependencyGraphRoutes);
+
+  // GET /:id/topology — topology classifier over REST, backing the remote
+  // MCP `topology_check` proxy tool. Registered as a child plugin alongside
+  // dependency-graph so its colocated `schema:` block lives in its own file.
+  await fastify.register(topologyRoutes);
 
   // DELETE /:id - Delete project
   fastify.delete(
