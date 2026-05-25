@@ -2,29 +2,37 @@ Owner: Repository maintainers
 
 # /tasks:decompose Design Spec
 
-> **Companion artifacts (to be added when the runtime lands):**
-> a zod schema mirror at `src/lib/decompose/schema.ts` (in this commit) and
-> a future reference example at
-> `docs/decomposition-reference-example.md` (deferred to the implementation
-> follow-on tasks). This document is the design-of-record landed by
-> wood-fired-tasks task **#320**.
+> **Companion artifacts:**
+> a zod schema mirror at `src/lib/decompose/schema.ts` (shipped — backs the
+> live pipeline) and a reference example at
+> `docs/decomposition-reference-example.md`. This document is the
+> design-of-record landed by wood-fired-tasks task **#320**; the runtime that
+> implements it shipped subsequently (see Status below).
 
 ## Status
 
-Wave 5 DESIGN landed by wood-fired-tasks task **#320** (2026-05-23).
-Runtime orchestration is **deferred** — the skill file at
-[`skills/tasks/decompose.md`](../skills/tasks/decompose.md) is a discovery
-stub that points users at this design and refuses to dispatch any subagent
-or mutate the bugs database. The follow-on tasks listed in §11 will:
+Wave 5 DESIGN landed by wood-fired-tasks task **#320** (2026-05-23). The
+runtime is now **OPERATIONAL**: the skill file at
+[`skills/tasks/decompose.md`](../skills/tasks/decompose.md) is the executable
+implementation of this design — it runs the full 9-step pipeline (§4): goal
+capture → codebase recon (one Explore agent) → candidate generation
+(planner) → independence check (critic) → topology decision (`topology_check`)
+→ coverage check (critic) → sizing → materialize (`create_task` +
+`add_dependency`) → emit `DECOMPOSITION.md`. It PLANS only and never executes
+the tasks it materializes (Guardrail 1), and it is bounded by the $5 soft
+target / $15 hard cap (Cost budget). Where the skill and this doc could
+drift, the design doc wins.
 
-1. Implement the runtime orchestration pipeline (§4).
-2. Author the four verification fixtures sketched in §9.
-3. Integrate `/tasks:decompose` into onboarding docs (AGENTS.md,
-   docs/NAVIGATION.md, README quickstart).
+The companion zod schema at
+[`src/lib/decompose/schema.ts`](../src/lib/decompose/schema.ts) ships
+alongside the skill and backs the live pipeline (`CandidateTaskSchema`,
+`DecompositionFrontmatterSchema`); its constraints are locked by
+`src/lib/decompose/__tests__/schema.test.ts`. `/tasks:decompose` is wired
+into onboarding (AGENTS.md lists it as OPERATIONAL).
 
-Until those tasks land, invoking `/tasks:decompose` MUST emit a
-"design-only — implementation deferred" message rather than executing any
-step of the pipeline.
+Still outstanding from the original follow-on list (§11): the four
+verification fixtures sketched in §9 remain design sketches (see the
+"Verification fixtures" section below).
 
 ## Why this exists
 
@@ -404,10 +412,9 @@ subagent dispatch.
 
 To be created in wood-fired-tasks project 15 *after* this design lands:
 
-- **Implement /tasks:decompose runtime** — replace the discovery stub
-  in `skills/tasks/decompose.md` with the full pipeline. Wire Step 2
-  (Explore-agent), Step 3 (planner), Step 4 + Step 6 (critic), and the
-  cost tracker.
+- **Implement /tasks:decompose runtime** — ✅ DONE. The full pipeline now
+  lives in `skills/tasks/decompose.md`: Step 2 (Explore-agent), Step 3
+  (planner), Step 4 + Step 6 (critic), and the cost tracker are all wired.
 - **Author verification fixtures** — write the four fixtures sketched
   in §9 (Project 12 replay, OIDC SSO DAG, cyclic halt, cost guardrail)
   plus the three blast-radius refusal parametric tests.
