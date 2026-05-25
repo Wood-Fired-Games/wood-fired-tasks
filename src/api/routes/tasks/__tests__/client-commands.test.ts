@@ -34,6 +34,7 @@ import { TASK_PRIORITIES, TASK_STATUSES } from '../../../../types/task.js';
 
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const CLIENT_DIR = resolve(REPO_ROOT, 'client-package/commands/tasks');
+const SKILL_DIR = resolve(REPO_ROOT, 'skills/tasks');
 
 // The intentional 10-command client surface (orchestrators loop/loop-dag/
 // loop-shared, decompose, audit, and the non-invocable _enums doc are
@@ -251,4 +252,112 @@ describe('client-package command drift gate', () => {
       );
     }
   });
+});
+
+/**
+ * Skills → client-package CONTENT-PARITY gate.
+ *
+ * The previous `describe` block above only proves the shipped client copies are
+ * individually well-formed (no bad enum tokens, no hardcoded identity, no
+ * dev-only links). It does NOT prove the client copy still says the SAME THING
+ * as its `skills/tasks/<name>.md` dev original — an instruction sentence could
+ * be dropped from (or added to) one side and every check above would still pass.
+ *
+ * Per `scripts/build-client-package.sh:95-138`, the client copies are the
+ * SELF-CONTAINED, link-stripped source of truth. They are intentionally NOT
+ * byte-identical to the skill originals: the build documents exactly one class
+ * of divergence — the dev-only enum-citation lines (`_enums.md`,
+ * `../../src/types/task.ts`, `src/schemas/...`) are stripped and the enum VALUES
+ * are inlined as plain prose. Everything else (the workflow steps, the
+ * transition rules, the example usage, the headings) MUST match verbatim.
+ *
+ * This gate compares the two sources after normalizing away ONLY that
+ * documented transform, then asserts the remaining instruction content is
+ * identical. The normalization is deliberately tight: it removes (a) any line
+ * carrying a FORBIDDEN_LINK_PATTERN (the dev-only citation lines), (b) the
+ * inlined-enum guidance lines that replace them on the client side, and (c) an
+ * in-prose `(source: src/types/task.ts)` / `— see [_enums.md](...)` fragment
+ * embedded mid-sentence (project-status). It does NOT absorb arbitrary content
+ * differences: a dropped/added/changed instruction line on either side survives
+ * normalization and reds the test (verified during development by injecting a
+ * unique sentence into one client copy).
+ */
+
+// Lines that carry one of the dev-only citations the build strips. On the skill
+// side these are whole "See [_enums.md] ... (source: src/types/task.ts)" lines;
+// reuse the same FORBIDDEN_LINK_PATTERNS the hardening gate uses.
+function lineHasForbiddenLink(line: string): boolean {
+  return FORBIDDEN_LINK_PATTERNS.some(({ re }) => re.test(line));
+}
+
+// The inlined-enum guidance lines that REPLACE the stripped citation on the
+// client side (and the skill's own pre-strip "Valid priority values:" line,
+// which is part of the same enum-reference region). These restate canonical
+// status/priority VALUES as prose; the actual canonical values are asserted by
+// the enum-token gate above, so dropping them here loses no coverage.
+const ENUM_INLINE_PATTERNS: ReadonlyArray<RegExp> = [
+  /Canonical (task )?status(es)?\b/i,
+  /Canonical priorit(y|ies)\b/i,
+  /Canonical priority enum\b/i,
+  /Canonical statuses are\b/i,
+  /Valid priority values\b/i,
+  /canonical status values\b/i,
+];
+
+function lineIsInlinedEnumGuidance(line: string): boolean {
+  return ENUM_INLINE_PATTERNS.some((re) => re.test(line));
+}
+
+// Some skill sentences embed the citation mid-line (project-status) rather than
+// on a dedicated line. Strip just the documented `(source: ...)` / `— see
+// [_enums.md](...)` fragment so the surrounding shared prose still compares.
+function stripInlineCitationFragment(line: string): string {
+  return line
+    .replace(
+      /\s*[—–-]+\s*see \[_enums\.md\]\(_enums\.md\)[^.)]*?source:\s*`src\/types\/task\.ts`\)?/i,
+      ')',
+    )
+    .replace(/\s*\(source:\s*`src\/types\/task\.ts`\)/i, '');
+}
+
+/**
+ * Reduce a command file to its transform-invariant instruction content: strip
+ * the documented enum-citation fragment from each line, drop dev-only-link
+ * lines and inlined-enum-guidance lines, then drop blank lines so the
+ * blank-line churn the enum-block substitution introduces (e.g. create-task
+ * collapsing a 3-line block to 1 line) does not cause false mismatches.
+ */
+function normalizeCommandContent(text: string): string[] {
+  return text
+    .split('\n')
+    .map(stripInlineCitationFragment)
+    .filter((line) => !lineHasForbiddenLink(line))
+    .filter((line) => !lineIsInlinedEnumGuidance(line))
+    .map((line) => line.replace(/\s+$/, ''))
+    .filter((line) => line.trim() !== '');
+}
+
+describe('skills → client-package content parity', () => {
+  it.each([...EXPECTED_CLIENT_COMMANDS])(
+    '%s says the same thing in skills/ and client-package/ (modulo the documented enum-link transform)',
+    (file) => {
+      const skillText = readFileSync(resolve(SKILL_DIR, file), 'utf8');
+      const clientText = readFileSync(resolve(CLIENT_DIR, file), 'utf8');
+
+      const skillContent = normalizeCommandContent(skillText);
+      const clientContent = normalizeCommandContent(clientText);
+
+      // Compare the normalized instruction-line sequences. A real divergence —
+      // an instruction present in one source but not the other, or reworded —
+      // survives normalization (it is neither a dev-only link nor inlined-enum
+      // guidance) and fails here. Joining with '\n' gives a readable line diff.
+      expect(
+        clientContent.join('\n'),
+        `client-package/commands/tasks/${file} drifted from skills/tasks/${file} ` +
+          `in non-enum/non-link content. The build transform only strips dev-only ` +
+          `enum citations (see build-client-package.sh:95-138); any other difference ` +
+          `is real drift — re-sync the client copy from the skill original.`,
+      ).toEqual(skillContent.join('\n'));
+    },
+  );
 });
