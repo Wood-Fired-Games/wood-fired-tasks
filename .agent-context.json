@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-25T22:15:37.560Z",
+    "generated_at": "2026-05-25T22:30:04.829Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -92,8 +92,8 @@
       "status": "present",
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
-      "actual_lines": 290,
-      "sha256": "90642d231ef5ae444ed48fbe925e62251b3e48b4fa4a6f904187f7ac35bf8e94",
+      "actual_lines": 337,
+      "sha256": "91755a52d6d99c3e86c1527f7fdb3fedd1751686bae08a1cc35c32f5842d4753",
       "actual_owner": "Repository maintainers"
     },
     {
