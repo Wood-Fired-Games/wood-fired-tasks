@@ -134,13 +134,13 @@ Coverage is enforced by Vitest via `vitest.config.ts`. Current minimums:
 
 | Metric     | Threshold |
 | ---------- | --------- |
-| Lines      | 70%       |
-| Functions  | 70%       |
-| Branches   | 60%       |
-| Statements | 65%       |
+| Lines      | 85%       |
+| Functions  | 85%       |
+| Branches   | 75%       |
+| Statements | 85%       |
 
-These are baselines (task 199) — please do not lower them. Raise them when
-your change improves coverage materially.
+These are baselines (ratcheted up by task #249) — please do not lower them.
+Raise them when your change improves coverage materially.
 
 ## Quality Gates
 
@@ -301,9 +301,10 @@ AI assistant at all.
 
 ### PR checklist for agent context impact
 
-There is no PR template yet, so copy the relevant items below into your PR
-description and tick the ones that apply. (When a PR template lands, these
-will move there.)
+The PR template (`.github/PULL_REQUEST_TEMPLATE.md`) covers the general
+Quality and Migration-changes checklists. The agent-context-specific items
+below are not in that template — copy the relevant ones into your PR
+description and tick the ones that apply.
 
 - [ ] If this PR adds, removes, or renames a REST route, MCP tool, or CLI command, I updated `docs/INTERFACES.md` (per-row table + `Total: N` anchor) and ran `npm test` so the drift test stays green.
 - [ ] If this PR changes a status transition, claim rule, event type, idempotency rule, or other behavior that crosses surfaces, I updated `docs/ARCHITECTURE.md`.

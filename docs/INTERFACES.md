@@ -103,9 +103,11 @@ so REST and MCP cannot drift on validation.
 
 **Total: 22 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1 topology).
 10 are read-only; 12 mutate state. Counted by `grep registerTool` across the
-six files above. The remote server registers the same 21 non-topology tools via
-`src/mcp/remote/register-tools.ts` (topology classifier is local-only — it needs
-direct service access, not a REST round-trip).
+six files above. The remote server registers all **22 tools including
+`topology_check`** via `src/mcp/remote/register-tools.ts`; the topology
+classifier reaches the same `TopologyService` over REST
+(`GET /api/v1/projects/:id/topology`) rather than via a direct in-process
+call.
 
 Deep reference: [`docs/MCP.md`](MCP.md).
 
@@ -258,15 +260,18 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. Both transports therefore expose **the same 21 REST-backed tools**
-with identical input validation; behavioural differences are limited to
-transport (stdio vs HTTP) and the auth boundary. The local stdio server
-additionally exposes `topology_check` (#318) which is service-local — there
-is no REST counterpart, so it is not registered by the remote server.
+`src/schemas/`. Both transports therefore expose **22 tools including
+`topology_check`** with identical input validation; behavioural differences
+are limited to transport (stdio vs HTTP) and the auth boundary.
+`topology_check` (#318) reaches the same `TopologyService` over REST — the
+remote server proxies it to `GET /api/v1/projects/:id/topology` (wired in
+commit 6f30bfc), so its input/output schema is byte-identical to the stdio
+tool and callers can't tell which transport they're on.
 
 **Parity rule:** any new MCP tool MUST land in both servers in the same PR.
-The drift-detection test enforces the local count; a follow-up should
-extend it to assert the remote count matches.
+The drift-detection test enforces the local count; the remote count now
+matches at 22 but is not yet test-enforced, so a follow-up should extend the
+test to assert the remote registration count too.
 
 ## Pointers
 

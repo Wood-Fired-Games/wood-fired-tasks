@@ -141,7 +141,7 @@ The MCP server has two transports, and they authenticate differently:
 them at boot:
 
 1. **PAT** — values starting with `wft_pat_` are hashed (SHA-256) and
-   looked up in `personal_access_tokens`. The matched row's
+   looked up in `api_tokens`. The matched row's
    `user_id` becomes the actor for every subsequent write tool call.
    Revoked / unknown PATs fall back to `mcp-bot` (see below).
 2. **Legacy key** — anything else is matched against the `API_KEYS`
@@ -282,10 +282,10 @@ revocation.
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 21 (full set including `completion_report`) | 21 (full parity — `completion_report` proxies `GET /api/v1/tasks/completion-report`) |
+| Tool count | 22 (full set including `completion_report` and `topology_check`) | 22 (full parity — `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
-The remote server is at full tool parity with the local server. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces.
+The remote server is at full tool parity with the local server. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process.
 
 ## Tools Reference
 
@@ -314,6 +314,7 @@ The MCP server exposes 22 tools organized by domain:
 | `remove_dependency` | Dependency | Remove a blocking relationship between two tasks. |
 | `get_dependencies` | Dependency | Return both blockers and blocked-by relationships for a task. |
 | `check_health` | Health | Verify database connectivity and report version info. |
+| `topology_check` | Topology | Classify a project as FLAT, DAG, or DAG_CYCLIC over its task-dependency graph; returns roots, leaves, edges, and an execution advisory. |
 
 ### Task Tools (9 tools)
 
@@ -700,6 +701,24 @@ Check service health status, database connectivity, and version information.
 ```
 
 **Usage:** When Claude Code needs to verify the MCP server and database are functioning correctly.
+
+### Topology Tools (1 tool)
+
+#### topology_check
+
+Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wave parallel dispatch, `/tasks:loop-dag`), or `DAG_CYCLIC` (BLOCKED) based on its `task_dependencies` graph.
+
+**Input Schema:**
+
+```json
+{
+  "project_id": "number (required, positive integer)"
+}
+```
+
+**Returns:** A `TopologyReport` (in both human-readable `content[0].text` and structured `structuredContent` form) containing `topology`, `advisory`, `edges`, `roots`, and `leaves`.
+
+**Usage:** When Claude Code needs to decide whether a project's backlog can be drained in parallel (`/tasks:loop-dag`) or must run sequentially, or to detect a dependency cycle that blocks execution. Registered on both the local and remote servers; the remote variant proxies `GET /api/v1/projects/:id/topology`.
 
 ## Resources Reference
 

@@ -16,6 +16,7 @@ than duplicating them.
 | `docs/` | Authoritative reference + agent-facing docs. |
 | `scripts/` | Repo automation (`aggregate-mutation-reports.ts`, `build-client-package.sh`, `scripts/__tests__/`). |
 | `skills/` | Task-loop skill files under `skills/tasks/`. |
+| `tests/` | Cross-cutting test assets outside `src/`: `fixtures/`, `helpers/`, `smoke/` (CLI e2e/install smoke), `verifier-fixtures/`. |
 | `deploy/` | Linux systemd unit, crontab, backup/restore, install notes. |
 | `client-package/` | Packaged install bundle (setup/uninstall for Windows / Linux / macOS, `commands/`). |
 | `.github/workflows/` | CI: `ci.yml`, `bench.yml`, `install-scripts.yml`, `mutation.yml`, `secret-scan.yml`. |
@@ -36,21 +37,21 @@ than duplicating them.
 ### `src/api/` — Fastify HTTP API
 - `server.ts` — app factory. `start.ts` — process entrypoint (`npm run dev`).
 - `routes/health.ts`, `routes/events.ts` — flat route files.
-- `routes/comments/`, `routes/dependencies/`, `routes/projects/`, `routes/tasks/` — resource folders.
+- `routes/auth/`, `routes/comments/`, `routes/dependencies/`, `routes/me/`, `routes/projects/`, `routes/tasks/`, `routes/web/` — resource folders.
 - `plugins/auth.ts` (API-key), `plugins/swagger.ts` (OpenAPI).
 - `hooks/error-handler.ts` — global error hook.
 - Tests: `src/api/__tests__/`. Deeper: [`docs/API.md`](API.md).
 
 ### `src/mcp/` — Model Context Protocol server
 - `server.ts`, `index.ts` — stdio + transport entry points.
-- `tools/` — five files: `comment-tools.ts`, `dependency-tools.ts`, `health-tools.ts`, `project-tools.ts`, `task-tools.ts`.
+- `tools/` — six files: `comment-tools.ts`, `dependency-tools.ts`, `health-tools.ts`, `project-tools.ts`, `task-tools.ts`, `topology-tools.ts`.
 - `resources/`, `remote/` (HTTP transport), `commands/` (helpers).
 - Tests: `src/mcp/__tests__/`. Deeper: [`docs/MCP.md`](MCP.md).
 
 ### `src/cli/` — Commander-based CLI (`tasks`)
 - `bin/tasks.ts` — entrypoint.
 - `commands/` — one file per subcommand (`backup`, `claim`, `comment-add/-delete/-list`, `completed`, `completions`, `create`, `db-check`, `delete`, `dep-add/-list/-remove`, `doctor`, `health`, `list`, `project-create/-delete/-list/-show/-update`, `show`, `stats`, `subtask-create/-list`, `update`).
-- `formatters/`, `output/`, `prompts/`, `repositories/` — shared helpers.
+- `api/` (REST client), `auth/`, `config/`, `output/`, `prompts/` — shared helpers.
 - Tests: `src/cli/__tests__/`. Deeper: [`docs/CLI.md`](CLI.md).
 
 ### `src/slack/` — Slack integration
@@ -63,7 +64,7 @@ than duplicating them.
 ### `src/db/` — SQLite + migrations
 - `database.ts` — better-sqlite3 connection.
 - `migrate.ts` — umzug runner (`npm run migrate`).
-- `migrations/001-initial-schema.ts` … `007-completed-at.ts`.
+- `migrations/001-initial-schema.ts` … `012-verification-evidence.ts`.
 - Tests: `src/db/__tests__/` (includes migration tests).
 
 ### `src/repositories/` — SQL access layer

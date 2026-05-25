@@ -342,6 +342,39 @@ curl -X DELETE http://localhost:3000/api/v1/projects/1 \
   -H "X-API-Key: your-key"
 ```
 
+### GET /api/v1/projects/:id/topology
+
+Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wave parallel dispatch, `/tasks:loop-dag`), or `DAG_CYCLIC` (BLOCKED) based on its `task_dependencies` graph (parent/child taxonomy edges are excluded). Delegates to `TopologyService.classify`; backs the `topology_check` MCP tool (including the remote MCP proxy).
+
+**Response:** 200 OK — the body IS the `TopologyReport`.
+
+```json
+{
+  "topology": "DAG",
+  "edges": [
+    { "from": 1, "to": 2 }
+  ],
+  "roots": [1],
+  "leaves": [2],
+  "advisory": "/tasks:loop-dag"
+}
+```
+
+- `topology`: one of `FLAT`, `DAG`, `DAG_CYCLIC`.
+- `edges`: `{ from, to }` rows where `from` blocks `to`.
+- `roots`: task IDs with zero in-degree (sorted ascending).
+- `leaves`: task IDs with zero out-degree (sorted ascending).
+- `advisory`: one of `/tasks:loop`, `/tasks:loop-dag`, `BLOCKED`.
+
+**Response:** 404 Not Found — project does not exist (ProblemDetails body).
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/projects/1/topology \
+  -H "X-API-Key: your-key"
+```
+
 ## Task Endpoints
 
 ### POST /api/v1/tasks

@@ -47,9 +47,9 @@ We will:
 - The Fastify REST API (TypeScript, Node ≥22) under `src/api/` — routes,
   plugins (auth, rate-limit, SSE), and request/response validation.
 - The MCP server under `src/mcp/` — both transports: the **stdio** server
-  (`npm run mcp` / installed Claude Code stdio target) and the **remote
-  HTTP** server (`npm run mcp:remote`), including its tool implementations
-  and prompt/resource handlers.
+  (`npm run mcp:start` / `npm run mcp:dev` / installed Claude Code stdio
+  target) and the **remote HTTP** server (`npm run mcp:remote`), including
+  its tool implementations and prompt/resource handlers.
 - The `tasks` CLI under `src/cli/` — command parsers, HTTP client, and the
   small set of offline subcommands that touch SQLite directly
   (`backup`, `doctor`, `stats`, `db-check`, `completed`).
@@ -107,7 +107,7 @@ log (`user_id`, `token_id`, `auth_method`).
 
 | Order | Strategy | Credential | Wire format |
 |-------|----------|------------|-------------|
-| 1 | **PAT (Personal Access Token)** | A token row in `personal_access_tokens` | `Authorization: Bearer wft_pat_<…>` |
+| 1 | **PAT (Personal Access Token)** | A token row in `api_tokens` | `Authorization: Bearer wft_pat_<…>` |
 | 2 | **Session** | An OIDC-derived sealed-box session cookie | `Cookie: wft_session=<…>` |
 | 3 | **Legacy** | An entry in the `API_KEYS` env list | `X-API-Key: <…>` |
 
@@ -157,7 +157,7 @@ Every authenticated request emits a structured pino log line carrying:
 - `user_id` — the local `users.id` (NULL for service accounts like
   `mcp-bot` / `slack-bot` only when the bot row is missing; the seed
   guarantees they exist).
-- `token_id` — the `personal_access_tokens.id` when strategy=PAT; NULL
+- `token_id` — the `api_tokens.id` when strategy=PAT; NULL
   otherwise.
 - `auth_method` — one of `pat`, `session`, `legacy`.
 - `apiKeyLabel` — the human-friendly label for legacy keys, e.g.

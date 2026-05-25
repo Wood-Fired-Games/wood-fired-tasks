@@ -90,12 +90,17 @@ today (Biome formatter is disabled in `biome.json`); see
 `npm run pack:check` is the most important manual step — it surfaces any
 file accidentally added to the publish set. The tarball should contain:
 
-- `dist/` (excluding `dist/wood-fired-tasks-client.zip`)
+- `dist/` (excluding `dist/**/__tests__/**`, `dist/**/*.test.*`,
+  `dist/**/*.property.test.*`, and `dist/wood-fired-tasks-client.zip`)
 - `LICENSE`
 - `README.md`
 - `CHANGELOG.md`
 - `SECURITY.md`
-- `package.json`
+- `AGENTS.md`
+- `CLAUDE.md`
+- `llms.txt`
+- `docs/AGENT_CONTEXT.md`
+- `package.json` (always included by npm)
 
 If you see `src/`, `data/`, `.env*`, `.planning/`, test files, or anything
 unexpected, fix the `files` whitelist in `package.json` before publishing.

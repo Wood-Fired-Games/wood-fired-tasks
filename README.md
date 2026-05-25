@@ -10,10 +10,10 @@ Wood Fired Tasks is a centralized task management service providing a REST API, 
 
 **Key capabilities:**
 
-- REST API with 22 authenticated endpoints for full task lifecycle management
-- CLI (`tasks`) with 26 commands for terminal-based operations
+- REST API with 22 endpoints (1 public `/health` + 21 authenticated) for full task lifecycle management
+- CLI (`tasks`) with 31 commands for terminal-based operations
 - MCP server with 22 tools for native Claude Code integration (local SQLite or remote HTTP modes)
-- 11 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
+- 16 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
 - Workflow automation: parent auto-complete and dependency auto-unblock
@@ -62,40 +62,32 @@ For self-hosted production deploys (including the fork-and-deploy workflow for O
 
 ## Security Model
 
-**Read this before deploying.** Wood Fired Tasks is designed for trusted multi-agent coordination on a private network. The auth model is intentionally simple and reflects that scope. OSS operators who assume "API key = user login" will mis-deploy this service.
+**Read this before deploying.** Wood Fired Tasks is built for trusted multi-agent coordination. As of **v1.6** the REST API authenticates every `/api/v1` request through a three-strategy chain (`src/api/plugins/auth/index.ts`), tried in order — the first strategy that produces a valid user wins, and that user's id is stamped onto every write (`created_by_user_id`, `assignee_user_id`, …) and the per-request audit log (`user_id`, `token_id`, `auth_method`):
 
-### Every valid API key has full admin power
+| Order | Strategy | Credential | Wire format |
+|-------|----------|------------|-------------|
+| 1 | **PAT** — recommended for machines/agents | row in `api_tokens` (SHA-256 hash stored) | `Authorization: Bearer wft_pat_<…>` |
+| 2 | **Session** — recommended for humans | OIDC sign-in → sealed-box cookie | `Cookie: wft_session=<…>` |
+| 3 | **Legacy** — deprecated (see sunset below) | entry in `API_KEYS` env list | `X-API-Key: <…>` |
 
-The auth plugin (`src/api/plugins/auth.ts`) validates only that the supplied `X-API-Key` header matches one of the configured keys. There is:
+PATs are minted from a logged-in `/me` web session or offline via `tasks db mint-token`; the raw value is shown **once** at mint time (only a hash is stored) and revoked via the `/me` UI, `DELETE /me/tokens/:id`, or `tasks logout`. Sessions come from OIDC (`/auth/login` → provider → `/auth/callback`, protected by PKCE + state), are sealed-box-encrypted with `SESSION_COOKIE_SECRET`, and expire after 8h. The CLI and remote MCP client auto-select the header from the `wft_pat_` prefix, so the same env var accepts a PAT or a legacy key. Full detail: [SECURITY.md → Authentication Architecture](SECURITY.md#authentication-architecture).
 
-- **No per-user identity.** The server does not know who is calling — only that they hold a valid key.
-- **No project ACL.** Any valid key can read, write, and delete tasks/projects/comments/dependencies across every project in the database.
-- **No scoped tokens.** There are no read-only keys, no per-route keys, no expiring tokens. A leaked key has full admin power until it is rotated out of `API_KEYS`.
-- **No enforcement of `created_by` / `assignee`.** These are caller-supplied strings. An agent holding any valid key can create or claim a task as any identity it likes. They are convention-only fields useful for filtering and display, not authorization.
+### Authentication is not authorization
 
-### Operator obligations
+Auth identifies the caller; it does **not** scope what they can do. There is still **no project ACL / RBAC** — any authenticated identity (PAT, session, or legacy key) can read, write, and delete tasks/projects/comments/dependencies across **every** project in the database. Scoped/role-based permissions are tracked as future work; until they land, front the service with an authenticating reverse proxy (which performs its own per-tenant auth) if you need isolation.
 
-- **Issue one key per machine/agent.** This lets you revoke an individual key (by removing it from `API_KEYS` and restarting) without rotating credentials for every other agent. The `API_KEYS` env var accepts a comma-separated list specifically so you can revoke piecewise.
-- **Never share keys between humans or services.** Treat keys like SSH private keys — one per identity.
-- **Label your keys.** `API_KEYS` accepts entries of the form `key:label` (alongside bare keys) so per-request audit logs identify the caller by label. Example:
-  ```
-  API_KEYS=abc123def456...:alice-laptop,xyz789...:ci-runner,bare-key-no-label
-  ```
-  Bare keys get an auto-label `key_<first8>` derived from the first 8 characters of the raw key. The label appears in every per-request log line as `apiKeyLabel=<label>`; the raw key value is never logged.
-- **Reference [SECURITY.md](SECURITY.md) for incident response** (key compromise, rotation, disclosure).
+### Legacy `X-API-Key` is being sunset
+
+The legacy `X-API-Key` strategy is **deprecated as of v1.6 and scheduled for removal in v1.7**. Legacy-authed responses carry RFC 8594 `Deprecation: true` + `Sunset: <LEGACY_AUTH_SUNSET_DATE>` headers (default `2026-12-31`) and emit a `legacy_auth_used` warn log so operators can track migration to zero. New deployments should issue **PATs** — one per machine/agent, so you can revoke an individual token without disturbing others — or use OIDC sessions. The `API_KEYS` env still accepts a comma-separated list of `key` or `key:label` entries (the label surfaces in audit logs as `apiKeyLabel`; the raw key is never logged). See [SECURITY.md → Legacy Auth Sunset Timeline](SECURITY.md#legacy-auth-sunset-timeline) for the v1.7 runbook and `tasks db migrate-identities`.
 
 ### Defense in depth
 
-The auth layer is paired with two additional protections, both configurable:
+Auth is paired with two configurable protections, both mitigations rather than authorization:
 
-- **Rate limiting** via `@fastify/rate-limit` (global, 1000 req/min default) — tunable through `RATE_LIMIT_MAX` and `RATE_LIMIT_TIME_WINDOW`. Caps brute-force attempts on the auth endpoint and protects against runaway agents.
-- **SSE connection caps** — per-key, per-IP, and global limits on long-lived event-stream connections (`SSE_MAX_CONNECTIONS_PER_KEY` / `SSE_MAX_CONNECTIONS_PER_IP` / `SSE_MAX_CONNECTIONS`). Prevents connection exhaustion from a misbehaving or compromised key.
+- **Rate limiting** via `@fastify/rate-limit` (global, 1000 req/min default) — tunable through `RATE_LIMIT_MAX` and `RATE_LIMIT_TIME_WINDOW`.
+- **SSE connection caps** — per-key, per-IP, and global limits on long-lived event-stream connections (`SSE_MAX_CONNECTIONS_PER_KEY` / `SSE_MAX_CONNECTIONS_PER_IP` / `SSE_MAX_CONNECTIONS`).
 
-These are mitigations, not authorization. They reduce blast radius; they do not substitute for proper key hygiene.
-
-### Future work
-
-Scoped/role-based tokens are tracked for a possible v1.0 milestone but are not on the v0.x roadmap. If your deployment requires per-user access control, fronting this service with an authenticating reverse proxy (which sets `X-API-Key` per-tenant after its own auth) is the recommended path until scoped tokens land.
+These reduce blast radius; they do not substitute for credential hygiene. For incident response (credential compromise, rotation, disclosure), see [SECURITY.md](SECURITY.md).
 
 ## Architecture
 
@@ -193,9 +185,9 @@ flowchart TB
 
 | Interface | Access Method | Transport | Auth |
 |-----------|--------------|-----------|------|
-| REST API | HTTP endpoints | Port 3000 (configurable) | X-API-Key header |
-| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | API_KEY env var |
-| MCP Server | stdio JSON-RPC (local) or HTTP (remote variant) | MCP client integration | None for stdio (local access); X-API-Key for remote |
+| REST API | HTTP endpoints | Port 3000 (configurable) | PAT (`Authorization: Bearer`), session cookie, or legacy `X-API-Key` |
+| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | `API_KEY` env var (accepts a PAT or legacy key) |
+| MCP Server | stdio JSON-RPC (local) or HTTP (remote variant) | MCP client integration | None for stdio (local access); Bearer PAT or `X-API-Key` for remote |
 | Slack subprocess | Slack Socket Mode | WebSocket to Slack | Slack signing secret + bot token |
 
 All entry points share the same TypeScript services
@@ -220,6 +212,8 @@ errors twice, and short-circuits permanent errors
 | **comments** | id, task_id, author, content, created_at, updated_at |
 | **idempotency_keys** | key, response, created_at |
 | **slack_channel_subscriptions** | id, channel_id, project_id, event_type, created_at (UNIQUE on the triple) |
+| **users** | id, oidc_sub, oidc_provider, email, display_name, slack_user_id, is_legacy, is_service_account, created_at, disabled_at |
+| **api_tokens** | id, user_id, name, prefix, suffix, hash, scopes, created_at, last_used_at, revoked_at, expires_at |
 
 ### Task Statuses
 
@@ -249,7 +243,7 @@ Valid priorities: `low`, `medium`, `high`, `urgent`
 
 ## API Summary
 
-All endpoints under `/api/v1` require authentication via `X-API-Key` header.
+All `/api/v1` endpoints require authentication — a PAT (`Authorization: Bearer wft_pat_…`), an OIDC session cookie, or a legacy `X-API-Key` header (deprecated). `GET /health` is public; the OIDC sign-in flow lives under `/auth/*` (outside `/api/v1`).
 
 Base URL: `http://localhost:3000`
 
@@ -257,7 +251,8 @@ Base URL: `http://localhost:3000`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Service health check (no auth required) |
+| GET | /health | Service health check + resolved DB path/fingerprint (no auth required) |
+| GET | /health/detailed | Detailed health behind auth |
 
 ### Projects
 
@@ -268,6 +263,7 @@ Base URL: `http://localhost:3000`
 | GET | /api/v1/projects/:id | Get project by ID |
 | PUT | /api/v1/projects/:id | Update project |
 | DELETE | /api/v1/projects/:id | Delete project |
+| GET | /api/v1/projects/:id/topology | Classify the project's dependency graph (FLAT / DAG / DAG_CYCLIC) |
 
 ### Tasks
 
@@ -302,6 +298,21 @@ Base URL: `http://localhost:3000`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /api/v1/events | Subscribe to real-time SSE event stream |
+
+### Authentication & Identity
+
+The OIDC/session/PAT surface backing the auth model lives partly outside the task API:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /auth/login | Begin OIDC sign-in (redirects to provider; PKCE + state) |
+| GET | /auth/callback | OIDC redirect callback → sets the session cookie |
+| POST | /auth/logout | Revoke the active PAT and clear the session |
+| GET | /api/v1/me/profile | Current authenticated user's profile |
+| GET | /api/v1/me/tokens | List the caller's personal access tokens |
+| DELETE | /api/v1/me/tokens/:id | Revoke a personal access token |
+
+A device-authorization flow under `/auth/device*` supports headless PAT minting; the `/auth/*` routes are disabled-stubbed when OIDC is not configured.
 
 For detailed API documentation including request/response schemas, see [docs/API.md](docs/API.md).
 
@@ -342,6 +353,7 @@ The `tasks` command provides terminal access to all task operations.
 | tasks dep-add \<taskId\> \<blocksTaskId\> | Add dependency relationship |
 | tasks dep-remove \<taskId\> \<blocksTaskId\> | Remove dependency |
 | tasks dep-list \<taskId\> | List dependencies for task |
+| tasks topology \<projectId\> | Classify a project's dependency graph (FLAT / DAG / DAG_CYCLIC) |
 
 ### Comment Commands
 
@@ -364,11 +376,34 @@ The `tasks` command provides terminal access to all task operations.
 |---------|-------------|
 | tasks health | Check server health |
 
+### Authentication Commands
+
+| Command | Description |
+|---------|-------------|
+| tasks login | OIDC sign-in; caches a PAT to the local credentials file |
+| tasks logout | Revoke the active PAT and clear the local credentials |
+| tasks whoami | Show the currently authenticated identity |
+
+### Admin & Offline Commands
+
+These talk to SQLite directly (no running server required):
+
+| Command | Description |
+|---------|-------------|
+| tasks backup | Back up the SQLite database to a file |
+| tasks doctor | Diagnose database / config health |
+| tasks stats | Show task / project statistics |
+| tasks completed | List recently completed tasks |
+| tasks db-check | Verify the database schema / integrity |
+| tasks db mint-token | Mint a PAT offline (`--user`, `--name`, optional `--expires-at`) |
+| tasks db migrate-identities | Backfill identity FK columns (v1.7 sunset pre-flight) |
+| tasks completions | Generate shell completion scripts |
+
 For detailed CLI documentation including all options and examples, see [docs/CLI.md](docs/CLI.md).
 
 ## MCP Tools Summary
 
-The MCP server exposes 22 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the full REST-backed tool surface (21 tools) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 22 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the full REST-backed tool surface (22 tools, at parity with local) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -415,6 +450,12 @@ The MCP server exposes 22 tools and 1 resource for Claude Code integration. A se
 | Tool | Description |
 |------|-------------|
 | check_health | Check service health status |
+
+### Topology Tools (1)
+
+| Tool | Description |
+|------|-------------|
+| topology_check | Classify a project's dependency graph as FLAT / DAG / DAG_CYCLIC |
 
 ### Resources (1)
 
@@ -531,7 +572,7 @@ variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#envi
 # Development mode with hot reload
 npm run dev
 
-# Run tests (1300 tests across 101 files)
+# Run tests (2640 tests across 204 files)
 npm test
 
 # Watch mode for tests
@@ -549,7 +590,7 @@ npm run mcp:dev
 
 ### Database
 
-SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug. Seven migration files in `src/db/migrations/`:
+SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug. Twelve migration files in `src/db/migrations/`:
 
 1. `001-initial-schema.ts` — projects, tasks, task_tags, dependencies, comments
 2. `002-task-hierarchy-and-dependencies.ts` — task hierarchy and dependency tracking
@@ -558,10 +599,15 @@ SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug.
 5. `005-backlogged-status.ts` — adds `backlogged` to the status CHECK constraint (rebuilds tasks table; preserves FTS triggers)
 6. `006-slack-channel-subscriptions.ts` — `slack_channel_subscriptions` table for the Slack notifier
 7. `007-completed-at.ts` — `completed_at` column on tasks (set on transition into `done`, backfilled from `updated_at`)
+8. `008-identity-tables.ts` — `users` and `api_tokens` tables (OIDC/PAT identity)
+9. `009-parallel-fk-columns.ts` — parallel `*_user_id` FK columns alongside the legacy TEXT identity columns
+10. `010-identity-uniqueness-indexes.ts` — uniqueness indexes on user identity (oidc_sub, email)
+11. `011-acceptance-criteria.ts` — `acceptance_criteria` column on tasks
+12. `012-verification-evidence.ts` — `verification_evidence` column on tasks (verifier verdict + checks)
 
 ### Testing
 
-1300 tests across 101 test files covering:
+2640 tests across 204 test files covering:
 - Service layer unit tests
 - API route integration tests (all endpoints)
 - MCP tool tests (all tools)
