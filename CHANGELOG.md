@@ -22,7 +22,7 @@ OSS-launch readiness and CI sharding work landed since v1.11.
 - License relicensed from ISC to MIT for OSS launch (task 253).
 - SECURITY.md rewritten for the actual TypeScript/Fastify stack (task 254).
 - OSS package metadata + npm `files` allowlist (task 255).
-- Installer split into local vs. remote MCP paths; unused API key flag dropped (task 258).
+- Installer split into local vs. remote MCP paths; `--api-key` flag deprecated (still parsed and honored, emits a deprecation warning — prefer `WOOD_FIRED_TASKS_API_KEY`, the per-user secret file, or the interactive prompt) (task 258).
 - Stryker mutation tests sharded across 4 parallel CI jobs; threshold raised to 75; workflow timeout extended (tasks 250, 252).
 - Shipped systemd unit (`deploy/wood-fired-tasks.service`) now orders after `network-online.target` so OIDC discovery doesn't crash-loop the service on a cold boot; `StartLimitBurst` raised to 5 (task 353).
 - `docs/MCP.md` now recommends the remote (REST) variant as the single-writer default, warns that the local direct-SQLite variant silently serves stale data, and documents a launcher-wrapper that keeps the API key out of client config (task 356).
