@@ -92,7 +92,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     genReqId: () => randomUUID(), // UUID v4 request IDs for end-to-end tracing
     requestIdHeader: false, // Security: do not trust caller-supplied request IDs
     logger: {
-      name: 'wood-fired-bugs',
+      name: 'wood-fired-tasks',
       level: config.LOG_LEVEL,
       // Redact sensitive fields in EVERY environment so x-api-key (and other
       // secret-bearing fields) never appear in logs, including tests and dev.

@@ -5,7 +5,7 @@ Status: Authoritative one-pager. See [docs/AGENT_CONTEXT.md](AGENT_CONTEXT.md) f
 
 ## Mission
 
-`wood-fired-bugs` exposes one dataset through three inbound surfaces (REST,
+`wood-fired-tasks` exposes one dataset through three inbound surfaces (REST,
 MCP, CLI) and one outbound notifier (Slack). **Source of truth: `src/services/`
 + `src/schemas/`** — every surface is a thin adapter that validates with a
 shared Zod schema and delegates to a shared service. Shared behaviour belongs
@@ -54,7 +54,7 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
 - **MCP remote** (`src/mcp/remote/index.ts` + `register-tools.ts`): stdio
   transport on the client, but each tool calls `RestClient` which POSTs to
   the REST API with `X-API-Key`. No DB access on the client. Required env:
-  `WFB_API_URL`, `WFB_API_KEY` — both fail fast.
+  `WFT_API_URL`, `WFT_API_KEY` — both fail fast.
 - **CLI** (`src/cli/bin/tasks.ts` -> `src/cli/commands/*`): Commander
   subcommands call `src/cli/api/client.ts`, an HTTP client against the REST
   API. Auth via `API_KEY` env (CLI side); server matches against
@@ -263,8 +263,8 @@ Three layers translate up:
   `/health/detailed` is gated.
 - **MCP local** (stdio): no auth — trusts the parent process that spawned
   it. The DB path comes from `DATABASE_PATH` (or legacy `DB_PATH`).
-- **MCP remote**: passes `WFB_API_KEY` to the REST API via the same
-  `X-API-Key` header. Fails fast if `WFB_API_URL` or `WFB_API_KEY` is
+- **MCP remote**: passes `WFT_API_KEY` to the REST API via the same
+  `X-API-Key` header. Fails fast if `WFT_API_URL` or `WFT_API_KEY` is
   missing.
 - **CLI**: `API_KEY` env (singular, see `src/cli/config/env.ts`) sent as
   `X-API-Key`; `API_BASE_URL` defaults to `http://localhost:3000`.

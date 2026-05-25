@@ -2,7 +2,7 @@
 #
 # cli-symlink-smoke.sh — regression smoke test for the globally-linked `tasks` CLI.
 #
-# Background: wood-fired-bugs #334 fixed a silent-CLI bug where running the
+# Background: wood-fired-tasks #334 fixed a silent-CLI bug where running the
 # globally-linked `tasks` binary produced NO output because the entry guard
 # (`import.meta.url === \`file://${process.argv[1]}\``) did not match when
 # Node resolved `process.argv[1]` through an npm-link symlink. The fix uses
@@ -10,7 +10,7 @@
 # regression net: a future revert of that fix must FAIL this script on the
 # `--version` assertion within seconds.
 #
-# Acceptance criteria (wood-fired-bugs #335):
+# Acceptance criteria (wood-fired-tasks #335):
 #   1. `npm link` the local package (assumes `npm run build` has been run).
 #   2. Assert `tasks --version` equals the version in package.json (no whitespace).
 #   3. Assert `tasks --help` exits 0 and produces >= 10 lines of output.
@@ -117,7 +117,7 @@ echo "[smoke] resolved bin:      ${resolved}"
 
 # ----- Assertion 1: tasks --version --------------------------------------------
 # This is the load-bearing assertion: it is the one that fails the moment
-# someone reverts wood-fired-bugs #334's is-main fix. Capture stdout into a
+# someone reverts wood-fired-tasks #334's is-main fix. Capture stdout into a
 # variable and trim any trailing whitespace before comparing.
 echo "[smoke] assert 1: ${bin_name} --version  ==  ${expected_version}"
 version_out="$("${bin_name}" --version 2>/dev/null || true)"
@@ -127,7 +127,7 @@ if [ "${version_out_trimmed}" != "${expected_version}" ]; then
   echo "ERROR: '${bin_name} --version' output mismatch." >&2
   echo "       expected: '${expected_version}'" >&2
   echo "       actual:   '${version_out}'   (trimmed='${version_out_trimmed}')" >&2
-  echo "       This is the wood-fired-bugs #334 regression signal — the global" >&2
+  echo "       This is the wood-fired-tasks #334 regression signal — the global" >&2
   echo "       symlink is invoking the CLI but the entry guard is not firing." >&2
   exit 1
 fi

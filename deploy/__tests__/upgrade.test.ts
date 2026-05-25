@@ -34,7 +34,7 @@ describe('deploy/upgrade.sh', () => {
     // Run upgrade.sh from a tmpdir that has src/ but no dist/. The pre-flight
     // should reject with a clear "build" message and non-zero exit code.
     //
-    // We pass WFB_INSTALL_DIR to a writable tmpdir as well so the script
+    // We pass WFT_INSTALL_DIR to a writable tmpdir as well so the script
     // never even thinks about touching /opt/. We also override SOURCE_DIR
     // resolution by invoking the script from the tmpdir but pointing it at
     // a copy of the script that resolves SOURCE_DIR via $(dirname "$0").
@@ -62,7 +62,7 @@ describe('deploy/upgrade.sh', () => {
         execFileSync('bash', [fakeUpgrade], {
           env: {
             ...process.env,
-            WFB_INSTALL_DIR: installDir,
+            WFT_INSTALL_DIR: installDir,
             // Disable the sudo re-exec branch so the test never prompts.
             // The re-exec path is `id -u`==0 short-circuit; we run as a
             // normal user, so the script will try `exec sudo ...`. We can

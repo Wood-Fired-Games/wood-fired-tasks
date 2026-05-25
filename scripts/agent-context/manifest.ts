@@ -540,7 +540,7 @@ export function buildManifest(
         'Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts.',
     },
     project: {
-      name: 'wood-fired-bugs',
+      name: 'wood-fired-tasks',
       contract: 'docs/AGENT_CONTEXT.md',
       first_read: 'AGENTS.md',
     },

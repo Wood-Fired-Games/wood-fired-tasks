@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-05-22
 
-This guide records the current code quality baseline for `wood-fired-bugs`
+This guide records the current code quality baseline for `wood-fired-tasks`
 and the phased work needed to move it toward a high-standard TypeScript
 service posture. It is intentionally practical: keep the existing strengths,
 close the highest-value gaps first, and avoid tooling churn that does not

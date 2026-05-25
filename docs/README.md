@@ -1,8 +1,8 @@
-# wood-fired-bugs docs
+# wood-fired-tasks docs
 
 Owner: Repository maintainers
 
-This directory holds the reference and agent-facing docs for `wood-fired-bugs`. Start with [`AGENTS.md`](../AGENTS.md) at the repo root, then follow the read order in [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md). Everything here is vendor-neutral — Claude, Cursor, Gemini, Codex, and human contributors all read the same files.
+This directory holds the reference and agent-facing docs for `wood-fired-tasks`. Start with [`AGENTS.md`](../AGENTS.md) at the repo root, then follow the read order in [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md). Everything here is vendor-neutral — Claude, Cursor, Gemini, Codex, and human contributors all read the same files.
 
 ## Index by audience
 

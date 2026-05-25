@@ -1,5 +1,5 @@
 {
-  "name": "wood-fired-bugs",
+  "name": "wood-fired-tasks",
   "version": "1.0.0",
   "description": "Network-wide task tracking system for Wood Fired Games",
   "keywords": [
@@ -25,12 +25,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Wood-Fired-Games/wood-fired-bugs.git"
+    "url": "git+https://github.com/Wood-Fired-Games/wood-fired-tasks.git"
   },
   "bugs": {
-    "url": "https://github.com/Wood-Fired-Games/wood-fired-bugs/issues"
+    "url": "https://github.com/Wood-Fired-Games/wood-fired-tasks/issues"
   },
-  "homepage": "https://github.com/Wood-Fired-Games/wood-fired-bugs#readme",
+  "homepage": "https://github.com/Wood-Fired-Games/wood-fired-tasks#readme",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -41,7 +41,7 @@
     "!dist/**/__tests__/**",
     "!dist/**/*.test.*",
     "!dist/**/*.property.test.*",
-    "!dist/wood-fired-bugs-client.zip",
+    "!dist/wood-fired-tasks-client.zip",
     "LICENSE",
     "README.md",
     "CHANGELOG.md",

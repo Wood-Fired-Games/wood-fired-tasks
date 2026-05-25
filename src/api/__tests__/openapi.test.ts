@@ -49,14 +49,14 @@ describe('OpenAPI Documentation', () => {
     expect(spec.openapi).toMatch(/^3\.(0|1)\./); // OpenAPI 3.0.x or 3.1.x
   });
 
-  it('The spec has info.title = Wood Fired Bugs API', async () => {
+  it('The spec has info.title = Wood Fired Tasks API', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/docs/json',
     });
 
     const spec = JSON.parse(response.payload);
-    expect(spec.info?.title).toBe('Wood Fired Bugs API');
+    expect(spec.info?.title).toBe('Wood Fired Tasks API');
   });
 
   it('The spec has paths for /api/v1/tasks (POST, GET)', async () => {

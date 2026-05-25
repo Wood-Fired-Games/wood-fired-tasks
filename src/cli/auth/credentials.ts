@@ -3,9 +3,9 @@
  * auth-precedence resolver shared by `tasks login`, `tasks logout`,
  * `tasks whoami`, and the API client.
  *
- * Path: `$WFB_CREDENTIALS_PATH` > `$XDG_CONFIG_HOME/wood-fired-bugs/credentials`
+ * Path: `$WFT_CREDENTIALS_PATH` > `$XDG_CONFIG_HOME/wood-fired-tasks/credentials`
  *       (when XDG_CONFIG_HOME is an ABSOLUTE path per XDG Base Directory spec)
- *       > `~/.config/wood-fired-bugs/credentials`.
+ *       > `~/.config/wood-fired-tasks/credentials`.
  *
  * On POSIX the file is enforced at mode 0o600 — `writeCredentials` opens with
  * the mode AND chmods after (belt-and-braces against permissive umasks), and
@@ -105,7 +105,7 @@ export function setTokenOverride(token: string | null): void {
 }
 
 export function getCredentialsPath(): string {
-  const override = process.env.WFB_CREDENTIALS_PATH;
+  const override = process.env.WFT_CREDENTIALS_PATH;
   if (override && override.length > 0) return override;
 
   const xdg = process.env.XDG_CONFIG_HOME;
@@ -113,7 +113,7 @@ export function getCredentialsPath(): string {
     xdg && path.isAbsolute(xdg)
       ? xdg
       : path.join(os.homedir(), '.config');
-  return path.join(configHome, 'wood-fired-bugs', 'credentials');
+  return path.join(configHome, 'wood-fired-tasks', 'credentials');
 }
 
 export function readCredentials(filePath: string = getCredentialsPath()): Credentials | null {
@@ -178,7 +178,7 @@ export function writeCredentials(
   mkdirSync(path.dirname(filePath), { recursive: true });
 
   const header =
-    '# Wood Fired Bugs CLI credentials. Created by `tasks login`.\n' +
+    '# Wood Fired Tasks CLI credentials. Created by `tasks login`.\n' +
     '# Do NOT commit this file to version control.\n\n';
   const body = header + stringify(creds);
 

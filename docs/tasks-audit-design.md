@@ -6,11 +6,11 @@ Owner: Repository maintainers
 > a zod schema mirror at `src/lib/audit/schema.ts` (in this commit) and
 > future reference examples at `docs/audit-reference-example.md`
 > (deferred to the implementation follow-on tasks). This document is the
-> design-of-record landed by wood-fired-bugs task **#323**.
+> design-of-record landed by wood-fired-tasks task **#323**.
 
 ## Status
 
-Wave 7.1 DESIGN landed by wood-fired-bugs task **#323** (2026-05-23).
+Wave 7.1 DESIGN landed by wood-fired-tasks task **#323** (2026-05-23).
 Runtime orchestration is **deferred** — the skill file at
 [`skills/tasks/audit.md`](../skills/tasks/audit.md) is a discovery stub
 that points users at this design and refuses to dispatch any subagent or
@@ -65,7 +65,7 @@ triggers:
   - "/tasks:audit"
 required-args (exactly one of):
   --loop-run <path>      # explicit path to a LOOP-RUN.md on disk
-  --project <id>         # wood-fired-bugs project id; auto-finds the
+  --project <id>         # wood-fired-tasks project id; auto-finds the
                          # most recent .planning/loops/<UTC>-<id>.md
 outputs:
   - .planning/loops/<UTC>-<project_id>-AUDIT.md
@@ -221,7 +221,7 @@ path is **not committed** — `.planning/` is in the repo's `.gitignore`
 |-------------------|-------------|-----------------------------------------------------------------------------|
 | `run_id`          | UUIDv4      | **Reused** from the LOOP-RUN.md frontmatter — correlates the two artifacts. |
 | `audit_id`        | UUIDv4      | **Fresh** per audit invocation; idempotency key for re-runs.                |
-| `project_id`      | int ≥ 1     | wood-fired-bugs project id (mirrors LOOP-RUN.md).                           |
+| `project_id`      | int ≥ 1     | wood-fired-tasks project id (mirrors LOOP-RUN.md).                           |
 | `audit_started_at`| RFC 3339    | UTC start time.                                                             |
 | `audit_ended_at`  | RFC 3339    | UTC end time.                                                               |
 | `total_tasks`     | int ≥ 0     | Count of tasks listed in LOOP-RUN.md `## Tasks Closed`.                     |
@@ -283,7 +283,7 @@ The skill **MUST NOT mutate code**.
 
 ### Guardrail 2 — read-only against the bugs DB
 
-The skill **MUST NOT call wood-fired-bugs `update_task` or
+The skill **MUST NOT call wood-fired-tasks `update_task` or
 `add_comment`**.
 
 - **Why.** Symmetric to the verifier contract. An audit that comments
@@ -401,7 +401,7 @@ extra blast radius to refuse against.
 
 ## §8 Follow-on tasks
 
-To be created in wood-fired-bugs project 15 *after* this design lands:
+To be created in wood-fired-tasks project 15 *after* this design lands:
 
 - **Implement /tasks:audit runtime** — replace the discovery stub in
   `skills/tasks/audit.md` with the full pipeline. Wire Step 1

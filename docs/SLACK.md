@@ -1,6 +1,6 @@
 # Slack Integration
 
-Wood Fired Bugs ships an **optional** Slack integration that exposes the
+Wood Fired Tasks ships an **optional** Slack integration that exposes the
 task tracker inside a Slack workspace through:
 
 1. A `/tasks` slash command (read, create, update, claim, subscribe, etc.).
@@ -79,7 +79,7 @@ A canonical app manifest is checked in at
 5. Install the app to the workspace and copy the three tokens above into
    `.env` (or your secret manager).
 6. Restart the server: `npm run dev` locally, or `pm2 restart
-   wood-fired-bugs` / `systemctl restart …` in production.
+   wood-fired-tasks` / `systemctl restart …` in production.
 
 ### What the manifest grants
 

@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# Wood Fired Bugs - Client Setup Script (Linux/Mac)
+# Wood Fired Tasks - Client Setup Script (Linux/Mac)
 #
-# Configures Claude Code on this machine to connect to the Wood Fired Bugs
+# Configures Claude Code on this machine to connect to the Wood Fired Tasks
 # task management system running on the local network.
 #
 # API key resolution (most secure first):
-#   1. WFB_API_KEY environment variable
-#   2. Per-user secret file (~/.config/wood-fired-bugs/api-key, mode 600)
+#   1. WFT_API_KEY environment variable
+#   2. Per-user secret file (~/.config/wood-fired-tasks/api-key, mode 600)
 #   3. Masked interactive prompt
 #   4. --api-key KEY argument (DEPRECATED — leaks via shell history and ps)
 #
 # Usage:
-#   WFB_API_KEY=... ./setup.sh
+#   WFT_API_KEY=... ./setup.sh
 #   ./setup.sh                                 # prompts for the key
 #   ./setup.sh --server-url http://192.0.2.100:3000
 #   ./setup.sh --api-key YOUR_API_KEY          # deprecated, still works
 #
 # Options:
 #   --server-url URL    Backend server URL (default: http://localhost:3000).
-#                       Override this with --server-url or the WFB_API_URL env
+#                       Override this with --server-url or the WFT_API_URL env
 #                       var when the backend runs on a different host.
 #   --api-key KEY       API key (DEPRECATED — see resolution order above)
 #   --help              Show this help message
@@ -26,14 +26,14 @@
 set -e
 
 # ── Defaults ────────────────────────────────────────────────────────────────
-# Default to localhost; users must override via --server-url or WFB_API_URL
+# Default to localhost; users must override via --server-url or WFT_API_URL
 # when targeting a remote backend.
-SERVER_URL="${WFB_API_URL:-http://localhost:3000}"
+SERVER_URL="${WFT_API_URL:-http://localhost:3000}"
 API_KEY=""
 API_KEY_FROM_ARGV=0
 
 # Per-user secret file. 0600 perms, owner-only access.
-SECRET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-bugs"
+SECRET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-tasks"
 SECRET_FILE="$SECRET_DIR/api-key"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
@@ -63,14 +63,14 @@ done
 if [[ "$API_KEY_FROM_ARGV" -eq 1 ]]; then
     echo "[WARN] --api-key on the command line is DEPRECATED."
     echo "[WARN] Command-line secrets leak via shell history and 'ps -ef'."
-    echo "[WARN] Prefer the WFB_API_KEY env var, the secret file ($SECRET_FILE),"
+    echo "[WARN] Prefer the WFT_API_KEY env var, the secret file ($SECRET_FILE),"
     echo "[WARN] or the interactive prompt. This flag will be removed in a future release."
 fi
 
 # Resolve API key from env var if not on argv
-if [[ -z "$API_KEY" && -n "${WFB_API_KEY:-}" ]]; then
-    API_KEY="$WFB_API_KEY"
-    echo "[INFO] Using API key from WFB_API_KEY environment variable"
+if [[ -z "$API_KEY" && -n "${WFT_API_KEY:-}" ]]; then
+    API_KEY="$WFT_API_KEY"
+    echo "[INFO] Using API key from WFT_API_KEY environment variable"
 fi
 
 # Resolve API key from secret file
@@ -90,13 +90,13 @@ fi
 # Final fallback: masked prompt
 if [[ -z "$API_KEY" ]]; then
     echo ""
-    read -rsp "Enter Wood Fired Bugs API key: " API_KEY
+    read -rsp "Enter Wood Fired Tasks API key: " API_KEY
     echo ""
 fi
 
 if [[ -z "$API_KEY" ]]; then
     echo "ERROR: API key is required"
-    echo "Set WFB_API_KEY, populate $SECRET_FILE (mode 600), or supply it at the prompt."
+    echo "Set WFT_API_KEY, populate $SECRET_FILE (mode 600), or supply it at the prompt."
     exit 1
 fi
 
@@ -119,7 +119,7 @@ CLAUDE_DIR="$HOME/.claude"
 CLAUDE_COMMANDS_DIR="$CLAUDE_DIR/commands/tasks"
 
 echo ""
-echo "Wood Fired Bugs - Client Setup"
+echo "Wood Fired Tasks - Client Setup"
 echo "================================"
 echo ""
 echo "Package directory: $SCRIPT_DIR"
@@ -183,12 +183,12 @@ fi
 
 # Remove any prior user-scope entry so re-running setup is idempotent.
 # 'claude mcp remove' exits non-zero when the entry is absent — that's fine.
-claude mcp remove wood-fired-bugs --scope user >/dev/null 2>&1 || true
+claude mcp remove wood-fired-tasks --scope user >/dev/null 2>&1 || true
 
-if ! claude mcp add wood-fired-bugs \
+if ! claude mcp add wood-fired-tasks \
     --scope user \
-    -e "WFB_API_URL=$SERVER_URL" \
-    -e "WFB_API_KEY=$API_KEY" \
+    -e "WFT_API_URL=$SERVER_URL" \
+    -e "WFT_API_KEY=$API_KEY" \
     -- node "$MCP_ENTRY_POINT"; then
     echo "ERROR: 'claude mcp add' failed."
     exit 1
@@ -200,7 +200,7 @@ if [[ -f "$CLAUDE_CONFIG" ]]; then
     chmod 600 "$CLAUDE_CONFIG" 2>/dev/null || true
 fi
 
-echo "OK: Registered wood-fired-bugs at user scope (~/.claude.json, mode 600)"
+echo "OK: Registered wood-fired-tasks at user scope (~/.claude.json, mode 600)"
 
 # ── 5. Done ───────────────────────────────────────────────────────────────────
 echo ""
@@ -209,7 +209,7 @@ echo ""
 echo "API key cached at: $SECRET_FILE (mode 600)"
 echo ""
 echo "To verify the connection, run (key is read from the secret file):"
-echo "  WFB_API_URL=$SERVER_URL WFB_API_KEY=\"\$(cat \"$SECRET_FILE\")\" node \"$MCP_ENTRY_POINT\""
+echo "  WFT_API_URL=$SERVER_URL WFT_API_KEY=\"\$(cat \"$SECRET_FILE\")\" node \"$MCP_ENTRY_POINT\""
 echo ""
 echo "Open Claude Code in any project and try:"
 echo "  /tasks:my-work"

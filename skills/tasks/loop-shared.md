@@ -19,7 +19,7 @@ The blocks below are NOT independently invocable — they are reference material
 Brief template — adapt to the task. Brief size should scale with codebase quality: if you know the repo is already well-typed and well-tested, prefer thinner briefs (keep the constraint list intact but drop worked-example idioms); if the repo is messy, beef up the "decisions in the brief" and "preferred idioms" sections.
 
 ```
-You are implementing wood-fired-bugs task #<id> ("<title>") from project "<project_name>".
+You are implementing wood-fired-tasks task #<id> ("<title>") from project "<project_name>".
 Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit after verifying your work.
 
 ## Working dir / Cross-repo context
@@ -175,7 +175,7 @@ const verifierInputs = {
 
 **Resolving `acceptance_criteria`** (in order):
 
-1. Read the task's `acceptance_criteria` column via `wood-fired-bugs:get_task` (Wave 1.3 surfaces this as a first-class field).
+1. Read the task's `acceptance_criteria` column via `wood-fired-tasks:get_task` (Wave 1.3 surfaces this as a first-class field).
 2. If that column is NULL/empty, fall back to extracting the "ACCEPTANCE CRITERIA:" / "Acceptance criteria:" block from the task description (existing convention from Step 2).
 3. If neither exists, **skip the verifier dispatch entirely** and proceed straight to Step 8 with `verification_evidence: { verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` plus a comment noting "no acceptance criteria to grade against — verifier skipped". This is the documented escape hatch.
 
@@ -289,9 +289,9 @@ Note: creating the follow-on bugs-DB task in step 2 of this carve-out is a delib
 **Cross-reference: this carve-out closes the loop opened by the post-#320 orchestrator-upgrade hardening (commit `6b26fc5`).** It is NOT a verdict upgrade — `verdict: "PARTIAL"` is preserved in `verification_evidence` exactly as the verifier emitted it. The orchestrator is making a *status* decision (done vs in_progress) based on the declared-scope contract from §2a + §7a, while the verdict accurately reflects what the verifier could grade. Without §2a's `scope:` annotation upstream, this carve-out does NOT apply and the default PARTIAL branch (task stays `in_progress`) is the only path.
 
 ```
-wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+wood-fired-tasks:add_comment with task_id=<id>, author=<agent>, content=
   "Verifier verdict: PARTIAL (declared scope: <label>).\n\n§2a scope decision: <verbatim quote of scope label + in-scope bullets + deferred bullets>.\n\nFollow-on tasks tracking deferred runtime ACs: #<id_1>, #<id_2>.\n\nIn-scope ACs the verifier could not observe (acknowledged as deferred, not blocking closure):\n- <check.name>: <check.evidence_url_or_text>\n- ..."
-wood-fired-bugs:update_task with id=<id>, updates={
+wood-fired-tasks:update_task with id=<id>, updates={
   "status": "done",
   "verification_evidence": <full evidence object — verdict stays PARTIAL>
 }
@@ -442,7 +442,7 @@ When the carve-out fires, the inline fix MUST be documented in the Step 8 close-
 
 ## §K. Harness TodoWrite preload (TaskCreate + TaskUpdate + TaskList bundling)
 
-> **Why this section exists.** F9 friction finding from the 2026-05-24 `/tasks:loop-dag` first-use audit: in Claude Code's deferred-tool model, `TaskCreate` (the in-conversation TodoWrite-family create-todo tool) is auto-promoted by the harness in some contexts, but `TaskUpdate` and `TaskList` are typically deferred and require a separate `ToolSearch` round-trip to load before they're callable. The pairing is asymmetric — you can create a todo and then discover you can't mark it `in_progress` / `completed` without another round-trip. Tracked in [task #352](https://github.com/Wood-Fired-Games/wood-fired-bugs/) (this project).
+> **Why this section exists.** F9 friction finding from the 2026-05-24 `/tasks:loop-dag` first-use audit: in Claude Code's deferred-tool model, `TaskCreate` (the in-conversation TodoWrite-family create-todo tool) is auto-promoted by the harness in some contexts, but `TaskUpdate` and `TaskList` are typically deferred and require a separate `ToolSearch` round-trip to load before they're callable. The pairing is asymmetric — you can create a todo and then discover you can't mark it `in_progress` / `completed` without another round-trip. Tracked in [task #352](https://github.com/Wood-Fired-Games/wood-fired-tasks/) (this project).
 
 **Rule for orchestrator skills (this skill, `/tasks:loop`, `/tasks:loop-dag`, and any future sibling that uses TodoWrite-family tooling):** load the trio in a single preflight `ToolSearch` rather than one-by-one. The canonical incantation:
 
@@ -450,7 +450,7 @@ When the carve-out fires, the inline fix MUST be documented in the Step 8 close-
 ToolSearch with query "select:TaskCreate,TaskUpdate,TaskList"
 ```
 
-Run this once near the top of the orchestrator turn (alongside any wood-fired-bugs MCP loads). The trio is small — loading all three costs almost nothing — and avoids the cache-miss penalty of discovering the dependency mid-run when you've already minted a todo and need to flip its status.
+Run this once near the top of the orchestrator turn (alongside any wood-fired-tasks MCP loads). The trio is small — loading all three costs almost nothing — and avoids the cache-miss penalty of discovering the dependency mid-run when you've already minted a todo and need to flip its status.
 
 **For skills that only READ todos** (rarer — e.g. a status-check helper), load `TaskList` alone:
 
@@ -460,4 +460,4 @@ ToolSearch with query "select:TaskList"
 
 **For skills that only WRITE todos without follow-up updates** (rarer still — e.g. a one-shot capture into TodoWrite from another tool's output): load `TaskCreate` alone. But prefer the bundled trio unless you're certain follow-up isn't needed.
 
-**Upstream-issue status:** the asymmetric promotion is a Claude Code harness concern, not actionable from a wood-fired-bugs skill. File a feedback note at <https://github.com/anthropics/claude-code/issues> if you hit it (suggested title: "TaskUpdate not auto-promoted alongside TaskCreate — extra ToolSearch round-trip required"). Until that lands, this bundling rule is the workaround.
+**Upstream-issue status:** the asymmetric promotion is a Claude Code harness concern, not actionable from a wood-fired-tasks skill. File a feedback note at <https://github.com/anthropics/claude-code/issues> if you hit it (suggested title: "TaskUpdate not auto-promoted alongside TaskCreate — extra ToolSearch round-trip required"). Until that lands, this bundling rule is the workaround.

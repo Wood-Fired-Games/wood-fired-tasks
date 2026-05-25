@@ -7,13 +7,13 @@ disable-model-invocation: false
 
 # Create Task Workflow
 
-Creates a new task in the Wood Fired Bugs system with full configuration options.
+Creates a new task in the Wood Fired Tasks system with full configuration options.
 
 ## Preflight: identity + MCP tools
 
 **Resolve a real identity** before the `created_by` field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-create-task`). Pick once at top of invocation and capture as `$CREATED_BY`.
 
-This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__create_task,mcp__wood-fired-bugs__list_projects`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__list_projects`) and retry.
 
 ## Steps
 
@@ -24,7 +24,7 @@ This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fire
 
    Ask user for or extract from context:
 
-   - **project**: Use `wood-fired-bugs:list_projects` to show available projects if not specified
+   - **project**: Use `wood-fired-tasks:list_projects` to show available projects if not specified
    - **priority**: Default 'medium'. Valid values: low, medium, high, urgent
    - **assignee**: Optional. If not specified, leave unset
    - **description**: Optional. If not specified, leave unset
@@ -34,7 +34,7 @@ This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fire
 
 3. **Create Task**
 
-   Call `wood-fired-bugs:create_task` with all gathered parameters:
+   Call `wood-fired-tasks:create_task` with all gathered parameters:
    - title: [parsed title]
    - description: [if provided]
    - priority: [selected priority, default 'medium']

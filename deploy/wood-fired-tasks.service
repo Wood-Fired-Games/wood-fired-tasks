@@ -1,5 +1,5 @@
 [Unit]
-Description=Wood Fired Bugs Task Tracker
+Description=Wood Fired Tasks Task Tracker
 # Order after network-online.target (not just network.target) so that, when OIDC
 # is enabled, discovery to the IdP has real connectivity at boot. With only
 # network.target the service can start before the network is actually up; OIDC
@@ -16,14 +16,14 @@ StartLimitIntervalSec=60
 
 [Service]
 Type=simple
-# User/Group default to the generic 'wood-fired-bugs' system account.
-# To run as a different account (e.g. WFB_SERVICE_USER=appsvc), do NOT edit this
+# User/Group default to the generic 'wood-fired-tasks' system account.
+# To run as a different account (e.g. WFT_SERVICE_USER=appsvc), do NOT edit this
 # unit in-place -- use a systemd drop-in instead. See deploy/README.md.
-User=wood-fired-bugs
-Group=wood-fired-bugs
-WorkingDirectory=/opt/wood-fired-bugs
-EnvironmentFile=/opt/wood-fired-bugs/.env
-ExecStart=/usr/bin/node /opt/wood-fired-bugs/dist/api/start.js
+User=wood-fired-tasks
+Group=wood-fired-tasks
+WorkingDirectory=/opt/wood-fired-tasks
+EnvironmentFile=/opt/wood-fired-tasks/.env
+ExecStart=/usr/bin/node /opt/wood-fired-tasks/dist/api/start.js
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=15s
@@ -41,7 +41,7 @@ TasksMax=50
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
-ReadWritePaths=/opt/wood-fired-bugs/data /opt/wood-fired-bugs/backups
+ReadWritePaths=/opt/wood-fired-tasks/data /opt/wood-fired-tasks/backups
 
 # Device and kernel protection
 PrivateDevices=yes
@@ -74,7 +74,7 @@ SystemCallArchitectures=native
 # Enabling this would cause V8 to crash at runtime.
 
 # NOTE: DynamicUser is NOT used because SQLite requires stable
-# file ownership across service restarts for /opt/wood-fired-bugs/data/tasks.db.
+# file ownership across service restarts for /opt/wood-fired-tasks/data/tasks.db.
 
 # ── Graceful Shutdown ──────────────────────────────────────
 KillMode=mixed
@@ -83,7 +83,7 @@ KillSignal=SIGTERM
 # ── Logging ────────────────────────────────────────────────
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=wood-fired-bugs
+SyslogIdentifier=wood-fired-tasks
 
 [Install]
 WantedBy=multi-user.target

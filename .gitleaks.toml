@@ -1,4 +1,4 @@
-# gitleaks config for wood-fired-bugs
+# gitleaks config for wood-fired-tasks
 # Inherits all default rules from gitleaks v8.x; only adds allowlists
 # for known false positives (test fixtures, documentation placeholders,
 # and internal planning docs that ship outside the npm tarball).
@@ -10,7 +10,7 @@
 useDefault = true
 
 [allowlist]
-description = "wood-fired-bugs false-positive allowlist (see task #256)"
+description = "wood-fired-tasks false-positive allowlist (see task #256)"
 
 paths = [
   # Internal planning workspaces — never published to npm, not part of

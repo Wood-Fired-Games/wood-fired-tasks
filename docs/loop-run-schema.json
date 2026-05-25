@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://wood-fired-games.github.io/wood-fired-bugs/loop-run-schema.json",
+  "$id": "https://wood-fired-games.github.io/wood-fired-tasks/loop-run-schema.json",
   "title": "LOOP-RUN.md frontmatter",
   "description": "Validates the YAML frontmatter block of a .planning/loops/<UTC-timestamp>-<project_id>.md file produced by tasks:loop / tasks:bug-smash. See docs/loop-run-schema.md for the full contract.",
   "type": "object",
@@ -30,7 +30,7 @@
     "project_id": {
       "type": "integer",
       "minimum": 1,
-      "description": "wood-fired-bugs project id the loop drained."
+      "description": "wood-fired-tasks project id the loop drained."
     },
     "started_at": {
       "type": "string",

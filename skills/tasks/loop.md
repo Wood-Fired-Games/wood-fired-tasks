@@ -1,6 +1,6 @@
 ---
 name: loop
-description: Autonomous backlog-drain loop. A single orchestrating context picks the highest priority open task from a Wood Fired Bugs project, dispatches a subagent to implement the fix, independently re-validates with the project's build/test/smoke commands, closes the task, commits, pushes, and continues. Use when the user wants to drain an open backlog hands-off without filling the main context with implementation noise.
+description: Autonomous backlog-drain loop. A single orchestrating context picks the highest priority open task from a Wood Fired Tasks project, dispatches a subagent to implement the fix, independently re-validates with the project's build/test/smoke commands, closes the task, commits, pushes, and continues. Use when the user wants to drain an open backlog hands-off without filling the main context with implementation noise.
 argument-hint: [project-name] [--max-tasks N]
 disable-model-invocation: false
 ---
@@ -17,7 +17,7 @@ The loop is project-agnostic. Validation commands (`build`, `test`, `smoke`) and
 
 **Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the worker-brief / claim / comment sections below — this block is the canonical pointer.
 
-This skill calls tools on the `wood-fired-bugs` MCP server. Shorthand `wood-fired-bugs:<tool>` ↔ harness name `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_projects,mcp__wood-fired-bugs__list_tasks,mcp__wood-fired-bugs__get_task,mcp__wood-fired-bugs__get_comments,mcp__wood-fired-bugs__get_dependencies,mcp__wood-fired-bugs__claim_task,mcp__wood-fired-bugs__update_task,mcp__wood-fired-bugs__add_comment,mcp__wood-fired-bugs__topology_check`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check`) and retry.
 
 ---
 
@@ -33,7 +33,7 @@ Parse `$ARGUMENTS` — or, when invoked via natural language ("loop the backlog 
 
 ### Resolve Project ID
 
-Call `wood-fired-bugs:list_projects`, match the argument (by ID if numeric/`#`-prefixed, else by name), store `project_id` + `project_name`. If no match, list available projects and stop.
+Call `wood-fired-tasks:list_projects`, match the argument (by ID if numeric/`#`-prefixed, else by name), store `project_id` + `project_name`. If no match, list available projects and stop.
 
 ---
 
@@ -120,7 +120,7 @@ If the suite is already red:
 2. Ask whether to (a) fix the pre-existing breakage as a separate housekeeping commit before the loop starts, or (b) abort.
 3. Do not start the loop until the suite is green.
 
-**Sibling-repo baselining (when §2a flagged ≥ 1 task as targeting a sibling repo — see §2a "Cross-repo scope detection" for the canonical rules).** The CWD baseline above is necessary but NOT sufficient. The orchestrator MUST baseline tests in EVERY repo that appears in any task's `cross_repo: [...]` set from §2a — not just CWD. Without this, pre-existing flakes in a sibling repo will get attributed to whichever subagent first cd's into it, and the loop will stall mid-flight when verification fails on a flake the orchestrator never saw coming. (Real-world failure mode: Wave 1 drain of project 15 was invoked from `wood-fired-bugs` but tasks #309 / #310 lived in `wood-fired-engine/tooling/wfg-cc-telemetry`; CWD baseline ran clean, sibling-repo baseline never ran, and 3 pre-existing E2E flakes — `RestartIdempotency`, `ShimSocket`, `ShimLatency` — only surfaced during #309 verification mid-loop.)
+**Sibling-repo baselining (when §2a flagged ≥ 1 task as targeting a sibling repo — see §2a "Cross-repo scope detection" for the canonical rules).** The CWD baseline above is necessary but NOT sufficient. The orchestrator MUST baseline tests in EVERY repo that appears in any task's `cross_repo: [...]` set from §2a — not just CWD. Without this, pre-existing flakes in a sibling repo will get attributed to whichever subagent first cd's into it, and the loop will stall mid-flight when verification fails on a flake the orchestrator never saw coming. (Real-world failure mode: Wave 1 drain of project 15 was invoked from `wood-fired-tasks` but tasks #309 / #310 lived in `wood-fired-engine/tooling/wfg-cc-telemetry`; CWD baseline ran clean, sibling-repo baseline never ran, and 3 pre-existing E2E flakes — `RestartIdempotency`, `ShimSocket`, `ShimLatency` — only surfaced during #309 verification mid-loop.)
 
 For each unique sibling repo `R` in the union of all `cross_repo` sets:
 
@@ -202,7 +202,7 @@ Record the branch outcome in orchestrator state as `gate_decision` for inclusion
 
 The orchestrator computes the execution order itself — this is mechanical graph work that does not need a subagent and does not need user confirmation. Sorting a DAG is the kind of problem computers solve perfectly; do it.
 
-1. Fetch all open tasks for the project via `wood-fired-bugs:list_tasks` with `status=open` and `limit=200`. Capture `id`, `priority`, `created_at` per task.
+1. Fetch all open tasks for the project via `wood-fired-tasks:list_tasks` with `status=open` and `limit=200`. Capture `id`, `priority`, `created_at` per task.
 2. Take the edge list from `topology_check.edges`. Each `{from, to}` edge means "task `from` must complete before task `to`" — i.e. `to` depends on `from`.
 3. Reduce the graph to the relevant set:
    - If the user specified a curated subset of task IDs in the invocation (e.g. `project 15 329, 331, 332`), restrict the node set to those IDs. Drop edges whose `from` endpoint is outside the curated set — those external dependencies are treated as already-satisfied (the user has implicitly opted out of them by curating). Log a one-line note in the first prompt naming the dropped external dep IDs so the user can sanity-check.
@@ -229,7 +229,7 @@ For each iteration, the orchestrator goes through **ten steps**. Do not skip ahe
 ### Step 1 — Pick the next task
 
 ```
-wood-fired-bugs:list_tasks with project_id=<id>, status=open
+wood-fired-tasks:list_tasks with project_id=<id>, status=open
 ```
 
 Task selection depends on the `gate_decision` recorded in §2f:
@@ -246,10 +246,10 @@ If `list_tasks status=open` returns empty, announce completion and exit. If you'
 ### Step 2 — Claim and read
 
 ```
-wood-fired-bugs:claim_task with task_id=<id>, assignee=<your agent name>
-wood-fired-bugs:get_task with id=<id>
-wood-fired-bugs:get_comments with task_id=<id>
-wood-fired-bugs:get_dependencies with task_id=<id>
+wood-fired-tasks:claim_task with task_id=<id>, assignee=<your agent name>
+wood-fired-tasks:get_task with id=<id>
+wood-fired-tasks:get_comments with task_id=<id>
+wood-fired-tasks:get_dependencies with task_id=<id>
 ```
 
 Read the task description carefully. Extract:
@@ -365,7 +365,7 @@ EOF
 )
 ```
 
-The verifier subagent's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a git/test allowlist, and the read-only wood-fired-bugs MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/tasks-verifier.md` for the enforced allowlist.
+The verifier subagent's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a git/test allowlist, and the read-only wood-fired-tasks MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/tasks-verifier.md` for the enforced allowlist.
 
 **Bounds recap** (cite `docs/verifier-contract.md` §Bounds): the verifier MUST stay within **≤ 30 tool calls** and **≤ 5 minutes** wall-clock. The subagent self-throttles at 25 tool calls. If the orchestrator observes the bound exceeded, treat the run as `verdict: "PARTIAL"` with a synthetic final SKIP check noting the bound that triggered.
 
@@ -393,31 +393,31 @@ If a verifier's verdict is wrong because the verifier mis-scoped the ACs (e.g. c
 
 The verdict controls whether the task closes, blocks, or stays in_progress. **Do NOT skip a branch.** Each branch writes the full verifier evidence into `tasks.verification_evidence` via Wave 1.4's `update_task` field.
 
-- **`verdict: "PASS"`** → proceed to Step 8 (close task as done). Pass the full verifier evidence object as `updates.verification_evidence` in the Step 8 `wood-fired-bugs:update_task` call. The status transition to `done` is gated on PASS — no other verdict reaches Step 8's `status: "done"` write.
+- **`verdict: "PASS"`** → proceed to Step 8 (close task as done). Pass the full verifier evidence object as `updates.verification_evidence` in the Step 8 `wood-fired-tasks:update_task` call. The status transition to `done` is gated on PASS — no other verdict reaches Step 8's `status: "done"` write.
 
 - **`verdict: "FAIL"`** → the task is NOT done. The orchestrator MUST:
-  1. Call `wood-fired-bugs:add_comment` with the failed checks formatted as a markdown bulleted list (one bullet per `checks[i]` with `status: "FAIL"`, citing the check `name` and its `evidence_url_or_text`).
-  2. Call `wood-fired-bugs:update_task` with `updates: { "status": "blocked", "verification_evidence": <full evidence> }`.
+  1. Call `wood-fired-tasks:add_comment` with the failed checks formatted as a markdown bulleted list (one bullet per `checks[i]` with `status: "FAIL"`, citing the check `name` and its `evidence_url_or_text`).
+  2. Call `wood-fired-tasks:update_task` with `updates: { "status": "blocked", "verification_evidence": <full evidence> }`.
   3. Do NOT call Step 8's close-as-done path. Move on to the next task in the loop.
 
   ```
-  wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+  wood-fired-tasks:add_comment with task_id=<id>, author=<agent>, content=
     "Verifier verdict: FAIL.\n\nFailed checks:\n- <check.name>: <check.evidence_url_or_text>\n- ..."
-  wood-fired-bugs:update_task with id=<id>, updates={
+  wood-fired-tasks:update_task with id=<id>, updates={
     "status": "blocked",
     "verification_evidence": <full evidence object>
   }
   ```
 
 - **`verdict: "PARTIAL"`** → the task is neither closed nor blocked; it stays in_progress so a follow-on attempt can finish the UNCHECKABLE criteria. The orchestrator MUST:
-  1. Call `wood-fired-bugs:add_comment` listing the UNCHECKABLE criteria (the `checks[i]` with `status: "SKIP"` and `evidence_url_or_text` starting with `UNCHECKABLE:`), one bullet per skipped check.
-  2. Call `wood-fired-bugs:update_task` with `updates: { "verification_evidence": <full evidence> }` only — do NOT change `status`. The task stays `in_progress`.
+  1. Call `wood-fired-tasks:add_comment` listing the UNCHECKABLE criteria (the `checks[i]` with `status: "SKIP"` and `evidence_url_or_text` starting with `UNCHECKABLE:`), one bullet per skipped check.
+  2. Call `wood-fired-tasks:update_task` with `updates: { "verification_evidence": <full evidence> }` only — do NOT change `status`. The task stays `in_progress`.
   3. Move on to the next task in the loop.
 
   ```
-  wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+  wood-fired-tasks:add_comment with task_id=<id>, author=<agent>, content=
     "Verifier verdict: PARTIAL.\n\nUNCHECKABLE criteria (need follow-on):\n- <check.name>: <check.evidence_url_or_text>\n- ..."
-  wood-fired-bugs:update_task with id=<id>, updates={
+  wood-fired-tasks:update_task with id=<id>, updates={
     "verification_evidence": <full evidence object>
   }
   ```
@@ -427,9 +427,9 @@ The verdict controls whether the task closes, blocks, or stays in_progress. **Do
 - **`verdict: "NOT_VERIFIED"`** → treat as PARTIAL but with a comment noting the verifier produced no checks (no acceptance criteria to grade against, or the verifier's output failed schema validation). Status stays `in_progress`. This is the documented no-acceptance-criteria escape hatch — surface it so the user can backfill criteria and re-queue.
 
   ```
-  wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=
+  wood-fired-tasks:add_comment with task_id=<id>, author=<agent>, content=
     "Verifier verdict: NOT_VERIFIED — no acceptance criteria available, or verifier output failed schema validation. Task stays in_progress; backfill acceptance_criteria and re-queue."
-  wood-fired-bugs:update_task with id=<id>, updates={
+  wood-fired-tasks:update_task with id=<id>, updates={
     "verification_evidence": { "verdict": "NOT_VERIFIED", "checks": [], "verified_at": "<iso8601>" }
   }
   ```
@@ -441,8 +441,8 @@ Only the PASS branch falls through to Step 8. The FAIL / PARTIAL / NOT_VERIFIED 
 This step runs **only when Step 7 produced `verdict: "PASS"`**. For FAIL / PARTIAL / NOT_VERIFIED, Step 7 already wrote the appropriate `status` + `verification_evidence` and the loop returned to Step 1.
 
 ```
-wood-fired-bugs:add_comment with task_id=<id>, author=<agent>, content=<structured summary>
-wood-fired-bugs:update_task with id=<id>, updates={ "status": "done", "verification_evidence": <full evidence from Step 7> }
+wood-fired-tasks:add_comment with task_id=<id>, author=<agent>, content=<structured summary>
+wood-fired-tasks:update_task with id=<id>, updates={ "status": "done", "verification_evidence": <full evidence from Step 7> }
 ```
 
 **Close-out comment template lives in [loop-shared.md §I](loop-shared.md#i-step-8-close-out-comment-template).** Required fields: tooling pick, changes (per-file), disabled/deferred, validation results, flake exclusions / candidate-for-promotion bullets (conditional on `known_flakes` non-empty), commit hash + subject. If duplicates exist, close them with `Resolved by fix to task #<id>. See comment on that task for details.`
@@ -461,7 +461,7 @@ The final orchestrator step writes a per-run audit artifact summarizing every ta
 
 - **Directory:** Always `.planning/loops/` — create on first emission.
 - **Timestamp:** Compact ISO-8601 UTC, format `YYYYMMDDTHHMMSSZ` (e.g. `20260522T175000Z`). The orchestrator MUST use its own `started_at` (the time the loop began), NOT the per-iteration time — one file per run.
-- **project_id:** The numeric wood-fired-bugs project id this loop drained.
+- **project_id:** The numeric wood-fired-tasks project id this loop drained.
 - One file per run. The path is stable across re-emissions within the run.
 
 #### 9b. Incremental rewrite (kill-safe)
@@ -551,7 +551,7 @@ For EACH overlap in the deduplicated list, dispatch a separate `integration-audi
 
 Use the `Agent` tool. **Default to `subagent_type: "general-purpose"` with the auditor prompt embedded in the brief** — same rule as Step 7's verifier dispatch (line 571). The named `subagent_type: "integration-auditor"` is only registered for sessions started AFTER the user ran `install.sh`; in any fresh session the named agent is typically unavailable, and an `Agent` call with an unknown `subagent_type` FAILS the entire dispatch (the orchestrator then can't audit the overlap and §10e's BROKEN-revert protocol won't fire — silent loss of the cross-task safety net). Defaulting to `general-purpose` + embedded prompt is the reliable path.
 
-**Recommendation for repeat users:** run `install.sh` once on the workstation. It copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md` and registers the named agent. The named agent's `tools:` frontmatter enforces a read-only tool surface (Read, Grep, Glob, restricted Bash, read-only wood-fired-bugs MCP tools), preventing an auditor from accidentally mutating code or the bugs DB. The general-purpose fallback honors the read-only contract via prompt-only constraint — equivalent functional contract, but no harness-level enforcement. Both paths satisfy §10e; the named agent is strictly safer.
+**Recommendation for repeat users:** run `install.sh` once on the workstation. It copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md` and registers the named agent. The named agent's `tools:` frontmatter enforces a read-only tool surface (Read, Grep, Glob, restricted Bash, read-only wood-fired-tasks MCP tools), preventing an auditor from accidentally mutating code or the bugs DB. The general-purpose fallback honors the read-only contract via prompt-only constraint — equivalent functional contract, but no harness-level enforcement. Both paths satisfy §10e; the named agent is strictly safer.
 
 ```
 Agent(
@@ -572,7 +572,7 @@ EOF
 )
 ```
 
-The integration-auditor's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a strict git-read allowlist, and the read-only wood-fired-bugs MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/integration-auditor.md` for the enforced allowlist.
+The integration-auditor's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a strict git-read allowlist, and the read-only wood-fired-tasks MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/integration-auditor.md` for the enforced allowlist.
 
 **Bounds recap**: the integration-auditor MUST stay within **≤ 15 tool calls** and **≤ 3 minutes** wall-clock per overlap. Bounds are tighter than `tasks-verifier`'s because the audit scope is one file × two hunks. If the bound is exceeded, the auditor self-emits `RISKY` with a note that the bound was hit.
 
@@ -586,10 +586,10 @@ After every auditor returns (sequentially or in parallel — orchestrator's choi
 - **No BROKEN, ≥ 1 RISKY** (mix of SAFE + RISKY) → emit INTEGRATION-AUDIT.md. **Do NOT revert any tasks.** RISKY warnings are surfaced for human review; the loop run is NOT marked failed.
 - **≥ 1 BROKEN** → emit INTEGRATION-AUDIT.md AND execute the BROKEN-revert protocol:
 
-  1. For each task ID that appears in a BROKEN overlap, call `wood-fired-bugs:update_task` to flip it from `done` back to `in_progress`, **preserving** the verifier's PASS evidence (append an `integration_concern` note rather than replacing the existing `verification_evidence` object):
+  1. For each task ID that appears in a BROKEN overlap, call `wood-fired-tasks:update_task` to flip it from `done` back to `in_progress`, **preserving** the verifier's PASS evidence (append an `integration_concern` note rather than replacing the existing `verification_evidence` object):
 
      ```
-     wood-fired-bugs:update_task with id=<task_id>, updates={
+     wood-fired-tasks:update_task with id=<task_id>, updates={
        "status": "in_progress",
        "verification_evidence": {
          ...<existing PASS evidence>,
@@ -598,10 +598,10 @@ After every auditor returns (sequentially or in parallel — orchestrator's choi
      }
      ```
 
-  2. For each reverted task, call `wood-fired-bugs:add_comment` explaining the integration concern, citing the auditor's verdict and rationale:
+  2. For each reverted task, call `wood-fired-tasks:add_comment` explaining the integration concern, citing the auditor's verdict and rationale:
 
      ```
-     wood-fired-bugs:add_comment with task_id=<task_id>, author=<agent>, content=
+     wood-fired-tasks:add_comment with task_id=<task_id>, author=<agent>, content=
        "Integration auditor verdict: BROKEN.\n\nOverlap on `<file_path>` with task #<other_id>:\n<auditor rationale>\n\nReverting to in_progress. See INTEGRATION-AUDIT.md for the full evidence trail."
      ```
 

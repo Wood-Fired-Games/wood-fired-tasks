@@ -61,7 +61,7 @@ describe('RestClient', () => {
   //
   // The remote MCP server is a thin stdio→HTTP proxy: every incoming JSON-
   // RPC call becomes an outbound REST request. The auth header switches
-  // based on the WFB_API_KEY prefix so a single env var works for both
+  // based on the WFT_API_KEY prefix so a single env var works for both
   // legacy keys (`X-API-Key`) and PATs (`Authorization: Bearer`). Mirrors
   // the same precedent that Phase 30 Plan 05 wired into `src/cli/api/client.ts`.
 

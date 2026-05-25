@@ -12,7 +12,7 @@ Show high-level overview of all projects with task counts broken down by status 
 ## Process
 
 ### 1. Retrieve all projects
-Call `wood-fired-bugs:list_projects` with empty parameters to get all projects.
+Call `wood-fired-tasks:list_projects` with empty parameters to get all projects.
 
 ### 2. Check for project filter
 If $ARGUMENTS contains a project name or ID:
@@ -22,7 +22,7 @@ If $ARGUMENTS contains a project name or ID:
 ### 3. For each project, aggregate task data
 For every project returned:
 
-a. Call `wood-fired-bugs:list_tasks` with filter: { project_id: project.id }
+a. Call `wood-fired-tasks:list_tasks` with filter: { project_id: project.id }
 
 b. Group tasks by status:
 - Open

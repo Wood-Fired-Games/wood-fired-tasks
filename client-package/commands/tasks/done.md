@@ -17,7 +17,7 @@ Marks a task as complete by updating its status to `done`.
    - If missing or invalid, inform user: "Please provide a valid task ID"
 
 2. **Update task status**
-   - Call `wood-fired-bugs:update_task` with:
+   - Call `wood-fired-tasks:update_task` with:
      - `id`: task ID from step 1
      - `updates`: `{ "status": "done" }`
 

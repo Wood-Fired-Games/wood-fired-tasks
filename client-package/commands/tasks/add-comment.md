@@ -24,7 +24,7 @@ Adds a comment to a task with user-provided content.
    - Use `"user"` as the author placeholder
 
 4. **Add comment**
-   - Call `wood-fired-bugs:add_comment` with:
+   - Call `wood-fired-tasks:add_comment` with:
      - `task_id`: task ID from step 1
      - `author`: `"user"`
      - `content`: comment text from step 2

@@ -161,7 +161,7 @@ describe('agent-context manifest', () => {
     expect(onDisk.$schema_version).toBe('1');
     expect(onDisk._generated.by).toBe('scripts/agent-context/generate.ts');
     expect(typeof onDisk._generated.generated_at).toBe('string');
-    expect(onDisk.project.name).toBe('wood-fired-bugs');
+    expect(onDisk.project.name).toBe('wood-fired-tasks');
     expect(onDisk.project.first_read).toBe('AGENTS.md');
     expect(onDisk.project.contract).toBe('docs/AGENT_CONTEXT.md');
     expect(Array.isArray(onDisk.files)).toBe(true);

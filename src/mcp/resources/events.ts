@@ -49,7 +49,7 @@ GET ${apiUrl}/events
 
 ## Authentication
 
-Include API key in header. Replace \`<your-api-key>\` with the value you configured in \`WFB_API_KEY\` (or \`API_KEYS\` for local stdio).
+Include API key in header. Replace \`<your-api-key>\` with the value you configured in \`WFT_API_KEY\` (or \`API_KEYS\` for local stdio).
 \`\`\`
 X-API-Key: <your-api-key>
 \`\`\`
@@ -82,7 +82,7 @@ Server replays missed events from buffer (up to 1000 events or 5-minute window).
 
 ## Example with curl
 
-Replace \`<your-api-key>\` with the value you configured in \`WFB_API_KEY\` (or \`API_KEYS\` for local stdio).
+Replace \`<your-api-key>\` with the value you configured in \`WFT_API_KEY\` (or \`API_KEYS\` for local stdio).
 
 \`\`\`bash
 curl -N -H "X-API-Key: <your-api-key>" "${apiUrl}/events?project_id=1&event_types=task.created,task.updated"

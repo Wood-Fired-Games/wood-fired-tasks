@@ -38,7 +38,7 @@ import { isMain } from '../../utils/is-main.js';
 // Configure CLI program
 program
   .name('tasks')
-  .description('Wood Fired Bugs - Task management CLI')
+  .description('Wood Fired Tasks - Task management CLI')
   .version('1.0.0');
 
 // Global options must be registered before subcommands to inherit properly
@@ -131,7 +131,7 @@ export { program };
 // Guarded by isMain(import.meta.url) so that importing this module from a
 // test does NOT execute the CLI. The helper resolves symlinks (npm link /
 // npm install -g) which a raw string compare against process.argv[1] does
-// not — see src/utils/is-main.ts and wood-fired-bugs #334.
+// not — see src/utils/is-main.ts and wood-fired-tasks #334.
 if (isMain(import.meta.url)) {
   // Plan 30-05: top-level catch surfaces NotAuthenticatedError as the
   // friendly "Not authenticated. Run: tasks login" + exit 1 contract,

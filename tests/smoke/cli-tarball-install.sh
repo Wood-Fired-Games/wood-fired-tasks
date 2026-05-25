@@ -3,7 +3,7 @@
 # cli-tarball-install.sh — validate the CLI against the actual `npm pack`
 # tarball install (not against npm link's symlinked working tree).
 #
-# Background: wood-fired-bugs #335 (cli-symlink-smoke.sh) and #337
+# Background: wood-fired-tasks #335 (cli-symlink-smoke.sh) and #337
 # (cli-surface-coverage.sh) both validate the CLI against `npm link`, which
 # symlinks the entire working tree into the global node_modules. Any file
 # missing from package.json's `files` array still resolves through that
@@ -19,8 +19,8 @@
 # is the load-bearing assertion that proves we're hitting the packaged
 # dist/, not the dev tree's dist/.
 #
-# Acceptance criteria (wood-fired-bugs #338):
-#   1. `npm pack` produces wood-fired-bugs-X.Y.Z.tgz at repo root.
+# Acceptance criteria (wood-fired-tasks #338):
+#   1. `npm pack` produces wood-fired-tasks-X.Y.Z.tgz at repo root.
 #   2. `npm install --prefix <tmp> --omit=dev <tarball>` succeeds.
 #   3. `realpath $(which tasks)` resolves under <tmp>/node_modules/<pkg>/dist/.
 #   4. Smoke + per-command surface assertions pass against that binary.
@@ -140,7 +140,7 @@ echo "[tarball]   produced: ${tarball} (${tarball_size} bytes)"
 
 # ----- Step 2: clean install into a temp directory -----------------------------
 # `npm install --prefix <tmp> --omit=dev <tarball>` materialises the package
-# exactly as a real user `npm i -g wood-fired-bugs` would receive it. The
+# exactly as a real user `npm i -g wood-fired-tasks` would receive it. The
 # --omit=dev flag mirrors what global installs do by default and avoids
 # pulling devDependencies (and their many transitive packages).
 tmp="$(mktemp -d)"

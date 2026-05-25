@@ -7,7 +7,7 @@ disable-model-invocation: false
 
 # Log Bug Workflow
 
-Creates a high-priority bug task in the Wood Fired Bugs system.
+Creates a high-priority bug task in the Wood Fired Tasks system.
 
 ## Steps
 
@@ -16,12 +16,12 @@ Creates a high-priority bug task in the Wood Fired Bugs system.
    - Extract optional description from remaining $ARGUMENTS
 
 2. **Select Project**
-   - If no project specified, call `wood-fired-bugs:list_projects` to show available projects
+   - If no project specified, call `wood-fired-tasks:list_projects` to show available projects
    - Ask user to select project from list
    - Store selected project_id
 
 3. **Create Bug Task**
-   - Call `wood-fired-bugs:create_task` with:
+   - Call `wood-fired-tasks:create_task` with:
      - title: [parsed title]
      - description: [parsed description if provided]
      - priority: 'high' (always high for bugs)

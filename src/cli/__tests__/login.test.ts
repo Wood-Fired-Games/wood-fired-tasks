@@ -141,7 +141,7 @@ describe('tasks login (subprocess)', () => {
     expect(res.stderr).toContain('Logged in as Test User');
     expect(res.stderr).toContain('ABCD-EFGH'); // user_code rendered
 
-    const credPath = path.join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     expect(existsSync(credPath)).toBe(true);
     if (POSIX) {
       const mode = statSync(credPath).mode & 0o777;
@@ -205,7 +205,7 @@ describe('tasks login (subprocess)', () => {
 
     expect(res.exitCode).toBe(1);
     expect(res.stderr).toContain('Login link expired');
-    const credPath = path.join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     expect(existsSync(credPath)).toBe(false);
   });
 
@@ -235,7 +235,7 @@ describe('tasks login (subprocess)', () => {
       /Could not reach|Failed to start device flow|fetch failed/.test(combined),
     ).toBe(true);
     // And the credentials file MUST NOT exist.
-    const credPath = path.join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     expect(existsSync(credPath)).toBe(false);
   });
 
@@ -249,7 +249,7 @@ describe('tasks login (subprocess)', () => {
       { XDG_CONFIG_HOME: tmpDir },
     );
     expect(res.exitCode).toBe(0);
-    const credPath = path.join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     const body = readFileSync(credPath, 'utf8');
     const parsed = parse(body) as { active: { server: string } };
     expect(parsed.active.server).toBe(server.baseUrl);
@@ -340,7 +340,7 @@ describe('tasks login (subprocess)', () => {
 
     // Sanity: the token IS in the on-disk credentials file (so the test
     // isn't trivially passing because login wrote nothing).
-    const credPath = path.join(tmpDir, 'wood-fired-bugs', 'credentials');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     const body = readFileSync(credPath, 'utf8');
     expect(body).toContain(successEnvelope.token);
   });

@@ -7,7 +7,7 @@ loadConfig();
 import { createServer } from './server.js';
 
 /**
- * Production entry point for Wood Fired Bugs REST API
+ * Production entry point for Wood Fired Tasks REST API
  *
  * Features:
  * - Graceful shutdown on SIGTERM/SIGINT

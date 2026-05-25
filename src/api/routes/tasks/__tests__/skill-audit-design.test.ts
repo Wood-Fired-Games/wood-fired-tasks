@@ -132,13 +132,13 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
     expect(design.includes('MUST NOT mutate code')).toBe(true);
   });
 
-  it('guardrail 2 documented verbatim: MUST NOT call wood-fired-bugs update_task or add_comment', () => {
+  it('guardrail 2 documented verbatim: MUST NOT call wood-fired-tasks update_task or add_comment', () => {
     expect(
       design.includes(
-        'MUST NOT call wood-fired-bugs `update_task` or\n`add_comment`',
+        'MUST NOT call wood-fired-tasks `update_task` or\n`add_comment`',
       ) ||
         design.includes(
-          'MUST NOT call wood-fired-bugs `update_task` or `add_comment`',
+          'MUST NOT call wood-fired-tasks `update_task` or `add_comment`',
         ),
     ).toBe(true);
   });

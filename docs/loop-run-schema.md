@@ -1,6 +1,6 @@
 # LOOP-RUN.md Artifact Contract
 
-> **Status:** v1 (introduced by wood-fired-bugs task #313, milestone v1.7 work).
+> **Status:** v1 (introduced by wood-fired-tasks task #313, milestone v1.7 work).
 > **Companion files:** [`loop-run-schema.json`](./loop-run-schema.json) (Ajv-validatable JSON
 > schema for the frontmatter) and a reference example at
 > [`loop-run-reference-example.md`](./loop-run-reference-example.md). The reference
@@ -34,7 +34,7 @@ cost-attribution joins, replay, and downstream review.
   Claude Code session DB; this file *points* at them).
 - A code-review artifact (PR review notes belong on the PR; this file may
   surface integration concerns but does not replace human review).
-- A bug-database substitute — task lifecycle stays in wood-fired-bugs; the
+- A bug-database substitute — task lifecycle stays in wood-fired-tasks; the
   loop file is an immutable audit complement to that mutable state.
 
 ## 2. File Location Convention
@@ -51,7 +51,7 @@ cost-attribution joins, replay, and downstream review.
   emitter MUST use the *start* time of the run.
   - Canonical format: `YYYY-MM-DDTHH-MM-SSZ`
   - Example: `2026-05-23T20-20-13Z`
-- **project_id:** The wood-fired-bugs numeric project id the loop drained.
+- **project_id:** The wood-fired-tasks numeric project id the loop drained.
 - **slug (optional):** Append `-<slug>` when the file is a reference / synthetic
   example, e.g. `-reference`, `-replay`, `-dry-run`. Live runs SHOULD omit it.
 
@@ -69,7 +69,7 @@ delimited by `---` lines, and MUST appear first in the file.
 | Field | Type | Format / Units | Description | Example |
 |---|---|---|---|---|
 | `run_id` | string | UUIDv4 | Stable identifier minted by the orchestrator at run start; used to dedupe re-emissions. | `4ae2b18c-9c2f-4f7d-9b2c-1d5d8e3a55a0` |
-| `project_id` | integer | ≥ 1 | wood-fired-bugs project drained by this run. | `12` |
+| `project_id` | integer | ≥ 1 | wood-fired-tasks project drained by this run. | `12` |
 | `started_at` | string | RFC 3339 / ISO-8601 date-time, UTC | Orchestrator start time. | `2026-05-22T17:50:00Z` |
 | `ended_at` | string | RFC 3339 / ISO-8601 date-time, UTC | Orchestrator end time (last commit pushed). | `2026-05-22T22:18:43Z` |
 | `wall_seconds` | integer | ≥ 0, seconds | `ended_at - started_at` rounded down. Stored explicitly so consumers don't re-parse timestamps. | `16123` |
@@ -114,7 +114,7 @@ A markdown table, one row per attempted task, columns *in this order*:
 
 | Column | Type | Notes |
 |---|---|---|
-| `task_id` | integer | wood-fired-bugs task id (e.g. `293`) |
+| `task_id` | integer | wood-fired-tasks task id (e.g. `293`) |
 | `title` | string | Truncate to ≤ 100 chars with `…` if needed |
 | `verdict` | enum | `PASS` \| `FAIL` \| `PARTIAL` \| `NOT_VERIFIED` |
 | `evidence_link` | string | Relative path or URL to commit, PR, or test artifact |
@@ -240,7 +240,7 @@ Exactly four values are legal in the `verdict` column and in
 
 | Verdict | Meaning |
 |---|---|
-| `PASS` | All declared acceptance criteria met. Independent verifier confirmed via tests / build / runtime checks the loop has access to. Task is closed in wood-fired-bugs. |
+| `PASS` | All declared acceptance criteria met. Independent verifier confirmed via tests / build / runtime checks the loop has access to. Task is closed in wood-fired-tasks. |
 | `FAIL` | At least one acceptance criterion verifiably broken (failing test, build red, missing required artifact). Task is kept open or re-opened. |
 | `PARTIAL` | *Some* acceptance criteria met but not all. The work is real and may have landed in commits, but the task does **not** meet the bar to close. Use this when a fix addresses the headline issue but leaves a follow-up gap (e.g. test added but coverage regression on an adjacent path). |
 | `NOT_VERIFIED` | Could not be self-canaried in this run. Distinct from `PARTIAL`: the subagent's work *may* be correct, but the verification surface isn't reachable from the loop (e.g. a runtime canary requires a prod deploy, an external service is down, a Slack integration test needs a real workspace). Task SHOULD be kept open pending out-of-band verification. |

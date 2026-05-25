@@ -158,7 +158,7 @@ describe('MCP Server stdio compliance', () => {
 
       // Verify stderr contains startup message
       const stderr = stderrChunks.join('');
-      expect(stderr).toContain('Wood Fired Bugs MCP Server running on stdio');
+      expect(stderr).toContain('Wood Fired Tasks MCP Server running on stdio');
     }, 10000); // 10 second timeout for the test
   });
 });

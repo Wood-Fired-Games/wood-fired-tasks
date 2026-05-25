@@ -17,9 +17,9 @@ import { isMain } from '../../utils/is-main.js';
  * to the backend's REST API over HTTP.
  *
  * Required environment variables:
- *   WFB_API_URL  - Base URL of the REST API (e.g., http://localhost:3000
+ *   WFT_API_URL  - Base URL of the REST API (e.g., http://localhost:3000
  *                  or http://your-server.local:3000). Required — no default.
- *   WFB_API_KEY  - API key for authentication. Required.
+ *   WFT_API_KEY  - API key for authentication. Required.
  */
 
 /**
@@ -32,12 +32,12 @@ export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
   apiUrl: string;
   apiKey: string;
 } {
-  const apiUrl = env.WFB_API_URL;
-  const apiKey = env.WFB_API_KEY;
+  const apiUrl = env.WFT_API_URL;
+  const apiKey = env.WFT_API_KEY;
 
   if (!apiUrl || apiUrl.trim() === '') {
     throw new Error(
-      'WFB_API_URL must be set when running the remote MCP server ' +
+      'WFT_API_URL must be set when running the remote MCP server ' +
         '(e.g., http://localhost:3000 or http://your-server.local:3000). ' +
         'No default is provided to avoid silently connecting to the wrong host.'
     );
@@ -45,8 +45,8 @@ export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
 
   if (!apiKey || apiKey.trim() === '') {
     throw new Error(
-      'WFB_API_KEY must be set when running the remote MCP server. ' +
-        'Example: WFB_API_KEY=your-api-key-here'
+      'WFT_API_KEY must be set when running the remote MCP server. ' +
+        'Example: WFT_API_KEY=your-api-key-here'
     );
   }
 
@@ -70,7 +70,7 @@ async function main() {
 
   // Create MCP server (same name/version as local server)
   const server = new McpServer({
-    name: 'wood-fired-bugs',
+    name: 'wood-fired-tasks',
     version: '1.0.0',
   });
 
@@ -98,7 +98,7 @@ async function main() {
   await server.connect(transport);
 
   // Log to stderr (stdout reserved for JSON-RPC)
-  console.error('Wood Fired Bugs MCP Server (remote) running on stdio');
+  console.error('Wood Fired Tasks MCP Server (remote) running on stdio');
   console.error(`Connected to backend: ${apiUrl}`);
 }
 
@@ -115,7 +115,7 @@ process.on('unhandledRejection', (reason) => {
 
 // Only auto-start when executed directly (node dist/mcp/remote/index.js),
 // not when imported by unit tests. isMain() resolves symlinks so this works
-// under `npm link` / `npm install -g` — see wood-fired-bugs #334.
+// under `npm link` / `npm install -g` — see wood-fired-tasks #334.
 if (isMain(import.meta.url)) {
   main().catch((error) => {
     console.error('Fatal error during remote MCP startup:', error);

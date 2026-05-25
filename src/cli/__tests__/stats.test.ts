@@ -1,7 +1,7 @@
 /**
  * In-process tests for src/cli/commands/stats.ts (task #249).
  *
- * Boots a real Wood Fired Bugs database via createApp(':memory:'), but writes
+ * Boots a real Wood Fired Tasks database via createApp(':memory:'), but writes
  * to a temp file so the command's own better-sqlite3 constructor can open it.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

@@ -1,5 +1,5 @@
 /**
- * Regression guard for wood-fired-bugs #334.
+ * Regression guard for wood-fired-tasks #334.
  *
  * `src/cli/bin/tasks.ts` exports `program` so that tests can drive
  * `program.parseAsync(...)` themselves. The module's bottom `if (isMain(...))`

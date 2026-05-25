@@ -1,10 +1,10 @@
 @echo off
 setlocal
 
-REM Wood Fired Bugs client setup wrapper.
+REM Wood Fired Tasks client setup wrapper.
 REM
 REM Preferred (key never appears on a command line):
-REM   set WFB_API_KEY=...
+REM   set WFT_API_KEY=...
 REM   setup.bat
 REM   setup.bat http://192.0.2.100:3000
 REM
@@ -31,25 +31,25 @@ if not "%~1"=="" (
         exit /b %ERRORLEVEL%
     )
     echo [WARN] Passing the API key as a positional argument is DEPRECATED.
-    echo [WARN] Set WFB_API_KEY in the environment or let setup.ps1 prompt for it.
+    echo [WARN] Set WFT_API_KEY in the environment or let setup.ps1 prompt for it.
     powershell -ExecutionPolicy Bypass -File "%~dp0setup.ps1" -ApiKey "%~1"
     exit /b %ERRORLEVEL%
 )
 
-REM Zero-arg form: hand off to setup.ps1. It will pick up WFB_API_KEY from
+REM Zero-arg form: hand off to setup.ps1. It will pick up WFT_API_KEY from
 REM the environment, fall back to the per-user secret file, then prompt.
 powershell -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
 exit /b %ERRORLEVEL%
 
 :two_args
 echo [WARN] Passing the API key as a positional argument is DEPRECATED.
-echo [WARN] Set WFB_API_KEY in the environment or let setup.ps1 prompt for it.
+echo [WARN] Set WFT_API_KEY in the environment or let setup.ps1 prompt for it.
 powershell -ExecutionPolicy Bypass -File "%~dp0setup.ps1" -ApiKey "%~1" -ServerUrl "%~2"
 exit /b %ERRORLEVEL%
 
 :show_help
 echo Usage:
-echo   set WFB_API_KEY=...
+echo   set WFT_API_KEY=...
 echo   setup.bat                          ^(uses env / secret file / prompt^)
 echo   setup.bat ^<SERVER_URL^>             ^(same, with custom server URL^)
 echo.

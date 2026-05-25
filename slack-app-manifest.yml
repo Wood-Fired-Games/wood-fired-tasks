@@ -1,12 +1,12 @@
 _metadata:
   major_version: 1
 display_information:
-  name: Wood Fired Bugs
+  name: Wood Fired Tasks
   description: Task tracker for Wood Fired Games
   background_color: "#d94f00"
 features:
   bot_user:
-    display_name: Wood Fired Bugs
+    display_name: Wood Fired Tasks
     always_online: true
   slash_commands:
     - command: /tasks

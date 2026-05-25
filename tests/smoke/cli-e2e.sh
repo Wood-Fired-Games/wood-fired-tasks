@@ -3,7 +3,7 @@
 # cli-e2e.sh — end-to-end functional smoke for the published `tasks` CLI
 # against a real REST API + SQLite DB.
 #
-# Background: wood-fired-bugs #335 (cli-symlink-smoke), #337
+# Background: wood-fired-tasks #335 (cli-symlink-smoke), #337
 # (cli-surface-coverage), and #338 (cli-tarball-install) prove that the
 # CLI's *surface* renders correctly — --version, --help, per-command --help,
 # and the published tarball shape. None of them prove that a command
@@ -12,7 +12,7 @@
 # (#339) closes that gap with a CLI → REST API → SQLite → CLI round-trip
 # against a real server bound to an ephemeral DB.
 #
-# Acceptance criteria (wood-fired-bugs #339):
+# Acceptance criteria (wood-fired-tasks #339):
 #   1. Install the package from `npm pack` (same shape as #338) into a
 #      tmpdir; prepend its .bin to PATH.
 #   2. Start the REST API server in the background with DATABASE_PATH
@@ -90,8 +90,8 @@ fi
 
 # ----- pick an ephemeral port + secrets ----------------------------------------
 # Default to 14310 (matches the orchestrator brief). Caller can override via
-# WFB_E2E_PORT — useful if 14310 is occupied on a dev box.
-port="${WFB_E2E_PORT:-14310}"
+# WFT_E2E_PORT — useful if 14310 is occupied on a dev box.
+port="${WFT_E2E_PORT:-14310}"
 api_url="http://127.0.0.1:${port}"
 
 # API_KEYS doubles as the seed for the legacy user. The server's
@@ -254,7 +254,7 @@ echo "[e2e] step 1: start server (port=${port}, db=${tmp_db})"
 if curl -fsS "${api_url}/health" -o /dev/null 2>/dev/null; then
   echo "ERROR: ${api_url}/health is already serving 200 before we started." >&2
   echo "       A stale server is bound to port ${port}. Kill it or set" >&2
-  echo "       WFB_E2E_PORT to a free port and retry." >&2
+  echo "       WFT_E2E_PORT to a free port and retry." >&2
   exit 1
 fi
 

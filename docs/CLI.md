@@ -2,7 +2,7 @@
 
 Agents: start at [`AGENTS.md`](../AGENTS.md); the full read-order contract is in [`docs/AGENT_CONTEXT.md`](AGENT_CONTEXT.md).
 
-Complete command-line interface reference for Wood Fired Bugs.
+Complete command-line interface reference for Wood Fired Tasks.
 
 **Binary:** `tasks`
 

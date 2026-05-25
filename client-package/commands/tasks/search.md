@@ -13,7 +13,7 @@ Search for tasks matching a keyword in titles and descriptions.
    - Required: at least 1 character
    - If missing or empty, display error: "Error: Search keyword required"
 
-2. Call `wood-fired-bugs:list_tasks` with filter parameter:
+2. Call `wood-fired-tasks:list_tasks` with filter parameter:
    - filter: { search: keyword }
    - This searches across both title and description fields
 

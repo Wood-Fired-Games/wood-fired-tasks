@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wood Fired Bugs - In-Place Application Upgrade
+# Wood Fired Tasks - In-Place Application Upgrade
 #
-# Refreshes the deployed app artefacts at $WFB_INSTALL_DIR with the contents
+# Refreshes the deployed app artefacts at $WFT_INSTALL_DIR with the contents
 # of the current source tree's dist/. Runs DB migrations. Restarts the
 # systemd service. Polls /health. Prints an exact manual-rollback recipe if
 # the health probe fails.
 #
 # Run as root or with sudo (the script re-execs with sudo if invoked
 # unprivileged). Sudo is needed for systemctl stop|start and to write into
-# $WFB_INSTALL_DIR when it is owned by the service user.
+# $WFT_INSTALL_DIR when it is owned by the service user.
 #
 # Prerequisites:
 #   - deploy/install.sh has already run on this host (service user exists,
-#     $WFB_INSTALL_DIR exists, systemd unit installed)
+#     $WFT_INSTALL_DIR exists, systemd unit installed)
 #   - The source tree has been built (npm ci && npm run build) so dist/ is
 #     present and newer than src/
-#   - Node.js available on PATH (or set $WFB_NODE_BIN to an absolute path).
+#   - Node.js available on PATH (or set $WFT_NODE_BIN to an absolute path).
 #     The script uses whichever node the invoking shell resolves so the
 #     better-sqlite3 native binding ABI matches the systemd service.
 #
@@ -25,11 +25,11 @@ set -euo pipefail
 # guard so the operator can recover from any failure point):
 #   1. Pre-flight: refuse to run if ./dist/ is missing or older than ./src/
 #   2. Back up data/tasks.db + .db-wal + .db-shm to
-#      $WFB_INSTALL_DIR/backups/pre-deploy-<UTC>.db[*]
+#      $WFT_INSTALL_DIR/backups/pre-deploy-<UTC>.db[*]
 #   3. Back up the live dist/ to
-#      $WFB_INSTALL_DIR/backups/dist-pre-deploy-<UTC>/
+#      $WFT_INSTALL_DIR/backups/dist-pre-deploy-<UTC>/
 #   4. Stop the systemd service
-#   5. Replace $WFB_INSTALL_DIR/dist with a clean copy of ./dist
+#   5. Replace $WFT_INSTALL_DIR/dist with a clean copy of ./dist
 #   6. Copy package.json + package-lock.json
 #   7. npm ci --omit=dev in the install dir
 #   8. node dist/db/migrate.js (NOT npm run migrate -- tsx is dev-only)
@@ -39,16 +39,16 @@ set -euo pipefail
 #      no automatic rollback in v1 -- migrations make it risky.
 #
 # Configurable env vars:
-#   WFB_INSTALL_DIR   Install path     (default: /opt/wood-fired-bugs)
-#   WFB_SERVICE_NAME  systemd unit     (default: wood-fired-bugs)
-#   WFB_NODE_BIN      Absolute node path; overrides PATH lookup and the
+#   WFT_INSTALL_DIR   Install path     (default: /opt/wood-fired-tasks)
+#   WFT_SERVICE_NAME  systemd unit     (default: wood-fired-tasks)
+#   WFT_NODE_BIN      Absolute node path; overrides PATH lookup and the
 #                     systemd ExecStart fallback. Use only when neither
 #                     `command -v node` nor `systemctl cat` resolves the
 #                     right node (e.g. unusual nvm setups before the
 #                     systemd unit is installed).
 
-INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
-SERVICE_NAME="${WFB_SERVICE_NAME:-wood-fired-bugs}"
+INSTALL_DIR="${WFT_INSTALL_DIR:-/opt/wood-fired-tasks}"
+SERVICE_NAME="${WFT_SERVICE_NAME:-wood-fired-tasks}"
 SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -56,33 +56,33 @@ TS="$(date -u +%Y%m%dT%H%M%SZ)"
 # The migrate step and npm ci must run under the same Node version the
 # systemd service uses, or the better-sqlite3 native binding ABI mismatches
 # and the service fails to boot. Priority:
-#   1. $WFB_NODE_BIN (operator override).
+#   1. $WFT_NODE_BIN (operator override).
 #   2. `command -v node` from the invoking shell's PATH (the usual case --
-#      sudo's PATH reset is handled by exporting WFB_NODE_BIN below before
+#      sudo's PATH reset is handled by exporting WFT_NODE_BIN below before
 #      the re-exec).
 #   3. ExecStart= line of the installed systemd unit (only useful for in-
 #      place upgrades where install.sh has already run).
-NODE_BIN="${WFB_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+NODE_BIN="${WFT_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
   NODE_BIN="$(systemctl cat "$SERVICE_NAME" 2>/dev/null \
     | awk -F= '/^ExecStart=/{split($2,a," "); print a[1]; exit}' || true)"
 fi
 if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
   echo "ERROR: no usable node binary found." >&2
-  echo "Either install node so it's on PATH, or set WFB_NODE_BIN=/path/to/node." >&2
+  echo "Either install node so it's on PATH, or set WFT_NODE_BIN=/path/to/node." >&2
   exit 1
 fi
-export WFB_NODE_BIN="$NODE_BIN"
+export WFT_NODE_BIN="$NODE_BIN"
 NODE_DIR="$(dirname "$NODE_BIN")"
 
-# Re-exec under sudo if not root. Preserves env vars so WFB_* survive.
-# WFB_NODE_BIN is preserved so the post-sudo run uses the same node the
+# Re-exec under sudo if not root. Preserves env vars so WFT_* survive.
+# WFT_NODE_BIN is preserved so the post-sudo run uses the same node the
 # pre-sudo PATH lookup resolved (sudo strips PATH by default).
 if [ "$(id -u)" -ne 0 ]; then
-  exec sudo --preserve-env=WFB_INSTALL_DIR,WFB_SERVICE_NAME,WFB_NODE_BIN "$0" "$@"
+  exec sudo --preserve-env=WFT_INSTALL_DIR,WFT_SERVICE_NAME,WFT_NODE_BIN "$0" "$@"
 fi
 
-echo "=== Wood Fired Bugs Upgrade ==="
+echo "=== Wood Fired Tasks Upgrade ==="
 echo "Source dir  : $SOURCE_DIR"
 echo "Install dir : $INSTALL_DIR"
 echo "Service     : $SERVICE_NAME"

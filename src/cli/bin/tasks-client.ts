@@ -35,7 +35,7 @@ import { whoamiCommand } from '../commands/whoami.js';
 
 program
   .name('tasks')
-  .description('Wood Fired Bugs - Task management CLI (remote client)')
+  .description('Wood Fired Tasks - Task management CLI (remote client)')
   .version('1.0.0');
 
 program.option('--json', 'Output as JSON (machine-readable)');

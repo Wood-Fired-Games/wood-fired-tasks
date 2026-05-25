@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wood Fired Bugs - SQLite Database Backup
+# Wood Fired Tasks - SQLite Database Backup
 # Uses sqlite3 .backup command (transaction-safe, handles WAL mode correctly)
 # Do NOT use file copy (cp) -- risks corruption in WAL mode (see research pitfall #2)
 #
 # Usage: ./backup-sqlite.sh [db_path] [backup_dir]
-# Defaults: ${WFB_INSTALL_DIR}/data/tasks.db -> ${WFB_INSTALL_DIR}/backups/
+# Defaults: ${WFT_INSTALL_DIR}/data/tasks.db -> ${WFT_INSTALL_DIR}/backups/
 #
 # Configurable env vars (see deploy/README.md):
-#   WFB_INSTALL_DIR   Install path  (default: /opt/wood-fired-bugs)
+#   WFT_INSTALL_DIR   Install path  (default: /opt/wood-fired-tasks)
 
-INSTALL_DIR="${WFB_INSTALL_DIR:-/opt/wood-fired-bugs}"
+INSTALL_DIR="${WFT_INSTALL_DIR:-/opt/wood-fired-tasks}"
 DB_PATH="${1:-${INSTALL_DIR}/data/tasks.db}"
 BACKUP_DIR="${2:-${INSTALL_DIR}/backups}"
 RETENTION_DAYS=30

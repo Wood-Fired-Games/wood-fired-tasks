@@ -9,7 +9,7 @@ import type { Project } from '../../../types/task.js';
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 1,
-    name: 'Wood Fired Bugs',
+    name: 'Wood Fired Tasks',
     description: 'Bug tracking for wood-fired games',
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-02-01T00:00:00.000Z',

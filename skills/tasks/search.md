@@ -9,13 +9,13 @@ Search for tasks matching a keyword in titles and descriptions.
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shorthand `wood-fired-bugs:<tool>`; harness tool names are `mcp__wood-fired-bugs__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-bugs__list_tasks`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_tasks`) and retry.
 
 ## Workflow
 
 1. **Parse `$ARGUMENTS`** — the first positional token is the keyword; remaining tokens are flags:
    - `--limit N` (optional integer, max 200, default 50). On an invalid value: "Error: --limit must be an integer between 1 and 200".
-   - `--project <name-or-id>` (optional). Scopes the search to one project. If numeric or `#`-prefixed → treat as project ID. Otherwise → case-insensitive partial match against project names (call `wood-fired-bugs:list_projects` and pick the unique match; if 0 or >1 match: error).
+   - `--project <name-or-id>` (optional). Scopes the search to one project. If numeric or `#`-prefixed → treat as project ID. Otherwise → case-insensitive partial match against project names (call `wood-fired-tasks:list_projects` and pick the unique match; if 0 or >1 match: error).
    - `--all` (optional flag). Bypasses the 3-character minimum below.
 
 2. **Validate keyword length** — minimum 3 characters unless `--all` is set.
@@ -25,7 +25,7 @@ This skill calls tools on the `wood-fired-bugs` MCP server. The doc uses shortha
 
 3. **Build filter** — `{ search: keyword, limit: <limit>, project_id?: <project-id> }`. The `limit` is the resolved cap (user's `--limit` value or 50 default). When `--project` was given as a name, substitute the resolved ID from step 1.
 
-4. **Call** `wood-fired-bugs:list_tasks` with the filter built in step 3.
+4. **Call** `wood-fired-tasks:list_tasks` with the filter built in step 3.
 
 5. **Format search results** — for each matching task:
    - Task ID

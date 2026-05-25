@@ -2,7 +2,7 @@
 
 For repository structure and agent-context entry, see [`AGENTS.md`](AGENTS.md).
 
-We take the security of wood-fired-bugs seriously. This document explains
+We take the security of wood-fired-tasks seriously. This document explains
 which versions receive security fixes, how to report a vulnerability, and
 what is in scope.
 
@@ -26,7 +26,7 @@ verify the current latest release via
 
 **Preferred:** open a private report via GitHub Security Advisories:
 
-  https://github.com/Wood-Fired-Games/wood-fired-bugs/security/advisories/new
+  https://github.com/Wood-Fired-Games/wood-fired-tasks/security/advisories/new
 
 **Fallback:** email `security@woodfiredgames.com` with steps to reproduce,
 affected version/commit, and the impact you observed. Please do not file
@@ -94,7 +94,7 @@ Issues we will prioritize include, but are not limited to:
   bypassing the admin-key check on write endpoints or escalating
   read-only access to write access on either MCP transport.
 
-Thank you for helping keep wood-fired-bugs and its users safe.
+Thank you for helping keep wood-fired-tasks and its users safe.
 
 ## Authentication Architecture
 
@@ -128,7 +128,7 @@ immediately on the next request — there is no cache.
 
 The PAT prefix (`wfb_pat_`) is part of the wire format: the remote MCP
 server and the CLI HTTP client switch their auth header based on the
-prefix, so the same env var (`WFB_API_KEY` for MCP, `API_KEY` for CLI)
+prefix, so the same env var (`WFT_API_KEY` for MCP, `API_KEY` for CLI)
 transparently accepts a PAT or a legacy key.
 
 ### Session lifecycle

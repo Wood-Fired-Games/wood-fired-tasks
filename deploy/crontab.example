@@ -1,12 +1,12 @@
-# Wood Fired Bugs - Automated Daily Backup
-# Install with: sudo -u "${WFB_SERVICE_USER:-wood-fired-bugs}" crontab -e
+# Wood Fired Tasks - Automated Daily Backup
+# Install with: sudo -u "${WFT_SERVICE_USER:-wood-fired-tasks}" crontab -e
 # Then paste the line below (the service user, not root, owns the schedule).
 #
 # Schedule: Daily at 2:00 AM
-# Logs: Appended to /var/log/wood-fired-bugs-backup.log
+# Logs: Appended to /var/log/wood-fired-tasks-backup.log
 #
 # To verify cron is running: crontab -l
-# To check backup logs: tail -20 /var/log/wood-fired-bugs-backup.log
-# To list backups: ls -lh /opt/wood-fired-bugs/backups/
+# To check backup logs: tail -20 /var/log/wood-fired-tasks-backup.log
+# To list backups: ls -lh /opt/wood-fired-tasks/backups/
 
-0 2 * * * /opt/wood-fired-bugs/deploy/backup-sqlite.sh >> /var/log/wood-fired-bugs-backup.log 2>&1
+0 2 * * * /opt/wood-fired-tasks/deploy/backup-sqlite.sh >> /var/log/wood-fired-tasks-backup.log 2>&1

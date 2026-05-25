@@ -20,7 +20,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
   },
   "info": {
     "description": "Task management REST API for Wood Fired Games. Designed for LLM agent consumption.",
-    "title": "Wood Fired Bugs API",
+    "title": "Wood Fired Tasks API",
     "version": "<pinned>",
   },
   "openapi": "3.0.3",

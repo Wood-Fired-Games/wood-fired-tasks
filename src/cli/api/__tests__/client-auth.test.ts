@@ -42,7 +42,7 @@ const sampleCreds: Credentials = {
 
 function snapshotEnv() {
   return {
-    WFB_CREDENTIALS_PATH: process.env.WFB_CREDENTIALS_PATH,
+    WFT_CREDENTIALS_PATH: process.env.WFT_CREDENTIALS_PATH,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
     API_KEY: process.env.API_KEY,
   };
@@ -59,7 +59,7 @@ beforeEach(() => {
   origEnv = snapshotEnv();
   tmpDir = mkdtempSync(join(tmpdir(), 'wfb-auth-'));
   // Route every test's credentials file into the per-test tmp dir.
-  process.env.WFB_CREDENTIALS_PATH = join(tmpDir, 'credentials');
+  process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'credentials');
   delete process.env.API_KEY;
   setTokenOverride(null);
   vi.restoreAllMocks();

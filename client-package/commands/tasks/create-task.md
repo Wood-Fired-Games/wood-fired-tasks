@@ -7,7 +7,7 @@ disable-model-invocation: false
 
 # Create Task Workflow
 
-Creates a new task in the Wood Fired Bugs system with full configuration options.
+Creates a new task in the Wood Fired Tasks system with full configuration options.
 
 ## Steps
 
@@ -18,7 +18,7 @@ Creates a new task in the Wood Fired Bugs system with full configuration options
 
    Ask user for or extract from context:
 
-   - **project**: Use `wood-fired-bugs:list_projects` to show available projects if not specified
+   - **project**: Use `wood-fired-tasks:list_projects` to show available projects if not specified
    - **priority**: Default 'medium'. Valid values: low, medium, high, urgent
    - **assignee**: Optional. If not specified, leave unset
    - **description**: Optional. If not specified, leave unset
@@ -28,7 +28,7 @@ Creates a new task in the Wood Fired Bugs system with full configuration options
 
 3. **Create Task**
 
-   Call `wood-fired-bugs:create_task` with all gathered parameters:
+   Call `wood-fired-tasks:create_task` with all gathered parameters:
    - title: [parsed title]
    - description: [if provided]
    - priority: [selected priority, default 'medium']

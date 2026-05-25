@@ -1,7 +1,7 @@
-# Wood Fired Bugs - Client Setup
+# Wood Fired Tasks - Client Setup
 
 This package gives any developer on the local network full access to the
-Wood Fired Bugs task management system via Claude Code and the `tasks` CLI.
+Wood Fired Tasks task management system via Claude Code and the `tasks` CLI.
 
 Once set up, you get:
 - **10 `/tasks:*` slash commands** in Claude Code (`/tasks:create-task`, `/tasks:my-work`, etc.)
@@ -14,7 +14,7 @@ Once set up, you get:
 
 - **Node.js 18+** installed — [download from nodejs.org](https://nodejs.org/)
 - **Claude Code** installed — [claude.ai/claude-code](https://claude.ai/claude-code)
-- Network access to the backend server (default: `http://localhost:3000` — override with `--server-url` or `WFB_API_URL` to target a remote host like `http://your-server.local:3000`)
+- Network access to the backend server (default: `http://localhost:3000` — override with `--server-url` or `WFT_API_URL` to target a remote host like `http://your-server.local:3000`)
 - Your API key (ask the server admin)
 
 ---
@@ -23,10 +23,10 @@ Once set up, you get:
 
 The setup scripts resolve the API key in this order (most secure first):
 
-1. `WFB_API_KEY` environment variable
+1. `WFT_API_KEY` environment variable
 2. Per-user secret file
-   - Windows: `%LOCALAPPDATA%\wood-fired-bugs\api-key` (user-only ACL)
-   - Linux / Mac: `~/.config/wood-fired-bugs/api-key` (mode 600)
+   - Windows: `%LOCALAPPDATA%\wood-fired-tasks\api-key` (user-only ACL)
+   - Linux / Mac: `~/.config/wood-fired-tasks/api-key` (mode 600)
 3. Masked interactive prompt
 4. `--api-key` / `-ApiKey` / positional CLI argument — **deprecated**. Command-line
    secrets leak through shell history (`~/.bash_history`, PowerShell `ConsoleHost_history.txt`)
@@ -42,7 +42,7 @@ env var, no prompt, no argv.
 Set the env var, then run with no key on argv:
 
 ```powershell
-$env:WFB_API_KEY = "your-api-key-here"
+$env:WFT_API_KEY = "your-api-key-here"
 .\setup.bat
 ```
 
@@ -61,7 +61,7 @@ setup.bat http://192.0.2.100:3000
 PowerShell direct form:
 
 ```powershell
-$env:WFB_API_KEY = "your-api-key-here"
+$env:WFT_API_KEY = "your-api-key-here"
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
@@ -74,7 +74,7 @@ Set the env var, then run with no key on argv:
 
 ```bash
 chmod +x setup.sh
-WFB_API_KEY="your-api-key-here" ./setup.sh
+WFT_API_KEY="your-api-key-here" ./setup.sh
 ```
 
 Or let setup.sh prompt:
@@ -86,7 +86,7 @@ Or let setup.sh prompt:
 With a custom server URL:
 
 ```bash
-WFB_API_KEY="your-api-key-here" ./setup.sh --server-url "http://192.0.2.100:3000"
+WFT_API_KEY="your-api-key-here" ./setup.sh --server-url "http://192.0.2.100:3000"
 ```
 
 > **Deprecated** (key on argv leaks): `./setup.sh --api-key "your-api-key-here"`.
@@ -208,17 +208,17 @@ If still not found, check that the `bin` directory inside this package is on you
 
 ### Test the MCP server manually
 
-The MCP server requires `WFB_API_URL` (no default — set it to your backend, e.g. `http://localhost:3000` or `http://your-server.local:3000`). To test:
+The MCP server requires `WFT_API_URL` (no default — set it to your backend, e.g. `http://localhost:3000` or `http://your-server.local:3000`). To test:
 
 **Windows (PowerShell):**
 ```powershell
-$env:WFB_API_KEY = (Get-Content "$env:LOCALAPPDATA\wood-fired-bugs\api-key").Trim()
+$env:WFT_API_KEY = (Get-Content "$env:LOCALAPPDATA\wood-fired-tasks\api-key").Trim()
 node ".\mcp-server\dist\mcp\remote\index.js"
 ```
 
 **Linux/Mac:**
 ```bash
-WFB_API_KEY="$(cat ~/.config/wood-fired-bugs/api-key)" \
+WFT_API_KEY="$(cat ~/.config/wood-fired-tasks/api-key)" \
   node ./mcp-server/dist/mcp/remote/index.js
 ```
 
@@ -228,7 +228,7 @@ history. If you must, prefix the command with a space (most shells with
 
 Expected output (to stderr):
 ```
-Wood Fired Bugs MCP Server (remote) running on stdio
+Wood Fired Tasks MCP Server (remote) running on stdio
 Connected to backend: http://localhost:3000
 ```
 
@@ -237,7 +237,7 @@ Press Ctrl+C to exit.
 ### MCP server not found in Claude Code
 
 1. Restart Claude Code after running setup
-2. Run `claude mcp list` and confirm `wood-fired-bugs` appears with status `✓ Connected`
+2. Run `claude mcp list` and confirm `wood-fired-tasks` appears with status `✓ Connected`
 3. If missing, re-register manually. Read the key from the cached secret file
    so it never appears on the command line:
 
@@ -247,18 +247,18 @@ Press Ctrl+C to exit.
 
    **Linux/Mac:**
    ```bash
-   claude mcp add wood-fired-bugs --scope user \
-     -e WFB_API_URL=http://localhost:3000 \
-     -e WFB_API_KEY="$(cat ~/.config/wood-fired-bugs/api-key)" \
+   claude mcp add wood-fired-tasks --scope user \
+     -e WFT_API_URL=http://localhost:3000 \
+     -e WFT_API_KEY="$(cat ~/.config/wood-fired-tasks/api-key)" \
      -- node /absolute/path/to/mcp-server/dist/mcp/remote/index.js
    ```
 
    **Windows (PowerShell):**
    ```powershell
-   $key = (Get-Content "$env:LOCALAPPDATA\wood-fired-bugs\api-key").Trim()
-   claude mcp add wood-fired-bugs --scope user `
-     -e WFB_API_URL=http://localhost:3000 `
-     -e WFB_API_KEY=$key `
+   $key = (Get-Content "$env:LOCALAPPDATA\wood-fired-tasks\api-key").Trim()
+   claude mcp add wood-fired-tasks --scope user `
+     -e WFT_API_URL=http://localhost:3000 `
+     -e WFT_API_KEY=$key `
      -- node C:\path\to\mcp-server\dist\mcp\remote\index.js
    ```
 
@@ -283,7 +283,7 @@ You should see 10 `.md` files. If missing, re-run the setup script.
 ```
 Your Machine                               Linux Backend
 ┌──────────────────────────────────┐       ┌──────────────────────┐
-│                                  │       │  Wood Fired Bugs      │
+│                                  │       │  Wood Fired Tasks      │
 │  tasks CLI ─────────────────────────────>│  REST API             │
 │  (tasks list, tasks show, etc.)  │ HTTP  │  :3000                │
 │                                  │       │                        │
@@ -308,12 +308,12 @@ restricted to your user account:
 
 | Path | Access | Purpose |
 |------|--------|---------|
-| `~/.config/wood-fired-bugs/api-key` (Linux/Mac) | mode 600, owner-only | Source of truth read by the `tasks` CLI wrapper and re-runs of `setup.sh` |
-| `%LOCALAPPDATA%\wood-fired-bugs\api-key` (Windows) | user-only ACL via `icacls` | Same as above; the generated `tasks.cmd` reads from here at runtime |
+| `~/.config/wood-fired-tasks/api-key` (Linux/Mac) | mode 600, owner-only | Source of truth read by the `tasks` CLI wrapper and re-runs of `setup.sh` |
+| `%LOCALAPPDATA%\wood-fired-tasks\api-key` (Windows) | user-only ACL via `icacls` | Same as above; the generated `tasks.cmd` reads from here at runtime |
 | `~/.claude.json` (Linux/Mac mode 600, Windows user-only ACL) | restricted by setup | MCP server env block consumed by Claude Code |
 
 The Windows `tasks.cmd` wrapper does **not** embed the key as a literal
-`set API_KEY=...` line. It reads `WFB_API_KEY` from the per-user secret file
+`set API_KEY=...` line. It reads `WFT_API_KEY` from the per-user secret file
 at each invocation. This means an attacker who can read your `%PATH%` cannot
 exfiltrate the key — they would need access to your `%LOCALAPPDATA%` directory,
 which is already protected by the user-only ACL.

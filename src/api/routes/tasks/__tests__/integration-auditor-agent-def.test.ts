@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
  *
  * The agent definition's frontmatter `tools:` line is the enforced read-only
  * tool surface — the load-bearing safety property of the auditor. If a future
- * edit silently adds Edit/Write or a mutating wood-fired-bugs MCP tool to the
+ * edit silently adds Edit/Write or a mutating wood-fired-tasks MCP tool to the
  * frontmatter, the auditor could mutate the working tree or the bugs database
  * during composition analysis, which would defeat its purpose as an
  * independent grader.
@@ -66,12 +66,12 @@ describe('skills/agents/integration-auditor.md — frontmatter + body contract (
     expect(toolsLine).toMatch(/\bBash\b/);
   });
 
-  it('tools: INCLUDES the read-only wood-fired-bugs MCP tool get_task', () => {
-    expect(toolsLine).toMatch(/mcp__wood-fired-bugs__get_task/);
+  it('tools: INCLUDES the read-only wood-fired-tasks MCP tool get_task', () => {
+    expect(toolsLine).toMatch(/mcp__wood-fired-tasks__get_task/);
   });
 
-  it('tools: INCLUDES the read-only wood-fired-bugs MCP tool list_tasks', () => {
-    expect(toolsLine).toMatch(/mcp__wood-fired-bugs__list_tasks/);
+  it('tools: INCLUDES the read-only wood-fired-tasks MCP tool list_tasks', () => {
+    expect(toolsLine).toMatch(/mcp__wood-fired-tasks__list_tasks/);
   });
 
   // ----- NEGATIVE: every mutating tool MUST be excluded -----
@@ -92,19 +92,19 @@ describe('skills/agents/integration-auditor.md — frontmatter + body contract (
     expect(toolsLine).not.toMatch(/\bNotebookEdit\b/);
   });
 
-  it('tools: EXCLUDES every mutating wood-fired-bugs MCP tool', () => {
+  it('tools: EXCLUDES every mutating wood-fired-tasks MCP tool', () => {
     const mutators = [
-      'mcp__wood-fired-bugs__update_task',
-      'mcp__wood-fired-bugs__claim_task',
-      'mcp__wood-fired-bugs__add_comment',
-      'mcp__wood-fired-bugs__create_task',
-      'mcp__wood-fired-bugs__create_project',
-      'mcp__wood-fired-bugs__delete_task',
-      'mcp__wood-fired-bugs__delete_project',
-      'mcp__wood-fired-bugs__delete_comment',
-      'mcp__wood-fired-bugs__update_project',
-      'mcp__wood-fired-bugs__add_dependency',
-      'mcp__wood-fired-bugs__remove_dependency',
+      'mcp__wood-fired-tasks__update_task',
+      'mcp__wood-fired-tasks__claim_task',
+      'mcp__wood-fired-tasks__add_comment',
+      'mcp__wood-fired-tasks__create_task',
+      'mcp__wood-fired-tasks__create_project',
+      'mcp__wood-fired-tasks__delete_task',
+      'mcp__wood-fired-tasks__delete_project',
+      'mcp__wood-fired-tasks__delete_comment',
+      'mcp__wood-fired-tasks__update_project',
+      'mcp__wood-fired-tasks__add_dependency',
+      'mcp__wood-fired-tasks__remove_dependency',
     ];
     for (const tool of mutators) {
       expect(toolsLine).not.toContain(tool);

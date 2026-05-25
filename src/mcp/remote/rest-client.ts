@@ -39,7 +39,7 @@ const PAT_PREFIX = 'wfb_pat_';
 /**
  * REST API client for the remote MCP server.
  *
- * Wraps HTTP calls to the Wood Fired Bugs REST API.
+ * Wraps HTTP calls to the Wood Fired Tasks REST API.
  * Uses native fetch (Node 18+) with a 10-second timeout. The auth header
  * is chosen based on the apiKey prefix (Phase 31 Plan 03 Task 3, MCP-01):
  *

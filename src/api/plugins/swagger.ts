@@ -17,7 +17,7 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
   await fastify.register(fastifySwagger, {
     openapi: {
       info: {
-        title: 'Wood Fired Bugs API',
+        title: 'Wood Fired Tasks API',
         description: 'Task management REST API for Wood Fired Games. Designed for LLM agent consumption.',
         version: '1.0.0',
       },

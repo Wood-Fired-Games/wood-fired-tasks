@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Wood Fired Bugs - Claude Code Skills Installer (Windows PowerShell)
+# Wood Fired Tasks - Claude Code Skills Installer (Windows PowerShell)
 # Installs skill files and configures MCP server integration
 
 [CmdletBinding()]
@@ -40,12 +40,12 @@ $SkillsDest = Join-Path $env:USERPROFILE ".claude" "commands" "tasks"
 # install.sh. Missing or empty directory is logged + skipped, never fatal.
 $SkillsAgentSource = Join-Path $ScriptDir "skills" "agents"
 $SkillsAgentDest = Join-Path $env:USERPROFILE ".claude" "agents"
-$ServiceUrl = if ($env:WOOD_FIRED_BUGS_URL) { $env:WOOD_FIRED_BUGS_URL } else { "http://localhost:3000" }
+$ServiceUrl = if ($env:WOOD_FIRED_TASKS_URL) { $env:WOOD_FIRED_TASKS_URL } else { "http://localhost:3000" }
 
 # Per-user secret file for the API key. Stored under LOCALAPPDATA so it
 # stays on the local machine (not roamed) and inherits a user-only ACL once
 # we lock it down with icacls.
-$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-bugs" } else { Join-Path $env:USERPROFILE ".wood-fired-bugs" }
+$SecretDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "wood-fired-tasks" } else { Join-Path $env:USERPROFILE ".wood-fired-tasks" }
 $SecretFile = Join-Path $SecretDir "api-key"
 
 # Restrict the ACL on a file to the current user only.
@@ -64,7 +64,7 @@ function Set-UserOnlyAcl {
 }
 
 try {
-    Write-Host "`n[INFO] Wood Fired Bugs Claude Code Installer" -ForegroundColor Cyan
+    Write-Host "`n[INFO] Wood Fired Tasks Claude Code Installer" -ForegroundColor Cyan
     Write-Host "=" * 60 -ForegroundColor Cyan
 
     # ============================================================================
@@ -99,16 +99,16 @@ try {
     # Determine the MCP server name we'd install under. Local and remote
     # modes use different keys so both can coexist in ~/.claude.json.
     if ($Mode -eq 'local') {
-        $serverName = 'wood-fired-bugs'
+        $serverName = 'wood-fired-tasks'
     } else {
-        $serverName = 'wood-fired-bugs-remote'
+        $serverName = 'wood-fired-tasks-remote'
     }
 
     # Count any explicit user intent to change configuration. Presence (not
     # value) is what matters here — if the user supplied an env var or flag,
     # they are signalling "please reconfigure this".
-    $urlFromEnv    = [bool]$env:WOOD_FIRED_BUGS_URL
-    $apiKeyFromEnv = [bool]$env:WOOD_FIRED_BUGS_API_KEY
+    $urlFromEnv    = [bool]$env:WOOD_FIRED_TASKS_URL
+    $apiKeyFromEnv = [bool]$env:WOOD_FIRED_TASKS_API_KEY
     $anyExplicit   = $script:ModeExplicit -or $urlFromEnv -or $script:ApiKeyFromArgv -or $apiKeyFromEnv
 
     # Inspect the existing config (if any) for an entry matching $serverName.
@@ -135,8 +135,8 @@ try {
         } elseif (-not $anyExplicit) {
             $script:PreserveExisting = $true
             Write-Host "[OK] Existing '$serverName' MCP entry detected — preserving it (no flags supplied)." -ForegroundColor Green
-            Write-Host "[INFO] Re-run with -Force, or with explicit -Mode/-ApiKey/`$env:WOOD_FIRED_BUGS_URL/" -ForegroundColor Yellow
-            Write-Host "       `$env:WOOD_FIRED_BUGS_API_KEY, to intentionally change the entry." -ForegroundColor Yellow
+            Write-Host "[INFO] Re-run with -Force, or with explicit -Mode/-ApiKey/`$env:WOOD_FIRED_TASKS_URL/" -ForegroundColor Yellow
+            Write-Host "       `$env:WOOD_FIRED_TASKS_API_KEY, to intentionally change the entry." -ForegroundColor Yellow
         } else {
             Write-Host ""
             Write-Host "[WARN] An MCP entry for '$serverName' is already configured in ${ConfigFile}:" -ForegroundColor Yellow
@@ -177,10 +177,10 @@ try {
         $ApiKey = $null
     } elseif ($Mode -eq 'local') {
         # Local mode: silently ignore any API-key inputs. The local MCP server
-        # reads DATABASE_PATH and never reads WFB_API_KEY /
-        # WOOD_FIRED_BUGS_API_KEY, so keeping a key in ~/.claude.json would
+        # reads DATABASE_PATH and never reads WFT_API_KEY /
+        # WOOD_FIRED_TASKS_API_KEY, so keeping a key in ~/.claude.json would
         # be dead weight (and a leak surface). Task #258.
-        if ($script:ApiKeyFromArgv -or $env:WOOD_FIRED_BUGS_API_KEY) {
+        if ($script:ApiKeyFromArgv -or $env:WOOD_FIRED_TASKS_API_KEY) {
             Write-Host "[INFO] Ignoring API key input — local mode does not use one." -ForegroundColor Yellow
         }
         $ApiKey = $null
@@ -190,15 +190,15 @@ try {
         if ($script:ApiKeyFromArgv) {
             Write-Host "[WARN] -ApiKey on the command line is DEPRECATED." -ForegroundColor Yellow
             Write-Host "[WARN] Command-line secrets leak via shell history and process listings (Get-Process,wmic)." -ForegroundColor Yellow
-            Write-Host "[WARN] Prefer the WOOD_FIRED_BUGS_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
+            Write-Host "[WARN] Prefer the WOOD_FIRED_TASKS_API_KEY env var, the secret file ($SecretFile)," -ForegroundColor Yellow
             Write-Host "[WARN] or the interactive prompt. This flag will be removed in a future release." -ForegroundColor Yellow
         }
 
         # Resolution order: -ApiKey > env > secret file > interactive prompt
         if (-not $ApiKey) {
-            if ($env:WOOD_FIRED_BUGS_API_KEY) {
-                $ApiKey = $env:WOOD_FIRED_BUGS_API_KEY
-                Write-Host "[INFO] Using API key from WOOD_FIRED_BUGS_API_KEY environment variable" -ForegroundColor Yellow
+            if ($env:WOOD_FIRED_TASKS_API_KEY) {
+                $ApiKey = $env:WOOD_FIRED_TASKS_API_KEY
+                Write-Host "[INFO] Using API key from WOOD_FIRED_TASKS_API_KEY environment variable" -ForegroundColor Yellow
             } elseif (Test-Path $SecretFile) {
                 # Only honor the secret file if it isn't accessible to anyone except the current user.
                 $acl = Get-Acl $SecretFile
@@ -218,7 +218,7 @@ try {
                 }
             }
             if (-not $ApiKey) {
-                $secureKey = Read-Host "Enter Wood Fired Bugs API key" -AsSecureString
+                $secureKey = Read-Host "Enter Wood Fired Tasks API key" -AsSecureString
                 $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
                 try {
                     $ApiKey = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
@@ -345,7 +345,7 @@ try {
         $config = Get-Content $ConfigFile -Raw | ConvertFrom-Json
 
         # Build new server config — local writes only DATABASE_PATH, remote writes
-        # WFB_API_URL + WFB_API_KEY under a separate server name so both can
+        # WFT_API_URL + WFT_API_KEY under a separate server name so both can
         # coexist. Task #258.
         #
         # Use absolute paths for args + DATABASE_PATH. Claude Code's MCP config
@@ -366,8 +366,8 @@ try {
                 command = "node"
                 args = @((Join-Path $ScriptDir 'dist/mcp/remote/index.js'))
                 env = [PSCustomObject]@{
-                    WFB_API_URL = $ServiceUrl
-                    WFB_API_KEY = $ApiKey
+                    WFT_API_URL = $ServiceUrl
+                    WFT_API_KEY = $ApiKey
                 }
             }
         }
@@ -426,7 +426,7 @@ try {
     if ($script:PreserveExisting) {
         Write-Host "  - API key:      Untouched (existing entry preserved)"
     } elseif ($Mode -eq 'remote') {
-        Write-Host "  - API key:      Configured in MCP environment (WFB_API_KEY)"
+        Write-Host "  - API key:      Configured in MCP environment (WFT_API_KEY)"
     } else {
         Write-Host "  - API key:      Not used in local mode"
     }

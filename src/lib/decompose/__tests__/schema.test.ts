@@ -26,7 +26,7 @@ const VALID_FRONTMATTER: DecompositionFrontmatter = {
   decomposition_id: '7c1a0b9e-f8c2-4d7b-9d2e-3c8a0f1d4a55',
   project_id: 15,
   generated_at: '2026-05-23T20:20:13Z',
-  goal: 'Ship OIDC SSO for the wood-fired-bugs Slack app so internal users can authenticate via Google Workspace.',
+  goal: 'Ship OIDC SSO for the wood-fired-tasks Slack app so internal users can authenticate via Google Workspace.',
   success_criteria: [
     'Slack OAuth flow accepts a Google-issued OIDC token',
     'Session middleware re-uses the existing fastify cookie store',

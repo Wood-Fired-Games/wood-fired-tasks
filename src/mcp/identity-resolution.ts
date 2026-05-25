@@ -10,22 +10,22 @@
  *
  * Resolution precedence — mirrors the auth chain (PAT first, then legacy):
  *
- *   1. `WFB_API_KEY` starts with `wfb_pat_` → SHA-256 hash + lookup in
+ *   1. `WFT_API_KEY` starts with `wfb_pat_` → SHA-256 hash + lookup in
  *      `api_tokens`. The token MUST be unrevoked, unexpired, AND owned by
  *      a non-disabled user (matches REST PAT strategy). Otherwise the
- *      resolver fails closed unless `WFB_MCP_ALLOW_BAD_PAT=1` is set, in
+ *      resolver fails closed unless `WFT_MCP_ALLOW_BAD_PAT=1` is set, in
  *      which case it falls back to mcp-bot with a distinguishing path tag
  *      (`pat-revoked-fallback`, `pat-unknown-fallback`,
  *      `pat-expired-fallback`, or `pat-user-disabled-fallback`).
  *
- *   2. `WFB_API_KEY` is any other non-empty string → treat as a legacy key.
+ *   2. `WFT_API_KEY` is any other non-empty string → treat as a legacy key.
  *      SHA-256-compare its hash against every entry from `parseApiKeyEntries(
  *      API_KEYS)`. On a match, look up the legacy `users` row by
  *      `display_name = entry.label` (`is_legacy = 1`). On a miss, or if the
  *      resolved user is disabled, fall through to the service-account
  *      fallback.
  *
- *   3. No `WFB_API_KEY` set → resolve the seeded `mcp-bot` service-account
+ *   3. No `WFT_API_KEY` set → resolve the seeded `mcp-bot` service-account
  *      row via `userRepository.findServiceAccountByName('mcp-bot')`.
  *
  * If even the service-account fallback fails (mcp-bot not seeded), the
@@ -34,11 +34,11 @@
  * error here is the right boot-time failure (MCP cannot operate without an
  * actor identity).
  *
- * Fail-closed PAT default (Phase 31 review WR-02): when WFB_API_KEY is a
+ * Fail-closed PAT default (Phase 31 review WR-02): when WFT_API_KEY is a
  * PAT but the token is unknown/revoked/expired or its owning user is
  * disabled, the resolver throws by default. Operators wanting the legacy
  * silent fallback (e.g. to keep an MCP subprocess alive during a deliberate
- * key rotation) opt back in by setting `WFB_MCP_ALLOW_BAD_PAT=1`. This
+ * key rotation) opt back in by setting `WFT_MCP_ALLOW_BAD_PAT=1`. This
  * prevents a revoked PAT from being silently demoted to mcp-bot and
  * masking a kill-signal.
  *
@@ -46,7 +46,7 @@
  *   - All DB I/O is via the better-sqlite3 prepared statements on the
  *     repositories (sync by design).
  *   - No env reads inside the function — the caller passes
- *     `process.env.WFB_API_KEY` and the parsed `API_KEYS` entries (and
+ *     `process.env.WFT_API_KEY` and the parsed `API_KEYS` entries (and
  *     optionally pre-computed `hashedEntries` from `precomputeHashedEntries`,
  *     plus the `allowBadPat` opt-in flag).
  *   - No log writes. The boot path in `src/mcp/index.ts` logs the resolved
@@ -66,7 +66,7 @@ import { precomputeHashedEntries } from '../api/plugins/auth/strategies/legacy.j
 import { hashToken, PAT_PREFIX } from '../services/pat-hash.js';
 
 export interface ResolveActorUserIdInput {
-  /** Raw `process.env.WFB_API_KEY`, possibly undefined. */
+  /** Raw `process.env.WFT_API_KEY`, possibly undefined. */
   apiKey: string | undefined;
   apiTokenRepo: ApiTokenRepository;
   userRepo: UserRepository;
@@ -100,7 +100,7 @@ export interface ResolveActorUserIdInput {
    * `false` (default), those classes throw so a revoked PAT cannot
    * silently be demoted to the mcp-bot service account.
    *
-   * Source in production: `process.env.WFB_MCP_ALLOW_BAD_PAT === '1'`,
+   * Source in production: `process.env.WFT_MCP_ALLOW_BAD_PAT === '1'`,
    * read once by the caller and passed in.
    */
   allowBadPat?: boolean;
@@ -211,10 +211,10 @@ export function resolveActorUserIdWithPath(
             : 'pat-user-disabled-fallback';
     if (!allowBadPat) {
       throw new Error(
-        `MCP boot: WFB_API_KEY is a PAT but the token is ${reject} ` +
+        `MCP boot: WFT_API_KEY is a PAT but the token is ${reject} ` +
           `(${fallbackPath}). Refusing fallback to mcp-bot. ` +
-          `Either rotate the PAT, unset WFB_API_KEY, or override with ` +
-          `WFB_MCP_ALLOW_BAD_PAT=1.`,
+          `Either rotate the PAT, unset WFT_API_KEY, or override with ` +
+          `WFT_MCP_ALLOW_BAD_PAT=1.`,
       );
     }
     return {
@@ -262,7 +262,7 @@ export function resolveActorUserIdWithPath(
     };
   }
 
-  // Path 3: WFB_API_KEY unset (or empty). Fall back unconditionally.
+  // Path 3: WFT_API_KEY unset (or empty). Fall back unconditionally.
   return {
     actorUserId: resolveMcpBotOrThrow(userRepo),
     path: 'service-account-fallback',

@@ -99,11 +99,11 @@ function seedCredentials(
     logged_in_at?: string;
   },
 ): string {
-  const dir = path.join(tmpDir, 'wood-fired-bugs');
+  const dir = path.join(tmpDir, 'wood-fired-tasks');
   mkdirSync(dir, { recursive: true });
   const credPath = path.join(dir, 'credentials');
   const body =
-    '# Wood Fired Bugs CLI credentials. Created by `tasks login`.\n' +
+    '# Wood Fired Tasks CLI credentials. Created by `tasks login`.\n' +
     '# Do NOT commit this file to version control.\n\n' +
     '[active]\n' +
     `token = "${active.token}"\n` +
