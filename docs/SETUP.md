@@ -145,6 +145,16 @@ SESSION_COOKIE_NAME=wft_session
 Rotating it invalidates every active session immediately — every user
 must log in again.
 
+[CRITICAL] The session cookie is marked `secure` only when
+`NODE_ENV=production` (`src/api/server.ts` — the secure-session
+registration sets `secure: config.NODE_ENV === 'production'`). A `secure`
+cookie is never sent by the browser over plain HTTP, so in production the
+browser/OIDC login flow **must** run behind HTTPS — even on a LAN.
+Terminate TLS at a reverse proxy (or run the server with HTTPS) before
+visiting `/auth/login`; otherwise the session cookie is dropped and login
+silently loops back to the login page. In `development`/`test` the cookie
+is non-`secure`, so plain `http://localhost` works.
+
 ### 4. (Optional) Set the legacy sunset date
 
 The server stamps `Deprecation: true` + `Sunset: <date>` headers on every
@@ -185,6 +195,29 @@ the `WFT_API_KEY` env var in MCP and CLI clients (the REST client switches
 to `Authorization: Bearer …` automatically when the value starts with
 `wft_pat_`). See [`SECURITY.md`](../SECURITY.md) →
 **Authentication Architecture** for the full chain.
+
+[WARNING] **PATs have NO default expiry.** The `api_tokens.expires_at`
+column is nullable (migration `008-identity-tables.ts`) and is written
+`NULL` unless you pass `--expires-at`. A token minted without that flag
+is valid indefinitely until it is explicitly revoked. Set an expiry at
+mint time with an ISO-8601 timestamp:
+
+```bash
+# Mint a PAT that auto-expires. --expires-at takes an ISO-8601 instant.
+node dist/cli/bin/tasks.js db mint-token \
+  --user you@example.com --name ci-runner \
+  --expires-at 2027-05-22T00:00:00Z
+```
+
+**Rotation & revocation.** Because non-expiring tokens never lapse on
+their own, rotate long-lived PATs on a schedule: mint a replacement,
+switch the consumer to the new value, then revoke the old one. Revoke a
+token from the web UI (`/me` → your token list → revoke), or self-revoke
+the token a CLI client is currently using via `tasks logout` (which calls
+`DELETE /api/v1/me/tokens/active`). Revocation stamps `revoked_at` and the
+token stops authenticating immediately; setting `--expires-at` at mint
+time bounds the blast radius if a token is ever leaked and missed during
+rotation.
 
 ### 7. Migrating from an `API_KEYS`-only deployment
 
@@ -768,7 +801,7 @@ Tests include:
 Interactive API documentation is available at:
 
 ```
-http://localhost:3000/documentation
+http://localhost:3000/docs
 ```
 
 [NOTE] Swagger UI is available in both development and production. Use it to explore endpoints, view schemas, and test API calls with authentication.
@@ -801,7 +834,7 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `REQUEST_TIMEOUT` | no | `60000` (ms) | Fastify `requestTimeout`. |
 | `KEEP_ALIVE_TIMEOUT` | no | `10000` (ms) | Fastify `keepAliveTimeout`. |
 | `WAL_CHECKPOINT_INTERVAL_MS` | no | `900000` (15 min) | Interval for the periodic SQLite WAL checkpoint job. |
-| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag to expose `/documentation` and `/documentation/json` when `NODE_ENV=production`. Gated by the auth plugin when enabled (task #185). |
+| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag to expose `/docs` and `/docs/json` when `NODE_ENV=production`. Gated by the auth plugin when enabled (task #185). |
 | `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-API-key cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
 | `SSE_MAX_CONNECTIONS_PER_IP` | no | `8` | Per-IP cap on concurrent SSE connections. |
 | `SSE_MAX_CONNECTIONS` | no | `200` | Global cap on concurrent SSE connections. |
