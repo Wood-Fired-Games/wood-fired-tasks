@@ -137,3 +137,4 @@ Source-of-truth code is in `src/`. Everything else is regenerated or installed:
 | Release | [`docs/RELEASE.md`](RELEASE.md) |
 | Architecture | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Surface inventory | [`docs/INTERFACES.md`](INTERFACES.md) |
+| Troubleshooting / recovery | [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |

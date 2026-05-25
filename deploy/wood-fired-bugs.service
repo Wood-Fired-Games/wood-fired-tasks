@@ -1,7 +1,17 @@
 [Unit]
 Description=Wood Fired Bugs Task Tracker
-After=network.target
-StartLimitBurst=3
+# Order after network-online.target (not just network.target) so that, when OIDC
+# is enabled, discovery to the IdP has real connectivity at boot. With only
+# network.target the service can start before the network is actually up; OIDC
+# discovery then fails ("fetch failed"), the app exits 78/CONFIG, and it
+# crash-loops past StartLimitBurst and latches `failed`. Requires
+# NetworkManager-wait-online.service (or systemd-networkd-wait-online.service)
+# to be enabled — see deploy/README.md.
+After=network-online.target
+Wants=network-online.target
+# Allow a few transient failures before latching `failed` (e.g. a slow-coming
+# network on a cold boot) rather than giving up after 3.
+StartLimitBurst=5
 StartLimitIntervalSec=60
 
 [Service]
