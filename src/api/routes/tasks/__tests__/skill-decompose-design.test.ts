@@ -363,11 +363,16 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
   // Cost cap — $5 checkpoint (run continues) + $15 hard halt (cost_cap_hit).
   // -------------------------------------------------------------------------
 
-  it('skill encodes the $5 soft checkpoint (run continues) and the $15 hard cap halt', () => {
-    expect(skill.includes('$5')).toBe(true);
-    expect(skill.includes('$15')).toBe(true);
+  it('skill encodes the 5 USD soft checkpoint (run continues) and the 15 USD hard cap halt', () => {
+    // The skill body must NOT carry a literal `$5`/`$15`: those are captured
+    // by argument substitution at skill-load time (`$5` → 5th positional arg)
+    // and render corrupted. The cost figures are written as USD instead.
+    expect(skill.includes('$5')).toBe(false);
+    expect(skill.includes('$15')).toBe(false);
+    expect(/5 ?USD/.test(skill)).toBe(true);
+    expect(/15 ?USD/.test(skill)).toBe(true);
     expect(skill.includes('cost_cap_hit')).toBe(true);
-    // $5 = checkpoint/continue; $15 = halt. Both semantics present.
+    // 5 USD = checkpoint/continue; 15 USD = halt. Both semantics present.
     expect(/checkpoint/i.test(skill)).toBe(true);
     expect(/HALT|halt/.test(skill)).toBe(true);
   });
