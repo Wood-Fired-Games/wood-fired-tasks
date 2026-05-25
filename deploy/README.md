@@ -72,6 +72,32 @@ sudo systemctl reset-failed wood-fired-tasks && sudo systemctl start wood-fired-
 
 See [`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md) for the full recovery runbook.
 
+## Network exposure (HOST binding)
+
+The shipped env template (`wood-fired-tasks.env.example`) sets
+`HOST=127.0.0.1`, and the runtime default is the same. This keeps the server
+**loopback-only**: it is reachable only from the host it runs on, so a fresh
+deploy is never accidentally exposed on every network interface. This is the
+recommended posture for production.
+
+To serve clients on other machines, do **not** simply flip the bind to
+`0.0.0.0`. Instead:
+
+- **Front the service with a reverse proxy** (e.g. nginx or Caddy) on the same
+  host. The proxy listens on `:443`/`:80`, terminates TLS, and forwards to the
+  loopback-bound app at `127.0.0.1:3000`. The app itself stays on loopback —
+  nothing else needs to change in `.env`.
+- **Restrict access with a firewall.** Allow only the proxy's listening ports
+  (and only from trusted networks) via `ufw`, `nftables`, or your cloud
+  security groups. The app port (`3000`) should never be open to untrusted
+  networks.
+
+Only if you have a specific reason to bind the app directly to the LAN —
+**and** you have the reverse proxy and firewall above in place — uncomment the
+`HOST=0.0.0.0` example in the env template (or set a specific LAN IP, e.g.
+`HOST=10.0.0.5`). Binding `0.0.0.0` without a firewall exposes the task tracker
+on every interface, including any public one.
+
 ## Custom install path or service user
 
 Export the env vars before invoking `install.sh`. They are propagated through
