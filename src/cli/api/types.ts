@@ -208,4 +208,14 @@ export interface HealthResponse {
   checks: {
     database: 'ok' | 'failed';
   };
+  /**
+   * Present on the authenticated /health/detailed response: which DB file the
+   * service opened plus a cheap fingerprint, so a wrong/stale DB is obvious.
+   */
+  database?: {
+    path: string;
+    projects: number;
+    maxTaskId: number | null;
+    latestActivity: string | null;
+  };
 }

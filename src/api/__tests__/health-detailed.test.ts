@@ -74,6 +74,15 @@ describe('Authenticated /health/detailed', () => {
     expect(typeof body.stats.eventBus.listenerCount).toBe('number');
     expect(typeof body.stats.sseManager.clientCount).toBe('number');
     expect(typeof body.stats.sseManager.uptime).toBe('number');
+
+    // DB fingerprint (task #354): which DB this process opened + cheap counts,
+    // so a wrong/stale DB is obvious. Authenticated-only — never on public /health.
+    expect(body.database).toBeDefined();
+    expect(typeof body.database.path).toBe('string');
+    expect(body.database.path.length).toBeGreaterThan(0);
+    expect(typeof body.database.projects).toBe('number');
+    expect(body.database).toHaveProperty('maxTaskId');
+    expect(body.database).toHaveProperty('latestActivity');
   });
 
   it('responds with application/json content-type', async () => {

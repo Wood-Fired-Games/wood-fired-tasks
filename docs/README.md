@@ -33,6 +33,7 @@ This directory holds the reference and agent-facing docs for `wood-fired-bugs`. 
 |------|---------|
 | [`SETUP.md`](SETUP.md) | Local setup, environment variables, install paths. |
 | [`RELEASE.md`](RELEASE.md) | Release process and pre-publish checks. |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Operator recovery runbook: boot failures, wrong/stale DB, safe backup/restore. |
 
 ### Quality
 

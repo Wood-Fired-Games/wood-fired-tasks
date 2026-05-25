@@ -275,6 +275,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'docs/TROUBLESHOOTING.md',
+    role: 'runbook',
+    purpose:
+      'Operator symptom→cause→fix recovery runbook: service boot failures (OIDC / network-online ordering), wrong or stale database via the local MCP variant, and how to identify the live DB and back up / restore safely.',
+    when_to_read: 'on-demand',
+    line_budget: 250,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/CODE_QUALITY_ROADMAP.md',
     role: 'deep-doc',
     purpose: 'Code quality roadmap and current baseline.',

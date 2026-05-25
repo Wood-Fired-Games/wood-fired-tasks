@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-24T18:24:02.519Z",
+    "generated_at": "2026-05-25T11:59:32.295Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 93,
-      "sha256": "4962455c473d06f2447785ce4a509f8c4c38cbbf28f68cda797d621779016450",
+      "actual_lines": 94,
+      "sha256": "1e1e862daec03b5bb299cc8bbf1ba75b63543744c4107cd264395e2656df1165",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -106,8 +106,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 6000,
-      "actual_lines": 139,
-      "sha256": "d6ff60010373a9df37bd44bcc82f46240c73ea092b222bf0462962228ca55ef9",
+      "actual_lines": 140,
+      "sha256": "4fee8c26ba12fc9cccd70fc950e287a7ecb64b4175ea046a489487a5932ecfea",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 879,
-      "sha256": "c24cf173aac0c6a717b53014c8bdad4907bdbccdcb2c44dcbeb7cf271510beba"
+      "actual_lines": 927,
+      "sha256": "2d9ef6a7155125bc1654703cf628ef3b183508597466f6a2c1ee73f221270379"
     },
     {
       "path": "docs/CLI.md",
@@ -191,6 +191,20 @@
       "approx_token_budget": 12000,
       "actual_lines": 210,
       "sha256": "1d9b98cbe50ced31023eec668ff5d2e959c7dd8b4480907b5662db6c95793e0c"
+    },
+    {
+      "path": "docs/TROUBLESHOOTING.md",
+      "role": "runbook",
+      "purpose": "Operator symptom→cause→fix recovery runbook: service boot failures (OIDC / network-online ordering), wrong or stale database via the local MCP variant, and how to identify the live DB and back up / restore safely.",
+      "when_to_read": "on-demand",
+      "line_budget": 250,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 5000,
+      "actual_lines": 105,
+      "sha256": "65e03ddaaa6c8ba1e68e48fca8f4e8e52888bf7aa83f13b24159a1f42dad46c8",
+      "actual_owner": "Repository maintainers"
     },
     {
       "path": "docs/CODE_QUALITY_ROADMAP.md",
@@ -259,8 +273,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1800,
-      "actual_lines": 48,
-      "sha256": "a1849770f38426479dc4c1bf4a0c1d547b972664614f07ef96e9dc59a12b06dd",
+      "actual_lines": 49,
+      "sha256": "31e9f202e5d15bf2511acd640a16a7985ca59c489a8701efae118413ce4aa88d",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -288,7 +302,7 @@
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
       "actual_lines": 619,
-      "sha256": "ec464176e95e961bff2d753160b74eee605ddb222c180bfe57e41e8d8453a924"
+      "sha256": "7d34810495e19eed1b10011f4d03d3130f88ea6104321ab9ba1a6f981efac9ba"
     },
     {
       "path": "SECURITY.md",

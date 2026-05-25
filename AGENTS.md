@@ -86,6 +86,7 @@ Treat these as off-limits unless your task explicitly requires touching them.
 | [docs/INTERFACES.md](docs/INTERFACES.md) | Inventory of REST routes, MCP tools, CLI commands (counts verified by CI) |
 | [docs/NAVIGATION.md](docs/NAVIGATION.md) | Task-oriented "if you want to do X, read these files" index |
 | [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Repeatable onboarding smoke test (scripted + manual) |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Operator recovery runbook: boot failures, wrong/stale DB, safe backup/restore |
 | [.agent-context.json](.agent-context.json) | Machine-readable manifest of the files above |
 
 ## Vendor neutrality
