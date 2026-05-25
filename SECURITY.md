@@ -75,9 +75,11 @@ We will:
 
 Issues we will prioritize include, but are not limited to:
 
-- Authentication or authorization bypass on any endpoint, including
-  bypassing the `X-API-Key` check, the admin-key check on write
-  endpoints, or the SSE auth path.
+- Authentication bypass on any endpoint — reaching a `/api/v1` route
+  without a valid PAT, session, or `X-API-Key` credential, or bypassing
+  the SSE auth path. (Note: there is no separate authorization layer to
+  bypass — see "Authentication Is Not Authorization" below. Any valid
+  credential is already full-access.)
 - Secrets exposure (API keys, Slack tokens, `.env` leakage, log
   scrubbing gaps in pino redaction, Slack signing-secret disclosure).
 - SQL injection or FTS5 injection in task/comment/project queries
@@ -89,10 +91,12 @@ Issues we will prioritize include, but are not limited to:
   take unintended action.
 - Signature-verification bypass on the Slack webhook / events endpoint,
   or replay of signed Slack requests.
-- Anything that allows unauthenticated mutation of tasks, projects,
-  comments, dependencies, or Slack channel subscriptions — including
-  bypassing the admin-key check on write endpoints or escalating
-  read-only access to write access on either MCP transport.
+- Anything that allows **unauthenticated** mutation of tasks, projects,
+  comments, dependencies, or Slack channel subscriptions — i.e. mutating
+  state without presenting any valid credential, or escalating
+  read-only access to write access on either MCP transport. (Mutation by
+  an *authenticated* identity is by design — every credential is
+  full-access; see "Authentication Is Not Authorization".)
 
 Thank you for helping keep wood-fired-tasks and its users safe.
 
@@ -118,13 +122,30 @@ machine credential; session is the recommended user credential.
 ### PAT lifecycle
 
 PATs are minted from a logged-in `/me` web session **or** offline via the
-CLI (`tasks db mint-token`, see [`docs/CLI.md`](docs/CLI.md)). The raw
-token value is shown **once at mint time** — the database only stores a
-SHA-256 hash, so a lost PAT cannot be recovered (only re-minted). PATs
-have no expiry; revocation is explicit via the `/me` UI, the
-`DELETE /me/tokens/:id` endpoint, or `tasks logout` (revokes the active
-PAT and removes the local credentials file). Revoked PATs are rejected
-immediately on the next request — there is no cache.
+CLI (`tasks db mint-token --user <id|email|displayName> --name <label>`,
+see [`docs/CLI.md`](docs/CLI.md)). The raw token value is shown **once at
+mint time** — the database only stores a SHA-256 hash, so a lost PAT
+cannot be recovered (only re-minted).
+
+**PATs have no default expiry.** The `api_tokens.expires_at` column is
+nullable and is left `NULL` unless you explicitly pass
+`--expires-at <ISO-8601>` at mint time (e.g.
+`tasks db mint-token --user alice@example.com --name ci-runner --expires-at 2027-05-22T00:00:00Z`).
+A token with a NULL `expires_at` is valid until it is revoked. Because a
+non-expiring credential never rotates itself, operators are responsible
+for hygiene:
+
+- **Rotate** by minting a replacement PAT (with a fresh `--expires-at`),
+  deploying it, then revoking the old one — one PAT per machine/agent so a
+  rotation never disturbs unrelated clients.
+- **Revoke** explicitly via the `/me` UI, the `DELETE /me/tokens/:id`
+  endpoint, or `tasks logout` (revokes the active PAT and removes the
+  local credentials file). Revoked PATs are rejected immediately on the
+  next request — there is no cache.
+- **Set an expiry** on every new PAT (`--expires-at`) so credentials age
+  out even if a manual revocation is forgotten. The expiry is enforced by
+  the PAT auth strategy: once `expires_at` is in the past the token fails
+  with `reasonCode: expired`.
 
 The PAT prefix (`wft_pat_`) is part of the wire format: the remote MCP
 server and the CLI HTTP client switch their auth header based on the
@@ -139,11 +160,23 @@ claims. The cookie:
 
 - Uses `SESSION_COOKIE_SECRET` (32 bytes, generated via
   `openssl rand -base64 32`) as the sodium sealed-box key.
-- Has `maxAge=8h`, `httpOnly=true`, `sameSite=lax`, and
-  `secure=true` in production (`NODE_ENV=production`).
+- Has `maxAge=8h`, `httpOnly=true`, and `sameSite=lax`.
+- Sets the `secure` attribute **only when `NODE_ENV=production`**
+  (`src/api/server.ts` — `secure: config.NODE_ENV === 'production'`).
 - Has **no DB-side sessions table** — the cookie is self-contained.
   Rotating `SESSION_COOKIE_SECRET` invalidates every active session
   immediately because the existing cookies can no longer be decrypted.
+
+> **Run production behind HTTPS — even on a LAN.** Because the cookie is
+> flagged `secure` whenever `NODE_ENV=production`, a production server
+> reached over plain `http://` will have its `Set-Cookie` dropped by the
+> browser, silently breaking the OIDC login flow (the session never
+> persists, so the callback loops back to `/auth/login`). This applies to
+> internal / LAN deployments too: terminate TLS in front of the service
+> (reverse proxy or a self-signed cert the clients trust) before exposing
+> the browser login. The matching `secure=false` in non-production exists
+> only so local `http://localhost` development works — do not run a
+> public or shared instance with `NODE_ENV` unset.
 
 The OIDC flow itself uses **PKCE + state** to prevent CSRF / replay
 against the callback endpoint, and validates the issuer + audience
@@ -169,98 +202,98 @@ so secret values never appear in logs. The `auth-audit` helper enforces
 this — it is the **only** sanctioned way for the auth plugin to
 log into the request.
 
-## Legacy Auth Sunset Timeline
+## Legacy `X-API-Key` Status
 
-The legacy `X-API-Key` strategy is deprecated as of v1.6 and scheduled for
-removal in v1.7. Every legacy-authed REST response carries two RFC 8594
-headers so clients can detect the deprecation programmatically:
+The legacy `X-API-Key` strategy is **deprecated but still fully
+supported as of v1.11.** It remains the third link in the auth chain
+(`src/api/plugins/auth/index.ts` walks PAT → session → legacy), so a
+request carrying a valid `API_KEYS` entry still authenticates and
+mutates data. PAT and OIDC session are the preferred credentials; legacy
+keys exist to keep older deployments running while operators migrate.
 
-```
-Deprecation: true
-Sunset: 2026-12-31
-```
+There is **no scheduled removal version.** Earlier drafts of this
+document described a "v1.7 sunset" that would drop `API_KEYS` support —
+that never happened. v1.7 through v1.11 shipped with the legacy strategy
+intact, and no removal date is currently committed.
 
-The `Sunset` value comes from the `LEGACY_AUTH_SUNSET_DATE` env var
-(default `2026-12-31`, must be `YYYY-MM-DD`). PAT-authed and
-session-authed requests carry **neither** header — only legacy requests
-trigger the stamping.
+Legacy authentication is surfaced so operators can track migration
+progress, not blocked:
 
-In addition, every legacy-authed request emits a `warn`-level log line:
+- Every legacy-authed REST response carries two RFC 8594 headers:
 
-```json
-{
-  "level": 40,
-  "event": "legacy_auth_used",
-  "userId": 1,
-  "apiKeyLabel": "key_alice-laptop",
-  "requestId": "…",
-  "requestUrl": "/api/v1/tasks",
-  "sunset": "2026-12-31"
-}
-```
+  ```
+  Deprecation: true
+  Sunset: 2026-12-31
+  ```
 
-Operators can aggregate the `legacy_auth_used` event over a rolling
-window to track sunset readiness — a steady decline to zero indicates
-clients have all migrated to PAT or session.
+  The `Sunset` value comes from the `LEGACY_AUTH_SUNSET_DATE` env var
+  (default `2026-12-31`, must be `YYYY-MM-DD`). It is an advisory
+  migration target, **not** an enforced cutoff — the strategy keeps
+  working past that date. PAT-authed and session-authed requests carry
+  **neither** header.
 
-**v1.6:** legacy keeps working; clients see the deprecation signals.
-**v1.7:** legacy strategy is removed from the chain; pre-flight refuses
-to boot if any legacy artefacts remain (see Runbook below).
+- Every legacy-authed request also emits a `warn`-level log line:
 
-## v1.7 Sunset Runbook
+  ```json
+  {
+    "level": 40,
+    "event": "legacy_auth_used",
+    "userId": 1,
+    "apiKeyLabel": "key_alice-laptop",
+    "requestId": "…",
+    "requestUrl": "/api/v1/tasks",
+    "sunset": "2026-12-31"
+  }
+  ```
 
-This runbook is the operator checklist for upgrading from v1.6 (legacy
-+ PAT + session) to v1.7 (PAT + session only).
+  Aggregate `legacy_auth_used` over a rolling window to gauge migration
+  readiness — a steady decline to zero means clients have all moved to
+  PAT or session. New deployments should issue PATs (one per
+  machine/agent) or use OIDC sessions rather than `API_KEYS`.
 
-### Pre-flight (run on v1.6 before upgrading)
+If a future release does remove the legacy strategy, the
+`tasks db migrate-identities` tool (idempotent; backfills identity FKs
+for historical rows that carry only the legacy TEXT identity columns)
+is the supported pre-upgrade step. It is safe to run today.
 
-1. **Backfill identity FKs** for any historical rows still carrying
-   only the legacy TEXT identity columns. Idempotent; safe to re-run.
+## CORS
 
-   ```bash
-   # Dry-run first — review the per-mapping summary.
-   node dist/cli/bin/tasks.js db migrate-identities
+The REST API **does not register a CORS plugin** — there is no
+`@fastify/cors` (or equivalent) registration anywhere in `src/api/`, and
+`cors` is not a project dependency. This is intentional: the API is built
+for server-to-server and agent traffic (PAT / `X-API-Key` in headers),
+plus a same-origin browser surface (`/auth/*`, `/me`, `/login`) that does
+not need cross-origin access. With no `Access-Control-Allow-Origin`
+header emitted, browsers block cross-origin reads of API responses by
+default.
 
-   # Apply.
-   node dist/cli/bin/tasks.js db migrate-identities --commit
-   ```
+> **Never add `origin: true` (reflect-any-origin) CORS.** The OIDC
+> session is a **credentialed cookie** (`Cookie: wft_session=…`).
+> Combining a reflect-any-origin CORS policy
+> (`origin: true` / `Access-Control-Allow-Origin: <reflected>`) with
+> `Access-Control-Allow-Credentials: true` would let any website the
+> victim visits make authenticated, cookie-bearing requests to the API on
+> the victim's behalf — a cross-site request forgery / data-exfiltration
+> hole. If you must enable CORS, set an explicit, hard-coded allow-list of
+> trusted origins; do not reflect the request origin while credentials are
+> allowed.
 
-   Unmatched TEXT values default to the lowest-id `is_legacy=1` user.
-   Override per-string with `--alias-map <file>` (JSON object,
-   `{"alice@example.com": 42, …}`) or pass `--user-fallback skip` to
-   leave NULLs in place for later manual review.
+## Authentication Is Not Authorization
 
-2. **Audit `legacy_auth_used` log volume** over the past 7 days. Any
-   non-zero count indicates clients still using `X-API-Key` — they will
-   break on v1.7. Migrate them to PAT (`tasks login` → cache PAT, or
-   `tasks db mint-token` for headless agents) before proceeding.
+Authentication identifies the caller; it does **not** scope what the
+caller may do. Wood Fired Tasks has **no RBAC, no ACL, and no tenant /
+project isolation.** Every authenticated identity — whether it arrived
+via PAT, OIDC session, or a legacy `X-API-Key` — is effectively an
+admin: it can read, write, and delete **every** task, project, comment,
+dependency, and Slack subscription across **every** project in the
+database. The `--scopes` minted onto a PAT are advisory metadata only and
+are **not enforced** by any endpoint.
 
-3. **Confirm all PATs are minted and distributed.** Each operator /
-   service account that needs API access should have a PAT in hand. The
-   `mcp-bot` and `slack-bot` service-account rows are seeded
-   automatically; their PATs (if any) are operator-minted via
-   `tasks db mint-token --user-display-name mcp-bot`.
-
-4. **Take a database backup.**
-
-   ```bash
-   node dist/cli/bin/tasks.js backup --out /var/backups/wft-pre-v1.7.db
-   ```
-
-### v1.7 actions (applied by the v1.7 release)
-
-- Drops the legacy TEXT identity columns: `tasks.created_by`,
-  `tasks.assignee`, `task_comments.author`. The parallel `*_user_id`
-  FK columns become the only identity record.
-- Removes `API_KEYS` env support and the legacy strategy from the auth
-  chain. Requests carrying only `X-API-Key` will fail with `401`.
-- Adds a boot-time pre-flight check that refuses to start if any row
-  in `tasks` / `task_comments` has a NULL identity FK that was
-  previously populated via the TEXT column. Override with `--force`
-  only after acknowledging that those rows will lose their author
-  attribution.
-
-The `tasks db migrate-identities` tool is intentionally idempotent so
-the pre-flight backfill can be scripted and re-run safely up to (and
-including) the v1.7 upgrade window.
+The consequence: any valid credential is a full-access credential. If you
+need per-user, per-team, or per-tenant isolation, you must enforce it
+**outside** this service — front it with an authenticating reverse proxy
+that performs its own per-tenant authorization. Treat the loss or leak of
+any single PAT or API key as a full-database compromise and revoke/rotate
+accordingly. Scoped, role-based permissions are tracked as future work;
+until they land, the model above is the whole authorization story.
 
