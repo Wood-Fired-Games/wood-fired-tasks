@@ -18,6 +18,18 @@ on:
 # the installer scripts only. It does not consume any untrusted input
 # fields (issue titles, PR bodies, commit messages) in shell commands.
 
+# F1: least-privilege token. This workflow only reads the checkout; it
+# never writes to the repo, posts statuses, or uploads release assets.
+permissions:
+  contents: read
+
+# F2: cancel superseded runs on the same ref to save runner minutes when a
+# new commit lands. Pattern copied from mutation.yml's concurrency block,
+# keyed on workflow + ref so concurrent unrelated workflows are unaffected.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # -------------------------------------------------------------------------
   # Lint install.sh with shellcheck. Fails on any errors OR warnings —
@@ -26,6 +38,7 @@ jobs:
   shellcheck:
     name: shellcheck install.sh
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install shellcheck
@@ -48,6 +61,7 @@ jobs:
   shellcheck-deploy:
     name: shellcheck deploy/*.sh
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install shellcheck
@@ -65,6 +79,48 @@ jobs:
         run: test -x deploy/upgrade.sh
 
   # -------------------------------------------------------------------------
+  # Lint the full client-package bundle's POSIX shell scripts. The client
+  # package (distributed as wood-fired-tasks-client.zip by
+  # scripts/build-client-package.sh) ships setup.sh + uninstall.sh to end
+  # users on Linux/macOS, so both must pass shellcheck -S warning exactly
+  # like the root installer. scripts/build-client-package.sh is the producer
+  # of that bundle and is linted here too so a bad change to the packaging
+  # script cannot land silently. Task #386 introduced this coverage.
+  #
+  # The bundle's Windows/DOS surfaces are linted by the psscriptanalyzer
+  # job (setup.ps1, uninstall.ps1). The .bat shims (setup.bat, uninstall.bat)
+  # have NO linter in this repo — there is no batch-file static analyzer in
+  # the toolchain — so they are intentionally not gated here; they are thin
+  # launchers that delegate to the .ps1 scripts.
+  # -------------------------------------------------------------------------
+  shellcheck-client-package:
+    name: shellcheck client-package/*.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --version
+      - name: Run shellcheck on the client-package bundle scripts
+        # setup.sh + uninstall.sh ship to end users; build-client-package.sh
+        # produces the bundle. All three must be clean at -S warning.
+        run: shellcheck -S warning client-package/setup.sh client-package/uninstall.sh scripts/build-client-package.sh
+      - name: Verify all three scripts parse as valid bash (bash -n)
+        run: |
+          bash -n client-package/setup.sh
+          bash -n client-package/uninstall.sh
+          bash -n scripts/build-client-package.sh
+      - name: Verify uninstall.sh is executable
+        # setup.sh is intentionally tracked non-executable (mode 0644);
+        # scripts/build-client-package.sh chmod +x's it into the bundle and
+        # the docs invoke it as `bash setup.sh`. Only uninstall.sh ships
+        # with the executable bit set in-tree, so only it is gated here.
+        run: test -x client-package/uninstall.sh
+
+  # -------------------------------------------------------------------------
   # Lint install.ps1 with PSScriptAnalyzer on a Windows runner.
   # The installer is intentionally interactive (Write-Host w/ colors), so
   # we only fail on Errors here — the noisy Write-Host warnings are
@@ -74,22 +130,45 @@ jobs:
   psscriptanalyzer:
     name: PSScriptAnalyzer install.ps1
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Run PSScriptAnalyzer
         shell: pwsh
+        # Lint the root installer AND the client-package bundle's PowerShell
+        # surfaces (setup.ps1 + uninstall.ps1), which ship to Windows end
+        # users via wood-fired-tasks-client.zip. Task #386 extended coverage
+        # from install.ps1 alone to the full bundle. Severity stays Error:
+        # these installers are intentionally interactive (Write-Host w/
+        # colors), so the noisy informational/warning rules are accepted by
+        # design; only real Errors fail the build.
         run: |
+          $targets = @(
+            'install.ps1',
+            'client-package/setup.ps1',
+            'client-package/uninstall.ps1'
+          )
           if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
             Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
           }
           Import-Module PSScriptAnalyzer
-          $results = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
-          if ($results) {
-            $results | Format-Table -AutoSize
-            Write-Error "PSScriptAnalyzer reported $($results.Count) error(s) in install.ps1"
-            exit 1
+          $failed = $false
+          foreach ($t in $targets) {
+            if (-not (Test-Path $t)) {
+              Write-Error "PSScriptAnalyzer target not found: $t"
+              $failed = $true
+              continue
+            }
+            $results = Invoke-ScriptAnalyzer -Path $t -Severity Error
+            if ($results) {
+              $results | Format-Table -AutoSize
+              Write-Error "PSScriptAnalyzer reported $($results.Count) error(s) in $t"
+              $failed = $true
+            } else {
+              Write-Host "PSScriptAnalyzer: no errors in $t"
+            }
           }
-          Write-Host "PSScriptAnalyzer: no errors in install.ps1"
+          if ($failed) { exit 1 }
 
   # -------------------------------------------------------------------------
   # Smoke-test install.sh on Linux + macOS.
@@ -121,6 +200,7 @@ jobs:
     name: smoke install.sh (${{ matrix.os }})
     needs: shellcheck
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -235,6 +315,7 @@ jobs:
     name: smoke install.ps1 (windows-latest)
     needs: psscriptanalyzer
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -365,6 +446,7 @@ jobs:
     name: cli-smoke-link
     needs: smoke-unix
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -413,6 +495,7 @@ jobs:
     name: cli-surface-coverage-link (node ${{ matrix.node-version }})
     needs: cli-smoke-link
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -474,6 +557,7 @@ jobs:
     name: cli-tarball-install
     needs: cli-surface-coverage-link
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -535,6 +619,7 @@ jobs:
     name: cli-e2e
     needs: cli-tarball-install
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
