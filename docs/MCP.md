@@ -158,7 +158,7 @@ attribution, so deployments that audit by user should always supply a
 real PAT.
 
 [NOTE] The `mcp-bot` row is seeded unconditionally on first boot.
-`tasks db mint-token --user-display-name mcp-bot` mints a PAT bound
+`tasks db mint-token --user mcp-bot` mints a PAT bound
 to that row if you'd rather have an explicit credential than rely on
 the fallback.
 
@@ -182,7 +182,7 @@ PAT — it forwards the credential and lets the server side enforce.
 # 1. Mint a PAT once via the web UI (/me) or the CLI for headless boxes:
 tasks login                           # browser flow on a workstation
 # or:
-node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
+node dist/cli/bin/tasks.js db mint-token --user you@example.com
 
 # 2. Paste the PAT value into your MCP client config:
 #    "env": { "WFT_API_KEY": "wft_pat_…" }
