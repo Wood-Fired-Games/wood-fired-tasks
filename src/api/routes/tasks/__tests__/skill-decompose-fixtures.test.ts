@@ -104,15 +104,19 @@ describe('/tasks:decompose §9 verification fixtures (#321)', () => {
       expect(design.includes('cost_cap_hit')).toBe(true);
     });
 
-    it('skill emits a checkpoint at $5 and CONTINUES the run', () => {
-      expect(skill.includes('$5')).toBe(true);
+    it('skill emits a checkpoint at 5 USD and CONTINUES the run', () => {
+      // Literal `$5` must NOT appear — it is arg-substituted at skill load.
+      expect(skill.includes('$5')).toBe(false);
+      expect(/5 ?USD/.test(skill)).toBe(true);
       expect(/checkpoint/i.test(skill)).toBe(true);
-      // $5 is a SOFT target — the run continues past it.
+      // 5 USD is a SOFT target — the run continues past it.
       expect(/continues|continue/i.test(skill)).toBe(true);
     });
 
-    it('skill HALTs at the $15 hard cap and sets cost_cap_hit: true (work preserved)', () => {
-      expect(skill.includes('$15')).toBe(true);
+    it('skill HALTs at the 15 USD hard cap and sets cost_cap_hit: true (work preserved)', () => {
+      // Literal `$15` must NOT appear — it is arg-substituted at skill load.
+      expect(skill.includes('$15')).toBe(false);
+      expect(/15 ?USD/.test(skill)).toBe(true);
       expect(skill.includes('cost_cap_hit: true')).toBe(true);
       // Already-materialized tasks are preserved (no rollback).
       expect(/preserve|do NOT roll back|stay/i.test(skill)).toBe(true);

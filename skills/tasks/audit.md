@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Operational retroactive grader for a /tasks:loop run. Resolves a LOOP-RUN.md (via --loop-run <path> or --project <id>), enumerates the closed tasks, dispatches one read-only tasks-verifier subagent per task (reconstructing acceptance_criteria from the task description when the bugs DB column is NULL), scores each task COVERED/PARTIAL/MISSING, rolls up an integration verdict, and emits a gitignored AUDIT.md. Read-only against both the source tree and the bugs DB; bounded by a $5 hard cost cap.
+description: Operational retroactive grader for a /tasks:loop run. Resolves a LOOP-RUN.md (via --loop-run <path> or --project <id>), enumerates the closed tasks, dispatches one read-only tasks-verifier subagent per task (reconstructing acceptance_criteria from the task description when the bugs DB column is NULL), scores each task COVERED/PARTIAL/MISSING, rolls up an integration verdict, and emits a gitignored AUDIT.md. Read-only against both the source tree and the bugs DB; bounded by a 5 USD hard cost cap.
 argument-hint: --loop-run <path> | --project <id>
 disable-model-invocation: false
 ---
@@ -106,11 +106,11 @@ nothing for the verifier to grade against. A NULL column with a
 reconstructable bullet MUST still be dispatched (Guardrail 4) — do not
 short-circuit it to the escape hatch.
 
-## $5 hard cost-cap guard (run BEFORE Step 3 — Guardrail 3)
+## 5 USD hard cost-cap guard (run BEFORE Step 3 — Guardrail 3)
 
-Compute `estimated_usd = task_count × $0.30`, where `task_count` is the
+Compute `estimated_usd = task_count × 0.30 USD`, where `task_count` is the
 number of tasks that would be dispatched to a verifier (the §6
-per-verifier budget). **If `estimated_usd > $5`, HALT before dispatching
+per-verifier budget). **If `estimated_usd > 5 USD`, HALT before dispatching
 any verifier:**
 
 - Dispatch **zero** verifiers.
@@ -120,9 +120,9 @@ any verifier:**
   §3 Step 5).
 - Report the halt to the user and stop.
 
-Example: a 20-task run is `20 × $0.30 = $6.00 > $5` → halt with
+Example: a 20-task run is `20 × 0.30 USD = 6.00 USD > 5 USD` → halt with
 `cost_cap_hit: true`, `total_usd: 0`, zero verifiers dispatched. A
-15-task run is `15 × $0.30 = $4.50 ≤ $5` → proceed.
+15-task run is `15 × 0.30 USD = 4.50 USD ≤ 5 USD` → proceed.
 
 ## Step 3 — Dispatch one `tasks-verifier` per task
 
@@ -239,7 +239,7 @@ This `Write` is the ONLY filesystem mutation the skill is permitted.
 | `missing_count`       | tasks scored `MISSING`.                                            |
 | `integration_verdict` | `COVERED` \| `PARTIAL` \| `MISSING` (§3 Step 5).                    |
 | `total_usd`           | orchestrator + every verifier dispatch (cache-discounted); `0` if cost-cap-hit. |
-| `cost_cap_hit`        | `true` iff the $5 cap halted the run before dispatch.              |
+| `cost_cap_hit`        | `true` iff the 5 USD cap halted the run before dispatch.           |
 
 **You MUST construct the counts so the invariant holds:**
 `covered_count + partial_count + missing_count == total_tasks`. The
@@ -282,8 +282,8 @@ Do not weaken those tests without simultaneously updating
    any other mutating MCP tool — see Preflight). Read-only against the
    bugs DB, symmetric to the verifier contract. The audit must be a pure
    function of (LOOP-RUN.md, bugs-DB snapshot at audit time).
-3. **MUST refuse to start if estimated cost > $5.** Compute
-   `estimated_usd = task_count × $0.30` after Step 1 and before Step 3;
+3. **MUST refuse to start if estimated cost > 5 USD.** Compute
+   `estimated_usd = task_count × 0.30 USD` after Step 1 and before Step 3;
    on overage, halt and emit a partial AUDIT.md with `cost_cap_hit: true`
    and `total_usd: 0`, dispatching zero verifiers.
 4. **MUST reconstruct `acceptance_criteria` from the task description
