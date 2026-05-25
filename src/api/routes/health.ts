@@ -99,6 +99,19 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
               database: z.enum(['ok', 'failed']),
               eventBus: z.enum(['ok', 'degraded', 'unknown']),
               sseManager: z.enum(['ok', 'degraded', 'unknown']),
+              // Task #357: OIDC subsystem state. `degraded` = configured but
+              // boot discovery failed after all retries — login is down while
+              // PAT/legacy auth keeps working.
+              oidc: z.enum(['disabled', 'ready', 'degraded']),
+            }),
+            // Task #357: OIDC discovery detail — issuer, retry attempts, and
+            // the last error when degraded — so this endpoint explains WHY,
+            // not just THAT, OIDC login is unavailable.
+            oidc: z.object({
+              state: z.enum(['disabled', 'ready', 'degraded']),
+              issuer: z.string().optional(),
+              attempts: z.number().optional(),
+              error: z.string().optional(),
             }),
             stats: z
               .object({
@@ -121,6 +134,19 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
               database: z.enum(['ok', 'failed']),
               eventBus: z.enum(['ok', 'degraded', 'unknown']),
               sseManager: z.enum(['ok', 'degraded', 'unknown']),
+              // Task #357: OIDC subsystem state. `degraded` = configured but
+              // boot discovery failed after all retries — login is down while
+              // PAT/legacy auth keeps working.
+              oidc: z.enum(['disabled', 'ready', 'degraded']),
+            }),
+            // Task #357: OIDC discovery detail — issuer, retry attempts, and
+            // the last error when degraded — so this endpoint explains WHY,
+            // not just THAT, OIDC login is unavailable.
+            oidc: z.object({
+              state: z.enum(['disabled', 'ready', 'degraded']),
+              issuer: z.string().optional(),
+              attempts: z.number().optional(),
+              error: z.string().optional(),
             }),
             stats: z
               .object({
@@ -175,6 +201,12 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const sseManagerStatus: 'ok' | 'degraded' | 'unknown' = fastify.sseManager.isHealthy() ? 'ok' : 'degraded';
       const sseManagerStats = fastify.sseManager.getStats();
 
+      // Task #357: OIDC boot state. `state` is the same discriminated union
+      // captured in createApp; spreading it yields exactly the optional
+      // issuer/attempts/error fields the schema allows. `checks.oidc` mirrors
+      // `state` so existing check-scanning dashboards pick it up automatically.
+      const oidc = { ...fastify.oidcStatus };
+
       // Database is the critical check - return 503 if it fails
       if (databaseStatus === 'failed') {
         return reply.code(503).send({
@@ -186,7 +218,9 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
             database: databaseStatus,
             eventBus: eventBusStatus,
             sseManager: sseManagerStatus,
+            oidc: oidc.state,
           },
+          oidc,
           stats: {
             eventBus: eventBusStats,
             sseManager: sseManagerStats,
@@ -204,7 +238,9 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
           database: databaseStatus,
           eventBus: eventBusStatus,
           sseManager: sseManagerStatus,
+          oidc: oidc.state,
         },
+        oidc,
         stats: {
           eventBus: eventBusStats,
           sseManager: sseManagerStats,
