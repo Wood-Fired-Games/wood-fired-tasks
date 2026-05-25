@@ -848,11 +848,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         const version = health.version ?? '1.0.0';
         const timestamp = health.timestamp ?? new Date().toISOString();
         const dbStatus = health.checks?.database ?? 'unknown';
+        const fp = health.database;
+        const fpLine = fp
+          ? `\nDB Path: ${fp.path}\nProjects: ${fp.projects}, Max Task ID: ${fp.maxTaskId ?? 'none'}, Latest Activity: ${fp.latestActivity ?? 'none'}`
+          : '';
         return {
           content: [
             {
               type: 'text',
-              text: `Service Status: ${status}\nVersion: ${version}\nDatabase: ${dbStatus}\nTimestamp: ${timestamp}`,
+              text: `Service Status: ${status}\nVersion: ${version}\nDatabase: ${dbStatus}\nTimestamp: ${timestamp}${fpLine}`,
             },
           ],
           structuredContent: health as unknown as Record<string, unknown>,

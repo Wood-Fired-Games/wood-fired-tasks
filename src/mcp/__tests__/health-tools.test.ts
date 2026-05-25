@@ -63,11 +63,22 @@ describe('MCP Health Tools', () => {
         const health = result.structuredContent as {
           status: string;
           version: string;
+          database: {
+            path: string;
+            projects: number;
+            maxTaskId: number | null;
+            latestActivity: string | null;
+          };
           checks: { database: string };
         };
         expect(health.status).toBe('healthy');
         expect(health.version).toBe('1.0.0');
         expect(health.checks.database).toBe('ok');
+        // DB fingerprint (task #354).
+        expect(typeof health.database.path).toBe('string');
+        expect(typeof health.database.projects).toBe('number');
+        expect(health.database).toHaveProperty('maxTaskId');
+        expect(health.database).toHaveProperty('latestActivity');
       }
     });
   });

@@ -336,6 +336,10 @@ export class RestClient {
   // ── Health operations ────────────────────────────────────────────────────
 
   async checkHealth(): Promise<HealthResponse> {
-    return this.request<HealthResponse>('/health');
+    // Hit the AUTHENTICATED detailed endpoint so the response carries the DB
+    // path + fingerprint. The public /health is intentionally minimal (task
+    // #185); the remote client always sends X-API-Key, so the auth-gated
+    // /health/detailed is reachable here.
+    return this.request<HealthResponse>('/health/detailed');
   }
 }

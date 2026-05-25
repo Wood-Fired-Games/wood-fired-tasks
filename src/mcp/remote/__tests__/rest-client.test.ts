@@ -383,18 +383,20 @@ describe('RestClient', () => {
     expect(url).toBe('http://localhost:3000/api/v1/tasks/completion-report');
   });
 
-  it('checkHealth hits /health (no /api/v1 prefix)', async () => {
+  it('checkHealth hits /health/detailed (authenticated, no /api/v1 prefix)', async () => {
     fetchMock.mockResolvedValue(
       ok({
         status: 'healthy',
         timestamp: 't',
         version: '1.0.0',
+        database: { path: '/tmp/tasks.db', projects: 2, maxTaskId: 9, latestActivity: '2026-05-25T00:00:00.000Z' },
         checks: { database: 'ok' },
       })
     );
     const health = await client.checkHealth();
     expect(health.status).toBe('healthy');
-    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:3000/health');
+    expect(health.database?.path).toBe('/tmp/tasks.db');
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:3000/health/detailed');
   });
 
   // ── Error body parsing branches ────────────────────────────────────────

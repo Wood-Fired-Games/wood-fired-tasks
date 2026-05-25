@@ -89,6 +89,12 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
             status: z.string(),
             timestamp: z.string(),
             version: z.string(),
+            database: z.object({
+              path: z.string(),
+              projects: z.number(),
+              maxTaskId: z.number().nullable(),
+              latestActivity: z.string().nullable(),
+            }),
             checks: z.object({
               database: z.enum(['ok', 'failed']),
               eventBus: z.enum(['ok', 'degraded', 'unknown']),
@@ -105,6 +111,12 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
             status: z.string(),
             timestamp: z.string(),
             version: z.string(),
+            database: z.object({
+              path: z.string(),
+              projects: z.number(),
+              maxTaskId: z.number().nullable(),
+              latestActivity: z.string().nullable(),
+            }),
             checks: z.object({
               database: z.enum(['ok', 'failed']),
               eventBus: z.enum(['ok', 'degraded', 'unknown']),
@@ -124,10 +136,32 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const timestamp = new Date().toISOString();
       const version = '1.0.0';
 
-      // Check database connectivity
+      // Check database connectivity and capture a fingerprint so an operator
+      // can confirm WHICH database this process opened (resolved path + cheap
+      // counts) — the signal that was missing during the 2026-05-25 incident.
       let databaseStatus: 'ok' | 'failed' = 'ok';
+      let database: {
+        path: string;
+        projects: number;
+        maxTaskId: number | null;
+        latestActivity: string | null;
+      } = {
+        path: fastify.db.name,
+        projects: 0,
+        maxTaskId: null,
+        latestActivity: null,
+      };
       try {
         fastify.db.prepare('SELECT 1').get();
+        const projectRow = fastify.db.prepare('SELECT COUNT(*) AS n FROM projects').get() as { n: number };
+        const maxIdRow = fastify.db.prepare('SELECT MAX(id) AS m FROM tasks').get() as { m: number | null };
+        const latestRow = fastify.db.prepare('SELECT MAX(updated_at) AS t FROM tasks').get() as { t: string | null };
+        database = {
+          path: fastify.db.name,
+          projects: projectRow.n,
+          maxTaskId: maxIdRow.m ?? null,
+          latestActivity: latestRow.t ?? null,
+        };
       } catch (err) {
         request.log.error(err, 'Database health check failed');
         databaseStatus = 'failed';
@@ -147,6 +181,7 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
           status: 'unhealthy',
           timestamp,
           version,
+          database,
           checks: {
             database: databaseStatus,
             eventBus: eventBusStatus,
@@ -164,6 +199,7 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
         status: 'healthy',
         timestamp,
         version,
+        database,
         checks: {
           database: databaseStatus,
           eventBus: eventBusStatus,
