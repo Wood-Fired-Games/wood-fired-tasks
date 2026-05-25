@@ -35,7 +35,7 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
   - Known pre-existing flakes (do NOT attribute these to your changes): `<test names from §2c known_flakes>`.
 - Per-repo state at loop start: `<branch>` branch, `<clean | N uncommitted files>` working tree. If you need to add new commits, target `main` unless instructed otherwise.
 
-## Acceptance criteria (from the bugs database, verbatim)
+## Acceptance criteria (from the tasks database, verbatim)
 
 <paste the task description's "Acceptance criteria:" block here>
 
@@ -144,7 +144,7 @@ Then the standard fields:
 - Output of each validation step (pass/fail + headline numbers only).
 - One-line suggested commit message.
 
-Do NOT commit. Do NOT push. Do NOT modify the bugs database. The orchestrator owns those.
+Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator owns those.
 ```
 
 **Decision rules in the brief:**
@@ -279,12 +279,12 @@ When §2a annotated the task with `scope: design-only` (or any similar narrowing
 If the rollup is **PARTIAL** AND every SKIP check cites an *in-scope* AC (i.e. an AC bullet the orchestrator passed in the narrowed `acceptance_criteria` envelope — NOT a deferred runtime AC the orchestrator already removed in §7a), the orchestrator MAY transition `status` to `done` provided ALL of these hold:
 
 1. **No FAIL checks.** Any FAIL → the task stays `in_progress` exactly as the default PARTIAL branch requires. The carve-out is a SKIP-only relaxation.
-2. **Follow-on tracking is recorded.** The orchestrator has either (a) referenced existing follow-on bugs-DB task IDs in the close-out comment, OR (b) created a new bugs-DB task tracking the deferred runtime ACs (and that task ID is cited in the close-out comment).
+2. **Follow-on tracking is recorded.** The orchestrator has either (a) referenced existing follow-on task IDs in the close-out comment, OR (b) created a new task tracking the deferred runtime ACs (and that task ID is cited in the close-out comment).
 3. **Audit trail is intact.** The close-out comment quotes the §2a scope decision verbatim — the scope label, the in-scope AC bullets, the deferred bullets, and the follow-on task IDs — so a future reader sees exactly what was deferred and why.
 
 Verdict stays **`PARTIAL`** inside `verification_evidence` — verdict honesty is preserved, the orchestrator NEVER upgrades. Only `status` moves to `done`. Verdict and status are decoupled deliberately: the verdict reflects what the verifier could observe in this attempt; the status reflects whether the orchestrator considers the task complete relative to its **declared scope** (the §2a annotation).
 
-Note: creating the follow-on bugs-DB task in step 2 of this carve-out is a deliberate exception to the "Don't create new tasks during the loop" rule under Important Rules — the new task is the entire mechanism that makes this closure honest, so it MUST be permitted here.
+Note: creating the follow-on task in step 2 of this carve-out is a deliberate exception to the "Don't create new tasks during the loop" rule under Important Rules — the new task is the entire mechanism that makes this closure honest, so it MUST be permitted here.
 
 **Cross-reference: this carve-out closes the loop opened by the post-#320 orchestrator-upgrade hardening (commit `6b26fc5`).** It is NOT a verdict upgrade — `verdict: "PARTIAL"` is preserved in `verification_evidence` exactly as the verifier emitted it. The orchestrator is making a *status* decision (done vs in_progress) based on the declared-scope contract from §2a + §7a, while the verdict accurately reflects what the verifier could grade. Without §2a's `scope:` annotation upstream, this carve-out does NOT apply and the default PARTIAL branch (task stays `in_progress`) is the only path.
 
@@ -380,7 +380,7 @@ When the orchestrator decides at planning time (Step 3) to narrow scope — most
 - (a) the **scope label** (e.g. `scope: design-only`, `scope: slice-of-epic`),
 - (b) which AC bullets are **in-scope** for THIS attempt (verbatim copy of the bullet text — quoting matters; the verifier will be graded against this exact list in Step 7a),
 - (c) which AC bullets are **out-of-scope / deferred** to runtime follow-on,
-- (d) **where the follow-on tasks are tracked** — existing bugs-DB task IDs if they already exist, or the literal string `to be created at close-out` if the follow-on tasks will be opened during the §7d carve-out.
+- (d) **where the follow-on tasks are tracked** — existing task IDs if they already exist, or the literal string `to be created at close-out` if the follow-on tasks will be opened during the §7d carve-out.
 
 Detection signals — these are the orchestrator's *planning judgment cues*, NOT auto-classification triggers:
 
@@ -394,7 +394,7 @@ The orchestrator MUST NOT silently narrow scope. The decision is logged twice: o
 
 ## §I. Step 8 close-out comment template
 
-**Called from:** `loop.md` §Step 8 (Close the bugs-db task), `loop-dag.md` §3d PASS branch (close-out comment per `loop.md` §Step 8 template).
+**Called from:** `loop.md` §Step 8 (Close the task), `loop-dag.md` §3d PASS branch (close-out comment per `loop.md` §Step 8 template).
 
 ```
 Resolved.

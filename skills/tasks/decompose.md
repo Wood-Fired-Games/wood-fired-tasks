@@ -24,7 +24,7 @@ into it.
 > the crew that builds it. Each step hands the *next* step a small summary
 > (recon summary, candidate drafts, edge set, coverage verdict) — never the
 > raw subagent transcript — so your working context stays bounded across
-> the whole run. The only writes you perform are bugs-DB `create_task` /
+> the whole run. The only writes you perform are tasks-database `create_task` /
 > `add_dependency` calls (Step 8) and the single `DECOMPOSITION.md` emit
 > (Step 9). You touch the source tree **read-only**, and only during Step 2
 > recon.

@@ -174,12 +174,12 @@ describe('/tasks:loop skill — INTEGRATION-AUDIT.md emission wiring (#317)', ()
     expect(hasStep9).toBe(true);
   });
 
-  it('Step 8 (close the bugs-db task) is preserved — regression catch for #315 wiring', () => {
+  it('Step 8 (close the task) is preserved — regression catch for #315 wiring', () => {
     // Cross-check that the Wave 3.2 edit did not silently weaken the
     // verifier-gated close from Wave 2.2.
     const hasStep8 = skill
       .split('\n')
-      .some((line) => /^### Step 8 — Close the bugs-db task/.test(line));
+      .some((line) => /^### Step 8 — Close the task/.test(line));
     expect(hasStep8).toBe(true);
   });
 

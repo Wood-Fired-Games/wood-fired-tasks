@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Operational retroactive grader for a /tasks:loop run. Resolves a LOOP-RUN.md (via --loop-run <path> or --project <id>), enumerates the closed tasks, dispatches one read-only tasks-verifier subagent per task (reconstructing acceptance_criteria from the task description when the bugs DB column is NULL), scores each task COVERED/PARTIAL/MISSING, rolls up an integration verdict, and emits a gitignored AUDIT.md. Read-only against both the source tree and the bugs DB; bounded by a 5 USD hard cost cap.
+description: Operational retroactive grader for a /tasks:loop run. Resolves a LOOP-RUN.md (via --loop-run <path> or --project <id>), enumerates the closed tasks, dispatches one read-only tasks-verifier subagent per task (reconstructing acceptance_criteria from the task description when the tasks database column is NULL), scores each task COVERED/PARTIAL/MISSING, rolls up an integration verdict, and emits a gitignored AUDIT.md. Read-only against both the source tree and the tasks database; bounded by a 5 USD hard cost cap.
 argument-hint: --loop-run <path> | --project <id>
 disable-model-invocation: false
 ---
@@ -83,7 +83,7 @@ AUDIT.md frontmatter so the two artifacts correlate. Record
 
 Read the `## Tasks Closed` section body of the LOOP-RUN.md. Set
 `total_tasks` = the count of task rows there. For **each** task, fetch
-read-only from the bugs DB:
+read-only from the tasks database:
 
 - `acceptance_criteria` — the verbatim column value via `get_task`. **If
   NULL, reconstruct from the task `description`** (Guardrail 4): extract
@@ -252,7 +252,7 @@ construction.
 1. **`## Per-Task Audit`** — one row per task: `task_id`, `title`,
    `score`, raw `verifier_verdict`, check count, the first FAIL/SKIP
    evidence line (truncated to 200 chars), and a stable link back to the
-   task in the bugs DB.
+   task in the tasks database.
 2. **`## Integration Verdict`** — the §3 Step 5 roll-up plus a
    one-paragraph rationale citing the contributing tasks (e.g. "MISSING
    because task #N had no commits referencing the file in AC #2").
@@ -263,7 +263,7 @@ construction.
 4. **`## Replay Instructions`** — the exact
    `/tasks:audit --loop-run <path>` invocation that reproduces this
    artifact (`audit_id` is fresh per invocation; the LOOP-RUN.md path +
-   bugs-DB state fully determine the audit).
+   tasks-database state fully determine the audit).
 
 Set `audit_ended_at = <now UTC>` immediately before the final write.
 
@@ -280,14 +280,14 @@ Do not weaken those tests without simultaneously updating
    fixer — remediation lives in a separate orchestrator.
 2. **MUST NOT call wood-fired-tasks `update_task` or `add_comment`** (nor
    any other mutating MCP tool — see Preflight). Read-only against the
-   bugs DB, symmetric to the verifier contract. The audit must be a pure
-   function of (LOOP-RUN.md, bugs-DB snapshot at audit time).
+   tasks database, symmetric to the verifier contract. The audit must be a pure
+   function of (LOOP-RUN.md, tasks-database snapshot at audit time).
 3. **MUST refuse to start if estimated cost > 5 USD.** Compute
    `estimated_usd = task_count × 0.30 USD` after Step 1 and before Step 3;
    on overage, halt and emit a partial AUDIT.md with `cost_cap_hit: true`
    and `total_usd: 0`, dispatching zero verifiers.
 4. **MUST reconstruct `acceptance_criteria` from the task description
-   when the bugs DB column is NULL.** Historical loops pre-date Wave 1.3;
+   when the tasks database column is NULL.** Historical loops pre-date Wave 1.3;
    a NULL column must NOT cause the audit to skip that task. Fall back to
    `score: PARTIAL`, `no_acceptance_criteria: true` ONLY when no bullets
    are recoverable.

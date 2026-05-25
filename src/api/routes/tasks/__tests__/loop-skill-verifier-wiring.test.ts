@@ -47,7 +47,7 @@ describe('/tasks:loop skill — verifier dispatch wiring (#315)', () => {
     // dispatch logic.
     const hasStep8Close = skill
       .split('\n')
-      .some((line) => /^### Step 8 — Close the bugs-db task/.test(line));
+      .some((line) => /^### Step 8 — Close the task/.test(line));
     expect(hasStep8Close).toBe(true);
   });
 

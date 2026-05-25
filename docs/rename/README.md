@@ -1,6 +1,18 @@
-# Rename: `wood-fired-bugs` → `wood-fired-tasks`
+<!--
+INTERNAL HISTORICAL ARTIFACT — not user-facing documentation.
 
-Tracking: **Project 13**. This directory holds the planning + audit artifacts.
+This directory records a one-time, maintainer-only project rename
+(old private working name → `wood-fired-tasks`) that predates the first
+public release. It is preserved for provenance only. References to the old
+private name and to internal task/project numbers below are historical and
+do NOT describe any current public surface. The project ships exclusively as
+`wood-fired-tasks`; there is no old name to migrate from for external users.
+-->
+
+# Rename history (internal artifact) → `wood-fired-tasks`
+
+Tracking: **internal project (historical)**. This directory holds the
+planning + audit artifacts for the one-time rename. Internal/historical only.
 
 ## Scope decision (governs everything here)
 

@@ -1,4 +1,12 @@
-# Positioning — why "tasks" not "bugs" (#294)
+<!--
+INTERNAL HISTORICAL ARTIFACT — not user-facing documentation.
+Records the rationale for a one-time, maintainer-only rename that predates the
+first public release. The old private name and internal task numbers below are
+historical provenance only and do NOT describe any current public surface. The
+project ships exclusively as `wood-fired-tasks`.
+-->
+
+# Positioning — why "tasks" not "bugs" (internal, historical)
 
 The rationale for the rename, and the narrative to thread through docs and
 skills during the Phase B sweep.

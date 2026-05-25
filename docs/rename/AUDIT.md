@@ -1,4 +1,12 @@
-# Rename Audit — old-name occurrence inventory (#289)
+<!--
+INTERNAL HISTORICAL ARTIFACT — not user-facing documentation.
+Records a one-time, maintainer-only rename that predates the first public
+release. The old private name and internal task numbers below are historical
+provenance only and do NOT describe any current public surface. The project
+ships exclusively as `wood-fired-tasks`.
+-->
+
+# Rename Audit — old-name occurrence inventory (internal, historical)
 
 **Snapshot base:** `origin/main` @ `7f75e7d`. Re-run the commands below after the
 OSS-prep branch merges (the post-merge audit pass).

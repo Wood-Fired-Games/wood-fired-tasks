@@ -112,7 +112,7 @@ Record this matrix as a short memo. If the loop is non-trivial (≥ 3 tasks), **
 
 **Before touching anything, run `<build>` and `<test>`** and confirm they pass on the unchanged tree. If they don't, the loop must not start — pre-existing breakage will be attributed to the first task and stall everything.
 
-**Trust the exit code, not the summarizer prose.** `bash-summarize` will sometimes prominently flag stderr noise from tests that exercise error paths (e.g. `error: required option '-a, --assignee <name>' not specified` from a CLI argparse fixture). If the exit code is 0 *and* the headline test count matches expectation, the suite is green regardless of how scary the summary reads. Re-run with raw output only if the headline numbers are missing or contradict the exit code.
+**Trust the exit code, not the summarizer prose.** `bash-summarize` and `ask-local` are **optional** local CLI wrappers that summarize long output / file reads to keep context clean — *not* dependencies. If they aren't installed (`command not found`), ignore every mention of them and use plain `Bash` / `Read`; the loop works identically. Read every "prefer `bash-summarize`/`ask-local`" below as "use if available, else plain `Bash`/`Read`." When you do use `bash-summarize`, it will sometimes prominently flag stderr noise from tests that exercise error paths (e.g. `error: required option '-a, --assignee <name>' not specified` from a CLI argparse fixture). If the exit code is 0 *and* the headline test count matches expectation, the suite is green regardless of how scary the summary reads. Re-run with raw output only if the headline numbers are missing or contradict the exit code.
 
 If the suite is already red:
 
@@ -292,7 +292,7 @@ When the subagent returns its summary:
 
 1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it.
 2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted). **Watch specifically for silent-pass gates**: a new CI job, npm script, or assertion that passes trivially (no-op, always-true condition, doesn't actually run the underlying tool). A gate that doesn't exercise the real check is worse than no gate — it gives false confidence forever. If you see one, re-brief and remove it (don't accept the compromise just because validation passed).
-3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Use `bash-summarize` for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. The `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines.
+3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Prefer `bash-summarize` *if it's available* (optional — see the note in §2c) for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings, and for everything if the wrapper isn't installed. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. When `bash-summarize` is in use, the `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines.
 
     **Regression-delta computation (load-bearing — no stash dance required).** The subagent's "Reporting back" block now contains two FQN sets: **Baseline (pre-edit)** and **Post-edit**. Compute `regressions_introduced_by_this_change = post_edit_failures - baseline_failures` (set difference on the FQN strings, applied AFTER the §2c `.flaky-tests.json` exclusion filter both sets were captured under). If the delta is empty, the subagent's work is clean (modulo any new tests added in this change — those count separately). If the delta is non-empty, those FQNs are real regressions introduced by this change and trigger the re-brief loop in item #5 below — the orchestrator does NOT need to stash the working tree and re-baseline to determine pre-existing-vs-new, because the subagent already captured the pre-edit set before touching code. If the subagent's report is missing either FQN block (or the two blocks were captured under different exclusion flags), treat that as a brief-deviation per Step 5's error-handling clause and re-brief.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
@@ -365,7 +365,7 @@ EOF
 )
 ```
 
-The verifier subagent's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a git/test allowlist, and the read-only wood-fired-tasks MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/tasks-verifier.md` for the enforced allowlist.
+The verifier subagent's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a git/test allowlist, and the read-only wood-fired-tasks MCP tools). It cannot Edit, Write, commit, push, or mutate the tasks database — by design. See `skills/agents/tasks-verifier.md` for the enforced allowlist.
 
 **Bounds recap** (cite `docs/verifier-contract.md` §Bounds): the verifier MUST stay within **≤ 30 tool calls** and **≤ 5 minutes** wall-clock. The subagent self-throttles at 25 tool calls. If the orchestrator observes the bound exceeded, treat the run as `verdict: "PARTIAL"` with a synthetic final SKIP check noting the bound that triggered.
 
@@ -377,9 +377,9 @@ Parse the verifier's final message as JSON. Validate against `VerificationEviden
 
 **Five known parse-failure patterns + the diagnostic message to send for each (verbatim diagnostic strings) live in [loop-shared.md §G](loop-shared.md#g-verifier-parse-failure-patterns).** The patterns cover: (1) `status: "PARTIAL"` on a per-check entry (enum violation), (2) wrong per-check field name (`criterion` instead of `name`), (3) extra strict-mode fields, (4) missing required field, (5) malformed JSON (markdown fence / preamble). For each pattern, the orchestrator sends `SendMessage(to: "verifier-task-<id>", message: <diagnostic>)` and re-parses. Cap auto-repair at **2 SendMessage round-trips per verifier session** — beyond that, synthesize NOT_VERIFIED and stop.
 
-**Hard fallback (verifier unreachable for repair):** if the verifier was dispatched WITHOUT a `name:` (a §7b violation), `SendMessage` cannot reach it. Do NOT re-dispatch a fresh verifier — fresh dispatches lack the original verifier's tool-call context and **will fabricate checks** (observed once in Wave 11 / #332; fresh verifier invented entirely new check names for a different task). Instead, synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }`, add a bugs-DB comment explicitly citing the §7b violation ("verifier dispatched without `name:` — schema-repair was unreachable; original findings preserved below for audit"), and preserve the original verifier's parse-failed output verbatim in the comment so a human reviewer can recover the findings.
+**Hard fallback (verifier unreachable for repair):** if the verifier was dispatched WITHOUT a `name:` (a §7b violation), `SendMessage` cannot reach it. Do NOT re-dispatch a fresh verifier — fresh dispatches lack the original verifier's tool-call context and **will fabricate checks** (observed once in Wave 11 / #332; fresh verifier invented entirely new check names for a different task). Instead, synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }`, add a tasks-database comment explicitly citing the §7b violation ("verifier dispatched without `name:` — schema-repair was unreachable; original findings preserved below for audit"), and preserve the original verifier's parse-failed output verbatim in the comment so a human reviewer can recover the findings.
 
-On parse failures NOT in the known-pattern list above (or after 2 failed repair round-trips), synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and proceed to the `NOT_VERIFIED` branch below. Always preserve the verifier's parse-failed output in a bugs-DB comment so the findings are not silently lost.
+On parse failures NOT in the known-pattern list above (or after 2 failed repair round-trips), synthesize `{ verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` and proceed to the `NOT_VERIFIED` branch below. Always preserve the verifier's parse-failed output in a tasks-database comment so the findings are not silently lost.
 
 **Sanity-check the verdict against the rollup table** (contract §Verdict rollup rules). The orchestrator is allowed exactly ONE class of override: **rollup-driven DOWNGRADES**. Examples:
 - Verifier emitted `verdict: "PASS"` but a check has `status: "FAIL"` → override `verdict` to `FAIL`.
@@ -436,7 +436,7 @@ The verdict controls whether the task closes, blocks, or stays in_progress. **Do
 
 Only the PASS branch falls through to Step 8. The FAIL / PARTIAL / NOT_VERIFIED branches all return to Step 1 after writing their comment + evidence.
 
-### Step 8 — Close the bugs-db task
+### Step 8 — Close the task
 
 This step runs **only when Step 7 produced `verdict: "PASS"`**. For FAIL / PARTIAL / NOT_VERIFIED, Step 7 already wrote the appropriate `status` + `verification_evidence` and the loop returned to Step 1.
 
@@ -497,7 +497,7 @@ All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections us
 
 #### 9e. NOT committed (intentional)
 
-`.planning/` is gitignored per project policy — see the `.gitignore` line `Internal planning + agent workspaces (not for open-source distribution)`. LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact. The trade-off: replay across machines requires manual sharing (copy the file out, attach to a bugs-db comment, or paste into a PR description). The benefit: open-source distribution stays clean, and per-run forensic detail never leaks into the public history of a fork.
+`.planning/` is gitignored per project policy — see the `.gitignore` line `Internal planning + agent workspaces (not for open-source distribution)`. LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact. The trade-off: replay across machines requires manual sharing (copy the file out, attach to a task comment, or paste into a PR description). The benefit: open-source distribution stays clean, and per-run forensic detail never leaks into the public history of a fork.
 
 The orchestrator MUST NOT `git add` the `.planning/loops/` artifact. It MUST NOT modify `.gitignore` to make `.planning/loops/` an exception.
 
@@ -551,7 +551,7 @@ For EACH overlap in the deduplicated list, dispatch a separate `integration-audi
 
 Use the `Agent` tool. **Default to `subagent_type: "general-purpose"` with the auditor prompt embedded in the brief** — same rule as Step 7's verifier dispatch (line 571). The named `subagent_type: "integration-auditor"` is only registered for sessions started AFTER the user ran `install.sh`; in any fresh session the named agent is typically unavailable, and an `Agent` call with an unknown `subagent_type` FAILS the entire dispatch (the orchestrator then can't audit the overlap and §10e's BROKEN-revert protocol won't fire — silent loss of the cross-task safety net). Defaulting to `general-purpose` + embedded prompt is the reliable path.
 
-**Recommendation for repeat users:** run `install.sh` once on the workstation. It copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md` and registers the named agent. The named agent's `tools:` frontmatter enforces a read-only tool surface (Read, Grep, Glob, restricted Bash, read-only wood-fired-tasks MCP tools), preventing an auditor from accidentally mutating code or the bugs DB. The general-purpose fallback honors the read-only contract via prompt-only constraint — equivalent functional contract, but no harness-level enforcement. Both paths satisfy §10e; the named agent is strictly safer.
+**Recommendation for repeat users:** run `install.sh` once on the workstation. It copies `skills/agents/integration-auditor.md` to `~/.claude/agents/integration-auditor.md` and registers the named agent. The named agent's `tools:` frontmatter enforces a read-only tool surface (Read, Grep, Glob, restricted Bash, read-only wood-fired-tasks MCP tools), preventing an auditor from accidentally mutating code or the tasks database. The general-purpose fallback honors the read-only contract via prompt-only constraint — equivalent functional contract, but no harness-level enforcement. Both paths satisfy §10e; the named agent is strictly safer.
 
 ```
 Agent(
@@ -572,7 +572,7 @@ EOF
 )
 ```
 
-The integration-auditor's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a strict git-read allowlist, and the read-only wood-fired-tasks MCP tools). It cannot Edit, Write, commit, push, or mutate the bugs database — by design. See `skills/agents/integration-auditor.md` for the enforced allowlist.
+The integration-auditor's `tools:` frontmatter is restricted to read-only operations (Read, Grep, Glob, Bash with a strict git-read allowlist, and the read-only wood-fired-tasks MCP tools). It cannot Edit, Write, commit, push, or mutate the tasks database — by design. See `skills/agents/integration-auditor.md` for the enforced allowlist.
 
 **Bounds recap**: the integration-auditor MUST stay within **≤ 15 tool calls** and **≤ 3 minutes** wall-clock per overlap. Bounds are tighter than `tasks-verifier`'s because the audit scope is one file × two hunks. If the bound is exceeded, the auditor self-emits `RISKY` with a note that the bound was hit.
 
@@ -660,7 +660,7 @@ Use `SendMessage` to the same agent ID (not a new Agent call) whenever the orche
 - **Quality deviations on a passing build** — silent-pass gates, no-op scripts, fabricated checks, scope creep, hard-constraint violations the orchestrator catches during Step 5 inspection.
 - **Discovered constraints that change scope** — e.g. the subagent surfaced a tooling constraint not in the brief (`formatter.enabled: false` in biome config) and proposed a compromise. Re-brief with the constraint acknowledged and the right policy (accept, defer the deliverable cleanly, or split the work) — don't accept compromises that introduce anti-patterns just to ship.
 
-Same agent = full context preserved; the re-brief can be short ("you previously did X, do Y instead, because Z"). If two re-briefs don't land the right outcome, mark the bugs-db task `blocked` with a comment listing what was tried, then move on.
+Same agent = full context preserved; the re-brief can be short ("you previously did X, do Y instead, because Z"). If two re-briefs don't land the right outcome, mark the task `blocked` with a comment listing what was tried, then move on.
 
 ### Subagent goes off-script
 
@@ -680,7 +680,7 @@ After 2–3 honest subagent round-trips, set the task to `blocked` with a commen
 
 ### `topology_check` returns something other than FLAT / DAG / DAG_CYCLIC
 
-Defensive halt. Emit a comment in the bugs-DB project's top-level discussion (`add_comment` on the highest-ID open task as a proxy — there is no project-level comment API) citing the unexpected topology value verbatim, then exit. This should be impossible per `TopologyService`'s contract; if it happens it is a data-shape bug worth a separate task.
+Defensive halt. Emit a comment in the tasks project's top-level discussion (`add_comment` on the highest-ID open task as a proxy — there is no project-level comment API) citing the unexpected topology value verbatim, then exit. This should be impossible per `TopologyService`'s contract; if it happens it is a data-shape bug worth a separate task.
 
 ---
 

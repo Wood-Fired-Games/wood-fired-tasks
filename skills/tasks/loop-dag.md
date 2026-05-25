@@ -125,15 +125,15 @@ Algorithm:
 
 1. Fetch all open tasks for the project via `wood-fired-tasks:list_tasks` with `status=open` and `limit=200`.
 2. **Build the `blocked_by` index from `topology_check.edges` (already fetched in §2f).** For each edge `from → to` in the response, append `from` to `blocked_by[to]`. **Do NOT call `wood-fired-tasks:get_dependencies` per task** — `topology_check` is the authoritative single-call source-of-truth and per-task fetches are N+1 round-trips that the §2f call has already eliminated. The only exception: if §2f's `topology_check` was unavailable or returned a malformed response (defensive halt path), fall back to per-task `wood-fired-tasks:get_dependencies` here and cache per task id.
-3. A task is **on the frontier** iff every `blocked_by` task id either (a) has `status` in {`done`, `closed`}, (b) is missing from the project (cross-project or dangling edge — drop defensively, matching `src/services/topology.service.ts`'s same-project filter), or (c) has been already-closed by a prior wave in THIS loop run (track this in orchestrator state — a task closed in wave N is satisfied for wave N+1's frontier calculation even if the bugs-DB write hasn't been re-read).
+3. A task is **on the frontier** iff every `blocked_by` task id either (a) has `status` in {`done`, `closed`}, (b) is missing from the project (cross-project or dangling edge — drop defensively, matching `src/services/topology.service.ts`'s same-project filter), or (c) has been already-closed by a prior wave in THIS loop run (track this in orchestrator state — a task closed in wave N is satisfied for wave N+1's frontier calculation even if the tasks-database write hasn't been re-read).
 4. **Skip tasks already claimed by someone else.** If a task is on the frontier but its `claimed_at` is non-null and the assignee is not this orchestrator's agent name, drop it from this wave's dispatch set and re-evaluate it on the next frontier recomputation (it may still be claimed; that's fine — eventually it closes or is released).
 5. **Skip tasks the orchestrator already dispatched in a prior wave of THIS run.** A worker that returned FAIL → blocked stays blocked; do NOT silently re-attempt within the same loop run. Track these in orchestrator state by task id.
-6. **Skip tasks flagged by §2g feasibility gate.** If a task id is in `not_dispatchable_this_run` (set built in §2g and extended below), drop it. The task remains open in the bugs DB; it just doesn't enter THIS run's frontier.
+6. **Skip tasks flagged by §2g feasibility gate.** If a task id is in `not_dispatchable_this_run` (set built in §2g and extended below), drop it. The task remains open in the tasks database; it just doesn't enter THIS run's frontier.
 7. **Skip tasks with stale-PARTIAL evidence (previously-PARTIAL guard).** If a task has `verification_evidence.verdict = "PARTIAL"` from a prior loop run AND no new commits have touched any of the files in `verification_evidence.file_changes` since `verification_evidence.verified_at`, add the task id to `not_dispatchable_this_run` with reason `"previously-PARTIAL, no new evidence"` and skip it. Add a one-time comment to the task: `"/tasks:loop-dag previously-PARTIAL guard: task graded PARTIAL on <verified_at> by verifier <verifier_session_id>; no new commits have touched its tracked files since. Re-dispatch would re-grade the same evidence and produce the same PARTIAL. Skipping. Either commit progress toward the UNCHECKABLE criteria first, or close the task manually."` (Check `git log --since=<verified_at> -- <files>` to determine staleness; if `file_changes` is empty in the prior evidence, treat as stale — there's no signal that anything has moved.)
 8. Sort the resulting frontier by **priority DESC** (`urgent` > `high` > `medium` > `low`), then **`created_at` ASC** (older first), then **`id` ASC**. The first `--concurrency K` tasks of the sorted frontier are the wave's dispatch set.
 9. If the resulting frontier is empty, do one final check: are there any open tasks left at all? If YES, those tasks are all transitively blocked by something that either failed (verdict=FAIL → blocked), was never closed, or was filtered by §2g / step 7 — emit `## Stalled Tasks` AND `## Not-Dispatchable Tasks` blocks in the final LOOP-RUN.md (per §5d) and exit. If NO, the backlog is drained — announce completion, run §4 (integration audit) ONCE, then exit.
 
-**Frontier correctness invariant (test fixture — not a real task set).** The canonical *test fixture* lives in `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`; the IDs 334/335/337/338/339 are fictional and need not be looked up in the live bugs DB. Given edges `{334→337, 335→337, 337→338, 337→339}` on an open-task set `{334, 335, 337, 338, 339}`, the frontier algorithm MUST produce waves `{334, 335}` (wave 1) / `{337}` (wave 2) / `{338, 339}` (wave 3). This is the load-bearing correctness contract for §3a — any change to the algorithm MUST preserve this fixture's wave shape.
+**Frontier correctness invariant (test fixture — not a real task set).** The canonical *test fixture* lives in `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`; the IDs 334/335/337/338/339 are fictional and need not be looked up in the live tasks database. Given edges `{334→337, 335→337, 337→338, 337→339}` on an open-task set `{334, 335, 337, 338, 339}`, the frontier algorithm MUST produce waves `{334, 335}` (wave 1) / `{337}` (wave 2) / `{338, 339}` (wave 3). This is the load-bearing correctness contract for §3a — any change to the algorithm MUST preserve this fixture's wave shape.
 
 ### Step 3b — Claim and dispatch in parallel
 
@@ -168,7 +168,7 @@ Re-read `loop.md` §Step 7 in full — the verifier dispatch shape (§7a build e
 
 **Branch outcomes per task (same rollup table as `loop.md` §7d):**
 
-- `verdict: "PASS"` → commit the worker's changes if not already committed (mirrors `loop.md` §Step 6 — Commit + push), call `wood-fired-tasks:update_task with updates={ "status": "done", "verification_evidence": <full evidence> }`. Add the bugs-DB close-out comment per `loop.md` §Step 8 template.
+- `verdict: "PASS"` → commit the worker's changes if not already committed (mirrors `loop.md` §Step 6 — Commit + push), call `wood-fired-tasks:update_task with updates={ "status": "done", "verification_evidence": <full evidence> }`. Add the close-out comment per `loop.md` §Step 8 template.
 - `verdict: "FAIL"` → call `wood-fired-tasks:add_comment` with the failed-checks bullet list, then `wood-fired-tasks:update_task with updates={ "status": "blocked", "verification_evidence": <full evidence> }`. **Downstream tasks (those whose `blocked_by` includes this task) MUST stay `open` and untouched — they will simply never appear on a future frontier** because their `blocked_by` is no longer satisfied. The orchestrator MUST NOT silently re-attempt the failed task within the same loop run. The §3a stalled-tasks check at the end will surface the downstream stall.
 - `verdict: "PARTIAL"` → call `wood-fired-tasks:add_comment` listing the UNCHECKABLE criteria, then `wood-fired-tasks:update_task with updates={ "verification_evidence": <full evidence> }` only — status stays `in_progress`. Same load-bearing rule as FAIL: downstream tasks stay open and will not appear on the next frontier (PARTIAL is not the same as `done`/`closed`; `blocked_by` is not satisfied).
 - `verdict: "NOT_VERIFIED"` → same handling as `loop.md` §7d NOT_VERIFIED branch. Same downstream-stays-open rule applies.
@@ -321,11 +321,11 @@ If the user explicitly asked to "drain the whole DAG" or "run until empty", set 
 
 ### Worker subagent fails mid-wave
 
-Per §3c, treat the failing task as `NOT_VERIFIED` → bugs-DB status `blocked` for THIS run. The remainder of the wave's workers continue uninterrupted — one worker failure does NOT cancel the wave. Downstream tasks (those whose `blocked_by` includes the failed task) stay open and will surface in the run's final `## Stalled Tasks` section.
+Per §3c, treat the failing task as `NOT_VERIFIED` → tasks-database status `blocked` for THIS run. The remainder of the wave's workers continue uninterrupted — one worker failure does NOT cancel the wave. Downstream tasks (those whose `blocked_by` includes the failed task) stay open and will surface in the run's final `## Stalled Tasks` section.
 
 ### Verifier subagent unreachable for repair
 
-Per §3d, follow `loop.md` §7c's hard-fallback exactly: synthesize `NOT_VERIFIED`, add a bugs-DB comment citing the §7b violation, preserve the original verifier's parse-failed output verbatim. Do NOT re-dispatch a fresh verifier — fresh dispatches lack the original verifier's tool-call context and will fabricate checks.
+Per §3d, follow `loop.md` §7c's hard-fallback exactly: synthesize `NOT_VERIFIED`, add a tasks-database comment citing the §7b violation, preserve the original verifier's parse-failed output verbatim. Do NOT re-dispatch a fresh verifier — fresh dispatches lack the original verifier's tool-call context and will fabricate checks.
 
 ### Per-wave integration audit surfaces BROKEN
 
@@ -337,7 +337,7 @@ Per §3a, surface the stall in the final LOOP-RUN.md `## Stalled Tasks` section.
 
 ### `topology_check` returns something other than FLAT / DAG / DAG_CYCLIC
 
-Defensive halt. Emit a comment in the bugs-DB project's top-level discussion (`add_comment` on the highest-ID open task as a proxy — there is no project-level comment API) citing the unexpected topology value verbatim, then exit. This should be impossible per `TopologyService`'s contract; if it happens it is a data-shape bug worth a separate task.
+Defensive halt. Emit a comment in the tasks project's top-level discussion (`add_comment` on the highest-ID open task as a proxy — there is no project-level comment API) citing the unexpected topology value verbatim, then exit. This should be impossible per `TopologyService`'s contract; if it happens it is a data-shape bug worth a separate task.
 
 ---
 
@@ -371,7 +371,7 @@ Envelope construction + `acceptance_criteria` resolution order + scope-narrowing
 
 ### 6c. Verdict branch outcomes
 
-| Verdict | Bugs-DB update | Commit action | Downstream effect |
+| Verdict | Tasks-DB update | Commit action | Downstream effect |
 |---------|----------------|---------------|-------------------|
 | **PASS** | `update_task → status=done`, write evidence | `git add` + `git commit` + `git push` | Downstream becomes frontier-eligible. |
 | **FAIL** | `update_task → status=blocked`, write evidence | none | Downstream stays open, never frontier-eligible this run. |

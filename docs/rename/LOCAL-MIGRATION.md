@@ -1,4 +1,13 @@
-# One-off Local Migration (#293)
+<!--
+INTERNAL HISTORICAL ARTIFACT — not user-facing documentation.
+Records a one-time, maintainer-only migration of a single existing deployment
+during a rename that predates the first public release. The old private name
+and internal task numbers below are historical provenance only and do NOT
+describe any current public surface. The project ships exclusively as
+`wood-fired-tasks`; external users have no old install to migrate from.
+-->
+
+# One-off Local Migration (internal, historical)
 
 A **single, manual** migration of the maintainer's existing deployment from the
 old name to the new one. This is **not** a repeatable/parameterized process and

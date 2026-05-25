@@ -1,4 +1,12 @@
-# Rename Identity Brief (#287)
+<!--
+INTERNAL HISTORICAL ARTIFACT — not user-facing documentation.
+Records a one-time, maintainer-only rename that predates the first public
+release. The old private name and internal task numbers below are historical
+provenance only and do NOT describe any current public surface. The project
+ships exclusively as `wood-fired-tasks`.
+-->
+
+# Rename Identity Brief (internal, historical)
 
 Canonical names + the (small) first-public-release steps. Because the project is
 private and never published, there is **no old-name handling policy to design** —

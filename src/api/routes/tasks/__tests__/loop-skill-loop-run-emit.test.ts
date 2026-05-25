@@ -92,7 +92,7 @@ describe('/tasks:loop skill — LOOP-RUN.md emission wiring (#316)', () => {
     // the verifier gate is gone.
     const hasStep8Close = skill
       .split('\n')
-      .some((line) => /^### Step 8 — Close the bugs-db task/.test(line));
+      .some((line) => /^### Step 8 — Close the task/.test(line));
     expect(hasStep8Close).toBe(true);
   });
 });
