@@ -311,14 +311,14 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     path: 'docs/tasks-decompose-design.md',
     role: 'deep-doc',
     purpose:
-      'Wave 5 (#320) /tasks:decompose design spec: contract, 9-step methodology, four guardrails, DECOMPOSITION.md artifact schema, verification-fixture sketches, and cost budget. Runtime implementation deferred to follow-on tasks.',
+      'Wave 5 (#320) /tasks:decompose design spec: contract, 9-step methodology, four guardrails, DECOMPOSITION.md artifact schema, verification-fixture sketches, and cost budget. /tasks:decompose is OPERATIONAL — the runtime ships at skills/tasks/decompose.md; this doc is the design-of-record.',
     when_to_read: 'on-demand',
     line_budget: 500,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
     notes:
-      'Design spec — single landing doc for the deferred /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when implementation peels content out into adjacent files.',
+      'Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when content peels out into adjacent files.',
   },
   {
     path: 'docs/ONBOARDING_SMOKE.md',
