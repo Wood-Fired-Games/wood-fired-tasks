@@ -8,7 +8,7 @@
  * printed once on stdout and cannot be retrieved later.
  *
  * Output format (28-CONTEXT.md §"tasks db mint-token CLI Command"):
- *   Token: wfb_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ *   Token: wft_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
  *   Id: 17
  *   User: 1 (legacy-key)
  *   Scopes: [admin, reader]

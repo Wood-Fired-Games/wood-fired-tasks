@@ -39,7 +39,7 @@ import {
 const ISSUER = 'https://accounts.example.com';
 const CLIENT_ID = 'test-client-id.example.com';
 const CLIENT_SECRET = 'test-client-secret';
-const REDIRECT_URI = 'https://wfb.example.com/auth/callback';
+const REDIRECT_URI = 'https://wft.example.com/auth/callback';
 const SCOPES = 'openid email profile';
 const SESSION_SECRET = randomBytes(32).toString('base64');
 

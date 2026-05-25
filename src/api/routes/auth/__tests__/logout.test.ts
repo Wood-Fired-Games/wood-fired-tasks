@@ -147,11 +147,11 @@ describe('POST /auth/logout', () => {
     // WR-03 fix: the post_logout_redirect_uri must come from
     // configuration (the harness derives it from REDIRECT_URI's origin),
     // NOT from request.protocol/hostname. The harness's REDIRECT_URI is
-    // `https://wfb.example.com/auth/callback`, so the post-logout URI
-    // is `https://wfb.example.com/auth/login` regardless of what Host
+    // `https://wft.example.com/auth/callback`, so the post-logout URI
+    // is `https://wft.example.com/auth/login` regardless of what Host
     // header the caller smuggled in.
     expect(u.searchParams.get('post_logout_redirect_uri')).toBe(
-      'https://wfb.example.com/auth/login',
+      'https://wft.example.com/auth/login',
     );
   });
 
@@ -174,9 +174,9 @@ describe('POST /auth/logout', () => {
     expect(typeof location).toBe('string');
     const u = new URL(location as string);
     // Even with a spoofed Host header, the post-logout URI MUST come
-    // from configuration (wfb.example.com), not from request.hostname.
+    // from configuration (wft.example.com), not from request.hostname.
     const postLogout = u.searchParams.get('post_logout_redirect_uri');
-    expect(postLogout).toBe('https://wfb.example.com/auth/login');
+    expect(postLogout).toBe('https://wft.example.com/auth/login');
     expect(postLogout).not.toContain('evil.example.org');
 
     // Session-delete contract: the response must emit a clearing
@@ -189,11 +189,11 @@ describe('POST /auth/logout', () => {
     const setCookieList = Array.isArray(setCookieRaw)
       ? setCookieRaw
       : [setCookieRaw as string];
-    const clearing = setCookieList.find((c) => c.startsWith('wfb_session='));
+    const clearing = setCookieList.find((c) => c.startsWith('wft_session='));
     expect(clearing).toBeDefined();
     // The clearing Set-Cookie either has an empty value OR an Expires
     // attribute in the past (epoch). Both are valid expiry signals.
-    const hasEmptyValue = /^wfb_session=;/.test(clearing as string);
+    const hasEmptyValue = /^wft_session=;/.test(clearing as string);
     const hasPastExpiry =
       /Expires=Thu, 01 Jan 1970/i.test(clearing as string) ||
       /Max-Age=0/i.test(clearing as string);

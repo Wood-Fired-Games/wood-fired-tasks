@@ -35,7 +35,7 @@ describe('topology command', () => {
       .spyOn(process.stdout, 'write')
       .mockImplementation(() => true);
 
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-topology-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-topology-'));
     dbPath = join(tmpDir, 'tasks.db');
 
     // Materialize a real schema so the command's read-only handle sees the

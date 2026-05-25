@@ -56,7 +56,7 @@ describe('db-mint-token command', () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-dbmint-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-dbmint-'));
     dbPath = join(tmpDir, 'tasks.db');
 
     // Seed: migrations + a legacy user (display_name=legacy-key, is_legacy=1).
@@ -147,7 +147,7 @@ describe('db-mint-token command', () => {
 
     const stdout = loggedStdout();
     expect(process.exitCode).toBe(0);
-    expect(stdout).toMatch(/Token: wfb_pat_[A-Z2-7]{32}/);
+    expect(stdout).toMatch(/Token: wft_pat_[A-Z2-7]{32}/);
     expect(stdout).toContain('Id:');
     expect(stdout).toContain(`User: ${legacy!.id} (legacy-key)`);
 
@@ -155,10 +155,10 @@ describe('db-mint-token command', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].user_id).toBe(legacy!.id);
     expect(rows[0].name).toBe('laptop');
-    expect(rows[0].prefix).toBe('wfb_pat_');
+    expect(rows[0].prefix).toBe('wft_pat_');
 
     // Round-trip: extract token from stdout, hash it, verify match.
-    const match = stdout.match(/Token: (wfb_pat_[A-Z2-7]{32})/);
+    const match = stdout.match(/Token: (wft_pat_[A-Z2-7]{32})/);
     expect(match).not.toBeNull();
     const printedToken = match![1];
     const expectedHash = createHash('sha256')
@@ -346,7 +346,7 @@ describe('db-mint-token command', () => {
 
       expect(process.exitCode).toBe(0);
       const stdout = loggedStdout();
-      expect(stdout).toMatch(/Token: wfb_pat_[A-Z2-7]{32}/);
+      expect(stdout).toMatch(/Token: wft_pat_[A-Z2-7]{32}/);
       expect(stdout).toContain(`User: ${legacy!.id} (legacy-key)`);
 
       const rows = readTokens();

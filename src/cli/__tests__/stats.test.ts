@@ -32,7 +32,7 @@ describe('stats command', () => {
   }
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-stats-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-stats-'));
     dbPath = join(tmpDir, 'tasks.db');
     app = await createApp(dbPath);
 

@@ -64,7 +64,7 @@ const MintTokenBodySchema = z.object({
 
 const MintTokenResponseSchema = z.object({
   id: z.number().int(),
-  // `token` carries the full `wfb_pat_...` value EXACTLY ONCE — the only
+  // `token` carries the full `wft_pat_...` value EXACTLY ONCE — the only
   // surface that ever sees the plaintext after mint. Annotated so the
   // generated OpenAPI doc carries the warning to API consumers.
   token: z
@@ -208,7 +208,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
     schema: {
       tags: ['me-tokens'],
       description:
-        'Mint a new Personal Access Token. The full `wfb_pat_...` token ' +
+        'Mint a new Personal Access Token. The full `wft_pat_...` token ' +
         'is returned EXACTLY ONCE in the response body — store it ' +
         'securely; it cannot be retrieved later.',
       // No body schema declared at the route level: the HTML branch runs

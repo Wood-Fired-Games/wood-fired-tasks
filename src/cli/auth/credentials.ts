@@ -58,7 +58,7 @@ export interface Credentials {
  * property 'server' of 'undefined'`.
  *
  * Field rules:
- *   - `token`: non-empty string. PAT format `wfb_pat_<base64url>`; we
+ *   - `token`: non-empty string. PAT format `wft_pat_<base64url>`; we
  *     don't pin the prefix here because the legacy/raw-bearer migration
  *     path (Phase 28 PATs) could in principle ship in different shapes.
  *     "Non-empty" is the load-bearing invariant — anything else and the

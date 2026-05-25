@@ -39,7 +39,7 @@ function restoreEnv(snap: typeof origEnv) {
 
 const sampleCreds: Credentials = {
   active: {
-    token: 'wfb_pat_ABCDEFG1234567890',
+    token: 'wft_pat_ABCDEFG1234567890',
     token_id: 17,
     server: 'https://woodfiredbugs.local',
     user_id: 1,
@@ -51,7 +51,7 @@ const sampleCreds: Credentials = {
 
 beforeEach(() => {
   origEnv = snapshotEnv();
-  tmpDir = mkdtempSync(join(tmpdir(), 'wfb-creds-'));
+  tmpDir = mkdtempSync(join(tmpdir(), 'wft-creds-'));
   // Strip any env that could leak into getCredentialsPath / resolveAuth.
   delete process.env.WFT_CREDENTIALS_PATH;
   delete process.env.XDG_CONFIG_HOME;
@@ -218,7 +218,7 @@ describe('readCredentials', () => {
         target,
         [
           '[active]',
-          'token = "wfb_pat_x"',
+          'token = "wft_pat_x"',
           'token_id = -3',
           'server = "https://example.test"',
           'user_id = 1',
@@ -240,7 +240,7 @@ describe('readCredentials', () => {
         target,
         [
           '[active]',
-          'token = "wfb_pat_x"',
+          'token = "wft_pat_x"',
           'token_id = 1',
           'server = "https://example.test"',
           // user_id intentionally omitted
@@ -262,7 +262,7 @@ describe('readCredentials', () => {
         target,
         [
           '[active]',
-          'token = "wfb_pat_x"',
+          'token = "wft_pat_x"',
           'token_id = 1',
           'server = "https://example.test"',
           'user_id = 1',
@@ -279,7 +279,7 @@ describe('readCredentials', () => {
       writeCredentials(
         {
           active: {
-            token: 'wfb_pat_x',
+            token: 'wft_pat_x',
             token_id: 1,
             server: 'https://example.test',
             user_id: 1,
@@ -315,9 +315,9 @@ describe('resolveAuth precedence', () => {
     process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'creds');
     writeCredentials(sampleCreds, process.env.WFT_CREDENTIALS_PATH);
     process.env.API_KEY = 'legacykey';
-    setTokenOverride('wfb_pat_FLAG_OVERRIDE');
+    setTokenOverride('wft_pat_FLAG_OVERRIDE');
     const auth = await resolveAuth();
-    expect(auth).toEqual({ kind: 'bearer', token: 'wfb_pat_FLAG_OVERRIDE', origin: 'flag' });
+    expect(auth).toEqual({ kind: 'bearer', token: 'wft_pat_FLAG_OVERRIDE', origin: 'flag' });
   });
 
   it('credentials file is used when no override (kind=bearer, origin=file)', async () => {

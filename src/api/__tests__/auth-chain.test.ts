@@ -210,7 +210,7 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
         headers: {
           // valid PAT shape, but never inserted into api_tokens
           authorization:
-            'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+            'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
         },
       });
       expect(res.statusCode).toBe(401);
@@ -239,7 +239,7 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/probe',
-        headers: { authorization: 'Bearer wfb_pat_short' },
+        headers: { authorization: 'Bearer wft_pat_short' },
       });
       expect(res.statusCode).toBe(401);
       const allLogs = harness.captured.join('');
@@ -479,14 +479,14 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
         method: 'GET',
         url: '/api/v1/throw-probe',
         headers: {
-          authorization: 'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+          authorization: 'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
         },
       });
       expect(res.statusCode).toBe(500);
       const body = JSON.parse(res.body);
       expect(body).toEqual({ error: 'INTERNAL_ERROR' });
       // Body MUST NOT leak the offending token bytes or stack.
-      expect(res.body).not.toContain('wfb_pat_');
+      expect(res.body).not.toContain('wft_pat_');
       expect(res.body).not.toContain('database is locked');
     });
 
@@ -495,7 +495,7 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
         method: 'GET',
         url: '/api/v1/throw-probe',
         headers: {
-          authorization: 'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+          authorization: 'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
         },
       });
       expect(res.statusCode).toBe(500);

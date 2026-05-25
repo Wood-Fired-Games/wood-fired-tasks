@@ -23,14 +23,14 @@ describe('hashToken', () => {
 });
 
 describe('generateToken', () => {
-  it('token starts with wfb_pat_', () => {
+  it('token starts with wft_pat_', () => {
     const result = generateToken();
-    expect(result.token.startsWith('wfb_pat_')).toBe(true);
+    expect(result.token.startsWith('wft_pat_')).toBe(true);
   });
 
-  it('prefix is the literal wfb_pat_', () => {
+  it('prefix is the literal wft_pat_', () => {
     const result = generateToken();
-    expect(result.prefix).toBe('wfb_pat_');
+    expect(result.prefix).toBe('wft_pat_');
   });
 
   it('base32 body is exactly 32 chars', () => {

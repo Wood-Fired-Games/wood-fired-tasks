@@ -38,7 +38,7 @@ describe('deploy/upgrade.sh', () => {
     // never even thinks about touching /opt/. We also override SOURCE_DIR
     // resolution by invoking the script from the tmpdir but pointing it at
     // a copy of the script that resolves SOURCE_DIR via $(dirname "$0").
-    const work = mkdtempSync(join(tmpdir(), 'wfb-upgrade-smoke-'));
+    const work = mkdtempSync(join(tmpdir(), 'wft-upgrade-smoke-'));
     try {
       // Lay out the fake "source tree" with src/ but NO dist/.
       mkdirSync(join(work, 'deploy'), { recursive: true });

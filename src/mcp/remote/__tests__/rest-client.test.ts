@@ -66,17 +66,17 @@ describe('RestClient', () => {
   // the same precedent that Phase 30 Plan 05 wired into `src/cli/api/client.ts`.
 
   describe('auth header prefix detection (MCP-01)', () => {
-    it('uses Authorization: Bearer when apiKey starts with wfb_pat_', async () => {
+    it('uses Authorization: Bearer when apiKey starts with wft_pat_', async () => {
       const patClient = new RestClient(
         'http://localhost:3000',
-        'wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+        'wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
       );
       fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
       await patClient.listTasks();
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
       expect(headers['Authorization']).toBe(
-        'Bearer wfb_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+        'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
       );
       // The PAT path MUST NOT also stamp X-API-Key — the server's auth
       // chain treats X-API-Key as the legacy strategy and could log a
@@ -84,7 +84,7 @@ describe('RestClient', () => {
       expect(headers['X-API-Key']).toBeUndefined();
     });
 
-    it('uses X-API-Key when apiKey does NOT start with wfb_pat_ (legacy path)', async () => {
+    it('uses X-API-Key when apiKey does NOT start with wft_pat_ (legacy path)', async () => {
       const legacyClient = new RestClient(
         'http://localhost:3000',
         'legacy-style-no-prefix',
@@ -104,8 +104,8 @@ describe('RestClient', () => {
     it('preserves apiKey verbatim in the Bearer body (no manipulation)', async () => {
       // Defensive: ensure the prefix detection only switches the HEADER
       // NAME and never mutates the token (e.g. strips the prefix). The
-      // server expects the full `wfb_pat_<body>` string for hash lookup.
-      const fullToken = 'wfb_pat_2222222222222222222222AAAAAAAAAA';
+      // server expects the full `wft_pat_<body>` string for hash lookup.
+      const fullToken = 'wft_pat_2222222222222222222222AAAAAAAAAA';
       const patClient = new RestClient('http://localhost:3000', fullToken);
       fetchMock.mockResolvedValue(ok({ id: 1 }));
       await patClient.getTask(1);

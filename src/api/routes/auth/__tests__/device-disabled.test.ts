@@ -117,19 +117,19 @@ describe('effectiveOrigin', () => {
   it('derives from OIDC_REDIRECT_URI when present', () => {
     expect(
       effectiveOrigin({
-        OIDC_REDIRECT_URI: 'https://wfb.local/auth/callback',
+        OIDC_REDIRECT_URI: 'https://wft.local/auth/callback',
         PORT: 3000,
       }),
-    ).toBe('https://wfb.local');
+    ).toBe('https://wft.local');
   });
 
   it('strips path/query from the redirect URI', () => {
     expect(
       effectiveOrigin({
-        OIDC_REDIRECT_URI: 'https://wfb.local:8443/some/deep/path?x=1',
+        OIDC_REDIRECT_URI: 'https://wft.local:8443/some/deep/path?x=1',
         PORT: 3000,
       }),
-    ).toBe('https://wfb.local:8443');
+    ).toBe('https://wft.local:8443');
   });
 
   it('falls back to http://localhost:PORT when OIDC_REDIRECT_URI absent', () => {

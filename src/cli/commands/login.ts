@@ -38,7 +38,7 @@ function emitJsonEvent(event: Record<string, unknown>): void {
 }
 
 export const loginCommand = new Command('login')
-  .description('Authenticate with the WFB server via OAuth device flow')
+  .description('Authenticate with the WFT server via OAuth device flow')
   .option(
     '--token-name <name>',
     'Name for the minted PAT (currently advisory; reserved for v1.7 explicit naming)',
@@ -71,7 +71,7 @@ export const loginCommand = new Command('login')
       return;
     }
 
-    const clientId: string = process.env.OIDC_CLIENT_ID ?? 'wfb-cli';
+    const clientId: string = process.env.OIDC_CLIENT_ID ?? 'wft-cli';
     const hostname: string = os.hostname();
 
     // 2. Request a device_code from the server.

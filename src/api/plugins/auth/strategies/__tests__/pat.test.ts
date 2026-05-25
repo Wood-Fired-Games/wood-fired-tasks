@@ -99,7 +99,7 @@ describe('PAT strategy tryAuth', () => {
       expect(deps.apiTokenRepository.findByHash).not.toHaveBeenCalled();
     });
 
-    it('skips when the Bearer token is not a wfb_pat_ token (e.g. JWT)', async () => {
+    it('skips when the Bearer token is not a wft_pat_ token (e.g. JWT)', async () => {
       const req = makeRequest('Bearer eyJhbGciOiJIUzI1NiJ9.foo.bar');
       const deps = makeDeps();
       const out = await tryAuth(req, deps);
@@ -107,8 +107,8 @@ describe('PAT strategy tryAuth', () => {
       expect(deps.apiTokenRepository.findByHash).not.toHaveBeenCalled();
     });
 
-    it('skips when prefix is wfb_pat_ but missing the Bearer scheme (raw body)', async () => {
-      // We only own the Bearer scheme. Naked `wfb_pat_...` (no Bearer)
+    it('skips when prefix is wft_pat_ but missing the Bearer scheme (raw body)', async () => {
+      // We only own the Bearer scheme. Naked `wft_pat_...` (no Bearer)
       // belongs to the legacy strategy's catch-all path.
       const req = makeRequest(makeToken());
       const deps = makeDeps();

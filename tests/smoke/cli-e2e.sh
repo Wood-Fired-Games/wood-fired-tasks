@@ -318,7 +318,7 @@ fi
 # `tasks db mint-token` opens the DB directly (no HTTP). It runs migrations
 # itself (idempotent on a server-migrated DB) and resolves --user against
 # the legacy display_name seeded above. The token is printed on stdout
-# exactly once (line: "Token: wfb_pat_...").
+# exactly once (line: "Token: wft_pat_...").
 echo "[e2e] step 2: mint PAT via 'tasks db mint-token'"
 mint_out="$(mktemp)"
 mint_err="$(mktemp)"

@@ -42,7 +42,7 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
     sessionName: 'session',
-    cookieName: 'wfb_session',
+    cookieName: 'wft_session',
     key: randomBytes(32),
     expiry: SESSION_LIFETIME_SECONDS,
     cookie: {

@@ -7,7 +7,7 @@
 // the session and legacy strategies and applies the side effects.
 //
 // Token format (locked by 27-CONTEXT.md):
-//   wfb_pat_<32 chars of RFC 4648 base32 (A-Z, 2-7), no padding>
+//   wft_pat_<32 chars of RFC 4648 base32 (A-Z, 2-7), no padding>
 //
 // Five categorical failure reasons match the Phase 27 AuthFailureReason
 // enum exactly: wrong_prefix | unknown_token | revoked | expired |
@@ -55,7 +55,7 @@ export function toAuthenticatedUser(user: User): AuthenticatedUser {
  * Decision tree:
  *   1. No Authorization header                       → skip
  *   2. Authorization doesn't start with `Bearer `    → skip
- *   3. Bearer body doesn't start with `wfb_pat_`     → skip (legacy may try)
+ *   3. Bearer body doesn't start with `wft_pat_`     → skip (legacy may try)
  *   4. PAT body shape wrong (length / charset)       → fail/wrong_prefix
  *   5. findByHash returns null                       → fail/unknown_token
  *   6. row.revoked_at is set                         → fail/revoked

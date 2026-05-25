@@ -10,7 +10,7 @@
  *
  * Resolution precedence — mirrors the auth chain (PAT first, then legacy):
  *
- *   1. `WFT_API_KEY` starts with `wfb_pat_` → SHA-256 hash + lookup in
+ *   1. `WFT_API_KEY` starts with `wft_pat_` → SHA-256 hash + lookup in
  *      `api_tokens`. The token MUST be unrevoked, unexpired, AND owned by
  *      a non-disabled user (matches REST PAT strategy). Otherwise the
  *      resolver fails closed unless `WFT_MCP_ALLOW_BAD_PAT=1` is set, in

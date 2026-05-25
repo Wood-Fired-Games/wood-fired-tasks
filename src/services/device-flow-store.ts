@@ -81,7 +81,7 @@ export interface DeviceFlowSession {
   approvedUserId: number | null;
   /** Set by Plan 30-04 on successful mint. */
   mintedTokenId: number | null;
-  /** Set by Plan 30-04 on successful mint — the `wfb_pat_*` plaintext. */
+  /** Set by Plan 30-04 on successful mint — the `wft_pat_*` plaintext. */
   mintedToken: string | null;
 }
 

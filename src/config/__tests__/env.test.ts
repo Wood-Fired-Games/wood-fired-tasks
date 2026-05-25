@@ -582,14 +582,14 @@ describe('Configuration Validation', () => {
       }
     });
 
-    it('defaults SESSION_COOKIE_NAME to "wfb_session" when unset', () => {
+    it('defaults SESSION_COOKIE_NAME to "wft_session" when unset', () => {
       process.env.API_KEYS = 'test-key';
 
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.SESSION_COOKIE_NAME).toBe('wfb_session');
+        expect(result.data.SESSION_COOKIE_NAME).toBe('wft_session');
       }
     });
   });

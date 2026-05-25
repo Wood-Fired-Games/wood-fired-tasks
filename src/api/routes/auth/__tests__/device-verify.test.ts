@@ -103,7 +103,7 @@ async function buildHarness(): Promise<Harness> {
   await app.register(fastifyCookie);
   await app.register(fastifySecureSession, {
     sessionName: 'session',
-    cookieName: 'wfb_session',
+    cookieName: 'wft_session',
     key: randomBytes(32),
     expiry: SESSION_LIFETIME_SECONDS,
     cookie: {
@@ -439,7 +439,7 @@ describe('POST /auth/device/verify', () => {
       const after = findByUserCode(ds.userCode);
       expect(after?.status).toBe('approved');
       expect(after?.mintedTokenId).toBeTypeOf('number');
-      expect(after?.mintedToken).toMatch(/^wfb_pat_[A-Z2-7]{32}$/);
+      expect(after?.mintedToken).toMatch(/^wft_pat_[A-Z2-7]{32}$/);
 
       // DB has the new api_tokens row.
       const row = harness.db

@@ -13,7 +13,7 @@ import {
 // The helper has no parameter slot for them — these constants exist only
 // to assert via serialization that nothing leaks into the structured log.
 const SENTINEL_SECRETS = [
-  'wfb_pat_DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+  'wft_pat_DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
   'sk-test-secret-value',
   'super-secret-password-123',
 ];

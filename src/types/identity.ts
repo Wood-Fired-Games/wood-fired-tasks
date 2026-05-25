@@ -57,7 +57,7 @@ export interface AuthenticatedUser {
 /**
  * Discriminator identifying which auth strategy matched the request.
  *
- * - `'pat'` — Personal Access Token (`Authorization: Bearer wfb_pat_...`).
+ * - `'pat'` — Personal Access Token (`Authorization: Bearer wft_pat_...`).
  * - `'session'` — encrypted session cookie (Phase 29; stub returns null in
  *   Phase 28).
  * - `'legacy'` — pre-Phase-27 `X-API-Key` (MIGR-01 break-glass).

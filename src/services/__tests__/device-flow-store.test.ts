@@ -333,17 +333,17 @@ describe('device-flow-store', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         expect(approve(s.userCode, 7)).toBe(true);
         expect(
-          recordMintedToken(s.userCode, { tokenId: 42, token: 'wfb_pat_XYZ' }),
+          recordMintedToken(s.userCode, { tokenId: 42, token: 'wft_pat_XYZ' }),
         ).toBe(true);
         const after = findByDeviceCode(s.deviceCode);
         expect(after?.mintedTokenId).toBe(42);
-        expect(after?.mintedToken).toBe('wfb_pat_XYZ');
+        expect(after?.mintedToken).toBe('wft_pat_XYZ');
       });
 
       it('returns false when session is still pending (approve not called)', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         expect(
-          recordMintedToken(s.userCode, { tokenId: 1, token: 'wfb_pat_X' }),
+          recordMintedToken(s.userCode, { tokenId: 1, token: 'wft_pat_X' }),
         ).toBe(false);
         // Session must remain untouched.
         const after = findByDeviceCode(s.deviceCode);
@@ -355,7 +355,7 @@ describe('device-flow-store', () => {
         expect(
           recordMintedToken('UNKNOWN1', {
             tokenId: 1,
-            token: 'wfb_pat_X',
+            token: 'wft_pat_X',
           }),
         ).toBe(false);
       });
@@ -364,7 +364,7 @@ describe('device-flow-store', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         expect(deny(s.userCode)).toBe(true);
         expect(
-          recordMintedToken(s.userCode, { tokenId: 1, token: 'wfb_pat_X' }),
+          recordMintedToken(s.userCode, { tokenId: 1, token: 'wft_pat_X' }),
         ).toBe(false);
       });
 
@@ -372,14 +372,14 @@ describe('device-flow-store', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         approve(s.userCode, 7);
         expect(
-          recordMintedToken(s.userCode, { tokenId: 9, token: 'wfb_pat_A' }),
+          recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' }),
         ).toBe(true);
         expect(
-          recordMintedToken(s.userCode, { tokenId: 9, token: 'wfb_pat_A' }),
+          recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' }),
         ).toBe(true);
         const after = findByDeviceCode(s.deviceCode);
         expect(after?.mintedTokenId).toBe(9);
-        expect(after?.mintedToken).toBe('wfb_pat_A');
+        expect(after?.mintedToken).toBe('wft_pat_A');
       });
     });
   });

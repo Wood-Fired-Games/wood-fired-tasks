@@ -84,7 +84,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-dbmigrate-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-dbmigrate-'));
     dbPath = join(tmpDir, 'tasks.db');
 
     // Baseline: migrations + two legacy users via API_KEYS, plus one

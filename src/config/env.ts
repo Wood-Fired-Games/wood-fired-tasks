@@ -97,7 +97,7 @@ export const configSchema = z.object({
   // Host header.
   OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   OIDC_SCOPES: z.string().min(1).default('openid email profile'),
-  SESSION_COOKIE_NAME: z.string().min(1).default('wfb_session'),
+  SESSION_COOKIE_NAME: z.string().min(1).default('wft_session'),
   // SESSION_COOKIE_SECRET is the sealed-box key for @fastify/secure-session.
   // sodium requires exactly 32 bytes; the refine enforces that strictly so
   // misconfiguration cannot silently produce a weaker key.

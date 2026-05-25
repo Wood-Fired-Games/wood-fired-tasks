@@ -52,7 +52,7 @@ function insertToken(
     id: row.id ?? null,
     user_id: row.user_id,
     name: row.name,
-    prefix: row.prefix ?? 'wfb_pat_',
+    prefix: row.prefix ?? 'wft_pat_',
     suffix: row.suffix ?? 'abcd',
     hash: row.hash,
     scopes: row.scopes ?? '[]',
@@ -91,7 +91,7 @@ describe('ApiTokenRepository', () => {
       expect(token!.user_id).toBe(userId);
       expect(token!.name).toBe('laptop');
       expect(token!.hash).toBe('hash-abc-123');
-      expect(token!.prefix).toBe('wfb_pat_');
+      expect(token!.prefix).toBe('wft_pat_');
       expect(token!.scopes).toBe('[]');
       expect(token!.revoked_at).toBeNull();
       expect(token!.last_used_at).toBeNull();
@@ -142,7 +142,7 @@ describe('ApiTokenRepository', () => {
       const result = repo.insert({
         userId,
         name: 'laptop',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'wxyz',
         hash: 'sha256-insert-happy',
       });
@@ -150,7 +150,7 @@ describe('ApiTokenRepository', () => {
       expect(result.id).toBeGreaterThan(0);
       expect(result.user_id).toBe(userId);
       expect(result.name).toBe('laptop');
-      expect(result.prefix).toBe('wfb_pat_');
+      expect(result.prefix).toBe('wft_pat_');
       expect(result.suffix).toBe('wxyz');
       expect(result.hash).toBe('sha256-insert-happy');
       expect(result.scopes).toBe('[]');
@@ -165,7 +165,7 @@ describe('ApiTokenRepository', () => {
       const result = repo.insert({
         userId,
         name: 'admin-token',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'admn',
         hash: 'sha256-insert-scopes',
         scopes: '["admin"]',
@@ -184,7 +184,7 @@ describe('ApiTokenRepository', () => {
       const result = repo.insert({
         userId,
         name: 'no-expiry',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'noex',
         hash: 'sha256-insert-no-expiry',
       });
@@ -199,7 +199,7 @@ describe('ApiTokenRepository', () => {
       const result = repo.insert({
         userId,
         name: 'with-expiry',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'expy',
         hash: 'sha256-insert-with-expiry',
         expiresAt: '2027-01-01T00:00:00.000Z',
@@ -213,7 +213,7 @@ describe('ApiTokenRepository', () => {
         repo.insert({
           userId: 999999,
           name: 'orphan',
-          prefix: 'wfb_pat_',
+          prefix: 'wft_pat_',
           suffix: 'orph',
           hash: 'sha256-insert-orphan',
         })
@@ -224,7 +224,7 @@ describe('ApiTokenRepository', () => {
       const result = repo.insert({
         userId,
         name: 'shape-check',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'shap',
         hash: 'sha256-insert-shape',
       });
@@ -253,7 +253,7 @@ describe('ApiTokenRepository', () => {
       const inserted = repo.insert({
         userId,
         name: 'to-revoke',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'revk',
         hash: 'sha256-revoke-happy',
       });
@@ -272,7 +272,7 @@ describe('ApiTokenRepository', () => {
       const inserted = repo.insert({
         userId,
         name: 'mine',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'mine',
         hash: 'sha256-revoke-cross-user',
       });
@@ -289,7 +289,7 @@ describe('ApiTokenRepository', () => {
       const inserted = repo.insert({
         userId,
         name: 'double-revoke',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'dbrv',
         hash: 'sha256-revoke-idempotent',
       });
@@ -308,7 +308,7 @@ describe('ApiTokenRepository', () => {
       const inserted = repo.insert({
         userId,
         name: 'touch-me',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'tchm',
         hash: 'sha256-touch-happy',
       });
@@ -332,7 +332,7 @@ describe('ApiTokenRepository', () => {
       const inserted = repo.insert({
         userId,
         name: 'void-return',
-        prefix: 'wfb_pat_',
+        prefix: 'wft_pat_',
         suffix: 'void',
         hash: 'sha256-touch-void',
       });

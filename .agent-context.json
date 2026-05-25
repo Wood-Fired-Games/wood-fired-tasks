@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-25T12:48:25.528Z",
+    "generated_at": "2026-05-25T13:16:05.329Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -136,7 +136,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 927,
-      "sha256": "2fd848a1301dde41b183d4386db8d3db9978f6bed596d43f180172eacbd478ad"
+      "sha256": "1934bd7644bc57880245fa4aa6e01809c365092cd6c12758d8521b0e49188bef"
     },
     {
       "path": "docs/CLI.md",
@@ -164,7 +164,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 896,
-      "sha256": "e701dee219c9713c6b69671864a2b6ef5dfb3e5a3ecfb9ae938aa35c7fd0b48b"
+      "sha256": "2e59e21c66b2064cf7c5308fa453ea44dd9b456a7d28e184afb95f3981e3be40"
     },
     {
       "path": "docs/SLACK.md",
@@ -316,7 +316,7 @@
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
       "actual_lines": 266,
-      "sha256": "fa1a9d00661129480a4f182d4049c46a41afbd841f9eb167b5e8635758643966"
+      "sha256": "6601de935d1cf231d11765974aa425f798512e0968bb518c3f7553c8770b0108"
     },
     {
       "path": "llms.txt",

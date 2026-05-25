@@ -6,7 +6,7 @@
  * `actorUserId: number` that downstream MCP tool handlers inject into every
  * service write. Three input shapes are valid:
  *
- *   1. `WFT_API_KEY=wfb_pat_<…>`     → resolve via apiTokenRepository.findByHash
+ *   1. `WFT_API_KEY=wft_pat_<…>`     → resolve via apiTokenRepository.findByHash
  *   2. `WFT_API_KEY=<legacy-key>`    → match against parsed API_KEYS entries
  *                                       (hash compare) and look up the legacy
  *                                       user by label
@@ -148,7 +148,7 @@ describe('resolveActorUserId', () => {
 
   it('PAT path: THROWS when the PAT has the prefix but no matching row (fail-closed default — WR-02)', () => {
     // A correctly-prefixed but never-inserted PAT.
-    const unknownPat = 'wfb_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const unknownPat = 'wft_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
     expect(() =>
       resolveActorUserId({
@@ -163,7 +163,7 @@ describe('resolveActorUserId', () => {
   });
 
   it('PAT path: falls back to mcp-bot when unknown + allowBadPat=true (WR-02 opt-in)', () => {
-    const unknownPat = 'wfb_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const unknownPat = 'wft_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
     const actor = resolveActorUserId({
       apiKey: unknownPat,

@@ -228,7 +228,7 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
     const $ = cheerio.load(followRes.body);
     const aside = $('aside.minted-token');
     expect(aside.length).toBe(1);
-    expect(aside.text()).toMatch(/wfb_pat_[A-Z2-7]{32}/);
+    expect(aside.text()).toMatch(/wft_pat_[A-Z2-7]{32}/);
     expect(aside.text()).toContain('will not be shown again');
     // Copy button present.
     const copyBtn = aside.find('button');
@@ -321,8 +321,8 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
     const body = JSON.parse(res.body);
     expect(body.name).toBe('json-minted');
     expect(typeof body.token).toBe('string');
-    expect(body.token).toMatch(/^wfb_pat_[A-Z2-7]{32}$/);
-    expect(body.prefix).toBe('wfb_pat_');
+    expect(body.token).toMatch(/^wft_pat_[A-Z2-7]{32}$/);
+    expect(body.prefix).toBe('wft_pat_');
   });
 
   // -------------------------------------------------------------------------

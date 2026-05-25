@@ -166,12 +166,12 @@ describe('Migration 008: Identity Tables', () => {
     db.prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(userId, 'token-1', 'wfb_pat_', 'AAAA', 'hash-aaaa');
+    ).run(userId, 'token-1', 'wft_pat_', 'AAAA', 'hash-aaaa');
 
     db.prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(userId, 'token-2', 'wfb_pat_', 'BBBB', 'hash-bbbb');
+    ).run(userId, 'token-2', 'wft_pat_', 'BBBB', 'hash-bbbb');
 
     const before = db
       .prepare('SELECT COUNT(*) AS c FROM api_tokens WHERE user_id = ?')

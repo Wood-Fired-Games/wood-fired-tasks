@@ -107,8 +107,8 @@ log (`user_id`, `token_id`, `auth_method`).
 
 | Order | Strategy | Credential | Wire format |
 |-------|----------|------------|-------------|
-| 1 | **PAT (Personal Access Token)** | A token row in `personal_access_tokens` | `Authorization: Bearer wfb_pat_<…>` |
-| 2 | **Session** | An OIDC-derived sealed-box session cookie | `Cookie: wfb_session=<…>` |
+| 1 | **PAT (Personal Access Token)** | A token row in `personal_access_tokens` | `Authorization: Bearer wft_pat_<…>` |
+| 2 | **Session** | An OIDC-derived sealed-box session cookie | `Cookie: wft_session=<…>` |
 | 3 | **Legacy** | An entry in the `API_KEYS` env list | `X-API-Key: <…>` |
 
 The three strategies coexist intentionally — legacy keeps existing
@@ -126,7 +126,7 @@ have no expiry; revocation is explicit via the `/me` UI, the
 PAT and removes the local credentials file). Revoked PATs are rejected
 immediately on the next request — there is no cache.
 
-The PAT prefix (`wfb_pat_`) is part of the wire format: the remote MCP
+The PAT prefix (`wft_pat_`) is part of the wire format: the remote MCP
 server and the CLI HTTP client switch their auth header based on the
 prefix, so the same env var (`WFT_API_KEY` for MCP, `API_KEY` for CLI)
 transparently accepts a PAT or a legacy key.
@@ -244,7 +244,7 @@ This runbook is the operator checklist for upgrading from v1.6 (legacy
 4. **Take a database backup.**
 
    ```bash
-   node dist/cli/bin/tasks.js backup --out /var/backups/wfb-pre-v1.7.db
+   node dist/cli/bin/tasks.js backup --out /var/backups/wft-pre-v1.7.db
    ```
 
 ### v1.7 actions (applied by the v1.7 release)

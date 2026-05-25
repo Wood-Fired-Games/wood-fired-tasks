@@ -120,7 +120,7 @@ function seedCredentials(
   return credPath;
 }
 
-const TEST_TOKEN = 'wfb_pat_TESTTOKEN1234567890';
+const TEST_TOKEN = 'wft_pat_TESTTOKEN1234567890';
 
 const STUART_ME = {
   id: 1,
@@ -139,7 +139,7 @@ function tokenListWith(id: number, name: string, lastUsedAt: string | null) {
     {
       id,
       name,
-      prefix: 'wfb_pat_',
+      prefix: 'wft_pat_',
       suffix: '7890',
       scopes: ['*'],
       createdAt: '2026-05-23T11:00:00.000Z',
@@ -155,7 +155,7 @@ describe('tasks whoami (subprocess)', () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(path.join(tmpdir(), 'wfb-whoami-test-'));
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wft-whoami-test-'));
   });
 
   afterEach(async () => {
@@ -420,7 +420,7 @@ describe('tasks whoami (subprocess)', () => {
     const res = await runWhoami(['--json'], { XDG_CONFIG_HOME: tmpDir });
     expect(res.exitCode).toBe(0);
     const combined = res.stdout + res.stderr;
-    expect(combined).not.toContain('wfb_pat_');
+    expect(combined).not.toContain('wft_pat_');
     expect(combined).not.toContain(TEST_TOKEN);
   });
 });

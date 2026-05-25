@@ -92,7 +92,7 @@ function runLogin(
 }
 
 const successEnvelope = {
-  token: 'wfb_pat_TESTTOKEN1234567890',
+  token: 'wft_pat_TESTTOKEN1234567890',
   token_type: 'PAT',
   token_id: 42,
   user: {
@@ -109,7 +109,7 @@ describe('tasks login (subprocess)', () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(path.join(tmpdir(), 'wfb-login-test-'));
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wft-login-test-'));
   });
 
   afterEach(async () => {
@@ -335,7 +335,7 @@ describe('tasks login (subprocess)', () => {
     );
     expect(res.exitCode).toBe(0);
     const combined = res.stdout + res.stderr;
-    expect(combined).not.toContain('wfb_pat_');
+    expect(combined).not.toContain('wft_pat_');
     expect(combined).not.toContain(successEnvelope.token);
 
     // Sanity: the token IS in the on-disk credentials file (so the test

@@ -137,8 +137,8 @@ Then set:
 # Must decode to exactly 32 bytes; the server refuses to boot otherwise.
 SESSION_COOKIE_SECRET=<output of openssl rand -base64 32>
 
-# Optional — the cookie name. Defaults to wfb_session.
-SESSION_COOKIE_NAME=wfb_session
+# Optional — the cookie name. Defaults to wft_session.
+SESSION_COOKIE_NAME=wft_session
 ```
 
 [CRITICAL] Treat `SESSION_COOKIE_SECRET` as a production-grade secret.
@@ -178,10 +178,10 @@ node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
 ```
 
 The command prints the raw PAT to stdout once. Use it as the
-`Authorization: Bearer wfb_pat_<…>` value on subsequent requests, or as
+`Authorization: Bearer wft_pat_<…>` value on subsequent requests, or as
 the `WFT_API_KEY` env var in MCP and CLI clients (the REST client switches
 to `Authorization: Bearer …` automatically when the value starts with
-`wfb_pat_`). See [`SECURITY.md`](../SECURITY.md) →
+`wft_pat_`). See [`SECURITY.md`](../SECURITY.md) →
 **Authentication Architecture** for the full chain.
 
 ### 7. Migrating from an `API_KEYS`-only deployment

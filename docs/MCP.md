@@ -140,7 +140,7 @@ The MCP server has two transports, and they authenticate differently:
 `WFT_API_KEY` accepts two value shapes; the local MCP server resolves
 them at boot:
 
-1. **PAT** — values starting with `wfb_pat_` are hashed (SHA-256) and
+1. **PAT** — values starting with `wft_pat_` are hashed (SHA-256) and
    looked up in `personal_access_tokens`. The matched row's
    `user_id` becomes the actor for every subsequent write tool call.
    Revoked / unknown PATs fall back to `mcp-bot` (see below).
@@ -169,7 +169,7 @@ startup and chooses the wire header by prefix:
 
 | `WFT_API_KEY` prefix | Outbound header |
 |----------------------|-----------------|
-| `wfb_pat_…` | `Authorization: Bearer wfb_pat_…` |
+| `wft_pat_…` | `Authorization: Bearer wft_pat_…` |
 | anything else | `X-API-Key: <value>` |
 
 The REST API's auth chain (PAT → session → legacy) decodes each
@@ -185,7 +185,7 @@ tasks login                           # browser flow on a workstation
 node dist/cli/bin/tasks.js db mint-token --user-email you@example.com
 
 # 2. Paste the PAT value into your MCP client config:
-#    "env": { "WFT_API_KEY": "wfb_pat_…" }
+#    "env": { "WFT_API_KEY": "wft_pat_…" }
 
 # 3. Restart Claude Code. The MCP server (local or remote) picks up the
 #    PAT on next boot.
@@ -252,7 +252,7 @@ secret**:
 
 ```bash
 #!/usr/bin/env bash
-# ~/.local/bin/wfb-mcp — reads the key from the server's .env at spawn time.
+# ~/.local/bin/wft-mcp — reads the key from the server's .env at spawn time.
 set -euo pipefail
 WFT_API_KEY="$(grep -m1 '^API_KEYS=' /opt/wood-fired-tasks/.env | cut -d= -f2- | cut -d, -f1)"
 export WFT_API_KEY
@@ -265,7 +265,7 @@ The client entry then carries only the command — no `env` block, no key:
 ```json
 {
   "mcpServers": {
-    "wood-fired-tasks": { "command": "/home/you/.local/bin/wfb-mcp", "args": [] }
+    "wood-fired-tasks": { "command": "/home/you/.local/bin/wft-mcp", "args": [] }
   }
 }
 ```

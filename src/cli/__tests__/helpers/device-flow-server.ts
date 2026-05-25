@@ -1,5 +1,5 @@
 /**
- * Test helper: minimal Fastify server that emulates the WFB device-flow
+ * Test helper: minimal Fastify server that emulates the WFT device-flow
  * endpoints for Plan 30-06's subprocess test.
  *
  * Only `POST /auth/device/code` and `POST /auth/device/token` are wired —

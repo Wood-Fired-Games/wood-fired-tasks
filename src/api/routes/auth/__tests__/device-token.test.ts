@@ -262,7 +262,7 @@ describe('POST /auth/device/token', () => {
     expect(
       recordMintedToken(session.userCode, {
         tokenId: 999,
-        token: 'wfb_pat_MINTED1234567890ABCDEFGHIJKLMNOP',
+        token: 'wft_pat_MINTED1234567890ABCDEFGHIJKLMNOP',
       }),
     ).toBe(true);
 
@@ -284,7 +284,7 @@ describe('POST /auth/device/token', () => {
         isServiceAccount: boolean;
       };
     };
-    expect(body.token).toBe('wfb_pat_MINTED1234567890ABCDEFGHIJKLMNOP');
+    expect(body.token).toBe('wft_pat_MINTED1234567890ABCDEFGHIJKLMNOP');
     expect(body.token_type).toBe('PAT');
     expect(body.token_id).toBe(999);
     expect(body.user.id).toBe(legacyUserId);

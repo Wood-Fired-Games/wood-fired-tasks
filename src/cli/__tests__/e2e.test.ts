@@ -86,7 +86,7 @@ function runCli(
           // credentials file from the developer's home and the CLI sends
           // its bearer token to the ephemeral test server, which rejects
           // it (401).
-          WFT_CREDENTIALS_PATH: '/nonexistent/wfb-credentials-for-e2e-test',
+          WFT_CREDENTIALS_PATH: '/nonexistent/wft-credentials-for-e2e-test',
           // Force non-TTY so the spinner/prompt code paths stay quiet and
           // the JSON envelope is the only thing on stdout.
           FORCE_COLOR: '0',

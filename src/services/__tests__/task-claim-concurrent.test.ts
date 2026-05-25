@@ -70,7 +70,7 @@ describe('TaskService - real-concurrency claim race (disk-backed SQLite)', () =>
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'wfb-claim-race-'));
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-claim-race-'));
   });
 
   afterEach(() => {
