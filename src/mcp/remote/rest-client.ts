@@ -17,6 +17,7 @@ import type {
   CompletionReportInput,
   CompletionReportResponse,
 } from '../../cli/api/types.js';
+import type { TopologyReport } from '../../schemas/topology.schema.js';
 
 function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
   if (Array.isArray(payload)) {
@@ -331,6 +332,20 @@ export class RestClient {
       ? `/api/v1/tasks/completion-report?${qs}`
       : '/api/v1/tasks/completion-report';
     return this.request<CompletionReportResponse>(endpoint);
+  }
+
+  // ── Topology operations ──────────────────────────────────────────────────
+
+  /**
+   * Classify a project's dependency topology via
+   * `GET /api/v1/projects/:id/topology`.
+   *
+   * Returns the same `TopologyReport` shape the stdio MCP `topology_check`
+   * tool emits (topology, edges, roots, leaves, advisory) so the remote
+   * proxy tool is transport-indistinguishable from the local one.
+   */
+  async getTopology(projectId: number): Promise<TopologyReport> {
+    return this.request<TopologyReport>(`/api/v1/projects/${projectId}/topology`);
   }
 
   // ── Health operations ────────────────────────────────────────────────────

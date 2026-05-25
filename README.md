@@ -605,6 +605,17 @@ and exposes 22 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 
+The `/tasks:*` skills automate the plan→execute→audit loop. Start with
+**`/tasks:decompose --project <id> --goal "..." --success "..."`** to turn a
+project-level goal into 8–25 well-formed tasks (or a dependency DAG) — it
+advises `/tasks:loop` (FLAT backlog, drained sequentially) or
+`/tasks:loop-dag` (DAG backlog, drained wave-by-wave in parallel), then
+`/tasks:audit` grades the run. Decompose only plans; it never executes the
+tasks it creates, refuses blast-radius goals, and supports `--dry-run` to
+preview the breakdown without touching the database. See
+[skills/tasks/decompose.md](skills/tasks/decompose.md) and its design at
+[docs/tasks-decompose-design.md](docs/tasks-decompose-design.md).
+
 ## Release Verification
 
 Before publishing to npm, run `npm run pack:check` (alias for

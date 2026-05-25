@@ -12,7 +12,7 @@ import {
 } from '../../schemas/task.schema.js';
 
 /**
- * Register all 21 MCP tools backed by REST API calls via RestClient.
+ * Register all 22 MCP tools backed by REST API calls via RestClient.
  *
  * Tool names, descriptions, and input schemas match the local MCP server exactly.
  * Each handler proxies the request to the REST API and formats the MCP response.
@@ -23,9 +23,16 @@ import {
  *   3 dependency tools
  *   3 comment tools
  *   1 health tool
+ *   1 topology tool (topology_check) — backed by GET /api/v1/projects/:id/topology
  *
  * task #245 — the `completion_report` tool reaches parity with the local server
  * by hitting `GET /api/v1/tasks/completion-report`.
+ *
+ * topology_check — parity with the stdio MCP server's `topology_check`
+ * (`src/mcp/tools/topology-tools.ts`). Proxies to
+ * `GET /api/v1/projects/:id/topology`, which exposes `TopologyService`.
+ * Input/output schema is byte-identical to the stdio tool so callers can't
+ * tell which transport they're on.
  */
 export function registerRemoteTools(server: McpServer, client: RestClient): void {
 
@@ -878,6 +885,51 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             checks: { database: 'failed' },
           } as unknown as Record<string, unknown>,
         };
+      }
+    }
+  );
+
+  // ── Topology tool (1) ────────────────────────────────────────────────────
+
+  // Tool: topology_check
+  // Parity with the stdio MCP tool (src/mcp/tools/topology-tools.ts).
+  // Proxies to GET /api/v1/projects/:id/topology (TopologyService.classify).
+  // Input/output schema is identical to the stdio tool.
+  server.registerTool(
+    'topology_check',
+    {
+      description:
+        'Classify a project as FLAT (parallelizable, /tasks:loop), DAG ' +
+        '(wave-by-wave parallel dispatch, /tasks:loop-dag), or DAG_CYCLIC ' +
+        '(BLOCKED) based ' +
+        'on its task_dependencies graph. Returns roots, leaves, edges, and ' +
+        'an execution advisory.',
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const report = await client.getTopology(args.project_id);
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `Project ${args.project_id}: topology=${report.topology}, ` +
+                `advisory=${report.advisory}, ` +
+                `edges=${report.edges.length}, ` +
+                `roots=${report.roots.length}, ` +
+                `leaves=${report.leaves.length}`,
+            },
+          ],
+          structuredContent: report as unknown as Record<string, unknown>,
+        };
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to check topology'
+        );
       }
     }
   );
