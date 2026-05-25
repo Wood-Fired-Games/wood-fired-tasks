@@ -10,7 +10,7 @@ Wood Fired Tasks is a centralized task management service providing a REST API, 
 
 **Key capabilities:**
 
-- REST API with 22 endpoints (1 public `/health` + 21 authenticated) for full task lifecycle management
+- REST API with 47 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated) for full task lifecycle management — a single running instance serves up to 40 of them (the OIDC-disabled `/auth/*` stub handlers are mutually exclusive with the live OIDC routes)
 - CLI (`tasks`) with 31 commands for terminal-based operations
 - MCP server with 22 tools for native Claude Code integration (local SQLite or remote HTTP modes)
 - 16 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
@@ -68,17 +68,22 @@ For self-hosted production deploys (including the fork-and-deploy workflow for O
 |-------|----------|------------|-------------|
 | 1 | **PAT** — recommended for machines/agents | row in `api_tokens` (SHA-256 hash stored) | `Authorization: Bearer wft_pat_<…>` |
 | 2 | **Session** — recommended for humans | OIDC sign-in → sealed-box cookie | `Cookie: wft_session=<…>` |
-| 3 | **Legacy** — deprecated (see sunset below) | entry in `API_KEYS` env list | `X-API-Key: <…>` |
+| 3 | **Legacy** — deprecated but still supported (see below) | entry in `API_KEYS` env list | `X-API-Key: <…>` |
 
 PATs are minted from a logged-in `/me` web session or offline via `tasks db mint-token`; the raw value is shown **once** at mint time (only a hash is stored) and revoked via the `/me` UI, `DELETE /me/tokens/:id`, or `tasks logout`. Sessions come from OIDC (`/auth/login` → provider → `/auth/callback`, protected by PKCE + state), are sealed-box-encrypted with `SESSION_COOKIE_SECRET`, and expire after 8h. The CLI and remote MCP client auto-select the header from the `wft_pat_` prefix, so the same env var accepts a PAT or a legacy key. Full detail: [SECURITY.md → Authentication Architecture](SECURITY.md#authentication-architecture).
 
-### Authentication is not authorization
+### ⚠️ Authentication is NOT authorization — every identity is admin
 
-Auth identifies the caller; it does **not** scope what they can do. There is still **no project ACL / RBAC** — any authenticated identity (PAT, session, or legacy key) can read, write, and delete tasks/projects/comments/dependencies across **every** project in the database. Scoped/role-based permissions are tracked as future work; until they land, front the service with an authenticating reverse proxy (which performs its own per-tenant auth) if you need isolation.
+**Read this before exposing the service to anything but trusted callers.**
 
-### Legacy `X-API-Key` is being sunset
+- **Authentication ≠ authorization.** The auth chain only *identifies* the caller; it does **not** scope what they may do.
+- **Every authenticated identity is effectively an admin.** Any valid credential — PAT, OIDC session, or legacy `X-API-Key` — can read, write, and delete **every** task, project, comment, and dependency across **every** project in the database.
+- **There is NO RBAC, NO ACL, and NO per-project / per-tenant isolation.** These are not implemented; scoped/role-based permissions are tracked only as future work.
+- **Do NOT expose this service on a public network, and do NOT run it multi-tenant, without an external authorization layer** (e.g. an authenticating reverse proxy that enforces its own per-tenant access control in front of the API). Treat any issued credential as full admin access to all data.
 
-The legacy `X-API-Key` strategy is **deprecated as of v1.6 and scheduled for removal in v1.7**. Legacy-authed responses carry RFC 8594 `Deprecation: true` + `Sunset: <LEGACY_AUTH_SUNSET_DATE>` headers (default `2026-12-31`) and emit a `legacy_auth_used` warn log so operators can track migration to zero. New deployments should issue **PATs** — one per machine/agent, so you can revoke an individual token without disturbing others — or use OIDC sessions. The `API_KEYS` env still accepts a comma-separated list of `key` or `key:label` entries (the label surfaces in audit logs as `apiKeyLabel`; the raw key is never logged). See [SECURITY.md → Legacy Auth Sunset Timeline](SECURITY.md#legacy-auth-sunset-timeline) for the v1.7 runbook and `tasks db migrate-identities`.
+### Legacy `X-API-Key` is still supported (PAT / OIDC preferred)
+
+The legacy `X-API-Key` strategy **still works today** — it is strategy #3 in the live auth chain (`src/api/plugins/auth/index.ts`), and `API_KEYS` is currently a **required** env var (see Configuration), so every deployment has at least one working key. It is marked **deprecated as of v1.6**: PAT and OIDC sessions are the preferred credentials going forward, but legacy keys have **not** been removed. Legacy-authed responses carry advisory RFC 8594 `Deprecation: true` + `Sunset: <LEGACY_AUTH_SUNSET_DATE>` headers (operator-controlled, default `2026-12-31`) and emit a `legacy_auth_used` warn log so operators can track migration progress. New deployments should issue **PATs** — one per machine/agent, so you can revoke an individual token without disturbing others — or use OIDC sessions. The `API_KEYS` env accepts a comma-separated list of `key` or `key:label` entries (the label surfaces in audit logs as `apiKeyLabel`; the raw key is never logged). See [SECURITY.md → Legacy Auth Sunset Timeline](SECURITY.md#legacy-auth-sunset-timeline) and `tasks db migrate-identities` for the planned migration path.
 
 ### Defense in depth
 
@@ -136,7 +141,7 @@ flowchart TB
   end
 
   subgraph storage[Persistence]
-    DB[(SQLite WAL<br/>tasks, projects, comments,<br/>dependencies, idempotency_keys,<br/>slack_channel_subscriptions)]
+    DB[(SQLite WAL<br/>tasks, projects, task_comments,<br/>task_dependencies, idempotency_keys,<br/>slack_channel_subscriptions)]
     Subs[(Channel<br/>Subscription Repo)]
   end
 
@@ -208,8 +213,8 @@ errors twice, and short-circuits permanent errors
 | **projects** | id, name, description, created_at, updated_at |
 | **tasks** | id, title, description, status, priority, project_id, parent_task_id, estimated_minutes, assignee, created_by, due_date, version, claimed_at, **completed_at**, created_at, updated_at |
 | **task_tags** | id, task_id, tag |
-| **dependencies** | id, task_id, blocks_task_id, created_at |
-| **comments** | id, task_id, author, content, created_at, updated_at |
+| **task_dependencies** | id, task_id, blocks_task_id, created_at |
+| **task_comments** | id, task_id, author, content, created_at, updated_at |
 | **idempotency_keys** | key, response, created_at |
 | **slack_channel_subscriptions** | id, channel_id, project_id, event_type, created_at (UNIQUE on the triple) |
 | **users** | id, oidc_sub, oidc_provider, email, display_name, slack_user_id, is_legacy, is_service_account, created_at, disabled_at |
@@ -251,8 +256,8 @@ Base URL: `http://localhost:3000`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Service health check + resolved DB path/fingerprint (no auth required) |
-| GET | /health/detailed | Detailed health behind auth |
+| GET | /health | Minimal public liveness check — returns only `{ status, timestamp, version }` (no auth required). Pings the DB and returns 503 in the same shape on failure; intentionally leaks no deployment fingerprint. |
+| GET | /health/detailed | Authenticated diagnostic check — adds resolved DB path/fingerprint, component checks (database, eventBus, sseManager, oidc), OIDC discovery detail, and runtime stats. |
 
 ### Projects
 
@@ -264,6 +269,7 @@ Base URL: `http://localhost:3000`
 | PUT | /api/v1/projects/:id | Update project |
 | DELETE | /api/v1/projects/:id | Delete project |
 | GET | /api/v1/projects/:id/topology | Classify the project's dependency graph (FLAT / DAG / DAG_CYCLIC) |
+| GET | /api/v1/projects/:id/dependency-graph | Dashboard tree-view of the project's task dependency graph |
 
 ### Tasks
 
@@ -271,6 +277,7 @@ Base URL: `http://localhost:3000`
 |--------|------|-------------|
 | POST | /api/v1/tasks | Create a new task |
 | GET | /api/v1/tasks | List tasks with filters |
+| GET | /api/v1/tasks/completion-report | Completion dashboard for a time window (per-project/assignee/priority aggregates) |
 | GET | /api/v1/tasks/:id | Get task by ID |
 | PUT | /api/v1/tasks/:id | Update task |
 | DELETE | /api/v1/tasks/:id | Delete task |
@@ -308,11 +315,15 @@ The OIDC/session/PAT surface backing the auth model lives partly outside the tas
 | GET | /auth/login | Begin OIDC sign-in (redirects to provider; PKCE + state) |
 | GET | /auth/callback | OIDC redirect callback → sets the session cookie |
 | POST | /auth/logout | Revoke the active PAT and clear the session |
-| GET | /api/v1/me/profile | Current authenticated user's profile |
+| GET | /auth/error | OIDC/session error landing page (session-expiry, 403 destinations) |
+| GET | /api/v1/me | Current authenticated user's profile (accepts session, PAT, or legacy auth) |
 | GET | /api/v1/me/tokens | List the caller's personal access tokens |
-| DELETE | /api/v1/me/tokens/:id | Revoke a personal access token |
+| DELETE | /api/v1/me/tokens/active | Revoke the caller's currently-active token |
+| DELETE | /api/v1/me/tokens/:id | Revoke a personal access token by ID |
 
-A device-authorization flow under `/auth/device*` supports headless PAT minting; the `/auth/*` routes are disabled-stubbed when OIDC is not configured.
+A device-authorization flow under `/auth/device*` (`GET /auth/device`, `POST /auth/device/code`, `POST /auth/device/token`, `POST /auth/device/verify`) supports headless PAT minting. When OIDC is **not** configured, the `/auth/*` and `/auth/device/*` routes are replaced by disabled-stub handlers (HTTP 501), so they exist in both modes but only one set is live per instance. When `SESSION_COOKIE_SECRET` is set, top-level HTML web routes (`GET /login`, `GET /me`, `GET /me/tokens`, `POST /me/tokens/:id/revoke`) are also served for the browser sign-in UI.
+
+This brings the full registered surface to **47 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **40** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the 8 live OIDC `/auth/*` routes.
 
 For detailed API documentation including request/response schemas, see [docs/API.md](docs/API.md).
 
@@ -396,7 +407,7 @@ These talk to SQLite directly (no running server required):
 | tasks completed | List recently completed tasks |
 | tasks db-check | Verify the database schema / integrity |
 | tasks db mint-token | Mint a PAT offline (`--user`, `--name`, optional `--expires-at`) |
-| tasks db migrate-identities | Backfill identity FK columns (v1.7 sunset pre-flight) |
+| tasks db migrate-identities | Backfill identity FK columns (preparation for the legacy-auth migration path) |
 | tasks completions | Generate shell completion scripts |
 
 For detailed CLI documentation including all options and examples, see [docs/CLI.md](docs/CLI.md).
@@ -550,7 +561,7 @@ Cascades are depth-limited (max 5 levels) and wrapped in transactions for atomic
 |----------|-------------|---------|
 | PORT | HTTP server port | 3000 |
 | HOST | HTTP server host. Defaults to loopback only; set to `0.0.0.0` (or a specific LAN IP) to expose on the network. | 127.0.0.1 |
-| API_KEYS | Comma-separated API keys for authentication | (none - auth disabled) |
+| API_KEYS | Comma-separated legacy API keys (`key` or `key:label`). **Required** — the Zod config schema rejects an empty/unset value (`src/config/env.ts`), so the server exits with code 78 (`EX_CONFIG`) at startup when it is missing. There is no "auth-disabled" mode. | (required — no default) |
 | LOG_LEVEL | Logging level (debug, info, warn, error) | info |
 | NODE_ENV | Environment (development, production) | (none) |
 | DATABASE_PATH | Path to SQLite database file (canonical; MCP server also accepts legacy `DB_PATH`) | ./data/tasks.db |
@@ -592,9 +603,9 @@ npm run mcp:dev
 
 SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug. Twelve migration files in `src/db/migrations/`:
 
-1. `001-initial-schema.ts` — projects, tasks, task_tags, dependencies, comments
-2. `002-task-hierarchy-and-dependencies.ts` — task hierarchy and dependency tracking
-3. `003-comments-and-estimates.ts` — comments and time estimates
+1. `001-initial-schema.ts` — projects, tasks, task_tags (plus the tasks_fts FTS5 virtual table and sync triggers)
+2. `002-task-hierarchy-and-dependencies.ts` — adds `parent_task_id` to tasks and creates the `task_dependencies` table
+3. `003-comments-and-estimates.ts` — creates the `task_comments` table and adds `estimated_minutes` to tasks
 4. `004-claim-protocol.ts` — version field, claimed_at, idempotency_keys table
 5. `005-backlogged-status.ts` — adds `backlogged` to the status CHECK constraint (rebuilds tasks table; preserves FTS triggers)
 6. `006-slack-channel-subscriptions.ts` — `slack_channel_subscriptions` table for the Slack notifier
