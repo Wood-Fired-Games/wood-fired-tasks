@@ -2,9 +2,10 @@ name: Mutation Testing
 
 on:
   # Nightly schedule re-enabled (task #252) after sharding the workflow across
-  # 4 parallel jobs. Pre-sharding, a full run was ~6h09m which exceeded the 6h
+  # parallel jobs. Pre-sharding, a full run was ~6h09m which exceeded the 6h
   # GH Actions ceiling on default runners; sharded runs target ~1h30m–2h per
-  # shard with all shards running in parallel.
+  # shard with all shards running in parallel. The api/mcp split (5 shards)
+  # followed after the combined api-mcp shard hit the 300-min ceiling.
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
@@ -34,7 +35,8 @@ jobs:
     # Each shard is a disjoint subset of src/ — see the matrix below for the
     # exact partitioning. Per-shard wall time is expected to be ~1h30m–2h on
     # the default runner (full unsharded run was ~6h09m for ~7000 mutants;
-    # 4-way shard divides the workload roughly evenly).
+    # the 5-way shard divides the workload across cli / api / mcp /
+    # services-db-repos / misc).
     timeout-minutes: 300
     strategy:
       # Don't kill sibling shards if one fails — we still want partial reports
@@ -45,13 +47,19 @@ jobs:
           - id: 0
             name: cli
             globs: 'src/cli/**/*.ts'
+          # shard-1 (api-mcp) was hitting the 300-min job ceiling on the nightly
+          # (src/api + src/mcp combined exceeded ~5h). Split into two independent
+          # shards so each fits the budget.
           - id: 1
-            name: api-mcp
-            globs: 'src/api/**/*.ts src/mcp/**/*.ts'
+            name: api
+            globs: 'src/api/**/*.ts'
           - id: 2
+            name: mcp
+            globs: 'src/mcp/**/*.ts'
+          - id: 3
             name: services-db-repos
             globs: 'src/services/**/*.ts src/db/**/*.ts src/repositories/**/*.ts'
-          - id: 3
+          - id: 4
             name: misc
             globs: >-
               src/slack/**/*.ts
