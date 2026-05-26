@@ -135,14 +135,27 @@ const MAX_FILES_PER_PROBE = 6;
 // tighten when those files are split per the AGENT_CONTEXT.md budgets.
 const MAX_LINES_PER_PROBE_FILE = 1500;
 
-function countLines(absPath: string): number {
-  const text = readFileSync(absPath, 'utf8');
+function countLines(text: string): number {
   let n = 0;
   for (let i = 0; i < text.length; i++) {
     if (text.charCodeAt(i) === 10) n++;
   }
   if (text.length > 0 && text.charCodeAt(text.length - 1) !== 10) n++;
   return n;
+}
+
+// Stryker mutation testing copies the repo into a sandbox and instruments
+// every mutated src/** file, prepending mutant-switch scaffolding
+// (stryNS_/stryCov_/stryMutAct_ helpers). This inflates the on-disk line
+// count far past the committed source — e.g. under shard 3 (src/slack/**)
+// `tasks-command.ts` grows 1193 → 1625 lines — which would false-fail the
+// budget below during Stryker's initial dry-run (the dry-run executes the
+// whole suite, so a failure here aborts the entire shard). The 1500-line
+// budget is a doc-hygiene check on the *committed* file and is already
+// enforced on every push/PR CI run where sources are pristine, so detect
+// instrumented sandbox copies and skip them. See mutation run 2026-05-26.
+function isStrykerInstrumented(text: string): boolean {
+  return text.includes('stryMutAct_') || text.includes('stryNS_');
 }
 
 interface PackageJsonShape {
@@ -221,7 +234,10 @@ describe('onboarding smoke (task #282)', () => {
         for (const rel of probe.expectedFiles) {
           if (dirSet.has(rel)) continue;
           const abs = resolve(repoRoot, rel);
-          const lines = countLines(abs);
+          const text = readFileSync(abs, 'utf8');
+          // Skip Stryker-instrumented sandbox copies — see isStrykerInstrumented.
+          if (isStrykerInstrumented(text)) continue;
+          const lines = countLines(text);
           expect(
             lines,
             `${probe.name}: "${rel}" is ${lines} lines (> ${MAX_LINES_PER_PROBE_FILE}); ` +
