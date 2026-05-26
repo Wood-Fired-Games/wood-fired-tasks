@@ -33,36 +33,45 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'mutation'))
     runs-on: ubuntu-latest
     # Each shard is a disjoint subset of src/ — see the matrix below for the
-    # exact partitioning. Per-shard wall time is expected to be ~1h30m–2h on
-    # the default runner (full unsharded run was ~6h09m for ~7000 mutants;
-    # the 5-way shard divides the workload across cli / api / mcp /
-    # services-db-repos / misc).
+    # exact partitioning. The 7-way shard keeps every job comfortably under the
+    # cap (heaviest is api-routes at ~246 min); api and misc were split further
+    # after the 5-way layout left api over the cap and misc at 284/300 min.
     timeout-minutes: 300
     strategy:
       # Don't kill sibling shards if one fails — we still want partial reports
       # for the aggregator and the HTML artifact upload.
       fail-fast: false
       matrix:
+        # Shard wall time tracks MUTANT count, not file count (big files like
+        # slack/commands/tasks-command.ts dominate). Measured rate from the
+        # 2026-05-26 run: ~0.16 min/mutant + ~4 min overhead. `api` (2219
+        # mutants) blew the 300-min cap; `misc` (1760) landed at 284 min — both
+        # too hot. Split each by directory along that rate so every shard sits
+        # well under the cap (est. minutes in comments). Globs stay directory-
+        # level (no per-route-group lists) so new files can't silently fall
+        # out of coverage.
         shard:
           - id: 0
             name: cli
             globs: 'src/cli/**/*.ts'
-          # shard-1 (api-mcp) was hitting the 300-min job ceiling on the nightly
-          # (src/api + src/mcp combined exceeded ~5h). Split into two independent
-          # shards so each fits the budget.
           - id: 1
-            name: api
-            globs: 'src/api/**/*.ts'
+            name: api-routes # ~1524 mutants, ~246 min — heaviest shard
+            globs: 'src/api/routes/**/*.ts'
           - id: 2
+            name: api-core # plugins+hooks+top-level, ~695 mutants, ~115 min
+            globs: 'src/api/plugins/**/*.ts src/api/hooks/**/*.ts src/api/*.ts'
+          - id: 3
             name: mcp
             globs: 'src/mcp/**/*.ts'
-          - id: 3
+          - id: 4
             name: services-db-repos
             globs: 'src/services/**/*.ts src/db/**/*.ts src/repositories/**/*.ts'
-          - id: 4
-            name: misc
+          - id: 5
+            name: slack # ~1019 mutants, ~166 min
+            globs: 'src/slack/**/*.ts'
+          - id: 6
+            name: misc-core # schemas/events/utils/types/config/index, ~741 mutants, ~122 min
             globs: >-
-              src/slack/**/*.ts
               src/schemas/**/*.ts
               src/events/**/*.ts
               src/utils/**/*.ts
