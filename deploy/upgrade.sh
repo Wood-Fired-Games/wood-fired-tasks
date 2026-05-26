@@ -78,7 +78,13 @@ NODE_DIR="$(dirname "$NODE_BIN")"
 # Re-exec under sudo if not root. Preserves env vars so WFT_* survive.
 # WFT_NODE_BIN is preserved so the post-sudo run uses the same node the
 # pre-sudo PATH lookup resolved (sudo strips PATH by default).
-if [ "$(id -u)" -ne 0 ]; then
+#
+# WFT_SKIP_SUDO_REEXEC=1 suppresses the re-exec so the pre-flight checks below
+# can be exercised unprivileged (used by deploy/__tests__/upgrade.test.ts to
+# avoid blocking on sudo's TTY password prompt). It never grants privilege --
+# with the re-exec skipped the script just runs as the calling user and fails
+# at the first operation that genuinely needs root.
+if [ "$(id -u)" -ne 0 ] && [ "${WFT_SKIP_SUDO_REEXEC:-}" != "1" ]; then
   exec sudo --preserve-env=WFT_INSTALL_DIR,WFT_SERVICE_NAME,WFT_NODE_BIN "$0" "$@"
 fi
 

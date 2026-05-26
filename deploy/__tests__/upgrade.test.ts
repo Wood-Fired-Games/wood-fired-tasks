@@ -63,14 +63,14 @@ describe('deploy/upgrade.sh', () => {
           env: {
             ...process.env,
             WFT_INSTALL_DIR: installDir,
-            // Disable the sudo re-exec branch so the test never prompts.
-            // The re-exec path is `id -u`==0 short-circuit; we run as a
-            // normal user, so the script will try `exec sudo ...`. We can
-            // sidestep that by pre-setting SUDO_UID or running under fakeroot.
-            // Simpler: run with `sudo -n` disabled via PATH manipulation --
-            // but the cleanest assertion is to capture whatever stderr we
-            // get and look for the pre-flight message, because even the
-            // sudo re-exec path will surface the underlying error message.
+            // Skip the script's `exec sudo` re-exec so the pre-flight runs
+            // unprivileged, in-process. WITHOUT this the script blocks forever
+            // on sudo's /dev/tty password prompt whenever the suite runs under
+            // an interactive terminal -- execFileSync is synchronous, so
+            // vitest's test timeout can never interrupt it (the hang that
+            // wedged a release publish for 100+ minutes). With the re-exec
+            // skipped the script reaches its own dist/-missing pre-flight.
+            WFT_SKIP_SUDO_REEXEC: '1',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -88,14 +88,10 @@ describe('deploy/upgrade.sh', () => {
       // exits non-zero -- in both cases the test environment must NOT have
       // succeeded silently.
       expect(exitCode).not.toBe(0);
-      // The error message must point the operator at `npm run build`. When
-      // the script reaches its own pre-flight (no sudo re-exec needed
-      // because the script ran successfully under the harness), it prints
-      // the "Run 'npm run build' before deploying." marker. When sudo
-      // re-exec fires first and fails (no tty), we instead see a sudo
-      // error -- but the script reaches pre-flight on root-equivalent CI
-      // runners and on the maintainer's box, so this assertion only
-      // requires one of: the pre-flight message OR a sudo failure.
+      // With WFT_SKIP_SUDO_REEXEC the script always reaches its own pre-flight
+      // and prints the "Run 'npm run build' before deploying." marker. The
+      // sudo-failure alternative is kept as a belt-and-braces fallback for any
+      // environment where the re-exec still fires (e.g. a stale script copy).
       const sawBuildHint = /Run 'npm run build' before deploying\./.test(stderr);
       const sawSudoFailure = /sudo:|password is required|terminal is required/.test(stderr);
       expect(sawBuildHint || sawSudoFailure).toBe(true);
