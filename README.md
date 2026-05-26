@@ -4,9 +4,7 @@
 [![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Open-source task tracking system from Wood Fired Games.
-
-Wood Fired Tasks is a centralized task management service providing a REST API, CLI tool, and MCP server for managing work items across all projects. LLM agents interact via REST or MCP; humans interact via CLI. All three interfaces share a common service layer and SQLite database with full feature parity. Real-time SSE event streaming enables multi-agent coordination with atomic task claiming and workflow automation.
+Wood Fired Tasks is open-source coordination infrastructure for fleets of AI coding agents — the missing primitive between "I have one Claude Code session running" and "I have ten of them working the same backlog without stepping on each other." It ships an MCP server and REST API for agents (Claude Code, Cursor, Gemini, Codex) and a `tasks` CLI for the humans supervising them, all at full feature parity over a shared SQLite service layer so every surface reads and writes the same source of truth. The coordination primitives are first-class: atomic task claiming with optimistic locking (20 agents race, exactly one wins), workflow automation that auto-unblocks dependents and auto-completes parents as subtasks finish, and a real-time SSE event stream keeping every agent and dashboard in sync. Self-hostable, MIT-licensed, and ships with a set of `/tasks:*` Claude Code skill files that turn a project-level goal into a decomposed, executable, auditable plan.
 
 **Key capabilities:**
 
