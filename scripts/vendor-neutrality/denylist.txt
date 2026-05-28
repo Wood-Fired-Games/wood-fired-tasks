@@ -1,0 +1,62 @@
+# Vendor-neutrality denylist for the wft-router daemon.
+#
+# Rationale (docs/event-router-design.md §"Vendor-neutral guardrails" §1, §2,
+# §9): the router is a generic event/handler dispatcher. The daemon binary
+# itself must not name any AI vendor, CI provider, chat product, code-host,
+# IDE, or terminal multiplexer in its core source code. Recipe documents,
+# example adapters, and tests intentionally mention vendors and are NOT in
+# scope of this gate (see check.mjs glob + exclusions).
+#
+# Matching rules:
+#   - Lines starting with `#` are comments and skipped.
+#   - Blank lines are skipped.
+#   - Lines beginning with `re:` are JavaScript regular expressions (compiled
+#     with the `i` flag). Use these when a bare substring would over-match
+#     (e.g. `gpt` matches `crypto`, `gptools`, etc., so use `re:\bgpt\b`).
+#   - Every other line is a case-insensitive substring match. So `claude`
+#     forbids `Claude`, `claudeCode`, `CLAUDE_API_KEY`, and so on.
+#
+# Per-line escape hatch: append the literal marker
+#   WFT-NEUTRALITY-EXEMPT-LINE
+# (case-sensitive, anywhere on the line) to opt a single source line out of
+# the gate. Reserved for legitimate, spec-mandated uses of an otherwise-
+# forbidden token (e.g. the SSE `cursor` resume primitive is unrelated to the
+# Cursor IDE brand — that's the canonical exempt case).
+#
+# Maintenance: when adding a new vendor name, prefer the most generic form
+# (lower-case substring). Add a comment explaining why if it isn't obvious.
+
+# --- AI vendors / model providers ---
+claude
+openai
+anthropic
+gemini
+bedrock
+aider
+codex
+cursor
+# `gpt` is too short to substring-match safely (it occurs inside `crypto`,
+# `gptools`, etc.). Match it as a word boundary instead.
+re:\bgpt\b
+dall-e
+
+# --- Chat / comms products ---
+slack
+discord
+teams
+
+# --- VCS hosting platforms ---
+github
+gitlab
+bitbucket
+gitea
+forgejo
+
+# --- CI / build providers ---
+jenkins
+buildkite
+circleci
+travis
+
+# --- Terminal multiplexers (design §9 cited example) ---
+tmux

@@ -2,7 +2,7 @@
  * Cross-platform default path resolver for wft-router.
  *
  * The router needs three on-disk locations at runtime — config (where
- * `triggers.yaml` lives), state (cursor, dispatch log, idempotency store),
+ * `triggers.yaml` lives), state (cursor, dispatch log, idempotency store), WFT-NEUTRALITY-EXEMPT-LINE
  * and an optional data dir reserved for future use. The exact filesystem
  * layout is platform-conditional: XDG on Linux/BSD, Application Support on
  * macOS, AppData on Windows. See docs/event-router-design.md §"Platform-
@@ -56,7 +56,7 @@ export interface RouterPaths {
    * Overridable via `WFT_ROUTER_DATA_DIR`.
    */
   data: string;
-  /** Where the cursor file, dispatch log, and idempotency store live. Overridable via `WFT_ROUTER_STATE_DIR`. */
+  /** Where the cursor file, dispatch log, and idempotency store live. Overridable via `WFT_ROUTER_STATE_DIR`. */ // WFT-NEUTRALITY-EXEMPT-LINE
   state: string;
 }
 

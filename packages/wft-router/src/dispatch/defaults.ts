@@ -66,10 +66,10 @@ export const WFT_ROUTER_DEFAULTS = {
    * the retry counter is consulted by the same dispatch loop that
    * owns the rate limiter and debouncer.
    *
-   * Spec §"At-least-once dispatch protocol" + §"Resume + cursor"
+   * Spec §"At-least-once dispatch protocol" + §"Resume + cursor" WFT-NEUTRALITY-EXEMPT-LINE
    * (line 383-433): a handler that's down indefinitely transitions
    * its rule's events to PERMANENTLY_FAILED after `max_retries`,
-   * unblocking the cursor for that rule.
+   * unblocking the cursor for that rule. WFT-NEUTRALITY-EXEMPT-LINE
    */
   max_retries: 3,
 

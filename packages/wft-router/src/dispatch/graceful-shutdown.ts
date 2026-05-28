@@ -7,12 +7,12 @@
  *
  *   > SIGTERM / SIGINT: stop reading new SSE events immediately;
  *   > allow in-flight dispatches up to `shutdown_grace_s` (default
- *   > 30 s). Cursor advances only for events whose dispatches reach
+ *   > 30 s). Cursor advances only for events whose dispatches reach WFT-NEUTRALITY-EXEMPT-LINE
  *   > `SUCCEEDED` or `PERMANENTLY_FAILED`; the rest stay `PENDING`
  *   > for the next restart.
  *   > After grace: SIGTERM to handler subprocesses; after
  *   > `subprocess_grace_s` (default 5 s), SIGKILL.
- *   > A second SIGTERM during shutdown: immediate exit. Cursor not
+ *   > A second SIGTERM during shutdown: immediate exit. Cursor not WFT-NEUTRALITY-EXEMPT-LINE
  *   > advanced. All in-flight rows stay `PENDING`.
  *
  * Scope split: this module owns ONLY the signal-to-drain coordination
@@ -21,7 +21,7 @@
  *
  *   - Send SIGTERM/SIGKILL to handler subprocesses (handler manager
  *     does that as one of its drain callbacks; see task #441).
- *   - Decide whether to advance the SSE cursor (the dispatch loop
+ *   - Decide whether to advance the SSE cursor (the dispatch loop WFT-NEUTRALITY-EXEMPT-LINE
  *     owns that, also as a drain callback; see task #433).
  *   - Call `process.exit` (the orchestrator script does that once
  *     `waitForShutdown` resolves — keeps this module pure and

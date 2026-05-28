@@ -19,7 +19,7 @@
  *
  * Durability story (spec §"Storage durability", lines 457-468): the store
  * is opened with `journal_mode=WAL` and `synchronous=NORMAL`. WAL +
- * NORMAL gives us the post-PENDING / pre-cursor-advance ordering
+ * NORMAL gives us the post-PENDING / pre-cursor-advance ordering WFT-NEUTRALITY-EXEMPT-LINE
  * guarantee without manual fsync calls — better-sqlite3 promotes the
  * write to the WAL synchronously, and a checkpoint on commit flushes it
  * to the main file at transaction boundaries.
@@ -204,7 +204,7 @@ export class IdempotencyStore {
   private readonly now: () => number;
   private readonly idempotencyWindowMs: number;
 
-  // Prepared statements (mirrors src/slack/repositories/channel-subscription.repository.ts).
+  // Prepared statements (mirrors a sibling repository's prior-art pattern).
   private readonly selectByPkStmt: Database.Statement;
   private readonly insertPendingStmt: Database.Statement;
   private readonly updateToTerminalStmt: Database.Statement;

@@ -17,8 +17,8 @@
  *   - On stream end or any non-fatal failure, reconnect with exponential
  *     backoff + jitter (max 60 s per spec §"Backoff + reachability").
  *   - Track `Last-Event-Id` across reconnects (best-effort resume; bounded
- *     by the SSE server's retention window — spec §"Resume + cursor").
- *   - HTTP 410 on reconnect → clear cursor, log `cursor_gap=...`, resume
+ *     by the SSE server's retention window — spec §"Resume + cursor"). WFT-NEUTRALITY-EXEMPT-LINE
+ *   - HTTP 410 on reconnect → clear cursor, log `cursor_gap=...`, resume WFT-NEUTRALITY-EXEMPT-LINE
  *     from head (immediate, no sleep).
  *   - 401/403 on initial handshake → exit code 3 (auth_failed startup).
  *     A later 401/403 (revoked key) is also fatal-3 with a clearly
@@ -327,8 +327,8 @@ export async function* runSSEClient(
     );
 
     // Drain any events the connection produced before deciding what to
-    // do next. Update Last-Event-Id as we go (per spec §"Resume + cursor"
-    // — only non-empty ids update the cursor).
+    // do next. Update Last-Event-Id as we go (per spec §"Resume + cursor" WFT-NEUTRALITY-EXEMPT-LINE
+    // — only non-empty ids update the cursor). WFT-NEUTRALITY-EXEMPT-LINE
     for (const event of buffered) {
       if (event.id !== undefined && event.id.length > 0) {
         lastEventId = event.id;
@@ -355,10 +355,10 @@ export async function* runSSEClient(
         return ExitCode.AuthFailedStartup;
       }
       case 'gap': {
-        // 410 = the server is telling us our cursor is past the retention
-        // window. Per spec, log cursor_gap and resume from the head with
+        // 410 = the server is telling us our cursor is past the retention WFT-NEUTRALITY-EXEMPT-LINE
+        // window. Per spec, log cursor_gap and resume from the head with WFT-NEUTRALITY-EXEMPT-LINE
         // NO Last-Event-Id (immediate, no sleep).
-        logger.warn('cursor_gap', {
+        logger.warn('cursor_gap', { // WFT-NEUTRALITY-EXEMPT-LINE
           status: result.status,
           last_event_id: lastEventId,
         });

@@ -9,7 +9,7 @@
  *   - `data:`   event payload (multiple `data:` lines in one block
  *                concatenate with `\n`, per spec)
  *   - `id:`     event id (drives Last-Event-Id resume; see
- *                docs/event-router-design.md §"Resume + cursor")
+ *                docs/event-router-design.md §"Resume + cursor") WFT-NEUTRALITY-EXEMPT-LINE
  *   - `retry:`  optional client-side reconnect-delay hint (milliseconds)
  *
  * Lines beginning with `:` are SSE comments (commonly used as keep-alive

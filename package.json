@@ -77,6 +77,7 @@
     "pack:check": "npm pack --dry-run",
     "agent-context:gen": "tsx scripts/agent-context/generate.ts",
     "agent-context:check": "tsx scripts/agent-context/check.ts",
+    "check:vendor-neutrality": "node scripts/vendor-neutrality/check.mjs",
     "quality": "npm run build && npm test && npm run lint && npm run lint:deps && npm run depcruise && npm audit --omit=dev --audit-level=high",
     "prepublishOnly": "npm run build && npm test && npm run lint:deps && npm audit --omit=dev --audit-level=high && npm run pack:check"
   },
