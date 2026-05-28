@@ -11,3 +11,9 @@ export type {
   IdempotencyStoreOptions,
   PendingRow,
 } from './idempotency-store.js';
+
+export { evaluateWhere } from './predicate.js';
+export type { EventPayloadShape } from './predicate.js';
+
+export { renderWith, TemplatingError } from './template.js';
+export type { RenderOptions, TemplateLogger } from './template.js';
