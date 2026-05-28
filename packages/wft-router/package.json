@@ -1,0 +1,22 @@
+{
+  "name": "@wood-fired-games/wft-router",
+  "version": "0.0.1",
+  "description": "Event-router binary that streams wood-fired-tasks events to downstream sinks. Stub scaffold landed by task #421; see docs/event-router-design.md for the design-of-record.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "wft-router": "./dist/bin/wft-router.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p ."
+  }
+}

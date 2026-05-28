@@ -69,7 +69,8 @@
         "src/mcp/**",
         "scripts/**",
         "src/index.ts",
-        "src/db/migrate.ts"
+        "src/db/migrate.ts",
+        "packages/wft-router/src/bin/**"
       ],
       "linter": {
         "rules": {

@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-26T12:49:36.783Z",
+    "generated_at": "2026-05-28T16:50:24.143Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -275,6 +275,20 @@
       "approx_token_budget": 1800,
       "actual_lines": 49,
       "sha256": "14784098ac2c94809e3576d237e11b370e86027d6814bca356e407f6d210a041",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "packages/wft-router/README.md",
+      "role": "package-readme",
+      "purpose": "Sub-package README for the wft-router event-router binary scaffold. Points at docs/event-router-design.md as the design-of-record.",
+      "when_to_read": "on-demand",
+      "line_budget": 60,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 1200,
+      "actual_lines": 37,
+      "sha256": "829412ad95bcfac5a5dae4c8ae4c91c8f4bd10f47a96a51dd4f48721a845f2cd",
       "actual_owner": "Repository maintainers"
     },
     {

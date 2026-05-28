@@ -343,6 +343,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'packages/wft-router/README.md',
+    role: 'package-readme',
+    purpose:
+      'Sub-package README for the wft-router event-router binary scaffold. Points at docs/event-router-design.md as the design-of-record.',
+    when_to_read: 'on-demand',
+    line_budget: 60,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'CONTRIBUTING.md',
     role: 'human-onboarding',
     purpose: 'Human contributor workflow, commit and PR rules.',
