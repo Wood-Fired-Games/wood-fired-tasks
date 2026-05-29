@@ -148,14 +148,18 @@ so REST and MCP cannot drift on validation.
 | `tools/comment-tools.ts` | `delete_comment` | write | Delete a comment by id. |
 | `tools/health-tools.ts` | `check_health` | read | Service health, DB connectivity, version. |
 | `tools/topology-tools.ts` | `topology_check` | read | Wave 4.1 (#318): classify a project as FLAT/DAG/DAG_CYCLIC. |
+| `tools/wait-for-unblock-tools.ts` | `wait_for_unblock` | read | Task #455: in-process long-poll until a task transitions blocked->open. |
 
-**Total: 22 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1 topology).
-10 are read-only; 12 mutate state. Counted by `grep registerTool` across the
-six files above. The remote server registers all **22 tools including
-`topology_check`** via `src/mcp/remote/register-tools.ts`; the topology
-classifier reaches the same `TopologyService` over REST
-(`GET /api/v1/projects/:id/topology`) rather than via a direct in-process
-call.
+**Total: 23 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
+topology, 1 wait). 11 are read-only; 12 mutate state. Counted by `grep
+registerTool` across the seven files above. The remote server registers the
+**22 REST-backed tools including `topology_check`** via
+`src/mcp/remote/register-tools.ts`; the topology classifier reaches the same
+`TopologyService` over REST (`GET /api/v1/projects/:id/topology`) rather than
+via a direct in-process call. `wait_for_unblock` is **local-only** — it
+subscribes to the in-process EventBus and so is not part of the remote
+REST-backed surface (cross-process wake-ups use the SSE event stream / wft-router
+recipe instead).
 
 Deep reference: [`docs/MCP.md`](MCP.md).
 
@@ -307,9 +311,12 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. Both transports therefore expose **22 tools including
-`topology_check`** with identical input validation; behavioural differences
-are limited to transport (stdio vs HTTP) and the auth boundary.
+`src/schemas/`. The remote server exposes the **22 REST-backed tools
+including `topology_check`** with identical input validation; behavioural
+differences are limited to transport (stdio vs HTTP) and the auth boundary.
+The local server adds one further tool, `wait_for_unblock` (#455), for **23
+tools total locally** — it is intentionally NOT on the remote surface because
+it subscribes to the in-process EventBus, which a REST proxy cannot observe.
 `topology_check` (#318) reaches the same `TopologyService` over REST — the
 remote server proxies it to `GET /api/v1/projects/:id/topology` (wired in
 commit 6f30bfc), so its input/output schema is byte-identical to the stdio

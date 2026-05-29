@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-29T15:08:23.135Z",
+    "generated_at": "2026-05-29T21:08:36.128Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -92,8 +92,8 @@
       "status": "present",
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
-      "actual_lines": 337,
-      "sha256": "91755a52d6d99c3e86c1527f7fdb3fedd1751686bae08a1cc35c32f5842d4753",
+      "actual_lines": 344,
+      "sha256": "dbd341b113290742d8506b6c0ae0dbc0f6efbadd382566aa13b302a5581d28a9",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 946,
-      "sha256": "1a2a6c3f0dadac8898f46b99ecdc5574673f7c693db750c398d680a49cdcce3d"
+      "actual_lines": 974,
+      "sha256": "9fc3ce72b33cd94f635e1cf65a3c1dbd48d4a5b56409f04200e57c04c08f494c"
     },
     {
       "path": "docs/CLI.md",
@@ -164,7 +164,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 936,
-      "sha256": "fd07f001266375f14e358d42e87b970d7d11e44aaa5d34ccca850d72ab2c69d0"
+      "sha256": "e660b7aceb0007f1418e172cd9e90ce963499e1b7e2cf3574b19e647379ef2f2"
     },
     {
       "path": "docs/SLACK.md",
@@ -344,7 +344,7 @@
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
       "actual_lines": 685,
-      "sha256": "9d9c8f1900947587a1c10ec37866939ffe7bb423ca54ac53ca6c384bfd337f8d"
+      "sha256": "cf15c5a9f36c432643443874a449329a6747b9e408b7aed78bf52955d699d86c"
     },
     {
       "path": "SECURITY.md",

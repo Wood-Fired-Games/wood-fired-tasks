@@ -12,6 +12,7 @@ import { registerCommentTools } from './tools/comment-tools.js';
 import { registerProjectTools } from './tools/project-tools.js';
 import { registerHealthTools } from './tools/health-tools.js';
 import { registerTopologyTools } from './tools/topology-tools.js';
+import { registerWaitForUnblockTools } from './tools/wait-for-unblock-tools.js';
 import { VERSION } from '../utils/version.js';
 import {
   EVENTS_RESOURCE_URI,
@@ -51,8 +52,9 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 22 tools and 1 resource:
+ * Factory function that creates an McpServer with 23 tools and 1 resource:
  * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
+ * - 1 wait tool (wait_for_unblock) — Task #455, in-process long-poll on blocked->open
  * - 5 project tools (create, get, update, list, delete)
  * - 3 dependency tools (add, remove, list)
  * - 3 comment tools (add, list, delete)
@@ -102,6 +104,10 @@ export function createMcpServer(
   registerDependencyTools(server, dependencyService);
   registerCommentTools(server, commentService, ctx);
   registerHealthTools(server, db);
+  // Task #455: long-poll tool that blocks until a task unblocks. Registered
+  // unconditionally (like get_task) since it only needs the in-process
+  // TaskService + eventBus singleton.
+  registerWaitForUnblockTools(server, taskService);
   if (topologyService) {
     registerTopologyTools(server, topologyService);
   }

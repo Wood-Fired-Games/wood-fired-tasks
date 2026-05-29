@@ -10,7 +10,7 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 22 tools for task, project, comment, dependency, reporting, health, and topology operations
+- 23 tools for task, project, comment, dependency, reporting, health, topology, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 11 pre-built skill files for common workflows
@@ -289,7 +289,7 @@ The remote server is at full tool parity with the local server. `completion_repo
 
 ## Tools Reference
 
-The MCP server exposes 22 tools organized by domain:
+The MCP server exposes 23 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -315,6 +315,7 @@ The MCP server exposes 22 tools organized by domain:
 | `get_dependencies` | Dependency | Return both blockers and blocked-by relationships for a task. |
 | `check_health` | Health | Verify database connectivity and report version info. |
 | `topology_check` | Topology | Classify a project as FLAT, DAG, or DAG_CYCLIC over its task-dependency graph; returns roots, leaves, edges, and an execution advisory. |
+| `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. In-process only. |
 
 ### Task Tools (9 tools)
 
@@ -720,6 +721,33 @@ Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wav
 
 **Usage:** When Claude Code needs to decide whether a project's backlog can be drained in parallel (`/tasks:loop-dag`) or must run sequentially, or to detect a dependency cycle that blocks execution. Registered on both the local and remote servers; the remote variant proxies `GET /api/v1/projects/:id/topology`.
 
+### Wait Tools (1 tool)
+
+#### wait_for_unblock
+
+Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh task projection. Wraps the in-process `subscribeOnce` helper over the EventBus singleton.
+
+**Input Schema:**
+
+```json
+{
+  "task_id": "number (required, positive integer)",
+  "timeout_seconds": "number (optional, positive integer; default 300, clamped to max 1800)"
+}
+```
+
+**Returns:** Exactly one of three structured shapes:
+
+- `{ "status": "unblocked", "task": <fresh projection>, "applied_timeout_seconds": <number> }` — the `blocked -> open` transition fired during the wait.
+- `{ "status": "already_unblocked", "task": <fresh projection>, "applied_timeout_seconds": <number> }` — the task was not `blocked` at call time (returns immediately).
+- `{ "status": "timeout", "task_id": <number>, "waited_seconds": <number>, "applied_timeout_seconds": <number> }` — the deadline elapsed. **No error is thrown for timeout.**
+
+`applied_timeout_seconds` echoes the clamped timeout so callers can see when a requested value exceeded the 1800s ceiling. Authorization is identical to `get_task`: an unknown / inaccessible `task_id` yields the same MCP error (`NotFoundError` -> `InvalidRequest`).
+
+**In-process limitation:** `wait_for_unblock` subscribes to the **in-process** EventBus, so it only observes status transitions that happen in the **same process** as the MCP server (e.g. the workflow-engine auto-unblock cascade running in-process). It does **not** see transitions made by other sessions or processes — cross-process / cross-session wake-ups are the domain of the SSE event stream (see `events://stream`) and the wft-router automation recipe (task #456). This is also why `wait_for_unblock` is **local-only** and not part of the remote REST-backed tool surface.
+
+**Usage:** When an agent has hit a `blocked` task and wants to park until its blockers clear (within the same MCP process) rather than busy-polling `get_task`.
+
 ## Resources Reference
 
 The MCP server exposes 1 resource.
@@ -938,7 +966,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:bug-smash`
-- Explore the 22 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 23 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host
 - Read the `events://stream` resource for real-time event integration
