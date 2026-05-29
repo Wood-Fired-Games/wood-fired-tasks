@@ -197,19 +197,24 @@ type ConnectionResult =
   | { kind: 'network_error'; message: string };
 
 /**
- * Drive a single HTTP connection: open, stream, parse, yield. Resolves to
- * a `ConnectionResult` when the stream ends (cleanly or not). Yields
- * events as a side effect by pushing them onto `sink` for the outer
- * generator to pull.
+ * Drive a single HTTP connection: open, stream, parse, yield. An async
+ * generator that `yield`s each parsed {@link SSEEvent} the instant it is
+ * decoded off the wire, and `return`s a {@link ConnectionResult} when the
+ * stream ends (cleanly or not).
+ *
+ * This MUST yield incrementally: an SSE connection is long-lived and never
+ * closes on its own, so buffering events until the connection ends would
+ * mean a healthy stream delivers nothing in real time (the consumer would
+ * only ever see events when the socket drops). Delegating with `yield*` in
+ * {@link runSSEClient} flows each event straight through to the daemon.
  */
-async function runOneConnection(
+async function* runOneConnection(
   url: string,
   apiKey: string,
   lastEventId: string | undefined,
   fetchImpl: typeof fetch,
   signal: AbortSignal,
-  sink: (event: SSEEvent) => void,
-): Promise<ConnectionResult> {
+): AsyncGenerator<SSEEvent, ConnectionResult> {
   const header = authHeader(apiKey);
   const headers: Record<string, string> = {
     [header.name]: header.value,
@@ -259,11 +264,11 @@ async function runOneConnection(
       }
       if (chunk.done) {
         // Flush any final pending event then return.
-        for (const event of parser.flush()) sink(event);
+        for (const event of parser.flush()) yield event;
         return { kind: 'closed_clean' };
       }
       const text = decoder.decode(chunk.value, { stream: true });
-      for (const event of parser.feed(text)) sink(event);
+      for (const event of parser.feed(text)) yield event;
     }
   } finally {
     // Best-effort: release the reader so the socket can recycle.
@@ -315,31 +320,36 @@ export async function* runSSEClient(
   let everYielded = false;
 
   while (!signal.aborted) {
-    /** Buffer that the inner connection pushes onto; we drain it after each connection so the watchdog can advance even when an event arrives mid-loop. */
-    const buffered: SSEEvent[] = [];
-    const result = await runOneConnection(
-      url,
-      opts.apiKey,
-      lastEventId,
-      fetchImpl,
-      signal,
-      (e) => buffered.push(e),
-    );
-
-    // Drain any events the connection produced before deciding what to
-    // do next. Update Last-Event-Id as we go (per spec §"Resume + cursor" WFT-NEUTRALITY-EXEMPT-LINE
-    // — only non-empty ids update the cursor). WFT-NEUTRALITY-EXEMPT-LINE
-    for (const event of buffered) {
+    /**
+     * Count of events this connection delivered. We pull each event from the
+     * inner generator and yield it onward IN REAL TIME — no buffering until
+     * the connection closes. A long-lived SSE stream never closes on its
+     * own, so buffering would mean a healthy stream delivers nothing until
+     * the socket drops.
+     */
+    let eventsThisConnection = 0;
+    const conn = runOneConnection(url, opts.apiKey, lastEventId, fetchImpl, signal);
+    let result: ConnectionResult;
+    for (;;) {
+      const next = await conn.next();
+      if (next.done === true) {
+        result = next.value;
+        break;
+      }
+      const event = next.value;
+      // Update Last-Event-Id as we go (per spec §"Resume + cursor" WFT-NEUTRALITY-EXEMPT-LINE
+      // — only non-empty ids update the cursor). WFT-NEUTRALITY-EXEMPT-LINE
       if (event.id !== undefined && event.id.length > 0) {
         lastEventId = event.id;
       }
       everYielded = true;
+      eventsThisConnection += 1;
       yield event;
     }
 
     // A successful connection that produced at least one event resets
     // the watchdog and attempts counter — same semantic as TCP keep-alive.
-    if (buffered.length > 0) {
+    if (eventsThisConnection > 0) {
       firstFailureAt = null;
       attempts = 0;
     }
@@ -374,7 +384,7 @@ export async function* runSSEClient(
         // (no failure accounting) so an idle disconnect doesn't trip the
         // watchdog. Sleep a short jittered amount to avoid hot-loop on
         // an unhealthy server that disconnects every read.
-        if (buffered.length === 0) {
+        if (eventsThisConnection === 0) {
           // Zero-event clean close in a row counts as a failure — the
           // server is up but giving us nothing, which is the same
           // observable as a half-open socket.

@@ -534,6 +534,49 @@ describe('runSSEClient — clean shutdown', () => {
   });
 });
 
+describe('runSSEClient — incremental delivery on a long-lived stream (regression)', () => {
+  // Regression guard for the buffer-until-close bug: the client used to push
+  // parsed events onto an array and only yield them AFTER the connection
+  // returned. A real SSE connection is long-lived and never closes on its
+  // own, so a healthy stream delivered ZERO events in real time — the daemon
+  // blocked on gen.next() forever. This test feeds a stream that enqueues
+  // events and then STAYS OPEN (no controller.close()): the buggy client
+  // would hang here (no yield → this test times out); the fixed client
+  // yields each event the instant it is parsed.
+  it('yields events as they arrive, before the stream closes', async () => {
+    const ac = new AbortController();
+    const body =
+      'id: 1\nevent: task.status_changed\ndata: {"x":1}\n\n' +
+      'id: 2\nevent: ping\ndata: {}\n\n';
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        // Deliberately NO controller.close() — mimic a live, open SSE stream.
+      },
+    });
+    const response = new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+    const { fetchImpl } = recordingFetch([response]);
+    const gen = runSSEClient(
+      baseOpts({ fetchImpl, clock: fakeClock(0), logger: spyLogger() }),
+      ac.signal,
+    );
+
+    // Both pulls must resolve even though the stream never closes.
+    const first = await gen.next();
+    const second = await gen.next();
+    ac.abort(); // leave the suspended generator parked; no third pull.
+
+    expect(first.done).toBe(false);
+    expect(second.done).toBe(false);
+    expect((first.value as { id?: string }).id).toBe('1');
+    expect((first.value as { event?: string }).event).toBe('task.status_changed');
+    expect((second.value as { id?: string }).id).toBe('2');
+  });
+});
+
 // Reassure linters that drainToExit is exercised (kept for the public
 // helper surface even if every test today uses takeEvents instead).
 void drainToExit;
