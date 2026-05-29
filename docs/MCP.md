@@ -282,10 +282,10 @@ revocation.
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 23 (full set including `completion_report`, `topology_check`, and the local-only `wait_for_unblock`) | 22 (`wait_for_unblock` is local-only — see below; the other 22 are at parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`) |
+| Tool count | 23 (full set including `completion_report`, `topology_check`, and `wait_for_unblock`) | 23 (full parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`, and `wait_for_unblock` resolves over the SSE stream `GET /api/v1/events`) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
-The remote server carries every tool except the local-only `wait_for_unblock`, which subscribes to the in-process EventBus and therefore cannot work over the REST-backed remote transport (see its entry below). `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process.
+The remote server carries every tool the local server does. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process. `wait_for_unblock` is hosted on **both** servers but over **different transports**: the local variant resolves the `blocked -> open` transition off the **in-process EventBus**, while the remote variant (task #481) resolves it off the **SSE event stream** (`GET /api/v1/events`, `RestClient.waitForUnblockViaSse`) — so the remote tool additionally observes cross-process / cross-session transitions. The input schema and the three return envelopes (`already_unblocked` / `unblocked` / `timeout`) are byte-identical across both transports.
 
 ## Tools Reference
 
@@ -315,7 +315,7 @@ The MCP server exposes 23 tools organized by domain:
 | `get_dependencies` | Dependency | Return both blockers and blocked-by relationships for a task. |
 | `check_health` | Health | Verify database connectivity and report version info. |
 | `topology_check` | Topology | Classify a project as FLAT, DAG, or DAG_CYCLIC over its task-dependency graph; returns roots, leaves, edges, and an execution advisory. |
-| `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. In-process only. |
+| `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. On both servers: local resolves over the in-process bus, remote over the SSE stream. |
 
 ### Task Tools (9 tools)
 
@@ -742,9 +742,14 @@ Long-poll (block) until a task transitions `blocked` -> `open`, then return the 
 - `{ "status": "already_unblocked", "task": <fresh projection>, "applied_timeout_seconds": <number> }` — the task was not `blocked` at call time (returns immediately).
 - `{ "status": "timeout", "task_id": <number>, "waited_seconds": <number>, "applied_timeout_seconds": <number> }` — the deadline elapsed. **No error is thrown for timeout.**
 
-`applied_timeout_seconds` echoes the clamped timeout so callers can see when a requested value exceeded the 1800s ceiling. Authorization is identical to `get_task`: an unknown / inaccessible `task_id` yields the same MCP error (`NotFoundError` -> `InvalidRequest`).
+`applied_timeout_seconds` echoes the clamped timeout so callers can see when a requested value exceeded the 1800s ceiling. Authorization is identical to `get_task`: an unknown / inaccessible `task_id` yields the same MCP error.
 
-**In-process limitation:** `wait_for_unblock` subscribes to the **in-process** EventBus, so it only observes status transitions that happen in the **same process** as the MCP server (e.g. the workflow-engine auto-unblock cascade running in-process). It does **not** see transitions made by other sessions or processes — cross-process / cross-session wake-ups are the domain of the SSE event stream (see `events://stream`) and the wft-router automation recipe (task #456). This is also why `wait_for_unblock` is **local-only** and not part of the remote REST-backed tool surface.
+**Two transports (local in-process bus vs remote SSE stream):** `wait_for_unblock` is hosted on **both** the local and remote MCP servers, but resolves the `blocked -> open` transition over different transports:
+
+- **Local (stdio, `src/mcp/tools/wait-for-unblock-tools.ts`):** subscribes to the **in-process EventBus**, so it only observes status transitions that happen in the **same process** as the MCP server (e.g. the workflow-engine auto-unblock cascade running in-process). It does **not** see transitions made by other sessions or processes.
+- **Remote (`src/mcp/remote/register-tools.ts` → `RestClient.waitForUnblockViaSse`, task #481):** opens a streaming authenticated `GET /api/v1/events?event_types=task.status_changed` and resolves on the first frame whose payload satisfies `data.id === task_id && metadata.from === "blocked" && metadata.to === "open"`. Because the SSE stream carries events from the whole server, the remote variant **also** observes cross-process / cross-session wake-ups (the domain previously reserved for the `events://stream` resource and the wft-router automation recipe, task #456).
+
+The input schema, the three envelopes, the clamp logic, and the no-throw timeout semantics are byte-identical across both transports, so a caller cannot tell which one served the request.
 
 **Usage:** When an agent has hit a `blocked` task and wants to park until its blockers clear (within the same MCP process) rather than busy-polling `get_task`.
 

@@ -57,6 +57,7 @@ function makeMockClient() {
     deleteComment: vi.fn(),
     checkHealth: vi.fn(),
     getTopology: vi.fn(),
+    waitForUnblockViaSse: vi.fn(),
   };
 }
 
@@ -100,6 +101,7 @@ describe('registerRemoteTools', () => {
       'delete_comment',
       'check_health',
       'topology_check',
+      'wait_for_unblock',
     ];
     for (const name of expected) {
       expect(handlers.has(name)).toBe(true);
