@@ -27,3 +27,6 @@ export {
 export type { HttpRequestOptions, HttpResponse } from './http-client.js';
 
 export { createTaskInProject } from './create-task-in-project.js';
+
+export { assertEndpointAllowed, webhookPost } from './webhook-post.js';
+export type { EndpointDecision } from './webhook-post.js';
