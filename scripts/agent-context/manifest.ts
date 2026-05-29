@@ -321,6 +321,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
       'Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when content peels out into adjacent files.',
   },
   {
+    path: 'docs/automation-recipes/claude-routines.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: dispatch a routine on task close via the vendor-neutral agent_session_dispatch + shell_exec core handlers, with a validating sample triggers.yaml and the adapter-contract shape.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/ONBOARDING_SMOKE.md',
     role: 'onboarding-smoke',
     purpose:
