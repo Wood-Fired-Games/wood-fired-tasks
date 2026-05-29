@@ -282,10 +282,10 @@ revocation.
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 22 (full set including `completion_report` and `topology_check`) | 22 (full parity — `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`) |
+| Tool count | 23 (full set including `completion_report`, `topology_check`, and the local-only `wait_for_unblock`) | 22 (`wait_for_unblock` is local-only — see below; the other 22 are at parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
-The remote server is at full tool parity with the local server. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process.
+The remote server carries every tool except the local-only `wait_for_unblock`, which subscribes to the in-process EventBus and therefore cannot work over the REST-backed remote transport (see its entry below). `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process.
 
 ## Tools Reference
 
