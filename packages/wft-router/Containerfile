@@ -1,0 +1,146 @@
+# syntax=docker/dockerfile:1
+#
+# OCI Containerfile for the wft-router event-router binary.
+#
+# Build (from the REPO ROOT — the build context is the repo root because the
+# router resolves its dependencies from the shared root lockfile; there are no
+# npm workspaces and the package has no local node_modules):
+#
+#   docker build -f packages/wft-router/Containerfile -t wft-router .
+#
+# Multi-arch (build-only smoke; cannot --load a multi-platform image into the
+# local daemon, that is expected):
+#
+#   docker buildx build --platform linux/amd64,linux/arm64 \
+#     -f packages/wft-router/Containerfile .
+#
+# ---------------------------------------------------------------------------
+# Native module note (better-sqlite3)
+# ---------------------------------------------------------------------------
+# better-sqlite3 compiles a C++ addon at install time and a node:*-slim base
+# lacks the build toolchain. We use a two-stage build: the BUILDER stage runs
+# on the full node:22 image (ships python3 + make + g++), installs/compiles all
+# deps and builds dist/, then the RUNTIME stage starts from node:22-slim and
+# `npm install`s the npm-packed router tarball — which pulls ONLY the 4 prod
+# deps (better-sqlite3, pino, yaml, zod) and rebuilds the native addon against
+# the SAME node 22 / glibc ABI as the runtime base. This keeps the runtime
+# image minimal (no dev deps, no build toolchain) while guaranteeing
+# require('better-sqlite3') works at runtime.
+#
+# ---------------------------------------------------------------------------
+# Required / optional runtime environment variables
+# ---------------------------------------------------------------------------
+# The router reads ONLY the following process.env vars (verified against
+# packages/wft-router/src). Endpoint + token may also be passed as
+# --endpoint / --token flags; the env vars are the fallback.
+#
+#   WFT_ROUTER_ENDPOINT   (required unless --endpoint) tasks API base URL the
+#                         SSE client subscribes to.
+#   WFT_ROUTER_TOKEN      (required unless --token)    API key for the SSE subscription.
+#   LOG_LEVEL             (optional) pino log level (trace|debug|info|warn|
+#                         error|fatal). Default: info. An unknown value throws.
+#   WFT_ROUTER_CONFIG     (optional) absolute path override for the config dir
+#                         (triggers.yaml lives here). Relative values are ignored.
+#                         Default (Linux): $XDG_CONFIG_HOME/wft-router else ~/.config/wft-router.
+#   WFT_ROUTER_STATE_DIR  (optional) absolute path override for the state dir
+#                         (idempotency.sqlite + cursor live here). Relative ignored.
+#                         Default (Linux): $XDG_STATE_HOME/wft-router else ~/.local/state/wft-router.
+#   WFT_ROUTER_DATA_DIR   (optional) absolute path override for the data dir
+#                         (reserved for future use). Relative values ignored.
+#                         Default (Linux): $XDG_DATA_HOME/wft-router else ~/.local/share/wft-router.
+#   XDG_CONFIG_HOME       (optional) freedesktop base dir; config -> <it>/wft-router.
+#   XDG_STATE_HOME        (optional) freedesktop base dir; state  -> <it>/wft-router.
+#   XDG_DATA_HOME         (optional) freedesktop base dir; data   -> <it>/wft-router.
+#   HOME                  (optional) home dir used for the ~/.config / ~/.local
+#                         defaults. Set to /home/wft below so the non-root user
+#                         has writable defaults.
+#
+# Per-rule credential vars: when a triggers.yaml rule names a `token_env`, the
+# daemon reads process.env[<that name>] (e.g. WFT_API_KEY) and forwards it to
+# the handler. These names are operator-defined by the config, not fixed —
+# pass whatever credential vars your triggers.yaml references at `docker run`.
+#
+# Metrics are OPT-IN: the /metrics server only starts when --metrics-port <n>
+# is passed on the command line (there is no metrics env var). It binds
+# 127.0.0.1 by default (loopback, same network namespace as HEALTHCHECK) and is
+# widened only via --metrics-bind. The HEALTHCHECK below targets the port set in
+# METRICS_PORT and is meaningful only when the container is started with
+# `--metrics-port <METRICS_PORT>`. Without metrics enabled the healthcheck will
+# report unhealthy by design — run the router with --metrics-port to use it, e.g.
+#
+#   docker run -e WFT_ROUTER_ENDPOINT=... -e WFT_ROUTER_TOKEN=... \
+#     -v wft-router-state:/home/wft/.local/state/wft-router \
+#     wft-router --metrics-port 9464
+#
+# ===========================================================================
+# Stage 1 — builder (full node:22 image; has python3/make/g++ for native build)
+# ===========================================================================
+FROM node:22 AS builder
+
+WORKDIR /build
+
+# Install root deps from the shared lockfile (no workspaces; the router's deps
+# resolve from the hoisted root node_modules). Copy the manifests first for
+# layer caching, then the sources.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# The root tsconfig.json is the base the router's tsconfig extends. We build
+# ONLY the router project (tsc -p) rather than `npm run build` (which also runs
+# the root `tsc` over the main app's src/, not copied into this image).
+COPY tsconfig.json ./
+COPY packages/wft-router/package.json packages/wft-router/tsconfig.json ./packages/wft-router/
+COPY packages/wft-router/src ./packages/wft-router/src
+
+# Build the router bin -> packages/wft-router/dist, then pack it into a tarball
+# so the runtime stage can install a clean prod-only dependency tree.
+RUN npx tsc -p packages/wft-router \
+  && cd packages/wft-router \
+  && npm pack --pack-destination /build
+
+# ===========================================================================
+# Stage 2 — runtime (minimal node:22-slim; prod deps only, non-root)
+# ===========================================================================
+FROM node:22-slim AS runtime
+
+ENV NODE_ENV=production
+# Metrics port the HEALTHCHECK probes. Override at build time with
+# --build-arg METRICS_PORT=<n>; pass the SAME value as --metrics-port at run.
+ARG METRICS_PORT=9464
+ENV METRICS_PORT=${METRICS_PORT}
+
+# Non-root user/group with a real HOME so the XDG defaults resolve to a
+# writable location owned by the user.
+RUN groupadd --system --gid 10001 wft \
+  && useradd --system --uid 10001 --gid wft --home-dir /home/wft --create-home wft
+
+WORKDIR /app
+
+# Install ONLY the router's production deps from the packed tarball. npm
+# rebuilds better-sqlite3's native addon against this node:22-slim runtime, so
+# the prebuilt/compiled binary matches the runtime node ABI + glibc.
+COPY --from=builder /build/wood-fired-games-wft-router-*.tgz /tmp/wft-router.tgz
+RUN npm install --omit=dev --no-save --prefix /app /tmp/wft-router.tgz \
+  && rm /tmp/wft-router.tgz \
+  && npm cache clean --force
+
+# The installed package lands at /app/node_modules/@wood-fired-games/wft-router.
+# Its bin (dist/bin/wft-router.js) is symlinked at /app/node_modules/.bin/wft-router.
+ENV HOME=/home/wft \
+    PATH=/app/node_modules/.bin:$PATH
+
+# Default writable state/config dirs (owned by the non-root user). Mount a
+# volume here to persist the sqlite idempotency store + SSE cursor.
+RUN mkdir -p /home/wft/.config/wft-router /home/wft/.local/state/wft-router \
+  && chown -R wft:wft /home/wft
+VOLUME ["/home/wft/.local/state/wft-router"]
+
+USER wft
+
+# Healthcheck against the Prometheus /metrics endpoint. Uses node's global
+# fetch (node 22) so no extra package (curl/wget) is needed. Meaningful only
+# when the container runs with --metrics-port ${METRICS_PORT}.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.METRICS_PORT||9464)+'/metrics').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
+ENTRYPOINT ["wft-router"]
