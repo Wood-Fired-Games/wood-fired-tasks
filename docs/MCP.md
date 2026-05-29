@@ -748,6 +748,29 @@ Long-poll (block) until a task transitions `blocked` -> `open`, then return the 
 
 **Usage:** When an agent has hit a `blocked` task and wants to park until its blockers clear (within the same MCP process) rather than busy-polling `get_task`.
 
+##### Long-polling for task transitions
+
+`wait_for_unblock` and the wft-router [persistent-agent-sessions recipe](automation-recipes/persistent-agent-sessions.md) solve the same problem — "wake an agent when a task unblocks" — from opposite ends of a single trade-off. `wait_for_unblock` is a **single-turn blocking call inside ONE MCP request**: the calling agent holds the connection open until the `blocked -> open` transition fires (or the deadline elapses). Reach for it when the agent can afford to stay connected — sub-30-minute waits with no host failover, no session teardown. The wft-router persistent-agent-sessions recipe is the opposite pole: **fire-and-forget, cross-session wake-ups**. The agent closes its session and goes away; later, when the task transitions, wft-router dispatches an adapter that re-spawns (or re-prompts) the agent. Choose it when the wait may outlive the agent process, span hosts, or survive a restart.
+
+**`wait_for_unblock` (single-turn, in-process):**
+
+```json
+{ "task_id": 1234, "timeout_seconds": 600 }
+```
+
+The call blocks for up to 600s and returns `{ "status": "unblocked", "task": <fresh projection> }` the instant the blocker clears.
+
+**wft-router `agent_session_dispatch` (cross-session, fire-and-forget):**
+
+```yaml
+rules:
+  - name: unblocked-task-wakes-session
+    on: task.status_changed
+    where: { to_status: open }
+    do: agent_session_dispatch
+    with: { adapter: local-command, target: your-session, prompt: "{{task.id}}" }
+```
+
 ## Resources Reference
 
 The MCP server exposes 1 resource.

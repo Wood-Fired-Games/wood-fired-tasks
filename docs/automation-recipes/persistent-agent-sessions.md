@@ -206,3 +206,7 @@ templating violation. Validate in CI so a malformed rule never ships.
   record: handler table, predicate language, templating rules, the
   at-least-once dispatch protocol, and the full `agent_session_dispatch`
   extension contract.
+- [MCP.md](../MCP.md) (`wait_for_unblock` tool) — the single-turn,
+  in-process counterpart: if the agent can hold one MCP connection open for
+  the wait (sub-30-minute, no failover) rather than going away and being
+  re-spawned, block inside one call instead of wiring a dispatch rule here.
