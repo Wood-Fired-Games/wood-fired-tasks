@@ -38,6 +38,7 @@ function makeEvent(overrides: Partial<EventPayloadShape> = {}): EventPayloadShap
       status: 'open',
       tags: ['urgent', 'backend'],
       parent_task_id: 50,
+      assignee: 'owner@example.com',
     },
     metadata: {
       from: 'open',
@@ -145,6 +146,27 @@ describe('evaluateWhere — eq operators', () => {
     it('fails when task.parent_task_id is missing', () => {
       const e = makeEvent({ task: { id: 1 } });
       expect(evaluateWhere({ parent_id: 50 }, e)).toBe(false);
+    });
+  });
+
+  describe('assignee', () => {
+    it('passes on exact match', () => {
+      expect(evaluateWhere({ assignee: 'owner@example.com' }, makeEvent())).toBe(true);
+    });
+    it('fails on mismatch', () => {
+      expect(evaluateWhere({ assignee: 'other@example.com' }, makeEvent())).toBe(false);
+    });
+    it('fails when task.assignee is null', () => {
+      const e = makeEvent({ task: { id: 1, assignee: null } });
+      expect(evaluateWhere({ assignee: 'owner@example.com' }, e)).toBe(false);
+    });
+    it('fails when task.assignee is missing', () => {
+      const e = makeEvent({ task: { id: 1 } });
+      expect(evaluateWhere({ assignee: 'owner@example.com' }, e)).toBe(false);
+    });
+    it('imposes no constraint when where.assignee is absent', () => {
+      const e = makeEvent({ task: { id: 1 } });
+      expect(evaluateWhere({}, e)).toBe(true);
     });
   });
 

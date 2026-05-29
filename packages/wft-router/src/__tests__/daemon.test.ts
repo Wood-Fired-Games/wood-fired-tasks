@@ -128,7 +128,14 @@ describe('mapSSEEvent', () => {
     const ev = taskEvent(
       '42',
       'task.status_changed',
-      { id: 7, project_slug: 'demo', status: 'done', tags: ['x'] },
+      {
+        id: 7,
+        project_slug: 'demo',
+        status: 'done',
+        tags: ['x'],
+        parent_task_id: 3,
+        assignee: 'owner@example.com',
+      },
       { from: 'in_progress', to: 'done', source: 'user' },
     );
     const mapped = mapSSEEvent(ev);
@@ -136,6 +143,8 @@ describe('mapSSEEvent', () => {
     expect(mapped?.eventId).toBe('42');
     expect(mapped?.payload.type).toBe('task.status_changed');
     expect(mapped?.payload.task?.id).toBe(7);
+    expect(mapped?.payload.task?.parent_task_id).toBe(3);
+    expect(mapped?.payload.task?.assignee).toBe('owner@example.com');
     expect(mapped?.payload.metadata?.to).toBe('done');
     expect(mapped?.emittedAtMs).toBe(1_700_000_000_000);
   });

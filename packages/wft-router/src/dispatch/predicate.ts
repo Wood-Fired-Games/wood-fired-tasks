@@ -49,6 +49,7 @@ export interface EventPayloadShape {
     status?: string;
     tags?: readonly string[];
     parent_task_id?: number | null;
+    assignee?: string | null;
   };
   metadata?: {
     from?: string;
@@ -118,6 +119,9 @@ export function evaluateWhere(where: Where, event: EventPayloadShape): boolean {
     return false;
   }
   if (where.parent_id !== undefined && event.task?.parent_task_id !== where.parent_id) {
+    return false;
+  }
+  if (where.assignee !== undefined && event.task?.assignee !== where.assignee) {
     return false;
   }
   if (where.source !== undefined && event.metadata?.source !== where.source) {

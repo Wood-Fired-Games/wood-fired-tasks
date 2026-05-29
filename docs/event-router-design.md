@@ -200,6 +200,7 @@ host-language code.
 | `tags_contains_any`     | string[]                              | At least one tag must be present                  |
 | `task_id`               | number                                | Match a specific task                             |
 | `parent_id`             | number                                | Match by parent task                              |
+| `assignee`              | non-empty string                      | Match the task's assignee exactly; a missing/null assignee on the event fails the operator |
 | `source`                | `user \| workflow`                    | `metadata.source` — useful for dependency-unblock-only rules |
 | `eventType`             | one of `ALLOWED_EVENT_TYPES`          | Redundant with `on:` but allowed for explicitness |
 

@@ -65,6 +65,7 @@ describe('TriggersConfigSchema — valid configs', () => {
             tags_contains_any: ['priority', 'flagged'],
             task_id: 100,
             parent_id: 7,
+            assignee: 'someone@example.com',
             source: 'user',
             eventType: 'task.status_changed',
           },
@@ -208,6 +209,57 @@ describe('TriggersConfigSchema — invalid configs (shape)', () => {
 
   it('rejects an empty rules array', () => {
     const config = { version: 1, rules: [] };
+    const result = TriggersConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a where: with a string assignee operator', () => {
+    const config = {
+      version: 1,
+      rules: [
+        {
+          name: 'assignee-rule',
+          on: 'task.status_changed',
+          where: { assignee: 'someone@example.com' },
+          do: 'webhook_post',
+          with: {},
+        },
+      ],
+    };
+    const result = TriggersConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an empty-string assignee', () => {
+    const config = {
+      version: 1,
+      rules: [
+        {
+          name: 'empty-assignee',
+          on: 'task.status_changed',
+          where: { assignee: '' },
+          do: 'webhook_post',
+          with: {},
+        },
+      ],
+    };
+    const result = TriggersConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-string assignee', () => {
+    const config = {
+      version: 1,
+      rules: [
+        {
+          name: 'numeric-assignee',
+          on: 'task.status_changed',
+          where: { assignee: 123 },
+          do: 'webhook_post',
+          with: {},
+        },
+      ],
+    };
     const result = TriggersConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
   });

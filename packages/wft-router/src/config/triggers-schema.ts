@@ -76,6 +76,7 @@ export const WhereSchema = z
     tags_contains_any: z.array(z.string()).min(1).optional(),
     task_id: z.number().int().positive().optional(),
     parent_id: z.number().int().positive().optional(),
+    assignee: z.string().min(1).optional(),
     source: z.enum(['user', 'workflow']).optional(),
     eventType: EventTypeEnum.optional(),
   })

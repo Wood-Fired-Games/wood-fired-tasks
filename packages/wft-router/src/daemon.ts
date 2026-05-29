@@ -193,6 +193,7 @@ interface WireEventPayload {
     status?: string;
     tags?: readonly string[];
     parent_task_id?: number | null;
+    assignee?: string | null;
   };
   metadata?: {
     from?: string;
@@ -250,6 +251,7 @@ export function mapSSEEvent(ev: SSEEvent): MappedEvent | null {
       status: parsed.data.status,
       tags: parsed.data.tags,
       parent_task_id: parsed.data.parent_task_id,
+      assignee: parsed.data.assignee,
     };
   }
   if (parsed.metadata !== undefined && parsed.metadata !== null) {
