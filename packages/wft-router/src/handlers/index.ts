@@ -16,6 +16,7 @@ export type {
   HandlerContext,
   HandlerLogger,
   HandlerOutcome,
+  SpawnImpl,
 } from './types.js';
 
 export {
@@ -30,3 +31,12 @@ export { createTaskInProject } from './create-task-in-project.js';
 
 export { assertEndpointAllowed, webhookPost } from './webhook-post.js';
 export type { EndpointDecision } from './webhook-post.js';
+
+export {
+  buildChildEnv,
+  DEFAULT_CWD,
+  DEFAULT_ENV_ALLOWLIST,
+  DEFAULT_TIMEOUT_MS as SHELL_EXEC_DEFAULT_TIMEOUT_MS,
+  KILL_GRACE_MS,
+  shellExec,
+} from './shell-exec.js';

@@ -38,10 +38,19 @@
  * in this file (docs/event-router-design.md §Vendor-neutral guardrails).
  */
 
+import type { spawn as nodeSpawn } from 'node:child_process';
+
 import type {
   EventPayloadShape,
   IdempotencyStore,
 } from '../dispatch/index.js';
+
+/**
+ * Injectable shape of `child_process.spawn`. The `shell_exec` handler (#430)
+ * defaults this to the real `node:child_process` `spawn` and lets unit tests
+ * pin a fake. Aliased to the builtin's own signature so the seam stays exact.
+ */
+export type SpawnImpl = typeof nodeSpawn;
 
 /**
  * Minimal logger surface a handler needs. Structurally compatible with a
@@ -130,6 +139,20 @@ export interface HandlerContext {
   timeoutMs?: number;
   /** Test seam — defaults to `globalThis.fetch` inside the handler. */
   fetchImpl?: typeof fetch;
+  /**
+   * OPTIONAL test seam for the `shell_exec` handler (#430) — defaults to the
+   * real `node:child_process` `spawn`. The HTTP handlers (#428/#429) ignore
+   * it. Additive field; never required, never read by existing handlers.
+   */
+  spawnImpl?: SpawnImpl;
+  /**
+   * OPTIONAL name of the parent-process env var holding a credential the rule
+   * wants forwarded into the child (the rule's `token_env`). Read by
+   * `shell_exec` (#430) ONLY; the HTTP handlers ignore it. When set, the
+   * handler copies `process.env[tokenEnv]` (if present) into the child env
+   * allowlist. Additive field; never required.
+   */
+  tokenEnv?: string;
 }
 
 /**
