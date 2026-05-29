@@ -577,6 +577,55 @@ describe('runSSEClient — incremental delivery on a long-lived stream (regressi
   });
 });
 
+describe('runSSEClient — idle/read timeout guards a half-open socket (regression)', () => {
+  // Regression guard for the silent-wedge bug observed in production: a TCP
+  // connection half-opened (server gone, no FIN/RST), so reader.read()
+  // blocked forever. No frame arrived, but the 15-min unreachability
+  // watchdog never armed (it counts connection FAILURES, not a wedged read),
+  // so the router sat dead for hours and missed every event. The idle
+  // timeout converts "no frame within N ms" into a reconnect.
+  it('reconnects when no frame arrives within idleTimeoutMs instead of wedging', async () => {
+    const ac = new AbortController();
+    // Connection #1: emits `connected`, then stays OPEN and SILENT forever.
+    const openSilent = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: connected\ndata: {}\n\n'));
+        // never close, never send again -> the read idles
+      },
+    });
+    const resp1 = new Response(openSilent, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+    // Connection #2 (after the reconnect): a normal closing stream.
+    const { fetchImpl, calls } = recordingFetch([resp1, sseResponse('id: 2\ndata: second\n\n')]);
+    const logger = spyLogger();
+    const gen = runSSEClient(
+      // fakeClock(0) makes the post-failure backoff resolve instantly; the
+      // idle timeout itself uses a real 60 ms timer.
+      baseOpts({ fetchImpl, clock: fakeClock(0), logger, idleTimeoutMs: 60 }),
+      ac.signal,
+    );
+
+    const first = await gen.next(); // `connected` from connection #1
+    const second = await gen.next(); // after ~60 ms idle -> reconnect -> event from #2
+    ac.abort();
+    await gen.next();
+
+    expect(first.value).toEqual({ event: 'connected', data: '{}' });
+    expect((second.value as { id?: string }).id).toBe('2');
+    // It RECONNECTED (second fetch) rather than wedging on the dead socket.
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      logger.warns.some(
+        (w) =>
+          w.msg === 'sse_network_error' &&
+          String(w.fields?.message).includes('idle timeout'),
+      ),
+    ).toBe(true);
+  });
+});
+
 // Reassure linters that drainToExit is exercised (kept for the public
 // helper surface even if every test today uses takeEvents instead).
 void drainToExit;

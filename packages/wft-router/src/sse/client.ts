@@ -104,13 +104,68 @@ export interface SSEClientOptions {
   randomFn?: () => number;
   /** Test seam — defaults to a `console`-backed logger. */
   logger?: SSELogger;
+  /**
+   * Idle/read timeout: if NO frame (event, comment, OR server keep-alive
+   * ping) arrives within this many ms, treat the connection as dead and
+   * reconnect. This is the half-open-socket guard — without it a silently
+   * dropped TCP connection blocks `reader.read()` forever and the
+   * unreachability watchdog never arms (it only counts connection
+   * FAILURES, not a wedged read). Set to 0 to disable. Default 90 s
+   * (the server pings well inside that, so 90 s = a few missed pings).
+   */
+  idleTimeoutMs?: number;
 }
 
 /** Default per-spec ceilings, exported for the daemon assembly to reuse. */
 export const DEFAULT_MAX_BACKOFF_MS = 60_000;
 export const DEFAULT_UNREACHABLE_LIMIT_MS = 15 * 60_000;
+/**
+ * Default idle/read timeout. The SSE server emits keep-alive pings on a far
+ * shorter cadence, so 90 s without a single frame means the stream is dead
+ * (half-open socket) — reconnect rather than wedge forever.
+ */
+export const DEFAULT_IDLE_TIMEOUT_MS = 90_000;
 
 const EVENTS_PATH = '/api/v1/events';
+
+/** Sentinel rejection used by {@link readWithIdleTimeout} on idle expiry. */
+class IdleTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`idle timeout: no SSE frame within ${String(ms)}ms`);
+    this.name = 'IdleTimeoutError';
+  }
+}
+
+/**
+ * Race a single `reader.read()` against a wall-clock idle timer. Resolves
+ * with the read result if a chunk (or stream-end) arrives first; rejects
+ * with {@link IdleTimeoutError} if `idleMs` elapses with no frame. A
+ * non-positive `idleMs` disables the guard (plain `reader.read()`).
+ *
+ * Uses a real `setTimeout` deliberately — NOT the injected test clock — so
+ * the guard reflects true wall-clock silence on the live socket and does
+ * not interfere with fake-clock unit tests (whose streams resolve reads
+ * promptly, well inside the default 90 s).
+ */
+function readWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  idleMs: number,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  if (idleMs <= 0) return reader.read();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new IdleTimeoutError(idleMs)), idleMs);
+    reader.read().then(
+      (chunk) => {
+        clearTimeout(timer);
+        resolve(chunk);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
 
 /**
  * Build the wall-clock + setTimeout-backed clock the daemon uses in
@@ -214,6 +269,7 @@ async function* runOneConnection(
   lastEventId: string | undefined,
   fetchImpl: typeof fetch,
   signal: AbortSignal,
+  idleTimeoutMs: number,
 ): AsyncGenerator<SSEEvent, ConnectionResult> {
   const header = authHeader(apiKey);
   const headers: Record<string, string> = {
@@ -257,9 +313,17 @@ async function* runOneConnection(
     for (;;) {
       let chunk: ReadableStreamReadResult<Uint8Array>;
       try {
-        chunk = await reader.read();
+        chunk = await readWithIdleTimeout(reader, idleTimeoutMs);
       } catch (err) {
         if (signal.aborted) return { kind: 'closed_clean' };
+        // Idle timeout OR a read error: the stream is dead (possibly a
+        // half-open socket). Cancel the reader to free the socket and
+        // report a failure so the run loop reconnects + arms the watchdog.
+        try {
+          await reader.cancel();
+        } catch {
+          /* already torn down */
+        }
         return { kind: 'network_error', message: errMessage(err) };
       }
       if (chunk.done) {
@@ -311,6 +375,7 @@ export async function* runSSEClient(
   const logger = opts.logger ?? defaultLogger();
   const maxBackoffMs = opts.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
   const unreachableLimitMs = opts.unreachableLimitMs ?? DEFAULT_UNREACHABLE_LIMIT_MS;
+  const idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const url = buildUrl(opts.endpoint, opts.eventTypes);
 
   let lastEventId: string | undefined;
@@ -328,7 +393,14 @@ export async function* runSSEClient(
      * the socket drops.
      */
     let eventsThisConnection = 0;
-    const conn = runOneConnection(url, opts.apiKey, lastEventId, fetchImpl, signal);
+    const conn = runOneConnection(
+      url,
+      opts.apiKey,
+      lastEventId,
+      fetchImpl,
+      signal,
+      idleTimeoutMs,
+    );
     let result: ConnectionResult;
     for (;;) {
       const next = await conn.next();
