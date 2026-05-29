@@ -3,7 +3,6 @@
   "version": "0.0.1",
   "description": "Event-router binary that streams wood-fired-tasks events to downstream sinks. Stub scaffold landed by task #421; see docs/event-router-design.md for the design-of-record.",
   "license": "MIT",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
@@ -16,8 +15,13 @@
   "engines": {
     "node": ">=22"
   },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "scripts": {
-    "build": "tsc -p ."
+    "build": "tsc -p .",
+    "prepublishOnly": "npm run build && (cd ../.. && npx vitest run wft-router)"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
