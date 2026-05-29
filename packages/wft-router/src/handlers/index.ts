@@ -40,3 +40,16 @@ export {
   KILL_GRACE_MS,
   shellExec,
 } from './shell-exec.js';
+
+export {
+  ADAPTER_NAME_RE,
+  ADAPTERS_PATH_ENV,
+  agentSessionDispatch,
+  buildAdapterArgv,
+  DEFAULT_TIMEOUT_MS as AGENT_SESSION_DISPATCH_DEFAULT_TIMEOUT_MS,
+  KILL_GRACE_MS as AGENT_SESSION_DISPATCH_KILL_GRACE_MS,
+  MAX_SESSION_ID_LEN,
+  resolveAdapter,
+  resolveAdaptersPath,
+  WITH_KEY_RE,
+} from './agent-session-dispatch.js';

@@ -70,7 +70,10 @@ export interface HandlerLogger {
  * this to decide whether to re-enqueue (only when `retryable: true`).
  *
  *   - `succeeded`  — the side-effect committed; the idempotency row is now
- *     SUCCEEDED.
+ *     SUCCEEDED. The OPTIONAL `sessionId` carries an identifier the side-effect
+ *     surfaced back (e.g. the `agent_session_dispatch` adapter prints a session
+ *     id to stdout); it is additive and absent for handlers that do not emit
+ *     one (#428/#429/#430).
  *   - `suppressed` — no side-effect was performed because the dispatch was
  *     already claimed (PENDING) or already terminal (DONE). The `reason`
  *     distinguishes the two so callers can log at the right level.
@@ -80,7 +83,7 @@ export interface HandlerLogger {
  *     summary (never the verbatim payload).
  */
 export type HandlerOutcome =
-  | { kind: 'succeeded' }
+  | { kind: 'succeeded'; sessionId?: string }
   | { kind: 'suppressed'; reason: 'already_pending' | 'already_done' }
   | { kind: 'failed'; retryable: boolean; detail: string };
 
@@ -153,6 +156,17 @@ export interface HandlerContext {
    * allowlist. Additive field; never required.
    */
   tokenEnv?: string;
+  /**
+   * OPTIONAL adapters-path override for the `agent_session_dispatch` handler
+   * (task #431) — a list of directories an adapter executable may be resolved
+   * from (by basename). Read by `agent_session_dispatch` ONLY; the other
+   * handlers ignore it. When set, it takes precedence over the
+   * `$WFT_ROUTER_ADAPTERS_PATH` env var, letting tests pin a temp dir without
+   * mutating the real environment. An EMPTY array (or unset + unset env var)
+   * means NO adapter resolves — adapters must be explicitly opted in. Additive
+   * field; never required, never read by #428/#429/#430.
+   */
+  adaptersPath?: readonly string[];
 }
 
 /**
