@@ -485,10 +485,13 @@ backlog.
 - Metrics: optional Prometheus endpoint via `--metrics-port` (disabled
   by default). Binds `127.0.0.1` unless `--metrics-bind 0.0.0.0` is
   explicitly set; no built-in auth (the operator's reverse proxy owns
-  that). Counters: `matched_rules_total`, `dispatched_total`,
-  `handler_errors_total`, `rate_limit_dropped_total`,
-  `permanently_failed_total`. Histograms: handler latency, debounce
-  coalescing.
+  that). Counters (all carry the `wft_router_` prefix in the exposition
+  output, e.g. `wft_router_dispatched_total`): `events_received_total`,
+  `matched_rules_total`, `dispatched_total` (labelled `{handler,status}`),
+  `handler_errors_total` (labelled `{handler}`), `rate_limit_dropped_total`
+  (labelled `{rule}`), `permanently_failed_total` (labelled `{rule}`).
+  Histograms (handler latency, debounce coalescing) are DEFERRED — the
+  counters above are what the `/metrics` endpoint currently exposes.
 
 ### Config validation
 

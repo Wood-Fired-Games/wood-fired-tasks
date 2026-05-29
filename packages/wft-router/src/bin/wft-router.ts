@@ -7,6 +7,12 @@
  * --dry-run, --once, --metrics-port, --metrics-bind, --rebuild-idempotency)
  * per docs/event-router-design.md §Contract.
  *
+ * Task #434 adds the optional Prometheus `--metrics-port <n>` /
+ * `--metrics-bind <addr>` flags: when `--metrics-port` is given, the bin
+ * constructs a {@link MetricsRegistry}, threads it into the daemon deps, and
+ * starts a loopback-default `node:http` metrics server (binds 127.0.0.1
+ * unless `--metrics-bind` widens it; no built-in auth). Disabled by default.
+ *
  * Task #422 adds the `--validate <path>` flag: reads the file, runs the
  * triggers.yaml zod schema + templating-safety pass, prints
  * `triggers.yaml validation OK.` on success and exits 0, or prints the
@@ -33,6 +39,11 @@ import {
   type DaemonDeps,
 } from '../daemon.js';
 import { getLogger } from '../logging/index.js';
+import {
+  MetricsRegistry,
+  startMetricsServer,
+  type MetricsServerHandle,
+} from '../metrics.js';
 import { getPaths } from '../paths/index.js';
 import { runSSEClient, type SSEClientOptions } from '../sse/index.js';
 
@@ -78,6 +89,20 @@ function readStringFlag(argv: readonly string[], flag: string): string | undefin
 }
 
 /**
+ * Pull a `--flag <int>` pair out of argv. Returns undefined if absent or not
+ * a positive integer. Used for `--metrics-port`.
+ */
+function readIntFlag(argv: readonly string[], flag: string): number | undefined {
+  const raw = readStringFlag(argv, flag);
+  if (raw === undefined) return undefined;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isInteger(n) || n < 0 || String(n) !== raw) {
+    return undefined;
+  }
+  return n;
+}
+
+/**
  * Options for booting the daemon. Exposed so AC #4's integration test can
  * drive the no-flag entry path against a stubbed API by injecting a fake
  * SSE source + fetch without going through the side-effecting `main()`.
@@ -101,6 +126,12 @@ export interface RunDaemonOptions {
   store?: DaemonDeps['store'];
   /** Test seam — handler registry override. Default: the four real handlers. */
   handlers?: DaemonDeps['handlers'];
+  /**
+   * Optional Prometheus metrics registry (task #434). When present it is
+   * threaded into the daemon deps so the pipeline increments it. The bin
+   * `main()` constructs one only when `--metrics-port` is given.
+   */
+  metrics?: MetricsRegistry;
 }
 
 /**
@@ -153,6 +184,7 @@ export async function createDaemon(
     apiBaseUrl: opts.endpoint,
     apiKey: opts.apiKey,
     fetchImpl: opts.fetchImpl,
+    metrics: opts.metrics,
   };
 
   return new WftRouterDaemon(deps);
@@ -231,10 +263,28 @@ async function main(): Promise<void> {
     process.exit(EX_CONFIG);
   }
 
+  // Optional metrics endpoint: DISABLED unless `--metrics-port <n>` is given.
+  // Binds 127.0.0.1 unless `--metrics-bind <addr>` widens it. No auth here —
+  // the operator's reverse proxy owns that (docs §Observability / §Threat).
+  const metricsPort = readIntFlag(argv, '--metrics-port');
+  const metricsBind = readStringFlag(argv, '--metrics-bind') ?? '127.0.0.1';
+  let metrics: MetricsRegistry | undefined;
+  let metricsServer: MetricsServerHandle | undefined;
+  if (metricsPort !== undefined) {
+    metrics = new MetricsRegistry();
+    metricsServer = await startMetricsServer({
+      port: metricsPort,
+      bind: metricsBind,
+      registry: metrics,
+    });
+  }
+
   try {
-    const code = await runDaemon({ configPath, endpoint, apiKey });
+    const code = await runDaemon({ configPath, endpoint, apiKey, metrics });
+    await metricsServer?.close();
     process.exit(code);
   } catch (err) {
+    await metricsServer?.close();
     const exitCode = (err as Error & { exitCode?: number }).exitCode;
     const message = err instanceof Error ? err.message : String(err);
     console.error(message);

@@ -77,6 +77,7 @@ import {
   type HandlerLogger,
   type HandlerOutcome,
 } from './handlers/index.js';
+import type { MetricsRegistry } from './metrics.js';
 import { ExitCode, type SSEEvent } from './sse/index.js';
 
 // ---------------------------------------------------------------------------
@@ -140,6 +141,15 @@ export interface DaemonDeps {
   env?: NodeJS.ProcessEnv;
   /** Injected clock for debounce/rate-limit math in tests. Default: Date.now. */
   now?: () => number;
+  /**
+   * Optional Prometheus metrics registry. ADDITIVE (task #434): when present,
+   * the daemon increments it at the pipeline points it already tracks (events
+   * received, rules matched, dispatches by handler+status, handler errors,
+   * permanently-failed, rate-limit drops). Absent in existing tests, which
+   * keep passing unchanged. The bin entry only constructs one when
+   * `--metrics-port` is given.
+   */
+  metrics?: MetricsRegistry;
 }
 
 /**
@@ -288,6 +298,8 @@ export class WftRouterDaemon {
   private readonly spawnImpl?: HandlerContext['spawnImpl'];
   private readonly adaptersPath?: readonly string[];
   private readonly env: NodeJS.ProcessEnv;
+  /** Optional metrics registry (task #434); incremented only when injected. */
+  private readonly metrics?: MetricsRegistry;
 
   private phase: DaemonPhase = 'idle';
   private readonly abortController = new AbortController();
@@ -314,6 +326,7 @@ export class WftRouterDaemon {
     this.spawnImpl = deps.spawnImpl;
     this.adaptersPath = deps.adaptersPath;
     this.env = deps.env ?? process.env;
+    this.metrics = deps.metrics;
 
     const now = deps.now ?? Date.now;
     this.rateLimiter =
@@ -455,6 +468,8 @@ export class WftRouterDaemon {
    * notifier subscriber template).
    */
   private onEvent(ev: SSEEvent): void {
+    this.metrics?.incEventsReceived();
+
     if (ev.id !== undefined && ev.id.length > 0) {
       this.lastEventId = ev.id; // in-memory cursor seam (durable persist deferred)
     }
@@ -475,6 +490,7 @@ export class WftRouterDaemon {
     if (matched.length === 0) {
       return;
     }
+    this.metrics?.incMatchedRules(matched.length);
 
     // For each matched rule, run stage 3 (debounce) and stage 4 (rate-limit),
     // then collect the dispatch promises. We launch ALL of them and join them
@@ -530,6 +546,7 @@ export class WftRouterDaemon {
     if (!this.rateLimiter.tryAcquire(rule.name)) {
       // Bounded overflow queue is DEFERRED — drop with a WARN + counter.
       this.rateLimitedDropped += 1;
+      this.metrics?.incRateLimitDropped(rule.name);
       this.logger.warn(
         {
           rule_name: rule.name,
@@ -559,6 +576,7 @@ export class WftRouterDaemon {
     } catch (err) {
       // A handler that throws (rather than returning a failed outcome) is
       // logged and isolated — it must not abort sibling rules' dispatches.
+      this.metrics?.incHandlerError(winner.rule.do);
       this.logger.error(
         {
           rule_name: rule.name,
@@ -628,6 +646,9 @@ export class WftRouterDaemon {
       event_id: identity.event_id,
       coalesced_count: coalescedCount,
     };
+    // Record the dispatch outcome by handler + status (task #434). The
+    // outcome kind maps 1:1 onto the `status` label values.
+    this.metrics?.incDispatched(rule.do, outcome.kind);
     switch (outcome.kind) {
       case 'succeeded':
         this.logger.info(
@@ -649,6 +670,7 @@ export class WftRouterDaemon {
             'wft_router_dispatch_failed_retryable',
           );
         } else {
+          this.metrics?.incPermanentlyFailed(rule.name);
           this.logger.error(
             { ...base, detail: outcome.detail, retryable: false },
             'wft_router_dispatch_failed_permanent',
