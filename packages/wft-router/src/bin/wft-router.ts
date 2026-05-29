@@ -21,10 +21,20 @@
  * guardrails): no provider, AI, chat, or CI name appears in this file.
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { EX_CONFIG, loadAndValidateTriggers } from '../config/triggers-schema.js';
+import { IdempotencyStore } from '../dispatch/index.js';
+import {
+  DEFAULT_HANDLER_REGISTRY,
+  WftRouterDaemon,
+  type DaemonDeps,
+} from '../daemon.js';
+import { getLogger } from '../logging/index.js';
+import { getPaths } from '../paths/index.js';
+import { runSSEClient, type SSEClientOptions } from '../sse/index.js';
 
 interface PackageJsonShape {
   version?: unknown;
@@ -54,6 +64,121 @@ function readValidateFlag(argv: readonly string[]): string | undefined {
     return undefined;
   }
   return next;
+}
+
+/** Pull a `--flag <value>` pair out of argv. Returns undefined if absent. */
+function readStringFlag(argv: readonly string[], flag: string): string | undefined {
+  const i = argv.indexOf(flag);
+  if (i === -1) return undefined;
+  const next = argv[i + 1];
+  if (typeof next !== 'string' || next.startsWith('--')) {
+    return undefined;
+  }
+  return next;
+}
+
+/**
+ * Options for booting the daemon. Exposed so AC #4's integration test can
+ * drive the no-flag entry path against a stubbed API by injecting a fake
+ * SSE source + fetch without going through the side-effecting `main()`.
+ */
+export interface RunDaemonOptions {
+  /** Resolved path to triggers.yaml. */
+  configPath: string;
+  /** API base URL (the `--endpoint`). */
+  endpoint: string;
+  /** API key (the `--token`). */
+  apiKey: string;
+  /** Optional event-type filter for the SSE subscription. */
+  eventTypes?: readonly string[];
+  /** State dir override (where idempotency.sqlite lives). Default: resolved paths. */
+  stateDir?: string;
+  /** Test seam — overrides the SSE source factory (default: real `runSSEClient`). */
+  sseSourceFactory?: DaemonDeps['sseSource'];
+  /** Test seam — fetch impl threaded to the SSE client + handlers. */
+  fetchImpl?: typeof fetch;
+  /** Test seam — pre-built idempotency store (e.g. `:memory:`). */
+  store?: DaemonDeps['store'];
+  /** Test seam — handler registry override. Default: the four real handlers. */
+  handlers?: DaemonDeps['handlers'];
+}
+
+/**
+ * Construct a fully-wired {@link WftRouterDaemon} from boot options. Loads +
+ * validates the triggers config, resolves the idempotency store path, and
+ * assembles the real dependency set (or test seams when provided). Returns
+ * the daemon plus the loaded config so the caller can `start()`/`stop()` it.
+ *
+ * Importable by tests (AC #4) so the no-flag boot path can be exercised
+ * against a stubbed API without invoking the process-exiting `main()`.
+ */
+export async function createDaemon(
+  opts: RunDaemonOptions,
+): Promise<WftRouterDaemon> {
+  const loaded = await loadAndValidateTriggers(opts.configPath);
+  if (!loaded.ok) {
+    const err = new Error(
+      `triggers.yaml validation failed:\n${loaded.errors.join('\n')}`,
+    );
+    (err as Error & { exitCode?: number }).exitCode = EX_CONFIG;
+    throw err;
+  }
+
+  const stateDir = opts.stateDir ?? getPaths().state;
+  // Ensure the state dir exists before opening the sqlite file.
+  mkdirSync(stateDir, { recursive: true });
+  const store =
+    opts.store ?? new IdempotencyStore({ dbPath: join(stateDir, 'idempotency.sqlite') });
+
+  const logger = getLogger();
+
+  const sseSource: DaemonDeps['sseSource'] =
+    opts.sseSourceFactory ??
+    ((signal) => {
+      const sseOpts: SSEClientOptions = {
+        endpoint: opts.endpoint,
+        apiKey: opts.apiKey,
+        eventTypes: opts.eventTypes,
+        fetchImpl: opts.fetchImpl,
+      };
+      return runSSEClient(sseOpts, signal);
+    });
+
+  const deps: DaemonDeps = {
+    config: loaded.config,
+    store,
+    sseSource,
+    handlers: opts.handlers ?? DEFAULT_HANDLER_REGISTRY,
+    logger,
+    apiBaseUrl: opts.endpoint,
+    apiKey: opts.apiKey,
+    fetchImpl: opts.fetchImpl,
+  };
+
+  return new WftRouterDaemon(deps);
+}
+
+/**
+ * Boot the daemon for the no-flag entry path: build it, install
+ * SIGTERM/SIGINT → `stop()`, `start()` it, and await the consume loop.
+ * Resolves with the daemon exit code.
+ */
+export async function runDaemon(opts: RunDaemonOptions): Promise<number> {
+  const daemon = await createDaemon(opts);
+
+  const onSignal = (): void => {
+    void daemon.stop();
+  };
+  process.on('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
+
+  daemon.start();
+  const code = await daemon.wait();
+  // Ensure drain runs even when the SSE source returned on its own.
+  await daemon.stop();
+  process.off('SIGTERM', onSignal);
+  process.off('SIGINT', onSignal);
+  return code;
 }
 
 async function runValidate(path: string): Promise<never> {
@@ -87,14 +212,57 @@ async function main(): Promise<void> {
     process.exit(EX_CONFIG);
   }
 
-  console.log(
-    `wft-router v${version} — not yet implemented; see docs/event-router-design.md`,
-  );
-  process.exit(0);
+  // No flag → boot the daemon: resolve config + endpoint + token, construct
+  // the daemon with real deps, start it, and install SIGTERM/SIGINT → stop().
+  const paths = getPaths();
+  const configPath =
+    readStringFlag(argv, '--config') ?? join(paths.config, 'triggers.yaml');
+  const endpoint =
+    readStringFlag(argv, '--endpoint') ?? process.env.WFT_ROUTER_ENDPOINT ?? '';
+  const apiKey =
+    readStringFlag(argv, '--token') ?? process.env.WFT_ROUTER_TOKEN ?? '';
+
+  if (endpoint.length === 0) {
+    console.error('wft-router: --endpoint (or WFT_ROUTER_ENDPOINT) is required');
+    process.exit(EX_CONFIG);
+  }
+  if (apiKey.length === 0) {
+    console.error('wft-router: --token (or WFT_ROUTER_TOKEN) is required');
+    process.exit(EX_CONFIG);
+  }
+
+  try {
+    const code = await runDaemon({ configPath, endpoint, apiKey });
+    process.exit(code);
+  } catch (err) {
+    const exitCode = (err as Error & { exitCode?: number }).exitCode;
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(message);
+    process.exit(typeof exitCode === 'number' ? exitCode : 1);
+  }
 }
 
-main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error('wft-router crashed:', message);
-  process.exit(1);
-});
+/**
+ * Only auto-run `main()` when this file is the process entry point. When the
+ * module is imported (e.g. by AC #4's integration test, which exercises
+ * `createDaemon`/`runDaemon` directly), the side-effecting CLI bootstrap must
+ * NOT fire. `import.meta.url` vs the invoked `argv[1]` is the standard ESM
+ * "is this the main module?" check.
+ */
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return import.meta.url === new URL(`file://${entry}`).href || fileURLToPath(import.meta.url) === entry;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('wft-router crashed:', message);
+    process.exit(1);
+  });
+}
