@@ -565,12 +565,16 @@ over the others):
    any OS with Node.
 2. **OCI container** (`examples/deploy/Containerfile`) — built with
    `docker build` / `podman build` / `buildah`; runs on any OCI runtime.
-3. **systemd unit** (`examples/deploy/wft-router.service`) — Linux hosts
-   with systemd.
-4. **launchd plist** (`examples/deploy/wft-router.plist`) — macOS.
-5. **Windows Service / Scheduled Task** (`examples/deploy/
-   wft-router.service.ps1`) — Windows. The doc covers both NSSM-shaped
-   service registration and Task Scheduler XML examples.
+3. **systemd unit**
+   (`packages/wft-router/host-manifests/systemd/wft-router.service`) —
+   Linux hosts with systemd.
+4. **launchd plist**
+   (`packages/wft-router/host-manifests/launchd/com.wood-fired-games.wft-router.plist`)
+   — macOS.
+5. **Windows Service**
+   (`packages/wft-router/host-manifests/windows/README.md`) — Windows. The
+   README covers nssm-based service registration (preferred for a console
+   app) and an `sc.exe` alternative.
 6. **Run-once** (`wft-router --once`) — useful for CI smoke tests and
    replaying a backlog window after downtime.
 

@@ -191,3 +191,46 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: false
           load: false
+
+  host-manifests:
+    # Validates the example host-platform service manifests under
+    # packages/wft-router/host-manifests/. These are EXAMPLES with placeholder
+    # install paths, so the checks below tolerate "binary missing" warnings
+    # while still failing on a genuinely malformed directive.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Verify systemd unit (tolerate placeholder ExecStart only)
+        run: |
+          set -uo pipefail
+          unit=packages/wft-router/host-manifests/systemd/wft-router.service
+          # systemd-analyze verify exits non-zero on directive errors AND on a
+          # non-existent ExecStart binary. The unit ships an intentional
+          # placeholder path (/usr/local/bin/wft-router), so we treat ONLY the
+          # "is not executable: No such file or directory" line as benign and
+          # fail on anything else.
+          out="$(systemd-analyze verify "$unit" 2>&1)"; rc=$?
+          echo "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "systemd-analyze verify: clean"
+            exit 0
+          fi
+          # Drop the expected placeholder-binary lines; if nothing else remains,
+          # the unit is well-formed and we pass.
+          residual="$(printf '%s\n' "$out" \
+            | grep -v 'is not executable: No such file or directory' \
+            | grep -v '^[[:space:]]*$' || true)"
+          if [ -z "$residual" ]; then
+            echo "::notice::only the expected placeholder-ExecStart warning was emitted; unit is well-formed"
+            exit 0
+          fi
+          echo "::error::systemd-analyze verify reported a real problem:"
+          printf '%s\n' "$residual"
+          exit 1
+      - name: Lint launchd plist (plistlib; plutil is macOS-only)
+        run: |
+          python3 -c "import plistlib,sys; plistlib.load(open(sys.argv[1],'rb')); print('PLIST_OK')" \
+            packages/wft-router/host-manifests/launchd/com.wood-fired-games.wft-router.plist
+      - name: Windows service README present
+        run: test -f packages/wft-router/host-manifests/windows/README.md
