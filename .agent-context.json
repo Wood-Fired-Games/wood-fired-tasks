@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-29T15:02:25.146Z",
+    "generated_at": "2026-05-29T15:08:23.135Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -261,6 +261,20 @@
       "approx_token_budget": 6000,
       "actual_lines": 164,
       "sha256": "bd10ad24ffb12322a0082285f5eed0a49f3aa1c5134c7615f62549457277d18a",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/automation-recipes/persistent-agent-sessions.md",
+      "role": "deep-doc",
+      "purpose": "Automation recipe: drive a long-lived agent session via the vendor-neutral agent_session_dispatch core handler, covering the session-id round-trip, restart semantics, and idempotency-store interactions, with a validating sample triggers.yaml.",
+      "when_to_read": "on-demand",
+      "line_budget": 300,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 6000,
+      "actual_lines": 208,
+      "sha256": "196aec7107cc62d8f270a8efdb81294c00a76de7ec35d36e549c4b7c1f435812",
       "actual_owner": "Repository maintainers"
     },
     {

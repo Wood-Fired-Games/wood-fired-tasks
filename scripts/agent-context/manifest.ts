@@ -332,6 +332,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'docs/automation-recipes/persistent-agent-sessions.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: drive a long-lived agent session via the vendor-neutral agent_session_dispatch core handler, covering the session-id round-trip, restart semantics, and idempotency-store interactions, with a validating sample triggers.yaml.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/ONBOARDING_SMOKE.md',
     role: 'onboarding-smoke',
     purpose:
