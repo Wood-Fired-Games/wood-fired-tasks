@@ -310,7 +310,7 @@ describe('runSSEClient — happy path', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe('http://localhost:3000/api/v1/events');
     expect(calls[0]?.headers['Authorization']).toBe(
-      `Bearer ${PAT_PREFIX}abcdef0123456789`,
+      `Bearer ${PAT_PREFIX}ABCDEFG1234567890`,
     );
     expect(calls[0]?.headers['Last-Event-Id']).toBeUndefined();
   });
