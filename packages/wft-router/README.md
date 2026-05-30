@@ -2,36 +2,59 @@ Owner: Repository maintainers
 
 # wft-router
 
-`wft-router` is the event-router binary for wood-fired-tasks. It tails the
-event bus, normalizes records, and forwards them to downstream sinks
-(webhooks, message queues, log targets) without coupling the core API to
-any specific vendor.
+`wft-router` is the event-router daemon for wood-fired-tasks. It subscribes to
+the API's Server-Sent Events stream (`GET /api/v1/events`), matches each task
+event against rules in a `triggers.yaml`, and dispatches matches to
+vendor-neutral handlers — without coupling the core API to any specific sink.
 
-The design-of-record is [docs/event-router-design.md](../../docs/event-router-design.md);
-the v1 implementation is being built in active development as project 19
-in wood-fired-tasks.
+Design-of-record: [docs/event-router-design.md](../../docs/event-router-design.md) · recipes in [docs/automation-recipes/](../../docs/automation-recipes/).
 
-## Status
+## Handlers
 
-This scaffold (landed by task #421) is a stub. Today the binary only
-honours `--version` / `-V`; every other contract flag listed in the
-design spec — `--config`, `--endpoint`, `--token`, `--validate`,
-`--dry-run`, `--once`, `--metrics-port`, `--metrics-bind`,
-`--rebuild-idempotency` — lands in downstream tasks.
+Four core handlers ship in v1, selected per rule:
 
-## Build
+| Handler | Effect |
+|---|---|
+| `create_task_in_project` | POST a templated task to the REST API |
+| `webhook_post` | POST a templated body to an operator URL (TLS/loopback guarded) |
+| `shell_exec` | Spawn a local program (never a shell); event JSON on stdin |
+| `agent_session_dispatch` | Invoke a confined adapter executable to bridge a session |
+
+Dispatch is at-least-once (SQLite idempotency store) with secret-redacted logs.
+
+## Run
 
 ```
-cd packages/wft-router
-npm run build
-node dist/bin/wft-router.js --version
+wft-router --endpoint https://tasks.example.com --token "$WFT_ROUTER_TOKEN"
 ```
 
-The root `npm run build` also compiles this package as part of its
-default pipeline.
+Endpoint and token may come from flags or env (`WFT_ROUTER_ENDPOINT`,
+`WFT_ROUTER_TOKEN`); `triggers.yaml` is resolved from the platform config dir
+unless `--config <path>` is given.
+
+| Flag | Purpose |
+|---|---|
+| `--config <path>` | Path to `triggers.yaml` (default: platform config dir) |
+| `--endpoint <url>` | API base URL (or `WFT_ROUTER_ENDPOINT`) |
+| `--token <key>` | API key / PAT (or `WFT_ROUTER_TOKEN`) |
+| `--validate <path>` | Schema-check a config and exit (0 ok / 78 invalid) |
+| `--metrics-port <n>` | Expose Prometheus `/metrics` (off by default) |
+| `--metrics-bind <addr>` | Metrics bind address (default `127.0.0.1`) |
+| `--version` / `-V` | Print version |
+
+Reserved by the design spec, not yet implemented: `--dry-run`, `--once`, `--rebuild-idempotency`.
+
+## Build & deploy
+
+```
+npm run build   # repo root (also runs as part of the default pipeline)
+node dist/bin/wft-router.js --validate path/to/triggers.yaml
+```
+
+Service manifests (systemd / launchd / Windows) are in
+[`host-manifests/`](host-manifests/); a `Containerfile` is provided for OCI builds.
 
 ## Vendor-neutrality
 
-Per the design spec, no provider, AI vendor, chat platform, or CI name
-appears in the package name, code, or documentation. New contributions
-must hold that line.
+No provider, AI vendor, chat platform, or CI name appears in the package name,
+code, or docs. New contributions must hold that line.
