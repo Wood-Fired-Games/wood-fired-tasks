@@ -40,12 +40,15 @@
  *      DIRECTLY inside the (realpath'd) entry — a symlink whose target escapes
  *      the adapters dir is REFUSED. The first entry that yields a valid file
  *      wins. If none do → PERMANENTLY_FAILED, non-retryable.
- *    - DIRECTORY HARDENING (best-effort). Each adapters-path entry SHOULD be a
- *      directory owned by the router user with mode ≤ 0755. We perform a cheap
- *      `fs.statSync` mode check and SKIP an entry that is world/group-writable
- *      (mode & 0o022) so a tampered dir cannot be used; we do NOT hard-fail
- *      the dispatch on a perfect ownership check (that is a documented
- *      deployment requirement, not a core invariant).
+ *    - DIRECTORY HARDENING. Each adapters-path entry SHOULD be a directory
+ *      owned by the router user with mode ≤ 0755. We perform a cheap
+ *      `fs.statSync` and SKIP an entry that is (a) world/group-writable
+ *      (mode & 0o022) or (b) NOT owned by the router process uid, so a dir
+ *      planted by another user cannot supply an adapter even if its mode looks
+ *      benign. The ownership skip is POSIX-only: `process.getuid` is absent on
+ *      Windows (ACL-based; `st.uid` is not meaningful), so there we keep the
+ *      mode-only posture and ownership stays a documented deployment
+ *      requirement.
  *
  * 2. ARGV (TEMPLATED — this differs from `shell_exec`).
  *    - The rule's `with:` block is rendered via `renderWith` (untrusted task
@@ -180,8 +183,16 @@ export function resolveAdapter(
       if (!st.isDirectory()) {
         continue;
       }
-      // Best-effort hardening: skip a group/world-writable adapters dir.
+      // Hardening: skip a group/world-writable adapters dir.
       if ((st.mode & 0o022) !== 0) {
+        continue;
+      }
+      // Hardening (POSIX only): skip a dir not owned by the router uid so a
+      // dir planted by another user cannot supply an adapter. `getuid` is
+      // undefined on Windows, where st.uid is not meaningful — fall back to
+      // the mode-only check there.
+      const routerUid = process.getuid?.();
+      if (routerUid !== undefined && st.uid !== routerUid) {
         continue;
       }
       entryReal = fs.realpathSync(entry);

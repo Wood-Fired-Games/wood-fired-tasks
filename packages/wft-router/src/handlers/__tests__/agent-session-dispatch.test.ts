@@ -30,7 +30,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { IdempotencyStore, type DispatchStatus } from '../../dispatch/index.js';
 import type { EventPayloadShape } from '../../dispatch/index.js';
@@ -290,6 +290,26 @@ describe('resolveAdapter (path security)', () => {
     fs.writeFileSync(f, '#!/bin/true\n', { mode: 0o755 });
     fs.chmodSync(dir, 0o777);
     expect(resolveAdapter('user-defined', [dir])).toBeNull();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('skips an adapters dir not owned by the router uid (POSIX ownership hardening)', () => {
+    if (isWindows || process.getuid === undefined) return; // POSIX-only behavior
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-owner-'));
+    fs.chmodSync(dir, 0o755);
+    const f = path.join(dir, 'user-defined');
+    fs.writeFileSync(f, '#!/bin/true\n', { mode: 0o755 });
+    // The temp dir is owned by the current (test) uid. Spoof getuid() to a
+    // different uid so the ownership check treats it as foreign-owned.
+    const realUid = process.getuid();
+    const spy = vi.spyOn(process, 'getuid').mockReturnValue(realUid + 1);
+    try {
+      expect(resolveAdapter('user-defined', [dir])).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+    // Sanity: with the true uid the same adapter resolves.
+    expect(resolveAdapter('user-defined', [dir])).toBe(fs.realpathSync(f));
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
