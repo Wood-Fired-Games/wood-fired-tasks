@@ -11,6 +11,34 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v1.13] - 2026-05-31
+
+Ships the `wft-router` event-driven automation daemon, a `wait_for_unblock` MCP long-poll tool, and a `qs` DoS fix.
+
+### Added
+- **`wft-router` automation daemon** (`packages/wft-router`): a vendor-neutral service that subscribes to task lifecycle events over SSE and dispatches configured handlers. Includes a `triggers.yaml` Zod schema with a `--validate` flag, a predicate evaluator with templating, an idempotency store + dispatch state machine, a fetch-based SSE client with resume + watchdog, rate-limit/debounce/graceful-shutdown primitives, a pino logger, a cross-platform default path resolver, and a Prometheus `/metrics` endpoint (loopback by default).
+- **`wft-router` handlers**: `create_task_in_project`, `webhook_post` (TLS posture guard), `shell_exec` (env scrubbing), and `agent_session_dispatch` (adapter extension), all on a shared handler contract.
+- **`wait_for_unblock` MCP tool**: a long-poll tool to await dependency unblocking, available locally and SSE-backed on the remote server.
+- `events.subscribeOnce` helper with deterministic teardown.
+- **`wft-router` packaging**: OCI `Containerfile` + multi-arch `oci-build` CI job, host-platform manifests (systemd, launchd, Windows), reference adapters, deploy assets, and an example config.
+- npm publish wiring: `prepublishOnly` gate (build + test + lint:deps + audit + pack-check) and a `pack-smoke` CI job.
+
+### Changed
+- README now leads with the AI-orchestration framing.
+- `wft-router` assignee where-predicate to scope unblock dispatches.
+- Stryker mutation CI re-sharded (api/mcp split, 7-way by mutant count).
+
+### Fixed
+- `wft-router` SSE client yields events incrementally instead of buffering until close, and applies an idle/read timeout so half-open sockets reconnect.
+- `deploy/upgrade.sh` smoke test no longer hangs on a sudo TTY prompt.
+- CI host-manifests systemd verify step no longer aborts under `errexit`.
+
+### Security
+- Forced `qs >= 6.15.2` to close GHSA-q8mj-m7cp-5q26 (prototype-pollution DoS).
+- `wft-router` owner-uid hardening on adapter directory resolution; the `http://` posture guard is documented as a literal-host-only SSRF boundary.
+- `wft-router` vendor-neutrality CI gate + denylist.
+- `wft-router` pino logger redacts secret key-names and filesystem paths.
+
 ## [v1.12] - 2026-05-25
 
 First public open-source release. OSS-launch readiness and CI sharding work landed since v1.11.

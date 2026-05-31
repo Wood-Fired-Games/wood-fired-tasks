@@ -12,6 +12,7 @@
  * confirm it works end-to-end (no crash on a benign flag).
  */
 import { describe, it, expect } from 'vitest';
+import { VERSION } from '../../utils/version.js';
 
 describe('bin/tasks.ts side-effect guard', () => {
   it('does not auto-parse argv on import (isMain returns false in vitest)', async () => {
@@ -56,6 +57,6 @@ describe('bin/tasks.ts side-effect guard', () => {
       expect(code).toBe('commander.version');
     }
 
-    expect(versionOut.trim()).toBe('1.12.0');
+    expect(versionOut.trim()).toBe(VERSION);
   });
 });

@@ -4,6 +4,7 @@ import { createMcpServer } from '../server.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { App } from '../../index.js';
+import { VERSION } from '../../utils/version.js';
 
 interface ToolResult {
   content: Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -55,7 +56,7 @@ describe('MCP Health Tools', () => {
       if (result.content[0].type === 'text') {
         expect(result.content[0].text).toContain('healthy');
         expect(result.content[0].text).toContain('ok');
-        expect(result.content[0].text).toContain('1.12.0');
+        expect(result.content[0].text).toContain(VERSION);
       }
 
       expect(result.structuredContent).toBeDefined();
@@ -72,7 +73,7 @@ describe('MCP Health Tools', () => {
           checks: { database: string };
         };
         expect(health.status).toBe('healthy');
-        expect(health.version).toBe('1.12.0');
+        expect(health.version).toBe(VERSION);
         expect(health.checks.database).toBe('ok');
         // DB fingerprint (task #354).
         expect(typeof health.database.path).toBe('string');
