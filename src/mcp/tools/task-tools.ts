@@ -211,7 +211,16 @@ export function registerTaskTools(
             ctx.userRepository,
           );
         }
-        const task = taskService.updateTask(args.id, updates);
+        // task #608 (PIECE A): thread the resolved actor id so the service's
+        // strict-evidence validator (flag-gated, default OFF) can enforce
+        // generator/critic separation (verifier != caller). 'user' keeps the
+        // existing default source; ctx.actorUserId may be null.
+        const task = taskService.updateTask(
+          args.id,
+          updates,
+          'user',
+          ctx.actorUserId,
+        );
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'success' }));
         return {
           content: [

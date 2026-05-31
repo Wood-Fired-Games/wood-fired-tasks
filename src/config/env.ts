@@ -75,6 +75,17 @@ export const configSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // task #608 (PIECE A): server-side anti-fabrication validation of
+  // verification_evidence. DEFAULT OFF — operators opt in with
+  // WFT_STRICT_EVIDENCE=true. When enabled, an update that supplies a
+  // non-null verification_evidence is run through the generator/critic
+  // separation + placeholder-evidence checks in
+  // src/services/evidence-validation.ts and rejected (ValidationError) on
+  // any violation.
+  WFT_STRICT_EVIDENCE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // task #185: SSE connection caps. New per-key/per-IP/global limits bound
   // long-lived connection exhaustion. When any cap is hit the route returns
   // 429 with Retry-After.
