@@ -518,6 +518,25 @@ What the router adds to the host's attack surface:
     RFC1918; otherwise refuse to start (exit 78). The PAT travels in
     `Authorization` on every reconnect; HTTP-with-PAT to a routable
     host is credential exposure.
+  - **`http://` loopback/private guard is literal-host-only (no DNS
+    resolution).** `assertEndpointAllowed` (shared by `webhook_post` and
+    the SSE endpoint check) classifies the target by matching the literal
+    host string in the URL — it does NOT resolve DNS. Three boundaries
+    follow, intentional for v1:
+    1. The `http://` → loopback/private decision is made on the literal
+       URL host only. A public hostname that *resolves* to a private or
+       loopback IP is not detected, and DNS-rebinding (TOCTOU on the
+       resolved address) is **out of scope for v1**.
+    2. `https://` egress to any routable host is **allowed by design** —
+       the router is a webhook *sender*, and TLS removes the
+       plaintext-credential-exposure concern that the `http://` guard
+       exists to prevent.
+    3. The guard's purpose is met: no PAT or handler token is ever sent in
+       cleartext over `http://` to a routable host. It is not, and does not
+       claim to be, a general SSRF egress firewall. Operators who need
+       egress restriction should enforce it at the network layer. (If a
+       resolve-and-recheck step is ever wanted, track it as a separate
+       follow-on; it is deliberately not in v1.)
 - **Subprocess env.** `shell_exec` and `agent_session_dispatch` child
   processes receive a *scrubbed* environment (PATH/HOME/LANG/TZ + the
   rule's own `token_env` + explicit `env:` block only). `WFT_API_KEY`
