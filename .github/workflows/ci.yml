@@ -203,7 +203,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Verify systemd unit (tolerate placeholder ExecStart only)
         run: |
-          set -uo pipefail
+          # GitHub's default step shell runs with errexit (`bash -e`). This
+          # script does its OWN exit-code handling on systemd-analyze — a
+          # non-zero rc is EXPECTED (the unit ships a placeholder ExecStart) —
+          # so errexit must be OFF or the `out=$(...)` assignment aborts the
+          # step before the residual-filtering logic ever runs.
+          set +e -uo pipefail
           unit=packages/wft-router/host-manifests/systemd/wft-router.service
           # systemd-analyze verify exits non-zero on directive errors AND on a
           # non-existent ExecStart binary. The unit ships an intentional
