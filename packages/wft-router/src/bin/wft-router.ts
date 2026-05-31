@@ -1,27 +1,26 @@
 #!/usr/bin/env node
 /**
- * wft-router stub entry point.
+ * wft-router entry point.
  *
- * Task #421 lands the package scaffold; downstream tasks implement the
- * actual router flags (--config, --endpoint, --token, --validate,
- * --dry-run, --once, --metrics-port, --metrics-bind, --rebuild-idempotency)
- * per docs/event-router-design.md §Contract.
+ * Parses flags, resolves config/endpoint/token (flags over the `WFT_ROUTER_*`
+ * env vars), and boots the {@link WftRouterDaemon}: SSE subscribe → predicate
+ * match → debounce/rate-limit → handler dispatch, with an at-least-once
+ * idempotency store. See docs/event-router-design.md §Contract for the flag
+ * surface and operational properties.
  *
- * Task #434 adds the optional Prometheus `--metrics-port <n>` /
- * `--metrics-bind <addr>` flags: when `--metrics-port` is given, the bin
- * constructs a {@link MetricsRegistry}, threads it into the daemon deps, and
- * starts a loopback-default `node:http` metrics server (binds 127.0.0.1
- * unless `--metrics-bind` widens it; no built-in auth). Disabled by default.
+ * Flags:
+ *   --config <path>        triggers.yaml (default: platform config dir)
+ *   --endpoint <url>       API base URL (or WFT_ROUTER_ENDPOINT)
+ *   --token <key>          API key / PAT (or WFT_ROUTER_TOKEN)
+ *   --validate <path>      schema + templating-safety check; prints
+ *                          `triggers.yaml validation OK.` and exits 0, or the
+ *                          formatted error list and exits 78 (EX_CONFIG).
+ *   --metrics-port <n>     expose Prometheus /metrics (off by default)
+ *   --metrics-bind <addr>  metrics bind address (default 127.0.0.1, no auth)
+ *   --version / -V         print version
  *
- * Task #422 adds the `--validate <path>` flag: reads the file, runs the
- * triggers.yaml zod schema + templating-safety pass, prints
- * `triggers.yaml validation OK.` on success and exits 0, or prints the
- * formatted error list on failure and exits 78 (sysexits EX_CONFIG).
- * Error formatting mirrors `src/config/env.ts:199-216`.
- *
- * Everything else still prints a one-line "not yet implemented" pointer
- * and exits 0 — so smoke probes and integration scaffolding can link
- * against a working entry point before the real logic lands.
+ * Reserved by the design spec but not yet implemented: --dry-run, --once,
+ * --rebuild-idempotency. These print a one-line pointer and exit 0.
  *
  * Vendor-neutral by design (see docs/event-router-design.md §Vendor-neutral
  * guardrails): no provider, AI, chat, or CI name appears in this file.
