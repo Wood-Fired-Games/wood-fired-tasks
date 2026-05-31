@@ -89,6 +89,12 @@ function extractCandidates(text) {
     // delimited by whitespace/punctuation like (), [], commas, or sentence
     // ends — never by '-' or '.' touching the hex itself.
     if (/[a-z0-9_.-]/i.test(before) || /[a-z0-9_.-]/i.test(after)) continue;
+    // A real git object id is hex; a run with no a-f letter is a plain decimal
+    // number (a row count, a Unix timestamp, a PID, a port) that only *looks*
+    // like a short SHA. Skip it — git short SHAs are effectively always mixed
+    // hex, and blocking honest numeric evidence would be a false positive (the
+    // exact numeric evidence the loop records).
+    if (!/[a-f]/i.test(tok)) continue;
     out.add(tok.toLowerCase());
   }
   return [...out];

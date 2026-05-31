@@ -172,6 +172,27 @@ describe('validate-sha.mjs PreToolUse hook', () => {
     expect(stdout.trim()).toBe('');
   });
 
+  it('allows evidence containing plain decimal numbers (not hex SHAs)', () => {
+    // Regression: a row count, a Unix timestamp, a PID, or a dollar-in-micros
+    // figure is a run of 7+ digits that matches the length window but has no
+    // a-f letter. These are honest numeric evidence — exactly what the loop
+    // records — and must NOT be treated as fabricated commit SHAs.
+    const { status, stdout } = runHook(
+      {
+        tool_name: 'mcp__wood-fired-tasks__update_task',
+        tool_input: {
+          id: 608,
+          verification_evidence: {
+            note: 'Migrated 1234567 rows at ts 20260531; worker pid 9876543 exited 0.',
+          },
+        },
+      },
+      repoDir,
+    );
+    expect(status).toBe(0);
+    expect(stdout.trim()).toBe('');
+  });
+
   it('skips (allows) when cwd is not a git repo', () => {
     const nonRepo = mkdtempSync(join(tmpdir(), 'validate-sha-nonrepo-'));
     try {

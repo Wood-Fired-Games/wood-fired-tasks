@@ -359,7 +359,7 @@ visible to operators.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `WFT_STRICT_EVIDENCE` | `false` (off) | When `true`, `update_task` rejects a `verification_evidence` payload that shows the structural tells of fabrication — an empty `verifier_session_id`, one equal to the task assignee/author/caller, one matching a self-grading pattern (`^orchestrator`/`^self`/`^main-loop`), or placeholder/empty check evidence text. Recommended for any deployment that closes tasks via `/tasks:loop` or `/tasks:loop-dag`. See [`RELIABILITY.md`](RELIABILITY.md). |
+| `WFT_STRICT_EVIDENCE` | `false` (off) | When `true`, `update_task` rejects a `verification_evidence` payload that shows the structural tells of fabrication — an empty `verifier_session_id`, one equal to the task assignee or the calling identity, one matching a self-grading pattern (`^orchestrator`/`^self`/`^main-loop`), or placeholder/empty check evidence text. Recommended for any deployment that closes tasks via `/tasks:loop` or `/tasks:loop-dag`. See [`RELIABILITY.md`](RELIABILITY.md). |
 
 ```bash
 # Opt in to server-side anti-fabrication validation (default off):
