@@ -835,10 +835,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        // The local tool only takes comment_id, but the REST API route requires task_id in the URL.
-        // The server handler ignores task_id and only uses commentId for deletion.
-        // We use task_id=1 as a safe placeholder — any positive integer passes URL validation.
-        await client.deleteComment(1, args.comment_id);
+        // The REST delete route is keyed solely by comment_id; its `{task_id}`
+        // path segment is required to satisfy the URL shape but is IGNORED by
+        // the server handler (deletion is by comment_id alone). This sentinel
+        // makes that intent explicit so a future reader does not mistake the
+        // value for a real task reference — any positive integer would do.
+        const PATH_TASK_ID_IGNORED_BY_SERVER = 1;
+        await client.deleteComment(PATH_TASK_ID_IGNORED_BY_SERVER, args.comment_id);
         return {
           content: [
             {
