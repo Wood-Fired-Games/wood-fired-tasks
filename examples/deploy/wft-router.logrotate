@@ -1,0 +1,19 @@
+# Example logrotate(8) config for the wft-router dispatch log.
+#
+# Install to /etc/logrotate.d/wft-router and adjust the path below to match the
+# router's state directory (the dir holding dispatch.log / cursor /
+# idempotency.sqlite). The default below assumes a systemd DynamicUser deploy
+# with StateDirectory=wft-router (i.e. /var/lib/wft-router).
+#
+# copytruncate is used because the router holds the log file open; it avoids
+# needing a reload/HUP to reopen the handle after rotation.
+
+/var/lib/wft-router/dispatch.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

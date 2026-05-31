@@ -583,7 +583,8 @@ over the others):
 
 1. **Plain Node process** — `wft-router --config …`. Canonical; works on
    any OS with Node.
-2. **OCI container** (`examples/deploy/Containerfile`) — built with
+2. **OCI container** (`packages/wft-router/Containerfile`; see
+   `examples/deploy/` for the build command + operator assets) — built with
    `docker build` / `podman build` / `buildah`; runs on any OCI runtime.
 3. **systemd unit**
    (`packages/wft-router/host-manifests/systemd/wft-router.service`) —
