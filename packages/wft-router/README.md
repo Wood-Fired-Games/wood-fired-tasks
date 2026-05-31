@@ -24,6 +24,11 @@ Dispatch is at-least-once (SQLite idempotency store) with secret-redacted logs.
 
 ## Run
 
+`wft-router` ships inside the [`wood-fired-tasks`](https://www.npmjs.com/package/wood-fired-tasks)
+package — installing that puts the `wft-router` bin on your PATH (`npm i -g
+wood-fired-tasks`, or invoke via `npx wft-router`). It is not published as a
+standalone npm package.
+
 ```
 wft-router --endpoint https://tasks.example.com --token "$WFT_ROUTER_TOKEN"
 ```

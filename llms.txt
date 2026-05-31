@@ -29,7 +29,7 @@
 
 - [docs/event-router-design.md](docs/event-router-design.md): `wft-router` event-router daemon design (SSE → predicate → handler dispatch).
 - [docs/automation-recipes/](docs/automation-recipes/): Copy-paste automation recipes on the vendor-neutral handler contract.
-- [packages/wft-router/README.md](packages/wft-router/README.md): `wft-router` daemon reference (in-repo; not yet on npm).
+- [packages/wft-router/README.md](packages/wft-router/README.md): `wft-router` daemon reference (ships in the `wood-fired-tasks` package; run via `wft-router`).
 
 ## Other
 

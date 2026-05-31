@@ -26,7 +26,7 @@
  * guardrails): no provider, AI, chat, or CI name appears in this file.
  */
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -298,14 +298,32 @@ async function main(): Promise<void> {
  * NOT fire. `import.meta.url` vs the invoked `argv[1]` is the standard ESM
  * "is this the main module?" check.
  */
-function isMainModule(): boolean {
-  const entry = process.argv[1];
+/**
+ * True when `importMetaUrl` is the process entry point identified by `entry`
+ * (normally `process.argv[1]`). Exported for testing.
+ *
+ * The third comparison is load-bearing: when invoked through an npm bin
+ * symlink (e.g. `node_modules/.bin/wft-router`), `argv[1]` is the symlink path
+ * while `import.meta.url` is the resolved real path — they never match
+ * directly. Resolving `entry` to its real path before comparing is what makes
+ * the bundled bin actually run when installed, not just when run by its direct
+ * path. (Regression: the bin was a silent no-op via the symlink before this.)
+ */
+export function isEntryPoint(importMetaUrl: string, entry: string | undefined): boolean {
   if (entry === undefined) return false;
   try {
-    return import.meta.url === new URL(`file://${entry}`).href || fileURLToPath(import.meta.url) === entry;
+    const here = fileURLToPath(importMetaUrl);
+    if (here === entry || importMetaUrl === new URL(`file://${entry}`).href) {
+      return true;
+    }
+    return here === realpathSync(entry);
   } catch {
     return false;
   }
+}
+
+function isMainModule(): boolean {
+  return isEntryPoint(import.meta.url, process.argv[1]);
 }
 
 if (isMainModule()) {

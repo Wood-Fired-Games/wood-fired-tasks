@@ -33,7 +33,7 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 |------|---------|
 | [`event-router-design.md`](event-router-design.md) | Design spec for the `wft-router` event-router daemon: SSE subscription → predicate match → handler dispatch. |
 | [`automation-recipes/`](automation-recipes/) | Copy-paste automation recipes (`claude-routines.md`, `persistent-agent-sessions.md`) built on the vendor-neutral handler contract. |
-| [`../packages/wft-router/README.md`](../packages/wft-router/README.md) | `wft-router` daemon reference (handlers, flags, `triggers.yaml`, deploy). Lives in-repo; not yet published to npm. |
+| [`../packages/wft-router/README.md`](../packages/wft-router/README.md) | `wft-router` daemon reference (handlers, flags, `triggers.yaml`, deploy). Ships inside the `wood-fired-tasks` package — run via `wft-router` / `npx wft-router`. |
 
 ### Setup + release
 
