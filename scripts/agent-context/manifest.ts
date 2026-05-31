@@ -321,6 +321,28 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
       'Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when content peels out into adjacent files.',
   },
   {
+    path: 'docs/automation-recipes/claude-routines.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: dispatch a routine on task close via the vendor-neutral agent_session_dispatch + shell_exec core handlers, with a validating sample triggers.yaml and the adapter-contract shape.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
+    path: 'docs/automation-recipes/persistent-agent-sessions.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: drive a long-lived agent session via the vendor-neutral agent_session_dispatch core handler, covering the session-id round-trip, restart semantics, and idempotency-store interactions, with a validating sample triggers.yaml.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/ONBOARDING_SMOKE.md',
     role: 'onboarding-smoke',
     purpose:
@@ -338,6 +360,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
       'Docs directory index grouping the agent, surface, setup, and quality docs by audience.',
     when_to_read: 'on-demand',
     line_budget: 90,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
+    path: 'packages/wft-router/README.md',
+    role: 'package-readme',
+    purpose:
+      'Sub-package README for the wft-router event-router daemon — handlers, run flags, config (triggers.example.yaml), and pointers to recipes/adapters/deploy assets. Points at docs/event-router-design.md as the design-of-record.',
+    when_to_read: 'on-demand',
+    line_budget: 95,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',

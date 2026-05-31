@@ -52,6 +52,7 @@ const DOMAIN_TO_FILE: Record<string, string> = {
   Dependency: 'dependency-tools.ts',
   Health: 'health-tools.ts',
   Topology: 'topology-tools.ts',
+  Wait: 'wait-for-unblock-tools.ts',
 };
 
 /** Lines that mention the *remote* MCP server's tool count are intentionally

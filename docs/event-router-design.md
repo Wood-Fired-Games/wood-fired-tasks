@@ -200,6 +200,7 @@ host-language code.
 | `tags_contains_any`     | string[]                              | At least one tag must be present                  |
 | `task_id`               | number                                | Match a specific task                             |
 | `parent_id`             | number                                | Match by parent task                              |
+| `assignee`              | non-empty string                      | Match the task's assignee exactly; a missing/null assignee on the event fails the operator |
 | `source`                | `user \| workflow`                    | `metadata.source` — useful for dependency-unblock-only rules |
 | `eventType`             | one of `ALLOWED_EVENT_TYPES`          | Redundant with `on:` but allowed for explicitness |
 
@@ -485,10 +486,13 @@ backlog.
 - Metrics: optional Prometheus endpoint via `--metrics-port` (disabled
   by default). Binds `127.0.0.1` unless `--metrics-bind 0.0.0.0` is
   explicitly set; no built-in auth (the operator's reverse proxy owns
-  that). Counters: `matched_rules_total`, `dispatched_total`,
-  `handler_errors_total`, `rate_limit_dropped_total`,
-  `permanently_failed_total`. Histograms: handler latency, debounce
-  coalescing.
+  that). Counters (all carry the `wft_router_` prefix in the exposition
+  output, e.g. `wft_router_dispatched_total`): `events_received_total`,
+  `matched_rules_total`, `dispatched_total` (labelled `{handler,status}`),
+  `handler_errors_total` (labelled `{handler}`), `rate_limit_dropped_total`
+  (labelled `{rule}`), `permanently_failed_total` (labelled `{rule}`).
+  Histograms (handler latency, debounce coalescing) are DEFERRED — the
+  counters above are what the `/metrics` endpoint currently exposes.
 
 ### Config validation
 
@@ -514,6 +518,25 @@ What the router adds to the host's attack surface:
     RFC1918; otherwise refuse to start (exit 78). The PAT travels in
     `Authorization` on every reconnect; HTTP-with-PAT to a routable
     host is credential exposure.
+  - **`http://` loopback/private guard is literal-host-only (no DNS
+    resolution).** `assertEndpointAllowed` (shared by `webhook_post` and
+    the SSE endpoint check) classifies the target by matching the literal
+    host string in the URL — it does NOT resolve DNS. Three boundaries
+    follow, intentional for v1:
+    1. The `http://` → loopback/private decision is made on the literal
+       URL host only. A public hostname that *resolves* to a private or
+       loopback IP is not detected, and DNS-rebinding (TOCTOU on the
+       resolved address) is **out of scope for v1**.
+    2. `https://` egress to any routable host is **allowed by design** —
+       the router is a webhook *sender*, and TLS removes the
+       plaintext-credential-exposure concern that the `http://` guard
+       exists to prevent.
+    3. The guard's purpose is met: no PAT or handler token is ever sent in
+       cleartext over `http://` to a routable host. It is not, and does not
+       claim to be, a general SSRF egress firewall. Operators who need
+       egress restriction should enforce it at the network layer. (If a
+       resolve-and-recheck step is ever wanted, track it as a separate
+       follow-on; it is deliberately not in v1.)
 - **Subprocess env.** `shell_exec` and `agent_session_dispatch` child
   processes receive a *scrubbed* environment (PATH/HOME/LANG/TZ + the
   rule's own `token_env` + explicit `env:` block only). `WFT_API_KEY`
@@ -560,14 +583,19 @@ over the others):
 
 1. **Plain Node process** — `wft-router --config …`. Canonical; works on
    any OS with Node.
-2. **OCI container** (`examples/deploy/Containerfile`) — built with
+2. **OCI container** (`packages/wft-router/Containerfile`; see
+   `examples/deploy/` for the build command + operator assets) — built with
    `docker build` / `podman build` / `buildah`; runs on any OCI runtime.
-3. **systemd unit** (`examples/deploy/wft-router.service`) — Linux hosts
-   with systemd.
-4. **launchd plist** (`examples/deploy/wft-router.plist`) — macOS.
-5. **Windows Service / Scheduled Task** (`examples/deploy/
-   wft-router.service.ps1`) — Windows. The doc covers both NSSM-shaped
-   service registration and Task Scheduler XML examples.
+3. **systemd unit**
+   (`packages/wft-router/host-manifests/systemd/wft-router.service`) —
+   Linux hosts with systemd.
+4. **launchd plist**
+   (`packages/wft-router/host-manifests/launchd/com.wood-fired-games.wft-router.plist`)
+   — macOS.
+5. **Windows Service**
+   (`packages/wft-router/host-manifests/windows/README.md`) — Windows. The
+   README covers nssm-based service registration (preferred for a console
+   app) and an `sc.exe` alternative.
 6. **Run-once** (`wft-router --once`) — useful for CI smoke tests and
    replaying a backlog window after downtime.
 

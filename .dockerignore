@@ -1,0 +1,26 @@
+# Build-context excludes for the wft-router OCI image (context = repo root).
+# Keep the context small + fast: the Containerfile copies only the root
+# manifests + packages/wft-router/{package.json,tsconfig.json,src}.
+.git
+node_modules
+**/node_modules
+dist
+**/dist
+*.tgz
+**/*.tgz
+*.db
+**/*.db
+data
+.planning
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+coverage
+.vscode
+.idea
+*.log
+.DS_Store
+Dockerfile
+Containerfile
+**/Containerfile
+.dockerignore

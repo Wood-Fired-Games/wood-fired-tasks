@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  EXAMPLE launchd agent/daemon for wft-router on macOS — operators adapt paths.
+
+  Install as a per-user agent:
+    cp com.wood-fired-games.wft-router.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.wood-fired-games.wft-router.plist
+  Or as a system daemon (requires root):
+    sudo cp com.wood-fired-games.wft-router.plist /Library/LaunchDaemons/
+    sudo launchctl load /Library/LaunchDaemons/com.wood-fired-games.wft-router.plist
+
+  Validate:  plutil -lint com.wood-fired-games.wft-router.plist   (macOS only)
+
+  Path resolver (see docs/event-router-design.md §6) resolves on macOS to:
+    config:  ~/Library/Application Support/wft-router
+    state:   ~/Library/Application Support/wft-router/state
+    data:    ~/Library/Application Support/wft-router/data
+  launchd cannot read an EnvironmentFile, so fill EnvironmentVariables below
+  (or have the operator inject secrets via a separate mechanism).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wood-fired-games.wft-router</string>
+
+    <!-- Adjust to the actual install location. For a global npm install this is
+         typically /opt/homebrew/bin/wft-router (Apple Silicon) or
+         /usr/local/bin/wft-router (Intel). For a checkout, use the node binary
+         plus the dist entrypoint:
+           <string>/usr/local/bin/node</string>
+           <string>/opt/wood-fired-tasks/packages/wft-router/dist/bin/wft-router.js</string> -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/wft-router</string>
+        <string>--metrics-port</string>
+        <string>9464</string>
+    </array>
+
+    <!-- Fill in real values before loading. WFT_ROUTER_TOKEN is a secret. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WFT_ROUTER_ENDPOINT</key>
+        <string>https://tasks.example.com</string>
+        <key>WFT_ROUTER_TOKEN</key>
+        <string>replace-me</string>
+        <key>LOG_LEVEL</key>
+        <string>info</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on crash but not on clean exit. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Throttle restart loops (seconds between respawns). -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/wft-router</string>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/wft-router/wft-router.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/wft-router/wft-router.err.log</string>
+</dict>
+</plist>

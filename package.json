@@ -55,7 +55,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc -p packages/wft-router",
     "start": "node dist/api/start.js",
     "dev": "tsx src/api/start.ts",
     "test": "vitest run",
@@ -71,12 +71,13 @@
     "format:check": "echo 'format:check is unavailable: biome.json has formatter.enabled=false. Enable the formatter in a dedicated follow-up PR before re-adding this gate.' >&2 && exit 1",
     "format": "biome format --write .",
     "lint:deps": "knip --dependencies",
-    "depcruise": "depcruise src --config .dependency-cruiser.cjs",
-    "depcruise:graph": "depcruise src --config .dependency-cruiser.cjs --output-type dot --output-to dependency-graph.dot",
+    "depcruise": "depcruise src packages/wft-router/src --config .dependency-cruiser.cjs",
+    "depcruise:graph": "depcruise src packages/wft-router/src --config .dependency-cruiser.cjs --output-type dot --output-to dependency-graph.dot",
     "test:mutation": "stryker run",
     "pack:check": "npm pack --dry-run",
     "agent-context:gen": "tsx scripts/agent-context/generate.ts",
     "agent-context:check": "tsx scripts/agent-context/check.ts",
+    "check:vendor-neutrality": "node scripts/vendor-neutrality/check.mjs",
     "quality": "npm run build && npm test && npm run lint && npm run lint:deps && npm run depcruise && npm audit --omit=dev --audit-level=high",
     "prepublishOnly": "npm run build && npm test && npm run lint:deps && npm audit --omit=dev --audit-level=high && npm run pack:check"
   },

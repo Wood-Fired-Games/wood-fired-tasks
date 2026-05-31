@@ -1,0 +1,42 @@
+# triggers.example.yaml — copy, edit, then validate with:
+#   wft-router --validate triggers.example.yaml
+#
+# A vendor-neutral starter config using only core handlers. Replace the project
+# slugs, URL, and *_env token names with your own. See the full schema and
+# predicate/templating rules in docs/event-router-design.md.
+version: 1
+
+defaults: # applied to every rule unless the rule overrides them
+  debounce_ms: 1500
+  idempotency_window_s: 3600
+  max_dispatches_per_minute: 60
+  max_retries: 3
+
+rules:
+  # 1) Cross-project chaining: when a tagged task closes in one project,
+  #    file a follow-up task in another project.
+  - name: closed-release-task-files-followup
+    on: task.status_changed
+    where: # structured AND-predicate — no eval, no shell
+      project: my-upstream-project
+      to_status: closed
+      tags_contains_all: [release]
+    do: create_task_in_project
+    with:
+      project: my-downstream-project
+      # Templating rule: a {{...}} substitution must occupy the WHOLE value
+      # (no prefix/suffix). Compose richer strings upstream, not in the template.
+      title: "{{task.title}}"
+      body: "Auto-filed by wft-router when an upstream release task closed."
+      labels: [auto-filed]
+      token_env: WFT_API_KEY_WRITER # name of the env var holding the write PAT
+
+  # 2) Notify an operator endpoint over HTTPS when any task becomes blocked.
+  - name: blocked-task-notifies-operator
+    on: task.status_changed
+    where:
+      to_status: blocked
+    do: webhook_post
+    with:
+      url: https://hooks.example.com/wft-router
+      token_env: WFT_WEBHOOK_TOKEN

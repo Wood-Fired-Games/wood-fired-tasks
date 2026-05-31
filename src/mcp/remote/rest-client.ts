@@ -18,6 +18,7 @@ import type {
   CompletionReportResponse,
 } from '../../cli/api/types.js';
 import type { TopologyReport } from '../../schemas/topology.schema.js';
+import { createRemoteSSEParser } from './sse-parser.js';
 
 function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
   if (Array.isArray(payload)) {
@@ -62,6 +63,23 @@ export class RestClient {
   }
 
   /**
+   * Build the mutually-exclusive auth header for this client's key.
+   *
+   * Phase 31 Plan 03 Task 3 (MCP-01): switch header name based on prefix.
+   * Mirrors the same precedence Phase 30 Plan 05 wired into the CLI client
+   * (`src/cli/api/client.ts`). The full apiKey value flows through verbatim
+   * — the server needs the entire `wft_pat_<body>` string for the SHA-256
+   * lookup. Factored out (task #481) so the streaming `waitForUnblock` SSE
+   * path applies the identical rule as `request()` without going through it.
+   */
+  private authHeader(): Record<string, string> {
+    if (this.apiKey.startsWith(PAT_PREFIX)) {
+      return { Authorization: `Bearer ${this.apiKey}` };
+    }
+    return { 'X-API-Key': this.apiKey };
+  }
+
+  /**
    * Internal HTTP request helper with authentication, timeout, and error handling.
    */
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -71,17 +89,7 @@ export class RestClient {
     const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
-      const headers: Record<string, string> = {};
-      // Phase 31 Plan 03 Task 3 (MCP-01): switch header based on prefix.
-      // Mirrors the same precedence Phase 30 Plan 05 wired into the CLI
-      // client (`src/cli/api/client.ts`). The full apiKey value flows
-      // through verbatim — the server needs the entire `wft_pat_<body>`
-      // string for the SHA-256 lookup.
-      if (this.apiKey.startsWith(PAT_PREFIX)) {
-        headers['Authorization'] = `Bearer ${this.apiKey}`;
-      } else {
-        headers['X-API-Key'] = this.apiKey;
-      }
+      const headers: Record<string, string> = { ...this.authHeader() };
       if (options?.body) {
         headers['Content-Type'] = 'application/json';
       }
@@ -346,6 +354,201 @@ export class RestClient {
    */
   async getTopology(projectId: number): Promise<TopologyReport> {
     return this.request<TopologyReport>(`/api/v1/projects/${projectId}/topology`);
+  }
+
+  // ── SSE wait operations ──────────────────────────────────────────────────
+
+  /**
+   * Block on the API's SSE stream until task `taskId` transitions
+   * `blocked -> open`, the `timeoutMs` deadline elapses, or `signal` aborts
+   * (task #481 — remote parity for the stdio `wait_for_unblock` tool).
+   *
+   * This is the cross-process analogue of the stdio tool's in-process
+   * EventBus subscription: it opens a streaming authenticated
+   * `GET /api/v1/events?event_types=task.status_changed`, parses SSE frames
+   * incrementally off `fetch().body`, and resolves on the first
+   * `task.status_changed` frame whose payload satisfies
+   * `data.id === taskId && metadata.from === 'blocked' && metadata.to === 'open'`.
+   *
+   * Resolution:
+   *   - `true`  — the matching transition was observed.
+   *   - `false` — the `timeoutMs` deadline elapsed first (NO throw — the
+   *               caller maps this to the `timeout` envelope).
+   *
+   * Teardown is unconditional: on resolve, timeout, AND abort the underlying
+   * `fetch` is aborted (which tears down the socket) and the stream reader is
+   * cancelled, and every timer is cleared — no socket / reader leak. The
+   * method's own AbortController is `abort()`-ed in a `finally`, and it also
+   * chains the caller's `signal` so an external abort propagates to the
+   * fetch immediately.
+   *
+   * Network / auth failures throw (TypeError "fetch failed" → friendly hint;
+   * non-2xx → `Error` with the status), so an unauthorized stream surfaces an
+   * error rather than silently timing out.
+   *
+   * NOTE — this method does NOT do the already_unblocked fast-path read; the
+   * caller (`register-tools.ts`) opens this stream FIRST and then re-reads
+   * the task status, aborting this stream via `signal` if the re-read shows
+   * the task is no longer blocked. That ordering closes the subscribe-vs-read
+   * race the stdio tool documents (a transition landing between the read and
+   * the subscribe would otherwise be missed).
+   */
+  async waitForUnblockViaSse(
+    taskId: number,
+    timeoutMs: number,
+    signal: AbortSignal,
+    fetchImpl: typeof fetch = fetch,
+  ): Promise<boolean> {
+    const url = `${this.baseUrl}/api/v1/events?event_types=task.status_changed`;
+
+    // Our own controller so we can tear the fetch down on resolve/timeout.
+    // It also fires if the caller's `signal` aborts (chained below).
+    const controller = new AbortController();
+
+    // A settle-on-abort promise so the race ends the instant EITHER the
+    // deadline fires OR the caller's external `signal` aborts — without
+    // depending on the underlying `reader.read()` rejecting (a mocked stream
+    // may never propagate the abort). Both resolve `false` (timeout / cancel
+    // semantics — no throw).
+    let settleEarly!: (v: boolean) => void;
+    const earlyExit = new Promise<boolean>((resolve) => {
+      settleEarly = resolve;
+    });
+
+    const onExternalAbort = (): void => {
+      controller.abort();
+      settleEarly(false);
+    };
+    if (signal.aborted) {
+      controller.abort();
+      settleEarly(false);
+    } else {
+      signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      timeoutTimer = setTimeout(() => {
+        // Deadline hit: abort the fetch (tears down the socket) and resolve
+        // false. No throw — the caller maps false to the timeout envelope.
+        controller.abort();
+        resolve(false);
+      }, timeoutMs);
+    });
+
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
+    const streamPromise = (async (): Promise<boolean> => {
+      let response: Response;
+      try {
+        response = await fetchImpl(url, {
+          method: 'GET',
+          headers: { ...this.authHeader(), Accept: 'text/event-stream' },
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          // Aborted by timeout or external signal — not a real failure.
+          return false;
+        }
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+          throw new Error(`Cannot reach API server at ${this.baseUrl}. Is it running?`);
+        }
+        throw error;
+      }
+
+      if (!response.ok || response.body === null) {
+        // Parse the error body BEFORE draining it (reading json() consumes the
+        // stream; cancelling first would make json() throw and lose the
+        // server's message).
+        let message: string;
+        try {
+          const body = (await response.json()) as { message?: string; error?: string };
+          message = body.message || body.error || `HTTP ${response.status}: ${response.statusText}`;
+        } catch {
+          message = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(`API request failed: ${message}`);
+      }
+
+      const parser = createRemoteSSEParser();
+      const decoder = new TextDecoder('utf-8');
+      reader = response.body.getReader();
+
+      try {
+        for (;;) {
+          let chunk: ReadableStreamReadResult<Uint8Array>;
+          try {
+            chunk = await reader.read();
+          } catch {
+            // Reader cancelled (abort/timeout) or read error → stop waiting.
+            return false;
+          }
+          if (chunk.done) {
+            // Server closed the stream without the transition we wanted.
+            return false;
+          }
+          const text = decoder.decode(chunk.value, { stream: true });
+          for (const frame of parser.feed(text)) {
+            if (frame.data === '') continue;
+            let payload: {
+              data?: { id?: number };
+              metadata?: { from?: string; to?: string };
+            };
+            try {
+              payload = JSON.parse(frame.data);
+            } catch {
+              // Non-JSON frame (e.g. the initial `connected` event carries a
+              // JSON string too, but be defensive) — skip.
+              continue;
+            }
+            if (
+              payload.data?.id === taskId &&
+              payload.metadata?.from === 'blocked' &&
+              payload.metadata?.to === 'open'
+            ) {
+              return true;
+            }
+          }
+        }
+      } finally {
+        try {
+          await reader.cancel();
+        } catch {
+          /* already torn down */
+        }
+        try {
+          reader.releaseLock();
+        } catch {
+          /* already released */
+        }
+      }
+    })();
+
+    try {
+      // Whichever settles first wins. The loser is torn down in `finally`.
+      return await Promise.race([streamPromise, timeoutPromise, earlyExit]);
+    } finally {
+      if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
+      signal.removeEventListener('abort', onExternalAbort);
+      // Unconditional teardown. Abort the fetch (closes the socket on a real
+      // connection); idempotent so safe to call repeatedly. On a real fetch
+      // the abort rejects the pending `reader.read()`; for robustness (and
+      // because a mocked stream may not propagate the abort) ALSO cancel the
+      // reader directly so the stream loop's pending read settles and its
+      // `finally` runs. Cancelling resolves the read with `done:true`.
+      controller.abort();
+      if (reader !== undefined) {
+        try {
+          await reader.cancel();
+        } catch {
+          /* already torn down */
+        }
+      }
+      // Let the stream promise settle so its `finally` (reader.cancel /
+      // releaseLock) runs before we return; swallow any late rejection.
+      await streamPromise.catch(() => undefined);
+    }
   }
 
   // ── Health operations ────────────────────────────────────────────────────

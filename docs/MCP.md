@@ -10,7 +10,7 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 22 tools for task, project, comment, dependency, reporting, health, and topology operations
+- 23 tools for task, project, comment, dependency, reporting, health, topology, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 11 pre-built skill files for common workflows
@@ -282,14 +282,14 @@ revocation.
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 22 (full set including `completion_report` and `topology_check`) | 22 (full parity — `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`) |
+| Tool count | 23 (full set including `completion_report`, `topology_check`, and `wait_for_unblock`) | 23 (full parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`, and `wait_for_unblock` resolves over the SSE stream `GET /api/v1/events`) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
-The remote server is at full tool parity with the local server. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process.
+The remote server carries every tool the local server does. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process. `wait_for_unblock` is hosted on **both** servers but over **different transports**: the local variant resolves the `blocked -> open` transition off the **in-process EventBus**, while the remote variant (task #481) resolves it off the **SSE event stream** (`GET /api/v1/events`, `RestClient.waitForUnblockViaSse`) — so the remote tool additionally observes cross-process / cross-session transitions. The input schema and the three return envelopes (`already_unblocked` / `unblocked` / `timeout`) are byte-identical across both transports.
 
 ## Tools Reference
 
-The MCP server exposes 22 tools organized by domain:
+The MCP server exposes 23 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -315,6 +315,7 @@ The MCP server exposes 22 tools organized by domain:
 | `get_dependencies` | Dependency | Return both blockers and blocked-by relationships for a task. |
 | `check_health` | Health | Verify database connectivity and report version info. |
 | `topology_check` | Topology | Classify a project as FLAT, DAG, or DAG_CYCLIC over its task-dependency graph; returns roots, leaves, edges, and an execution advisory. |
+| `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. On both servers: local resolves over the in-process bus, remote over the SSE stream. |
 
 ### Task Tools (9 tools)
 
@@ -720,6 +721,61 @@ Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wav
 
 **Usage:** When Claude Code needs to decide whether a project's backlog can be drained in parallel (`/tasks:loop-dag`) or must run sequentially, or to detect a dependency cycle that blocks execution. Registered on both the local and remote servers; the remote variant proxies `GET /api/v1/projects/:id/topology`.
 
+### Wait Tools (1 tool)
+
+#### wait_for_unblock
+
+Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh task projection. Wraps the in-process `subscribeOnce` helper over the EventBus singleton.
+
+**Input Schema:**
+
+```json
+{
+  "task_id": "number (required, positive integer)",
+  "timeout_seconds": "number (optional, positive integer; default 300, clamped to max 1800)"
+}
+```
+
+**Returns:** Exactly one of three structured shapes:
+
+- `{ "status": "unblocked", "task": <fresh projection>, "applied_timeout_seconds": <number> }` — the `blocked -> open` transition fired during the wait.
+- `{ "status": "already_unblocked", "task": <fresh projection>, "applied_timeout_seconds": <number> }` — the task was not `blocked` at call time (returns immediately).
+- `{ "status": "timeout", "task_id": <number>, "waited_seconds": <number>, "applied_timeout_seconds": <number> }` — the deadline elapsed. **No error is thrown for timeout.**
+
+`applied_timeout_seconds` echoes the clamped timeout so callers can see when a requested value exceeded the 1800s ceiling. Authorization is identical to `get_task`: an unknown / inaccessible `task_id` yields the same MCP error.
+
+**Two transports (local in-process bus vs remote SSE stream):** `wait_for_unblock` is hosted on **both** the local and remote MCP servers, but resolves the `blocked -> open` transition over different transports:
+
+- **Local (stdio, `src/mcp/tools/wait-for-unblock-tools.ts`):** subscribes to the **in-process EventBus**, so it only observes status transitions that happen in the **same process** as the MCP server (e.g. the workflow-engine auto-unblock cascade running in-process). It does **not** see transitions made by other sessions or processes.
+- **Remote (`src/mcp/remote/register-tools.ts` → `RestClient.waitForUnblockViaSse`, task #481):** opens a streaming authenticated `GET /api/v1/events?event_types=task.status_changed` and resolves on the first frame whose payload satisfies `data.id === task_id && metadata.from === "blocked" && metadata.to === "open"`. Because the SSE stream carries events from the whole server, the remote variant **also** observes cross-process / cross-session wake-ups (the domain previously reserved for the `events://stream` resource and the wft-router automation recipe, task #456).
+
+The input schema, the three envelopes, the clamp logic, and the no-throw timeout semantics are byte-identical across both transports, so a caller cannot tell which one served the request.
+
+**Usage:** When an agent has hit a `blocked` task and wants to park until its blockers clear (within the same MCP process) rather than busy-polling `get_task`.
+
+##### Long-polling for task transitions
+
+`wait_for_unblock` and the wft-router [persistent-agent-sessions recipe](automation-recipes/persistent-agent-sessions.md) solve the same problem — "wake an agent when a task unblocks" — from opposite ends of a single trade-off. `wait_for_unblock` is a **single-turn blocking call inside ONE MCP request**: the calling agent holds the connection open until the `blocked -> open` transition fires (or the deadline elapses). Reach for it when the agent can afford to stay connected — sub-30-minute waits with no host failover, no session teardown. The wft-router persistent-agent-sessions recipe is the opposite pole: **fire-and-forget, cross-session wake-ups**. The agent closes its session and goes away; later, when the task transitions, wft-router dispatches an adapter that re-spawns (or re-prompts) the agent. Choose it when the wait may outlive the agent process, span hosts, or survive a restart.
+
+**`wait_for_unblock` (single-turn, in-process):**
+
+```json
+{ "task_id": 1234, "timeout_seconds": 600 }
+```
+
+The call blocks for up to 600s and returns `{ "status": "unblocked", "task": <fresh projection> }` the instant the blocker clears.
+
+**wft-router `agent_session_dispatch` (cross-session, fire-and-forget):**
+
+```yaml
+rules:
+  - name: unblocked-task-wakes-session
+    on: task.status_changed
+    where: { to_status: open }
+    do: agent_session_dispatch
+    with: { adapter: local-command, target: your-session, prompt: "{{task.id}}" }
+```
+
 ## Resources Reference
 
 The MCP server exposes 1 resource.
@@ -938,7 +994,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:bug-smash`
-- Explore the 22 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 23 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host
 - Read the `events://stream` resource for real-time event integration

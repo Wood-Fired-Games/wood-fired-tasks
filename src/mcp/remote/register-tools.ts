@@ -12,8 +12,13 @@ import {
 } from '../../schemas/task.schema.js';
 import { VERSION } from '../../utils/version.js';
 
+/** Default long-poll deadline (seconds) when the caller omits `timeout_seconds`. */
+const WAIT_DEFAULT_TIMEOUT_SECONDS = 300;
+/** Hard ceiling (seconds); larger requests are clamped down to this. */
+const WAIT_MAX_TIMEOUT_SECONDS = 1800;
+
 /**
- * Register all 22 MCP tools backed by REST API calls via RestClient.
+ * Register all 23 MCP tools backed by REST API calls via RestClient.
  *
  * Tool names, descriptions, and input schemas match the local MCP server exactly.
  * Each handler proxies the request to the REST API and formats the MCP response.
@@ -25,6 +30,7 @@ import { VERSION } from '../../utils/version.js';
  *   3 comment tools
  *   1 health tool
  *   1 topology tool (topology_check) — backed by GET /api/v1/projects/:id/topology
+ *   1 wait tool (wait_for_unblock) — backed by the SSE stream GET /api/v1/events
  *
  * task #245 — the `completion_report` tool reaches parity with the local server
  * by hitting `GET /api/v1/tasks/completion-report`.
@@ -34,6 +40,16 @@ import { VERSION } from '../../utils/version.js';
  * `GET /api/v1/projects/:id/topology`, which exposes `TopologyService`.
  * Input/output schema is byte-identical to the stdio tool so callers can't
  * tell which transport they're on.
+ *
+ * wait_for_unblock — parity with the stdio `wait_for_unblock` tool
+ * (`src/mcp/tools/wait-for-unblock-tools.ts`, task #455). The stdio variant
+ * resolves the `blocked -> open` transition off the IN-PROCESS EventBus; this
+ * remote variant resolves it off the API's SSE event stream
+ * (`GET /api/v1/events`, task #481) so persistent agent sessions connected
+ * via the REST proxy can wait on cross-process transitions. The input schema,
+ * the three return envelopes (already_unblocked / unblocked / timeout), the
+ * clamp logic ([1,1800], default 300, echoed `applied_timeout_seconds`), and
+ * the timeout semantics (no throw) are byte-identical to the stdio tool.
  */
 export function registerRemoteTools(server: McpServer, client: RestClient): void {
 
@@ -819,10 +835,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        // The local tool only takes comment_id, but the REST API route requires task_id in the URL.
-        // The server handler ignores task_id and only uses commentId for deletion.
-        // We use task_id=1 as a safe placeholder — any positive integer passes URL validation.
-        await client.deleteComment(1, args.comment_id);
+        // The REST delete route is keyed solely by comment_id; its `{task_id}`
+        // path segment is required to satisfy the URL shape but is IGNORED by
+        // the server handler (deletion is by comment_id alone). This sentinel
+        // makes that intent explicit so a future reader does not mistake the
+        // value for a real task reference — any positive integer would do.
+        const PATH_TASK_ID_IGNORED_BY_SERVER = 1;
+        await client.deleteComment(PATH_TASK_ID_IGNORED_BY_SERVER, args.comment_id);
         return {
           content: [
             {
@@ -932,6 +951,162 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           error instanceof Error ? error.message : 'Failed to check topology'
         );
       }
+    }
+  );
+
+  // ── Wait tool (1) ────────────────────────────────────────────────────────
+
+  // Tool: wait_for_unblock
+  // Parity with the stdio MCP tool (src/mcp/tools/wait-for-unblock-tools.ts,
+  // task #455). The stdio variant resolves the blocked->open transition off
+  // the IN-PROCESS EventBus; this remote variant (task #481) resolves it off
+  // the API's SSE stream (GET /api/v1/events) via
+  // RestClient.waitForUnblockViaSse. Input schema, the three envelopes, the
+  // clamp logic, and the no-throw timeout semantics are byte-identical to the
+  // stdio tool so callers can't tell which transport they're on.
+  server.registerTool(
+    'wait_for_unblock',
+    {
+      description:
+        'Long-poll until a task transitions blocked -> open, then return the ' +
+        'fresh task projection. Resolves immediately with status ' +
+        '"already_unblocked" if the task is not currently blocked. Returns ' +
+        'status "timeout" (no error) if the deadline elapses first. ' +
+        'timeout_seconds defaults to 300, is clamped to [1, 1800], and the ' +
+        'applied value is echoed back as applied_timeout_seconds. NOTE: the ' +
+        'remote transport observes transitions over the SSE event stream, so ' +
+        'it sees cross-process / cross-session wake-ups (unlike the in-process ' +
+        'stdio variant).',
+      inputSchema: z.object({
+        task_id: z.number().int().positive(),
+        timeout_seconds: z.number().int().positive().optional(),
+      }),
+    },
+    async (args) => {
+      const requested = args.timeout_seconds ?? WAIT_DEFAULT_TIMEOUT_SECONDS;
+      // Clamp to [1, MAX]. Zod already rejects <=0 / non-int, so the lower
+      // bound is defensive; the upper bound is the real clamp the caller sees
+      // via applied_timeout_seconds. Identical to the stdio tool.
+      const appliedTimeoutSeconds = Math.min(
+        Math.max(1, requested),
+        WAIT_MAX_TIMEOUT_SECONDS
+      );
+
+      // Race handling (acceptance #3/#4): OPEN THE STREAM FIRST, then re-read
+      // the current status. A blocked->open transition could land in the tiny
+      // window between "read status" and "subscribe"; subscribing first
+      // guarantees we never miss it — the same no-miss ordering the stdio tool
+      // documents. We use an AbortController so that, if the re-read shows the
+      // task is already non-blocked, we tear the stream down immediately
+      // (already_unblocked fast path) rather than leaking a socket until the
+      // deadline.
+      const abortController = new AbortController();
+      const waitPromise = client.waitForUnblockViaSse(
+        args.task_id,
+        appliedTimeoutSeconds * 1000,
+        abortController.signal
+      );
+
+      // Now (after opening the stream) read the current projection. This both
+      // authorizes the caller (same boundary as get_task — throws for unknown
+      // / inaccessible ids) and tells us whether we even need to wait. If the
+      // read throws, abort the stream first so we never leak the socket, then
+      // surface the same McpError the remote get_task produces.
+      let current: import('../../cli/api/types.js').TaskResponse;
+      try {
+        current = await client.getTask(args.task_id);
+      } catch (error) {
+        abortController.abort();
+        waitPromise.catch(() => {
+          /* expected abort from the teardown above */
+        });
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to wait for unblock'
+        );
+      }
+
+      if (current.status !== 'blocked') {
+        // Not blocked at call time: abort the just-opened stream and return
+        // the already_unblocked envelope. Swallow the resulting resolution.
+        abortController.abort();
+        waitPromise.catch(() => {
+          /* expected abort from the teardown above */
+        });
+        const payload = {
+          status: 'already_unblocked' as const,
+          task: current,
+          applied_timeout_seconds: appliedTimeoutSeconds,
+        };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Task ${args.task_id} is not blocked (status: ${current.status}); returning immediately.`,
+            },
+          ],
+          structuredContent: payload as unknown as { [x: string]: unknown },
+        };
+      }
+
+      // Task is blocked: wait for the SSE transition or the deadline.
+      let unblocked: boolean;
+      try {
+        unblocked = await waitPromise;
+      } catch (error) {
+        // A genuine stream failure (network / auth / non-2xx) surfaces as the
+        // same McpError shape the other remote tools produce.
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to wait for unblock'
+        );
+      }
+
+      if (!unblocked) {
+        // Deadline hit: timeout envelope. NO exception is thrown for timeout.
+        const payload = {
+          status: 'timeout' as const,
+          task_id: args.task_id,
+          waited_seconds: appliedTimeoutSeconds,
+          applied_timeout_seconds: appliedTimeoutSeconds,
+        };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Timed out after ${appliedTimeoutSeconds}s waiting for task ${args.task_id} to unblock.`,
+            },
+          ],
+          structuredContent: payload as unknown as { [x: string]: unknown },
+        };
+      }
+
+      // Transition observed: re-read the fresh projection rather than trusting
+      // the event payload, so the caller always gets the current canonical
+      // task (mirrors the stdio tool).
+      let fresh: import('../../cli/api/types.js').TaskResponse;
+      try {
+        fresh = await client.getTask(args.task_id);
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to wait for unblock'
+        );
+      }
+      const payload = {
+        status: 'unblocked' as const,
+        task: fresh,
+        applied_timeout_seconds: appliedTimeoutSeconds,
+      };
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Task ${args.task_id} transitioned blocked -> open (status: ${fresh.status}).`,
+          },
+        ],
+        structuredContent: payload as unknown as { [x: string]: unknown },
+      };
     }
   );
 }

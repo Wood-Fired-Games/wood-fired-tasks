@@ -43,6 +43,8 @@ const MCP_TOOL_FILES = [
   'src/mcp/tools/task-tools.ts',
   // Wave 4.1 (#318): topology classifier.
   'src/mcp/tools/topology-tools.ts',
+  // Task #455: in-process long-poll wait_for_unblock tool.
+  'src/mcp/tools/wait-for-unblock-tools.ts',
 ] as const;
 
 const CLI_ENTRY = 'src/cli/bin/tasks.ts';
@@ -78,7 +80,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     ).toBe(22);
   });
 
-  it('MCP tool files together register exactly 22 tools', () => {
+  it('MCP tool files together register exactly 23 tools', () => {
     const perFile = MCP_TOOL_FILES.map((rel) => ({
       file: rel,
       count: countMatches(repoRoot, rel, MCP_TOOL_REGEX),
@@ -88,7 +90,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
       total,
       `MCP tool count drifted. Per-file: ${JSON.stringify(perFile)}. ` +
         'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(22);
+    ).toBe(23);
   });
 
   it('CLI entry wires exactly 31 commands into Commander', () => {
@@ -107,8 +109,8 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     expect(doc, 'missing "Total: 22 routes" anchor').toContain(
       'Total: 22 routes',
     );
-    expect(doc, 'missing "Total: 22 tools" anchor').toContain(
-      'Total: 22 tools',
+    expect(doc, 'missing "Total: 23 tools" anchor').toContain(
+      'Total: 23 tools',
     );
     expect(
       doc,

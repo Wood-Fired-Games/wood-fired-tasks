@@ -10,7 +10,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 
 - REST API with 47 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated) for full task lifecycle management — a single running instance serves up to 40 of them (the OIDC-disabled `/auth/*` stub handlers are mutually exclusive with the live OIDC routes)
 - CLI (`tasks`) with 31 commands for terminal-based operations
-- MCP server with 22 tools for native Claude Code integration (local SQLite or remote HTTP modes)
+- MCP server with 23 tools for native Claude Code integration (local SQLite or remote HTTP modes)
 - 16 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
@@ -57,6 +57,21 @@ For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 ## Self-hosting
 
 For self-hosted production deploys (including the fork-and-deploy workflow for OSS operators): provision a host once with `deploy/install.sh`, then ship every subsequent release in place with `deploy/upgrade.sh` (atomic backup, migrate, restart, `/health` probe, manual rollback recipe on failure). The full walkthrough — first-time install, in-place upgrades, deploying your fork, manual rollback, and the migration safety contract — lives at [Self-hosting and upgrades](docs/SETUP.md#self-hosting-and-upgrades). When a deploy or a reboot goes sideways, the [Troubleshooting & Recovery runbook](docs/TROUBLESHOOTING.md) covers boot failures (`exit 78`), wrong/stale-database symptoms, and safe backup/restore.
+
+## Automation (event-driven)
+
+Beyond the REST/CLI/MCP surfaces, an optional **event-router daemon** —
+[`wft-router`](packages/wft-router/README.md) — subscribes to the API's SSE
+event stream (`GET /api/v1/events`) and dispatches matched task events to
+vendor-neutral handlers (`create_task_in_project`, `webhook_post`, `shell_exec`,
+`agent_session_dispatch`) per a declarative `triggers.yaml`. It ships as a
+separately-publishable package (`@wood-fired-games/wft-router`) and adds nothing
+to the core server unless you run it. See the
+[design doc](docs/event-router-design.md), the
+[automation recipes](docs/automation-recipes/), and the
+[reference adapters](examples/adapters/). For agents that just need to block on
+a single task unblock, the MCP server also exposes a `wait_for_unblock` tool
+(see [docs/MCP.md](docs/MCP.md)).
 
 ## Security Model
 
@@ -412,7 +427,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 22 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the full REST-backed tool surface (22 tools, at parity with local) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 23 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 23 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -656,7 +671,7 @@ slash-command reference, channel subscription model, error handling.
 ### Claude Code (MCP)
 
 The shipped MCP server registers as a stdio MCP target in `~/.claude.json`
-and exposes 22 tools plus the `/tasks:*` skill files. See
+and exposes 23 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 

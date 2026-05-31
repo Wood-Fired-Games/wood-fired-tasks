@@ -1,0 +1,73 @@
+# EXAMPLE systemd unit for wft-router — operators MUST adapt paths/User before use.
+#
+# Install (system-wide):
+#   sudo cp wft-router.service /etc/systemd/system/wft-router.service
+#   sudo install -d -m 0750 /etc/wft-router
+#   sudo cp wft-router.env.example /etc/wft-router/wft-router.env   # then edit secrets
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wft-router.service
+#
+# Validate this file:  systemd-analyze verify wft-router.service
+#
+# Type: this example uses Type=simple. wft-router runs as a long-lived
+# foreground process and does NOT currently implement the sd_notify(READY=1)
+# readiness protocol, so Type=notify would block until TimeoutStartSec elapses
+# and then be killed. Once the daemon calls sd_notify(READY=1) (via libsystemd,
+# the sd-notify npm package, or a raw $NOTIFY_SOCKET write), switch this to
+# Type=notify and add WatchdogSec= for liveness. Tracked as a follow-up.
+
+[Unit]
+Description=Wood Fired Tasks event router (wft-router)
+Documentation=https://github.com/wood-fired-games/wood-fired-tasks/blob/main/docs/event-router-design.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Adjust ExecStart to where wft-router is actually installed.
+#   - Global npm install (npm i -g @wood-fired-games/wft-router): /usr/local/bin/wft-router
+#   - From a checkout: /usr/bin/node /opt/wood-fired-tasks/packages/wft-router/dist/bin/wft-router.js
+# Append --metrics-port 9464 to expose the Prometheus /metrics endpoint.
+ExecStart=/usr/local/bin/wft-router --metrics-port 9464
+
+# Runtime configuration & secrets live in an env file (NOT committed).
+# Keys: WFT_ROUTER_ENDPOINT, WFT_ROUTER_TOKEN, LOG_LEVEL, and the path
+# overrides WFT_ROUTER_CONFIG / WFT_ROUTER_STATE_DIR / WFT_ROUTER_DATA_DIR.
+# See wft-router.env.example in this directory.
+EnvironmentFile=/etc/wft-router/wft-router.env
+
+# Path resolver expectations (see docs/event-router-design.md §6):
+# with DynamicUser=yes and the overrides below, config is read-only at
+# /etc/wft-router and mutable state/data live under /var/lib/wft-router.
+Environment=WFT_ROUTER_CONFIG=/etc/wft-router
+Environment=WFT_ROUTER_STATE_DIR=/var/lib/wft-router/state
+Environment=WFT_ROUTER_DATA_DIR=/var/lib/wft-router/data
+
+Restart=on-failure
+RestartSec=5s
+
+# --- Sandboxing / hardening (kept systemd-analyze verify clean) ---
+# DynamicUser allocates a transient unprivileged user and grants
+# /var/lib/wft-router automatically via StateDirectory.
+DynamicUser=yes
+StateDirectory=wft-router
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+# State dir is writable; everything else under ProtectSystem=strict is read-only.
+ReadWritePaths=/var/lib/wft-router
+
+[Install]
+WantedBy=multi-user.target
