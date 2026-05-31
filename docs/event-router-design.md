@@ -768,8 +768,14 @@ of (1)–(10) are blocking review comments on any PR touching this design.
    `packages/wft-router/` as a sub-package. Defer to maintainer
    preference; the spec is identical.
 2. **Does the OSS default ship the router or just document it?**
-   Recommend: ship a single `npm i -g @wood-fired-games/wft-router`
-   package + an OCI image; do NOT bundle into the main server image.
+   ~~Recommend: ship a single `npm i -g @wood-fired-games/wft-router`
+   package + an OCI image; do NOT bundle into the main server image.~~
+   **RESOLVED (v1.15, opposite of the original recommendation):** the
+   standalone `@wood-fired-games/wft-router` package was never published (its
+   npm scope did not exist), so the router shipped to no one. It is now
+   **bundled into the `wood-fired-tasks` package** as a second `wft-router`
+   bin — installing `wood-fired-tasks` puts it on PATH. The OCI image remains
+   available separately.
 3. **Versioning of the config schema.** `version: 1` is in the schema;
    we commit to a minor version increment for additive fields and a
    major for breaking changes. Document the policy in `docs/RELEASE.md`.

@@ -17,6 +17,10 @@
 #   4. Assert `tasks` (no args) exits non-zero with stderr containing "Usage:".
 #   5. Clean up the link on exit (even on failure).
 #
+# Since v1.15 the package also ships a bundled `wft-router` bin, which shares
+# the same #334-class entry-guard bug. Assertions 4-5 (numbered below) smoke
+# that bin end-to-end through the same global symlink.
+#
 # Total wall time target: <= 30s on a normal dev box.
 
 set -euo pipefail
@@ -47,12 +51,16 @@ bin_name="$(node -e "
   if (typeof bin === 'string') {
     process.stdout.write(pkg.name);
   } else {
+    // This smoke is the regression net for the \`tasks\` CLI specifically
+    // (wood-fired-tasks #334/#335). The package now also exposes a \`wft-router\`
+    // bin (smoked separately below), so select \`tasks\` explicitly rather than
+    // assuming a single bin entry.
     const names = Object.keys(bin || {});
-    if (names.length !== 1) {
-      console.error('expected exactly one bin entry, got: ' + JSON.stringify(names));
+    if (!names.includes('tasks')) {
+      console.error('expected a \"tasks\" bin entry, got: ' + JSON.stringify(names));
       process.exit(1);
     }
-    process.stdout.write(names[0]);
+    process.stdout.write('tasks');
   }
 ")"
 
@@ -66,7 +74,7 @@ echo "[smoke] bin name:          ${bin_name}"
 bin_target="$(node -e "
   const pkg = require('./package.json');
   const bin = pkg.bin;
-  const path = (typeof bin === 'string') ? bin : Object.values(bin)[0];
+  const path = (typeof bin === 'string') ? bin : (bin.tasks || Object.values(bin)[0]);
   process.stdout.write(path);
 ")"
 if [ ! -f "${pkg_root}/${bin_target}" ]; then
@@ -187,6 +195,45 @@ if ! printf '%s' "${no_args_stderr}" | grep -q 'Usage:'; then
   exit 1
 fi
 echo "[smoke]   PASS — exit=${no_args_rc}, stderr contains 'Usage:'"
+
+# ----- Assertion 4: bundled wft-router bin works through the symlink ------------
+# wft-router ships inside this package (since v1.15) and is exposed as a second
+# bin. It shares the exact #334-class entry-guard bug: its `isEntryPoint` guard
+# compared import.meta.url (symlink-resolved) against argv[1] (the symlink),
+# which made `main()` a silent no-op when invoked via the npm bin symlink. This
+# block is the end-to-end regression net for that fix. Skipped automatically if
+# the package does not declare a `wft-router` bin.
+has_router="$(node -e "process.stdout.write(String(!!(require('./package.json').bin||{})['wft-router']))")"
+if [ "${has_router}" = "true" ]; then
+  router_resolved="$(command -v wft-router || true)"
+  if [ -z "${router_resolved}" ]; then
+    echo "ERROR: 'which wft-router' returned nothing after npm link." >&2
+    exit 1
+  fi
+  echo "[smoke] assert 4: wft-router --version  exits 0 AND non-empty (no-op signal)"
+  set +e
+  router_ver="$(wft-router --version 2>/dev/null)"
+  router_rc=$?
+  set -e
+  router_ver_trimmed="$(printf '%s' "${router_ver}" | tr -d '[:space:]')"
+  if [ "${router_rc}" -ne 0 ] || [ -z "${router_ver_trimmed}" ]; then
+    echo "ERROR: 'wft-router --version' failed (rc=${router_rc}, out='${router_ver}')." >&2
+    echo "       Empty output via the symlink is the #334-class no-op regression." >&2
+    exit 1
+  fi
+  echo "[smoke]   PASS — wft-router --version is '${router_ver_trimmed}'"
+
+  echo "[smoke] assert 5: wft-router --validate <shipped example>  exits 0"
+  set +e
+  wft-router --validate "${pkg_root}/packages/wft-router/triggers.example.yaml" >/dev/null 2>&1
+  router_validate_rc=$?
+  set -e
+  if [ "${router_validate_rc}" -ne 0 ]; then
+    echo "ERROR: 'wft-router --validate <example>' exited ${router_validate_rc} (expected 0)." >&2
+    exit 1
+  fi
+  echo "[smoke]   PASS — wft-router validated the shipped example config"
+fi
 
 # ----- done --------------------------------------------------------------------
 end_ts=$(date +%s)

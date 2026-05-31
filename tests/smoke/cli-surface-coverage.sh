@@ -53,18 +53,21 @@ bin_name="$(node -e "
   if (typeof bin === 'string') {
     process.stdout.write(pkg.name);
   } else {
+    // This check validates the \`tasks\` CLI surface specifically. The package
+    // also ships a \`wft-router\` bin (smoked in cli-symlink-smoke.sh), so target
+    // \`tasks\` explicitly rather than assuming a single bin entry.
     const names = Object.keys(bin || {});
-    if (names.length !== 1) {
-      console.error('expected exactly one bin entry, got: ' + JSON.stringify(names));
+    if (!names.includes('tasks')) {
+      console.error('expected a \"tasks\" bin entry, got: ' + JSON.stringify(names));
       process.exit(1);
     }
-    process.stdout.write(names[0]);
+    process.stdout.write('tasks');
   }
 ")"
 bin_target="$(node -e "
   const pkg = require('./package.json');
   const bin = pkg.bin;
-  const p = (typeof bin === 'string') ? bin : Object.values(bin)[0];
+  const p = (typeof bin === 'string') ? bin : (bin.tasks || Object.values(bin)[0]);
   process.stdout.write(p);
 ")"
 

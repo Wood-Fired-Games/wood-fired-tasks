@@ -11,6 +11,16 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v1.15] - 2026-05-31
+
+Makes the `wft-router` automation daemon actually reachable by npm users. It was advertised as a shipped feature since v1.13 but was a separate, never-published package (`@wood-fired-games/wft-router`), so it reached nobody via npm. It now ships **inside** the `wood-fired-tasks` package.
+
+### Added
+- **`wft-router` now ships in the `wood-fired-tasks` package.** Its built output and a `wft-router` bin are bundled into the published tarball; run it with `wft-router` / `npx wft-router` after install. The standalone `@wood-fired-games/wft-router` package is dropped (marked private). `pino` and `yaml` are now core runtime dependencies.
+
+### Fixed
+- **`wft-router` bin was a silent no-op when installed.** Its entry-point guard compared `import.meta.url` (symlink-resolved real path) against `process.argv[1]` (the `node_modules/.bin/wft-router` symlink path), which never matched, so `main()` never ran. The guard now resolves `argv[1]` to its real path. Regression-tested via `isEntryPoint`.
+
 ## [v1.14] - 2026-05-31
 
 Ships loop-evidence anti-fabrication guardrails for `/tasks:loop` and `/tasks:loop-dag`. (First npm release since 1.12.0 — the 1.13.0 changeset was tagged `v1.13` but never published to npm, so this release also delivers everything under `[v1.13]` below.)
@@ -294,7 +304,8 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.14...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.15...HEAD
+[v1.15]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.14...v1.15
 [v1.14]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.13...v1.14
 [v1.13]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.12...v1.13
 [v1.12]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.11...v1.12
