@@ -64,9 +64,10 @@ Beyond the REST/CLI/MCP surfaces, an optional **event-router daemon** —
 [`wft-router`](packages/wft-router/README.md) — subscribes to the API's SSE
 event stream (`GET /api/v1/events`) and dispatches matched task events to
 vendor-neutral handlers (`create_task_in_project`, `webhook_post`, `shell_exec`,
-`agent_session_dispatch`) per a declarative `triggers.yaml`. It ships as a
-separately-publishable package (`@wood-fired-games/wft-router`) and adds nothing
-to the core server unless you run it. See the
+`agent_session_dispatch`) per a declarative `triggers.yaml`. It lives in-repo at
+[`packages/wft-router/`](packages/wft-router/README.md) as a standalone daemon
+(`@wood-fired-games/wft-router`) — **not yet published to npm**; run it from a
+checkout — and adds nothing to the core server unless you run it. See the
 [design doc](docs/event-router-design.md), the
 [automation recipes](docs/automation-recipes/), and the
 [reference adapters](examples/adapters/). For agents that just need to block on

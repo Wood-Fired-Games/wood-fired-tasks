@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-31T19:03:07.388Z",
+    "generated_at": "2026-05-31T19:19:31.350Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -315,8 +315,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1800,
-      "actual_lines": 51,
-      "sha256": "ed153903c9b946d33e87c77333ffc40703ffe28c3d5906ae31a30bdbca03f0d8",
+      "actual_lines": 59,
+      "sha256": "93941bdc8138af7e6c898252813f025177bfea15c2ef13ca541176cf42be043c",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -357,8 +357,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
-      "actual_lines": 708,
-      "sha256": "3d15aff5a12b4e94d3b4db23b810b8a2eb788a84db80e5b54b3e82932644cd3c"
+      "actual_lines": 709,
+      "sha256": "6dd1a9c978e78cfd684edcc602aa5f2bb6aee98b185d74dee1914e8c451ff94e"
     },
     {
       "path": "SECURITY.md",
@@ -372,7 +372,7 @@
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
       "actual_lines": 299,
-      "sha256": "0ee69b0202defd6367e2734c941349d2b80467963baab9913bc63e53b1f3bf97"
+      "sha256": "ca47c70b0967a4040a267817ee26b352c7ce72adac460fd84e35a246e74e017e"
     },
     {
       "path": "llms.txt",
@@ -385,8 +385,8 @@
       "status": "present",
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
-      "actual_lines": 34,
-      "sha256": "a021c8db9a394da6cf42f2239ce6991333fdf42ba8ae1e2f1cdf0a13f001b6ba"
+      "actual_lines": 40,
+      "sha256": "68c1f3b040a0d7363dc2d57fa2432b9f0008cffbef081e2b217a6f8b5e3f451c"
     },
     {
       "path": "CLAUDE.md",

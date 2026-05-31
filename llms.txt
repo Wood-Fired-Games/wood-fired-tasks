@@ -21,9 +21,15 @@
 ## Surface reference
 
 - [docs/API.md](docs/API.md): REST API.
-- [docs/MCP.md](docs/MCP.md): MCP tools.
+- [docs/MCP.md](docs/MCP.md): MCP tools (incl. `wait_for_unblock` long-poll).
 - [docs/CLI.md](docs/CLI.md): CLI.
 - [docs/SLACK.md](docs/SLACK.md): Slack surface.
+
+## Automation
+
+- [docs/event-router-design.md](docs/event-router-design.md): `wft-router` event-router daemon design (SSE → predicate → handler dispatch).
+- [docs/automation-recipes/](docs/automation-recipes/): Copy-paste automation recipes on the vendor-neutral handler contract.
+- [packages/wft-router/README.md](packages/wft-router/README.md): `wft-router` daemon reference (in-repo; not yet on npm).
 
 ## Other
 
