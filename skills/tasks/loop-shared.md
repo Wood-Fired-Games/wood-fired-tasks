@@ -157,6 +157,22 @@ Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator o
 
 ---
 
+## §L. Anti-fabrication / evidence-integrity (CANON)
+
+**Called from:** `loop.md` §Step 6 / §Step 7 + Important Rules, `loop-dag.md` §3d + Important Rules, and §B below. This is the single canonical statement of the rule; the callers state it tersely inline and point here.
+
+**Anti-fabrication clause (load-bearing).** Every evidence value — git SHAs, row counts, dollar figures, exit codes, verdicts, message counts — MUST be copied verbatim from a tool result that has ALREADY RETURNED in a prior turn. Never compose, predict, or round-trip an evidence value in the same turn as the call that produces it. If you have not yet seen the producing tool's returned output, you do not yet have the value — stop and wait for it. Concretely: the `commit_shas` / `file_changes` passed to the verifier, and any number cited in a close-out comment, come from a `git rev-parse HEAD` / `git diff --name-only` / query that returned in an earlier turn — never from one batched into the same turn as the write that quotes it.
+
+**One-state-mutation-per-turn.** During the verify/commit phases, perform at most ONE state-producing action per turn and let it return before citing its result. Never batch a `git commit` together with the `update_task` / `add_comment` that cites its SHA; never batch a query with the comment that cites its output. The sequence is strict: **run the producing call → read its returned output → THEN, in a later turn, write the evidence that quotes it.** This holds even when waves dispatch workers/verifiers in parallel — parallelism applies to *dispatch*, never to "issue a producing call and quote its not-yet-returned result in the same turn."
+
+**Self-grading is forbidden.** `verification_evidence.verifier_session_id` MUST be the id of a SEPARATELY DISPATCHED `tasks-verifier` — never the orchestrator's own session, and never a literal like `"orchestrator"`, `"self"`, or `"main-loop"`. The orchestrator constructs the verifier *inputs*; it never authors the *evidence*. Writing your own verdict is fabrication, not verification.
+
+**Honest scope.** A server-side guard (`WFT_STRICT_EVIDENCE`, default OFF) and a client-side SHA hook block the *structural* tells of fabrication — empty/self/placeholder verifier ids and non-existent git SHAs. Numeric truthfulness (a real-but-wrong row count, a misquoted exit code) is NOT machine-checkable and remains a discipline rule enforced by the rules above.
+
+_Motivating incident (2026-05-31, project 28 via `/tasks:loop-dag`): an orchestrator batched dependent calls in one message and pre-wrote their results — non-existent git SHAs, metrics it never observed, a wrong exit code, an invented row count — then self-graded with `verifier_session_id="orchestrator-…"` instead of dispatching a verifier. See `docs/RELIABILITY.md`._
+
+---
+
 ## §B. VerifierInputs envelope spec
 
 **Called from:** `loop.md` §7a (Build the `VerifierInputs` envelope), `loop-dag.md` §3d (Verify each worker via `tasks-verifier`) / §6b (VerifierInputs envelope summary).
@@ -180,6 +196,8 @@ const verifierInputs = {
 3. If neither exists, **skip the verifier dispatch entirely** and proceed straight to Step 8 with `verification_evidence: { verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` plus a comment noting "no acceptance criteria to grade against — verifier skipped". This is the documented escape hatch.
 
 **Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
+
+**Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
 
 **Scope-narrowed envelope for declared design-only / slice-of-epic tasks.** If §2a annotated this task with `scope: design-only` (or any other scope-narrowing label — `slice-of-epic`, etc.), the orchestrator MUST narrow `acceptance_criteria` in the envelope to the **in-scope AC bullets only** (the verbatim list recorded in §2a annotation field (b)). The out-of-scope / deferred bullets from §2a annotation field (c) MUST NOT appear in the envelope's `acceptance_criteria` field — the verifier never sees criteria it cannot honestly grade.
 

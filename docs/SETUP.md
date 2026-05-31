@@ -355,6 +355,23 @@ must opt in to LAN exposure by setting `HOST=0.0.0.0` (or a specific LAN IP).
 On boot the bound interface is logged at info level so the binding is
 visible to operators.
 
+#### Optional hardening flags
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `WFT_STRICT_EVIDENCE` | `false` (off) | When `true`, `update_task` rejects a `verification_evidence` payload that shows the structural tells of fabrication — an empty `verifier_session_id`, one equal to the task assignee or the calling identity, one matching a self-grading pattern (`^orchestrator`/`^self`/`^main-loop`), or placeholder/empty check evidence text. Recommended for any deployment that closes tasks via `/tasks:loop` or `/tasks:loop-dag`. See [`RELIABILITY.md`](RELIABILITY.md). |
+
+```bash
+# Opt in to server-side anti-fabrication validation (default off):
+export WFT_STRICT_EVIDENCE=true
+```
+
+This is one of three defense-in-depth layers; the deterministic SHA-existence
+check is a client-side hook (see [`hooks/README.md`](hooks/README.md)) because
+the server cannot reach an arbitrary client's git repository. Full rationale,
+the motivating incident, and an honest statement of what the guardrails do
+**not** guarantee are in [`RELIABILITY.md`](RELIABILITY.md).
+
 ### 3. Run Migrations
 
 ```bash

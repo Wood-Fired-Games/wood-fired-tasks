@@ -285,7 +285,15 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
           ? { ...sanitizedBody, assignee_user_id: resolvedAssigneeUserId }
           : sanitizedBody;
 
-      const task = fastify.taskService.updateTask(request.params.id, serviceInput);
+      // task #608 (PIECE A): thread the authenticated caller id so the
+      // service's strict-evidence validator (flag-gated, default OFF) can
+      // enforce generator/critic separation (verifier != caller).
+      const task = fastify.taskService.updateTask(
+        request.params.id,
+        serviceInput,
+        'user',
+        requireUser(request).id,
+      );
       return reply.send(task);
     }
   );

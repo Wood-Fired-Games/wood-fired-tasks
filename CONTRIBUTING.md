@@ -68,6 +68,7 @@ bug worth reporting.
 | CLI reference      | `docs/CLI.md`    |
 | MCP integration    | `docs/MCP.md`    |
 | Local setup        | `docs/SETUP.md`  |
+| Loop evidence reliability | `docs/RELIABILITY.md` |
 
 Read `docs/SETUP.md` for environment variables, database location, and how
 to run the API, CLI, and MCP server locally.

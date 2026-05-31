@@ -11,6 +11,7 @@ import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReport
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
+import { validateVerificationEvidence } from './evidence-validation.js';
 
 /**
  * Sanitized message surfaced to clients when the FTS5 search expression
@@ -206,7 +207,12 @@ export class TaskService {
   /**
    * Update task with status lifecycle validation
    */
-  updateTask(id: number, input: unknown, source: 'user' | 'workflow' = 'user'): Task & { tags: string[] } {
+  updateTask(
+    id: number,
+    input: unknown,
+    source: 'user' | 'workflow' = 'user',
+    callerId?: string | number | null,
+  ): Task & { tags: string[] } {
     // Validate input
     const result = UpdateTaskSchema.safeParse(input);
     if (!result.success) {
@@ -225,6 +231,44 @@ export class TaskService {
     const existing = this.taskRepo.findById(id);
     if (!existing) {
       throw new NotFoundError('Task', id);
+    }
+
+    // task #608 (PIECE A): server-side anti-fabrication validation of
+    // verification_evidence, gated behind WFT_STRICT_EVIDENCE (default OFF).
+    // Runs only when the flag is on AND the update supplies a non-null
+    // verification_evidence. The trailing `callerId` mirrors the
+    // additive-positional precedent set by claimTask's assigneeUserId — all
+    // existing callers (which omit it) are unaffected. On any violation we
+    // throw the SAME ValidationError the service uses for Zod failures.
+    //
+    // The gate reads `process.env.WFT_STRICT_EVIDENCE` directly (matching the
+    // env schema's `v === 'true'` transform) rather than the `config` Proxy:
+    // touching the Proxy eagerly runs `loadConfig()`, which validates the
+    // whole environment (including the required `API_KEYS`). Pure service-
+    // layer tests never set `API_KEYS`, so a Proxy access in this hot path
+    // would break the existing suite. A direct env read keeps the default-OFF
+    // path zero-cost and side-effect-free.
+    if (
+      process.env.WFT_STRICT_EVIDENCE === 'true' &&
+      result.data.verification_evidence !== undefined &&
+      result.data.verification_evidence !== null
+    ) {
+      // `assignee_user_id` is selected by `findById` (SELECT t.*) but is not
+      // declared on the base Task type, so read it through a narrow cast.
+      const existingAssigneeUserId = (
+        existing as { assignee_user_id?: number | null }
+      ).assignee_user_id;
+      const violations = validateVerificationEvidence(
+        result.data.verification_evidence,
+        {
+          taskAssignee: existing.assignee,
+          taskAssigneeUserId: existingAssigneeUserId ?? null,
+          callerId: callerId ?? null,
+        },
+      );
+      if (violations.length > 0) {
+        throw new ValidationError({ verification_evidence: violations });
+      }
     }
 
     // Validate status transition if status is being changed

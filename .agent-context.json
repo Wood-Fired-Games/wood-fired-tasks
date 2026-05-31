@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-31T14:51:48.222Z",
+    "generated_at": "2026-05-31T19:03:07.388Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -77,8 +77,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 192,
-      "sha256": "cffd8ba2b87c4b923daffcc8dc05f2fcf5a220afb663f7ff6052fbb06471744b",
+      "actual_lines": 194,
+      "sha256": "bc4576576a499e5e3d6462880b9f6becac5bf421c22f1ef69cf95e9bf38b7527",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -106,8 +106,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 6000,
-      "actual_lines": 165,
-      "sha256": "31da109a739d7c6b682e2d59fa10a7cec54c13e84c3181e01fc92804ee24caf0",
+      "actual_lines": 190,
+      "sha256": "809b70682a52dc40877a8a0702c12027338afecb1551c3a1b256eccc57932507",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1002,
-      "sha256": "a6f0550c54beaf1b5f5b6fb94512e2336e2b2337b066f33792ea2d53ffaa1e09"
+      "actual_lines": 1003,
+      "sha256": "871507144f6cd9f5f9d048df343d0eea060b4245a896b0d2a00baf70c05602da"
     },
     {
       "path": "docs/CLI.md",
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 936,
-      "sha256": "e660b7aceb0007f1418e172cd9e90ce963499e1b7e2cf3574b19e647379ef2f2"
+      "actual_lines": 953,
+      "sha256": "ef0bba20d2d96551b295279a7a81353297a8df086e494934bfdf792d92ed52ef"
     },
     {
       "path": "docs/SLACK.md",
@@ -235,6 +235,20 @@
       "actual_owner": "Repository maintainers"
     },
     {
+      "path": "docs/RELIABILITY.md",
+      "role": "deep-doc",
+      "purpose": "Loop evidence anti-fabrication guardrails (task #608): the motivating 2026-05-31 incident, the three defense-in-depth layers (WFT_STRICT_EVIDENCE server gate, client-side validate-sha hook, loop skill discipline), and an honest statement of what they do and do NOT guarantee.",
+      "when_to_read": "on-demand",
+      "line_budget": 200,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 4000,
+      "actual_lines": 93,
+      "sha256": "02cd20e911fa8fd192186c264e9e2dd9167812c6025ceb27fe974b98d5daae84",
+      "actual_owner": "Repository maintainers"
+    },
+    {
       "path": "docs/tasks-decompose-design.md",
       "role": "deep-doc",
       "purpose": "Wave 5 (#320) /tasks:decompose design spec: contract, 9-step methodology, four guardrails, DECOMPOSITION.md artifact schema, verification-fixture sketches, and cost budget. /tasks:decompose is OPERATIONAL — the runtime ships at skills/tasks/decompose.md; this doc is the design-of-record.",
@@ -301,8 +315,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1800,
-      "actual_lines": 49,
-      "sha256": "14784098ac2c94809e3576d237e11b370e86027d6814bca356e407f6d210a041",
+      "actual_lines": 51,
+      "sha256": "ed153903c9b946d33e87c77333ffc40703ffe28c3d5906ae31a30bdbca03f0d8",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -329,8 +343,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 12000,
-      "actual_lines": 413,
-      "sha256": "64159c34de269c93969dea1d323cfaf048bf1780852f85c2023a2f9372074eb3"
+      "actual_lines": 414,
+      "sha256": "44bc2d7e20bf88814dc597f5326a0097712dc71bce75694979e5b9accdc496cc"
     },
     {
       "path": "README.md",
@@ -343,8 +357,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
-      "actual_lines": 700,
-      "sha256": "a22244ae4499a911b08cff70d4f8eda23ebdaa236cf5ded1a75262bc7d75a029"
+      "actual_lines": 708,
+      "sha256": "3d15aff5a12b4e94d3b4db23b810b8a2eb788a84db80e5b54b3e82932644cd3c"
     },
     {
       "path": "SECURITY.md",
@@ -371,8 +385,8 @@
       "status": "present",
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
-      "actual_lines": 33,
-      "sha256": "3a4483e84eb0038e729a068f83ca4922a4a51c3fc7ab2888af6e9c4c4671da5e"
+      "actual_lines": 34,
+      "sha256": "a021c8db9a394da6cf42f2239ce6991333fdf42ba8ae1e2f1cdf0a13f001b6ba"
     },
     {
       "path": "CLAUDE.md",

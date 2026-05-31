@@ -1,0 +1,16 @@
+{
+  "//": "Minimal Claude Code settings.json snippet wiring docs/hooks/validate-sha.mjs as a PreToolUse hook for the wood-fired-tasks MCP add_comment + update_task tools. Merge this into your ~/.claude/settings.json or the project's .claude/settings.json. Adjust the command path to wherever you keep this repo / copied the script.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__wood-fired-tasks__(add_comment|update_task)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PROJECT_DIR}/docs/hooks/validate-sha.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}

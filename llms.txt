@@ -15,7 +15,7 @@
 - [docs/REPO_MAP.md](docs/REPO_MAP.md): Compact tree + per-directory ownership.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Data flow, mutation flows, auth model.
 - [docs/INTERFACES.md](docs/INTERFACES.md): REST routes / MCP tools / CLI commands (counts verified in CI).
-- [docs/NAVIGATION.md](docs/NAVIGATION.md): 18 change-type recipes.
+- [docs/NAVIGATION.md](docs/NAVIGATION.md): 19 change-type recipes.
 - [docs/WORKFLOWS.md](docs/WORKFLOWS.md): Build, test, lint, dev recipes.
 
 ## Surface reference
@@ -28,6 +28,7 @@
 ## Other
 
 - [docs/SETUP.md](docs/SETUP.md): Local setup.
+- [docs/RELIABILITY.md](docs/RELIABILITY.md): Loop evidence anti-fabrication guardrails (`WFT_STRICT_EVIDENCE`, client SHA hook, skill discipline) and their honest scope.
 - [docs/RELEASE.md](docs/RELEASE.md): Release process.
 - [CONTRIBUTING.md](CONTRIBUTING.md): Contribution rules (incl. agent context maintenance).
 - [SECURITY.md](SECURITY.md): Security policy.

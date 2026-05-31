@@ -52,6 +52,7 @@ npm run mcp:dev
 |----------|-------------|---------|
 | `DATABASE_PATH` | Path to SQLite database file (canonical name; matches `src/config/env.ts`). | `./data/tasks.db` |
 | `DB_PATH` | Deprecated alias for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs. | — |
+| `WFT_STRICT_EVIDENCE` | When `true`, `update_task` rejects a `verification_evidence` payload showing the structural tells of fabrication (self-graded/empty/placeholder verifier identity, placeholder check text). Default off. See [RELIABILITY.md](RELIABILITY.md). | `false` (off) |
 
 [NOTE] The MCP server creates its own database connection. It does NOT call the REST API.
 
