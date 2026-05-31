@@ -10,7 +10,8 @@
   },
   "files": [
     "dist/",
-    "README.md"
+    "README.md",
+    "triggers.example.yaml"
   ],
   "engines": {
     "node": ">=22"

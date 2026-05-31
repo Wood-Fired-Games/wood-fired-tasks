@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-30T01:57:48.456Z",
+    "generated_at": "2026-05-31T14:51:48.222Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -308,15 +308,15 @@
     {
       "path": "packages/wft-router/README.md",
       "role": "package-readme",
-      "purpose": "Sub-package README for the wft-router event-router binary scaffold. Points at docs/event-router-design.md as the design-of-record.",
+      "purpose": "Sub-package README for the wft-router event-router daemon — handlers, run flags, config (triggers.example.yaml), and pointers to recipes/adapters/deploy assets. Points at docs/event-router-design.md as the design-of-record.",
       "when_to_read": "on-demand",
-      "line_budget": 60,
+      "line_budget": 95,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
-      "approx_token_budget": 1200,
-      "actual_lines": 60,
-      "sha256": "34de45f02add25d0b7044371b6646e99f844639645fa5edb541e34c26fdaee42",
+      "approx_token_budget": 1900,
+      "actual_lines": 76,
+      "sha256": "d50d406ac0083290b6cf6dbff35488f25552f697caa0649c1900b00d6c8596d7",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -343,8 +343,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 16000,
-      "actual_lines": 685,
-      "sha256": "b6ef1e4405fa3c0bffc984274ea4a1315511d43b58653afe4126c055bec12725"
+      "actual_lines": 700,
+      "sha256": "a22244ae4499a911b08cff70d4f8eda23ebdaa236cf5ded1a75262bc7d75a029"
     },
     {
       "path": "SECURITY.md",

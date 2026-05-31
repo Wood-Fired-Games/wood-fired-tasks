@@ -44,6 +44,20 @@ unless `--config <path>` is given.
 
 Reserved by the design spec, not yet implemented: `--dry-run`, `--once`, `--rebuild-idempotency`.
 
+## Configure
+
+A ready-to-edit starter config ships with the package as
+[`triggers.example.yaml`](triggers.example.yaml) — copy it, edit the project
+slugs / URL / token-env names, and check it before going live:
+
+```
+wft-router --validate triggers.example.yaml
+```
+
+- **Recipes** (full walkthroughs): [docs/automation-recipes/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/docs/automation-recipes)
+- **Reference adapters** for `agent_session_dispatch`: [examples/adapters/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/examples/adapters)
+- **Schema, predicate & templating rules**: [docs/event-router-design.md](https://github.com/Wood-Fired-Games/wood-fired-tasks/blob/main/docs/event-router-design.md)
+
 ## Build & deploy
 
 ```
@@ -52,7 +66,9 @@ node dist/bin/wft-router.js --validate path/to/triggers.yaml
 ```
 
 Service manifests (systemd / launchd / Windows) are in
-[`host-manifests/`](host-manifests/); a `Containerfile` is provided for OCI builds.
+[`host-manifests/`](host-manifests/); a `Containerfile` is provided for OCI
+builds, and operator deploy assets (container build command, logrotate example)
+are in [examples/deploy/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/examples/deploy).
 
 ## Vendor-neutrality
 

@@ -58,6 +58,21 @@ For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 
 For self-hosted production deploys (including the fork-and-deploy workflow for OSS operators): provision a host once with `deploy/install.sh`, then ship every subsequent release in place with `deploy/upgrade.sh` (atomic backup, migrate, restart, `/health` probe, manual rollback recipe on failure). The full walkthrough — first-time install, in-place upgrades, deploying your fork, manual rollback, and the migration safety contract — lives at [Self-hosting and upgrades](docs/SETUP.md#self-hosting-and-upgrades). When a deploy or a reboot goes sideways, the [Troubleshooting & Recovery runbook](docs/TROUBLESHOOTING.md) covers boot failures (`exit 78`), wrong/stale-database symptoms, and safe backup/restore.
 
+## Automation (event-driven)
+
+Beyond the REST/CLI/MCP surfaces, an optional **event-router daemon** —
+[`wft-router`](packages/wft-router/README.md) — subscribes to the API's SSE
+event stream (`GET /api/v1/events`) and dispatches matched task events to
+vendor-neutral handlers (`create_task_in_project`, `webhook_post`, `shell_exec`,
+`agent_session_dispatch`) per a declarative `triggers.yaml`. It ships as a
+separately-publishable package (`@wood-fired-games/wft-router`) and adds nothing
+to the core server unless you run it. See the
+[design doc](docs/event-router-design.md), the
+[automation recipes](docs/automation-recipes/), and the
+[reference adapters](examples/adapters/). For agents that just need to block on
+a single task unblock, the MCP server also exposes a `wait_for_unblock` tool
+(see [docs/MCP.md](docs/MCP.md)).
+
 ## Security Model
 
 **Read this before deploying.** Wood Fired Tasks is built for trusted multi-agent coordination. As of **v1.6** the REST API authenticates every `/api/v1` request through a three-strategy chain (`src/api/plugins/auth/index.ts`), tried in order — the first strategy that produces a valid user wins, and that user's id is stamped onto every write (`created_by_user_id`, `assignee_user_id`, …) and the per-request audit log (`user_id`, `token_id`, `auth_method`):

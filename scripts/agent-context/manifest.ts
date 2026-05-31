@@ -368,9 +368,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     path: 'packages/wft-router/README.md',
     role: 'package-readme',
     purpose:
-      'Sub-package README for the wft-router event-router binary scaffold. Points at docs/event-router-design.md as the design-of-record.',
+      'Sub-package README for the wft-router event-router daemon — handlers, run flags, config (triggers.example.yaml), and pointers to recipes/adapters/deploy assets. Points at docs/event-router-design.md as the design-of-record.',
     when_to_read: 'on-demand',
-    line_budget: 60,
+    line_budget: 95,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
