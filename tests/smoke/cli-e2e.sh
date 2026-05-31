@@ -55,18 +55,20 @@ bin_name="$(node -e "
   if (typeof bin === 'string') {
     process.stdout.write(pkg.name);
   } else {
+    // Package ships multiple bins (tasks + wft-router); this check targets the
+    // `tasks` CLI. Select it explicitly rather than assuming a single entry.
     const names = Object.keys(bin || {});
-    if (names.length !== 1) {
-      console.error('expected exactly one bin entry, got: ' + JSON.stringify(names));
+    if (!names.includes('tasks')) {
+      console.error('expected a \"tasks\" bin entry, got: ' + JSON.stringify(names));
       process.exit(1);
     }
-    process.stdout.write(names[0]);
+    process.stdout.write('tasks');
   }
 ")"
 bin_target="$(node -e "
   const pkg = require('./package.json');
   const bin = pkg.bin;
-  const p = (typeof bin === 'string') ? bin : Object.values(bin)[0];
+  const p = (typeof bin === 'string') ? bin : (bin.tasks || Object.values(bin)[0]);
   process.stdout.write(p);
 ")"
 
