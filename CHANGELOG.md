@@ -11,6 +11,10 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v1.14] - 2026-05-31
+
+Ships loop-evidence anti-fabrication guardrails for `/tasks:loop` and `/tasks:loop-dag`. (First npm release since 1.12.0 — the 1.13.0 changeset was tagged `v1.13` but never published to npm, so this release also delivers everything under `[v1.13]` below.)
+
 ### Added
 - **Loop evidence anti-fabrication guardrails** (#608): defense-in-depth against `/tasks:loop[-dag]` agents closing tasks on fabricated evidence. (1) Opt-in server gate `WFT_STRICT_EVIDENCE` (**default off**) — `update_task` rejects `verification_evidence` whose `verifier_session_id` is empty, equals the task assignee or the calling identity, or matches a self-grading pattern (`^orchestrator`/`^self`/`^main-loop`), and rejects placeholder/empty check evidence text (`src/services/evidence-validation.ts`). (2) Optional client-side `PreToolUse` reference hook `docs/hooks/validate-sha.mjs` that blocks evidence citing git SHAs unknown to the local repo. (3) Anti-fabrication / one-state-mutation-per-turn / separate-verifier discipline in the loop skills. Full rationale and honest scope in [`docs/RELIABILITY.md`](docs/RELIABILITY.md).
 
@@ -290,7 +294,10 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.11...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.14...HEAD
+[v1.14]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.13...v1.14
+[v1.13]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.12...v1.13
+[v1.12]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.11...v1.12
 [v1.11]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.10...v1.11
 [v1.10]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.9...v1.10
 [v1.9]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.8...v1.9
