@@ -142,6 +142,30 @@ surface") into a backlog an executor can drain — rather than hand-authoring
   halts on ≥ 30% interdependence. Use `--dry-run` to preview the candidate
   set without writing to the bugs DB.
 
+### 19. Harden loop evidence against fabrication
+
+If you want to stop `/tasks:loop` / `/tasks:loop-dag` agents from closing tasks
+on fabricated evidence (nonexistent git SHAs, self-grading, placeholder
+verifier text), there are three defense-in-depth layers — read
+[`docs/RELIABILITY.md`](RELIABILITY.md) first for the full picture and an honest
+statement of what each layer does **not** guarantee.
+
+- **Server-side gate (Piece A):** `src/services/evidence-validation.ts` (pure
+  fn), wired into `update_task` via `src/services/task.service.ts`, gated behind
+  the `WFT_STRICT_EVIDENCE` env flag (**default off** — opt in per
+  [`docs/SETUP.md`](SETUP.md) → *Optional hardening flags*).
+- **Client-side hook (Piece B):** [`docs/hooks/validate-sha.mjs`](hooks/validate-sha.mjs)
+  + [`docs/hooks/README.md`](hooks/README.md) — an optional `PreToolUse` guard
+  that blocks evidence citing SHAs unknown to the local repo. Client-side by
+  necessity: the server cannot reach an arbitrary client's checkout.
+- **Skill discipline (Piece C):** the anti-fabrication clause,
+  one-state-mutation-per-turn rule, and separate-verifier requirement in
+  [`skills/tasks/loop-shared.md`](../skills/tasks/loop-shared.md) §L, referenced
+  from [`loop.md`](../skills/tasks/loop.md) / [`loop-dag.md`](../skills/tasks/loop-dag.md).
+- **Tests:** `src/services/__tests__/strict-evidence-validation.test.ts`,
+  `src/__tests__/validate-sha-hook.test.ts`.
+- **Docs:** `docs/RELIABILITY.md`, `docs/hooks/README.md`, `docs/SETUP.md`.
+
 ## Cross-cutting reminders
 
 - Schemas in `src/schemas/` are imported by **every** surface — a one-line change ripples to REST, MCP, CLI types simultaneously. Search consumers before editing.
@@ -163,3 +187,4 @@ surface") into a backlog an executor can drain — rather than hand-authoring
 | Architecture | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) |
 | Surface inventory | [`docs/INTERFACES.md`](INTERFACES.md) |
 | Troubleshooting / recovery | [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
+| Loop evidence reliability / anti-fabrication | [`docs/RELIABILITY.md`](RELIABILITY.md) |

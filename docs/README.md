@@ -40,6 +40,8 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 | File | Purpose |
 |------|---------|
 | [`CODE_QUALITY_ROADMAP.md`](CODE_QUALITY_ROADMAP.md) | Code quality baseline and prioritized uplift roadmap. |
+| [`RELIABILITY.md`](RELIABILITY.md) | Loop evidence anti-fabrication guardrails: the `WFT_STRICT_EVIDENCE` server flag, the client-side SHA hook, the skill discipline rules, and an honest statement of their scope. |
+| [`hooks/README.md`](hooks/README.md) | Optional client-side `PreToolUse` reference hook (`validate-sha.mjs`) that blocks evidence containing git SHAs unknown to the local repo. |
 
 ## See also (repo root)
 

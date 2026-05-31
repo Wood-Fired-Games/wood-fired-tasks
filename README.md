@@ -584,6 +584,7 @@ Cascades are depth-limited (max 5 levels) and wrapped in transactions for atomic
 | RATE_LIMIT_MAX / RATE_LIMIT_TIME_WINDOW | Global rate limiter knobs | 1000 / "1 minute" |
 | SSE_MAX_CONNECTIONS_PER_KEY / SSE_MAX_CONNECTIONS_PER_IP / SSE_MAX_CONNECTIONS | SSE connection caps | 4 / 8 / 200 |
 | ENABLE_SWAGGER_IN_PRODUCTION | Opt-in to expose Swagger UI when `NODE_ENV=production` | false |
+| WFT_STRICT_EVIDENCE | Opt-in anti-fabrication gate: when `true`, `update_task` rejects `verification_evidence` with a self-graded/empty/placeholder verifier identity or placeholder check text. Recommended for `/tasks:loop[-dag]` deployments — see [docs/RELIABILITY.md](docs/RELIABILITY.md). | false |
 
 [NOTE] The full env-var reference (including server timeouts and installer
 variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#environment-variables).
@@ -685,6 +686,13 @@ tasks it creates, refuses blast-radius goals, and supports `--dry-run` to
 preview the breakdown without touching the database. See
 [skills/tasks/decompose.md](skills/tasks/decompose.md) and its design at
 [docs/tasks-decompose-design.md](docs/tasks-decompose-design.md).
+
+Because the loops close tasks on the strength of agent-written evidence,
+they ship with anti-fabrication guardrails: an opt-in server gate
+(`WFT_STRICT_EVIDENCE`), an optional client-side SHA hook, and skill-level
+discipline. See [docs/RELIABILITY.md](docs/RELIABILITY.md) for the full
+picture and an honest statement of what the guardrails do and do not
+guarantee.
 
 ## Release Verification
 

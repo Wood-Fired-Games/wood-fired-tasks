@@ -308,6 +308,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'docs/RELIABILITY.md',
+    role: 'deep-doc',
+    purpose:
+      'Loop evidence anti-fabrication guardrails (task #608): the motivating 2026-05-31 incident, the three defense-in-depth layers (WFT_STRICT_EVIDENCE server gate, client-side validate-sha hook, loop skill discipline), and an honest statement of what they do and do NOT guarantee.',
+    when_to_read: 'on-demand',
+    line_budget: 200,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/tasks-decompose-design.md',
     role: 'deep-doc',
     purpose:
