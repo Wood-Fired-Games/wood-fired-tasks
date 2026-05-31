@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-05-31T19:00:47.053Z",
+    "generated_at": "2026-05-31T19:03:07.388Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -77,8 +77,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 192,
-      "sha256": "cffd8ba2b87c4b923daffcc8dc05f2fcf5a220afb663f7ff6052fbb06471744b",
+      "actual_lines": 194,
+      "sha256": "bc4576576a499e5e3d6462880b9f6becac5bf421c22f1ef69cf95e9bf38b7527",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -343,8 +343,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 12000,
-      "actual_lines": 413,
-      "sha256": "64159c34de269c93969dea1d323cfaf048bf1780852f85c2023a2f9372074eb3"
+      "actual_lines": 414,
+      "sha256": "44bc2d7e20bf88814dc597f5326a0097712dc71bce75694979e5b9accdc496cc"
     },
     {
       "path": "README.md",
@@ -385,8 +385,8 @@
       "status": "present",
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
-      "actual_lines": 33,
-      "sha256": "3a4483e84eb0038e729a068f83ca4922a4a51c3fc7ab2888af6e9c4c4671da5e"
+      "actual_lines": 34,
+      "sha256": "a021c8db9a394da6cf42f2239ce6991333fdf42ba8ae1e2f1cdf0a13f001b6ba"
     },
     {
       "path": "CLAUDE.md",

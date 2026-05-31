@@ -153,6 +153,7 @@ group (bot + app + signing) or not at all.
 | `WFT_SERVICE_USER`         | optional  | Installer service user. See `deploy/README.md`.                    |
 | `WFT_API_URL`              | REQUIRED (remote MCP) | URL of the running API.                                |
 | `WFT_API_KEY`              | REQUIRED (remote MCP) | Sent as `X-API-Key`.                                   |
+| `WFT_STRICT_EVIDENCE`      | optional  | `true` opts into the anti-fabrication evidence gate (default off). Recommended for `/tasks:loop[-dag]` hosts. See [docs/RELIABILITY.md](RELIABILITY.md). |
 
 ## Network / secrets / running-API / writable-DB / approval flags
 
@@ -190,3 +191,4 @@ group (bot + app + signing) or not at all.
 - CLI reference: [docs/CLI.md](CLI.md)
 - REST API reference: [docs/API.md](API.md)
 - MCP tool reference: [docs/MCP.md](MCP.md)
+- Loop evidence anti-fabrication guardrails: [docs/RELIABILITY.md](RELIABILITY.md)
