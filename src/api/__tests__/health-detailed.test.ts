@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 import type { App } from '../../index.js';
+import { VERSION } from '../../utils/version.js';
 
 /**
  * task #185: /health/detailed exposes the full diagnostic payload (component
@@ -61,7 +62,7 @@ describe('Authenticated /health/detailed', () => {
     // Same shape as the pre-task-#185 /health route
     expect(body.status).toBe('healthy');
     expect(body.timestamp).toBeDefined();
-    expect(body.version).toBe('1.12.0');
+    expect(body.version).toBe(VERSION);
 
     // Component checks
     expect(body.checks).toBeDefined();

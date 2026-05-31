@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 import type { App } from '../../index.js';
+import { VERSION } from '../../utils/version.js';
 
 // Set API keys to ensure auth is configured. Note that /health bypasses
 // auth — these tests confirm task #185's minimal default response shape.
@@ -81,7 +82,7 @@ describe('Public /health (minimal)', () => {
     const body = JSON.parse(response.payload);
     expect(body.version).toBeDefined();
     expect(typeof body.version).toBe('string');
-    expect(body.version).toBe('1.12.0');
+    expect(body.version).toBe(VERSION);
   });
 
   /**

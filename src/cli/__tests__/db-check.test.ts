@@ -92,7 +92,13 @@ describe('db-check command', () => {
     const db = new Database(dbPath);
     const stmt = db.prepare('INSERT INTO thing (value) VALUES (?)');
     const big = 'x'.repeat(2048);
-    for (let i = 0; i < 600; i++) stmt.run(big);
+    // Single transaction: ~600 autocommit fsyncs would intermittently blow the
+    // 5s timeout under parallel-suite I/O contention. One commit keeps the
+    // >=1MB intent while staying deterministic.
+    const insertMany = db.transaction((n: number) => {
+      for (let i = 0; i < n; i++) stmt.run(big);
+    });
+    insertMany(600);
     db.close();
 
     await program.parseAsync(['node', 'tasks', 'db-check']);
