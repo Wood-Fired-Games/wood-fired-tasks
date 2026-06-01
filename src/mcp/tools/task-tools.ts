@@ -23,6 +23,7 @@ import {
   validateScoreSubmission,
   type ScoreSubmission,
 } from '../../services/wsjf.service.js';
+import { WSJF_HISTORY_TRIGGERS } from '../../repositories/wsjf-history.repository.js';
 import { ValidationError } from '../../services/errors.js';
 import type { WsjfWriteDTO } from '../../types/task.js';
 import type { WsjfSource } from '../../types/wsjf.js';
@@ -44,6 +45,10 @@ import type { WsjfSource } from '../../types/wsjf.js';
  * @param submission the agent's `{classification, features}` payload.
  * @param charter    the parent project's value charter (or null).
  * @param sourceText the task text the evidence spans must occur verbatim in.
+ * @param trigger    WSJF (#634): optional GENERIC history-trigger hint to stamp
+ *   on the audit row (e.g. `'single_create'` for create_task, `'decompose'`
+ *   for the decompose batch path). Omitted → the service default applies
+ *   (`'create'` on create, `'update'` on update).
  * @returns a {@link WsjfWriteDTO} (auto path: server-computed components +
  *   the classification/features/evidence + an all-`auto` source map).
  * @throws ValidationError when the gate rejects the submission.
@@ -52,6 +57,7 @@ function submissionToWsjfWrite(
   submission: ScoreSubmission,
   charter: import('../../types/task.js').ValueCharter | null,
   sourceText: string,
+  trigger?: import('../../repositories/wsjf-history.repository.js').WsjfHistoryTrigger,
 ): WsjfWriteDTO {
   const result = validateScoreSubmission(submission, { charter, sourceText });
   if (!result.ok || !result.components) {
@@ -74,6 +80,7 @@ function submissionToWsjfWrite(
     features: submission.features,
     evidence: submission.classification.evidence,
     source: autoSource,
+    ...(trigger ? { trigger } : {}),
   };
 }
 
@@ -150,7 +157,8 @@ export function registerTaskTools(
         'the deterministic validation gate (verbatim-evidence + job-size band ' +
         '+ contradiction checks) and a failure is rejected with a structured ' +
         'per-violation error — the server recomputes the score, never trusting ' +
-        'a client number.',
+        'a client number. Optional `wsjf_trigger` overrides the audit history ' +
+        "trigger (default `'single_create'`; decompose passes `'decompose'`).",
       // WR-04: CreateTaskClientSchema omits server-derived FKs so a client
       // attempting to set created_by_user_id / assignee_user_id sees a
       // clear Zod error instead of getting the values silently stripped.
@@ -159,6 +167,11 @@ export function registerTaskTools(
       // `wsjf_submission` is the classified/auto path routed through the gate.
       inputSchema: CreateTaskClientSchema.extend({
         wsjf_submission: ScoreSubmissionSchema.optional(),
+        // WSJF 2.2 (#633): the GENERIC history-trigger to stamp on the audit
+        // row for a classified create. Defaults to `'single_create'` (the
+        // single-create path, #634) when unset; the decompose batch path
+        // (skills/tasks/decompose.md Step 8) passes `'decompose'`.
+        wsjf_trigger: z.enum(WSJF_HISTORY_TRIGGERS).optional(),
       }),
     },
     async (args) => {
@@ -176,6 +189,7 @@ export function registerTaskTools(
           created_by_user_id: _spoofCreatedBy,
           assignee_user_id: _spoofAssignee,
           wsjf_submission: wsjfSubmission,
+          wsjf_trigger: wsjfTrigger,
           ...sanitizedArgs
         } = args as Record<string, unknown>;
         void _spoofCreatedBy;
@@ -196,10 +210,19 @@ export function registerTaskTools(
           ]
             .filter((s): s is string => typeof s === 'string')
             .join('\n');
+          // WSJF (#634): a classified single create stamps the history row
+          // with the generic `'single_create'` trigger (vs the bare-create
+          // default). WSJF 2.2 (#633): the trigger is now INPUT-DRIVEN —
+          // decompose's batch materialize (skills/tasks/decompose.md Step 8)
+          // passes `wsjf_trigger='decompose'`; absent the input the default
+          // remains `'single_create'`, preserving #634's behavior + test.
           wsjfWrite = submissionToWsjfWrite(
             wsjfSubmission as ScoreSubmission,
             project.value_charter,
             sourceText,
+            (wsjfTrigger as
+              | import('../../repositories/wsjf-history.repository.js').WsjfHistoryTrigger
+              | undefined) ?? 'single_create',
           );
         }
         const task = taskService.createTask({

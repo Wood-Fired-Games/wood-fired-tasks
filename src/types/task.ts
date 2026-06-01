@@ -5,6 +5,10 @@ import type {
   WsjfClassification,
   WsjfFeatures,
 } from './wsjf.js';
+// Type-only import (erased at compile time — no runtime module cycle): the
+// `WsjfHistoryTrigger` union is owned by the append-only history repository,
+// which is the single source of truth for the closed trigger set.
+import type { WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
 
 // Task status and priority enums
 export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged'] as const;
@@ -242,6 +246,18 @@ export interface WsjfWriteDTO {
    * row's `trigger`.
    */
   manual?: boolean;
+  /**
+   * WSJF (#634): optional GENERIC history-trigger hint for the auto/classified
+   * write path. When set on a create that carries a score (and is NOT a manual
+   * override) it overrides the default `'create'` trigger stamped on the
+   * `wsjf_score_history` row — e.g. the `create_task` MCP tool passes
+   * `'single_create'`, and `decompose` (#633) passes `'decompose'`. Ignored on
+   * the manual path (`manual === true` always stamps `'manual'`). When unset the
+   * create path keeps `'create'` and the update path keeps `'update'`. Kept as
+   * the full {@link WsjfHistoryTrigger} union so new callers need no further
+   * service-layer change.
+   */
+  trigger?: WsjfHistoryTrigger;
 }
 
 export interface CreateTaskDTO {

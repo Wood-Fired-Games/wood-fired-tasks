@@ -250,8 +250,12 @@ export class TaskService {
         throw new ValidationError({ wsjf: manualCheck.errors });
       }
     }
+    // WSJF (#634): trigger precedence — a manual override ALWAYS stamps
+    // 'manual'; otherwise an explicit generic `wsjf.trigger` hint
+    // (e.g. 'single_create' from create_task, 'decompose' from #633) wins;
+    // absent that, the auto create path defaults to 'create'.
     const createTrigger: WsjfHistoryTrigger =
-      wsjf?.manual === true ? 'manual' : 'create';
+      wsjf?.manual === true ? 'manual' : (wsjf?.trigger ?? 'create');
     let task: Task & { tags: string[] };
     if (wsjf && this.wsjfAuditEnabled()) {
       task = this.db!.transaction(() => {

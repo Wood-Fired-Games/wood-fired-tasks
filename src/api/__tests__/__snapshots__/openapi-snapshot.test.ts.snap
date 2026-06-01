@@ -2083,6 +2083,18 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           },
                         ],
                       },
+                      "trigger": {
+                        "enum": [
+                          "create",
+                          "update",
+                          "decompose",
+                          "single_create",
+                          "rescore",
+                          "manual",
+                          "propagation",
+                        ],
+                        "type": "string",
+                      },
                       "value": {
                         "anyOf": [
                           {
@@ -3362,6 +3374,18 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                             "type": "number",
                           },
                         ],
+                      },
+                      "trigger": {
+                        "enum": [
+                          "create",
+                          "update",
+                          "decompose",
+                          "single_create",
+                          "rescore",
+                          "manual",
+                          "propagation",
+                        ],
+                        "type": "string",
                       },
                       "value": {
                         "anyOf": [

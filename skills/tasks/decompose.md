@@ -251,6 +251,51 @@ Step 4 once on the splits** to fold the new edges into the edge set.
 candidates in wood-fired-tasks via `wood-fired-tasks:create_task`, then add
 the dependency edges via `wood-fired-tasks:add_dependency`.
 
+### Step 8a — Column-anchored batch WSJF scoring (BEFORE create_task)
+
+Before you materialize anything, score the **whole surviving candidate batch
+at once, column-anchored** against the parent project's value charter (fetch
+it via `get_project(project_id)` — the `value_charter`, or `null` when the
+project carries none). Follow the classification contract in
+[`wsjf-rubric.md`](./wsjf-rubric.md): the agent emits **only classifications
+over the fixed enums + verbatim evidence spans, never a final number** — the
+server recomputes the four Fibonacci components deterministically.
+
+**Why column-anchored, not per-task.** Score the batch **relative to itself**:
+look across ALL candidates one Cost-of-Delay column at a time (Business Value,
+Time Criticality, Risk/Opportunity) and anchor the column so the
+lowest-deserving candidate in that column is classified down to the `1` tier,
+with the rest spread relative to it. A batch where you score each task in
+isolation collapses to near-identical mid-band numbers and destroys the
+relative ordering the whole method depends on.
+
+**Submit per candidate, in the same `create_task` call.** For each surviving
+candidate, pass `wsjf_submission = { classification, features }` to
+`create_task` together with `wsjf_trigger='decompose'` (so the append-only
+`wsjf_score_history` row is stamped `trigger='decompose'`, distinguishing a
+decompose-batch score from a single-create or a manual override). The
+`classification` carries `themeName` (a charter `value_themes` name, or `null`
+only when the charter is `null`), the four enum classifications, `jobSizeTier`,
+and one **verbatim** evidence span per Cost-of-Delay + Job-Size column drawn
+from that candidate's own title / description / acceptance_criteria. `features`
+are the deterministic, no-LLM signals (deadline, transitive-dependent count
+from the Step-4 edge set, files-touched when linkable, charter version).
+
+**Rely on the gate's BATCH invariant to reject degenerate batches.** The
+server's `validateScoreSubmission` BATCH path enforces, across the batch, that
+**every Cost-of-Delay column has a `1` anchor AND each column's variance ≥ the
+variance floor**. If your batch is degenerate (no `1` anchor in some column, or
+all-similar scores with sub-floor variance), the gate **rejects** the
+submission with a structured per-violation error. On rejection, **re-prompt
+yourself**: re-anchor the offending column(s) — push the lowest-deserving
+candidate down to the `1` tier and widen the spread — then resubmit. Bounded
+re-prompt: at most 2 re-score passes; if still degenerate after the second,
+fall the batch back to unscored `create_task` (priority-only) and note it in
+the artifact body §5. A bad evidence span (not a verbatim substring) is
+rejected the same way and is fixed by quoting the candidate text exactly.
+
+### Step 8b — Create + edge
+
 **Idempotent on `decomposition_id` (tag-carried).** `create_task` has no
 `decomposition_id` field, so the id rides on a **tag**: stamp every created
 task with `decomp-<decomposition_id>` (and echo the id in the description).
@@ -258,7 +303,9 @@ Before creating, call
 `list_tasks(project_id, tags=["decomp-<decomposition_id>"])` and **skip any
 draft whose title already exists** under that tag — re-running the same goal
 + project + `decomposition_id` MUST NOT duplicate tasks. Record the
-`(draft_id → task_id)` mapping for the artifact body §5. Materialization
+`(draft_id → task_id)` mapping for the artifact body §5. Each materialized
+task carries its server-computed WSJF components + evidence (from Step 8a) and
+a `wsjf_score_history` row with `trigger='decompose'`. Materialization
 NEVER transitions a task's status, claims it, or comments on it
 (Guardrail 1) — it only creates and edges.
 
@@ -353,6 +400,7 @@ simultaneously updating `docs/tasks-decompose-design.md` §5.
 
 - Design spec (source of truth): [`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md)
 - Schema (zod): [`src/lib/decompose/schema.ts`](../../src/lib/decompose/schema.ts)
+- WSJF classification contract (Step 8a scoring): [`skills/tasks/wsjf-rubric.md`](./wsjf-rubric.md)
 - Schema tests: [`src/lib/decompose/__tests__/schema.test.ts`](../../src/lib/decompose/__tests__/schema.test.ts)
 - Design-doc / skill tests: [`src/api/routes/tasks/__tests__/skill-decompose-design.test.ts`](../../src/api/routes/tasks/__tests__/skill-decompose-design.test.ts)
 - Companion executor (FLAT advisory): [`skills/tasks/loop.md`](./loop.md)

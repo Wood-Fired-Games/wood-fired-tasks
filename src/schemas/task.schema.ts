@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../types/task.js';
+import { WSJF_HISTORY_TRIGGERS } from '../repositories/wsjf-history.repository.js';
 import {
   FibSchema,
   WsjfEvidenceSchema,
@@ -38,6 +39,11 @@ export const WsjfWriteSchema = z
     // components stay REQUIRED here, so all-four-or-none still holds; a manual
     // caller supplies the per-component `locked` / `source` maps alongside.
     manual: z.boolean().optional(),
+    // WSJF (#634): GENERIC history-trigger hint for the auto/classified path.
+    // Overrides the default `'create'`/`'update'` trigger stamped on the
+    // history row (e.g. `create_task` passes `'single_create'`, decompose
+    // passes `'decompose'`). Ignored when `manual === true` (always `'manual'`).
+    trigger: z.enum(WSJF_HISTORY_TRIGGERS).optional(),
   })
   .strict();
 

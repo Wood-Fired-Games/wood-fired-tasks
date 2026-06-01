@@ -46,14 +46,17 @@ import { AppendOnlyViolationError } from './errors.js';
  * task #643 uses `manual` via the shared {@link IWsjfHistoryRepository.append}
  * hook.
  */
-export type WsjfHistoryTrigger =
-  | 'create'
-  | 'update'
-  | 'decompose'
-  | 'single_create'
-  | 'rescore'
-  | 'manual'
-  | 'propagation';
+export const WSJF_HISTORY_TRIGGERS = [
+  'create',
+  'update',
+  'decompose',
+  'single_create',
+  'rescore',
+  'manual',
+  'propagation',
+] as const;
+
+export type WsjfHistoryTrigger = (typeof WSJF_HISTORY_TRIGGERS)[number];
 
 /**
  * One append-only history write. Components + score are the server-computed
