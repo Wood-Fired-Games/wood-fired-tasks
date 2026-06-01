@@ -42,15 +42,22 @@ This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fir
    the task text or charter. This step **NEVER blocks task creation** (see
    Fallback below).
 
-   1. **Fetch the parent charter.** Call `wood-fired-tasks:get_project` for the
-      selected `project_id` and read `value_charter`. The charter's value themes
-      (each with a Fibonacci weight) are the yardstick for User Business Value.
+   1. **Fetch the parent charter (live).** Call `wood-fired-tasks:get_project`
+      for the selected `project_id` and read `value_charter`. The charter's
+      `value_themes` (each a `{name, weight}` with a Fibonacci weight) are the
+      **live enum** that `themeName` is sourced from and the yardstick for User
+      Business Value. Use the values as they currently are in the project — do
+      not cache or invent themes.
 
    2. **Classify against charter themes.** Per the rubric, emit a
       `WsjfClassification` for the task:
-      - `themeName`: the exact name of the charter value theme this task serves
-        (verbatim match — do not invent a theme), or `null` if there is no
-        charter (see Empty-charter fallback).
+      - `themeName`: the exact `name` of the live charter `value_themes` entry
+        this task serves (verbatim match — do not invent a theme), or `null` if
+        there is no charter (see Empty-charter fallback). User Business Value is
+        then **charter theme weight × alignment**: the server resolves that
+        theme's `weight` from the live charter and computes UBV via
+        `ubvFromThemeAlignment(theme.weight, alignment)` — you never emit the
+        weight or the resulting number, only the `themeName` + `alignment`.
       - `alignment`: one of `none | weak | direct | core`.
       - `severity`: one of `none | tech_debt | security | data_loss | compliance`.
       - `decay`: `null` when the task text carries a real deadline date (the
@@ -72,14 +79,17 @@ This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fir
       tasks and the charter**, not an absolute scale.
 
    3. **Empty-charter fallback (record it in evidence).** When the project has
-      **no** charter (`value_charter` null/empty), set `themeName: null` and
-      fall back to **signal-based classification**: derive `alignment` /
-      `severity` / `decay` from the task text signals alone. You MUST RECORD the
-      fallback in the evidence spans — quote the task-text signal you classified
-      from and state it stood in for an absent charter theme (e.g. an evidence
-      span that names the in-text signal rather than a charter theme). The
-      server still recomputes; the recorded fallback makes the score auditable
-      as signal-derived rather than charter-derived.
+      **no** charter (`value_charter` null/empty) there are no `value_themes` to
+      source `themeName` from, so set `themeName: null` and take the
+      **signal-based path**: derive `alignment` / `severity` / `decay` from the
+      task text signals alone. With no theme there is no weight, so UBV degrades
+      to the alignment-only floor (`ubvFromThemeAlignment` with weight `1`)
+      instead of charter theme weight × alignment. You MUST RECORD the fallback
+      in the evidence spans — quote the task-text signal you classified from and
+      state it stood in for an absent charter theme (e.g. an evidence span that
+      names the in-text signal rather than a charter theme). The server still
+      recomputes; the recorded fallback makes the score auditable as
+      signal-derived rather than charter-derived.
 
    4. **Submit, with bounded retry then priority fallback (NEVER block).** Pass
       the classification as `wsjf_submission` on the `create_task` call in Step 4.

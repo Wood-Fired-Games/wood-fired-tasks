@@ -127,8 +127,14 @@ but you never emit the right-hand number yourself.
 
 ### User Business Value (UBV) — `ubvFromThemeAlignment(weight, alignment)`
 
-`weight` is the matched charter theme's Fibonacci weight. Alignment steps the
-weight down:
+UBV is **charter theme weight × alignment**. `weight` is NOT something you emit:
+it is the Fibonacci weight of the **live charter theme** your `themeName` names.
+`themeName` is therefore a **closed enum sourced live from the project charter's
+`value_themes`** — its only legal values are the exact `name` strings of the
+themes in the charter you were given (or `null`, see below). You match a task to
+a theme; the server looks that theme up in the live charter, reads its `weight`,
+and feeds `ubvFromThemeAlignment(theme.weight, alignment)`. Alignment steps the
+matched weight down:
 
 | alignment | resulting tier            |
 |-----------|---------------------------|
@@ -141,8 +147,21 @@ One-step-down ladder: `13→8`, `8→5`, `5→3`, `3→2`, `2→1`, `1→1`. Two
 applies it twice. Worked: `(13,'core')→13`, `(13,'direct')→8`, `(13,'weak')→5`,
 `(13,'none')→1`, `(5,'core')→5`, `(3,'direct')→2`.
 
-With **no charter** (`themeName: null`), UBV falls back to a signal
-classification recorded in evidence rather than a theme weight.
+**Charter-backed path (charter present).** Pick the `themeName` whose live
+`value_themes` entry the task serves; the server resolves that theme's weight and
+computes UBV as theme weight × alignment via `ubvFromThemeAlignment`. A
+`themeName` that is not a verbatim name in the live charter is rejected by the
+gate.
+
+**Signal fallback (no charter, `themeName: null`).** When the project has no
+charter there are no themes to source `themeName` from, so it MUST be `null`. UBV
+then takes the **signal fallback path**: there is no theme weight, so the server
+treats the weight as the floor (`1`) and `ubvFromThemeAlignment(1, alignment)`
+collapses to the alignment-only tier (`core`/`direct`/`weak`→`1`, `none`→`1`).
+You classify `alignment` from the task-text signal alone and **record that
+fallback in the Value evidence span** (quote the in-text signal, noting it stood
+in for an absent charter theme) so the score is auditable as signal-derived
+rather than charter-derived.
 
 ### Time Criticality (TC) — two paths
 

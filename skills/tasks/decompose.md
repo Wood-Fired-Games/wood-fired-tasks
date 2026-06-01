@@ -274,12 +274,20 @@ candidate, pass `wsjf_submission = { classification, features }` to
 `create_task` together with `wsjf_trigger='decompose'` (so the append-only
 `wsjf_score_history` row is stamped `trigger='decompose'`, distinguishing a
 decompose-batch score from a single-create or a manual override). The
-`classification` carries `themeName` (a charter `value_themes` name, or `null`
-only when the charter is `null`), the four enum classifications, `jobSizeTier`,
-and one **verbatim** evidence span per Cost-of-Delay + Job-Size column drawn
-from that candidate's own title / description / acceptance_criteria. `features`
-are the deterministic, no-LLM signals (deadline, transitive-dependent count
-from the Step-4 edge set, files-touched when linkable, charter version).
+`classification` carries `themeName` — the exact `name` of a **live** charter
+`value_themes` entry the candidate serves, sourced from the charter you fetched
+above (or `null` only when the charter is `null`) — the four enum
+classifications, `jobSizeTier`, and one **verbatim** evidence span per
+Cost-of-Delay + Job-Size column drawn from that candidate's own title /
+description / acceptance_criteria. Business Value is **charter theme weight ×
+alignment**: the server resolves the named theme's `weight` from the live
+charter and computes UBV via `ubvFromThemeAlignment(theme.weight, alignment)`;
+you emit only `themeName` + `alignment`, never the weight or the number. When
+the charter is `null`, `themeName` is `null` and UBV takes the **signal
+fallback** (alignment-only, weight `1`) — record the in-text signal in the Value
+evidence span so the score is auditable as signal-derived. `features` are the
+deterministic, no-LLM signals (deadline, transitive-dependent count from the
+Step-4 edge set, files-touched when linkable, charter version).
 
 **Rely on the gate's BATCH invariant to reject degenerate batches.** The
 server's `validateScoreSubmission` BATCH path enforces, across the batch, that

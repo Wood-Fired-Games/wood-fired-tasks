@@ -104,6 +104,48 @@ describe('wsjf deterministic functions (task #622)', () => {
     });
   });
 
+  // Task #640 (WSJF 3.4): the charter-driven UBV wiring the scoring skills
+  // describe. A charter-backed task sources its theme weight from the live
+  // charter `value_themes` and UBV = theme weight × alignment; an absent-charter
+  // task has no theme weight, so the signal fallback drives `ubvFromThemeAlignment`
+  // with the floor weight 1 (alignment-only). This pins the two paths the AC and
+  // the rubric/create-task/decompose skills wire to the same function.
+  describe('ubvFromThemeAlignment — charter-backed vs signal fallback (task #640)', () => {
+    // A live charter theme the scoring skills would resolve `themeName` against.
+    const charterTheme = { name: 'Player Retention', weight: 13 as Fib };
+
+    it('charter-backed: UBV = theme weight × alignment (weight 13, direct → 8)', () => {
+      // themeName names a live `value_themes` entry; server reads its weight.
+      expect(ubvFromThemeAlignment(charterTheme.weight, 'direct')).toBe(8);
+    });
+
+    it('charter-backed: same theme, core alignment keeps the full theme weight', () => {
+      expect(ubvFromThemeAlignment(charterTheme.weight, 'core')).toBe(13);
+    });
+
+    it('charter-backed: a lower-weight theme scales down (weight 5, weak → 2)', () => {
+      const lowTheme = { name: 'Internal Tooling', weight: 5 as Fib };
+      expect(ubvFromThemeAlignment(lowTheme.weight, 'weak')).toBe(2);
+    });
+
+    it('signal fallback (no charter): floor weight 1 collapses to the alignment-only tier', () => {
+      // No charter → themeName=null → no theme weight → server uses weight 1.
+      const fallbackWeight: Fib = 1;
+      expect(ubvFromThemeAlignment(fallbackWeight, 'core')).toBe(1);
+      expect(ubvFromThemeAlignment(fallbackWeight, 'direct')).toBe(1);
+      expect(ubvFromThemeAlignment(fallbackWeight, 'weak')).toBe(1);
+      expect(ubvFromThemeAlignment(fallbackWeight, 'none')).toBe(1);
+    });
+
+    it('charter-backed strictly out-ranks the signal fallback for the same alignment', () => {
+      // Same task aligned `direct`: with the charter theme it scores 8; with no
+      // charter (signal fallback, weight 1) it scores 1.
+      const charterBacked = ubvFromThemeAlignment(charterTheme.weight, 'direct');
+      const signalFallback = ubvFromThemeAlignment(1 as Fib, 'direct');
+      expect(charterBacked).toBeGreaterThan(signalFallback);
+    });
+  });
+
   describe('computeWsjf', () => {
     it('{value:13, timeCriticality:5, riskOpportunity:8, jobSize:5} === 5.2', () => {
       expect(
