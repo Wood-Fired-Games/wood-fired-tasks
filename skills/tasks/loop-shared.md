@@ -479,3 +479,72 @@ ToolSearch with query "select:TaskList"
 **For skills that only WRITE todos without follow-up updates** (rarer still — e.g. a one-shot capture into TodoWrite from another tool's output): load `TaskCreate` alone. But prefer the bundled trio unless you're certain follow-up isn't needed.
 
 **Upstream-issue status:** the asymmetric promotion is a Claude Code harness concern, not actionable from a wood-fired-tasks skill. File a feedback note at <https://github.com/anthropics/claude-code/issues> if you hit it (suggested title: "TaskUpdate not auto-promoted alongside TaskCreate — extra ToolSearch round-trip required"). Until that lands, this bundling rule is the workaround.
+
+---
+
+## §M. LOOP-RUN.md WSJF-ranking snapshot
+
+**Called from:** `loop.md` §Step 1 (WSJF-ordered selection) + §9d (body sections), `loop-dag.md` §3a step 8 (WSJF-ordered frontier sort) + §5d (body sections).
+
+When task selection consumes a `wsjf_ranking` MCP tool order (i.e. the project carried ≥ 1 WSJF-scored task), the orchestrator MUST record the ranking it ordered against as a `## WSJF Ranking` body section in LOOP-RUN.md. This makes the economic-value sequencing auditable and replayable — a reader can reconstruct WHY task A ran before task B without re-querying the (possibly-since-rescored) tasks database. The section is emitted alongside the other §9d / §5d body sections and is rewritten on every kill-safe re-emission.
+
+### WSJF-ordered selection procedure (full detail)
+
+This is the procedure `loop.md` §Step 1 and `loop-dag.md` §3a step 8 reference. Both run it before applying their default ordering; the only difference is the `scope` argument (table below).
+
+1. **Probe.** Call the `wsjf_ranking` MCP tool with `{ project_id, scope }`. The tool returns `ranking[]` where each entry is a `RankedTask`: `taskId`, `scored`, `baseWsjf`, `effectiveWsjf`, `components`, `propagation[]`, `evidence`. It defaults `scope` to `"frontier"` when omitted; pass it explicitly so the snapshot records which scope was used.
+
+2. **Scope derivation (from the §2f topology gate):**
+
+   | Caller / gate_decision | scope | Why |
+   |---|---|---|
+   | `loop.md` `allowed` (FLAT) | `frontier` | The whole open set is the frontier (zero edges). |
+   | `loop.md` `overridden` (DAG, user forced flat) | `frontier` | Rank only the ready frontier so blocked tasks are not surfaced ahead of their blockers. |
+   | `loop.md` `auto_ordered` (DAG, topological) | — (skip) | The topological order already respects `blocked_by`; re-sorting by WSJF would violate dependency edges. WSJF does NOT apply. |
+   | `loop-dag.md` `allowed` (DAG, always) | `frontier` | DAG-only skill; §3a dispatches only the ready frontier. Ranking `"all"` would surface blocked tasks the wave cannot run. |
+
+3. **Scored branch — `if ≥ 1 entry has scored: true`.** The project is WSJF-scored. Order the candidate tasks by the `ranking[]` order directly: it is already sorted descending by `effectiveWsjf`, with unscored tasks placed via `priorityFallbackScore` (urgent 9 / high 6 / medium 3 / low 1) and ties broken by `created_at` ASC then `id` ASC. Do NOT re-sort — consume it head-first exactly as `auto_ordered` consumes its topological order. For `loop-dag.md`, restrict the order to the task ids that survived §3a steps 1–7. Record the full snapshot (per-task scores, `effectiveWsjf`, `propagation` breakdown, γ/CAP) for the `## WSJF Ranking` block below; set `wsjf_ordering: true`.
+
+4. **Unscored branch — `if NO entry has scored: true`.** The backward-compatible default. Fall back to the caller's existing ordering UNCHANGED: `loop.md` → priority + ID; `loop-dag.md` → priority DESC / `created_at` ASC / `id` ASC. The `wsjf_ranking` call was a no-op probe; the snapshot records `wsjf_ordering: false` (emit the sentinel, not a table).
+
+This keeps WSJF strictly opt-in: an unscored project sorts exactly as it did before, while a project with even one scored task sequences by economic value. WSJF reorders WITHIN a frontier / the open set only — it never promotes a blocked task ahead of its blocker (the frontier / dependency filter is applied before this procedure runs).
+
+**When to emit:**
+
+- **WSJF ordering was used** (≥ 1 `ranking[]` entry had `scored: true`) → emit the full `## WSJF Ranking` section below.
+- **WSJF ordering was NOT used** (zero scored tasks; the probe returned an all-unscored ranking and the orchestrator fell back to priority + ID / topological order) → emit the sentinel: `_No WSJF ranking: project has no WSJF-scored tasks; selection used the priority + ID (or topological) order._`
+- **WSJF was never probed** (e.g. `gate_decision = "auto_ordered"` on a DAG under `/tasks:loop`, where WSJF ordering does not apply) → omit the section entirely OR emit the sentinel above; do not fabricate scores.
+
+**Header line** — record the scope and constants the ranking was computed under, so the snapshot is self-describing:
+
+- `wsjf_ordering: true | false` — whether the order below actually drove selection.
+- `scope: frontier | all` — the `scope` argument passed to `wsjf_ranking` (derived from the topology gate per the caller; `/tasks:loop-dag` always `frontier`).
+- `gamma: 0.5` — the propagation decay constant (`PROPAGATION_GAMMA`), copied verbatim from the engine contract.
+- `cap: 3` — the propagation ceiling (`PROPAGATION_CAP`): `effectiveWsjf ≤ baseWsjf × 3`.
+
+**Table** — one row per `ranking[]` entry, in the order the tool returned (descending `effectiveWsjf`):
+
+```markdown
+## WSJF Ranking
+
+- **wsjf_ordering:** true
+- **scope:** frontier
+- **gamma (PROPAGATION_GAMMA):** 0.5
+- **cap (PROPAGATION_CAP):** 3
+
+| rank | task_id | scored | base_wsjf | effective_wsjf | components (V/TC/RR/JS) | propagation |
+|---|---|---|---|---|---|---|
+| 1 | 622 | true | 5.200 | 9.100 | 13/5/8/5 | #624:+2.0, #625:+1.9 |
+| 2 | 623 | true | 4.000 | 4.000 | 8/3/5/4 | — |
+| 3 | 631 | false | — | 6.000 | — (priority=high → fallback 6) | — |
+```
+
+Column rules:
+
+- **`scored`** — the `RankedTask.scored` flag verbatim. `false` rows used `priorityFallbackScore` (urgent 9 / high 6 / medium 3 / low 1) for their `effective_wsjf`; note the source priority in the `components` cell (`— (priority=<p> → fallback <n>)`).
+- **`base_wsjf`** — `RankedTask.baseWsjf` to 3 decimals; `—` when `scored: false`.
+- **`effective_wsjf`** — `RankedTask.effectiveWsjf` to 3 decimals (the actual sort key). For scored rows this is the propagation-adjusted value (`base × … ≤ base × cap`); for unscored rows it is the fallback score.
+- **`components`** — the four Fibonacci component tiers `value/timeCriticality/riskOpportunity/jobSize` from `RankedTask.components`; `—` when unscored.
+- **`propagation`** — the per-dependent Cost-of-Delay contributions from `RankedTask.propagation[]`, formatted `#<dependentId>:+<contribution>` comma-separated; `—` when the array is empty (no downstream dependents lifted this task's effective score).
+
+**Anti-fabrication:** every cell is copied verbatim from a `wsjf_ranking` result that ALREADY RETURNED in a prior turn (§L canon) — never recomputed by hand. If the orchestrator did not call `wsjf_ranking`, it MUST emit the sentinel, not a synthesized table.
