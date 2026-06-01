@@ -803,7 +803,7 @@ Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
 - API route integration tests (all 22 REST routes: 1 public health + 21 authenticated)
-- MCP tool tests (all 23 tools)
+- MCP tool tests (all 26 tools)
 - CLI command tests
 - Event system tests (EventBus, SSEManager, events API)
 - Claim protocol tests (including 20-agent concurrency)

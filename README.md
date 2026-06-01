@@ -10,7 +10,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 
 - REST API with 47 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated) for full task lifecycle management — a single running instance serves up to 40 of them (the OIDC-disabled `/auth/*` stub handlers are mutually exclusive with the live OIDC routes)
 - CLI (`tasks`) with 31 commands for terminal-based operations
-- MCP server with 23 tools for native Claude Code integration (local SQLite or remote HTTP modes)
+- MCP server with 26 tools for native Claude Code integration (local SQLite or remote HTTP modes)
 - 16 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
 - Real-time Server-Sent Events (SSE) for task change notifications
 - Atomic task claiming with optimistic locking for multi-agent coordination
@@ -428,7 +428,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 23 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 23 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 26 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 23 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -673,7 +673,7 @@ slash-command reference, channel subscription model, error handling.
 ### Claude Code (MCP)
 
 The shipped MCP server registers as a stdio MCP target in `~/.claude.json`
-and exposes 23 tools plus the `/tasks:*` skill files. See
+and exposes 26 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 

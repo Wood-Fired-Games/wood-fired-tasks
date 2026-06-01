@@ -13,6 +13,13 @@ import { registerProjectTools } from './tools/project-tools.js';
 import { registerHealthTools } from './tools/health-tools.js';
 import { registerTopologyTools } from './tools/topology-tools.js';
 import { registerWaitForUnblockTools } from './tools/wait-for-unblock-tools.js';
+import { registerWsjfTools } from './tools/wsjf-tools.js';
+import { TaskRepository } from '../repositories/task.repository.js';
+import { DependencyRepository } from '../repositories/dependency.repository.js';
+import { WsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
+import { WsjfRescoreRepository } from '../repositories/wsjf-rescore.repository.js';
+import { ProjectRepository } from '../repositories/project.repository.js';
+import { WsjfRescoreService } from '../services/wsjf-rescore.service.js';
 import { VERSION } from '../utils/version.js';
 import {
   EVENTS_RESOURCE_URI,
@@ -52,7 +59,7 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 23 tools and 1 resource:
+ * Factory function that creates an McpServer with 26 tools and 1 resource:
  * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
  * - 1 wait tool (wait_for_unblock) — Task #455, in-process long-poll on blocked->open
  * - 5 project tools (create, get, update, list, delete)
@@ -60,6 +67,7 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
  * - 3 comment tools (add, list, delete)
  * - 1 health tool (check_health)
  * - 1 topology tool (topology_check) — Wave 4.1 (#318), only registered when topologyService is provided
+ * - 3 WSJF tools (wsjf_ranking, wsjf_history — #630; rescore_project — #641)
  * - 1 resource (events://stream - SSE event stream discovery)
  *
  * This pattern allows tests to instantiate servers without stdio transport.
@@ -111,6 +119,39 @@ export function createMcpServer(
   if (topologyService) {
     registerTopologyTools(server, topologyService);
   }
+
+  // WSJF 1.10 (#630): register wsjf_ranking + wsjf_history. The RankDeps bundle
+  // and the append-only history reader are built from the same `db` handle the
+  // rest of the services share (db-backed repositories are stateless prepared-
+  // statement holders). `rankFrontier` needs a TopologyService — reuse the one
+  // wired at boot when present, otherwise construct an equivalent over fresh
+  // db-backed repos so the tool is always available (mirrors how production
+  // always passes topologyService via src/mcp/index.ts).
+  const wsjfTaskRepo = new TaskRepository(db);
+  const wsjfDependencyRepo = new DependencyRepository(db);
+  const wsjfTopologyService =
+    topologyService ?? new TopologyService(wsjfTaskRepo, wsjfDependencyRepo);
+  const wsjfHistoryRepo = new WsjfHistoryRepository(db);
+  // WSJF 4.1 (#641): the deterministic rescore engine backing `rescore_project`.
+  // Shares the SAME `db` handle as history/runs so a rescore commits the run
+  // record, every linked history row, and the component writes atomically.
+  const wsjfRescoreService = new WsjfRescoreService({
+    db,
+    tasks: wsjfTaskRepo,
+    projects: new ProjectRepository(db),
+    history: wsjfHistoryRepo,
+    runs: new WsjfRescoreRepository(db),
+    topology: wsjfTopologyService,
+  });
+  registerWsjfTools(server, {
+    rank: {
+      topology: wsjfTopologyService,
+      dependency: dependencyService,
+      tasks: wsjfTaskRepo,
+    },
+    history: wsjfHistoryRepo,
+    rescore: wsjfRescoreService,
+  });
 
   // Register resources
   // Note: the API key is intentionally not passed to the resource — it would
