@@ -1,6 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ProjectService } from '../../services/project.service.js';
-import { CreateProjectSchema } from '../../schemas/task.schema.js';
+import {
+  CreateProjectSchema,
+  ValueCharterNullableSchema,
+} from '../../schemas/project.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
 
@@ -22,7 +25,10 @@ export function registerProjectTools(
   server.registerTool(
     'create_project',
     {
-      description: 'Create a new project',
+      description:
+        'Create a new project. Optionally accepts a WSJF `value_charter` ' +
+        '(mission, ranked value_themes with Fibonacci weights, time_context, ' +
+        'risk_posture, out_of_scope); malformed charters are rejected.',
       inputSchema: CreateProjectSchema,
     },
     async (args) => {
@@ -144,10 +150,17 @@ export function registerProjectTools(
   server.registerTool(
     'update_project',
     {
-      description: 'Update an existing project by ID. Can update name and/or description.',
+      description:
+        'Update an existing project by ID. Can update name, description, ' +
+        'and/or the WSJF `value_charter` (pass null to clear it). A malformed ' +
+        'charter (e.g. a non-Fibonacci theme weight) is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
-        updates: CreateProjectSchema.partial(),
+        updates: z.object({
+          name: z.string().min(1).max(200).optional(),
+          description: z.string().max(5000).optional().nullable(),
+          value_charter: ValueCharterNullableSchema.optional(),
+        }),
       }),
     },
     async (args) => {

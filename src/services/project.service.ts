@@ -5,7 +5,15 @@ import {
   DEFAULT_PAGE_LIMIT,
   DEFAULT_PAGE_OFFSET,
 } from '../types/task.js';
-import { CreateProjectSchema } from '../schemas/task.schema.js';
+// WSJF (Phase 3.2): validate against the charter-aware project schemas
+// (added by task 637) so an optional `value_charter` survives the service
+// boundary and reaches the repository instead of being stripped by the
+// charter-less schema in task.schema.ts. `ValueCharterSchema` rejects
+// non-Fibonacci theme weights here as a structured ValidationError.
+import {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+} from '../schemas/project.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { eventBus } from '../events/event-bus.js';
 
@@ -92,7 +100,7 @@ export class ProjectService {
    */
   updateProject(id: number, input: unknown): Project {
     // Validate input with partial schema
-    const result = CreateProjectSchema.partial().safeParse(input);
+    const result = UpdateProjectSchema.safeParse(input);
     if (!result.success) {
       const fieldErrors: Record<string, string[]> = {};
       result.error.issues.forEach((err) => {

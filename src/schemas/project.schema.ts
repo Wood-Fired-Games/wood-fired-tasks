@@ -57,15 +57,22 @@ export type ValueCharterInput = z.infer<typeof ValueCharterSchema>;
 export const ValueCharterNullableSchema = ValueCharterSchema.nullable();
 
 export const CreateProjectSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().max(5000).optional().nullable(),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .max(100, 'Name must be 100 characters or less'),
+  description: z.string().max(1000).optional().nullable(),
   value_charter: ValueCharterNullableSchema.optional(),
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
 export const UpdateProjectSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(5000).optional().nullable(),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .max(100, 'Name must be 100 characters or less')
+    .optional(),
+  description: z.string().max(1000).optional().nullable(),
   value_charter: ValueCharterNullableSchema.optional(),
 });
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
