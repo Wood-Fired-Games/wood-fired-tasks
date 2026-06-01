@@ -1,0 +1,175 @@
+{
+  "description": "Golden-set + replay corpus for WSJF scoring (Task #636 / WSJF 2.5). Each case is a self-contained scoring scenario: the task text + a reference to a charter, the LLM `classification`, the server `features`, the EXPECTED component buckets, and the STORED `wsjfScore`. Expected buckets and stored scores are NOT hand-invented — they equal exactly what the deterministic functions in src/services/wsjf.service.ts produce for these inputs (validateScoreSubmission for components, computeWsjf for the score). The golden test asserts (inputs -> expected buckets) within tolerance; the replay test recomputes the score from stored classification+features and asserts equality with `wsjfScore`. If the deterministic mapping changes, update `expectedComponents` / `wsjfScore` here only.",
+  "tolerance": {
+    "bucketTiers": 0,
+    "score": 1e-9
+  },
+  "charterRef": "charter.json",
+  "cases": [
+    {
+      "id": "G1-reliability-dataloss-deadline",
+      "summary": "Charter present; core Reliability theme; hard deadline in 5 days; data_loss severity.",
+      "useCharter": true,
+      "sourceText": "Fix data loss bug where the scoring pipeline drops stored classifications under load. This is core to keeping ranking correct and must land before the launch window closes.",
+      "classification": {
+        "themeName": "Reliability",
+        "alignment": "core",
+        "severity": "data_loss",
+        "decay": null,
+        "jobSizeTier": 5,
+        "evidence": {
+          "value": "core to keeping ranking correct",
+          "timeCriticality": "must land before the launch window closes",
+          "riskOpportunity": "Fix data loss bug",
+          "jobSize": "the scoring pipeline drops stored classifications"
+        }
+      },
+      "features": {
+        "deadlineDate": "2026-06-06T00:00:00.000Z",
+        "daysUntilDeadline": 5,
+        "transitiveDependents": 2,
+        "filesTouched": 3,
+        "charterVersion": 1
+      },
+      "expectedComponents": {
+        "value": 13,
+        "timeCriticality": 8,
+        "riskOpportunity": 8,
+        "jobSize": 5
+      },
+      "wsjfScore": 5.8
+    },
+    {
+      "id": "G2-growth-refactor-fastdecay",
+      "summary": "Charter present; direct Growth alignment; no deadline + fast decay; large refactor; fanout 5.",
+      "useCharter": true,
+      "sourceText": "Refactor the onboarding flow so more teams can adopt ranking. There is no hard deadline but the opportunity decays fast as competitors ship. This unblocks five downstream tasks.",
+      "classification": {
+        "themeName": "Growth",
+        "alignment": "direct",
+        "severity": "none",
+        "decay": "fast",
+        "jobSizeTier": 13,
+        "evidence": {
+          "value": "more teams can adopt ranking",
+          "timeCriticality": "the opportunity decays fast",
+          "riskOpportunity": "unblocks five downstream tasks",
+          "jobSize": "Refactor the onboarding flow"
+        }
+      },
+      "features": {
+        "deadlineDate": null,
+        "daysUntilDeadline": null,
+        "transitiveDependents": 5,
+        "filesTouched": null,
+        "charterVersion": 1
+      },
+      "expectedComponents": {
+        "value": 5,
+        "timeCriticality": 5,
+        "riskOpportunity": 8,
+        "jobSize": 13
+      },
+      "wsjfScore": 1.3846153846153846
+    },
+    {
+      "id": "G3-polish-typo-flatdecay",
+      "summary": "Charter present; weak Polish alignment; no deadline + flat decay; trivial typo; no fanout.",
+      "useCharter": true,
+      "sourceText": "Fix a typo in the settings copy. Low impact, no deadline, and the cost of delay is flat. Touches a single config string.",
+      "classification": {
+        "themeName": "Polish",
+        "alignment": "weak",
+        "severity": "none",
+        "decay": "flat",
+        "jobSizeTier": 1,
+        "evidence": {
+          "value": "Fix a typo in the settings copy",
+          "timeCriticality": "the cost of delay is flat",
+          "riskOpportunity": "Low impact",
+          "jobSize": "Touches a single config string"
+        }
+      },
+      "features": {
+        "deadlineDate": null,
+        "daysUntilDeadline": null,
+        "transitiveDependents": 0,
+        "filesTouched": 1,
+        "charterVersion": 1
+      },
+      "expectedComponents": {
+        "value": 1,
+        "timeCriticality": 1,
+        "riskOpportunity": 1,
+        "jobSize": 1
+      },
+      "wsjfScore": 3
+    },
+    {
+      "id": "G4-charterless-techdebt-overdue",
+      "summary": "Charter-less project (themeName null); overdue deadline; tech_debt severity; fanout 1.",
+      "useCharter": false,
+      "sourceText": "Pay down tech debt in the migration runner. The compliance deadline already passed, so this is overdue. One downstream task is waiting on it. Spans about eight files.",
+      "classification": {
+        "themeName": null,
+        "alignment": "none",
+        "severity": "tech_debt",
+        "decay": null,
+        "jobSizeTier": 8,
+        "evidence": {
+          "value": "Pay down tech debt in the migration runner",
+          "timeCriticality": "this is overdue",
+          "riskOpportunity": "One downstream task is waiting on it",
+          "jobSize": "Spans about eight files"
+        }
+      },
+      "features": {
+        "deadlineDate": "2026-05-30T00:00:00.000Z",
+        "daysUntilDeadline": -2,
+        "transitiveDependents": 1,
+        "filesTouched": 8,
+        "charterVersion": null
+      },
+      "expectedComponents": {
+        "value": 1,
+        "timeCriticality": 13,
+        "riskOpportunity": 3,
+        "jobSize": 8
+      },
+      "wsjfScore": 2.125
+    },
+    {
+      "id": "G5-reliability-direct-security-bigfanout",
+      "summary": "Charter present; direct Reliability alignment; deadline 120d; security severity; fanout 10.",
+      "useCharter": true,
+      "sourceText": "Harden the auth path against a security hole that could leak tokens. Directly supports keeping the pipeline correct. The deadline is about four months out. It unblocks ten downstream tasks and touches several core files.",
+      "classification": {
+        "themeName": "Reliability",
+        "alignment": "direct",
+        "severity": "security",
+        "decay": null,
+        "jobSizeTier": 8,
+        "evidence": {
+          "value": "Directly supports keeping the pipeline correct",
+          "timeCriticality": "The deadline is about four months out",
+          "riskOpportunity": "a security hole that could leak tokens",
+          "jobSize": "touches several core files"
+        }
+      },
+      "features": {
+        "deadlineDate": "2026-09-29T00:00:00.000Z",
+        "daysUntilDeadline": 120,
+        "transitiveDependents": 10,
+        "filesTouched": 4,
+        "charterVersion": 1
+      },
+      "expectedComponents": {
+        "value": 8,
+        "timeCriticality": 3,
+        "riskOpportunity": 13,
+        "jobSize": 8
+      },
+      "wsjfScore": 3
+    }
+  ]
+}
