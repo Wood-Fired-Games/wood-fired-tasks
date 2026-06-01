@@ -102,6 +102,55 @@ Charter shape:
 }
 ```
 
+### 4.3 Audit tables (migration `015-wsjf-audit.ts`)
+
+All three are **append-only** (no UPDATE/DELETE in normal flow; enforced at the
+repository layer; dropped by the down-migration). They make every value and every
+mid-project change traceable — see §11.
+
+**`wsjf_score_history`** — one immutable row per score write to a task:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `task_id` / `project_id` | INTEGER FK | |
+| `changed_at` | TEXT | timestamp |
+| `trigger` | TEXT | `create \| decompose \| single_create \| rescore \| manual \| propagation` |
+| `actor_type` / `actor_id` | TEXT | `agent \| user`, session/user id |
+| `charter_version` | INTEGER | nullable; which charter informed this score |
+| `rescore_run_id` | INTEGER FK | nullable; batch this change belonged to |
+| `value` / `time_criticality` / `risk_opportunity` / `job_size` | INTEGER | component snapshot |
+| `evidence` / `source` / `locked` | TEXT (JSON) | snapshots at write time |
+| `wsjf_score` | REAL | derived snapshot |
+| `prev_wsjf_score` | REAL | nullable; for fast delta queries |
+
+**`project_charter_history`** — full charter snapshot per version:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `project_id` | INTEGER FK | |
+| `interview_version` | INTEGER | |
+| `charter` | TEXT (JSON) | full snapshot |
+| `change_kind` | TEXT | `overwrite \| partial_update` |
+| `actor_type` / `actor_id` | TEXT | |
+| `changed_at` | TEXT | |
+
+**`wsjf_rescore_run`** — one row per rescore event:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `project_id` | INTEGER FK | |
+| `triggered_at` | TEXT | |
+| `charter_version` | INTEGER | the new charter driving the rescore |
+| `actor_type` / `actor_id` | TEXT | |
+| `tasks_evaluated` / `tasks_changed` / `tasks_skipped_locked` | INTEGER | |
+| `summary` | TEXT (JSON) | aggregate movement stats |
+
+`wsjf_score_history.rescore_run_id` links every score change to the run that
+produced it.
+
 ## 5. Types & validation schemas
 
 - `src/types/task.ts`: add the optional WSJF fields; add `WsjfComponents`,
@@ -154,8 +203,17 @@ Charter shape:
   avoiding the skills-vs-client-package drift trap.
 - **New `rescore_project(project_id)`** — returns the task set needing rescore, the
   charter, and current graph signals (fan-out counts, deadline deltas); accepts
-  written-back component scores. Drives the living-backlog rescore (§8.2).
+  written-back component scores. Opens a `wsjf_rescore_run`, writes a
+  `wsjf_score_history` row per change, and returns the run id + summary. Drives the
+  living-backlog rescore (§8.2).
+- **New `wsjf_history(task_id)`** — the score timeline for a task: every change
+  with from→to delta, trigger, actor, charter version, and evidence (§11).
 - **New `wsjf_health(project_id)`** — the degeneracy linter (§9).
+
+Every component write (via `create_task` / `update_task` / `rescore_project` /
+propagation) **appends a `wsjf_score_history` row** in the same transaction; every
+charter write appends a `project_charter_history` row. History writes are not
+optional — they are part of the write path, not a side channel.
 
 ## 8. Skills (`skills/tasks/`)
 
@@ -258,7 +316,59 @@ score must emit a one-line evidence string.
 `WSJF = (UBV + TC + RR) / max(JobSize, 1)`, ranked descending over the ready
 frontier with the §6 propagation adjustment.
 
-## 11. Testing
+## 11. Auditability
+
+Every score, and every mid-project change to it, must be traceable to *who/what
+set it, when, under which charter, and on what evidence*. Two layers:
+
+### 11.1 Point-in-time justification (per current value)
+
+The live task carries `wsjf_evidence` (one string per component), `wsjf_source`
+(`auto | manual` per component), and `wsjf_locked`. This answers "why is this
+value what it is *right now*."
+
+### 11.2 Temporal trail (per change over time)
+
+The append-only audit tables (§4.3) answer the questions point-in-time data
+cannot:
+
+- **"Why did task X's value drop from 8 to 3?"** → `wsjf_score_history` rows for
+  X, each with from→to (`prev_wsjf_score` → `wsjf_score`), `trigger`, `actor`,
+  `charter_version`, and the evidence captured at that moment.
+- **"What did re-interview v2 do to the backlog?"** → the `wsjf_rescore_run` row
+  (tasks evaluated / changed / skipped-locked + summary) plus every
+  `wsjf_score_history` row sharing its `rescore_run_id`.
+- **"What changed in the charter between rescases?"** → diff `project_charter_history`
+  snapshots for `interview_version` N-1 vs N.
+- **"Which values did a human set, and when?"** → history rows where
+  `trigger = manual` / `source = manual`.
+
+History writes happen **in the same transaction** as the score/charter write
+(§7), so the trail can never silently diverge from reality.
+
+### 11.3 Auditing the tuning constants and the ranking math
+
+The constants (`γ = 0.5`, `CAP = 3`, the priority→WSJF fallback map) are
+config-as-code: documented module constants, versioned in git. Their *application*
+is auditable two ways:
+
+- `wsjf_ranking` returns the **propagation breakdown** per task (base CoD, the
+  per-dependent contributions, the capped effective CoD), so a ranking is
+  explainable, not a black box.
+- `/tasks:loop` and `/tasks:loop-dag` **snapshot the `wsjf_ranking` result they
+  acted on** (scores, effective scores, breakdown, constant values) into the
+  existing `LOOP-RUN.md` artifact — so "what order did this run pick, and why" is
+  reproducible after the fact even as scores later change.
+
+### 11.4 Surfacing
+
+`wsjf_history(task_id)` (MCP) + REST endpoints (task score history; project
+charter history; rescore runs) + CLI (`wft task wsjf-history <id>`,
+`wft project charter-history <id>`). The §9 linter gains a **score-churn check**
+(a task whose value flaps across consecutive rescases = the unstable-estimate
+pitfall) — detectable only because history exists.
+
+## 12. Testing
 
 - **Unit**: `computeWsjf`; `priorityFallbackScore`; propagation on a known DAG
   (diamond dedupe, γ decay, CAP, cycle-guard); Job-Size floor.
@@ -267,26 +377,37 @@ frontier with the §6 propagation adjustment.
   schema validation.
 - **MCP**: `wsjf_ranking` ordering including a buried blocker surfacing via
   propagation; `rescore_project` respects locks; `wsjf_health` fires each check.
+- **Audit**: every write path (create / update / rescore / propagation) appends a
+  `wsjf_score_history` row in-transaction; history tables reject UPDATE/DELETE;
+  `wsjf_history` returns correct from→to deltas; a rescore links all its changes by
+  `rescore_run_id`; charter edits append a snapshot; score-churn check fires.
 - **Backward-compat**: an unscored project still sorts by priority; mixed
   scored/unscored projects sort coherently via the fallback mapping.
 - **Skill-level**: decompose batch scoring produces a `1` anchor per column;
   re-interview → prompt → rescore leaves locked components untouched.
 
-## 12. Phasing (incremental PRs; fits merge-commit + CI-gate flow)
+## 13. Phasing (incremental PRs; fits merge-commit + CI-gate flow)
 
-1. **Core engine** — task WSJF columns, `wsjf.service` (compute / fallback /
-   propagation), `wsjf_ranking`, loop/loop-dag selection, create/update fields.
+1. **Core engine** — task WSJF columns, **`wsjf_score_history` + in-transaction
+   audit writes**, `wsjf.service` (compute / fallback / propagation),
+   `wsjf_ranking` (with breakdown), loop/loop-dag selection + LOOP-RUN snapshot,
+   create/update fields, `wsjf_history` tool.
 2. **Autonomous scoring** — `wsjf-rubric.md`, decompose batch scoring,
    single-create scoring, evidence.
-3. **Charter + interview** — `projects.value_charter`, `new-project.md`,
-   charter-driven Business Value.
-4. **Living backlog** — `rescore_project`, re-interview (prompt-before-rescore),
-   manual override + per-component locks + propagation, REST/CLI affordances.
-5. **Guidance** — `wsjf_health` linter + surfacing.
+3. **Charter + interview** — `projects.value_charter` + `project_charter_history`,
+   `new-project.md`, charter-driven Business Value.
+4. **Living backlog** — `rescore_project` + `wsjf_rescore_run`, re-interview
+   (prompt-before-rescore), manual override + per-component locks + propagation,
+   REST/CLI affordances (incl. history endpoints).
+5. **Guidance** — `wsjf_health` linter (incl. score-churn) + surfacing.
+
+Audit is built into Phase 1's write path, not retrofitted; later phases add their
+own trigger types and the charter/rescore-run records as they introduce those
+write paths.
 
 Each phase delivers standalone value and can ship as its own PR.
 
-## 13. Out of scope (v1; future)
+## 14. Out of scope (v1; future)
 
 - Automatic Time-Criticality decay recomputed on a schedule (server can do the
   deadline delta on read; a background cron is deferred).
@@ -297,7 +418,7 @@ Each phase delivers standalone value and can ship as its own PR.
   warning.
 - Project-level `value_themes` weighting beyond simple ranked weights.
 
-## 14. Decisions log
+## 15. Decisions log
 
 | Decision | Choice |
 |---|---|
@@ -310,3 +431,4 @@ Each phase delivers standalone value and can ship as its own PR.
 | Human interface | REST API + CLI only |
 | Rescore trigger | Prompt before rescoring |
 | Lock granularity | Per-component locks with `auto \| manual` provenance |
+| Auditability | Append-only history (scores + charter + rescore runs), in-transaction; ranking breakdown + LOOP-RUN snapshot for the math |
