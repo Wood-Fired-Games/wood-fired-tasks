@@ -1,0 +1,70 @@
+// WSJF (Weighted Shortest Job First) prioritization — core enums & types.
+//
+// Task #621 (WSJF 1.1): the shared Contracts backbone every WSJF task depends
+// on. This module is type-only plus the single `FIB` runtime constant; it holds
+// NO logic. Names match the plan's §Contracts section verbatim — see
+// `docs/superpowers/plans/2026-06-01-wsjf-prioritization.md` and the design spec
+// `docs/superpowers/specs/2026-06-01-wsjf-prioritization-design.md`.
+
+/** The closed Fibonacci tier set used for every WSJF component score. */
+export type Fib = 1 | 2 | 3 | 5 | 8 | 13;
+
+/** Canonical ordered Fibonacci tiers. Typed `readonly Fib[]`. */
+export const FIB: readonly Fib[] = [1, 2, 3, 5, 8, 13];
+
+/** How well a task aligns with a charter value theme. */
+export type AlignmentClass = 'none' | 'weak' | 'direct' | 'core';
+
+/** Risk/severity bucket the task addresses. */
+export type SeverityClass = 'none' | 'tech_debt' | 'security' | 'data_loss' | 'compliance';
+
+/** How quickly the cost of delay grows when there is no hard deadline. */
+export type DecayClass = 'flat' | 'slow' | 'fast';
+
+/**
+ * What the LLM emits — never a final number.
+ */
+export interface WsjfClassification {
+  themeName: string | null; // must exist in charter.value_themes (or null = no charter)
+  alignment: AlignmentClass;
+  severity: SeverityClass;
+  decay: DecayClass | null; // null when a deadline date is present
+  jobSizeTier: Fib; // must fall inside jobSizeBand(features)
+  evidence: WsjfEvidence; // verbatim spans, one per component
+}
+
+/** Verbatim source spans, one per WSJF component, backing a classification. */
+export interface WsjfEvidence {
+  value: string;
+  timeCriticality: string;
+  riskOpportunity: string;
+  jobSize: string;
+}
+
+/**
+ * Deterministic inputs the server gathers (no LLM).
+ */
+export interface WsjfFeatures {
+  deadlineDate: string | null; // ISO; parsed from task text or charter.time_context
+  daysUntilDeadline: number | null;
+  transitiveDependents: number; // from the DAG
+  filesTouched: number | null; // when linkable; else null
+  charterVersion: number | null;
+}
+
+/** Stored, server-computed component scores. */
+export interface WsjfComponents {
+  value: Fib;
+  timeCriticality: Fib;
+  riskOpportunity: Fib;
+  jobSize: Fib;
+}
+
+/** The four component keys of {@link WsjfComponents}. */
+export type WsjfComponentKey = keyof WsjfComponents;
+
+/** Per-component provenance: server-derived (`auto`) vs human-set (`manual`). */
+export type WsjfSource = Record<WsjfComponentKey, 'auto' | 'manual'>;
+
+/** Per-component lock flags — locked components survive a rescore. */
+export type WsjfLocks = Record<WsjfComponentKey, boolean>;
