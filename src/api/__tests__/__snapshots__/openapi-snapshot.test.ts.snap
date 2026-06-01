@@ -1959,6 +1959,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                         ],
                         "type": "object",
                       },
+                      "manual": {
+                        "type": "boolean",
+                      },
                       "riskOpportunity": {
                         "anyOf": [
                           {
@@ -3235,6 +3238,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "jobSize",
                         ],
                         "type": "object",
+                      },
+                      "manual": {
+                        "type": "boolean",
                       },
                       "riskOpportunity": {
                         "anyOf": [

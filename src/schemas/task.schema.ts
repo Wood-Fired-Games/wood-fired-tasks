@@ -32,6 +32,12 @@ export const WsjfWriteSchema = z
     source: WsjfSourceSchema.optional().nullable(),
     classifications: WsjfClassificationSchema.optional().nullable(),
     features: WsjfFeaturesSchema.optional().nullable(),
+    // WSJF (#643): MANUAL-override marker. `true` routes the write through the
+    // manual gate (enum + contradiction only — exempt from the classification /
+    // evidence requirement) and stamps history `trigger='manual'`. The four
+    // components stay REQUIRED here, so all-four-or-none still holds; a manual
+    // caller supplies the per-component `locked` / `source` maps alongside.
+    manual: z.boolean().optional(),
   })
   .strict();
 

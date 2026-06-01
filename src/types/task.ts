@@ -231,6 +231,17 @@ export interface WsjfWriteDTO {
   source?: WsjfSource | null;
   classifications?: WsjfClassification | null;
   features?: WsjfFeatures | null;
+  /**
+   * WSJF (#643): when `true`, this is a MANUAL override — a human set the four
+   * components directly. The service runs the manual gate
+   * ({@link validateManualScore}: enum + contradiction, NO classification /
+   * evidence requirement) and audits the write with history `trigger='manual'`.
+   * When `false`/absent the write is treated as the auto/classified path
+   * (history `trigger='create'|'update'`). This flag is NOT persisted on its
+   * own — provenance lives in the per-component `source` map and the history
+   * row's `trigger`.
+   */
+  manual?: boolean;
 }
 
 export interface CreateTaskDTO {

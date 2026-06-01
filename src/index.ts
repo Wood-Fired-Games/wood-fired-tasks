@@ -8,6 +8,7 @@ import { DependencyRepository } from './repositories/dependency.repository.js';
 import { CommentRepository } from './repositories/comment.repository.js';
 import { UserRepository } from './repositories/user.repository.js';
 import { ApiTokenRepository } from './repositories/api-token.repository.js';
+import { WsjfHistoryRepository } from './repositories/wsjf-history.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
 import { DependencyService } from './services/dependency.service.js';
@@ -229,10 +230,14 @@ export async function createApp(dbPath?: string): Promise<App> {
   // prepared statements are cached for the entire process lifetime.
   const userRepository = new UserRepository(db);
   const apiTokenRepository = new ApiTokenRepository(db);
+  // WSJF (#628): append-only score-history repo. Shares the SAME `db` handle
+  // as TaskRepository so the component write + history append commit in one
+  // `db.transaction(...)` (see TaskService.appendWsjfHistory).
+  const wsjfHistoryRepo = new WsjfHistoryRepository(db);
 
   // Create services
   const projectService = new ProjectService(projectRepo);
-  const taskService = new TaskService(taskRepo, projectRepo);
+  const taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
   const topologyService = new TopologyService(taskRepo, dependencyRepo);

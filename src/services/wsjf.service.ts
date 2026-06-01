@@ -23,7 +23,7 @@ import type {
 } from '../types/wsjf.js';
 import { FIB } from '../types/wsjf.js';
 import type { ValueCharter, Task, TaskStatus } from '../types/task.js';
-import { ScoreSubmissionSchema } from '../schemas/wsjf.schema.js';
+import { ScoreSubmissionSchema, WsjfComponentsSchema } from '../schemas/wsjf.schema.js';
 import type { WsjfEvidence } from '../types/wsjf.js';
 import type { ITaskRepository } from '../repositories/interfaces.js';
 import { MAX_PAGE_LIMIT } from '../types/task.js';
@@ -334,6 +334,62 @@ function ubvFor(
 }
 
 /**
+ * Task #643 (WSJF 4.3): the SINGLE source of truth for cross-component
+ * contradiction rules. Both the classified/auto gate
+ * ({@link validateScoreSubmission} step 5) and the manual-override gate
+ * ({@link validateManualScore}) call this — neither reimplements the rule, so
+ * a contradiction is rejected identically no matter how the components arrived.
+ *
+ * Current rule (design spec §12.3): a trivial-effort task (`jobSize=1`) cannot
+ * simultaneously carry maximum business value (`value=13`). Returns one error
+ * string per violated rule (empty array when consistent).
+ */
+export function checkComponentContradictions(c: WsjfComponents): string[] {
+  const errors: string[] = [];
+  if (c.jobSize === 1 && c.value === 13) {
+    errors.push(
+      'contradiction: jobSize=1 (trivial effort) but value=13 (max business value)',
+    );
+  }
+  return errors;
+}
+
+/**
+ * Task #643 (WSJF 4.3): the MANUAL-override gate. A human (not the LLM) sets the
+ * four Fibonacci components DIRECTLY, so this path is EXEMPT from the
+ * classification / verbatim-evidence / theme / job-size-band checks the
+ * {@link validateScoreSubmission} gate enforces — there is no classification to
+ * validate. It is NOT exempt from:
+ *   1. enum membership — each component must be a Fibonacci tier (via
+ *      {@link WsjfComponentsSchema}); off-scale integers (4, 6, 7, ...) reject.
+ *   2. the cross-component contradiction rules — reuses the shared
+ *      {@link checkComponentContradictions} (NOT a fork), so jobSize=1 ∧ value=13
+ *      is rejected on the manual path exactly as on the auto path.
+ *
+ * Pure; no I/O. On success returns the validated `components` echoed back.
+ */
+export function validateManualScore(input: unknown): ValidateResult {
+  const errors: string[] = [];
+
+  const parsed = WsjfComponentsSchema.safeParse(input);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join('.');
+      errors.push(path ? `${path}: ${issue.message}` : issue.message);
+    }
+    return { ok: false, errors };
+  }
+
+  const components = parsed.data as WsjfComponents;
+  errors.push(...checkComponentContradictions(components));
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, components, errors: [] };
+}
+
+/**
  * The deterministic chokepoint. Pure in `(submission, ctx)`. Runs, in order:
  *  1. Zod enum membership / all-fields shape (via `ScoreSubmissionSchema`).
  *  2. themeName presence: must exist in the charter; `null` allowed ONLY when
@@ -436,12 +492,10 @@ export function validateScoreSubmission(
     jobSize,
   };
 
-  // 5. Cross-component contradiction rules.
-  if (jobSize === 1 && value === 13) {
-    errors.push(
-      'contradiction: jobSize=1 (trivial effort) but value=13 (max business value)',
-    );
-  }
+  // 5. Cross-component contradiction rules (shared with the manual gate —
+  //    task #643 — so both paths reject identically; see
+  //    {@link checkComponentContradictions}).
+  errors.push(...checkComponentContradictions(components));
 
   // 6. Batch invariants (column-anchored relative scoring).
   if (ctx.batch !== undefined) {
