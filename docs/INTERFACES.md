@@ -155,18 +155,22 @@ so REST and MCP cannot drift on validation.
 | `tools/health-tools.ts` | `check_health` | read | Service health, DB connectivity, version. |
 | `tools/topology-tools.ts` | `topology_check` | read | Wave 4.1 (#318): classify a project as FLAT/DAG/DAG_CYCLIC. |
 | `tools/wait-for-unblock-tools.ts` | `wait_for_unblock` | read | Task #455: in-process long-poll until a task transitions blocked->open. |
+| `tools/wsjf-tools.ts` | `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` | read (×3) / write (rescore) | WSJF 1.10: propagation-adjusted ranking, score-history timeline, deterministic project rescore, degeneracy linter. |
 
-**Total: 23 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
-topology, 1 wait). 11 are read-only; 12 mutate state. Counted by `grep
-registerTool` across the seven files above. The remote server registers all
-**23 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
+**Total: 27 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
+topology, 1 wait, 4 WSJF). 14 are read-only; 13 mutate state. Counted by `grep
+registerTool` across the eight files above. The remote server registers all
+**27 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
 classifier reaches the same `TopologyService` over REST
 (`GET /api/v1/projects/:id/topology`) rather than via a direct in-process
-call. `wait_for_unblock` is hosted on **both** servers (#481) — the local
-variant resolves the `blocked->open` transition off the in-process EventBus,
-while the remote variant resolves it off the SSE event stream
-(`GET /api/v1/events`, `RestClient.waitForUnblockViaSse`), so the remote tool
-additionally observes cross-process / cross-session wake-ups.
+call, and the four WSJF tools proxy `GET /api/v1/projects/:id/wsjf-ranking`,
+`GET /api/v1/tasks/:id/score-history`, `GET /api/v1/projects/:id/wsjf-health`,
+and `POST /api/v1/projects/:id/rescore` (WSJF 1.10). `wait_for_unblock` is
+hosted on **both** servers (#481) — the local variant resolves the
+`blocked->open` transition off the in-process EventBus, while the remote
+variant resolves it off the SSE event stream (`GET /api/v1/events`,
+`RestClient.waitForUnblockViaSse`), so the remote tool additionally observes
+cross-process / cross-session wake-ups.
 
 Deep reference: [`docs/MCP.md`](MCP.md).
 
@@ -321,7 +325,7 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. The remote server exposes all **23 REST-backed tools** with
+`src/schemas/`. The remote server exposes all **27 REST-backed tools** with
 identical input validation; behavioural differences are limited to transport
 (stdio vs HTTP) and the auth boundary. `topology_check` (#318) reaches the
 same `TopologyService` over REST — the remote server proxies it to

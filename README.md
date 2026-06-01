@@ -428,7 +428,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 27 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 23 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 27 tools and 1 resource for Claude Code integration. A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 27 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 

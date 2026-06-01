@@ -57,6 +57,10 @@ function makeMockClient() {
     deleteComment: vi.fn(),
     checkHealth: vi.fn(),
     getTopology: vi.fn(),
+    getWsjfRanking: vi.fn(),
+    getWsjfHistory: vi.fn(),
+    getWsjfHealth: vi.fn(),
+    rescoreProject: vi.fn(),
     waitForUnblockViaSse: vi.fn(),
   };
 }
@@ -101,6 +105,10 @@ describe('registerRemoteTools', () => {
       'delete_comment',
       'check_health',
       'topology_check',
+      'wsjf_ranking',
+      'wsjf_history',
+      'rescore_project',
+      'wsjf_health',
       'wait_for_unblock',
     ];
     for (const name of expected) {
@@ -652,6 +660,196 @@ describe('registerRemoteTools', () => {
     client.getTopology.mockRejectedValue(new Error('boom'));
     await expect(
       handlers.get('topology_check')!({ project_id: 1 })
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
+  // ── WSJF tools (remote parity, WSJF 1.10) ─────────────────────────────────
+
+  it('wsjf_ranking proxies the REST ranking + formats ordered summary', async () => {
+    client.getWsjfRanking.mockResolvedValue({
+      project_id: 3,
+      scope: 'frontier',
+      total: 2,
+      ranking: [
+        {
+          taskId: 10,
+          scored: true,
+          baseWsjf: 2.5,
+          effectiveWsjf: 3.25,
+          components: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+          propagation: [{ dependentId: 11, contribution: 0.75 }],
+          evidence: null,
+        },
+        {
+          taskId: 11,
+          scored: false,
+          baseWsjf: null,
+          effectiveWsjf: 0,
+          components: null,
+          propagation: [],
+          evidence: null,
+        },
+      ],
+    });
+    const r = await handlers.get('wsjf_ranking')!({ project_id: 3 });
+    expect(client.getWsjfRanking).toHaveBeenCalledWith(3, 'frontier');
+    expect(r.content[0].text).toContain('Ranked 2 task(s) for project 3');
+    expect(r.content[0].text).toContain('1. [10] effectiveWsjf=3.250 (scored, base=2.500)');
+    expect(r.content[0].text).toContain('2. [11] effectiveWsjf=0.000 (unscored)');
+    expect(r.structuredContent).toMatchObject({ project_id: 3, scope: 'frontier' });
+  });
+
+  it('wsjf_ranking forwards scope=all', async () => {
+    client.getWsjfRanking.mockResolvedValue({
+      project_id: 5,
+      scope: 'all',
+      total: 0,
+      ranking: [],
+    });
+    await handlers.get('wsjf_ranking')!({ project_id: 5, scope: 'all' });
+    expect(client.getWsjfRanking).toHaveBeenCalledWith(5, 'all');
+  });
+
+  it('wsjf_ranking error path wraps in McpError', async () => {
+    client.getWsjfRanking.mockRejectedValue(new Error('boom'));
+    await expect(
+      handlers.get('wsjf_ranking')!({ project_id: 1 })
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('wsjf_history annotates deltas + formats timeline', async () => {
+    client.getWsjfHistory.mockResolvedValue({
+      task_id: 7,
+      total: 2,
+      history: [
+        {
+          id: 1,
+          task_id: 7,
+          project_id: 1,
+          changed_at: '2026-01-01T00:00:00Z',
+          trigger: 'create',
+          wsjf_score: 2,
+          prev_wsjf_score: null,
+          value: 8,
+        },
+        {
+          id: 2,
+          task_id: 7,
+          project_id: 1,
+          changed_at: '2026-02-01T00:00:00Z',
+          trigger: 'rescore',
+          wsjf_score: 4,
+          prev_wsjf_score: 2,
+          value: 13,
+        },
+      ],
+    });
+    const r = await handlers.get('wsjf_history')!({ task_id: 7 });
+    expect(client.getWsjfHistory).toHaveBeenCalledWith(7);
+    expect(r.content[0].text).toContain('Task 7 has 2 WSJF history entries');
+    expect(r.content[0].text).toContain('[create] wsjf ∅→2');
+    expect(r.content[0].text).toContain('[rescore] wsjf 2→4');
+    const sc = r.structuredContent as {
+      timeline: Array<{ deltas: Record<string, { from: number | null; to: number | null }> }>;
+    };
+    expect(sc.timeline[1].deltas.wsjf_score).toEqual({ from: 2, to: 4 });
+  });
+
+  it('wsjf_history error path wraps in McpError', async () => {
+    client.getWsjfHistory.mockRejectedValue(new Error('e'));
+    await expect(
+      handlers.get('wsjf_history')!({ task_id: 1 })
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('rescore_project proxies submissions + formats run summary with errors', async () => {
+    client.rescoreProject.mockResolvedValue({
+      run_id: 99,
+      project_id: 4,
+      tasks_evaluated: 3,
+      tasks_changed: 1,
+      tasks_skipped_locked: 1,
+      results: [],
+      errors: [{ taskId: 12, errors: ['contradiction'] }],
+    });
+    const r = await handlers.get('rescore_project')!({
+      project_id: 4,
+      submissions: [
+        { task_id: 12, classification: { a: 1 }, features: { b: 2 } },
+      ],
+      actor_type: 'agent',
+      actor_id: 'bot-1',
+    });
+    expect(client.rescoreProject).toHaveBeenCalledWith(
+      4,
+      [{ task_id: 12, classification: { a: 1 }, features: { b: 2 } }],
+      { actor_type: 'agent', actor_id: 'bot-1' }
+    );
+    expect(r.content[0].text).toContain('Rescore run 99 for project 4');
+    expect(r.content[0].text).toContain('3 evaluated, 1 changed, 1 with locked');
+    expect(r.content[0].text).toContain('[12] contradiction');
+    expect(r.structuredContent).toMatchObject({ run_id: 99, project_id: 4 });
+  });
+
+  it('rescore_project defaults empty submissions + omits actor when absent', async () => {
+    client.rescoreProject.mockResolvedValue({
+      run_id: 1,
+      project_id: 4,
+      tasks_evaluated: 0,
+      tasks_changed: 0,
+      tasks_skipped_locked: 0,
+      results: [],
+      errors: [],
+    });
+    await handlers.get('rescore_project')!({ project_id: 4 });
+    expect(client.rescoreProject).toHaveBeenCalledWith(4, [], {});
+  });
+
+  it('rescore_project error path wraps in McpError', async () => {
+    client.rescoreProject.mockRejectedValue(new Error('e'));
+    await expect(
+      handlers.get('rescore_project')!({ project_id: 1, submissions: [] })
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('wsjf_health formats OK summary on a healthy project', async () => {
+    client.getWsjfHealth.mockResolvedValue({
+      project_id: 8,
+      healthy: true,
+      scored_task_count: 5,
+      findings: [],
+    });
+    const r = await handlers.get('wsjf_health')!({ project_id: 8 });
+    expect(client.getWsjfHealth).toHaveBeenCalledWith(8);
+    expect(r.content[0].text).toContain('Project 8 WSJF health: OK');
+    expect(r.content[0].text).toContain('5 scored task(s)');
+    expect(r.structuredContent).toMatchObject({ healthy: true });
+  });
+
+  it('wsjf_health lists findings on a degenerate project', async () => {
+    client.getWsjfHealth.mockResolvedValue({
+      project_id: 8,
+      healthy: false,
+      scored_task_count: 4,
+      findings: [
+        {
+          check: 'degenerate-spread',
+          severity: 'warning',
+          message: 'Scores too close.',
+          suggestion: 'Spread them.',
+          taskIds: [1, 2],
+        },
+      ],
+    });
+    const r = await handlers.get('wsjf_health')!({ project_id: 8 });
+    expect(r.content[0].text).toContain('1 finding(s)');
+    expect(r.content[0].text).toContain('[warning] degenerate-spread: Scores too close. Fix: Spread them.');
+  });
+
+  it('wsjf_health error path wraps in McpError', async () => {
+    client.getWsjfHealth.mockRejectedValue(new Error('e'));
+    await expect(
+      handlers.get('wsjf_health')!({ project_id: 1 })
     ).rejects.toBeInstanceOf(McpError);
   });
 });
