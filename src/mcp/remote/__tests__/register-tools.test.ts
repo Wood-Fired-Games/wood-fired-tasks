@@ -435,6 +435,44 @@ describe('registerRemoteTools', () => {
     expect(r.content[0].text).toContain('Project 1 updated');
   });
 
+  it('update_project forwards a value_charter to the REST client', async () => {
+    client.updateProject.mockResolvedValue({ id: 1, name: 'q' });
+    const charter = {
+      mission: 'win the wedge',
+      value_themes: [{ name: 'reliability', weight: 8, description: 'd' }],
+      time_context: 'Q3',
+      risk_posture: 'outage first',
+      out_of_scope: [],
+      interview_version: 1,
+      updated_at: '2026-06-01T00:00:00.000Z',
+    };
+    await handlers.get('update_project')!({
+      id: 1,
+      updates: { value_charter: charter },
+    });
+    expect(client.updateProject).toHaveBeenCalledWith(1, {
+      value_charter: charter,
+    });
+  });
+
+  it('create_project forwards a value_charter to the REST client', async () => {
+    client.createProject.mockResolvedValue({ id: 2, name: 'p' });
+    const charter = {
+      mission: 'm',
+      value_themes: [{ name: 't', weight: 5, description: 'd' }],
+      time_context: 'none',
+      risk_posture: 'low',
+      out_of_scope: [],
+      interview_version: 1,
+      updated_at: '2026-06-01T00:00:00.000Z',
+    };
+    await handlers.get('create_project')!({ name: 'p', value_charter: charter });
+    expect(client.createProject).toHaveBeenCalledWith({
+      name: 'p',
+      value_charter: charter,
+    });
+  });
+
   it('update_project error path', async () => {
     client.updateProject.mockRejectedValue(new Error('e'));
     await expect(

@@ -590,6 +590,116 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "updated_at": {
                             "type": "string",
                           },
+                          "value_charter": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "interview_version": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer",
+                              },
+                              "mission": {
+                                "maxLength": 5000,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "out_of_scope": {
+                                "items": {
+                                  "maxLength": 500,
+                                  "type": "string",
+                                },
+                                "maxItems": 50,
+                                "type": "array",
+                              },
+                              "risk_posture": {
+                                "maxLength": 5000,
+                                "type": "string",
+                              },
+                              "time_context": {
+                                "maxLength": 5000,
+                                "type": "string",
+                              },
+                              "updated_at": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "value_themes": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "description": {
+                                      "maxLength": 2000,
+                                      "type": "string",
+                                    },
+                                    "name": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    "weight": {
+                                      "anyOf": [
+                                        {
+                                          "enum": [
+                                            1,
+                                          ],
+                                          "type": "number",
+                                        },
+                                        {
+                                          "enum": [
+                                            2,
+                                          ],
+                                          "type": "number",
+                                        },
+                                        {
+                                          "enum": [
+                                            3,
+                                          ],
+                                          "type": "number",
+                                        },
+                                        {
+                                          "enum": [
+                                            5,
+                                          ],
+                                          "type": "number",
+                                        },
+                                        {
+                                          "enum": [
+                                            8,
+                                          ],
+                                          "type": "number",
+                                        },
+                                        {
+                                          "enum": [
+                                            13,
+                                          ],
+                                          "type": "number",
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  "required": [
+                                    "name",
+                                    "weight",
+                                    "description",
+                                  ],
+                                  "type": "object",
+                                },
+                                "maxItems": 20,
+                                "type": "array",
+                              },
+                            },
+                            "required": [
+                              "mission",
+                              "value_themes",
+                              "time_context",
+                              "risk_posture",
+                              "out_of_scope",
+                              "interview_version",
+                              "updated_at",
+                            ],
+                            "type": "object",
+                          },
                         },
                         "required": [
                           "id",
@@ -653,6 +763,114 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "minLength": 1,
                     "type": "string",
                   },
+                  "value_charter": {
+                    "nullable": true,
+                    "properties": {
+                      "interview_version": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer",
+                      },
+                      "mission": {
+                        "maxLength": 5000,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "out_of_scope": {
+                        "items": {
+                          "maxLength": 500,
+                          "type": "string",
+                        },
+                        "maxItems": 50,
+                        "type": "array",
+                      },
+                      "risk_posture": {
+                        "maxLength": 5000,
+                        "type": "string",
+                      },
+                      "time_context": {
+                        "maxLength": 5000,
+                        "type": "string",
+                      },
+                      "updated_at": {
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "value_themes": {
+                        "items": {
+                          "properties": {
+                            "description": {
+                              "maxLength": 2000,
+                              "type": "string",
+                            },
+                            "name": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            "weight": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    1,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    2,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    3,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    5,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    8,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    13,
+                                  ],
+                                  "type": "number",
+                                },
+                              ],
+                            },
+                          },
+                          "required": [
+                            "name",
+                            "weight",
+                            "description",
+                          ],
+                          "type": "object",
+                        },
+                        "maxItems": 20,
+                        "type": "array",
+                      },
+                    },
+                    "required": [
+                      "mission",
+                      "value_themes",
+                      "time_context",
+                      "risk_posture",
+                      "out_of_scope",
+                      "interview_version",
+                      "updated_at",
+                    ],
+                    "type": "object",
+                  },
                 },
                 "required": [
                   "name",
@@ -685,6 +903,116 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "updated_at": {
                       "type": "string",
+                    },
+                    "value_charter": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "interview_version": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "mission": {
+                          "maxLength": 5000,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "out_of_scope": {
+                          "items": {
+                            "maxLength": 500,
+                            "type": "string",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "risk_posture": {
+                          "maxLength": 5000,
+                          "type": "string",
+                        },
+                        "time_context": {
+                          "maxLength": 5000,
+                          "type": "string",
+                        },
+                        "updated_at": {
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "value_themes": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "description": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "weight": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      1,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      2,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      3,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      5,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      8,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      13,
+                                    ],
+                                    "type": "number",
+                                  },
+                                ],
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "weight",
+                              "description",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 20,
+                          "type": "array",
+                        },
+                      },
+                      "required": [
+                        "mission",
+                        "value_themes",
+                        "time_context",
+                        "risk_posture",
+                        "out_of_scope",
+                        "interview_version",
+                        "updated_at",
+                      ],
+                      "type": "object",
                     },
                   },
                   "required": [
@@ -781,6 +1109,116 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "updated_at": {
                       "type": "string",
                     },
+                    "value_charter": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "interview_version": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "mission": {
+                          "maxLength": 5000,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "out_of_scope": {
+                          "items": {
+                            "maxLength": 500,
+                            "type": "string",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "risk_posture": {
+                          "maxLength": 5000,
+                          "type": "string",
+                        },
+                        "time_context": {
+                          "maxLength": 5000,
+                          "type": "string",
+                        },
+                        "updated_at": {
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "value_themes": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "description": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "weight": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      1,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      2,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      3,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      5,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      8,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      13,
+                                    ],
+                                    "type": "number",
+                                  },
+                                ],
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "weight",
+                              "description",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 20,
+                          "type": "array",
+                        },
+                      },
+                      "required": [
+                        "mission",
+                        "value_themes",
+                        "time_context",
+                        "risk_posture",
+                        "out_of_scope",
+                        "interview_version",
+                        "updated_at",
+                      ],
+                      "type": "object",
+                    },
                   },
                   "required": [
                     "id",
@@ -830,6 +1268,114 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "minLength": 1,
                     "type": "string",
                   },
+                  "value_charter": {
+                    "nullable": true,
+                    "properties": {
+                      "interview_version": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer",
+                      },
+                      "mission": {
+                        "maxLength": 5000,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "out_of_scope": {
+                        "items": {
+                          "maxLength": 500,
+                          "type": "string",
+                        },
+                        "maxItems": 50,
+                        "type": "array",
+                      },
+                      "risk_posture": {
+                        "maxLength": 5000,
+                        "type": "string",
+                      },
+                      "time_context": {
+                        "maxLength": 5000,
+                        "type": "string",
+                      },
+                      "updated_at": {
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "value_themes": {
+                        "items": {
+                          "properties": {
+                            "description": {
+                              "maxLength": 2000,
+                              "type": "string",
+                            },
+                            "name": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            "weight": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    1,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    2,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    3,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    5,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    8,
+                                  ],
+                                  "type": "number",
+                                },
+                                {
+                                  "enum": [
+                                    13,
+                                  ],
+                                  "type": "number",
+                                },
+                              ],
+                            },
+                          },
+                          "required": [
+                            "name",
+                            "weight",
+                            "description",
+                          ],
+                          "type": "object",
+                        },
+                        "maxItems": 20,
+                        "type": "array",
+                      },
+                    },
+                    "required": [
+                      "mission",
+                      "value_themes",
+                      "time_context",
+                      "risk_posture",
+                      "out_of_scope",
+                      "interview_version",
+                      "updated_at",
+                    ],
+                    "type": "object",
+                  },
                 },
                 "type": "object",
               },
@@ -859,6 +1405,116 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "updated_at": {
                       "type": "string",
+                    },
+                    "value_charter": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "interview_version": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer",
+                        },
+                        "mission": {
+                          "maxLength": 5000,
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "out_of_scope": {
+                          "items": {
+                            "maxLength": 500,
+                            "type": "string",
+                          },
+                          "maxItems": 50,
+                          "type": "array",
+                        },
+                        "risk_posture": {
+                          "maxLength": 5000,
+                          "type": "string",
+                        },
+                        "time_context": {
+                          "maxLength": 5000,
+                          "type": "string",
+                        },
+                        "updated_at": {
+                          "minLength": 1,
+                          "type": "string",
+                        },
+                        "value_themes": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "description": {
+                                "maxLength": 2000,
+                                "type": "string",
+                              },
+                              "name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "weight": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      1,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      2,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      3,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      5,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      8,
+                                    ],
+                                    "type": "number",
+                                  },
+                                  {
+                                    "enum": [
+                                      13,
+                                    ],
+                                    "type": "number",
+                                  },
+                                ],
+                              },
+                            },
+                            "required": [
+                              "name",
+                              "weight",
+                              "description",
+                            ],
+                            "type": "object",
+                          },
+                          "maxItems": 20,
+                          "type": "array",
+                        },
+                      },
+                      "required": [
+                        "mission",
+                        "value_themes",
+                        "time_context",
+                        "risk_posture",
+                        "out_of_scope",
+                        "interview_version",
+                        "updated_at",
+                      ],
+                      "type": "object",
                     },
                   },
                   "required": [

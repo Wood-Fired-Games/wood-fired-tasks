@@ -233,12 +233,25 @@ export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
 /**
  * CreateProjectSchema - validation for creating new projects
  */
-export const CreateProjectSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100, 'Name must be 100 characters or less'),
-  description: z.string().max(1000).optional().nullable(),
-});
-
-export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
+/**
+ * Project create/update schemas live in `project.schema.ts` (the single source
+ * of truth that carries the WSJF `value_charter`). They are re-exported here so
+ * every consumer that imports project schemas from this barrel — the REST
+ * project routes and the remote MCP proxy among them — gets the
+ * value_charter-aware definitions automatically.
+ *
+ * A local duplicate used to live here and silently lacked `value_charter`,
+ * which stripped the charter on the entire remote (REST + proxy) write path
+ * while the stdio path worked. Re-exporting keeps the two transports at parity
+ * by construction; the `task.schema ≡ project.schema` referential-identity
+ * guard in the project-tools tests fails loudly if they ever diverge again.
+ */
+export {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+  type CreateProjectInput,
+  type UpdateProjectInput,
+} from './project.schema.js';
 
 /**
  * Pagination bounds applied to all list endpoints.

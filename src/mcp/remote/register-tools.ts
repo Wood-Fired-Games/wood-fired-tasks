@@ -7,6 +7,7 @@ import {
   UpdateTaskSchema,
   ListTasksMcpSchema,
   CreateProjectSchema,
+  UpdateProjectSchema,
   CompletionReportSchema,
   toCompactTask,
 } from '../../schemas/task.schema.js';
@@ -449,7 +450,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   server.registerTool(
     'create_project',
     {
-      description: 'Create a new project',
+      description:
+        'Create a new project. Optionally accepts a WSJF `value_charter` ' +
+        '(mission, ranked Fibonacci-weighted value themes, time/risk context); ' +
+        'a malformed charter is rejected.',
       inputSchema: CreateProjectSchema,
     },
     async (args) => {
@@ -576,10 +580,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   server.registerTool(
     'update_project',
     {
-      description: 'Update an existing project by ID. Can update name and/or description.',
+      description:
+        'Update an existing project by ID. Can update the name, description, ' +
+        'and/or the WSJF `value_charter` (pass null to clear it). A malformed ' +
+        'charter is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
-        updates: CreateProjectSchema.partial(),
+        updates: UpdateProjectSchema,
       }),
     },
     async (args) => {

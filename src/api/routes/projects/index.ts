@@ -1,6 +1,9 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { CreateProjectSchema } from '../../../schemas/task.schema.js';
+import {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+} from '../../../schemas/task.schema.js';
 import {
   ProjectResponseSchema,
   ProjectListPaginatedResponseSchema,
@@ -85,7 +88,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
         tags: ['projects'],
         description: 'Update project by ID',
         params: z.object({ id: z.coerce.number().int().positive() }),
-        body: CreateProjectSchema.partial(),
+        body: UpdateProjectSchema,
         response: {
           200: ProjectResponseSchema,
         },
