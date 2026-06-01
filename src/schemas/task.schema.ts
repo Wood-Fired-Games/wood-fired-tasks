@@ -1,5 +1,41 @@
 import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../types/task.js';
+import {
+  FibSchema,
+  WsjfEvidenceSchema,
+  WsjfLocksSchema,
+  WsjfSourceSchema,
+  WsjfClassificationSchema,
+  WsjfFeaturesSchema,
+} from './wsjf.schema.js';
+
+/**
+ * WSJF (task #627): the WSJF score payload accepted on create/update.
+ *
+ * ALL-FOUR-OR-NONE enforcement: the four component scores
+ * (`value`, `timeCriticality`, `riskOpportunity`, `jobSize`) are each REQUIRED
+ * inside this object, and the whole `wsjf` field is OPTIONAL on the task
+ * schemas. So a caller either supplies a fully-scored task (all four present)
+ * or omits `wsjf` entirely — a half-scored payload (e.g. only `value`) is
+ * rejected because the other three components are missing. The structured
+ * JSON metadata members are optional and reuse the validators from
+ * `wsjf.schema.ts` (no redefinition — those are the authoritative shapes).
+ */
+export const WsjfWriteSchema = z
+  .object({
+    value: FibSchema,
+    timeCriticality: FibSchema,
+    riskOpportunity: FibSchema,
+    jobSize: FibSchema,
+    evidence: WsjfEvidenceSchema.optional().nullable(),
+    locked: WsjfLocksSchema.optional().nullable(),
+    source: WsjfSourceSchema.optional().nullable(),
+    classifications: WsjfClassificationSchema.optional().nullable(),
+    features: WsjfFeaturesSchema.optional().nullable(),
+  })
+  .strict();
+
+export type WsjfWriteInput = z.infer<typeof WsjfWriteSchema>;
 
 /**
  * Wave 1.4 (task #312): verdict enum for the verification_evidence envelope.
@@ -92,6 +128,10 @@ export const CreateTaskSchema = z.object({
   // call sites can pass them through.
   created_by_user_id: z.number().int().positive().optional().nullable(),
   assignee_user_id: z.number().int().positive().optional().nullable(),
+  // WSJF (task #627): optional WSJF score. Omit for an unscored task; supply
+  // the full object (all four components) for a scored one. All-four-or-none
+  // is enforced by WsjfWriteSchema (the four components are required there).
+  wsjf: WsjfWriteSchema.optional().nullable(),
 });
 
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
@@ -140,6 +180,9 @@ export const UpdateTaskSchema = z.object({
   // 400" contract). Pass null to clear, an object to set. Stored as a JSON
   // string by the repository.
   verification_evidence: VerificationEvidenceSchema.nullable(),
+  // WSJF (task #627): patch the WSJF score. `null` clears all four components;
+  // an object sets them (all-four-or-none enforced by WsjfWriteSchema).
+  wsjf: WsjfWriteSchema.nullable(),
 }).partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
@@ -168,6 +211,9 @@ export const UpdateTaskClientSchema = z.object({
   // envelope. It is NOT server-derived, so it stays on the client-facing
   // schema. Unknown verdicts get rejected at the Zod boundary.
   verification_evidence: VerificationEvidenceSchema.nullable(),
+  // WSJF (task #627): clients may patch the WSJF score directly. `null` clears
+  // it; an object sets all four components (all-four-or-none enforced).
+  wsjf: WsjfWriteSchema.nullable(),
 }).partial().strict();
 
 export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;

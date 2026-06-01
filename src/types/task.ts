@@ -1,3 +1,11 @@
+import type {
+  WsjfEvidence,
+  WsjfLocks,
+  WsjfSource,
+  WsjfClassification,
+  WsjfFeatures,
+} from './wsjf.js';
+
 // Task status and priority enums
 export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged'] as const;
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
@@ -77,6 +85,50 @@ export interface Task {
    * field is the parsed object as seen by service / route / MCP / CLI.
    */
   verification_evidence: VerificationEvidence | null;
+  /**
+   * WSJF (task #627): the four server-computed component scores. Each is a
+   * Fibonacci tier ({@link Fib}) or NULL. All four are NULL together for
+   * unscored tasks (rows that pre-date migration 013 OR were never scored) —
+   * the all-four-or-none rule is enforced at the schema boundary on write.
+   * Stored as the INTEGER columns
+   * `wsjf_value / wsjf_time_criticality / wsjf_risk_opportunity / wsjf_job_size`.
+   */
+  wsjf_value: Fib | null;
+  wsjf_time_criticality: Fib | null;
+  wsjf_risk_opportunity: Fib | null;
+  wsjf_job_size: Fib | null;
+  /**
+   * WSJF (task #627): structured JSON metadata describing how the score was
+   * derived. Stored as TEXT JSON columns; the repository serializes on write
+   * and parses on read (the `inflateVerificationEvidence` pattern), so these
+   * fields are the parsed objects as seen by service / route / MCP / CLI.
+   * NULL for unscored rows.
+   *
+   *  - `wsjf_evidence`        — verbatim source spans, one per component.
+   *  - `wsjf_locked`          — per-component lock flags (survive a rescore).
+   *  - `wsjf_source`          — per-component provenance (`auto` | `manual`).
+   *  - `wsjf_classifications` — the raw LLM classification(s) backing the score.
+   *  - `wsjf_features`        — the deterministic features the server gathered.
+   */
+  wsjf_evidence: WsjfEvidence | null;
+  wsjf_locked: WsjfLocks | null;
+  wsjf_source: WsjfSource | null;
+  wsjf_classifications: WsjfClassification | null;
+  wsjf_features: WsjfFeatures | null;
+}
+
+/**
+ * WSJF (task #627): read-only derived view of a task's WSJF standing. These
+ * fields are NEVER stored — they are computed at read time by the ranking
+ * service ({@link rankFrontier}). `wsjf_score` is the base WSJF
+ * `(value + timeCriticality + riskOpportunity) / max(jobSize, 1)`;
+ * `effective_wsjf` folds in dependency-propagation (γ-decayed, capped).
+ * Both are absent (undefined) for unscored tasks and on any read that does
+ * not pass through the ranking pipeline.
+ */
+export interface TaskWithWsjfScore extends Task {
+  readonly wsjf_score?: number;
+  readonly effective_wsjf?: number;
 }
 
 /**
@@ -162,6 +214,25 @@ export interface Comment {
 // (assignee, created_by, author) and are populated by callers that have
 // already resolved the displayName -> users.id mapping; legacy callers
 // continue to work because every new field is optional and defaults to null.
+/**
+ * WSJF (task #627): the full WSJF write payload carried on create/update DTOs.
+ * The four component scores plus the structured JSON metadata. Either all four
+ * components are present (a fully-scored task) or the whole `wsjf` object is
+ * omitted — the all-four-or-none rule is enforced at the schema boundary.
+ * The repository serializes the JSON members on write.
+ */
+export interface WsjfWriteDTO {
+  value: Fib;
+  timeCriticality: Fib;
+  riskOpportunity: Fib;
+  jobSize: Fib;
+  evidence?: WsjfEvidence | null;
+  locked?: WsjfLocks | null;
+  source?: WsjfSource | null;
+  classifications?: WsjfClassification | null;
+  features?: WsjfFeatures | null;
+}
+
 export interface CreateTaskDTO {
   title: string;
   description?: string | null;
@@ -179,6 +250,12 @@ export interface CreateTaskDTO {
   assignee_user_id?: number | null;
   /** Wave 1.3 (#311): optional free-form acceptance criteria (markdown). */
   acceptance_criteria?: string | null;
+  /**
+   * WSJF (#627): optional WSJF score to persist on create. `undefined`/absent
+   * leaves every wsjf_* column NULL (unscored task). When present, all four
+   * components are written and the JSON metadata is serialized.
+   */
+  wsjf?: WsjfWriteDTO | null;
 }
 
 export interface UpdateTaskDTO {
@@ -208,6 +285,14 @@ export interface UpdateTaskDTO {
    * (serialized to JSON by the repository).
    */
   verification_evidence?: VerificationEvidence | null;
+  /**
+   * WSJF (#627): patch the WSJF score. `undefined` (key absent) leaves every
+   * wsjf_* column untouched; explicit `null` clears all of them (back to
+   * unscored); a {@link WsjfWriteDTO} object sets all four components and
+   * serializes the JSON metadata. All-four-or-none is enforced at the schema
+   * boundary.
+   */
+  wsjf?: WsjfWriteDTO | null;
 }
 
 export interface CreateProjectDTO {

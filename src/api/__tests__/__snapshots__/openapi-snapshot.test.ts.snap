@@ -1713,6 +1713,422 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "minLength": 1,
                     "type": "string",
                   },
+                  "wsjf": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "classifications": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "alignment": {
+                            "enum": [
+                              "none",
+                              "weak",
+                              "direct",
+                              "core",
+                            ],
+                            "type": "string",
+                          },
+                          "decay": {
+                            "enum": [
+                              "flat",
+                              "slow",
+                              "fast",
+                            ],
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "evidence": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "jobSize": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "riskOpportunity": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "timeCriticality": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "value": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "value",
+                              "timeCriticality",
+                              "riskOpportunity",
+                              "jobSize",
+                            ],
+                            "type": "object",
+                          },
+                          "jobSizeTier": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  1,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  2,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  3,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  5,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  8,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  13,
+                                ],
+                                "type": "number",
+                              },
+                            ],
+                          },
+                          "severity": {
+                            "enum": [
+                              "none",
+                              "tech_debt",
+                              "security",
+                              "data_loss",
+                              "compliance",
+                            ],
+                            "type": "string",
+                          },
+                          "themeName": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "themeName",
+                          "alignment",
+                          "severity",
+                          "decay",
+                          "jobSizeTier",
+                          "evidence",
+                        ],
+                        "type": "object",
+                      },
+                      "evidence": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "jobSize": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          "riskOpportunity": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          "timeCriticality": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          "value": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "value",
+                          "timeCriticality",
+                          "riskOpportunity",
+                          "jobSize",
+                        ],
+                        "type": "object",
+                      },
+                      "features": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "charterVersion": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "daysUntilDeadline": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "deadlineDate": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "filesTouched": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "transitiveDependents": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "deadlineDate",
+                          "daysUntilDeadline",
+                          "transitiveDependents",
+                          "filesTouched",
+                          "charterVersion",
+                        ],
+                        "type": "object",
+                      },
+                      "jobSize": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                      "locked": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "jobSize": {
+                            "type": "boolean",
+                          },
+                          "riskOpportunity": {
+                            "type": "boolean",
+                          },
+                          "timeCriticality": {
+                            "type": "boolean",
+                          },
+                          "value": {
+                            "type": "boolean",
+                          },
+                        },
+                        "required": [
+                          "value",
+                          "timeCriticality",
+                          "riskOpportunity",
+                          "jobSize",
+                        ],
+                        "type": "object",
+                      },
+                      "riskOpportunity": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "jobSize": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                          "riskOpportunity": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                          "timeCriticality": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                          "value": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "value",
+                          "timeCriticality",
+                          "riskOpportunity",
+                          "jobSize",
+                        ],
+                        "type": "object",
+                      },
+                      "timeCriticality": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                    },
+                    "required": [
+                      "value",
+                      "timeCriticality",
+                      "riskOpportunity",
+                      "jobSize",
+                    ],
+                    "type": "object",
+                  },
                 },
                 "required": [
                   "title",
@@ -2571,6 +2987,422 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "required": [
                       "verdict",
+                    ],
+                    "type": "object",
+                  },
+                  "wsjf": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "classifications": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "alignment": {
+                            "enum": [
+                              "none",
+                              "weak",
+                              "direct",
+                              "core",
+                            ],
+                            "type": "string",
+                          },
+                          "decay": {
+                            "enum": [
+                              "flat",
+                              "slow",
+                              "fast",
+                            ],
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "evidence": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "jobSize": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "riskOpportunity": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "timeCriticality": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              "value": {
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                            },
+                            "required": [
+                              "value",
+                              "timeCriticality",
+                              "riskOpportunity",
+                              "jobSize",
+                            ],
+                            "type": "object",
+                          },
+                          "jobSizeTier": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  1,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  2,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  3,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  5,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  8,
+                                ],
+                                "type": "number",
+                              },
+                              {
+                                "enum": [
+                                  13,
+                                ],
+                                "type": "number",
+                              },
+                            ],
+                          },
+                          "severity": {
+                            "enum": [
+                              "none",
+                              "tech_debt",
+                              "security",
+                              "data_loss",
+                              "compliance",
+                            ],
+                            "type": "string",
+                          },
+                          "themeName": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "themeName",
+                          "alignment",
+                          "severity",
+                          "decay",
+                          "jobSizeTier",
+                          "evidence",
+                        ],
+                        "type": "object",
+                      },
+                      "evidence": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "jobSize": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          "riskOpportunity": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          "timeCriticality": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          "value": {
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "value",
+                          "timeCriticality",
+                          "riskOpportunity",
+                          "jobSize",
+                        ],
+                        "type": "object",
+                      },
+                      "features": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "charterVersion": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "daysUntilDeadline": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "deadlineDate": {
+                            "nullable": true,
+                            "type": "string",
+                          },
+                          "filesTouched": {
+                            "nullable": true,
+                            "type": "number",
+                          },
+                          "transitiveDependents": {
+                            "type": "number",
+                          },
+                        },
+                        "required": [
+                          "deadlineDate",
+                          "daysUntilDeadline",
+                          "transitiveDependents",
+                          "filesTouched",
+                          "charterVersion",
+                        ],
+                        "type": "object",
+                      },
+                      "jobSize": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                      "locked": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "jobSize": {
+                            "type": "boolean",
+                          },
+                          "riskOpportunity": {
+                            "type": "boolean",
+                          },
+                          "timeCriticality": {
+                            "type": "boolean",
+                          },
+                          "value": {
+                            "type": "boolean",
+                          },
+                        },
+                        "required": [
+                          "value",
+                          "timeCriticality",
+                          "riskOpportunity",
+                          "jobSize",
+                        ],
+                        "type": "object",
+                      },
+                      "riskOpportunity": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "jobSize": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                          "riskOpportunity": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                          "timeCriticality": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                          "value": {
+                            "enum": [
+                              "auto",
+                              "manual",
+                            ],
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "value",
+                          "timeCriticality",
+                          "riskOpportunity",
+                          "jobSize",
+                        ],
+                        "type": "object",
+                      },
+                      "timeCriticality": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              1,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              2,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              3,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              5,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              8,
+                            ],
+                            "type": "number",
+                          },
+                          {
+                            "enum": [
+                              13,
+                            ],
+                            "type": "number",
+                          },
+                        ],
+                      },
+                    },
+                    "required": [
+                      "value",
+                      "timeCriticality",
+                      "riskOpportunity",
+                      "jobSize",
                     ],
                     "type": "object",
                   },
