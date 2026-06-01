@@ -259,3 +259,31 @@ evidence spans when this fires; usually one of the two classes is wrong.
       criticality, or risk/opportunity.
 - [ ] Batch only: each cost-of-delay column has a `1` anchor and real spread
       (variance ≥ floor); columns scored down their column, not row-by-row.
+
+---
+
+## Tiered, selective redundancy (high-stakes tasks only)
+
+Most tasks get a single deterministic-first pass. A **high-stakes** task —
+`isHighStakes` in `wsjf.service.ts`, i.e. one near the **top of the ready
+frontier** OR one the deterministic layer **could not decide** (a contradiction
+rule fired, or the Job-Size band is the maximally-wide `[1,13]`) — gets the
+redundant path instead. Ordinary tasks do NOT.
+
+For a high-stakes task, the orchestrator calls
+`redundantScore(sample, verify, opts)`:
+
+1. **Tier 1 — N-sample self-consistency**: classify it `N` times (default
+   `DEFAULT_REDUNDANCY_SAMPLES = 3`), then take the per-component **median
+   Fibonacci bucket** (`aggregateSamples` → `fibMedianBucket`). Deterministic for
+   a fixed sample set.
+2. **Tier 2 — independent verifier**: triggered ONLY when the Tier-1 samples
+   disagree beyond tolerance (`DEFAULT_REDUNDANCY_TOLERANCE = 1` ordinal step) on
+   some component, or a contradiction rule fires on the aggregate. Re-run the
+   classification **blind** in a fresh `tasks-verifier` sub-agent and pass its
+   components as `verify()`. If the verifier lands within tolerance the aggregate
+   stands; otherwise the component is marked **low-confidence** and flagged for
+   human review (`RedundantScoreResult.lowConfidence`).
+
+You still emit **classifications only** on every sample; the median, escalation,
+and low-confidence flagging are computed deterministically by the service.

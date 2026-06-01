@@ -18,6 +18,7 @@ import type {
   SeverityClass,
   DecayClass,
   WsjfComponents,
+  WsjfComponentKey,
   WsjfClassification,
   WsjfFeatures,
 } from '../types/wsjf.js';
@@ -805,4 +806,235 @@ export async function rankFrontier(
   });
 
   return ranked;
+}
+
+// ---------------------------------------------------------------------------
+// Task #635 (WSJF 2.4) — tiered, selective redundancy with median aggregation
+// and verifier escalation (design spec §12.4).
+//
+// This is the read-time reliability layer that sits ON TOP of the deterministic
+// gate. It does NOT run for every task: redundancy is *selective*, applied only
+// to HIGH-STAKES classifications where extra sampling actually changes outcomes
+// — tasks near the top of the ready frontier, OR tasks the deterministic layer
+// could not decide (a contradiction rule fired / job-size is maximally
+// ambiguous). Everything else gets a single deterministic-first pass.
+//
+// Tier 1 — N-sample self-consistency: classify N times (default 3), take the
+// per-component MEDIAN Fibonacci bucket (deterministic aggregation: median over
+// the ORDINAL position in `FIB`, lower-median on an even sample count so the
+// result is reproducible and never invents a tier that wasn't sampled).
+//
+// Tier 2 — independent verifier: triggered ONLY when the Tier-1 samples
+// disagree beyond tolerance (max ordinal spread on any component) OR a
+// contradiction rule fires on the aggregate. A fresh-context verifier
+// re-classifies blind; if it agrees within tolerance the aggregate stands,
+// otherwise the disagreeing components are marked LOW-CONFIDENCE and flagged for
+// human review (persistent disagreement → low-confidence flag).
+//
+// All aggregation here is PURE (no I/O, no clock, no randomness). The sampling
+// and verifier calls are injected as async callbacks so the orchestration is
+// unit-testable with mocks — the scoring skill supplies the real LLM-backed
+// sampler + `tasks-verifier` sub-agent.
+// ---------------------------------------------------------------------------
+
+/** The four WSJF component keys, in canonical order. */
+const COMPONENT_KEYS: readonly WsjfComponentKey[] = [
+  'value',
+  'timeCriticality',
+  'riskOpportunity',
+  'jobSize',
+];
+
+/** Default number of Tier-1 self-consistency samples (design spec §12.4). */
+export const DEFAULT_REDUNDANCY_SAMPLES = 3;
+
+/**
+ * Per-component disagreement tolerance, expressed as a maximum allowed spread in
+ * ORDINAL Fibonacci steps. `0` = every sample must land on the identical tier;
+ * `1` (default) = samples may straddle one adjacent tier (e.g. 5↔8) before the
+ * component is considered to disagree and Tier-2 escalation fires.
+ */
+export const DEFAULT_REDUNDANCY_TOLERANCE = 1;
+
+/** Ordinal index of a Fibonacci tier within {@link FIB} (0..5). */
+function fibOrdinal(f: Fib): number {
+  return FIB.indexOf(f);
+}
+
+/**
+ * Deterministic MEDIAN Fibonacci bucket of a non-empty sample of tiers. Median
+ * is taken over the ORDINAL position in {@link FIB} (so 3 and 8 median to 5, not
+ * an arithmetic mean), and uses the LOWER median on an even count so the result
+ * is fully reproducible and is always one of the sampled-tier neighbourhood.
+ *
+ * Canonical: [5] → 5; [3,5,8] → 5; [8,8,3] → 8; [2,5] → 2 (lower median).
+ *
+ * @throws Error on an empty sample (a median of nothing is undefined).
+ */
+export function fibMedianBucket(samples: Fib[]): Fib {
+  if (samples.length === 0) {
+    throw new Error('fibMedianBucket: cannot take the median of an empty sample');
+  }
+  const ordinals = samples.map(fibOrdinal).sort((a, b) => a - b);
+  // Lower median: for odd N the true middle; for even N the lower of the two.
+  const mid = Math.floor((ordinals.length - 1) / 2);
+  return FIB[ordinals[mid]];
+}
+
+/**
+ * Aggregate N component samples into a single {@link WsjfComponents} by taking
+ * the {@link fibMedianBucket} of each component independently. Deterministic for
+ * a fixed sample set regardless of input order.
+ *
+ * @throws Error when given no samples.
+ */
+export function aggregateSamples(samples: WsjfComponents[]): WsjfComponents {
+  if (samples.length === 0) {
+    throw new Error('aggregateSamples: at least one component sample is required');
+  }
+  const out = {} as WsjfComponents;
+  for (const key of COMPONENT_KEYS) {
+    out[key] = fibMedianBucket(samples.map((s) => s[key]));
+  }
+  return out;
+}
+
+/**
+ * The ordinal SPREAD of a single component across a sample set: the difference
+ * between the highest and lowest Fibonacci ordinal observed. `0` means perfect
+ * agreement. Pure.
+ */
+export function componentSpread(samples: WsjfComponents[], key: WsjfComponentKey): number {
+  if (samples.length === 0) return 0;
+  const ords = samples.map((s) => fibOrdinal(s[key]));
+  return Math.max(...ords) - Math.min(...ords);
+}
+
+/**
+ * Which components disagree beyond `tolerance` across the Tier-1 samples — i.e.
+ * their ordinal spread exceeds the allowed step count. Returns the keys in
+ * canonical order (empty = the whole sample set agrees within tolerance). Pure.
+ */
+export function disagreeingComponents(
+  samples: WsjfComponents[],
+  tolerance: number = DEFAULT_REDUNDANCY_TOLERANCE,
+): WsjfComponentKey[] {
+  return COMPONENT_KEYS.filter((key) => componentSpread(samples, key) > tolerance);
+}
+
+/**
+ * Does a task warrant the redundant (multi-sample + maybe-verifier) path?
+ * Redundancy is SELECTIVE — applied only where it changes outcomes:
+ *   - `topOfFrontier`: the task sits at/near the top of the ready frontier (the
+ *     caller decides the cut, e.g. rank index < K), where a wrong bucket would
+ *     reorder what runs next; OR
+ *   - `deterministicUndecided`: the deterministic layer could not decide — a
+ *     contradiction rule fired, or the job-size band is maximally wide ([1,13]),
+ *     so a single sample is least trustworthy.
+ *
+ * Ordinary tasks (neither flag) take the single deterministic-first pass and are
+ * NOT scored redundantly. Pure.
+ */
+export function isHighStakes(input: {
+  topOfFrontier: boolean;
+  deterministicUndecided: boolean;
+}): boolean {
+  return input.topOfFrontier || input.deterministicUndecided;
+}
+
+/**
+ * Outcome of the redundant scoring orchestration for one task.
+ *  - `components`: the aggregated (Tier-1 median, possibly verifier-confirmed)
+ *    components.
+ *  - `escalated`: whether Tier-2 (the independent verifier) was invoked.
+ *  - `lowConfidence`: components that remained in disagreement AFTER the verifier
+ *    (persistent disagreement) — flagged for human review. Empty on agreement.
+ *  - `samples`: the raw Tier-1 samples (for audit / telemetry).
+ */
+export interface RedundantScoreResult {
+  components: WsjfComponents;
+  escalated: boolean;
+  lowConfidence: WsjfComponentKey[];
+  samples: WsjfComponents[];
+}
+
+/**
+ * Tiered redundancy orchestrator (design spec §12.4). PURE in its inputs except
+ * for the two injected async callbacks, which the scoring skill wires to the
+ * real LLM sampler and the `tasks-verifier` sub-agent.
+ *
+ * Flow:
+ *  1. Tier 1 — call `sample()` N times; take the per-component median bucket
+ *     ({@link aggregateSamples}).
+ *  2. Decide escalation: the samples disagree beyond `tolerance` on some
+ *     component, OR a contradiction rule fires on the aggregate
+ *     ({@link checkComponentContradictions}).
+ *  3. Tier 2 — if escalating and a `verify` callback is supplied, call it once
+ *     for a blind re-classification. For each disagreeing component: if the
+ *     verifier lands within `tolerance` of the aggregate bucket, the aggregate
+ *     stands; otherwise that component is marked LOW-CONFIDENCE (persistent
+ *     disagreement) and flagged.
+ *
+ * @param opts.samples    Tier-1 sample count (default {@link DEFAULT_REDUNDANCY_SAMPLES}).
+ * @param opts.tolerance  ordinal-step tolerance (default {@link DEFAULT_REDUNDANCY_TOLERANCE}).
+ * @param sample          async producer of one component sample.
+ * @param verify          async independent verifier; omit to skip Tier 2 (in
+ *                        which case a beyond-tolerance disagreement marks the
+ *                        component low-confidence directly).
+ */
+export async function redundantScore(
+  sample: () => Promise<WsjfComponents>,
+  verify: (() => Promise<WsjfComponents>) | undefined,
+  opts: { samples?: number; tolerance?: number } = {},
+): Promise<RedundantScoreResult> {
+  const n = Math.max(1, opts.samples ?? DEFAULT_REDUNDANCY_SAMPLES);
+  const tolerance = opts.tolerance ?? DEFAULT_REDUNDANCY_TOLERANCE;
+
+  const samples: WsjfComponents[] = [];
+  for (let i = 0; i < n; i++) {
+    samples.push(await sample());
+  }
+  const aggregate = aggregateSamples(samples);
+
+  const disagree = disagreeingComponents(samples, tolerance);
+  const contradiction = checkComponentContradictions(aggregate).length > 0;
+  const shouldEscalate = disagree.length > 0 || contradiction;
+
+  // No escalation needed — Tier-1 median stands, full confidence.
+  if (!shouldEscalate) {
+    return { components: aggregate, escalated: false, lowConfidence: [], samples };
+  }
+
+  // Escalation warranted but no verifier wired: the disagreeing components are
+  // unresolved → low-confidence directly (persistent disagreement).
+  if (verify === undefined) {
+    return {
+      components: aggregate,
+      escalated: false,
+      lowConfidence: [...disagree],
+      samples,
+    };
+  }
+
+  // Tier 2 — blind independent re-classification.
+  const verifierComponents = await verify();
+  // The verifier weighs in on every component we were unsure about (the
+  // disagreeing set, plus all components when a contradiction fired since the
+  // aggregate itself is internally inconsistent).
+  const underReview: WsjfComponentKey[] = contradiction
+    ? [...COMPONENT_KEYS]
+    : [...disagree];
+
+  const lowConfidence: WsjfComponentKey[] = [];
+  for (const key of underReview) {
+    const spread = Math.abs(fibOrdinal(verifierComponents[key]) - fibOrdinal(aggregate[key]));
+    if (spread > tolerance) {
+      // Verifier still disagrees → persistent disagreement → low-confidence.
+      lowConfidence.push(key);
+    }
+  }
+  // Preserve canonical key order.
+  lowConfidence.sort((a, b) => COMPONENT_KEYS.indexOf(a) - COMPONENT_KEYS.indexOf(b));
+
+  return { components: aggregate, escalated: true, lowConfidence, samples };
 }
