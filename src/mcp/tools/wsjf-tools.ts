@@ -8,6 +8,7 @@ import type {
   WsjfRescoreService,
   RescoreSubmission,
 } from '../../services/wsjf-rescore.service.js';
+import type { WsjfHealthService } from '../../services/wsjf-health.service.js';
 
 /**
  * Collaborators the WSJF MCP tools need.
@@ -32,6 +33,13 @@ export interface WsjfToolDeps {
    * `topology_check` is conditionally registered in `createMcpServer`).
    */
   rescore?: WsjfRescoreService;
+  /**
+   * Task #646 (WSJF 5.1): the degeneracy / pitfall linter backing
+   * `wsjf_health`. Optional for the same reason as `rescore` — pre-#646 callers
+   * that build a `WsjfToolDeps` bundle without it keep working, and the
+   * `wsjf_health` tool is only registered when a linter is wired in.
+   */
+  health?: WsjfHealthService;
 }
 
 /** The four WSJF component keys whose history deltas `wsjf_history` reports. */
@@ -261,6 +269,69 @@ export function registerWsjfTools(
               tasks_skipped_locked: result.tasksSkippedLocked,
               results: result.results,
               errors: result.errors,
+            } as unknown as { [x: string]: unknown },
+          };
+        } catch (error) {
+          throw convertToMcpError(error);
+        }
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Tool: wsjf_health — Task #646 (WSJF 5.1)
+  //
+  // Only registered when a linter is wired into the deps bundle
+  // (`deps.health`). Runs the spec §9 degeneracy / pitfall checks (plus the
+  // §11.4 score-churn check) over a project's WSJF state and returns the
+  // severity-tagged findings list. Non-blocking, pure read — writes nothing.
+  // -------------------------------------------------------------------------
+  if (deps.health) {
+    const healthService = deps.health;
+    server.registerTool(
+      'wsjf_health',
+      {
+        description:
+          "Lint a project's WSJF state for degeneracies and pitfalls " +
+          '(non-blocking). Reports near-identical scores, a Cost-of-Delay ' +
+          'column missing its `1` anchor, a Job Size distribution collapsed to ' +
+          '1–2, past-deadline tasks with stale Time Criticality, a high ' +
+          'priority-fallback ratio, and score-churn across rescore runs. Each ' +
+          'finding carries a severity, a plain-language message, and a suggested ' +
+          'fix. Empty findings list ⇔ healthy.',
+        inputSchema: z.object({
+          project_id: z.number().int().positive(),
+        }),
+      },
+      async (args) => {
+        try {
+          const report = healthService.check(args.project_id);
+
+          const summary = [
+            report.healthy
+              ? `Project ${report.projectId} WSJF health: OK ` +
+                `(${report.scoredTaskCount} scored task(s), no degeneracies).`
+              : `Project ${report.projectId} WSJF health: ${report.findings.length} ` +
+                `finding(s) across ${report.scoredTaskCount} scored task(s):\n`,
+          ];
+          for (const f of report.findings) {
+            summary.push(
+              `- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`,
+            );
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: summary.join('\n'),
+              },
+            ],
+            structuredContent: {
+              project_id: report.projectId,
+              healthy: report.healthy,
+              scored_task_count: report.scoredTaskCount,
+              findings: report.findings,
             } as unknown as { [x: string]: unknown },
           };
         } catch (error) {

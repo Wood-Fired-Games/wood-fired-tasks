@@ -20,6 +20,7 @@ import { WsjfHistoryRepository } from '../repositories/wsjf-history.repository.j
 import { WsjfRescoreRepository } from '../repositories/wsjf-rescore.repository.js';
 import { ProjectRepository } from '../repositories/project.repository.js';
 import { WsjfRescoreService } from '../services/wsjf-rescore.service.js';
+import { WsjfHealthService } from '../services/wsjf-health.service.js';
 import { VERSION } from '../utils/version.js';
 import {
   EVENTS_RESOURCE_URI,
@@ -59,7 +60,7 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 26 tools and 1 resource:
+ * Factory function that creates an McpServer with 27 tools and 1 resource:
  * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
  * - 1 wait tool (wait_for_unblock) — Task #455, in-process long-poll on blocked->open
  * - 5 project tools (create, get, update, list, delete)
@@ -143,6 +144,13 @@ export function createMcpServer(
     runs: new WsjfRescoreRepository(db),
     topology: wsjfTopologyService,
   });
+  // WSJF 5.1 (#646): the degeneracy / pitfall linter backing `wsjf_health`.
+  // Pure read over the same task repo + append-only history reader the rest of
+  // the WSJF tools share.
+  const wsjfHealthService = new WsjfHealthService({
+    tasks: wsjfTaskRepo,
+    history: wsjfHistoryRepo,
+  });
   registerWsjfTools(server, {
     rank: {
       topology: wsjfTopologyService,
@@ -151,6 +159,7 @@ export function createMcpServer(
     },
     history: wsjfHistoryRepo,
     rescore: wsjfRescoreService,
+    health: wsjfHealthService,
   });
 
   // Register resources

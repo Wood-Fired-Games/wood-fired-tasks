@@ -10,7 +10,7 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 26 tools for task, project, comment, dependency, reporting, health, topology, WSJF, and wait operations
+- 27 tools for task, project, comment, dependency, reporting, health, topology, WSJF, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 11 pre-built skill files for common workflows
@@ -290,7 +290,7 @@ The remote server carries every tool the local server does. `completion_report` 
 
 ## Tools Reference
 
-The MCP server exposes 26 tools organized by domain:
+The MCP server exposes 27 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -995,7 +995,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:bug-smash`
-- Explore the 26 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 27 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host
 - Read the `events://stream` resource for real-time event integration
