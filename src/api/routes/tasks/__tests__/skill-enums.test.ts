@@ -166,16 +166,18 @@ describe('skill enum-value consistency (#347)', () => {
     expect(missingFlag).toEqual([]);
   });
 
-  it('discovers all 17 shipped skill files (sanity: install.sh source set)', () => {
-    expect(allSkillFiles.length).toBe(17);
+  it('discovers all 18 shipped skill files (sanity: install.sh source set)', () => {
+    expect(allSkillFiles.length).toBe(18);
   });
 
-  it('partitions into 14 invocable + 3 non-invocable by actual flag value', () => {
+  it('partitions into 15 invocable + 3 non-invocable by actual flag value', () => {
     // decompose.md flipped from gated→invocable when its runtime landed,
-    // so the invocable bucket is 14. The non-invocable bucket is 3:
+    // so the invocable bucket is 15. The non-invocable bucket is 3:
     // _enums.md, loop-shared.md, and wsjf-rubric.md (the WSJF 2.1
     // classification contract — reference material, not a command).
-    expect(invocableByFlag.length).toBe(14);
+    // Task #639 (WSJF 3.3) added the invocable charter-interview command
+    // new-project.md, bumping the invocable bucket 14 → 15.
+    expect(invocableByFlag.length).toBe(15);
     expect(nonInvocableByFlag.length).toBe(3);
   });
 
