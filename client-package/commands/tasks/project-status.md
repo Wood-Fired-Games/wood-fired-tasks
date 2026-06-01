@@ -8,7 +8,7 @@ disable-model-invocation: false
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__wsjf_health`) and retry.
 
 ## Purpose
 Show high-level overview of all projects with task counts broken down by status and completion percentage.
@@ -60,11 +60,21 @@ Total: <count> tasks | Completion: <percentage>%
 ```
 Do NOT render the per-status breakdown for empty projects (every line would be `0` — noise). The single `(no tasks)` line is the entire body.
 
+### 4b. Surface WSJF health findings
+For each project being shown, also probe the `wood-fired-tasks:wsjf_health` MCP tool with `{ project_id: project.id }`. This is the non-blocking spec §9 degeneracy / pitfall linter — it is a pure read and writes nothing. Issue these calls in the SAME single message as the §3a `list_tasks` wave (one `wsjf_health` call per project) so the whole status pass stays one round-trip.
+
+The tool returns `{ healthy, scored_task_count, findings[] }`. Each entry in `findings[]` carries `check` (the stable check id), `severity` (`info` | `warning` | `critical`), `message` (a plain-language explanation), and `suggestion` (a concrete fix).
+
+- **`healthy: true` (empty `findings[]`)** → render NOTHING for that project. A healthy backlog is silent — do not print an "OK" line per project (it is noise on a multi-project workspace).
+- **`findings[]` non-empty** → under the project's status block, add a `WSJF Health` subsection listing each finding as `- [<severity>] <message> Fix: <suggestion>`. Order findings `critical` → `warning` → `info`. Lead with the highest severity so a past-deadline stale-Time-Criticality (`critical`) finding is the first thing the reader sees.
+- If `wsjf_health` is unavailable (the tool is CONDITIONALLY registered — `src/mcp/server.ts` omits it when no health linter is wired), skip this subsection silently; status output is never blocked on the linter.
+
 ### 5. Generate highlights section
 After all projects are shown, add highlights:
 
 - ATTENTION: Flag projects with blocked tasks (blocked count > 0) as needing attention
 - Flag projects with high completion (>80%) as nearly done
+- Flag any project whose `wsjf_health` returned a `critical` finding (e.g. past-deadline stale Time Criticality) as needing rescore attention.
 - Show overall totals across all projects (total tasks, overall completion %)
 
 ### 6. Handle empty state

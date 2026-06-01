@@ -89,6 +89,13 @@ const ENUM_PROSE_ALLOWLIST: ReadonlyArray<{ file: string; contains: string }> =
     { file: 'done.md', contains: 'normal flow' },
     { file: 'done.md', contains: 'normal completion flow' },
     { file: 'pick-up.md', contains: 'normal pickup' },
+    // WSJF 5.2 (#647): wsjf_health SEVERITY scale (`info`|`warning`|`critical`),
+    // a HealthSeverity tag, NOT a task-priority enum value.
+    { file: 'new-project.md', contains: '`info` | `warning` | `critical`' },
+    { file: 'new-project.md', contains: 'ordered `critical` → `warning`' },
+    { file: 'project-status.md', contains: '`info` | `warning` | `critical`' },
+    { file: 'project-status.md', contains: 'Order findings `critical` → `warning` → `info`' },
+    { file: 'project-status.md', contains: 'returned a `critical` finding' },
   ];
 
 /**

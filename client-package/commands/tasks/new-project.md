@@ -29,7 +29,7 @@ capture it as `$ACTOR`.
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand
 `wood-fired-tasks:<tool>` corresponds to harness name
 `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load the tools via
-`ToolSearch` (`select:mcp__wood-fired-tasks__get_project,mcp__wood-fired-tasks__update_project,mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__rescore_project`)
+`ToolSearch` (`select:mcp__wood-fired-tasks__get_project,mcp__wood-fired-tasks__update_project,mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__rescore_project,mcp__wood-fired-tasks__wsjf_health`)
 and retry.
 
 ## The value charter (what you are producing)
@@ -196,6 +196,21 @@ Rules the server enforces (respect them as you build the object):
       `wood-fired-tasks:rescore_project` (project id + `submissions` + `actor_type`
       / `actor_id` from `$ACTOR`). Then report the run summary (evaluated /
       changed / skipped-locked counts).
+    - **Post-rescore health surfacing.** Immediately after a rescore run returns,
+      probe the `wood-fired-tasks:wsjf_health` MCP tool with `{ project_id }` (the
+      non-blocking spec §9 degeneracy / pitfall linter — a pure read that writes
+      nothing). The tool returns `{ healthy, scored_task_count, findings[] }`; each
+      finding carries `check`, `severity` (`info` | `warning` | `critical`),
+      `message`, and `suggestion`. **If `healthy: true`** (empty `findings[]`) say
+      one line — "WSJF health: OK, no degeneracies." — and stop. **If `findings[]`
+      is non-empty**, print a `WSJF Health` block listing each as
+      `- [<severity>] <message> Fix: <suggestion>`, ordered `critical` → `warning`
+      → `info`. This is where a rescore that flattened the spread, dropped a
+      Cost-of-Delay anchor, or left a past-deadline task with stale Time
+      Criticality (score-churn included, §11.4) becomes visible right after the run
+      that caused it. The findings are advisory: never auto-rescore again in
+      response, and never block on the linter — if `wsjf_health` is unavailable
+      (conditionally registered), skip this surfacing silently.
     - On `Skip rescore`, write nothing further: the new charter is saved, the
       backlog keeps its existing scores, and the user can run a rescore later.
       Never rescore without the explicit confirmation.

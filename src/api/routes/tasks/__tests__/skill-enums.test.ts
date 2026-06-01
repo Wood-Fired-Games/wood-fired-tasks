@@ -72,6 +72,16 @@ const PROSE_ALLOWLIST: ReadonlyArray<{
   // not an enum citation. They are also valid canonical members so they
   // are not blocked by this test, but keeping them explicit here documents
   // intent.
+  // WSJF 5.2 (#647) — the wsjf_health surfacing prose names the linter's
+  // SEVERITY scale (`info` | `warning` | `critical`, a HealthSeverity in
+  // src/services/wsjf-health.service.ts), NOT the task-priority enum value.
+  { file: 'loop.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'loop-dag.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'new-project.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'new-project.md', contains: 'ordered `critical` → `warning`' },
+  { file: 'project-status.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'project-status.md', contains: 'Order findings `critical` → `warning` → `info`' },
+  { file: 'project-status.md', contains: 'returned a `critical` finding' },
 ];
 
 interface SkillFinding {
