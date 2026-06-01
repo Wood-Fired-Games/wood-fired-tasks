@@ -289,6 +289,23 @@ evidence span so the score is auditable as signal-derived. `features` are the
 deterministic, no-LLM signals (deadline, transitive-dependent count from the
 Step-4 edge set, files-touched when linkable, charter version).
 
+**Propagate a scored parent's VALUE prior to decompose-children (#644).** When
+the goal being decomposed corresponds to an already-WSJF-scored **parent task**
+(you are breaking *that* task into children, not seeding a fresh project),
+each child **inherits the parent's value-theme mapping + Business-Value (UBV)
+prior** — value flows down the tree (design spec §8.5). Carry the parent's
+`themeName` onto each child's `classification.themeName` and anchor the child's
+Business-Value classification to the parent's value tier as the **prior**,
+rather than re-deriving value from scratch. The three **objective** components
+— Time Criticality, Risk/Opportunity, and Job Size — are still scored **fresh**
+per child from that child's own deadline, DAG fan-out (Step-4 edge set), and
+scope; never copy them from the parent. If the parent's value was **human-set**
+(a manual override, `wsjf_source.value === 'manual'`), the inherited prior is a
+**human-anchored** anchor (flagged so it is visible) — keep the child's value at
+the parent's tier unless the child's own evidence clearly diverges. When the
+parent is unscored, there is no prior to inherit and the child is scored
+entirely fresh as below.
+
 **Rely on the gate's BATCH invariant to reject degenerate batches.** The
 server's `validateScoreSubmission` BATCH path enforces, across the batch, that
 **every Cost-of-Delay column has a `1` anchor AND each column's variance ≥ the

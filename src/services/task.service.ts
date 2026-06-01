@@ -11,7 +11,12 @@ import {
   WsjfWriteDTO,
 } from '../types/task.js';
 import type { WsjfComponents } from '../types/wsjf.js';
-import { computeWsjf, validateManualScore } from './wsjf.service.js';
+import {
+  computeWsjf,
+  validateManualScore,
+  derivePropagatedValuePrior,
+  type PropagatedValuePrior,
+} from './wsjf.service.js';
 import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
@@ -282,6 +287,29 @@ export class TaskService {
     });
 
     return task;
+  }
+
+  /**
+   * WSJF (#644): derive the VALUE prior a derived task (subtask or decompose
+   * child) inherits from its parent. The subtask creation path and the
+   * `decompose` batch-scoring flow call this BEFORE scoring a child: the child
+   * inherits the parent's value-theme mapping (`themeName`) + Business-Value
+   * (UBV) tier, while its OBJECTIVE components (time-criticality, risk/
+   * opportunity, job-size) are scored FRESH from the child's own deadline, DAG
+   * fan-out, and scope — never copied from the parent. When the parent's value
+   * was human-set (`wsjf_source.value === 'manual'`) the prior is flagged
+   * `humanAnchored` so it is visible as a pinned human anchor (design spec
+   * §8.5).
+   *
+   * Returns `null` when the parent does not exist or is unscored (no value to
+   * propagate) — the child is then scored entirely fresh. The work is delegated
+   * to the pure {@link derivePropagatedValuePrior} so the rule lives once in the
+   * WSJF substrate and both creation paths reuse it.
+   */
+  derivePropagatedValuePrior(parentTaskId: number): PropagatedValuePrior | null {
+    const parent = this.taskRepo.findById(parentTaskId);
+    if (!parent) return null;
+    return derivePropagatedValuePrior(parent);
   }
 
   /**

@@ -21,6 +21,7 @@ import type {
   WsjfComponentKey,
   WsjfClassification,
   WsjfFeatures,
+  WsjfSource,
 } from '../types/wsjf.js';
 import { FIB } from '../types/wsjf.js';
 import type { ValueCharter, Task, TaskStatus } from '../types/task.js';
@@ -519,6 +520,73 @@ export function validateScoreSubmission(
     return { ok: false, errors };
   }
   return { ok: true, components, errors: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Task #644 (WSJF 4.4) — propagation of a parent's VALUE prior to derived tasks
+// (subtasks + decompose children). Design spec §8.5:
+//
+//   "when a WSJF-scored task spawns subtasks or decompose-children, children
+//    inherit the parent's value-theme mapping + a Business-Value prior (value
+//    flows down the tree); per-child objective components (Job Size, fan-out)
+//    are scored fresh. A manually-set parent value is propagated as a
+//    human-anchored prior (flagged so it is visible)."
+//
+// ONLY the VALUE dimension flows down: the inherited `themeName` (value-theme
+// mapping) and the parent's Business-Value (UBV) tier. The three OBJECTIVE
+// components — Time Criticality, Risk/Opportunity, Job Size — are deliberately
+// NOT inherited; each derived task scores them fresh from its own deadline,
+// DAG fan-out, and scope. When the parent's VALUE component was human-set
+// (`wsjf_source.value === 'manual'`), the prior is flagged human-anchored so a
+// downstream rescore can treat it as a pinned input rather than a free guess.
+// ---------------------------------------------------------------------------
+
+/**
+ * The minimal parent state {@link derivePropagatedValuePrior} reads: the
+ * parent's persisted Business-Value tier, the theme it was mapped to (the
+ * `wsjf_classifications.themeName`, may be null on a charter-less project), and
+ * its per-component provenance map (to detect a human-set value).
+ */
+export interface PropagationParent {
+  wsjf_value: Fib | null;
+  wsjf_classifications: WsjfClassification | null;
+  wsjf_source: WsjfSource | null;
+}
+
+/**
+ * The VALUE-only prior a derived task inherits from its parent. `value` is the
+ * inherited Business-Value tier; `themeName` is the inherited value-theme
+ * mapping (null on a charter-less parent); `humanAnchored` is true when the
+ * parent's VALUE component was human-set (`wsjf_source.value === 'manual'`),
+ * so the prior is a pinned human anchor rather than an agent guess. The three
+ * objective components are intentionally absent — the caller scores them fresh.
+ */
+export interface PropagatedValuePrior {
+  value: Fib;
+  themeName: string | null;
+  humanAnchored: boolean;
+}
+
+/**
+ * Task #644 (WSJF 4.4): derive the VALUE prior a derived task (subtask or
+ * decompose child) inherits from its scored parent. Pure; no I/O.
+ *
+ * Returns `null` when the parent is unscored (no `wsjf_value`) — there is no
+ * value to flow down, so the child is scored entirely fresh. Otherwise the
+ * child inherits the parent's `value` tier + `themeName` mapping, and the
+ * `humanAnchored` flag mirrors whether the parent's value was manual. The
+ * returned object NEVER carries time-criticality / risk / job-size: those are
+ * objective and MUST be scored fresh per child (design spec §8.5).
+ */
+export function derivePropagatedValuePrior(
+  parent: PropagationParent,
+): PropagatedValuePrior | null {
+  if (parent.wsjf_value === null) return null;
+  return {
+    value: parent.wsjf_value,
+    themeName: parent.wsjf_classifications?.themeName ?? null,
+    humanAnchored: parent.wsjf_source?.value === 'manual',
+  };
 }
 
 // ---------------------------------------------------------------------------
