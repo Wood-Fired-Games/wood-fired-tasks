@@ -16,6 +16,11 @@ import { depAddCommand } from '../commands/dep-add.js';
 import { depRemoveCommand } from '../commands/dep-remove.js';
 import { depListCommand } from '../commands/dep-list.js';
 import { topologyCommand } from '../commands/topology.js';
+import {
+  wsjfHistoryCommand,
+  wsjfSetCommand,
+  charterHistoryCommand,
+} from '../commands/wsjf.js';
 import { commentAddCommand } from '../commands/comment-add.js';
 import { commentListCommand } from '../commands/comment-list.js';
 import { commentDeleteCommand } from '../commands/comment-delete.js';
@@ -80,6 +85,12 @@ program.addCommand(depListCommand);
 
 // Wave 4.1 (task #318): topology classifier — FLAT/DAG/DAG_CYCLIC advisory.
 program.addCommand(topologyCommand);
+
+// WSJF 4.5 (task #645): WSJF score-history, component set/lock, and project
+// charter-history CLI surface.
+program.addCommand(wsjfHistoryCommand);
+program.addCommand(wsjfSetCommand);
+program.addCommand(charterHistoryCommand);
 
 // Register comment commands
 program.addCommand(commentAddCommand);

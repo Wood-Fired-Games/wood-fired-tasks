@@ -7,6 +7,7 @@ import {
 } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
+import projectWsjfRoutes from './wsjf.js';
 
 // Pagination query schema for GET /projects. Mirrors task list bounds.
 const QueryProjectListSchema = z.object({
@@ -105,6 +106,11 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // MCP `topology_check` proxy tool. Registered as a child plugin alongside
   // dependency-graph so its colocated `schema:` block lives in its own file.
   await fastify.register(topologyRoutes);
+
+  // WSJF 4.5 (#645): GET /:id/charter-history + GET /:id/rescore-runs.
+  // Registered as a child plugin alongside topology so its colocated `schema:`
+  // blocks live in their own file.
+  await fastify.register(projectWsjfRoutes);
 
   // DELETE /:id - Delete project
   fastify.delete(

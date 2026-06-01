@@ -58,6 +58,11 @@ The core task/project/comment/dependency CRUD surface:
 | DELETE | `/api/v1/projects/:id` | `routes/projects/index.ts` | Delete project by id. | Yes |
 | GET | `/api/v1/projects/:id/topology` | `routes/projects/topology.ts` | Topology classification (FLAT/DAG/DAG_CYCLIC). | Yes |
 | GET | `/api/v1/projects/:id/dependency-graph` | `routes/projects/dependency-graph.ts` | Dependency-graph tree view (#342). | Yes |
+| GET | `/api/v1/projects/:id/charter-history` | `routes/projects/wsjf.ts` | WSJF 4.5 (#645): chronological value-charter snapshots. | Yes |
+| GET | `/api/v1/projects/:id/rescore-runs` | `routes/projects/wsjf.ts` | WSJF 4.5 (#645): chronological rescore runs. | Yes |
+| GET | `/api/v1/tasks/:id/wsjf` | `routes/tasks/wsjf.ts` | WSJF 4.5 (#645): read persisted WSJF components/evidence/locks. | Yes |
+| PUT | `/api/v1/tasks/:id/wsjf` | `routes/tasks/wsjf.ts` | WSJF 4.5 (#645): set/lock components (manual gate). | Yes |
+| GET | `/api/v1/tasks/:id/score-history` | `routes/tasks/wsjf.ts` | WSJF 4.5 (#645): chronological WSJF score history. | Yes |
 | POST | `/api/v1/tasks/:id/comments` | `routes/comments/index.ts` | Add a comment to a task. | Yes |
 | GET | `/api/v1/tasks/:id/comments` | `routes/comments/index.ts` | List comments for a task. | Yes |
 | DELETE | `/api/v1/tasks/:id/comments/:commentId` | `routes/comments/index.ts` | Delete a comment. | Yes |
@@ -101,15 +106,16 @@ sets are mutually exclusive at runtime.
 and `dependency-graph` rows above live in their own sibling files and are
 counted in the full-surface total below.
 
-**Full surface — Total: 47 route handlers; up to 40 reachable in any single
+**Full surface — Total: 52 route handlers; up to 45 reachable in any single
 running instance.** Counted by
 `/(fastify|server|app)\.(get|post|put|patch|delete)\(/g` across
 `src/api/routes/` (excluding `__tests__`). The 7 OIDC-disabled stub handlers
 are mutually exclusive with the 8 live `/auth/*` routes, so a given instance
-serves 47 − 7 = 40. This matches README's "47 route handlers (40 reachable
-per running instance)". (The POST `/api/v1/me/tokens` route is registered via
-`fastify.route` rather than a verb method, so it is *not* part of the 47 verb
-count; the table lists it for completeness.)
+serves 52 − 7 = 45. WSJF 4.5 (#645) added 5 verb registrations (2 in
+`routes/projects/wsjf.ts`, 3 in `routes/tasks/wsjf.ts`). (The POST
+`/api/v1/me/tokens` route is registered via `fastify.route` rather than a verb
+method, so it is *not* part of the 52 verb count; the table lists it for
+completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
 `/docs` when `npm run dev` runs (production opt-in via
@@ -205,8 +211,11 @@ call.
 | auth | `logout` | `commands/logout.ts` | Revoke the active PAT (DELETE /me/tokens/active) and remove the local credentials file. |
 | auth | `whoami` | `commands/whoami.ts` | Show the currently authenticated user (GET /me + GET /me/tokens). Honors `--json`. |
 | advisory | `topology` | `commands/topology.ts` | Wave 4.1 (#318): classify a project as FLAT/DAG/DAG_CYCLIC and emit an execution advisory. |
+| wsjf | `wsjf-history` | `commands/wsjf.ts` | WSJF 4.5 (#645): show a task's append-only WSJF score history (oldest-first). |
+| wsjf | `wsjf-set` | `commands/wsjf.ts` | WSJF 4.5 (#645): set / lock a task's WSJF components via the manual gate. |
+| wsjf | `charter-history` | `commands/wsjf.ts` | WSJF 4.5 (#645): show a project's value-charter history (oldest-first). |
 
-**Total: 31 commands wired into Commander** (counted by
+**Total: 34 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine
