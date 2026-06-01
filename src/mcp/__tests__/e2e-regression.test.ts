@@ -458,7 +458,13 @@ describe('Skill File Validation', () => {
     // frontmatter table that both `/tasks:loop` and `/tasks:loop-dag`
     // reference. Excluded here for the same reason `_enums.md` is — the
     // count tracks invocable skills only.
-    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md']);
+    //
+    // Task #632 (WSJF 2.1) added `wsjf-rubric.md` as a NON-invocable
+    // (`disable-model-invocation: true`) classification CONTRACT referenced
+    // by `decompose.md` and `create-task.md` when they score tasks. It is a
+    // reference document, not a command, so it is excluded here for the same
+    // reason `loop-shared.md` is.
+    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'))
@@ -475,7 +481,11 @@ describe('Skill File Validation', () => {
     // frontmatter table that both `/tasks:loop` and `/tasks:loop-dag`
     // reference. Excluded here for the same reason `_enums.md` is — the
     // count tracks invocable skills only.
-    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md']);
+    //
+    // Task #632 (WSJF 2.1) added `wsjf-rubric.md` as a NON-invocable
+    // classification contract (reference doc, not a command) — excluded for
+    // the same reason as `loop-shared.md`.
+    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'))

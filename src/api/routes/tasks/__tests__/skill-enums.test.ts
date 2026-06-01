@@ -126,6 +126,12 @@ describe('skill enum-value consistency (#347)', () => {
   const EXPECTED_NON_INVOCABLE: ReadonlySet<string> = new Set([
     '_enums.md',
     'loop-shared.md',
+    // wsjf-rubric.md (task #632 / WSJF 2.1): the classification CONTRACT.
+    // It is a reference document referenced by decompose.md and
+    // create-task.md when they score tasks, not a command installed to
+    // ~/.claude/commands/tasks/ — so it ships gated
+    // (`disable-model-invocation: true`), same precedent as _enums.md.
+    'wsjf-rubric.md',
   ]);
 
   function flagFor(fileName: string): 'true' | 'false' | 'missing' {
@@ -160,18 +166,20 @@ describe('skill enum-value consistency (#347)', () => {
     expect(missingFlag).toEqual([]);
   });
 
-  it('discovers all 16 shipped skill files (sanity: install.sh source set)', () => {
-    expect(allSkillFiles.length).toBe(16);
+  it('discovers all 17 shipped skill files (sanity: install.sh source set)', () => {
+    expect(allSkillFiles.length).toBe(17);
   });
 
-  it('partitions into 14 invocable + 2 non-invocable by actual flag value', () => {
+  it('partitions into 14 invocable + 3 non-invocable by actual flag value', () => {
     // decompose.md flipped from gated→invocable when its runtime landed,
-    // so the invocable bucket is 14 and the non-invocable bucket is 2.
+    // so the invocable bucket is 14. The non-invocable bucket is 3:
+    // _enums.md, loop-shared.md, and wsjf-rubric.md (the WSJF 2.1
+    // classification contract — reference material, not a command).
     expect(invocableByFlag.length).toBe(14);
-    expect(nonInvocableByFlag.length).toBe(2);
+    expect(nonInvocableByFlag.length).toBe(3);
   });
 
-  it('the non-invocable bucket is exactly {_enums.md, loop-shared.md}', () => {
+  it('the non-invocable bucket is exactly {_enums.md, loop-shared.md, wsjf-rubric.md}', () => {
     expect(new Set(nonInvocableByFlag)).toEqual(EXPECTED_NON_INVOCABLE);
   });
 
