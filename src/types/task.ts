@@ -79,12 +79,58 @@ export interface Task {
   verification_evidence: VerificationEvidence | null;
 }
 
+/**
+ * WSJF (Phase 3.1): the modified Fibonacci scale used for every WSJF
+ * component and for value-theme weights. The authoritative Zod validator
+ * lives in `src/schemas/project.schema.ts#FibSchema`.
+ */
+export const FIB = [1, 2, 3, 5, 8, 13] as const;
+export type Fib = (typeof FIB)[number];
+
+/**
+ * WSJF (Phase 3.1): one ranked value theme within a project's charter. The
+ * theme `weight` must be a Fibonacci tier (see {@link Fib}); the validator
+ * `ValueCharterSchema` rejects non-Fibonacci weights at the boundary.
+ */
+export interface ValueTheme {
+  name: string;
+  weight: Fib;
+  description: string;
+}
+
+/**
+ * WSJF (Phase 3.1): per-project "value charter" — the autonomous reference
+ * frame used to score User-Business Value. Stored as a JSON string in
+ * `projects.value_charter` (migration 014); the repository serializes on
+ * write and parses on read, so service / route / MCP / CLI callers see this
+ * parsed shape. NULL for projects that pre-date migration 014 or have not
+ * run the project interview. The authoritative validator is
+ * `src/schemas/project.schema.ts#ValueCharterSchema`.
+ */
+export interface ValueCharter {
+  mission: string;
+  value_themes: ValueTheme[];
+  time_context: string;
+  risk_posture: string;
+  out_of_scope: string[];
+  interview_version: number;
+  /** ISO8601 timestamp the charter was last written by the interview flow. */
+  updated_at: string;
+}
+
 export interface Project {
   id: number;
   name: string;
   description: string | null;
   created_at: string; // ISO8601
   updated_at: string; // ISO8601
+  /**
+   * WSJF (Phase 3.1): the project's value charter. NULL for rows that
+   * pre-date migration 014 OR projects that never ran the value interview.
+   * Stored as a JSON string in SQLite; this field is the parsed object as
+   * seen by service / route / MCP / CLI consumers.
+   */
+  value_charter: ValueCharter | null;
 }
 
 export interface TaskTag {
@@ -167,6 +213,12 @@ export interface UpdateTaskDTO {
 export interface CreateProjectDTO {
   name: string;
   description?: string | null;
+  /**
+   * WSJF (Phase 3.1): optional value charter. `undefined`/absent persists
+   * NULL; an object is serialized to JSON by the repository. On update,
+   * explicit `null` clears it; `undefined` leaves the column untouched.
+   */
+  value_charter?: ValueCharter | null;
 }
 
 export interface CreateDependencyDTO {
