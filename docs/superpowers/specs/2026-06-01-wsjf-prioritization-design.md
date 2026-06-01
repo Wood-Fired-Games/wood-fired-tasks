@@ -119,10 +119,16 @@ mid-project change traceable — see §11.
 | `actor_type` / `actor_id` | TEXT | `agent \| user`, session/user id |
 | `charter_version` | INTEGER | nullable; which charter informed this score |
 | `rescore_run_id` | INTEGER FK | nullable; batch this change belonged to |
-| `value` / `time_criticality` / `risk_opportunity` / `job_size` | INTEGER | component snapshot |
+| `value` / `time_criticality` / `risk_opportunity` / `job_size` | INTEGER | component snapshot (server-computed) |
+| `classifications` | TEXT (JSON) | the LLM's enum classifications that produced the numbers (theme, alignment, severity, decay, job-size tier) |
+| `features` | TEXT (JSON) | deterministic inputs used (parsed deadline, fan-out count, files/LOC, charter version) |
 | `evidence` / `source` / `locked` | TEXT (JSON) | snapshots at write time |
 | `wsjf_score` | REAL | derived snapshot |
 | `prev_wsjf_score` | REAL | nullable; for fast delta queries |
+
+Storing `classifications` + `features` (not just the numbers) is what makes the
+score `f(stored inputs)` and enables **replay verification** without the LLM
+(§12.5).
 
 **`project_charter_history`** — full charter snapshot per version:
 
@@ -165,8 +171,23 @@ produced it.
 
 ## 6. Server: `src/services/wsjf.service.ts` (new)
 
+All of the following are **pure, deterministic functions** — no LLM. The LLM's
+only contribution is bounded enum classifications fed into them (§12).
+
+- **Deterministic component functions** (turn classifications + features into
+  Fibonacci tiers):
+  - `tcFromDaysUntil(days)` — deadline parsed from text/charter → Time Criticality.
+  - `tcFromDecayClass(class)` — fallback when no date: `{flat,slow,fast}` → tier.
+  - `rrFromFanout(transitiveDependents)` — from the DAG.
+  - `rrFromSeverity(class)` — `{none,tech_debt,security,data_loss,compliance}` → tier;
+    `RR = max(rrFromFanout, rrFromSeverity)`.
+  - `jobSizeBand(features)` → allowed tier band; the LLM picks within it.
+  - `ubvFromThemeAlignment(themeWeight, alignmentClass)` — `weight × alignment`
+    lookup → tier.
 - `computeWsjf(c) = (UBV + TC + RR) / max(JobSize, 1)` — Job-Size floor prevents
   divide-by-zero and caps small-job bias.
+- `validateScoreSubmission(submission, context)` — the deterministic gate (§12.3);
+  every write path runs it before persistence.
 - `priorityFallbackScore(priority)` — deterministic mapping so unscored tasks sort
   coherently in the same numeric space as scored ones:
 
@@ -195,8 +216,12 @@ produced it.
 
 ## 7. MCP surface (`src/mcp/tools/`)
 
-- `create_task` / `update_task`: gain the optional `wsjf` object (4 components +
-  evidence + locks) — inherited from the client schemas.
+- `create_task` / `update_task`: gain the optional `wsjf` object. Agents submit
+  **classifications + evidence spans** (not numbers); the tool runs
+  `validateScoreSubmission` and the server computes the stored components. A
+  numbers-only submission is accepted **only** on the human/CLI manual-override
+  path (which sets `source=manual` and is exempt from the classification
+  requirement but not from the enum/contradiction checks).
 - `create_project` / `update_project`: gain the optional `value_charter`.
 - **New `wsjf_ranking(project_id, scope: 'frontier' | 'all')`** — the single
   server-owned ordering authority. Loop skills call it instead of doing math,
@@ -296,9 +321,12 @@ runs, and post-rescore. Each finding carries a plain-language explanation + fix
 
 ## 10. Scoring rubric (`wsjf-rubric.md` content)
 
-Standard {1,2,3,5,8,13} anchors per component, applied **relatively across the
-candidate set** (absolute anchors below seed and stabilize the ranking). Each
-score must emit a one-line evidence string.
+The rubric is a **classification contract**, not a "pick a number" guide (§12): it
+defines the closed enums the LLM chooses from and the deterministic map to
+{1,2,3,5,8,13}. The agent classifies **relatively across the candidate set**
+(batch); the server applies the map. Each classification emits a one-line verbatim
+evidence span. The descriptions below double as the human-readable anchors and the
+enum-to-tier mapping table.
 
 - **User-Business Value** — alignment to the charter's value themes; 1 =
   internal/cosmetic, 13 = mission-critical / top strategic bet. With no charter,
@@ -368,11 +396,100 @@ charter history; rescore runs) + CLI (`wft task wsjf-history <id>`,
 (a task whose value flaps across consecutive rescases = the unstable-estimate
 pitfall) — detectable only because history exists.
 
-## 12. Testing
+## 12. Determinism & LLM reliability
 
-- **Unit**: `computeWsjf`; `priorityFallbackScore`; propagation on a known DAG
-  (diamond dedupe, γ decay, CAP, cycle-guard); Job-Size floor.
-- **Migrations**: `013` and `014` up/down roundtrip.
+Design goal: **maximize deterministic computation; minimize and fence the LLM's
+degrees of freedom.** The unifying principle — **the LLM never emits a WSJF
+number.** It emits *classifications over closed enumerations with cited evidence
+spans*; a pure function turns those into the Fibonacci score. The stored number is
+therefore always `f(stored classifications + features)` — recomputable and
+verifiable without the model.
+
+### 12.1 Deterministic-first decomposition
+
+Each component splits into a deterministic substrate (server) + a bounded residual
+classification (LLM). The substrate dominates:
+
+| Component | Deterministic substrate (pure functions in `wsjf.service`) | Residual LLM (enum classification only) |
+|---|---|---|
+| Time Criticality | parse deadline (date parser) → `tcFromDaysUntil(d)`; server owns deadline-vs-now | only if no date: `decay ∈ {flat, slow, fast}` → bucket |
+| Risk/Opportunity | `rrFromFanout(transitiveDependents)` from the DAG | `severity ∈ {none, tech_debt, security, data_loss, compliance}`; final `= max(fanout, severity)` |
+| Job Size | linked files/LOC (when available) + keyword scope priors → a *band* | pick a tier *within the band* only |
+| User-Business Value | `weight × alignment` lookup table | map task → charter theme (closed set) + `alignment ∈ {none, weak, direct, core}` |
+
+TC and RR are frequently **fully deterministic** (a date or a fan-out count
+decides them); the LLM collapses to bounded classification, and UBV becomes
+"choose a theme + alignment level," never "invent a number."
+
+### 12.2 Output constraint & deterministic validation
+
+- **Schema-constrained generation**: scoring returns strict zod with **enum-only**
+  fields (theme names sourced live from the charter; fixed alignment/severity/decay
+  levels). Temperature 0. Out-of-enum → hard reject.
+- **Verbatim evidence spans**: each classification cites a substring of the task
+  text / charter; the server checks the span **literally occurs in the source**.
+  Fabricated span → reject.
+- **Recompute, don't trust**: the agent submits *classifications + features*; the
+  server computes the number. A hallucinated number cannot enter — the agent never
+  submits one.
+
+### 12.3 `validateScoreSubmission` — the deterministic chokepoint
+
+One gate **below** every write path (MCP + REST), unbypassable. A submission must
+pass all of:
+
+1. Fibonacci enum + all-four-or-none invariant.
+2. Evidence-span existence; theme references exist in the charter.
+3. **Cross-component contradiction rules** (e.g. JobSize=1 ∧ UBV=13 → reject/flag).
+4. **Batch invariants that machine-enforce relative anchoring**: every CoD column
+   has a `1` anchor and variance ≥ floor. A degenerate batch is **rejected and
+   re-prompted**, not stored — turning the make-or-break anchoring rule from a hope
+   into a gate.
+
+Failure → structured error → **bounded** agent retry (cap N; on exhaustion, mark
+the task `scoring_failed` and fall back to the priority enum — never block).
+
+### 12.4 Tiered, selective redundancy
+
+For the residual classifications only, and **only where it changes outcomes**
+(tasks near the top of the ready frontier, or where the deterministic layer could
+not decide):
+
+1. **Tier 1 — N-sample self-consistency**: classify N times (default 3), take the
+   **median/mode bucket** per component (deterministic aggregation).
+2. **Tier 2 — independent verifier sub-agent** (reusing the worker+`tasks-verifier`
+   pattern): triggered only when Tier-1 samples disagree beyond tolerance or a
+   contradiction rule fires. A fresh-context agent re-classifies blind; must agree
+   within tolerance, else the component is marked **low-confidence** and flagged for
+   human review.
+
+Everything else gets a single deterministic-first pass. This bounds token cost to
+where ranking precision actually matters.
+
+### 12.5 Replay & calibration (deterministic regression)
+
+- **Replay**: because history stores classifications + features (§4.3), a job
+  recomputes every stored score from its inputs and asserts equality — detects
+  drift, and lets the mapping change be applied by **deterministic rescore, no
+  LLM**.
+- **Golden-set CI gate**: a fixed corpus of tasks (with charter) and expected
+  buckets; CI asserts the scorer stays within tolerance — catches model drift
+  before release.
+- **Telemetry**: retry rate, Tier-1 inter-sample agreement, contradiction-flag
+  rate, low-confidence rate → analytics dashboard (consistent with existing tooling).
+
+## 13. Testing
+
+- **Unit**: `computeWsjf`; the deterministic component functions (`tcFromDaysUntil`,
+  `rrFromFanout`, Job-Size band, UBV `weight×alignment`); `priorityFallbackScore`;
+  propagation on a known DAG (diamond dedupe, γ decay, CAP, cycle-guard);
+  Job-Size floor.
+- **Reliability**: `validateScoreSubmission` rejects out-of-enum numbers,
+  fabricated evidence spans, unknown themes, contradiction rules, and degenerate
+  batches (no `1` anchor / sub-floor variance); bounded-retry exhaustion falls back
+  to priority; recompute-from-classifications equals the stored score (replay);
+  golden-set within tolerance; Tier-2 verifier triggers only on disagreement.
+- **Migrations**: `013`, `014`, `015` up/down roundtrip.
 - **Schema**: Fibonacci enum rejects 4/6/7; all-four-or-none invariant; charter
   schema validation.
 - **MCP**: `wsjf_ranking` ordering including a buried blocker surfacing via
@@ -386,14 +503,19 @@ pitfall) — detectable only because history exists.
 - **Skill-level**: decompose batch scoring produces a `1` anchor per column;
   re-interview → prompt → rescore leaves locked components untouched.
 
-## 13. Phasing (incremental PRs; fits merge-commit + CI-gate flow)
+## 14. Phasing (incremental PRs; fits merge-commit + CI-gate flow)
 
-1. **Core engine** — task WSJF columns, **`wsjf_score_history` + in-transaction
-   audit writes**, `wsjf.service` (compute / fallback / propagation),
-   `wsjf_ranking` (with breakdown), loop/loop-dag selection + LOOP-RUN snapshot,
-   create/update fields, `wsjf_history` tool.
-2. **Autonomous scoring** — `wsjf-rubric.md`, decompose batch scoring,
-   single-create scoring, evidence.
+1. **Core engine** — task WSJF columns (+ classification/feature columns),
+   **`wsjf_score_history` + in-transaction audit writes**, `wsjf.service`
+   (deterministic component functions, compute, fallback, propagation),
+   **`validateScoreSubmission` gate**, `wsjf_ranking` (with breakdown),
+   loop/loop-dag selection + LOOP-RUN snapshot, create/update fields,
+   `wsjf_history` tool. Deterministic core + gate land first so all later LLM
+   scoring writes through a validated chokepoint.
+2. **Autonomous scoring** — `wsjf-rubric.md` as a **classification** contract,
+   decompose batch scoring (classifications → server-computed numbers),
+   single-create scoring, evidence spans, tiered/selective redundancy (§12.4),
+   golden-set CI gate + replay test.
 3. **Charter + interview** — `projects.value_charter` + `project_charter_history`,
    `new-project.md`, charter-driven Business Value.
 4. **Living backlog** — `rescore_project` + `wsjf_rescore_run`, re-interview
@@ -407,7 +529,7 @@ write paths.
 
 Each phase delivers standalone value and can ship as its own PR.
 
-## 14. Out of scope (v1; future)
+## 15. Out of scope (v1; future)
 
 - Automatic Time-Criticality decay recomputed on a schedule (server can do the
   deadline delta on read; a background cron is deferred).
@@ -418,7 +540,7 @@ Each phase delivers standalone value and can ship as its own PR.
   warning.
 - Project-level `value_themes` weighting beyond simple ranked weights.
 
-## 15. Decisions log
+## 16. Decisions log
 
 | Decision | Choice |
 |---|---|
@@ -432,3 +554,7 @@ Each phase delivers standalone value and can ship as its own PR.
 | Rescore trigger | Prompt before rescoring |
 | Lock granularity | Per-component locks with `auto \| manual` provenance |
 | Auditability | Append-only history (scores + charter + rescore runs), in-transaction; ranking breakdown + LOOP-RUN snapshot for the math |
+| LLM output form | LLM emits **classifications over closed enums + evidence spans**, never a number; server computes the Fibonacci score deterministically |
+| Validation | `validateScoreSubmission` deterministic gate below all write paths; bounded retry → priority fallback |
+| Redundancy | Tiered (N-sample median → escalate to independent verifier sub-agent), **selective** (high-stakes / undecided only) |
+| Reliability regression | Replay (recompute from stored classifications) + golden-set CI gate |
