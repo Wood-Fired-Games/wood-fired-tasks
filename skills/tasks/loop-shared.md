@@ -548,3 +548,34 @@ Column rules:
 - **`propagation`** — the per-dependent Cost-of-Delay contributions from `RankedTask.propagation[]`, formatted `#<dependentId>:+<contribution>` comma-separated; `—` when the array is empty (no downstream dependents lifted this task's effective score).
 
 **Anti-fabrication:** every cell is copied verbatim from a `wsjf_ranking` result that ALREADY RETURNED in a prior turn (§L canon) — never recomputed by hand. If the orchestrator did not call `wsjf_ranking`, it MUST emit the sentinel, not a synthesized table.
+
+## §N. Worktree teardown (loop-dag run-end)
+
+**Called from:** `loop-dag.md` §5g (terminal step). `/tasks:loop` does NOT call this — see "Not-affected" below.
+
+**Why it exists.** `/tasks:loop-dag` dispatches each wave's workers in parallel, so every worker `Agent` call MUST set `isolation: "worktree"` — otherwise concurrent workers stomp each other in the shared tree (the shared-tree hazard: a worker can `git restore` another's edits even when their declared file sets are disjoint). The harness gives each isolated worker its own `.claude/worktrees/agent-<id>` worktree on a `worktree-agent-<id>` branch, and auto-removes a worktree **only when it is left unchanged**. Every worker edits files, so its worktree is always "changed" and is **never auto-cleaned**; left alone they accumulate across runs (observed: tens of stale worktrees + branches, which also pollute file searches with duplicate copies of every file). §5g reclaims them at run-end.
+
+**Ordering.** Runs ONCE per run, AFTER §5f's termination emit, on EVERY termination path (clean drain, `--max-waves` checkpoint, §2f gate refusal, §2g feasibility wipeout, §3a stall, user abort, unexpected error). On paths that dispatched no isolated workers (e.g. `--concurrency 1`, or a pre-dispatch abort) discovery finds nothing and the step is a no-op.
+
+**Procedure:**
+
+1. **Capture the integration base once, at run start.** Record the branch HEAD pointed at when the loop began as `<base>` (usually `main`; on a feature branch it is that branch). This is the branch §3d/§6c integrates PASS results onto. The gate compares against `<base>`, NOT a hardcoded `main`.
+
+2. **Enumerate candidates.** Run `git worktree list --porcelain` and select every worktree whose path is under `.claude/worktrees/` AND whose branch matches `worktree-agent-*`. Git discovery is authoritative and kill-safe: it also catches leftovers from prior crashed runs, not just this run's. (You MAY intersect with worktree/branch ids tracked in orchestrator state at dispatch for logging, but git discovery — not tracked state — is the source of truth.)
+
+3. **Integration-safety gate (per candidate branch `B`).** Run `git cherry <base> B` and count lines beginning with `+` (commits on `B` whose patch-id has no equivalent on `<base>`):
+   - **0 `+` lines → SAFE to remove.** Every patch on `B` is already integrated onto `<base>` (patch-id match, so it holds regardless of cherry-pick SHA churn), OR `B` has no commits at all (the common case — workers do NOT commit per §A, so the fix landed on `<base>` via the orchestrator and `B` is empty). Either way nothing is lost.
+   - **≥1 `+` line → RETAIN.** `B` holds work not on `<base>`. **Never delete it.** Add it to the retain set.
+   - This gate is the load-bearing safety property: the teardown can only ever remove fully-integrated leftovers.
+
+4. **Remove the safe set** (each safe worktree/branch, in order):
+   - `git worktree unlock <path>` — isolation worktrees are locked; `remove` refuses a locked worktree. Ignore a "not locked" error (idempotent).
+   - `git worktree remove --force <path>` — `--force` because the tree is "changed".
+   - `git branch -D worktree-agent-<id>` — capital `-D`: the §3 gate already proved integration, and ordinary `-d` would refuse a branch git still considers "unmerged" after a cherry-pick.
+   Then, once after processing all candidates: `git worktree prune` (clears stale admin entries for any worktree directory removed out-of-band).
+
+5. **Record + re-emit.** Put the retain set into the `## Retained Worktrees` LOOP-RUN.md body block (§5d) — one bullet per retained branch with its un-integrated patch count and the `git cherry <base> <branch>` command to inspect — then **re-emit LOOP-RUN.md once more** (the §5b kill-safe rewrite) so the block reflects the post-teardown state. This final write is the run's true terminal action; wrap §5g in the same `try/finally`-equivalent guard as §5f so a teardown exception still leaves a written LOOP-RUN.md.
+
+**Kill-safety / idempotency.** Because discovery is `git worktree list` and removal is gated on `git cherry`, re-running the teardown (or the next loop run) re-discovers and removes only the still-present, fully-integrated leftovers — the second run is a no-op. A teardown killed mid-way leaves a consistent partial state the next run finishes. Mirrors §5b's kill-safe posture.
+
+**`/tasks:loop` is NOT affected.** `/tasks:loop` (`loop.md`) is sequential — one worker at a time — and dispatches workers WITHOUT `isolation: "worktree"` (they run in the shared main tree; `isolation` and `--concurrency` are loop-dag-only). It therefore creates no per-worker worktrees or `worktree-agent-*` branches and has nothing to tear down. If a future change ever parallelizes `/tasks:loop`, it must adopt worktree isolation AND port this teardown step.
