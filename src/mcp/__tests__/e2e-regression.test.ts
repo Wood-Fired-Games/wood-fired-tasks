@@ -44,6 +44,10 @@ const KNOWN_MCP_TOOLS = new Set([
   'get_comments',
   'delete_comment',
   'check_health',
+  'wsjf_ranking',
+  'wsjf_history',
+  'rescore_project',
+  'wsjf_health',
 ]);
 
 describe('E2E Regression: Full Task Lifecycle', () => {

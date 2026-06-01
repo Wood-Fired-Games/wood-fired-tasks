@@ -29,7 +29,7 @@ capture it as `$ACTOR`.
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand
 `wood-fired-tasks:<tool>` corresponds to harness name
 `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load the tools via
-`ToolSearch` (`select:mcp__wood-fired-tasks__get_project,mcp__wood-fired-tasks__update_project,mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks`)
+`ToolSearch` (`select:mcp__wood-fired-tasks__get_project,mcp__wood-fired-tasks__update_project,mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__rescore_project`)
 and retry.
 
 ## The value charter (what you are producing)
@@ -57,8 +57,10 @@ Rules the server enforces (respect them as you build the object):
   No other integer is accepted (e.g. `4` is rejected).
 - At most 20 themes; 2–4 is the sweet spot.
 - `mission` is required and non-empty if a charter is written at all.
-- `interview_version` is `1` for a brand-new charter. (Re-interview that bumps
-  this version is a separate concern handled when the charter already exists.)
+- `interview_version` is `1` for a brand-new charter. **Re-interviewing an
+  existing charter bumps it: set the new charter's `interview_version` to the
+  prior charter's `interview_version + 1`** (see Step 1's re-interview branch and
+  Step 12's snapshot note).
 
 ## Steps
 
@@ -67,9 +69,26 @@ Rules the server enforces (respect them as you build the object):
      `wood-fired-tasks:list_projects` and ask the user (via `AskUserQuestion`)
      which project to charter, then STOP and wait for the choice.
    - Call `wood-fired-tasks:get_project` for the chosen project. If it already
-     has a `value_charter`, tell the user a charter exists and ask whether to
-     **overwrite**, **leave it untouched**, or **abort** (via `AskUserQuestion`,
-     STOP and wait). Only proceed to overwrite on explicit confirmation.
+     has a `value_charter`, this is a **re-interview** — go to Step 1a. If it has
+     no charter, this is a first-time interview — continue at Step 2.
+
+1a. **Re-interview branch** (existing charter only)
+   - Tell the user a charter already exists (show its mission + ranked themes so
+     they can see what is on file) and ask via `AskUserQuestion` (STOP and wait)
+     how to proceed:
+     - **Overwrite** — re-run the whole interview from Step 2, but **smart-skip**
+       each question: pre-fill it with the existing charter's answer and ask only
+       "keep this, or change it?". A "keep" answer carries the prior value
+       forward unchanged; only a "change" answer re-prompts that one field. This
+       preserves the one-question-at-a-time STOP-and-wait flow while letting the
+       user breeze past unchanged answers.
+     - **Partial edit** — ask which field(s) to change (mission, themes, ranking,
+       time, risk, out-of-scope), then run ONLY those steps (smart-skipping the
+       rest), keeping every other field byte-for-byte from the existing charter.
+     - **Abort** — write nothing, leave the existing charter untouched, end here.
+   - Whichever non-abort path is chosen, the assembled charter (Step 9) MUST set
+     `interview_version` to the existing charter's `interview_version + 1`, and
+     the write (Step 10) will snapshot the PRIOR charter to history (Step 12).
 
 2. **Offer the skip up front**
    - Via `AskUserQuestion`, ask: "Set up a value charter now, or skip?" with
@@ -133,7 +152,8 @@ Rules the server enforces (respect them as you build the object):
      - `value_themes`: each confirmed theme (Step 4) with its rank-derived
        Fibonacci `weight` (Step 5) and its one-line `description`
      - `time_context` (Step 6), `risk_posture` (Step 7), `out_of_scope` (Step 8)
-     - `interview_version`: `1`
+     - `interview_version`: `1` for a first-time interview; for a re-interview
+       (Step 1a), the existing charter's `interview_version + 1`
      - `updated_at`: the current time in ISO 8601 (e.g. `2026-06-01T12:00:00Z`)
    - Show the assembled charter to the user and ask for final confirmation via
      `AskUserQuestion` (Confirm / Edit). STOP and wait. Loop back to the relevant
@@ -145,6 +165,11 @@ Rules the server enforces (respect them as you build the object):
       - `value_charter`: the confirmed charter object.
     - If the server rejects it (e.g. a non-Fibonacci weight slipped through),
       read the structured error, fix the offending field, and retry once.
+    - **Prior-charter snapshot is automatic.** On a re-interview (Step 1a), when
+      `update_project` replaces a non-null charter with a new non-null charter,
+      the server appends the PRIOR charter to `project_charter_history` tagged
+      with the new charter's bumped `interview_version`, atomically with the
+      overwrite. You do NOT snapshot by hand — just write the bumped charter.
 
 11. **Confirm**
     - Display:
@@ -153,6 +178,27 @@ Rules the server enforces (respect them as you build the object):
       - The ranked value themes with their weights
       - A note that WSJF scoring will now derive Business Value from this charter
         (and that the interview can be re-run later to update it)
+      - On a re-interview: the new `interview_version` and that the prior charter
+        was snapshotted to history.
+
+12. **Offer a rescore (re-interview only)**
+    - This step runs ONLY after a re-interview wrote a new charter (Step 1a). On a
+      first-time interview there is no already-scored backlog to re-evaluate, so
+      skip it.
+    - Find how many of the project's tasks are already scored (e.g. the
+      already-scored tasks surfaced by the rescore set / `wsjf_ranking` for the
+      project). Call that count `N`.
+    - If `N` is 0, say there is nothing to rescore and end. Otherwise ask via
+      `AskUserQuestion` (STOP and wait): **"Rescore N tasks now against the
+      updated charter?"** with options `Rescore now` / `Skip rescore`.
+    - **Only on explicit `Rescore now`** invoke the rescore: build one written-back
+      classification per scored task against the NEW charter and call
+      `wood-fired-tasks:rescore_project` (project id + `submissions` + `actor_type`
+      / `actor_id` from `$ACTOR`). Then report the run summary (evaluated /
+      changed / skipped-locked counts).
+    - On `Skip rescore`, write nothing further: the new charter is saved, the
+      backlog keeps its existing scores, and the user can run a rescore later.
+      Never rescore without the explicit confirmation.
 
 ## Skip / fallback behavior
 

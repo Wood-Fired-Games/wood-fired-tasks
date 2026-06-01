@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { ProjectRepository } from '../../repositories/project.repository.js';
+import { ProjectCharterHistoryRepository } from '../../repositories/project-charter-history.repository.js';
 import { ProjectService } from '../project.service.js';
+import type { ValueCharter } from '../../types/task.js';
 import { ValidationError, BusinessError, NotFoundError } from '../errors.js';
 import { eventBus } from '../../events/event-bus.js';
 import type Database from 'better-sqlite3';
@@ -142,6 +144,97 @@ describe('ProjectService', () => {
       expect(() =>
         projectService.updateProject(created.id, { name: 'Existing Project' })
       ).toThrow(BusinessError);
+    });
+  });
+
+  describe('charter-history snapshot on re-interview (WSJF 4.2)', () => {
+    let charterHistory: ProjectCharterHistoryRepository;
+    let svc: ProjectService;
+
+    const charter = (version: number, mission: string): ValueCharter => ({
+      mission,
+      value_themes: [
+        { name: 'Reliability', weight: 13, description: 'do not break prod' },
+        { name: 'Speed', weight: 5, description: 'ship fast' },
+      ],
+      time_context: 'no hard deadline',
+      risk_posture: 'must not break production data',
+      out_of_scope: [],
+      interview_version: version,
+      updated_at: '2026-06-01T12:00:00Z',
+    });
+
+    beforeEach(() => {
+      charterHistory = new ProjectCharterHistoryRepository(db);
+      svc = new ProjectService(projectRepo, { charterHistory, db });
+    });
+
+    it('appends prior charter to history with bumped version on overwrite', () => {
+      const created = svc.createProject({ name: 'Charter Project' });
+
+      // First charter write: no prior charter → no snapshot.
+      svc.updateProject(created.id, { value_charter: charter(1, 'v1 mission') });
+      expect(charterHistory.countByProjectId(created.id)).toBe(0);
+
+      // Re-interview: overwrite v1 with a bumped v2 charter → snapshot the prior.
+      svc.updateProject(created.id, { value_charter: charter(2, 'v2 mission') });
+
+      const history = charterHistory.findByProjectId(created.id);
+      expect(history).toHaveLength(1);
+      // The snapshot holds the PRIOR (v1) charter content...
+      expect(history[0].charter?.mission).toBe('v1 mission');
+      expect(history[0].charter?.interview_version).toBe(1);
+      // ...tagged with the NEW (bumped) interview_version it was replaced at.
+      expect(history[0].interview_version).toBe(2);
+      expect(history[0].change_kind).toBe('overwrite');
+
+      // The live project now carries the v2 charter.
+      const reloaded = svc.getProject(created.id);
+      expect(reloaded.value_charter?.mission).toBe('v2 mission');
+      expect(reloaded.value_charter?.interview_version).toBe(2);
+    });
+
+    it('records actor attribution on the snapshot', () => {
+      const created = svc.createProject({ name: 'Attributed Project' });
+      svc.updateProject(created.id, { value_charter: charter(1, 'v1') });
+
+      svc.updateProject(
+        created.id,
+        { value_charter: charter(2, 'v2') },
+        { actorType: 'human', actorId: 'stuart@woodfiredgames.com' },
+      );
+
+      const history = charterHistory.findByProjectId(created.id);
+      expect(history).toHaveLength(1);
+      expect(history[0].actor_type).toBe('human');
+      expect(history[0].actor_id).toBe('stuart@woodfiredgames.com');
+    });
+
+    it('does NOT snapshot when setting a charter on a project that had none', () => {
+      const created = svc.createProject({ name: 'First Charter' });
+      svc.updateProject(created.id, { value_charter: charter(1, 'fresh') });
+      expect(charterHistory.countByProjectId(created.id)).toBe(0);
+    });
+
+    it('does NOT snapshot when clearing an existing charter', () => {
+      const created = svc.createProject({ name: 'Cleared Charter' });
+      svc.updateProject(created.id, { value_charter: charter(1, 'v1') });
+      svc.updateProject(created.id, { value_charter: null });
+      expect(charterHistory.countByProjectId(created.id)).toBe(0);
+    });
+
+    it('does NOT snapshot when no charter-history writer is injected', () => {
+      const plain = new ProjectService(projectRepo);
+      const created = plain.createProject({ name: 'No Writer' });
+      plain.updateProject(created.id, { value_charter: charter(1, 'v1') });
+      // Overwrite still works, just no snapshot is taken.
+      const updated = plain.updateProject(created.id, {
+        value_charter: charter(2, 'v2'),
+      });
+      expect(updated.value_charter?.interview_version).toBe(2);
+      // The table is empty because nothing wrote to it.
+      const hist = new ProjectCharterHistoryRepository(db);
+      expect(hist.countByProjectId(created.id)).toBe(0);
     });
   });
 

@@ -9,6 +9,7 @@ import { CommentRepository } from './repositories/comment.repository.js';
 import { UserRepository } from './repositories/user.repository.js';
 import { ApiTokenRepository } from './repositories/api-token.repository.js';
 import { WsjfHistoryRepository } from './repositories/wsjf-history.repository.js';
+import { ProjectCharterHistoryRepository } from './repositories/project-charter-history.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
 import { DependencyService } from './services/dependency.service.js';
@@ -234,9 +235,16 @@ export async function createApp(dbPath?: string): Promise<App> {
   // as TaskRepository so the component write + history append commit in one
   // `db.transaction(...)` (see TaskService.appendWsjfHistory).
   const wsjfHistoryRepo = new WsjfHistoryRepository(db);
+  // WSJF (#642): append-only project_charter_history writer. Shares the SAME
+  // `db` handle as ProjectRepository so a charter overwrite snapshots the prior
+  // charter and replaces it in one `db.transaction(...)`.
+  const charterHistoryRepo = new ProjectCharterHistoryRepository(db);
 
   // Create services
-  const projectService = new ProjectService(projectRepo);
+  const projectService = new ProjectService(projectRepo, {
+    charterHistory: charterHistoryRepo,
+    db,
+  });
   const taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);

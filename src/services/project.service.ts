@@ -16,12 +16,45 @@ import {
 } from '../schemas/project.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { eventBus } from '../events/event-bus.js';
+import type { Database } from 'better-sqlite3';
+import type { IProjectCharterHistoryRepository } from '../repositories/project-charter-history.repository.js';
+
+/**
+ * Optional collaborators that wire the WSJF 4.2 charter-history snapshot into
+ * the project update path. Both are optional so the dozens of existing
+ * `new ProjectService(projectRepo)` callers (and every service-layer unit
+ * test) keep working unchanged — when omitted, `updateProject` behaves exactly
+ * as before and writes no snapshot.
+ *
+ * - `charterHistory` is the append-only `project_charter_history` writer.
+ * - `db` is the SAME better-sqlite3 handle the project repo writes through, so
+ *   the prior-charter snapshot and the charter overwrite commit atomically.
+ */
+export interface ProjectServiceDeps {
+  charterHistory?: IProjectCharterHistoryRepository;
+  db?: Database;
+}
+
+/** Actor attribution for a charter overwrite, recorded on the snapshot row. */
+export interface ProjectUpdateActor {
+  actorType?: string | null;
+  actorId?: string | null;
+}
 
 /**
  * ProjectService - handles project business logic and validation
  */
 export class ProjectService {
-  constructor(private readonly projectRepo: IProjectRepository) {}
+  private readonly charterHistory?: IProjectCharterHistoryRepository;
+  private readonly db?: Database;
+
+  constructor(
+    private readonly projectRepo: IProjectRepository,
+    deps: ProjectServiceDeps = {},
+  ) {
+    this.charterHistory = deps.charterHistory;
+    this.db = deps.db;
+  }
 
   /**
    * Create a new project with validation
@@ -96,9 +129,24 @@ export class ProjectService {
   }
 
   /**
-   * Update a project
+   * Update a project.
+   *
+   * WSJF 4.2 (task #642): when the update REPLACES an existing (non-null)
+   * `value_charter` with a new (non-null) charter — i.e. the charter interview
+   * was re-run — the PRIOR charter is snapshotted to `project_charter_history`
+   * BEFORE the overwrite lands, tagged with the NEW charter's
+   * `interview_version` (which the skill bumps). The snapshot + the projects
+   * UPDATE commit atomically when a `db` handle was injected. The snapshot is
+   * only ever taken on this project code path; nothing here touches task
+   * scoring. Clearing a charter (`value_charter: null`) or setting a charter on
+   * a project that had none takes NO snapshot — there is no prior charter to
+   * preserve.
    */
-  updateProject(id: number, input: unknown): Project {
+  updateProject(
+    id: number,
+    input: unknown,
+    actor: ProjectUpdateActor = {},
+  ): Project {
     // Validate input with partial schema
     const result = UpdateProjectSchema.safeParse(input);
     if (!result.success) {
@@ -127,8 +175,36 @@ export class ProjectService {
       }
     }
 
-    // Update project
-    const updatedProject = this.projectRepo.update(id, result.data);
+    // WSJF 4.2: detect a charter OVERWRITE — a new non-null charter replacing a
+    // pre-existing non-null charter. Only then is there a prior charter worth
+    // snapshotting.
+    const newCharter = result.data.value_charter;
+    const priorCharter = existing.value_charter;
+    const isCharterOverwrite =
+      this.charterHistory != null &&
+      newCharter != null &&
+      priorCharter != null;
+
+    // Update project (snapshotting the prior charter first, atomically when a
+    // db handle is available).
+    const doUpdate = (): Project => {
+      if (isCharterOverwrite) {
+        this.charterHistory!.append({
+          projectId: id,
+          interviewVersion: newCharter!.interview_version,
+          charter: priorCharter!,
+          changeKind: 'overwrite',
+          actorType: actor.actorType ?? null,
+          actorId: actor.actorId ?? null,
+        });
+      }
+      return this.projectRepo.update(id, result.data);
+    };
+
+    const updatedProject =
+      isCharterOverwrite && this.db
+        ? this.db.transaction(doUpdate)()
+        : doUpdate();
 
     // Emit project.updated event after successful database operation
     eventBus.emit('project.updated', {
