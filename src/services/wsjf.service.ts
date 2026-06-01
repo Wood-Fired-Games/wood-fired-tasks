@@ -18,8 +18,18 @@ import type {
   SeverityClass,
   DecayClass,
   WsjfComponents,
+  WsjfClassification,
+  WsjfFeatures,
 } from '../types/wsjf.js';
 import { FIB } from '../types/wsjf.js';
+import type { ValueCharter, Task, TaskStatus } from '../types/task.js';
+import { ScoreSubmissionSchema } from '../schemas/wsjf.schema.js';
+import type { WsjfEvidence } from '../types/wsjf.js';
+import type { ITaskRepository } from '../repositories/interfaces.js';
+import { MAX_PAGE_LIMIT } from '../types/task.js';
+import { TopologyService } from './topology.service.js';
+import { DependencyService } from './dependency.service.js';
+import { BusinessError } from './errors.js';
 
 /** Task priority levels used for the no-WSJF fallback ordering. */
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';
@@ -226,4 +236,519 @@ export function priorityFallbackScore(p: Priority): number {
     case 'low':
       return 1;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Task #626 (WSJF 1.6) — `validateScoreSubmission`, the deterministic gate.
+//
+// Every write path (MCP + REST) funnels through this one pure function before
+// persistence (design spec §12.3). It NEVER trusts a client-supplied number:
+// on success it recomputes the four Fibonacci components from the submitted
+// `classification` + `features` via the deterministic functions above, and on
+// failure it returns a structured `errors[]` for a bounded agent retry.
+//
+// Shapes mirror the plan's §"Validation gate" Contracts block. `ValidateContext`
+// is extended with `sourceText` because §12.2 requires each evidence span to be
+// a *verbatim substring of the source* — the charter alone is not enough source
+// material (most spans cite the task text), so the gate checks each span against
+// the union of `sourceText` + charter-derived text.
+// ---------------------------------------------------------------------------
+
+/**
+ * What an agent submits for a single task: the bounded enum classification plus
+ * the deterministic features the server gathered. Mirrors `ScoreSubmissionSchema`
+ * in `wsjf.schema.ts`; the runtime number is NEVER part of the submission.
+ */
+export interface ScoreSubmission {
+  classification: WsjfClassification;
+  features: WsjfFeatures;
+}
+
+/**
+ * Deterministic context the gate validates against.
+ *  - `charter`: the project's value charter, or null (charter-less project).
+ *  - `sourceText`: the task text (and any other free-form source) the evidence
+ *    spans must literally occur in. Optional — when omitted only charter text
+ *    backs the spans.
+ *  - `batch`: when scoring a whole candidate batch column-anchored, the full set
+ *    of server-computed components (including this submission's). Enables the
+ *    batch invariants (every CoD column has a `1` anchor; variance ≥ floor).
+ */
+export interface ValidateContext {
+  charter: ValueCharter | null;
+  sourceText?: string;
+  batch?: WsjfComponents[];
+}
+
+/**
+ * The gate's verdict. On `ok`, `components` carries the server-computed scores
+ * (client numbers ignored). On failure, `errors[]` enumerates every violation
+ * so a bounded retry can fix them in one pass.
+ */
+export interface ValidateResult {
+  ok: boolean;
+  components?: WsjfComponents;
+  errors: string[];
+}
+
+/**
+ * Minimum required spread across a column of a column-anchored batch. A batch
+ * whose Cost-of-Delay columns are all identical (zero variance) collapses the
+ * relative anchoring the whole method depends on, so it is rejected and
+ * re-prompted (design spec §12.3 invariant 4). Population variance is used.
+ */
+export const VARIANCE_FLOOR = 0.5;
+
+/** The three Cost-of-Delay (numerator) columns checked by the batch invariants. */
+const COD_COLUMNS: readonly (keyof WsjfComponents)[] = [
+  'value',
+  'timeCriticality',
+  'riskOpportunity',
+];
+
+/** Population variance of a numeric series (0 for empty / singleton). */
+function populationVariance(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+  return xs.reduce((a, b) => a + (b - mean) * (b - mean), 0) / xs.length;
+}
+
+/**
+ * Build the deterministic UBV tier for a submission. When a charter is present
+ * and the submission names a theme, use that theme's Fibonacci weight; otherwise
+ * (charter-less / themeName=null) the weight defaults to 1 so UBV collapses to
+ * the alignment floor — keeping the gate pure and avoiding NaN.
+ */
+function ubvFor(
+  classification: WsjfClassification,
+  charter: ValueCharter | null,
+): Fib {
+  let weight: Fib = 1;
+  if (charter && classification.themeName !== null) {
+    const theme = charter.value_themes.find(
+      (t) => t.name === classification.themeName,
+    );
+    if (theme) weight = theme.weight;
+  }
+  return ubvFromThemeAlignment(weight, classification.alignment);
+}
+
+/**
+ * The deterministic chokepoint. Pure in `(submission, ctx)`. Runs, in order:
+ *  1. Zod enum membership / all-fields shape (via `ScoreSubmissionSchema`).
+ *  2. themeName presence: must exist in the charter; `null` allowed ONLY when
+ *     `charter === null`.
+ *  3. Verbatim evidence spans: each of the four spans must be a substring of the
+ *     source text (task text ∪ charter-derived text).
+ *  4. `jobSizeTier` within `jobSizeBand(features, sourceText)`.
+ *  5. Cross-component contradiction rules (e.g. jobSize=1 ∧ value=13 → error).
+ *  6. Batch invariants when `ctx.batch` present: every CoD column has a `1`
+ *     anchor AND each column's variance ≥ {@link VARIANCE_FLOOR}.
+ *
+ * On success returns server-computed `components` (any client number ignored).
+ */
+export function validateScoreSubmission(
+  s: ScoreSubmission,
+  ctx: ValidateContext,
+): ValidateResult {
+  const errors: string[] = [];
+
+  // 1. Enum membership / shape — the schema rejects off-scale Fibonacci tiers,
+  //    unknown enum members, empty evidence spans, and extra keys.
+  const parsed = ScoreSubmissionSchema.safeParse(s);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const path = issue.path.join('.');
+      errors.push(path ? `${path}: ${issue.message}` : issue.message);
+    }
+    // Without a structurally valid submission the remaining checks would throw
+    // on missing fields, so short-circuit here.
+    return { ok: false, errors };
+  }
+
+  const { classification, features } = s;
+
+  // 2. themeName presence in charter (null only when charter is null).
+  if (ctx.charter === null) {
+    if (classification.themeName !== null) {
+      errors.push(
+        `themeName "${classification.themeName}" supplied but project has no charter (only null allowed)`,
+      );
+    }
+  } else if (classification.themeName === null) {
+    errors.push('themeName=null is only allowed when the project has no charter');
+  } else {
+    const known = ctx.charter.value_themes.some(
+      (t) => t.name === classification.themeName,
+    );
+    if (!known) {
+      errors.push(
+        `themeName "${classification.themeName}" is not a theme in the project charter`,
+      );
+    }
+  }
+
+  // 3. Verbatim evidence-span substring checks against the source material.
+  const charterText = ctx.charter
+    ? [
+        ctx.charter.mission,
+        ctx.charter.time_context,
+        ctx.charter.risk_posture,
+        ...ctx.charter.value_themes.flatMap((t) => [t.name, t.description]),
+      ].join('\n')
+    : '';
+  const source = `${ctx.sourceText ?? ''}\n${charterText}`;
+  for (const key of ['value', 'timeCriticality', 'riskOpportunity', 'jobSize'] as const) {
+    const span = classification.evidence[key];
+    if (!source.includes(span)) {
+      errors.push(
+        `evidence.${key} span is not a verbatim substring of the source text: "${span}"`,
+      );
+    }
+  }
+
+  // 4. jobSizeTier within the deterministic band.
+  const [bandLow, bandHigh] = jobSizeBand(
+    features.filesTouched,
+    ctx.sourceText ?? '',
+  );
+  if (classification.jobSizeTier < bandLow || classification.jobSizeTier > bandHigh) {
+    errors.push(
+      `jobSizeTier ${classification.jobSizeTier} is outside the allowed band [${bandLow}, ${bandHigh}]`,
+    );
+  }
+
+  // Server-computed components (recompute, never trust a client number).
+  const value = ubvFor(classification, ctx.charter);
+  const timeCriticality =
+    features.daysUntilDeadline !== null
+      ? tcFromDaysUntil(features.daysUntilDeadline)
+      : tcFromDecayClass(classification.decay ?? 'flat');
+  const riskOpportunity = Math.max(
+    rrFromFanout(features.transitiveDependents),
+    rrFromSeverity(classification.severity),
+  ) as Fib;
+  const jobSize = classification.jobSizeTier;
+  const components: WsjfComponents = {
+    value,
+    timeCriticality,
+    riskOpportunity,
+    jobSize,
+  };
+
+  // 5. Cross-component contradiction rules.
+  if (jobSize === 1 && value === 13) {
+    errors.push(
+      'contradiction: jobSize=1 (trivial effort) but value=13 (max business value)',
+    );
+  }
+
+  // 6. Batch invariants (column-anchored relative scoring).
+  if (ctx.batch !== undefined) {
+    for (const col of COD_COLUMNS) {
+      const colVals = ctx.batch.map((c) => c[col]);
+      if (!colVals.includes(1)) {
+        errors.push(
+          `batch invariant: CoD column "${col}" has no 1 anchor (relative anchoring requires a baseline)`,
+        );
+      }
+      if (populationVariance(colVals) < VARIANCE_FLOOR) {
+        errors.push(
+          `batch invariant: CoD column "${col}" variance below floor ${VARIANCE_FLOOR} (degenerate, all-similar batch)`,
+        );
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, components, errors: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Task #629 (WSJF 1.9) — `rankFrontier` + downstream Cost-of-Delay propagation.
+//
+// This is the read-time ranking pipeline. It is the ONLY place the derived
+// `effective_wsjf` is produced (see `TaskWithWsjfScore` in `types/task.ts`):
+// nothing is persisted. The propagation model is the design spec §6 formula:
+//
+//   base_CoD(n)      = value + timeCriticality + riskOpportunity
+//   effective_CoD(n) = base_CoD(n)
+//                      + Σ_{d ∈ distinctTransitiveDependents(n)}
+//                            base_CoD(d) · γ^(dist(n,d) − 1)
+//                      capped at base_CoD(n) · CAP
+//   effective_wsjf   = effective_CoD / max(jobSize, 1)
+//
+// with γ = PROPAGATION_GAMMA (0.5) and CAP = PROPAGATION_CAP (3). The sum is
+// taken over the *distinct transitive closure* of dependents — a diamond
+// (A→{B,C}→D) counts the shared descendant D exactly once per ancestor, using
+// the SHORTEST hop distance for the γ exponent (BFS), so path-count explosions
+// can never inflate a blocker. Cycles are impossible here because we route the
+// graph through `TopologyService.classify`, which rejects `DAG_CYCLIC` up front
+// (we raise the same `BusinessError` the rest of the service layer uses).
+//
+// Edge orientation (from `TopologyService` / `task_dependencies`): an edge is
+// `{from, to}` meaning `from` must finish before `to` can start — so `to` is a
+// DOWNSTREAM dependent of `from`. Propagation flows dependents' CoD UP onto
+// their blockers, i.e. along reversed edges from `n` to everything reachable
+// by following `from → to`.
+//
+// Scope:
+//   - 'all'      → rank every task in the project.
+//   - 'frontier' → exclude tasks that are not ready: status === 'blocked', OR
+//                  any same-project blocker (an incoming `from → to` edge whose
+//                  `from` end is this task) is not in {done, closed}. Mirrors
+//                  the `/tasks:loop-dag` frontier definition (orphaned / cross-
+//                  project blocker edges are dropped by TopologyService already,
+//                  so they never gate a task).
+// ---------------------------------------------------------------------------
+
+/**
+ * One task's WSJF standing after read-time ranking. `effectiveWsjf` is the
+ * sort key (descending). For scored tasks it is the propagation-adjusted ratio;
+ * for unscored tasks it is the {@link priorityFallbackScore}. `propagation`
+ * enumerates each distinct downstream dependent's γ-decayed contribution to
+ * this task's effective Cost-of-Delay (empty for unscored tasks or leaves).
+ */
+export interface RankedTask {
+  taskId: number;
+  scored: boolean;
+  baseWsjf: number | null;
+  effectiveWsjf: number;
+  components: WsjfComponents | null;
+  propagation: { dependentId: number; contribution: number }[];
+  evidence: WsjfEvidence | null;
+}
+
+/**
+ * Collaborators `rankFrontier` needs to gather the DAG closure and task rows.
+ * Injected (rather than constructed) so the function stays unit-testable
+ * against real in-memory repositories — the same pattern the topology tests
+ * use. `topology` supplies the project-scoped, orphan-filtered, cycle-guarded
+ * edge set; `tasks` supplies the rows; `dependency` is the underlying edge
+ * authority that `topology` is built over (kept in the contract per spec §6).
+ */
+export interface RankDeps {
+  topology: TopologyService;
+  dependency: DependencyService;
+  tasks: ITaskRepository;
+}
+
+type ScoredTask = Task & { tags?: string[] };
+
+const RANKED_DONE_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
+  'done',
+  'closed',
+]);
+
+/** All four WSJF components present (a fully-scored task)? */
+function hasComponents(t: Task): t is Task & {
+  wsjf_value: Fib;
+  wsjf_time_criticality: Fib;
+  wsjf_risk_opportunity: Fib;
+  wsjf_job_size: Fib;
+} {
+  return (
+    t.wsjf_value !== null &&
+    t.wsjf_time_criticality !== null &&
+    t.wsjf_risk_opportunity !== null &&
+    t.wsjf_job_size !== null
+  );
+}
+
+/** Page through every task in the project (findByFilters clamps at 500). */
+function loadProjectTasks(
+  tasks: ITaskRepository,
+  projectId: number,
+): ScoredTask[] {
+  const expected = tasks.count({ project_id: projectId });
+  const out: ScoredTask[] = [];
+  let offset = 0;
+  while (out.length < expected) {
+    const page = tasks.findByFilters({
+      project_id: projectId,
+      limit: MAX_PAGE_LIMIT,
+      offset,
+      include_tags: false,
+    });
+    if (page.length === 0) break;
+    out.push(...page);
+    offset += page.length;
+  }
+  return out;
+}
+
+/**
+ * Rank a project's tasks by propagation-adjusted WSJF.
+ *
+ * @param projectId  project to rank.
+ * @param scope      `'all'` ranks every task; `'frontier'` excludes blocked /
+ *                   not-ready tasks (see module header).
+ * @param deps       injected topology / dependency / task collaborators.
+ * @returns          `RankedTask[]` sorted descending by `effectiveWsjf`, with a
+ *                   stable tie-break of `created_at` then `id` (ascending).
+ * @throws BusinessError when the project's dependency graph is `DAG_CYCLIC`.
+ */
+export async function rankFrontier(
+  projectId: number,
+  scope: 'frontier' | 'all',
+  deps: RankDeps,
+): Promise<RankedTask[]> {
+  // 1. Cycle guard — route through the topology classifier. A cyclic graph has
+  //    no orderable frontier and the propagation closure would never terminate,
+  //    so reject before doing any work.
+  const report = deps.topology.classify(projectId);
+  if (report.topology === 'DAG_CYCLIC') {
+    throw new BusinessError(
+      `Cannot rank project ${projectId}: dependency graph is cyclic (DAG_CYCLIC); break the cycle before ranking`,
+    );
+  }
+
+  const allTasks = loadProjectTasks(deps.tasks, projectId);
+  const taskById = new Map<number, ScoredTask>();
+  for (const t of allTasks) taskById.set(t.id, t);
+
+  // 2. Build the downstream adjacency (blocker → dependents) from the project-
+  //    scoped, orphan-filtered edge set the topology classifier produced.
+  //    Edge {from, to}: `from` blocks `to`, so `to` is a downstream dependent.
+  const downstream = new Map<number, number[]>();
+  const blockersOf = new Map<number, number[]>();
+  for (const id of taskById.keys()) {
+    downstream.set(id, []);
+    blockersOf.set(id, []);
+  }
+  for (const e of report.edges) {
+    downstream.get(e.from)!.push(e.to);
+    blockersOf.get(e.to)!.push(e.from);
+  }
+
+  // 3. base_CoD per scored task = value + timeCriticality + riskOpportunity.
+  const baseCoD = new Map<number, number>();
+  for (const t of allTasks) {
+    if (hasComponents(t)) {
+      baseCoD.set(
+        t.id,
+        t.wsjf_value + t.wsjf_time_criticality + t.wsjf_risk_opportunity,
+      );
+    }
+  }
+
+  // 4. distinctTransitiveDependents(n) via BFS over `downstream`, recording the
+  //    SHORTEST hop distance to each dependent (diamond-safe dedupe: each
+  //    descendant appears once, at its minimum distance). Then fold each
+  //    dependent's base_CoD · γ^(dist−1) onto n, capped at base_CoD(n)·CAP.
+  const propagationOf = new Map<
+    number,
+    { dependentId: number; contribution: number }[]
+  >();
+  const effectiveCoD = new Map<number, number>();
+
+  for (const t of allTasks) {
+    if (!hasComponents(t)) continue;
+    const base = baseCoD.get(t.id)!;
+
+    // BFS shortest-distance closure of downstream dependents.
+    const distance = new Map<number, number>();
+    const queue: number[] = [t.id];
+    distance.set(t.id, 0);
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const d = distance.get(cur)!;
+      for (const next of downstream.get(cur) ?? []) {
+        if (!distance.has(next)) {
+          distance.set(next, d + 1);
+          queue.push(next);
+        }
+      }
+    }
+
+    const contributions: { dependentId: number; contribution: number }[] = [];
+    let sum = 0;
+    // Deterministic order: ascending dependent id.
+    const dependentIds = [...distance.keys()]
+      .filter((id) => id !== t.id)
+      .sort((a, b) => a - b);
+    for (const depId of dependentIds) {
+      const depBase = baseCoD.get(depId);
+      if (depBase === undefined) continue; // unscored dependents contribute nothing
+      const dist = distance.get(depId)!;
+      const contribution = depBase * Math.pow(PROPAGATION_GAMMA, dist - 1);
+      if (contribution === 0) continue;
+      contributions.push({ dependentId: depId, contribution });
+      sum += contribution;
+    }
+
+    const uncapped = base + sum;
+    const capped = Math.min(uncapped, base * PROPAGATION_CAP);
+    effectiveCoD.set(t.id, capped);
+    propagationOf.set(t.id, contributions);
+  }
+
+  // 5. Frontier filtering — drop not-ready tasks when scope === 'frontier'.
+  const isReady = (t: ScoredTask): boolean => {
+    if (t.status === 'blocked') return false;
+    for (const blockerId of blockersOf.get(t.id) ?? []) {
+      const blocker = taskById.get(blockerId);
+      // Orphaned / cross-project blockers are already absent from `report.edges`
+      // (TopologyService drops them), so any blocker we see here is in-project.
+      if (blocker && !RANKED_DONE_STATUSES.has(blocker.status)) return false;
+    }
+    return true;
+  };
+
+  const scopedTasks =
+    scope === 'frontier' ? allTasks.filter(isReady) : allTasks;
+
+  // 6. Materialize RankedTask rows.
+  const ranked: RankedTask[] = scopedTasks.map((t) => {
+    if (hasComponents(t)) {
+      const components: WsjfComponents = {
+        value: t.wsjf_value,
+        timeCriticality: t.wsjf_time_criticality,
+        riskOpportunity: t.wsjf_risk_opportunity,
+        jobSize: t.wsjf_job_size,
+      };
+      const baseWsjf = computeWsjf(components);
+      const effCoD = effectiveCoD.get(t.id) ?? baseCoD.get(t.id)!;
+      const effectiveWsjf = effCoD / Math.max(components.jobSize, 1);
+      return {
+        taskId: t.id,
+        scored: true,
+        baseWsjf,
+        effectiveWsjf,
+        components,
+        propagation: propagationOf.get(t.id) ?? [],
+        evidence: t.wsjf_evidence ?? null,
+      };
+    }
+    // Unscored → priority fallback. effectiveWsjf is the fallback score so the
+    // sort key is uniform; scored tasks (real ratios) and fallback tasks live
+    // in the same ordering space (spec §6 step 4 + the priority→WSJF map).
+    return {
+      taskId: t.id,
+      scored: false,
+      baseWsjf: null,
+      effectiveWsjf: priorityFallbackScore(t.priority as Priority),
+      components: null,
+      propagation: [],
+      evidence: null,
+    };
+  });
+
+  // 7. Sort: effectiveWsjf DESC, then created_at ASC, then id ASC (deterministic).
+  ranked.sort((a, b) => {
+    if (b.effectiveWsjf !== a.effectiveWsjf) {
+      return b.effectiveWsjf - a.effectiveWsjf;
+    }
+    const ta = taskById.get(a.taskId)!;
+    const tb = taskById.get(b.taskId)!;
+    if (ta.created_at !== tb.created_at) {
+      return ta.created_at < tb.created_at ? -1 : 1;
+    }
+    return a.taskId - b.taskId;
+  });
+
+  return ranked;
 }
