@@ -9,7 +9,7 @@ disable-model-invocation: false
 
 You are the **orchestrator** of an autonomous backlog-drain for a **DAG-topology** project. The wood-fired-tasks project you target has dependency edges; tasks must run in an order that respects them, but tasks on the same frontier (no unsatisfied dependencies) MAY run in parallel.
 
-> See [loop-shared.md](loop-shared.md) for the worker brief template (§A), VerifierInputs envelope (§B), and LOOP-RUN.md frontmatter (§C) — same contracts as /tasks:loop. Also: INTEGRATION-AUDIT.md schema (§D), declared scope narrowing carve-out (§E), `.flaky-tests.json` handling (§F), verifier parse-failure patterns (§G), declared scope narrowing detection (§H), Step 8 close-out comment (§I), Step 5 post-correction carve-out (§J).
+> See [loop-shared.md](loop-shared.md) for the worker brief template (§A), VerifierInputs envelope (§B), and LOOP-RUN.md frontmatter (§C) — same contracts as /tasks:loop. Also: INTEGRATION-AUDIT.md schema (§D), declared scope narrowing carve-out (§E), `.flaky-tests.json` handling (§F), verifier parse-failure patterns (§G), declared scope narrowing detection (§H), Step 8 close-out comment (§I), Step 5 post-correction carve-out (§J), worktree teardown (§N).
 
 This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md). The two skills share most of the contract — pre-loop discovery, worker briefs, the mandatory `tasks-verifier` dispatch, the LOOP-RUN.md artifact, and the integration-auditor — and this file deliberately points at `loop.md` (and `loop-shared.md` for the shared templates) for the shared sections rather than duplicating them. What this skill adds is **wave-by-wave parallel dispatch** instead of single-task sequential ordering.
 
@@ -19,7 +19,7 @@ This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md).
 
 **Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop-dag`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the per-worker brief / claim / comment sections below (and reused from `loop.md` / `loop-shared.md`) — this block is the canonical pointer.
 
-This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__wsjf_health`) and retry. (`wsjf_ranking` is consumed by §3a's WSJF-ordered frontier sort; `wsjf_health` by §2h's loop-start health surfacing.)
 
 ---
 
@@ -105,6 +105,9 @@ Run this scan via a single `wood-fired-tasks:list_tasks` (already done in §3a s
 
 **Wipeout case:** if the §2g scan flags every open task in the project (i.e. the entire backlog is hand-replay-tagged), §3a's frontier will be empty after step 6. Skip §2a–§2e (no point doing baselines for a wipeout) and route directly to §5f termination emit with a `## Aborted` section naming "feasibility wipeout: N/N open tasks gated". This is the optimization that addresses friction F6 — the cheap §2g scan runs BEFORE the expensive §2a–§2e baselines, so a doomed pool is detected for ~one MCP round-trip instead of after a full baseline-tests run.
 
+### 2h. WSJF health surfacing (loop start)
+Run ONCE, after §2f's gate is decided and BEFORE §3a computes the first frontier. Probe `wood-fired-tasks:wsjf_health` with `{ project_id }` — the non-blocking spec §9 degeneracy / pitfall linter (pure read; writes nothing). It returns `{ healthy, scored_task_count, findings[] }`; each entry in `findings[]` carries `check`, `severity` (`info` | `warning` | `critical`), `message`, and `suggestion`. **`healthy: true`** → one-line `"WSJF health: OK (<scored_task_count> scored task(s), no degeneracies)."` and proceed. **`findings[]` non-empty** → print a `WSJF Health` block in the first prompt listing each as `- [<severity>] <message> Fix: <suggestion>`, ordered `critical` → `warning` → `info`, warning the operator that the per-wave WSJF-ordered frontier sort (§3a step 8) may consume a degenerate ranking (near-identical scores, or a past-deadline task with stale Time Criticality). The findings are **advisory only — they NEVER block the run**, never change the gate decision, and never auto-rescore. If `wsjf_health` is unavailable (CONDITIONALLY registered — `src/mcp/server.ts` omits it when no linter is wired), skip this surfacing silently and proceed to §3.
+
 ---
 
 ## 3. The Wave Loop
@@ -130,7 +133,7 @@ Algorithm:
 5. **Skip tasks the orchestrator already dispatched in a prior wave of THIS run.** A worker that returned FAIL → blocked stays blocked; do NOT silently re-attempt within the same loop run. Track these in orchestrator state by task id.
 6. **Skip tasks flagged by §2g feasibility gate.** If a task id is in `not_dispatchable_this_run` (set built in §2g and extended below), drop it. The task remains open in the tasks database; it just doesn't enter THIS run's frontier.
 7. **Skip tasks with stale-PARTIAL evidence (previously-PARTIAL guard).** If a task has `verification_evidence.verdict = "PARTIAL"` from a prior loop run AND no new commits have touched any of the files in `verification_evidence.file_changes` since `verification_evidence.verified_at`, add the task id to `not_dispatchable_this_run` with reason `"previously-PARTIAL, no new evidence"` and skip it. Add a one-time comment to the task: `"/tasks:loop-dag previously-PARTIAL guard: task graded PARTIAL on <verified_at> by verifier <verifier_session_id>; no new commits have touched its tracked files since. Re-dispatch would re-grade the same evidence and produce the same PARTIAL. Skipping. Either commit progress toward the UNCHECKABLE criteria first, or close the task manually."` (Check `git log --since=<verified_at> -- <files>` to determine staleness; if `file_changes` is empty in the prior evidence, treat as stale — there's no signal that anything has moved.)
-8. Sort the resulting frontier by **priority DESC** (`urgent` > `high` > `medium` > `low`), then **`created_at` ASC** (older first), then **`id` ASC**. The first `--concurrency K` tasks of the sorted frontier are the wave's dispatch set.
+8. Sort the resulting frontier. **WSJF-ordered frontier sort:** probe the `wsjf_ranking` MCP tool with `{ project_id, scope: "frontier" }` (scope is always `"frontier"` here — DAG-only, §3a dispatches only the ready frontier). **If ≥ 1 returned `ranking[]` entry has `scored: true`** → order this wave's surviving (steps 1–7) frontier by that pre-sorted order (descending `effectiveWsjf`, unscored via `priorityFallbackScore`, ties by created_at/id) and record the snapshot per §M. **If NO entry is scored** (backward-compatible default) → fall back UNCHANGED to **priority DESC**, then **`created_at` ASC**, then **`id` ASC**. The first `--concurrency K` tasks are the wave's dispatch set. WSJF reorders WITHIN a frontier only — never ahead of a blocker. Full procedure: [loop-shared.md §M](loop-shared.md#m-loop-runmd-wsjf-ranking-snapshot).
 9. If the resulting frontier is empty, do one final check: are there any open tasks left at all? If YES, those tasks are all transitively blocked by something that either failed (verdict=FAIL → blocked), was never closed, or was filtered by §2g / step 7 — emit `## Stalled Tasks` AND `## Not-Dispatchable Tasks` blocks in the final LOOP-RUN.md (per §5d) and exit. If NO, the backlog is drained — announce completion, run §4 (integration audit) ONCE, then exit.
 
 **Frontier correctness invariant (test fixture — not a real task set).** The canonical *test fixture* lives in `src/api/routes/tasks/__tests__/loop-dag-skill-design.test.ts`; the IDs 334/335/337/338/339 are fictional and need not be looked up in the live tasks database. Given edges `{334→337, 335→337, 337→338, 337→339}` on an open-task set `{334, 335, 337, 338, 339}`, the frontier algorithm MUST produce waves `{334, 335}` (wave 1) / `{337}` (wave 2) / `{338, 339}` (wave 3). This is the load-bearing correctness contract for §3a — any change to the algorithm MUST preserve this fixture's wave shape.
@@ -146,7 +149,7 @@ For each task in the wave's dispatch set (up to `--concurrency K`):
 
 **Parallel dispatch shape.** When `--concurrency K >= 2` and the wave has ≥ 2 tasks, the orchestrator MUST issue the `Agent` tool calls for the wave in a **single message** so they execute concurrently — per the platform's parallel-tool-call semantics. Each `Agent` call gets its own `name: "worker-task-<id>"` so it is independently addressable via `SendMessage` later (mirrors `loop.md` §7b's `name:` requirement for verifiers — the same reasoning applies to workers, since the orchestrator may need to send a tight diagnostic back to a single worker without disturbing the others mid-wave).
 
-Sequential dispatch (one Agent call, await, next Agent call) is permitted only when `--concurrency 1` is explicitly set — it is the strictly slower path and exists for diagnostic single-step runs.
+Sequential dispatch (one Agent call, await, next Agent call) is permitted only when `--concurrency 1` is explicitly set — it is the strictly slower path and exists for diagnostic single-step runs. Each parallel worker `Agent` call MUST set `isolation: "worktree"` (parallel workers in a shared tree can `git restore` each other's edits even on disjoint file sets); the per-worker `.claude/worktrees/agent-<id>` worktree + `worktree-agent-*` branch the harness creates is reclaimed at run-end by §5g (loop-shared.md §N) — the harness never auto-cleans them because an edited worktree counts as "changed".
 
 ### Step 3c — Await wave completion
 
@@ -263,7 +266,11 @@ All sections from `loop.md` §9d apply: `## Tasks Closed`, `## Verifier Findings
 
 - **`## Not-Dispatchable Tasks`** — populated when §2g (feasibility gate) or §3a step 7 (previously-PARTIAL guard) flagged tasks as not dispatch-eligible for this run. One bullet per task: `#<id> — <title> — reason: <feasibility|previously-PARTIAL> — <indicator that matched>`. Distinct from `## Stalled Tasks`: stalled = transitively blocked by a FAIL verdict this run; not-dispatchable = filtered out before any dispatch attempt. Sentinel `_No non-dispatchable tasks._` when empty.
 
+- **`## WSJF Ranking`** — the ranking snapshot §3a step 8's WSJF-ordered frontier sort consumed (per-task scores, `effectiveWsjf`, propagation breakdown, γ/CAP). Full table + header + sentinel rules: [loop-shared.md §M](loop-shared.md#m-loop-runmd-wsjf-ranking-snapshot). For a multi-wave run the snapshot reflects the MOST RECENT wave's frontier ranking (rewritten per-wave on the §5b kill-safe re-emission). Sentinel `_No WSJF ranking: project has no WSJF-scored tasks; selection used the priority + ID (or topological) order._` when the project was unscored.
+
 - **`## Aborted`** — present ONLY for non-graceful terminations (per §5f). Absent on clean backlog-drain runs and on clean `--max-waves N` checkpoints. When present, the body holds: `**Termination reason:**`, `**Termination step:**` (§ identifier), `**State at abort:**` (bullet list of MCP calls / claims / commits made), `**Recommended next step:**` (one-line). Format defined in §5f.
+
+- **`## Retained Worktrees`** — emitted by the §5g teardown: one bullet per `worktree-agent-*` branch it did NOT remove (un-integrated work), as `` `<path>` (branch `<branch>`) — <n> un-integrated patch(es); inspect with `git cherry <base> <branch>` ``. Sentinel `_No retained worktrees — all run worktrees were fully integrated and removed._` on a clean run; `_No worktrees created (no isolated workers dispatched)._` when no `isolation: "worktree"` workers ran.
 
 ### 5e. NOT committed (intentional)
 
@@ -284,14 +291,7 @@ For every other path, the body MUST include:
 
 **Termination reason:** <one-line summary>
 **Termination step:** <§ identifier — e.g. §2f, §2g, §3a step 9, user-abort-at-§3b>
-**State at abort:**
-- topology_check calls: <n>
-- list_tasks calls: <n>
-- get_task calls: <n>
-- claim_task calls: <n>
-- worker dispatches: <n>
-- verifier dispatches: <n>
-- commits made: <n>
+**State at abort:** counts for topology_check / list_tasks / get_task / claim_task calls, worker + verifier dispatches, and commits made.
 **Recommended next step:** <one-line — e.g. "Edit tasks tagged `hand-replay` and re-invoke", "Decompose epic-sized task #X via /tasks:decompose before re-running", "Resolve cycle in DAG (members: …) and re-invoke">
 ```
 
@@ -300,6 +300,10 @@ For abort paths that fire *after* one or more waves have completed, the `## Abor
 **`tasks_attempted` accounting on abort paths:** only counts tasks the orchestrator actually `claim_task`'d (not tasks it merely fetched). A pure §2f-refusal run reports `tasks_attempted: 0`. A run aborted after claiming 2 tasks reports `tasks_attempted: 2` even if no commits landed.
 
 **Crash-tolerance.** The same per-wave incremental rewrite from §5b protects against mid-run kills, BUT termination emit MUST be wrapped in a `try/finally`-equivalent guard so even an exception in the orchestrator code path (e.g. an MCP call throwing) still produces a final LOOP-RUN.md with `## Aborted` set. The orchestrator's "final exit" code MUST be the LOOP-RUN.md write, not any earlier return.
+
+### 5g. Worktree teardown (run-end, kill-safe)
+
+Terminal step — runs ONCE after §5f's emit, on EVERY termination path — to reclaim the `isolation: "worktree"` worker worktrees (§3b) + `worktree-agent-*` branches the harness never auto-removes (a committed/edited worktree is "changed", so it is never auto-cleaned and they pile up across runs). Discovery-based and integration-gated so it can ONLY ever delete fully-integrated leftovers: enumerate via `git worktree list --porcelain` (paths under `.claude/worktrees/`, branches `worktree-agent-*`); for each, `git cherry <base> <branch>` (where `<base>` is the run's integration branch, usually `main`) and remove only when there are **0** not-integrated (`+`) patches — `git worktree unlock` → `git worktree remove --force` → `git branch -D`, then `git worktree prune` once. Branches with ≥1 un-integrated patch are RETAINED and surfaced in the `## Retained Worktrees` LOOP-RUN.md block (§5d), then LOOP-RUN.md is re-emitted (§5b). Idempotent / kill-safe. **Full procedure + the `/tasks:loop` not-affected rationale: [loop-shared.md §N](loop-shared.md#n-worktree-teardown-loop-dag-run-end).**
 
 ---
 

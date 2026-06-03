@@ -1,5 +1,53 @@
 import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../types/task.js';
+import { WSJF_HISTORY_TRIGGERS } from '../types/wsjf.js';
+import {
+  FibSchema,
+  WsjfEvidenceSchema,
+  WsjfLocksSchema,
+  WsjfSourceSchema,
+  WsjfClassificationSchema,
+  WsjfFeaturesSchema,
+} from './wsjf.schema.js';
+
+/**
+ * WSJF (task #627): the WSJF score payload accepted on create/update.
+ *
+ * ALL-FOUR-OR-NONE enforcement: the four component scores
+ * (`value`, `timeCriticality`, `riskOpportunity`, `jobSize`) are each REQUIRED
+ * inside this object, and the whole `wsjf` field is OPTIONAL on the task
+ * schemas. So a caller either supplies a fully-scored task (all four present)
+ * or omits `wsjf` entirely — a half-scored payload (e.g. only `value`) is
+ * rejected because the other three components are missing. The structured
+ * JSON metadata members are optional and reuse the validators from
+ * `wsjf.schema.ts` (no redefinition — those are the authoritative shapes).
+ */
+export const WsjfWriteSchema = z
+  .object({
+    value: FibSchema,
+    timeCriticality: FibSchema,
+    riskOpportunity: FibSchema,
+    jobSize: FibSchema,
+    evidence: WsjfEvidenceSchema.optional().nullable(),
+    locked: WsjfLocksSchema.optional().nullable(),
+    source: WsjfSourceSchema.optional().nullable(),
+    classifications: WsjfClassificationSchema.optional().nullable(),
+    features: WsjfFeaturesSchema.optional().nullable(),
+    // WSJF (#643): MANUAL-override marker. `true` routes the write through the
+    // manual gate (enum + contradiction only — exempt from the classification /
+    // evidence requirement) and stamps history `trigger='manual'`. The four
+    // components stay REQUIRED here, so all-four-or-none still holds; a manual
+    // caller supplies the per-component `locked` / `source` maps alongside.
+    manual: z.boolean().optional(),
+    // WSJF (#634): GENERIC history-trigger hint for the auto/classified path.
+    // Overrides the default `'create'`/`'update'` trigger stamped on the
+    // history row (e.g. `create_task` passes `'single_create'`, decompose
+    // passes `'decompose'`). Ignored when `manual === true` (always `'manual'`).
+    trigger: z.enum(WSJF_HISTORY_TRIGGERS).optional(),
+  })
+  .strict();
+
+export type WsjfWriteInput = z.infer<typeof WsjfWriteSchema>;
 
 /**
  * Wave 1.4 (task #312): verdict enum for the verification_evidence envelope.
@@ -92,6 +140,10 @@ export const CreateTaskSchema = z.object({
   // call sites can pass them through.
   created_by_user_id: z.number().int().positive().optional().nullable(),
   assignee_user_id: z.number().int().positive().optional().nullable(),
+  // WSJF (task #627): optional WSJF score. Omit for an unscored task; supply
+  // the full object (all four components) for a scored one. All-four-or-none
+  // is enforced by WsjfWriteSchema (the four components are required there).
+  wsjf: WsjfWriteSchema.optional().nullable(),
 });
 
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
@@ -140,6 +192,9 @@ export const UpdateTaskSchema = z.object({
   // 400" contract). Pass null to clear, an object to set. Stored as a JSON
   // string by the repository.
   verification_evidence: VerificationEvidenceSchema.nullable(),
+  // WSJF (task #627): patch the WSJF score. `null` clears all four components;
+  // an object sets them (all-four-or-none enforced by WsjfWriteSchema).
+  wsjf: WsjfWriteSchema.nullable(),
 }).partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
@@ -168,6 +223,9 @@ export const UpdateTaskClientSchema = z.object({
   // envelope. It is NOT server-derived, so it stays on the client-facing
   // schema. Unknown verdicts get rejected at the Zod boundary.
   verification_evidence: VerificationEvidenceSchema.nullable(),
+  // WSJF (task #627): clients may patch the WSJF score directly. `null` clears
+  // it; an object sets all four components (all-four-or-none enforced).
+  wsjf: WsjfWriteSchema.nullable(),
 }).partial().strict();
 
 export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
@@ -175,12 +233,25 @@ export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
 /**
  * CreateProjectSchema - validation for creating new projects
  */
-export const CreateProjectSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100, 'Name must be 100 characters or less'),
-  description: z.string().max(1000).optional().nullable(),
-});
-
-export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
+/**
+ * Project create/update schemas live in `project.schema.ts` (the single source
+ * of truth that carries the WSJF `value_charter`). They are re-exported here so
+ * every consumer that imports project schemas from this barrel — the REST
+ * project routes and the remote MCP proxy among them — gets the
+ * value_charter-aware definitions automatically.
+ *
+ * A local duplicate used to live here and silently lacked `value_charter`,
+ * which stripped the charter on the entire remote (REST + proxy) write path
+ * while the stdio path worked. Re-exporting keeps the two transports at parity
+ * by construction; the `task.schema ≡ project.schema` referential-identity
+ * guard in the project-tools tests fails loudly if they ever diverge again.
+ */
+export {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+  type CreateProjectInput,
+  type UpdateProjectInput,
+} from './project.schema.js';
 
 /**
  * Pagination bounds applied to all list endpoints.

@@ -72,6 +72,16 @@ const PROSE_ALLOWLIST: ReadonlyArray<{
   // not an enum citation. They are also valid canonical members so they
   // are not blocked by this test, but keeping them explicit here documents
   // intent.
+  // WSJF 5.2 (#647) — the wsjf_health surfacing prose names the linter's
+  // SEVERITY scale (`info` | `warning` | `critical`, a HealthSeverity in
+  // src/services/wsjf-health.service.ts), NOT the task-priority enum value.
+  { file: 'loop.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'loop-dag.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'new-project.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'new-project.md', contains: 'ordered `critical` → `warning`' },
+  { file: 'project-status.md', contains: '`info` | `warning` | `critical`' },
+  { file: 'project-status.md', contains: 'Order findings `critical` → `warning` → `info`' },
+  { file: 'project-status.md', contains: 'returned a `critical` finding' },
 ];
 
 interface SkillFinding {
@@ -126,6 +136,12 @@ describe('skill enum-value consistency (#347)', () => {
   const EXPECTED_NON_INVOCABLE: ReadonlySet<string> = new Set([
     '_enums.md',
     'loop-shared.md',
+    // wsjf-rubric.md (task #632 / WSJF 2.1): the classification CONTRACT.
+    // It is a reference document referenced by decompose.md and
+    // create-task.md when they score tasks, not a command installed to
+    // ~/.claude/commands/tasks/ — so it ships gated
+    // (`disable-model-invocation: true`), same precedent as _enums.md.
+    'wsjf-rubric.md',
   ]);
 
   function flagFor(fileName: string): 'true' | 'false' | 'missing' {
@@ -160,18 +176,22 @@ describe('skill enum-value consistency (#347)', () => {
     expect(missingFlag).toEqual([]);
   });
 
-  it('discovers all 16 shipped skill files (sanity: install.sh source set)', () => {
-    expect(allSkillFiles.length).toBe(16);
+  it('discovers all 18 shipped skill files (sanity: install.sh source set)', () => {
+    expect(allSkillFiles.length).toBe(18);
   });
 
-  it('partitions into 14 invocable + 2 non-invocable by actual flag value', () => {
+  it('partitions into 15 invocable + 3 non-invocable by actual flag value', () => {
     // decompose.md flipped from gated→invocable when its runtime landed,
-    // so the invocable bucket is 14 and the non-invocable bucket is 2.
-    expect(invocableByFlag.length).toBe(14);
-    expect(nonInvocableByFlag.length).toBe(2);
+    // so the invocable bucket is 15. The non-invocable bucket is 3:
+    // _enums.md, loop-shared.md, and wsjf-rubric.md (the WSJF 2.1
+    // classification contract — reference material, not a command).
+    // Task #639 (WSJF 3.3) added the invocable charter-interview command
+    // new-project.md, bumping the invocable bucket 14 → 15.
+    expect(invocableByFlag.length).toBe(15);
+    expect(nonInvocableByFlag.length).toBe(3);
   });
 
-  it('the non-invocable bucket is exactly {_enums.md, loop-shared.md}', () => {
+  it('the non-invocable bucket is exactly {_enums.md, loop-shared.md, wsjf-rubric.md}', () => {
     expect(new Set(nonInvocableByFlag)).toEqual(EXPECTED_NON_INVOCABLE);
   });
 

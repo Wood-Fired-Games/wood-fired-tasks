@@ -4,9 +4,9 @@ This package gives any developer on the local network full access to the
 Wood Fired Tasks task management system via Claude Code and the `tasks` CLI.
 
 Once set up, you get:
-- **10 `/tasks:*` slash commands** in Claude Code (`/tasks:create-task`, `/tasks:my-work`, etc.)
+- **11 `/tasks:*` slash commands** in Claude Code (`/tasks:create-task`, `/tasks:my-work`, `/tasks:new-project`, etc.)
 - **`tasks` CLI** in your terminal (`tasks list`, `tasks show 1`, `tasks create`, etc.)
-- **MCP server** providing all 22 tools to Claude Code
+- **MCP server** providing all 27 tools to Claude Code — including the 4 WSJF prioritization tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health`), plus `topology_check` and `wait_for_unblock`
 
 ---
 
@@ -147,6 +147,12 @@ All commands support `--json` for machine-readable output and `--help` for usage
 
 > **Note:** Server-only commands (`backup`, `doctor`, `stats`, `db-check`) are not
 > available in the client CLI — they require direct database access on the backend.
+>
+> **Note:** WSJF prioritization is surfaced through the MCP tools (`wsjf_ranking`,
+> `wsjf_history`, `rescore_project`, `wsjf_health`) and the `/tasks:new-project`
+> charter interview, not the client CLI. The WSJF read/manual-set CLI commands
+> (`wsjf-history`, `wsjf-set`, `charter-history`) run only on the backend, which
+> owns the value charter and score-history database.
 
 ---
 
@@ -164,6 +170,7 @@ All commands support `--json` for machine-readable output and `--help` for usage
 | `/tasks:add-comment [task-id] [text]` | Add a comment to a task |
 | `/tasks:blocked [task-id] [reason]` | Mark a task as blocked with a reason |
 | `/tasks:project-status` | View project status overview with completion % |
+| `/tasks:new-project` | Charter-interview a project (mission, ranked value themes, time pressure, risk posture, out-of-scope) so WSJF scoring can derive Business Value |
 
 ---
 
@@ -274,7 +281,7 @@ Verify the skill files are installed:
 **Windows:** Check `%USERPROFILE%\.claude\commands\tasks\`
 **Linux/Mac:** Check `~/.claude/commands/tasks/`
 
-You should see 10 `.md` files. If missing, re-run the setup script.
+You should see 11 `.md` files. If missing, re-run the setup script.
 
 ---
 
@@ -291,7 +298,9 @@ Your Machine                               Linux Backend
 │  ┌───────────────────────────┐   │       └──────────────────────┘
 │  │  Remote MCP Server        │───┼──────>│
 │  │  (mcp-server/)            │   │ HTTP
-│  │  Proxies all 22 tools     │   │
+│  │  Proxies all 27 tools     │   │
+│  │  (incl. 4 WSJF + topology │   │
+│  │   + wait-for-unblock)     │   │
 │  └───────────────────────────┘   │
 │                                  │
 │  /tasks: slash commands          │

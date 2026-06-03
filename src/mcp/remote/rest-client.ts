@@ -20,6 +20,88 @@ import type {
 import type { TopologyReport } from '../../schemas/topology.schema.js';
 import { createRemoteSSEParser } from './sse-parser.js';
 
+// ── WSJF remote-parity payload types (WSJF 1.10) ──────────────────────────────
+// Structural projections of the REST WSJF responses. Kept as plain interfaces
+// (not server-side Zod inferences) so the remote rest-client stays importable
+// from a minimal stdio subprocess without dragging in server schema modules —
+// the same isolation principle as PAT_PREFIX above.
+
+/** A propagation-adjusted ranked task (mirrors RankedTask). */
+export interface RankedTaskPayload {
+  taskId: number;
+  scored: boolean;
+  baseWsjf: number | null;
+  effectiveWsjf: number;
+  components: Record<string, number> | null;
+  propagation: { dependentId: number; contribution: number }[];
+  evidence: Record<string, string> | null;
+}
+
+export interface WsjfRankingResponse {
+  project_id: number;
+  scope: 'frontier' | 'all';
+  total: number;
+  ranking: RankedTaskPayload[];
+}
+
+export interface WsjfScoreHistoryRow {
+  id: number;
+  task_id: number;
+  project_id: number;
+  changed_at: string;
+  trigger: string;
+  wsjf_score: number | null;
+  prev_wsjf_score: number | null;
+  [key: string]: unknown;
+}
+
+export interface WsjfScoreHistoryResponse {
+  task_id: number;
+  total: number;
+  history: WsjfScoreHistoryRow[];
+}
+
+export interface WsjfHealthFinding {
+  check: string;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  suggestion: string;
+  taskIds: number[];
+}
+
+export interface WsjfHealthResponse {
+  project_id: number;
+  healthy: boolean;
+  scored_task_count: number;
+  findings: WsjfHealthFinding[];
+}
+
+/** One written-back classification submission for a rescore (loose, gated server-side). */
+export interface RescoreSubmissionInput {
+  task_id: number;
+  classification: Record<string, unknown>;
+  features: Record<string, unknown>;
+}
+
+export interface RescoreTaskResultPayload {
+  taskId: number;
+  changed: boolean;
+  skippedLocked: string[];
+  components: Record<string, number>;
+  prevWsjfScore: number | null;
+  newWsjfScore: number;
+}
+
+export interface RescoreResponse {
+  run_id: number;
+  project_id: number;
+  tasks_evaluated: number;
+  tasks_changed: number;
+  tasks_skipped_locked: number;
+  results: RescoreTaskResultPayload[];
+  errors: { taskId: number; errors: string[] }[];
+}
+
 function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
   if (Array.isArray(payload)) {
     return { data: payload, total: payload.length, limit: payload.length, offset: 0 };
@@ -354,6 +436,69 @@ export class RestClient {
    */
   async getTopology(projectId: number): Promise<TopologyReport> {
     return this.request<TopologyReport>(`/api/v1/projects/${projectId}/topology`);
+  }
+
+  // ── WSJF operations ──────────────────────────────────────────────────────
+  // Remote parity (WSJF 1.10) for the stdio wsjf_ranking / wsjf_history /
+  // rescore_project / wsjf_health tools. Each proxies the project- (or task-)
+  // scoped REST endpoint that exposes the same service the stdio server wires
+  // in-process, so the remote proxy tools are transport-indistinguishable.
+
+  /**
+   * Rank a project's tasks by propagation-adjusted WSJF via
+   * `GET /api/v1/projects/:id/wsjf-ranking?scope=...`.
+   */
+  async getWsjfRanking(
+    projectId: number,
+    scope: 'frontier' | 'all'
+  ): Promise<WsjfRankingResponse> {
+    return this.request<WsjfRankingResponse>(
+      `/api/v1/projects/${projectId}/wsjf-ranking?scope=${scope}`
+    );
+  }
+
+  /**
+   * Read a task's append-only WSJF score history via
+   * `GET /api/v1/tasks/:id/score-history`. The stdio `wsjf_history` tool reads
+   * the same `wsjf_score_history` rows in-process; this is the REST analogue.
+   */
+  async getWsjfHistory(taskId: number): Promise<WsjfScoreHistoryResponse> {
+    return this.request<WsjfScoreHistoryResponse>(
+      `/api/v1/tasks/${taskId}/score-history`
+    );
+  }
+
+  /**
+   * Lint a project's WSJF state for degeneracies via
+   * `GET /api/v1/projects/:id/wsjf-health`.
+   */
+  async getWsjfHealth(projectId: number): Promise<WsjfHealthResponse> {
+    return this.request<WsjfHealthResponse>(
+      `/api/v1/projects/${projectId}/wsjf-health`
+    );
+  }
+
+  /**
+   * Deterministically rescore a project via `POST /api/v1/projects/:id/rescore`.
+   * The server delegates to `WsjfRescoreService.rescore`, which owns the
+   * rescore-run + history + component write lifecycle (one transaction).
+   */
+  async rescoreProject(
+    projectId: number,
+    submissions: RescoreSubmissionInput[],
+    opts?: { actor_type?: string; actor_id?: string }
+  ): Promise<RescoreResponse> {
+    return this.request<RescoreResponse>(
+      `/api/v1/projects/${projectId}/rescore`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          submissions,
+          ...(opts?.actor_type !== undefined && { actor_type: opts.actor_type }),
+          ...(opts?.actor_id !== undefined && { actor_id: opts.actor_id }),
+        }),
+      }
+    );
   }
 
   // ── SSE wait operations ──────────────────────────────────────────────────

@@ -11,6 +11,32 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v1.16] - 2026-06-03
+
+Ships **WSJF (Weighted Shortest Job First) economic prioritization**. Every task can be scored on its Cost of Delay (Business Value + Time Criticality + Risk/Opportunity-Enablement) divided by Job Size, so `/tasks:loop` and `/tasks:loop-dag` drain work by economic value rather than a hand-set `priority` enum. Scores are computed autonomously at task-creation time against a per-project **value charter**, every score carries a verbatim evidence trail plus append-only history, and a non-blocking degeneracy linter catches the classic WSJF anti-patterns. Fully backward-compatible: projects with no charter and no scores sort by `priority` then age exactly as before.
+
+### Added
+- **4 new WSJF MCP tools, with full stdio↔remote parity** (identical names, descriptions, and input schemas):
+  - `wsjf_ranking` — rank a project's tasks by propagation-adjusted WSJF; `scope="frontier"` (default) excludes blocked/not-ready tasks, `scope="all"` ranks every task; returns the ordered list with components, base vs effective WSJF, and the downstream Cost-of-Delay `propagation` breakdown.
+  - `wsjf_history` — a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes vs the previous entry.
+  - `rescore_project` *(mutation)* — deterministically rescore a project's already-scored tasks against the current value charter; opens a rescore run, writes one history row per changed task, skips locked components, returns evaluated/changed/skipped-locked counts.
+  - `wsjf_health` — lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, past-deadline stale Time Criticality, high priority-fallback ratio, and score-churn. Empty findings ⇔ healthy.
+  - Registered on both transports — stdio (`src/mcp/tools/wsjf-tools.ts`, wired in `src/mcp/server.ts`) and remote proxy (`src/mcp/remote/register-tools.ts`). MCP tool count rises from 23 to **27** on both transports. See [`docs/MCP.md`](docs/MCP.md).
+- **New REST endpoints** (base scope `/api/v1`). See [`docs/API.md`](docs/API.md).
+  - Task-scoped (`src/api/routes/tasks/wsjf.ts`): `GET /tasks/:id/wsjf` (read the four WSJF components + locks), `PUT /tasks/:id/wsjf` (manual-override set/lock of the four components; runs the enum + cross-component contradiction gate and writes a `manual` score-history row), `GET /tasks/:id/score-history` (append-only timeline with actor/charter/rescore-run provenance; backs `wsjf_history`).
+  - Project-scoped (`src/api/routes/projects/wsjf.ts`): `GET /projects/:id/charter-history`, `GET /projects/:id/rescore-runs`, `GET /projects/:id/wsjf-ranking` (backs `wsjf_ranking`), `GET /projects/:id/wsjf-health` (backs `wsjf_health`), `POST /projects/:id/rescore` *(mutation, backs `rescore_project`)*.
+- **New CLI commands** (`src/cli/commands/wsjf.ts`), all read commands emitting bare JSON:
+  - `tasks wsjf-history <id>` — a task's append-only WSJF score history (oldest-first).
+  - `tasks wsjf-set <id> --value <fib> --time-criticality <fib> --risk-opportunity <fib> --job-size <fib> [--lock <keys>]` — manual set/lock of a task's four components; all four flags required, each a Fibonacci tier (1,2,3,5,8,13); `--lock` takes comma-separated keys from `value,timeCriticality,riskOpportunity,jobSize`; runs the same enum + contradiction gate as REST/MCP.
+  - `tasks charter-history <id>` — a project's value-charter history (oldest-first). See [`docs/CLI.md`](docs/CLI.md).
+- **Migrations 013/014/015** (`src/db/migrations/`), bringing the migration count from 12 to **15**:
+  - `013-wsjf-fields.ts` — adds the four nullable Fibonacci-CHECK component columns (`wsjf_value`, `wsjf_time_criticality`, `wsjf_risk_opportunity`, `wsjf_job_size`) plus five JSON metadata columns (`wsjf_evidence`, `wsjf_locked`, `wsjf_source`, `wsjf_classifications`, `wsjf_features`) on `tasks`. An all-four-or-none invariant is enforced at the Zod write boundary, not by a SQLite constraint.
+  - `014-value-charter.ts` — adds the nullable JSON `value_charter` column on `projects`.
+  - `015-wsjf-audit.ts` — adds three append-only audit tables: `wsjf_rescore_run`, `wsjf_score_history` (one immutable row per score write, storing classifications + features for LLM-free replay), and `project_charter_history`.
+- **`value_charter` on projects + per-project setup interview.** The `/tasks:new-project` skill runs a STOP-and-wait, one-question-at-a-time interview capturing the project's value charter (mission, 2–4 Fibonacci-weighted value themes, time context, risk posture, out-of-scope). Skipping is valid — no charter is written and scoring falls back to the `priority` enum. The charter is the reference frame for User-Business-Value scoring.
+- **Autonomous evidence-backed WSJF scoring at decompose/create.** `/tasks:decompose` (Step 8a) batch-scores the whole candidate set one Cost-of-Delay column at a time against the charter, anchoring the lowest candidate per column to the `1` tier. The LLM never emits a number: it submits classifications over closed enums (`theme + alignment`, `severity`, `decay`, a server-banded `jobSizeTier`) plus a verbatim evidence span per component, and the server (`validateScoreSubmission` in `src/services/wsjf.service.ts`) recomputes the four Fibonacci components deterministically and rejects degenerate batches (no `1` anchor, sub-floor variance).
+- **`/tasks:loop` and `/tasks:loop-dag` select work by effective WSJF.** When a project has ≥ 1 scored task, the priority+ID sort is replaced by `wsjf_ranking` order (descending `effectiveWsjf`, unscored tasks slotted via a `priorityFallbackScore` map). Ranking gates on the ready frontier and propagates downstream Cost of Delay onto blockers (`effective_CoD = base_CoD + Σ dependents' base_CoD · γ^(dist−1)`, γ=0.5, capped at 3×), so a boring prerequisite that unblocks a large high-value subtree rises to the top. The ranking snapshot is written into `LOOP-RUN.md` for reproducibility, and `wsjf_health` is surfaced at loop start.
+
 ## [v1.15] - 2026-05-31
 
 Makes the `wft-router` automation daemon actually reachable by npm users. It was advertised as a shipped feature since v1.13 but was a separate, never-published package (`@wood-fired-games/wft-router`), so it reached nobody via npm. It now ships **inside** the `wood-fired-tasks` package.

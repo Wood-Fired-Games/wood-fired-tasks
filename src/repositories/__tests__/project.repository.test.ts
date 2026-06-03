@@ -119,4 +119,67 @@ describe('ProjectRepository', () => {
       repo.create({ name: 'Duplicate', description: 'Second' });
     }).toThrow(); // UNIQUE constraint violation
   });
+
+  // WSJF (Phase 3.1): value_charter persistence at the repository boundary.
+  const sampleCharter = {
+    mission: 'win the checkout wedge',
+    value_themes: [
+      {
+        name: 'checkout reliability',
+        weight: 8 as const,
+        description: 'no dropped carts',
+      },
+    ],
+    time_context: 'launch window Q3',
+    risk_posture: 'security + outage first',
+    out_of_scope: ['marketing site'],
+    interview_version: 1,
+    updated_at: '2026-06-01T00:00:00.000Z',
+  };
+
+  it('should default value_charter to null when not supplied', () => {
+    const project = repo.create({ name: 'No Charter' });
+    expect(project.value_charter).toBeNull();
+  });
+
+  it('should persist and read back a value_charter identically', () => {
+    const created = repo.create({
+      name: 'Charter Project',
+      value_charter: sampleCharter,
+    });
+    expect(created.value_charter).toEqual(sampleCharter);
+
+    const found = repo.findById(created.id);
+    expect(found?.value_charter).toEqual(sampleCharter);
+
+    const byName = repo.findByName('Charter Project');
+    expect(byName?.value_charter).toEqual(sampleCharter);
+
+    const all = repo.findAll();
+    expect(all.find((p) => p.id === created.id)?.value_charter).toEqual(
+      sampleCharter
+    );
+  });
+
+  it('should update value_charter and clear it with explicit null', () => {
+    const project = repo.create({ name: 'Updatable Charter' });
+    expect(project.value_charter).toBeNull();
+
+    const set = repo.update(project.id, { value_charter: sampleCharter });
+    expect(set.value_charter).toEqual(sampleCharter);
+
+    const cleared = repo.update(project.id, { value_charter: null });
+    expect(cleared.value_charter).toBeNull();
+  });
+
+  it('should leave value_charter untouched when update omits it', () => {
+    const project = repo.create({
+      name: 'Untouched Charter',
+      value_charter: sampleCharter,
+    });
+
+    const updated = repo.update(project.id, { description: 'changed' });
+    expect(updated.description).toBe('changed');
+    expect(updated.value_charter).toEqual(sampleCharter);
+  });
 });

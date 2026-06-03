@@ -1,4 +1,5 @@
 import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.js';
+import type { IWsjfHistoryRepository, WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
 import {
   Task,
   VALID_STATUS_TRANSITIONS,
@@ -6,12 +7,22 @@ import {
   PaginatedResponse,
   DEFAULT_PAGE_LIMIT,
   DEFAULT_PAGE_OFFSET,
+  Fib,
+  WsjfWriteDTO,
 } from '../types/task.js';
+import type { WsjfComponents } from '../types/wsjf.js';
+import {
+  computeWsjf,
+  validateManualScore,
+  derivePropagatedValuePrior,
+  type PropagatedValuePrior,
+} from './wsjf.service.js';
 import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
 import { validateVerificationEvidence } from './evidence-validation.js';
+import type Database from 'better-sqlite3';
 
 /**
  * Sanitized message surfaced to clients when the FTS5 search expression
@@ -65,10 +76,119 @@ export interface CompletionReport {
  * TaskService - handles task business logic, validation, and status lifecycle
  */
 export class TaskService {
+  /**
+   * @param taskRepo   task data access.
+   * @param projectRepo project data access.
+   * @param db         WSJF (#628): optional better-sqlite3 handle. Supplied
+   *   together with `wsjfHistoryRepo` so any WSJF component write and its
+   *   append-only `wsjf_score_history` row commit in ONE transaction. Omitting
+   *   it (pure service-unit tests, CLI report path) leaves the score-write
+   *   behaviour unchanged but means no audit row is appended — see
+   *   {@link wsjfAuditEnabled}.
+   * @param wsjfHistoryRepo WSJF (#628): append-only history writer, paired with
+   *   `db`. Must wrap the SAME connection as `taskRepo`.
+   */
   constructor(
     private readonly taskRepo: ITaskRepository,
-    private readonly projectRepo: IProjectRepository
+    private readonly projectRepo: IProjectRepository,
+    private readonly db?: Database.Database,
+    private readonly wsjfHistoryRepo?: IWsjfHistoryRepository,
   ) {}
+
+  /**
+   * WSJF (#628): is the in-transaction audit hook wired? True only when BOTH a
+   * db handle and a history repository were injected. When false the score
+   * still persists (back-compat for 2-arg constructions) but no history row is
+   * appended — the production wiring in `index.ts` always supplies both.
+   */
+  private wsjfAuditEnabled(): boolean {
+    return this.db !== undefined && this.wsjfHistoryRepo !== undefined;
+  }
+
+  /**
+   * WSJF (#628): the single in-transaction audit hook. Every component write
+   * path funnels through here so NONE can bypass history. Computes the new
+   * WSJF from the supplied components, appends one immutable
+   * `wsjf_score_history` row, and returns nothing. Pure side-effect.
+   *
+   * Well-factored for sibling task #643 (manual override): callers pass the
+   * `trigger` (`'create' | 'update' | 'manual' | ...`) and optional actor /
+   * rescore-run linkage, so the manual path can reuse this verbatim with
+   * `trigger='manual'` instead of duplicating the write.
+   *
+   * MUST be called inside the same `db.transaction(...)` as the component write
+   * so the two commit atomically.
+   */
+  private appendWsjfHistory(args: {
+    taskId: number;
+    projectId: number;
+    trigger: WsjfHistoryTrigger;
+    wsjf: WsjfWriteDTO;
+    prevWsjfScore: number | null;
+    actorType?: string | null;
+    actorId?: string | null;
+    charterVersion?: number | null;
+    rescoreRunId?: number | null;
+  }): void {
+    if (!this.wsjfHistoryRepo) return;
+    const components: WsjfComponents = {
+      value: args.wsjf.value,
+      timeCriticality: args.wsjf.timeCriticality,
+      riskOpportunity: args.wsjf.riskOpportunity,
+      jobSize: args.wsjf.jobSize,
+    };
+    this.wsjfHistoryRepo.append({
+      taskId: args.taskId,
+      projectId: args.projectId,
+      trigger: args.trigger,
+      value: components.value,
+      timeCriticality: components.timeCriticality,
+      riskOpportunity: components.riskOpportunity,
+      jobSize: components.jobSize,
+      wsjfScore: computeWsjf(components),
+      prevWsjfScore: args.prevWsjfScore,
+      classifications: args.wsjf.classifications ?? null,
+      features: args.wsjf.features ?? null,
+      evidence: args.wsjf.evidence ?? null,
+      source: args.wsjf.source ?? null,
+      locked: args.wsjf.locked ?? null,
+      actorType: args.actorType ?? null,
+      actorId: args.actorId ?? null,
+      charterVersion:
+        args.charterVersion ?? args.wsjf.features?.charterVersion ?? null,
+      rescoreRunId: args.rescoreRunId ?? null,
+    });
+  }
+
+  /**
+   * WSJF (#628): compute a task's current WSJF (the `prev_wsjf_score` for the
+   * NEXT write) from its persisted components, or null when unscored. Reads the
+   * four INTEGER columns off a freshly-read Task row.
+   */
+  private currentWsjfScore(
+    task: Pick<
+      Task,
+      | 'wsjf_value'
+      | 'wsjf_time_criticality'
+      | 'wsjf_risk_opportunity'
+      | 'wsjf_job_size'
+    >,
+  ): number | null {
+    if (
+      task.wsjf_value === null ||
+      task.wsjf_time_criticality === null ||
+      task.wsjf_risk_opportunity === null ||
+      task.wsjf_job_size === null
+    ) {
+      return null;
+    }
+    return computeWsjf({
+      value: task.wsjf_value as Fib,
+      timeCriticality: task.wsjf_time_criticality as Fib,
+      riskOpportunity: task.wsjf_risk_opportunity as Fib,
+      jobSize: task.wsjf_job_size as Fib,
+    });
+  }
 
   /**
    * Create a new task with validation
@@ -110,11 +230,53 @@ export class TaskService {
       }
     }
 
-    // Create task with status forced to 'open'
-    const task = this.taskRepo.create(
-      { ...result.data, status: 'open' },
-      result.data.tags
-    );
+    // Create task with status forced to 'open'.
+    //
+    // WSJF (#628): when the create carries a WSJF score AND the audit hook is
+    // wired, the component write and the append-only history row MUST commit
+    // together. Wrap both in ONE `db.transaction(...)` so no component write
+    // can land without its `wsjf_score_history` row (the no-bypass invariant).
+    // A brand-new task has no prior score, so `prev_wsjf_score` is null and the
+    // trigger is `create`. The unscored / audit-disabled paths take the plain
+    // single write — behaviour identical to before #628.
+    const createDto = { ...result.data, status: 'open' as const };
+    const wsjf = (createDto.wsjf ?? null) as WsjfWriteDTO | null;
+    // WSJF (#643): a manual override on create runs the same manual gate as
+    // update_task (enum + shared contradiction rule, no classification needed)
+    // and audits with `trigger='manual'`; an auto create keeps `trigger='create'`.
+    if (wsjf && wsjf.manual === true) {
+      const manualCheck = validateManualScore({
+        value: wsjf.value,
+        timeCriticality: wsjf.timeCriticality,
+        riskOpportunity: wsjf.riskOpportunity,
+        jobSize: wsjf.jobSize,
+      });
+      if (!manualCheck.ok) {
+        throw new ValidationError({ wsjf: manualCheck.errors });
+      }
+    }
+    // WSJF (#634): trigger precedence — a manual override ALWAYS stamps
+    // 'manual'; otherwise an explicit generic `wsjf.trigger` hint
+    // (e.g. 'single_create' from create_task, 'decompose' from #633) wins;
+    // absent that, the auto create path defaults to 'create'.
+    const createTrigger: WsjfHistoryTrigger =
+      wsjf?.manual === true ? 'manual' : (wsjf?.trigger ?? 'create');
+    let task: Task & { tags: string[] };
+    if (wsjf && this.wsjfAuditEnabled()) {
+      task = this.db!.transaction(() => {
+        const created = this.taskRepo.create(createDto, result.data.tags);
+        this.appendWsjfHistory({
+          taskId: created.id,
+          projectId: created.project_id,
+          trigger: createTrigger,
+          wsjf,
+          prevWsjfScore: null,
+        });
+        return created;
+      })();
+    } else {
+      task = this.taskRepo.create(createDto, result.data.tags);
+    }
 
     // Emit task.created event after successful database operation
     eventBus.emit('task.created', {
@@ -125,6 +287,29 @@ export class TaskService {
     });
 
     return task;
+  }
+
+  /**
+   * WSJF (#644): derive the VALUE prior a derived task (subtask or decompose
+   * child) inherits from its parent. The subtask creation path and the
+   * `decompose` batch-scoring flow call this BEFORE scoring a child: the child
+   * inherits the parent's value-theme mapping (`themeName`) + Business-Value
+   * (UBV) tier, while its OBJECTIVE components (time-criticality, risk/
+   * opportunity, job-size) are scored FRESH from the child's own deadline, DAG
+   * fan-out, and scope — never copied from the parent. When the parent's value
+   * was human-set (`wsjf_source.value === 'manual'`) the prior is flagged
+   * `humanAnchored` so it is visible as a pinned human anchor (design spec
+   * §8.5).
+   *
+   * Returns `null` when the parent does not exist or is unscored (no value to
+   * propagate) — the child is then scored entirely fresh. The work is delegated
+   * to the pure {@link derivePropagatedValuePrior} so the rule lives once in the
+   * WSJF substrate and both creation paths reuse it.
+   */
+  derivePropagatedValuePrior(parentTaskId: number): PropagatedValuePrior | null {
+    const parent = this.taskRepo.findById(parentTaskId);
+    if (!parent) return null;
+    return derivePropagatedValuePrior(parent);
   }
 
   /**
@@ -311,8 +496,56 @@ export class TaskService {
       updatesForRepo.verification_evidence = { verdict: 'NOT_VERIFIED' };
     }
 
-    // Update task
-    const updatedTask = this.taskRepo.update(id, updatesForRepo);
+    // Update task.
+    //
+    // WSJF (#628): when the update writes a WSJF score (a non-null `wsjf`
+    // object) AND the audit hook is wired, the component write and its
+    // append-only history row commit in ONE `db.transaction(...)` — the same
+    // no-bypass invariant as create. `prev_wsjf_score` is the task's WSJF
+    // BEFORE this write (null if it was previously unscored), read off the
+    // `existing` row we already loaded above. Clearing the score (`wsjf: null`)
+    // is not a component-value write, so it appends no history row.
+    const wsjfUpdate = result.data.wsjf as WsjfWriteDTO | null | undefined;
+    // WSJF (#643): a manual override (`wsjf.manual === true`) skips the
+    // classification/evidence requirement but MUST still pass the manual gate —
+    // enum membership + the SHARED contradiction rule (jobSize=1 ∧ value=13 →
+    // reject). `validateManualScore` reuses #626's contradiction logic verbatim.
+    // The history row is stamped `trigger='manual'`; an auto write keeps
+    // `trigger='update'`.
+    if (wsjfUpdate !== undefined && wsjfUpdate !== null && wsjfUpdate.manual === true) {
+      const manualCheck = validateManualScore({
+        value: wsjfUpdate.value,
+        timeCriticality: wsjfUpdate.timeCriticality,
+        riskOpportunity: wsjfUpdate.riskOpportunity,
+        jobSize: wsjfUpdate.jobSize,
+      });
+      if (!manualCheck.ok) {
+        throw new ValidationError({ wsjf: manualCheck.errors });
+      }
+    }
+    const wsjfTrigger: WsjfHistoryTrigger =
+      wsjfUpdate?.manual === true ? 'manual' : 'update';
+    let updatedTask: Task & { tags: string[] };
+    if (
+      wsjfUpdate !== undefined &&
+      wsjfUpdate !== null &&
+      this.wsjfAuditEnabled()
+    ) {
+      const prevWsjfScore = this.currentWsjfScore(existing);
+      updatedTask = this.db!.transaction(() => {
+        const updated = this.taskRepo.update(id, updatesForRepo);
+        this.appendWsjfHistory({
+          taskId: updated.id,
+          projectId: updated.project_id,
+          trigger: wsjfTrigger,
+          wsjf: wsjfUpdate,
+          prevWsjfScore,
+        });
+        return updated;
+      })();
+    } else {
+      updatedTask = this.taskRepo.update(id, updatesForRepo);
+    }
 
     // Emit task.updated event after successful database operation
     eventBus.emit('task.updated', {

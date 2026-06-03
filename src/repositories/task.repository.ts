@@ -94,6 +94,57 @@ function inflateVerificationEvidence<
   return { ...task, verification_evidence: parsed };
 }
 
+/**
+ * WSJF (#627): defensive JSON parse for the wsjf_* TEXT columns. Mirrors
+ * `parseVerificationEvidence` — a non-JSON string surfaces `null` rather than
+ * crashing the whole query. Validation against the Zod schema happens at the
+ * write boundary; read-side parsing trusts the bytes were validated on the
+ * way in.
+ */
+function parseWsjfJson<T>(raw: string | null | undefined): T | null {
+  if (raw === null || raw === undefined) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * WSJF (#627): serialize a wsjf_* JSON metadata member for storage. `undefined`
+ * (caller omitted it) and explicit `null` both persist as a NULL column;
+ * anything else is JSON.stringify'd. Validation already happened at the schema
+ * boundary, so this is a pure write-side transform.
+ */
+function serializeWsjfMember(value: unknown): string | null {
+  return value === undefined || value === null ? null : JSON.stringify(value);
+}
+
+/** The five wsjf_* TEXT JSON columns inflated by {@link inflateWsjf}. */
+const WSJF_JSON_COLUMNS = [
+  'wsjf_evidence',
+  'wsjf_locked',
+  'wsjf_source',
+  'wsjf_classifications',
+  'wsjf_features',
+] as const;
+
+/**
+ * WSJF (#627): in-place transform converting the raw wsjf_* TEXT columns
+ * (string-or-null) into the parsed objects the Task contract expects. Follows
+ * the `inflateVerificationEvidence` pattern — returns a new object so the
+ * better-sqlite3 cell map is not mutated underneath another reader. The four
+ * INTEGER component columns (wsjf_value etc.) pass through untouched.
+ */
+function inflateWsjf<T extends Record<string, unknown>>(task: T): T {
+  const out: Record<string, unknown> = { ...task };
+  for (const col of WSJF_JSON_COLUMNS) {
+    const raw = task[col];
+    out[col] = typeof raw === 'string' ? parseWsjfJson(raw) : (raw ?? null);
+  }
+  return out as T;
+}
+
 export class TaskRepository implements ITaskRepository {
   private insertTaskStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
@@ -114,12 +165,16 @@ export class TaskRepository implements ITaskRepository {
         title, description, status, priority, project_id, parent_task_id,
         estimated_minutes, assignee, created_by, due_date, created_at, updated_at,
         created_by_user_id, assignee_user_id, acceptance_criteria,
-        verification_evidence
+        verification_evidence,
+        wsjf_value, wsjf_time_criticality, wsjf_risk_opportunity, wsjf_job_size,
+        wsjf_evidence, wsjf_locked, wsjf_source, wsjf_classifications, wsjf_features
       ) VALUES (
         @title, @description, @status, @priority, @project_id, @parent_task_id,
         @estimated_minutes, @assignee, @created_by, @due_date, @created_at, @updated_at,
         @created_by_user_id, @assignee_user_id, @acceptance_criteria,
-        @verification_evidence
+        @verification_evidence,
+        @wsjf_value, @wsjf_time_criticality, @wsjf_risk_opportunity, @wsjf_job_size,
+        @wsjf_evidence, @wsjf_locked, @wsjf_source, @wsjf_classifications, @wsjf_features
       )
     `);
 
@@ -175,6 +230,19 @@ export class TaskRepository implements ITaskRepository {
         // brand-new task has no evidence yet. Bind NULL unconditionally so
         // the SQL/binding count stays in sync.
         verification_evidence: null,
+        // WSJF (#627): persist the score on create when supplied. The schema
+        // boundary enforces all-four-or-none, so `dto.wsjf` is either a fully
+        // populated object or absent — when absent, every wsjf_* column binds
+        // NULL (unscored task). JSON members are serialized at this boundary.
+        wsjf_value: dto.wsjf?.value ?? null,
+        wsjf_time_criticality: dto.wsjf?.timeCriticality ?? null,
+        wsjf_risk_opportunity: dto.wsjf?.riskOpportunity ?? null,
+        wsjf_job_size: dto.wsjf?.jobSize ?? null,
+        wsjf_evidence: serializeWsjfMember(dto.wsjf?.evidence),
+        wsjf_locked: serializeWsjfMember(dto.wsjf?.locked),
+        wsjf_source: serializeWsjfMember(dto.wsjf?.source),
+        wsjf_classifications: serializeWsjfMember(dto.wsjf?.classifications),
+        wsjf_features: serializeWsjfMember(dto.wsjf?.features),
       });
 
       const taskId = info.lastInsertRowid as number;
@@ -213,7 +281,7 @@ export class TaskRepository implements ITaskRepository {
     const tags = tagRows.map((row) => row.tag);
 
     return normalizeTaskTimestamps(
-      inflateVerificationEvidence({ ...task, tags })
+      inflateWsjf(inflateVerificationEvidence({ ...task, tags }))
     );
   }
 
@@ -245,7 +313,7 @@ export class TaskRepository implements ITaskRepository {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
       return normalizeTaskTimestamps(
-        inflateVerificationEvidence({ ...task, tags })
+        inflateWsjf(inflateVerificationEvidence({ ...task, tags }))
       );
     });
   }
@@ -333,6 +401,34 @@ export class TaskRepository implements ITaskRepository {
           updates.verification_evidence === null
             ? null
             : JSON.stringify(updates.verification_evidence);
+      }
+
+      // WSJF (#627): patch the WSJF score. `undefined` (key absent) leaves
+      // every wsjf_* column untouched; explicit `null` clears all nine (back
+      // to unscored); an object sets the four components and serializes the
+      // JSON metadata. All-four-or-none is enforced at the schema boundary, so
+      // an object here always carries all four components.
+      if (updates.wsjf !== undefined) {
+        const w = updates.wsjf;
+        fields.push('wsjf_value = @wsjf_value');
+        fields.push('wsjf_time_criticality = @wsjf_time_criticality');
+        fields.push('wsjf_risk_opportunity = @wsjf_risk_opportunity');
+        fields.push('wsjf_job_size = @wsjf_job_size');
+        fields.push('wsjf_evidence = @wsjf_evidence');
+        fields.push('wsjf_locked = @wsjf_locked');
+        fields.push('wsjf_source = @wsjf_source');
+        fields.push('wsjf_classifications = @wsjf_classifications');
+        fields.push('wsjf_features = @wsjf_features');
+        params.wsjf_value = w === null ? null : w.value;
+        params.wsjf_time_criticality = w === null ? null : w.timeCriticality;
+        params.wsjf_risk_opportunity = w === null ? null : w.riskOpportunity;
+        params.wsjf_job_size = w === null ? null : w.jobSize;
+        params.wsjf_evidence = w === null ? null : serializeWsjfMember(w.evidence);
+        params.wsjf_locked = w === null ? null : serializeWsjfMember(w.locked);
+        params.wsjf_source = w === null ? null : serializeWsjfMember(w.source);
+        params.wsjf_classifications =
+          w === null ? null : serializeWsjfMember(w.classifications);
+        params.wsjf_features = w === null ? null : serializeWsjfMember(w.features);
       }
 
       // Always update updated_at
@@ -520,7 +616,7 @@ export class TaskRepository implements ITaskRepository {
       return rows.map((row) => {
         const { tags_csv, ...task } = row;
         const tags = tags_csv ? tags_csv.split(',').sort() : [];
-        return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
+        return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
       });
     }
 
@@ -534,7 +630,7 @@ export class TaskRepository implements ITaskRepository {
       throw err;
     }
     return rowsNoTags.map((row) =>
-      normalizeTaskTimestamps(inflateVerificationEvidence({ ...row, tags: [] })),
+      normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...row, tags: [] }))),
     );
   }
 
@@ -614,7 +710,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
+      return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
     });
   }
 
@@ -785,7 +881,7 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps(inflateVerificationEvidence({ ...task, tags }));
+      return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
     });
   }
 }

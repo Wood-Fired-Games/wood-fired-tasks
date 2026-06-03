@@ -1,3 +1,15 @@
+import type {
+  WsjfEvidence,
+  WsjfLocks,
+  WsjfSource,
+  WsjfClassification,
+  WsjfFeatures,
+} from './wsjf.js';
+// Type-only import (erased at compile time — no runtime module cycle): the
+// `WsjfHistoryTrigger` union is owned by the append-only history repository,
+// which is the single source of truth for the closed trigger set.
+import type { WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
+
 // Task status and priority enums
 export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged'] as const;
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
@@ -77,6 +89,89 @@ export interface Task {
    * field is the parsed object as seen by service / route / MCP / CLI.
    */
   verification_evidence: VerificationEvidence | null;
+  /**
+   * WSJF (task #627): the four server-computed component scores. Each is a
+   * Fibonacci tier ({@link Fib}) or NULL. All four are NULL together for
+   * unscored tasks (rows that pre-date migration 013 OR were never scored) —
+   * the all-four-or-none rule is enforced at the schema boundary on write.
+   * Stored as the INTEGER columns
+   * `wsjf_value / wsjf_time_criticality / wsjf_risk_opportunity / wsjf_job_size`.
+   */
+  wsjf_value: Fib | null;
+  wsjf_time_criticality: Fib | null;
+  wsjf_risk_opportunity: Fib | null;
+  wsjf_job_size: Fib | null;
+  /**
+   * WSJF (task #627): structured JSON metadata describing how the score was
+   * derived. Stored as TEXT JSON columns; the repository serializes on write
+   * and parses on read (the `inflateVerificationEvidence` pattern), so these
+   * fields are the parsed objects as seen by service / route / MCP / CLI.
+   * NULL for unscored rows.
+   *
+   *  - `wsjf_evidence`        — verbatim source spans, one per component.
+   *  - `wsjf_locked`          — per-component lock flags (survive a rescore).
+   *  - `wsjf_source`          — per-component provenance (`auto` | `manual`).
+   *  - `wsjf_classifications` — the raw LLM classification(s) backing the score.
+   *  - `wsjf_features`        — the deterministic features the server gathered.
+   */
+  wsjf_evidence: WsjfEvidence | null;
+  wsjf_locked: WsjfLocks | null;
+  wsjf_source: WsjfSource | null;
+  wsjf_classifications: WsjfClassification | null;
+  wsjf_features: WsjfFeatures | null;
+}
+
+/**
+ * WSJF (task #627): read-only derived view of a task's WSJF standing. These
+ * fields are NEVER stored — they are computed at read time by the ranking
+ * service ({@link rankFrontier}). `wsjf_score` is the base WSJF
+ * `(value + timeCriticality + riskOpportunity) / max(jobSize, 1)`;
+ * `effective_wsjf` folds in dependency-propagation (γ-decayed, capped).
+ * Both are absent (undefined) for unscored tasks and on any read that does
+ * not pass through the ranking pipeline.
+ */
+export interface TaskWithWsjfScore extends Task {
+  readonly wsjf_score?: number;
+  readonly effective_wsjf?: number;
+}
+
+/**
+ * WSJF (Phase 3.1): the modified Fibonacci scale used for every WSJF
+ * component and for value-theme weights. The authoritative Zod validator
+ * lives in `src/schemas/project.schema.ts#FibSchema`.
+ */
+export const FIB = [1, 2, 3, 5, 8, 13] as const;
+export type Fib = (typeof FIB)[number];
+
+/**
+ * WSJF (Phase 3.1): one ranked value theme within a project's charter. The
+ * theme `weight` must be a Fibonacci tier (see {@link Fib}); the validator
+ * `ValueCharterSchema` rejects non-Fibonacci weights at the boundary.
+ */
+export interface ValueTheme {
+  name: string;
+  weight: Fib;
+  description: string;
+}
+
+/**
+ * WSJF (Phase 3.1): per-project "value charter" — the autonomous reference
+ * frame used to score User-Business Value. Stored as a JSON string in
+ * `projects.value_charter` (migration 014); the repository serializes on
+ * write and parses on read, so service / route / MCP / CLI callers see this
+ * parsed shape. NULL for projects that pre-date migration 014 or have not
+ * run the project interview. The authoritative validator is
+ * `src/schemas/project.schema.ts#ValueCharterSchema`.
+ */
+export interface ValueCharter {
+  mission: string;
+  value_themes: ValueTheme[];
+  time_context: string;
+  risk_posture: string;
+  out_of_scope: string[];
+  interview_version: number;
+  /** ISO8601 timestamp the charter was last written by the interview flow. */
+  updated_at: string;
 }
 
 export interface Project {
@@ -85,6 +180,13 @@ export interface Project {
   description: string | null;
   created_at: string; // ISO8601
   updated_at: string; // ISO8601
+  /**
+   * WSJF (Phase 3.1): the project's value charter. NULL for rows that
+   * pre-date migration 014 OR projects that never ran the value interview.
+   * Stored as a JSON string in SQLite; this field is the parsed object as
+   * seen by service / route / MCP / CLI consumers.
+   */
+  value_charter: ValueCharter | null;
 }
 
 export interface TaskTag {
@@ -116,6 +218,48 @@ export interface Comment {
 // (assignee, created_by, author) and are populated by callers that have
 // already resolved the displayName -> users.id mapping; legacy callers
 // continue to work because every new field is optional and defaults to null.
+/**
+ * WSJF (task #627): the full WSJF write payload carried on create/update DTOs.
+ * The four component scores plus the structured JSON metadata. Either all four
+ * components are present (a fully-scored task) or the whole `wsjf` object is
+ * omitted — the all-four-or-none rule is enforced at the schema boundary.
+ * The repository serializes the JSON members on write.
+ */
+export interface WsjfWriteDTO {
+  value: Fib;
+  timeCriticality: Fib;
+  riskOpportunity: Fib;
+  jobSize: Fib;
+  evidence?: WsjfEvidence | null;
+  locked?: WsjfLocks | null;
+  source?: WsjfSource | null;
+  classifications?: WsjfClassification | null;
+  features?: WsjfFeatures | null;
+  /**
+   * WSJF (#643): when `true`, this is a MANUAL override — a human set the four
+   * components directly. The service runs the manual gate
+   * ({@link validateManualScore}: enum + contradiction, NO classification /
+   * evidence requirement) and audits the write with history `trigger='manual'`.
+   * When `false`/absent the write is treated as the auto/classified path
+   * (history `trigger='create'|'update'`). This flag is NOT persisted on its
+   * own — provenance lives in the per-component `source` map and the history
+   * row's `trigger`.
+   */
+  manual?: boolean;
+  /**
+   * WSJF (#634): optional GENERIC history-trigger hint for the auto/classified
+   * write path. When set on a create that carries a score (and is NOT a manual
+   * override) it overrides the default `'create'` trigger stamped on the
+   * `wsjf_score_history` row — e.g. the `create_task` MCP tool passes
+   * `'single_create'`, and `decompose` (#633) passes `'decompose'`. Ignored on
+   * the manual path (`manual === true` always stamps `'manual'`). When unset the
+   * create path keeps `'create'` and the update path keeps `'update'`. Kept as
+   * the full {@link WsjfHistoryTrigger} union so new callers need no further
+   * service-layer change.
+   */
+  trigger?: WsjfHistoryTrigger;
+}
+
 export interface CreateTaskDTO {
   title: string;
   description?: string | null;
@@ -133,6 +277,12 @@ export interface CreateTaskDTO {
   assignee_user_id?: number | null;
   /** Wave 1.3 (#311): optional free-form acceptance criteria (markdown). */
   acceptance_criteria?: string | null;
+  /**
+   * WSJF (#627): optional WSJF score to persist on create. `undefined`/absent
+   * leaves every wsjf_* column NULL (unscored task). When present, all four
+   * components are written and the JSON metadata is serialized.
+   */
+  wsjf?: WsjfWriteDTO | null;
 }
 
 export interface UpdateTaskDTO {
@@ -162,11 +312,25 @@ export interface UpdateTaskDTO {
    * (serialized to JSON by the repository).
    */
   verification_evidence?: VerificationEvidence | null;
+  /**
+   * WSJF (#627): patch the WSJF score. `undefined` (key absent) leaves every
+   * wsjf_* column untouched; explicit `null` clears all of them (back to
+   * unscored); a {@link WsjfWriteDTO} object sets all four components and
+   * serializes the JSON metadata. All-four-or-none is enforced at the schema
+   * boundary.
+   */
+  wsjf?: WsjfWriteDTO | null;
 }
 
 export interface CreateProjectDTO {
   name: string;
   description?: string | null;
+  /**
+   * WSJF (Phase 3.1): optional value charter. `undefined`/absent persists
+   * NULL; an object is serialized to JSON by the repository. On update,
+   * explicit `null` clears it; `undefined` leaves the column untouched.
+   */
+  value_charter?: ValueCharter | null;
 }
 
 export interface CreateDependencyDTO {

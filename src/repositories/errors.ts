@@ -28,6 +28,34 @@ export class FtsSyntaxError extends Error {
 }
 
 /**
+ * AppendOnlyViolationError — thrown when a caller attempts to UPDATE or DELETE
+ * a row in an append-only audit table (e.g. `wsjf_score_history`).
+ *
+ * WSJF task #628: the score-history table is immutable by contract (design
+ * spec §11 — every score and mid-project change must stay traceable). The
+ * repository enforces this in code rather than via SQLite triggers (so the
+ * 015 down-migration can still drop the table cleanly). Any mutation method on
+ * the history repository raises this instead of issuing SQL.
+ */
+export class AppendOnlyViolationError extends Error {
+  public override readonly name = 'AppendOnlyViolationError';
+  public readonly table: string;
+  public readonly operation: 'UPDATE' | 'DELETE';
+
+  constructor(table: string, operation: 'UPDATE' | 'DELETE') {
+    super(
+      `${operation} is not permitted on append-only table "${table}"; ` +
+        'history rows are immutable',
+    );
+    this.table = table;
+    this.operation = operation;
+
+    // Restore prototype chain for instanceof checks across module boundaries.
+    Object.setPrototypeOf(this, AppendOnlyViolationError.prototype);
+  }
+}
+
+/**
  * Detect whether a raw error from better-sqlite3 is an FTS5 syntax error.
  *
  * Pattern: SQLITE_ERROR with a message that contains FTS-specific phrases.

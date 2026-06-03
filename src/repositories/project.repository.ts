@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Project, CreateProjectDTO } from '../types/task.js';
+import type { Project, CreateProjectDTO, ValueCharter } from '../types/task.js';
 import {
   DEFAULT_PAGE_LIMIT,
   DEFAULT_PAGE_OFFSET,
@@ -8,6 +8,41 @@ import {
 import type { IProjectRepository, PaginationOptions } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
+
+/**
+ * WSJF (Phase 3.1): parse the JSON-string `value_charter` column into a
+ * typed object so callers see a structured value (matching the Project type)
+ * instead of having to JSON.parse themselves. Mirrors
+ * `parseVerificationEvidence` in task.repository.ts.
+ *
+ * Defensive: a non-JSON string (corruption / hand-edit) surfaces as `null`
+ * rather than crashing the query. Shape validation is enforced by
+ * `ValueCharterSchema` on write — read-side parsing trusts the stored bytes.
+ */
+function parseValueCharter(
+  raw: string | null | undefined
+): ValueCharter | null {
+  if (raw === null || raw === undefined) return null;
+  try {
+    return JSON.parse(raw) as ValueCharter;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * In-place transform converting the raw TEXT column `value_charter`
+ * (string-or-null) into the parsed `ValueCharter | null` shape upstream
+ * consumers expect. Returns a new object so the original row is not mutated.
+ */
+function inflateValueCharter<
+  T extends { value_charter?: string | ValueCharter | null }
+>(project: T): T & { value_charter: ValueCharter | null } {
+  const raw = project.value_charter;
+  const parsed =
+    typeof raw === 'string' ? parseValueCharter(raw) : (raw ?? null);
+  return { ...project, value_charter: parsed };
+}
 
 /**
  * Same defensive clamp used in TaskRepository — see notes there.
@@ -38,7 +73,7 @@ export class ProjectRepository implements IProjectRepository {
   constructor(private db: Database.Database) {
     // Prepare all statements for reuse
     this.insertStmt = db.prepare(
-      'INSERT INTO projects (name, description) VALUES (@name, @description)'
+      'INSERT INTO projects (name, description, value_charter) VALUES (@name, @description, @value_charter)'
     );
     this.findByIdStmt = db.prepare('SELECT * FROM projects WHERE id = ?');
     this.findByNameStmt = db.prepare('SELECT * FROM projects WHERE name = ?');
@@ -53,6 +88,8 @@ export class ProjectRepository implements IProjectRepository {
     const info = this.insertStmt.run({
       name: dto.name,
       description: dto.description ?? null,
+      value_charter:
+        dto.value_charter == null ? null : JSON.stringify(dto.value_charter),
     });
     const project = this.findById(info.lastInsertRowid as number);
     if (!project) {
@@ -62,13 +99,18 @@ export class ProjectRepository implements IProjectRepository {
   }
 
   findById(id: number): Project | null {
-    const row = mapRow<Project>(this.findByIdStmt, id);
-    return row || null;
+    const row = mapRow<Omit<Project, 'value_charter'> & {
+      value_charter: string | null;
+    }>(this.findByIdStmt, id);
+    return row ? inflateValueCharter(row) : null;
   }
 
   findAll(pagination?: PaginationOptions): Project[] {
     const { limit, offset } = resolvePagination(pagination);
-    return mapRows<Project>(this.findAllStmt, limit, offset);
+    const rows = mapRows<
+      Omit<Project, 'value_charter'> & { value_charter: string | null }
+    >(this.findAllStmt, limit, offset);
+    return rows.map(inflateValueCharter);
   }
 
   /** Total project count, ignoring pagination. */
@@ -79,8 +121,10 @@ export class ProjectRepository implements IProjectRepository {
   }
 
   findByName(name: string): Project | null {
-    const row = mapRow<Project>(this.findByNameStmt, name);
-    return row || null;
+    const row = mapRow<Omit<Project, 'value_charter'> & {
+      value_charter: string | null;
+    }>(this.findByNameStmt, name);
+    return row ? inflateValueCharter(row) : null;
   }
 
   update(id: number, updates: Partial<CreateProjectDTO>): Project {
@@ -95,6 +139,16 @@ export class ProjectRepository implements IProjectRepository {
     if (updates.description !== undefined) {
       fields.push('description = @description');
       params.description = updates.description;
+    }
+    // WSJF (Phase 3.1): patch value_charter. `undefined` (key absent) leaves
+    // the column untouched; explicit `null` clears it; an object is
+    // serialized to JSON.
+    if (updates.value_charter !== undefined) {
+      fields.push('value_charter = @value_charter');
+      params.value_charter =
+        updates.value_charter === null
+          ? null
+          : JSON.stringify(updates.value_charter);
     }
 
     // Always update the updated_at timestamp

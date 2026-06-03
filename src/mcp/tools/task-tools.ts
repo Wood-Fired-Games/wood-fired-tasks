@@ -18,6 +18,71 @@ import { randomUUID } from 'crypto';
 import { convertToMcpError } from '../errors.js';
 import type { McpServerContext } from '../server.js';
 import type { UserRepository } from '../../repositories/user.repository.js';
+import { ScoreSubmissionSchema } from '../../schemas/wsjf.schema.js';
+import {
+  validateScoreSubmission,
+  type ScoreSubmission,
+} from '../../services/wsjf.service.js';
+import { WSJF_HISTORY_TRIGGERS } from '../../repositories/wsjf-history.repository.js';
+import { ValidationError } from '../../services/errors.js';
+import type { WsjfWriteDTO } from '../../types/task.js';
+import type { WsjfSource } from '../../types/wsjf.js';
+
+/**
+ * WSJF 1.10 (#630): route an agent's WSJF *submission* (`{classification,
+ * features}`) through the deterministic {@link validateScoreSubmission} gate
+ * BEFORE it reaches the service, and translate a passing result into the
+ * {@link WsjfWriteDTO} the service persists.
+ *
+ * The MCP layer NEVER trusts a client number — it only forwards a submission
+ * (enums + verbatim evidence spans + deterministic features) and lets the gate
+ * recompute the four Fibonacci components. A failing gate (e.g. an evidence
+ * span that is not a verbatim substring of the source) is surfaced as a
+ * structured {@link ValidationError} (`fieldErrors.wsjf` = the gate's `errors[]`)
+ * which `convertToMcpError` maps to an `InvalidParams` McpError carrying the
+ * per-violation list — the bounded-retry contract from the design spec §12.3.
+ *
+ * @param submission the agent's `{classification, features}` payload.
+ * @param charter    the parent project's value charter (or null).
+ * @param sourceText the task text the evidence spans must occur verbatim in.
+ * @param trigger    WSJF (#634): optional GENERIC history-trigger hint to stamp
+ *   on the audit row (e.g. `'single_create'` for create_task, `'decompose'`
+ *   for the decompose batch path). Omitted → the service default applies
+ *   (`'create'` on create, `'update'` on update).
+ * @returns a {@link WsjfWriteDTO} (auto path: server-computed components +
+ *   the classification/features/evidence + an all-`auto` source map).
+ * @throws ValidationError when the gate rejects the submission.
+ */
+function submissionToWsjfWrite(
+  submission: ScoreSubmission,
+  charter: import('../../types/task.js').ValueCharter | null,
+  sourceText: string,
+  trigger?: import('../../repositories/wsjf-history.repository.js').WsjfHistoryTrigger,
+): WsjfWriteDTO {
+  const result = validateScoreSubmission(submission, { charter, sourceText });
+  if (!result.ok || !result.components) {
+    // Structured, per-violation errors so a bounded agent retry can fix every
+    // problem in one pass (design spec §12.3 — the gate returns `errors[]`).
+    throw new ValidationError({ wsjf: result.errors });
+  }
+  const autoSource: WsjfSource = {
+    value: 'auto',
+    timeCriticality: 'auto',
+    riskOpportunity: 'auto',
+    jobSize: 'auto',
+  };
+  return {
+    value: result.components.value,
+    timeCriticality: result.components.timeCriticality,
+    riskOpportunity: result.components.riskOpportunity,
+    jobSize: result.components.jobSize,
+    classifications: submission.classification,
+    features: submission.features,
+    evidence: submission.classification.evidence,
+    source: autoSource,
+    ...(trigger ? { trigger } : {}),
+  };
+}
 
 /**
  * Best-effort resolver for `assignee_user_id` when a PATCH-style update
@@ -86,11 +151,28 @@ export function registerTaskTools(
   server.registerTool(
     'create_task',
     {
-      description: 'Create a new task in a project',
+      description:
+        'Create a new task in a project. Optionally accepts a WSJF ' +
+        '`wsjf_submission` ({classification, features}); it is routed through ' +
+        'the deterministic validation gate (verbatim-evidence + job-size band ' +
+        '+ contradiction checks) and a failure is rejected with a structured ' +
+        'per-violation error — the server recomputes the score, never trusting ' +
+        'a client number. Optional `wsjf_trigger` overrides the audit history ' +
+        "trigger (default `'single_create'`; decompose passes `'decompose'`).",
       // WR-04: CreateTaskClientSchema omits server-derived FKs so a client
       // attempting to set created_by_user_id / assignee_user_id sees a
       // clear Zod error instead of getting the values silently stripped.
-      inputSchema: CreateTaskClientSchema,
+      // WSJF 1.10 (#630): extend with the agent submission envelope. The raw
+      // `wsjf` WriteDTO stays on CreateTaskClientSchema for the manual path;
+      // `wsjf_submission` is the classified/auto path routed through the gate.
+      inputSchema: CreateTaskClientSchema.extend({
+        wsjf_submission: ScoreSubmissionSchema.optional(),
+        // WSJF 2.2 (#633): the GENERIC history-trigger to stamp on the audit
+        // row for a classified create. Defaults to `'single_create'` (the
+        // single-create path, #634) when unset; the decompose batch path
+        // (skills/tasks/decompose.md Step 8) passes `'decompose'`.
+        wsjf_trigger: z.enum(WSJF_HISTORY_TRIGGERS).optional(),
+      }),
     },
     async (args) => {
       const traceId = randomUUID();
@@ -106,12 +188,46 @@ export function registerTaskTools(
         const {
           created_by_user_id: _spoofCreatedBy,
           assignee_user_id: _spoofAssignee,
+          wsjf_submission: wsjfSubmission,
+          wsjf_trigger: wsjfTrigger,
           ...sanitizedArgs
         } = args as Record<string, unknown>;
         void _spoofCreatedBy;
         void _spoofAssignee;
+        // WSJF 1.10 (#630): if a submission is present, run the deterministic
+        // gate against the parent project's charter + the task text and forward
+        // the server-computed components as the `wsjf` WriteDTO. A bad evidence
+        // span (or any gate violation) throws a structured ValidationError.
+        let wsjfWrite: WsjfWriteDTO | undefined;
+        if (wsjfSubmission !== undefined) {
+          const project = projectService.getProject(
+            sanitizedArgs.project_id as number,
+          );
+          const sourceText = [
+            sanitizedArgs.title,
+            sanitizedArgs.description,
+            sanitizedArgs.acceptance_criteria,
+          ]
+            .filter((s): s is string => typeof s === 'string')
+            .join('\n');
+          // WSJF (#634): a classified single create stamps the history row
+          // with the generic `'single_create'` trigger (vs the bare-create
+          // default). WSJF 2.2 (#633): the trigger is now INPUT-DRIVEN —
+          // decompose's batch materialize (skills/tasks/decompose.md Step 8)
+          // passes `wsjf_trigger='decompose'`; absent the input the default
+          // remains `'single_create'`, preserving #634's behavior + test.
+          wsjfWrite = submissionToWsjfWrite(
+            wsjfSubmission as ScoreSubmission,
+            project.value_charter,
+            sourceText,
+            (wsjfTrigger as
+              | import('../../repositories/wsjf-history.repository.js').WsjfHistoryTrigger
+              | undefined) ?? 'single_create',
+          );
+        }
         const task = taskService.createTask({
           ...sanitizedArgs,
+          ...(wsjfWrite ? { wsjf: wsjfWrite } : {}),
           created_by_user_id: ctx.actorUserId,
         });
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'success' }));
@@ -181,14 +297,20 @@ export function registerTaskTools(
     'update_task',
     {
       description:
-        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags.',
+        'Update an existing task by ID. Can update title, description, status, ' +
+        'priority, assignee, due_date, tags, and the WSJF score. Pass a ' +
+        '`wsjf_submission` ({classification, features}) to (re)score via the ' +
+        'deterministic gate — a bad evidence span is rejected with a structured error.',
       // WR-04: UpdateTaskClientSchema omits server-derived assignee_user_id.
       // Clients change assignment by passing `assignee` (email or display
       // name); the handler resolves the FK server-side via
       // resolveAssigneeUserId.
+      // WSJF 1.10 (#630): extend updates with the agent submission envelope.
       inputSchema: z.object({
         id: z.number().int().positive(),
-        updates: UpdateTaskClientSchema,
+        updates: UpdateTaskClientSchema.extend({
+          wsjf_submission: ScoreSubmissionSchema.optional(),
+        }),
       }),
     },
     async (args) => {
@@ -201,10 +323,31 @@ export function registerTaskTools(
         // resolution helper as the REST PATCH route (Plan 02 Task 3).
         const {
           assignee_user_id: _spoofAssigneeUserId,
+          wsjf_submission: wsjfSubmission,
           ...rawUpdates
         } = args.updates as Record<string, unknown>;
         void _spoofAssigneeUserId;
         const updates: Record<string, unknown> = { ...rawUpdates };
+        // WSJF 1.10 (#630): route a submission through the deterministic gate
+        // against the task's project charter + current text, forwarding the
+        // server-computed components as the `wsjf` WriteDTO (structured reject
+        // on a bad evidence span / any gate violation).
+        if (wsjfSubmission !== undefined) {
+          const existing = taskService.getTask(args.id);
+          const project = projectService.getProject(existing.project_id);
+          const sourceText = [
+            updates.title ?? existing.title,
+            updates.description ?? existing.description,
+            updates.acceptance_criteria ?? existing.acceptance_criteria,
+          ]
+            .filter((s): s is string => typeof s === 'string')
+            .join('\n');
+          updates.wsjf = submissionToWsjfWrite(
+            wsjfSubmission as ScoreSubmission,
+            project.value_charter,
+            sourceText,
+          );
+        }
         if (Object.prototype.hasOwnProperty.call(rawUpdates, 'assignee')) {
           updates.assignee_user_id = resolveAssigneeUserId(
             rawUpdates.assignee as string | null | undefined,

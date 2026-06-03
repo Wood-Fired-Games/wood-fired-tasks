@@ -14,6 +14,8 @@
 
 import type { z } from 'zod';
 import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
+import type { ProjectResponseSchema } from '../../api/routes/projects/schemas.js';
+import type { ValueCharter } from '../../types/task.js';
 
 /**
  * Task response shape, inferred from the server Zod schema.
@@ -24,13 +26,13 @@ import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
  */
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 
-export interface ProjectResponse {
-  id: number;
-  name: string;
-  description: string | null;
-  created_at: string;
-  updated_at: string;
-}
+/**
+ * Project response shape, inferred from the server Zod schema (the single
+ * source of truth) so the CLI/remote-proxy type tracks the wire format — incl.
+ * the WSJF `value_charter` — without manual sync. Mirrors how `TaskResponse`
+ * is derived above.
+ */
+export type ProjectResponse = z.infer<typeof ProjectResponseSchema>;
 
 export interface CreateTaskInput {
   title: string;
@@ -95,11 +97,15 @@ export interface PaginationParams {
 export interface CreateProjectInput {
   name: string;
   description?: string | null;
+  /** WSJF (Phase 3.1): optional value charter; `null` clears, absent leaves untouched. */
+  value_charter?: ValueCharter | null;
 }
 
 export interface UpdateProjectInput {
   name?: string;
   description?: string | null;
+  /** WSJF (Phase 3.1): patch the value charter; `null` clears, absent leaves untouched. */
+  value_charter?: ValueCharter | null;
 }
 
 export interface ApiErrorResponse {

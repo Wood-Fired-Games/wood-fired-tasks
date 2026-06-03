@@ -7,6 +7,7 @@ import {
   UpdateTaskSchema,
   ListTasksMcpSchema,
   CreateProjectSchema,
+  UpdateProjectSchema,
   CompletionReportSchema,
   toCompactTask,
 } from '../../schemas/task.schema.js';
@@ -18,7 +19,7 @@ const WAIT_DEFAULT_TIMEOUT_SECONDS = 300;
 const WAIT_MAX_TIMEOUT_SECONDS = 1800;
 
 /**
- * Register all 23 MCP tools backed by REST API calls via RestClient.
+ * Register all 27 MCP tools backed by REST API calls via RestClient.
  *
  * Tool names, descriptions, and input schemas match the local MCP server exactly.
  * Each handler proxies the request to the REST API and formats the MCP response.
@@ -31,6 +32,11 @@ const WAIT_MAX_TIMEOUT_SECONDS = 1800;
  *   1 health tool
  *   1 topology tool (topology_check) — backed by GET /api/v1/projects/:id/topology
  *   1 wait tool (wait_for_unblock) — backed by the SSE stream GET /api/v1/events
+ *   4 WSJF tools (WSJF 1.10) — full remote parity with the stdio WSJF tools:
+ *       wsjf_ranking   → GET  /api/v1/projects/:id/wsjf-ranking
+ *       wsjf_history   → GET  /api/v1/tasks/:id/score-history
+ *       wsjf_health    → GET  /api/v1/projects/:id/wsjf-health
+ *       rescore_project→ POST /api/v1/projects/:id/rescore (MUTATION)
  *
  * task #245 — the `completion_report` tool reaches parity with the local server
  * by hitting `GET /api/v1/tasks/completion-report`.
@@ -444,7 +450,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   server.registerTool(
     'create_project',
     {
-      description: 'Create a new project',
+      description:
+        'Create a new project. Optionally accepts a WSJF `value_charter` ' +
+        '(mission, ranked Fibonacci-weighted value themes, time/risk context); ' +
+        'a malformed charter is rejected.',
       inputSchema: CreateProjectSchema,
     },
     async (args) => {
@@ -571,10 +580,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   server.registerTool(
     'update_project',
     {
-      description: 'Update an existing project by ID. Can update name and/or description.',
+      description:
+        'Update an existing project by ID. Can update the name, description, ' +
+        'and/or the WSJF `value_charter` (pass null to clear it). A malformed ' +
+        'charter is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
-        updates: CreateProjectSchema.partial(),
+        updates: UpdateProjectSchema,
       }),
     },
     async (args) => {
@@ -949,6 +961,245 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         throw new McpError(
           ErrorCode.InternalError,
           error instanceof Error ? error.message : 'Failed to check topology'
+        );
+      }
+    }
+  );
+
+  // ── WSJF tools (4) ────────────────────────────────────────────────────────
+  // Remote parity (WSJF 1.10) with the stdio WSJF tools
+  // (src/mcp/tools/wsjf-tools.ts). Each proxies the REST endpoint that exposes
+  // the same service the stdio server wires in-process, and formats output to
+  // match the stdio tool's text/structuredContent shape.
+
+  /** Component keys whose history deltas wsjf_history reports (matches stdio). */
+  const WSJF_COMPONENT_KEYS = [
+    'value',
+    'time_criticality',
+    'risk_opportunity',
+    'job_size',
+    'wsjf_score',
+  ] as const;
+
+  // Tool: wsjf_ranking
+  server.registerTool(
+    'wsjf_ranking',
+    {
+      description:
+        "Rank a project's tasks by propagation-adjusted WSJF (Weighted Shortest " +
+        'Job First). `scope="frontier"` (default) excludes not-ready/blocked tasks; ' +
+        '`scope="all"` ranks every task. Returns an ordered list (descending ' +
+        'effective WSJF) where each entry carries its components, base vs effective ' +
+        'WSJF, and the downstream Cost-of-Delay `propagation` breakdown.',
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+        scope: z.enum(['frontier', 'all']).optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        const scope = args.scope ?? 'frontier';
+        const res = await client.getWsjfRanking(args.project_id, scope);
+        const ranking = res.ranking;
+        const summary = [
+          `Ranked ${ranking.length} task(s) for project ${args.project_id} (scope=${scope}):\n`,
+        ];
+        ranking.forEach((r, idx) => {
+          summary.push(
+            `${idx + 1}. [${r.taskId}] effectiveWsjf=${r.effectiveWsjf.toFixed(3)}` +
+              (r.scored
+                ? ` (scored, base=${r.baseWsjf?.toFixed(3)})`
+                : ' (unscored)')
+          );
+        });
+        return {
+          content: [{ type: 'text', text: summary.join('\n') }],
+          structuredContent: {
+            project_id: args.project_id,
+            scope,
+            ranking,
+          } as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to rank tasks'
+        );
+      }
+    }
+  );
+
+  // Tool: wsjf_history
+  server.registerTool(
+    'wsjf_history',
+    {
+      description:
+        'Return the append-only WSJF score-history timeline for a task ' +
+        '(oldest-first). Each entry carries the server-computed components, the ' +
+        'classification/features behind them, the trigger, and a `deltas` map ' +
+        'reporting the from→to change of every component (and the WSJF score) ' +
+        'versus the previous entry (null `from` on the first scoring).',
+      inputSchema: z.object({
+        task_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const res = await client.getWsjfHistory(args.task_id);
+        const rows = res.history;
+        // Annotate each row with the from→to delta of every component versus
+        // the immediately-preceding row (oldest-first) — identical to stdio.
+        const timeline = rows.map((row, i) => {
+          const prev = i > 0 ? rows[i - 1] : null;
+          const deltas: Record<
+            string,
+            { from: number | null; to: number | null }
+          > = {};
+          for (const key of WSJF_COMPONENT_KEYS) {
+            const to =
+              (row as unknown as Record<string, number | null>)[key] ?? null;
+            const from = prev
+              ? (prev as unknown as Record<string, number | null>)[key] ?? null
+              : null;
+            deltas[key] = { from, to };
+          }
+          return { ...row, deltas };
+        });
+        const summary = [
+          `Task ${args.task_id} has ${timeline.length} WSJF history entr${
+            timeline.length === 1 ? 'y' : 'ies'
+          }:\n`,
+        ];
+        timeline.forEach((entry) => {
+          const s = entry.deltas.wsjf_score;
+          summary.push(
+            `- ${entry.changed_at} [${entry.trigger}] wsjf ${
+              s.from === null ? '∅' : s.from
+            }→${s.to === null ? '∅' : s.to}`
+          );
+        });
+        return {
+          content: [{ type: 'text', text: summary.join('\n') }],
+          structuredContent: {
+            task_id: args.task_id,
+            timeline,
+          } as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to read WSJF history'
+        );
+      }
+    }
+  );
+
+  // Tool: rescore_project (MUTATION)
+  server.registerTool(
+    'rescore_project',
+    {
+      description:
+        "Deterministically rescore a project's already-scored tasks against " +
+        'its current value charter. Accepts written-back classifications ' +
+        '(one per task), recomputes the four WSJF components, opens a rescore ' +
+        'run, writes one append-only history row per changed task linked by ' +
+        'the run id, and SKIPS per-component locked values. Returns a run ' +
+        'summary with evaluated / changed / skipped-locked counts and any ' +
+        'per-task validation errors.',
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+        submissions: z
+          .array(
+            z.object({
+              task_id: z.number().int().positive(),
+              classification: z.record(z.string(), z.unknown()),
+              features: z.record(z.string(), z.unknown()),
+            })
+          )
+          .default([]),
+        actor_type: z.string().optional(),
+        actor_id: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      try {
+        const result = await client.rescoreProject(
+          args.project_id,
+          (args.submissions ?? []).map((s) => ({
+            task_id: s.task_id,
+            classification: s.classification,
+            features: s.features,
+          })),
+          {
+            ...(args.actor_type !== undefined && { actor_type: args.actor_type }),
+            ...(args.actor_id !== undefined && { actor_id: args.actor_id }),
+          }
+        );
+        const summary = [
+          `Rescore run ${result.run_id} for project ${result.project_id}: ` +
+            `${result.tasks_evaluated} evaluated, ${result.tasks_changed} changed, ` +
+            `${result.tasks_skipped_locked} with locked components preserved.`,
+        ];
+        if (result.errors.length > 0) {
+          summary.push(
+            `\n${result.errors.length} task(s) had validation errors:`
+          );
+          for (const e of result.errors) {
+            summary.push(`- [${e.taskId}] ${e.errors.join('; ')}`);
+          }
+        }
+        return {
+          content: [{ type: 'text', text: summary.join('\n') }],
+          structuredContent: result as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to rescore project'
+        );
+      }
+    }
+  );
+
+  // Tool: wsjf_health
+  server.registerTool(
+    'wsjf_health',
+    {
+      description:
+        "Lint a project's WSJF state for degeneracies and pitfalls " +
+        '(non-blocking). Reports near-identical scores, a Cost-of-Delay ' +
+        'column missing its `1` anchor, a Job Size distribution collapsed to ' +
+        '1–2, past-deadline tasks with stale Time Criticality, a high ' +
+        'priority-fallback ratio, and score-churn across rescore runs. Each ' +
+        'finding carries a severity, a plain-language message, and a suggested ' +
+        'fix. Empty findings list ⇔ healthy.',
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+      }),
+    },
+    async (args) => {
+      try {
+        const report = await client.getWsjfHealth(args.project_id);
+        const summary = [
+          report.healthy
+            ? `Project ${report.project_id} WSJF health: OK ` +
+              `(${report.scored_task_count} scored task(s), no degeneracies).`
+            : `Project ${report.project_id} WSJF health: ${report.findings.length} ` +
+              `finding(s) across ${report.scored_task_count} scored task(s):\n`,
+        ];
+        for (const f of report.findings) {
+          summary.push(
+            `- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`
+          );
+        }
+        return {
+          content: [{ type: 'text', text: summary.join('\n') }],
+          structuredContent: report as unknown as { [x: string]: unknown },
+        };
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          error instanceof Error ? error.message : 'Failed to check WSJF health'
         );
       }
     }

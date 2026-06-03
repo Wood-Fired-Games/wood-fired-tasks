@@ -25,6 +25,7 @@ import {
 import { TASK_STATUSES } from '../../../types/task.js';
 import { BusinessError } from '../../../services/errors.js';
 import { requireUser } from '../../plugins/auth/index.js';
+import taskWsjfRoutes from './wsjf.js';
 
 // Query parameter schema for task filters (uses coercion for URL params).
 // `limit`/`offset` bound the result set so a 100k-row table cannot DoS the
@@ -416,6 +417,11 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       return reply.send(result);
     }
   );
+
+  // WSJF 4.5 (#645): GET/PUT /:id/wsjf + GET /:id/score-history. Registered as
+  // a child plugin so the colocated WSJF `schema:` blocks live in their own
+  // file (mirrors the projects barrel's topology / dependency-graph split).
+  await fastify.register(taskWsjfRoutes);
 };
 
 export default taskRoutes;

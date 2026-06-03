@@ -10,10 +10,10 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 23 tools for task, project, comment, dependency, reporting, health, topology, and wait operations
+- 27 tools for task, project, comment, dependency, reporting, health, topology, WSJF, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
-- 11 pre-built skill files for common workflows
+- 12 pre-built skill files for common workflows
 - Two server modes: **local** (in-process SQLite) and **remote** (HTTP proxy to a deployed REST API)
 
 ## MCP Server
@@ -283,14 +283,14 @@ revocation.
 | Data access | In-process via `better-sqlite3` against `DB_PATH` | HTTPS/HTTP calls to the deployed REST API |
 | Required env | `DB_PATH` (optional, defaults to `./data/tasks.db`) | `WFT_API_URL` + `WFT_API_KEY` (both required, no defaults) |
 | Auth surface | None (filesystem-trusted) | API key on every call |
-| Tool count | 23 (full set including `completion_report`, `topology_check`, and `wait_for_unblock`) | 23 (full parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`, and `wait_for_unblock` resolves over the SSE stream `GET /api/v1/events`) |
+| Tool count | 27 (full set including `completion_report`, `topology_check`, `wait_for_unblock`, and the four WSJF tools) | 27 (full parity: `completion_report` proxies `GET /api/v1/tasks/completion-report`, `topology_check` proxies `GET /api/v1/projects/:id/topology`, `wait_for_unblock` resolves over the SSE stream `GET /api/v1/events`, and `wsjf_ranking` / `wsjf_history` / `wsjf_health` / `rescore_project` proxy the project- and task-scoped WSJF REST endpoints) |
 | `events://stream` resource | Served, points at `API_URL` (default `http://localhost:3000/api/v1`) | Served, points at `WFT_API_URL/api/v1` |
 
-The remote server carries every tool the local server does. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process. `wait_for_unblock` is hosted on **both** servers but over **different transports**: the local variant resolves the `blocked -> open` transition off the **in-process EventBus**, while the remote variant (task #481) resolves it off the **SSE event stream** (`GET /api/v1/events`, `RestClient.waitForUnblockViaSse`) — so the remote tool additionally observes cross-process / cross-session transitions. The input schema and the three return envelopes (`already_unblocked` / `unblocked` / `timeout`) are byte-identical across both transports.
+The remote server carries every tool the local server does. `completion_report` calls reach the deployed REST API (`GET /api/v1/tasks/completion-report`) which runs `TaskService.getCompletionReport` server-side and returns the same envelope the local in-process tool produces. `topology_check` is registered on the remote server too (`src/mcp/remote/register-tools.ts`), proxying `GET /api/v1/projects/:id/topology` (`TopologyService.classify`) instead of constructing the service in-process. The four WSJF tools (`wsjf_ranking`, `wsjf_history`, `wsjf_health`, `rescore_project`) reach remote parity the same way (WSJF 1.10): the remote proxy calls `GET /api/v1/projects/:id/wsjf-ranking`, `GET /api/v1/tasks/:id/score-history`, `GET /api/v1/projects/:id/wsjf-health`, and `POST /api/v1/projects/:id/rescore`, each of which exposes the same service the stdio server wires in-process (`rankFrontier`, `WsjfHistoryRepository`, `WsjfHealthService`, `WsjfRescoreService`). `wait_for_unblock` is hosted on **both** servers but over **different transports**: the local variant resolves the `blocked -> open` transition off the **in-process EventBus**, while the remote variant (task #481) resolves it off the **SSE event stream** (`GET /api/v1/events`, `RestClient.waitForUnblockViaSse`) — so the remote tool additionally observes cross-process / cross-session transitions. The input schema and the three return envelopes (`already_unblocked` / `unblocked` / `timeout`) are byte-identical across both transports.
 
 ## Tools Reference
 
-The MCP server exposes 23 tools organized by domain:
+The MCP server exposes 27 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -316,6 +316,10 @@ The MCP server exposes 23 tools organized by domain:
 | `get_dependencies` | Dependency | Return both blockers and blocked-by relationships for a task. |
 | `check_health` | Health | Verify database connectivity and report version info. |
 | `topology_check` | Topology | Classify a project as FLAT, DAG, or DAG_CYCLIC over its task-dependency graph; returns roots, leaves, edges, and an execution advisory. |
+| `wsjf_ranking` | WSJF | Rank a project's tasks by propagation-adjusted WSJF; `scope="frontier"` (default) excludes blocked/not-ready, `scope="all"` ranks every task; returns base vs effective WSJF with the downstream Cost-of-Delay propagation breakdown. |
+| `wsjf_history` | WSJF | Return a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes vs the previous entry. |
+| `rescore_project` | WSJF | (MUTATION) Deterministically rescore a project's already-scored tasks against the current value charter; skips locked components, writes one history row per changed task. |
+| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn. |
 | `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. On both servers: local resolves over the in-process bus, remote over the SSE stream. |
 
 ### Task Tools (9 tools)
@@ -777,6 +781,77 @@ rules:
     with: { adapter: local-command, target: your-session, prompt: "{{task.id}}" }
 ```
 
+### WSJF Tools (4 tools)
+
+The four WSJF tools surface the **Weighted Shortest Job First** economic-prioritization layer: every task is scored on its Cost of Delay (Business Value + Time Criticality + Risk/Opportunity-Enablement) divided by Job Size, against a per-project value charter. All four register on **both** the local and remote servers with byte-identical names, descriptions, and input schemas (full stdio↔remote parity, WSJF 1.10). On the local server `wsjf_ranking` and `wsjf_history` register unconditionally while `rescore_project` and `wsjf_health` register only when their service deps are wired — in the production server boot (`src/mcp/server.ts`) both are wired, so all four are live. The remote variants (`src/mcp/remote/register-tools.ts`) each proxy the matching project- or task-scoped REST endpoint (see [API.md](API.md)).
+
+Backward-compatible: a project with no charter and no scored tasks behaves exactly as before, with selection falling back to `priority` then age.
+
+#### wsjf_ranking
+
+Rank a project's tasks by propagation-adjusted WSJF. The frontier scope drops `blocked` tasks and any task with an unsatisfied in-project blocker; downstream Cost of Delay propagates up onto blockers (`effective_CoD = base_CoD + Σ dependents' base_CoD · γ^(dist−1)`, γ = `PROPAGATION_GAMMA` = 0.5, capped at `base_CoD · PROPAGATION_CAP` = 3×). Ranking is read-time only and never persisted. Unscored tasks slot in via the `priorityFallbackScore` map so scored and unscored sort coherently. Proxies `GET /api/v1/projects/:id/wsjf-ranking` on the remote server.
+
+**Input Schema:**
+
+```json
+{
+  "project_id": "number (required, positive integer)",
+  "scope": "frontier|all (optional, default frontier)"
+}
+```
+
+**Returns:** An ordered list (descending `effective_wsjf`, ties broken by `created_at` ASC then `id` ASC) where each row carries the four WSJF components, `base_wsjf` vs `effective_wsjf`, and a `propagation` breakdown of the downstream Cost-of-Delay contributions (with the γ / CAP used).
+
+**Usage:** When `/tasks:loop` (Step 1) or `/tasks:loop-dag` (Step 3a) selects the next task by economic value over the ready frontier instead of a hand-set priority enum. The ranking snapshot is written into `LOOP-RUN.md` for after-the-fact reproducibility.
+
+#### wsjf_history
+
+Return a task's append-only WSJF score-history timeline (oldest-first). Each entry is annotated with a `deltas` map of from→to changes per component versus the previous entry. Backs the audit question "why did this value change, when, by whom, under which charter, on what evidence" — the underlying rows store the LLM classifications + deterministic features so any score is replayable without the model. Proxies `GET /api/v1/tasks/:id/score-history` on the remote server.
+
+**Input Schema:**
+
+```json
+{
+  "task_id": "number (required, positive integer)"
+}
+```
+
+**Returns:** A chronological (oldest-first) array of score-history entries, each with the four components, `wsjf_score`, `prev_wsjf_score`, the `deltas` map, the `trigger`, actor/charter/rescore-run provenance, and the stored classifications/features/evidence.
+
+**Usage:** When Claude Code needs the provenance trail behind a task's current WSJF score — e.g. to explain a rescore, audit a manual override, or replay a score under a prior charter version.
+
+#### rescore_project
+
+**(MUTATION)** Deterministically rescore a project's already-scored tasks against the **current** value charter. Re-runs the same deterministic validation gate, **skips locked components** (locked components keep their prior value), opens a rescore run, and writes one `wsjf_score_history` row per changed task — all in a single transaction. Invalid submissions are collected per-task without blocking the rest of the batch. Proxies `POST /api/v1/projects/:id/rescore` on the remote server.
+
+**Input Schema:**
+
+```json
+{
+  "project_id": "number (required, positive integer)"
+}
+```
+
+**Returns:** A summary with `tasks_evaluated`, `tasks_changed`, and `tasks_skipped_locked` counts, plus per-task errors (if any).
+
+**Usage:** When `/tasks:new-project` re-interviews an existing charter (bumping `interview_version`) and the operator confirms `Rescore N tasks now?`, driving the living-backlog rescore against the updated reference frame.
+
+#### wsjf_health
+
+Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The six severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, and `score-churn` (only possible because the score-history table exists). Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
+
+**Input Schema:**
+
+```json
+{
+  "project_id": "number (required, positive integer)"
+}
+```
+
+**Returns:** A severity-tagged findings report (empty when healthy).
+
+**Usage:** Surfaced at loop start (`/tasks:loop` §2g, `/tasks:loop-dag` §2h) and post-rescore to catch the classic WSJF anti-patterns before they corrupt the ordering.
+
 ## Resources Reference
 
 The MCP server exposes 1 resource.
@@ -821,7 +896,7 @@ If you add or rename a domain event, update `ALLOWED_EVENT_TYPES` in `src/events
 
 ## Skill Files
 
-Wood Fired Tasks provides 11 pre-built skill files in the `/tasks:` namespace.
+Wood Fired Tasks provides 12 pre-built skill files in the `/tasks:` namespace.
 
 After installation, these skills are available as slash commands in Claude Code.
 
@@ -904,6 +979,14 @@ After installation, these skills are available as slash commands in Claude Code.
 **Use when:** User wants to add a note, leave feedback, or annotate a task with additional context.
 
 **Workflow:** Prompts for comment content, adds comment to specified task using add_comment MCP tool.
+
+### /tasks:new-project
+
+**Description:** Charter-interview a project — a skippable, one-question-at-a-time setup that captures the project's value charter (mission, ranked value themes, time pressure, risk posture, out-of-scope) so WSJF scoring can derive Business Value from real priorities.
+
+**Use when:** Starting a new project, setting a project's goal/charter, or when asked to run the project interview.
+
+**Workflow:** Runs a STOP-and-wait interview, auto-detecting candidate value themes from existing tasks/repo signal and asking the operator to confirm rather than starting from a blank prompt; maps themes to Fibonacci weights and writes the `value_charter` (and a `project_charter_history` snapshot). Skipping is a valid outcome — no charter is written and scoring falls back to the `priority` enum. Re-running on an existing charter offers overwrite / partial-edit / abort, bumps `interview_version`, then **prompts** `Rescore N tasks now?` before calling `rescore_project` to refresh the living backlog.
 
 ### /tasks:loop
 
@@ -994,8 +1077,9 @@ The API and MCP server share the same database file. If changes made via the API
 
 ## Next Steps
 
-- Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:bug-smash`
-- Explore the 23 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:new-project`
+- Explore the 27 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Charter a project with `/tasks:new-project`, then rank the backlog by economic value with the WSJF tools (`wsjf_ranking`, `wsjf_health`) instead of a hand-set priority enum
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host
 - Read the `events://stream` resource for real-time event integration

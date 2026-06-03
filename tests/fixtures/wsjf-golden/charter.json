@@ -1,0 +1,25 @@
+{
+  "mission": "Ship a reliable, fast task graph that engineers trust for autonomous prioritization.",
+  "value_themes": [
+    {
+      "name": "Reliability",
+      "weight": 13,
+      "description": "Keep the scoring and ranking pipeline correct, deterministic, and crash-free under load."
+    },
+    {
+      "name": "Growth",
+      "weight": 8,
+      "description": "Expand adoption: more projects onboarded and more teams ranking their backlogs."
+    },
+    {
+      "name": "Polish",
+      "weight": 3,
+      "description": "Reduce paper-cuts in copy, config, and developer ergonomics."
+    }
+  ],
+  "time_context": "Quarterly release cadence; the v2 launch window closes at the end of the quarter.",
+  "risk_posture": "Conservative on data integrity and security; tolerant of cosmetic risk.",
+  "out_of_scope": ["marketing site", "mobile clients"],
+  "interview_version": 1,
+  "updated_at": "2026-06-01T00:00:00.000Z"
+}

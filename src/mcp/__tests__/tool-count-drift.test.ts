@@ -53,6 +53,7 @@ const DOMAIN_TO_FILE: Record<string, string> = {
   Health: 'health-tools.ts',
   Topology: 'topology-tools.ts',
   Wait: 'wait-for-unblock-tools.ts',
+  WSJF: 'wsjf-tools.ts',
 };
 
 /** Lines that mention the *remote* MCP server's tool count are intentionally

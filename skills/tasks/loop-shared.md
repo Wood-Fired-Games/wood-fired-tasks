@@ -479,3 +479,103 @@ ToolSearch with query "select:TaskList"
 **For skills that only WRITE todos without follow-up updates** (rarer still — e.g. a one-shot capture into TodoWrite from another tool's output): load `TaskCreate` alone. But prefer the bundled trio unless you're certain follow-up isn't needed.
 
 **Upstream-issue status:** the asymmetric promotion is a Claude Code harness concern, not actionable from a wood-fired-tasks skill. File a feedback note at <https://github.com/anthropics/claude-code/issues> if you hit it (suggested title: "TaskUpdate not auto-promoted alongside TaskCreate — extra ToolSearch round-trip required"). Until that lands, this bundling rule is the workaround.
+
+---
+
+## §M. LOOP-RUN.md WSJF-ranking snapshot
+
+**Called from:** `loop.md` §Step 1 (WSJF-ordered selection) + §9d (body sections), `loop-dag.md` §3a step 8 (WSJF-ordered frontier sort) + §5d (body sections).
+
+When task selection consumes a `wsjf_ranking` MCP tool order (i.e. the project carried ≥ 1 WSJF-scored task), the orchestrator MUST record the ranking it ordered against as a `## WSJF Ranking` body section in LOOP-RUN.md. This makes the economic-value sequencing auditable and replayable — a reader can reconstruct WHY task A ran before task B without re-querying the (possibly-since-rescored) tasks database. The section is emitted alongside the other §9d / §5d body sections and is rewritten on every kill-safe re-emission.
+
+### WSJF-ordered selection procedure (full detail)
+
+This is the procedure `loop.md` §Step 1 and `loop-dag.md` §3a step 8 reference. Both run it before applying their default ordering; the only difference is the `scope` argument (table below).
+
+1. **Probe.** Call the `wsjf_ranking` MCP tool with `{ project_id, scope }`. The tool returns `ranking[]` where each entry is a `RankedTask`: `taskId`, `scored`, `baseWsjf`, `effectiveWsjf`, `components`, `propagation[]`, `evidence`. It defaults `scope` to `"frontier"` when omitted; pass it explicitly so the snapshot records which scope was used.
+
+2. **Scope derivation (from the §2f topology gate):**
+
+   | Caller / gate_decision | scope | Why |
+   |---|---|---|
+   | `loop.md` `allowed` (FLAT) | `frontier` | The whole open set is the frontier (zero edges). |
+   | `loop.md` `overridden` (DAG, user forced flat) | `frontier` | Rank only the ready frontier so blocked tasks are not surfaced ahead of their blockers. |
+   | `loop.md` `auto_ordered` (DAG, topological) | — (skip) | The topological order already respects `blocked_by`; re-sorting by WSJF would violate dependency edges. WSJF does NOT apply. |
+   | `loop-dag.md` `allowed` (DAG, always) | `frontier` | DAG-only skill; §3a dispatches only the ready frontier. Ranking `"all"` would surface blocked tasks the wave cannot run. |
+
+3. **Scored branch — `if ≥ 1 entry has scored: true`.** The project is WSJF-scored. Order the candidate tasks by the `ranking[]` order directly: it is already sorted descending by `effectiveWsjf`, with unscored tasks placed via `priorityFallbackScore` (urgent 9 / high 6 / medium 3 / low 1) and ties broken by `created_at` ASC then `id` ASC. Do NOT re-sort — consume it head-first exactly as `auto_ordered` consumes its topological order. For `loop-dag.md`, restrict the order to the task ids that survived §3a steps 1–7. Record the full snapshot (per-task scores, `effectiveWsjf`, `propagation` breakdown, γ/CAP) for the `## WSJF Ranking` block below; set `wsjf_ordering: true`.
+
+4. **Unscored branch — `if NO entry has scored: true`.** The backward-compatible default. Fall back to the caller's existing ordering UNCHANGED: `loop.md` → priority + ID; `loop-dag.md` → priority DESC / `created_at` ASC / `id` ASC. The `wsjf_ranking` call was a no-op probe; the snapshot records `wsjf_ordering: false` (emit the sentinel, not a table).
+
+This keeps WSJF strictly opt-in: an unscored project sorts exactly as it did before, while a project with even one scored task sequences by economic value. WSJF reorders WITHIN a frontier / the open set only — it never promotes a blocked task ahead of its blocker (the frontier / dependency filter is applied before this procedure runs).
+
+**When to emit:**
+
+- **WSJF ordering was used** (≥ 1 `ranking[]` entry had `scored: true`) → emit the full `## WSJF Ranking` section below.
+- **WSJF ordering was NOT used** (zero scored tasks; the probe returned an all-unscored ranking and the orchestrator fell back to priority + ID / topological order) → emit the sentinel: `_No WSJF ranking: project has no WSJF-scored tasks; selection used the priority + ID (or topological) order._`
+- **WSJF was never probed** (e.g. `gate_decision = "auto_ordered"` on a DAG under `/tasks:loop`, where WSJF ordering does not apply) → omit the section entirely OR emit the sentinel above; do not fabricate scores.
+
+**Header line** — record the scope and constants the ranking was computed under, so the snapshot is self-describing:
+
+- `wsjf_ordering: true | false` — whether the order below actually drove selection.
+- `scope: frontier | all` — the `scope` argument passed to `wsjf_ranking` (derived from the topology gate per the caller; `/tasks:loop-dag` always `frontier`).
+- `gamma: 0.5` — the propagation decay constant (`PROPAGATION_GAMMA`), copied verbatim from the engine contract.
+- `cap: 3` — the propagation ceiling (`PROPAGATION_CAP`): `effectiveWsjf ≤ baseWsjf × 3`.
+
+**Table** — one row per `ranking[]` entry, in the order the tool returned (descending `effectiveWsjf`):
+
+```markdown
+## WSJF Ranking
+
+- **wsjf_ordering:** true
+- **scope:** frontier
+- **gamma (PROPAGATION_GAMMA):** 0.5
+- **cap (PROPAGATION_CAP):** 3
+
+| rank | task_id | scored | base_wsjf | effective_wsjf | components (V/TC/RR/JS) | propagation |
+|---|---|---|---|---|---|---|
+| 1 | 622 | true | 5.200 | 9.100 | 13/5/8/5 | #624:+2.0, #625:+1.9 |
+| 2 | 623 | true | 4.000 | 4.000 | 8/3/5/4 | — |
+| 3 | 631 | false | — | 6.000 | — (priority=high → fallback 6) | — |
+```
+
+Column rules:
+
+- **`scored`** — the `RankedTask.scored` flag verbatim. `false` rows used `priorityFallbackScore` (urgent 9 / high 6 / medium 3 / low 1) for their `effective_wsjf`; note the source priority in the `components` cell (`— (priority=<p> → fallback <n>)`).
+- **`base_wsjf`** — `RankedTask.baseWsjf` to 3 decimals; `—` when `scored: false`.
+- **`effective_wsjf`** — `RankedTask.effectiveWsjf` to 3 decimals (the actual sort key). For scored rows this is the propagation-adjusted value (`base × … ≤ base × cap`); for unscored rows it is the fallback score.
+- **`components`** — the four Fibonacci component tiers `value/timeCriticality/riskOpportunity/jobSize` from `RankedTask.components`; `—` when unscored.
+- **`propagation`** — the per-dependent Cost-of-Delay contributions from `RankedTask.propagation[]`, formatted `#<dependentId>:+<contribution>` comma-separated; `—` when the array is empty (no downstream dependents lifted this task's effective score).
+
+**Anti-fabrication:** every cell is copied verbatim from a `wsjf_ranking` result that ALREADY RETURNED in a prior turn (§L canon) — never recomputed by hand. If the orchestrator did not call `wsjf_ranking`, it MUST emit the sentinel, not a synthesized table.
+
+## §N. Worktree teardown (loop-dag run-end)
+
+**Called from:** `loop-dag.md` §5g (terminal step). `/tasks:loop` does NOT call this — see "Not-affected" below.
+
+**Why it exists.** `/tasks:loop-dag` dispatches each wave's workers in parallel, so every worker `Agent` call MUST set `isolation: "worktree"` — otherwise concurrent workers stomp each other in the shared tree (the shared-tree hazard: a worker can `git restore` another's edits even when their declared file sets are disjoint). The harness gives each isolated worker its own `.claude/worktrees/agent-<id>` worktree on a `worktree-agent-<id>` branch, and auto-removes a worktree **only when it is left unchanged**. Every worker edits files, so its worktree is always "changed" and is **never auto-cleaned**; left alone they accumulate across runs (observed: tens of stale worktrees + branches, which also pollute file searches with duplicate copies of every file). §5g reclaims them at run-end.
+
+**Ordering.** Runs ONCE per run, AFTER §5f's termination emit, on EVERY termination path (clean drain, `--max-waves` checkpoint, §2f gate refusal, §2g feasibility wipeout, §3a stall, user abort, unexpected error). On paths that dispatched no isolated workers (e.g. `--concurrency 1`, or a pre-dispatch abort) discovery finds nothing and the step is a no-op.
+
+**Procedure:**
+
+1. **Capture the integration base once, at run start.** Record the branch HEAD pointed at when the loop began as `<base>` (usually `main`; on a feature branch it is that branch). This is the branch §3d/§6c integrates PASS results onto. The gate compares against `<base>`, NOT a hardcoded `main`.
+
+2. **Enumerate candidates.** Run `git worktree list --porcelain` and select every worktree whose path is under `.claude/worktrees/` AND whose branch matches `worktree-agent-*`. Git discovery is authoritative and kill-safe: it also catches leftovers from prior crashed runs, not just this run's. (You MAY intersect with worktree/branch ids tracked in orchestrator state at dispatch for logging, but git discovery — not tracked state — is the source of truth.)
+
+3. **Integration-safety gate (per candidate branch `B`).** Run `git cherry <base> B` and count lines beginning with `+` (commits on `B` whose patch-id has no equivalent on `<base>`):
+   - **0 `+` lines → SAFE to remove.** Every patch on `B` is already integrated onto `<base>` (patch-id match, so it holds regardless of cherry-pick SHA churn), OR `B` has no commits at all (the common case — workers do NOT commit per §A, so the fix landed on `<base>` via the orchestrator and `B` is empty). Either way nothing is lost.
+   - **≥1 `+` line → RETAIN.** `B` holds work not on `<base>`. **Never delete it.** Add it to the retain set.
+   - This gate is the load-bearing safety property: the teardown can only ever remove fully-integrated leftovers.
+
+4. **Remove the safe set** (each safe worktree/branch, in order):
+   - `git worktree unlock <path>` — isolation worktrees are locked; `remove` refuses a locked worktree. Ignore a "not locked" error (idempotent).
+   - `git worktree remove --force <path>` — `--force` because the tree is "changed".
+   - `git branch -D worktree-agent-<id>` — capital `-D`: the §3 gate already proved integration, and ordinary `-d` would refuse a branch git still considers "unmerged" after a cherry-pick.
+   Then, once after processing all candidates: `git worktree prune` (clears stale admin entries for any worktree directory removed out-of-band).
+
+5. **Record + re-emit.** Put the retain set into the `## Retained Worktrees` LOOP-RUN.md body block (§5d) — one bullet per retained branch with its un-integrated patch count and the `git cherry <base> <branch>` command to inspect — then **re-emit LOOP-RUN.md once more** (the §5b kill-safe rewrite) so the block reflects the post-teardown state. This final write is the run's true terminal action; wrap §5g in the same `try/finally`-equivalent guard as §5f so a teardown exception still leaves a written LOOP-RUN.md.
+
+**Kill-safety / idempotency.** Because discovery is `git worktree list` and removal is gated on `git cherry`, re-running the teardown (or the next loop run) re-discovers and removes only the still-present, fully-integrated leftovers — the second run is a no-op. A teardown killed mid-way leaves a consistent partial state the next run finishes. Mirrors §5b's kill-safe posture.
+
+**`/tasks:loop` is NOT affected.** `/tasks:loop` (`loop.md`) is sequential — one worker at a time — and dispatches workers WITHOUT `isolation: "worktree"` (they run in the shared main tree; `isolation` and `--concurrency` are loop-dag-only). It therefore creates no per-worker worktrees or `worktree-agent-*` branches and has nothing to tear down. If a future change ever parallelizes `/tasks:loop`, it must adopt worktree isolation AND port this teardown step.

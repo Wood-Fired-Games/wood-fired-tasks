@@ -1,12 +1,16 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { CreateProjectSchema } from '../../../schemas/task.schema.js';
+import {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+} from '../../../schemas/task.schema.js';
 import {
   ProjectResponseSchema,
   ProjectListPaginatedResponseSchema,
 } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
+import projectWsjfRoutes from './wsjf.js';
 
 // Pagination query schema for GET /projects. Mirrors task list bounds.
 const QueryProjectListSchema = z.object({
@@ -84,7 +88,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
         tags: ['projects'],
         description: 'Update project by ID',
         params: z.object({ id: z.coerce.number().int().positive() }),
-        body: CreateProjectSchema.partial(),
+        body: UpdateProjectSchema,
         response: {
           200: ProjectResponseSchema,
         },
@@ -105,6 +109,11 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // MCP `topology_check` proxy tool. Registered as a child plugin alongside
   // dependency-graph so its colocated `schema:` block lives in its own file.
   await fastify.register(topologyRoutes);
+
+  // WSJF 4.5 (#645): GET /:id/charter-history + GET /:id/rescore-runs.
+  // Registered as a child plugin alongside topology so its colocated `schema:`
+  // blocks live in their own file.
+  await fastify.register(projectWsjfRoutes);
 
   // DELETE /:id - Delete project
   fastify.delete(

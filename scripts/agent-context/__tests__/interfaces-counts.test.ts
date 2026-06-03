@@ -45,6 +45,8 @@ const MCP_TOOL_FILES = [
   'src/mcp/tools/topology-tools.ts',
   // Task #455: in-process long-poll wait_for_unblock tool.
   'src/mcp/tools/wait-for-unblock-tools.ts',
+  // WSJF 1.10: wsjf_ranking, wsjf_history, rescore_project, wsjf_health.
+  'src/mcp/tools/wsjf-tools.ts',
 ] as const;
 
 const CLI_ENTRY = 'src/cli/bin/tasks.ts';
@@ -80,7 +82,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     ).toBe(22);
   });
 
-  it('MCP tool files together register exactly 23 tools', () => {
+  it('MCP tool files together register exactly 27 tools', () => {
     const perFile = MCP_TOOL_FILES.map((rel) => ({
       file: rel,
       count: countMatches(repoRoot, rel, MCP_TOOL_REGEX),
@@ -90,16 +92,16 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
       total,
       `MCP tool count drifted. Per-file: ${JSON.stringify(perFile)}. ` +
         'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(23);
+    ).toBe(27);
   });
 
-  it('CLI entry wires exactly 31 commands into Commander', () => {
+  it('CLI entry wires exactly 34 commands into Commander', () => {
     const count = countMatches(repoRoot, CLI_ENTRY, CLI_ADDCOMMAND_REGEX);
     expect(
       count,
       `CLI command count drifted in ${CLI_ENTRY}. ` +
         'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(31);
+    ).toBe(34);
   });
 
   it('docs/INTERFACES.md restates the verified totals so a drift is visible', () => {
@@ -109,13 +111,13 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     expect(doc, 'missing "Total: 22 routes" anchor').toContain(
       'Total: 22 routes',
     );
-    expect(doc, 'missing "Total: 23 tools" anchor').toContain(
-      'Total: 23 tools',
+    expect(doc, 'missing "Total: 27 tools" anchor').toContain(
+      'Total: 27 tools',
     );
     expect(
       doc,
-      'missing "Total: 31 commands" anchor (CLI subcommand count)',
-    ).toContain('Total: 31 commands');
+      'missing "Total: 34 commands" anchor (CLI subcommand count)',
+    ).toContain('Total: 34 commands');
   });
 
   it('every REST route source file is non-empty and parseable', () => {

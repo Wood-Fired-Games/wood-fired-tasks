@@ -14,6 +14,21 @@ interface ToolResult {
   isError?: boolean;
 }
 
+// WSJF (Phase 3.2): a fully-valid value charter. value_themes weights must be
+// on the modified Fibonacci scale {1,2,3,5,8,13}.
+const validCharter = {
+  mission: 'Ship the highest-leverage work first.',
+  value_themes: [
+    { name: 'Reliability', weight: 8, description: 'Keep the lights on.' },
+    { name: 'Velocity', weight: 5, description: 'Ship faster.' },
+  ],
+  time_context: 'Q3 push.',
+  risk_posture: 'Conservative on data, aggressive on UX.',
+  out_of_scope: ['marketing', 'billing'],
+  interview_version: 1,
+  updated_at: '2026-06-01T00:00:00.000Z',
+};
+
 describe('MCP Project Tools', () => {
   let app: App;
   let client: Client;
@@ -135,6 +150,54 @@ describe('MCP Project Tools', () => {
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
         expect(result.content[0].text).toContain('already exists');
+      }
+    });
+
+    it('accepts and persists a value_charter', async () => {
+      const createResult = (await client.callTool({
+        name: 'create_project',
+        arguments: {
+          name: 'Project with Charter',
+          value_charter: validCharter,
+        },
+      })) as ToolResult;
+
+      expect(createResult.isError).toBeFalsy();
+      const projectId = (createResult.structuredContent as { id: number }).id;
+
+      // Read it back via get_project to confirm persistence.
+      const getResult = (await client.callTool({
+        name: 'get_project',
+        arguments: { id: projectId },
+      })) as ToolResult;
+
+      const project = getResult.structuredContent as {
+        value_charter: typeof validCharter | null;
+      };
+      expect(project.value_charter).toEqual(validCharter);
+    });
+
+    it('rejects a malformed charter (non-Fibonacci weight) with a structured error', async () => {
+      const result = (await client.callTool({
+        name: 'create_project',
+        arguments: {
+          name: 'Project with Bad Charter',
+          value_charter: {
+            ...validCharter,
+            value_themes: [
+              // weight 4 is off the Fibonacci scale {1,2,3,5,8,13}
+              { name: 'Bad', weight: 4, description: 'invalid weight' },
+            ],
+          },
+        },
+      })) as ToolResult;
+
+      // Structured rejection (isError result), not an unhandled throw — same
+      // shape as the existing "missing name" validation case.
+      expect(result.isError).toBe(true);
+      expect(result.content[0].type).toBe('text');
+      if (result.content[0].type === 'text') {
+        expect(result.content[0].text).toContain('MCP error');
       }
     });
   });
@@ -416,6 +479,68 @@ describe('MCP Project Tools', () => {
       expect(result.content[0].type).toBe('text');
       if (result.content[0].type === 'text') {
         expect(result.content[0].text).toContain('already exists');
+      }
+    });
+
+    it('accepts and persists/updates a value_charter', async () => {
+      // Create a charter-less project, then attach a charter via update.
+      const createResult = (await client.callTool({
+        name: 'create_project',
+        arguments: { name: 'Project Charter via Update' },
+      })) as ToolResult;
+      const projectId = (createResult.structuredContent as { id: number }).id;
+
+      const updateResult = (await client.callTool({
+        name: 'update_project',
+        arguments: {
+          id: projectId,
+          updates: { value_charter: validCharter },
+        },
+      })) as ToolResult;
+
+      expect(updateResult.isError).toBeFalsy();
+      const updated = updateResult.structuredContent as {
+        value_charter: typeof validCharter | null;
+      };
+      expect(updated.value_charter).toEqual(validCharter);
+
+      // Confirm it survived a round-trip read.
+      const getResult = (await client.callTool({
+        name: 'get_project',
+        arguments: { id: projectId },
+      })) as ToolResult;
+      const fetched = getResult.structuredContent as {
+        value_charter: typeof validCharter | null;
+      };
+      expect(fetched.value_charter).toEqual(validCharter);
+    });
+
+    it('rejects a malformed charter on update with a structured error', async () => {
+      const createResult = (await client.callTool({
+        name: 'create_project',
+        arguments: { name: 'Project Bad Charter Update' },
+      })) as ToolResult;
+      const projectId = (createResult.structuredContent as { id: number }).id;
+
+      const result = (await client.callTool({
+        name: 'update_project',
+        arguments: {
+          id: projectId,
+          updates: {
+            value_charter: {
+              ...validCharter,
+              value_themes: [
+                { name: 'Bad', weight: 4, description: 'invalid weight' },
+              ],
+            },
+          },
+        },
+      })) as ToolResult;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].type).toBe('text');
+      if (result.content[0].type === 'text') {
+        expect(result.content[0].text).toContain('MCP error');
       }
     });
   });

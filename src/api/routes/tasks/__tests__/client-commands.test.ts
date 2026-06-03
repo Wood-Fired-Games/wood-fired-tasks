@@ -8,7 +8,7 @@ import { TASK_PRIORITIES, TASK_STATUSES } from '../../../../types/task.js';
 /**
  * Client-package command drift gate.
  *
- * `scripts/build-client-package.sh` ships the 10 markdown command files under
+ * `scripts/build-client-package.sh` ships the 11 markdown command files under
  * `client-package/commands/tasks/*.md` to end users (plain `cp`, no transform).
  * A prior audit found these copies had drifted into pre-rename / pre-hardening
  * artifacts that shipped WRONG info: a non-canonical priority enum
@@ -36,9 +36,10 @@ const REPO_ROOT = resolve(__dirname, '../../../../..');
 const CLIENT_DIR = resolve(REPO_ROOT, 'client-package/commands/tasks');
 const SKILL_DIR = resolve(REPO_ROOT, 'skills/tasks');
 
-// The intentional 10-command client surface (orchestrators loop/loop-dag/
-// loop-shared, decompose, audit, and the non-invocable _enums doc are
-// deliberately NOT shipped to clients — see build-client-package.sh).
+// The intentional 11-command client surface (orchestrators loop/loop-dag/
+// loop-shared, decompose, audit, the non-invocable _enums and wsjf-rubric docs
+// are deliberately NOT shipped to clients — see build-client-package.sh).
+// new-project.md (WSJF 3.3) is the charter-interview command and IS shipped.
 const EXPECTED_CLIENT_COMMANDS = [
   'add-comment.md',
   'blocked.md',
@@ -46,6 +47,7 @@ const EXPECTED_CLIENT_COMMANDS = [
   'done.md',
   'log-bug.md',
   'my-work.md',
+  'new-project.md',
   'pick-up.md',
   'project-status.md',
   'search.md',
@@ -87,6 +89,13 @@ const ENUM_PROSE_ALLOWLIST: ReadonlyArray<{ file: string; contains: string }> =
     { file: 'done.md', contains: 'normal flow' },
     { file: 'done.md', contains: 'normal completion flow' },
     { file: 'pick-up.md', contains: 'normal pickup' },
+    // WSJF 5.2 (#647): wsjf_health SEVERITY scale (`info`|`warning`|`critical`),
+    // a HealthSeverity tag, NOT a task-priority enum value.
+    { file: 'new-project.md', contains: '`info` | `warning` | `critical`' },
+    { file: 'new-project.md', contains: 'ordered `critical` → `warning`' },
+    { file: 'project-status.md', contains: '`info` | `warning` | `critical`' },
+    { file: 'project-status.md', contains: 'Order findings `critical` → `warning` → `info`' },
+    { file: 'project-status.md', contains: 'returned a `critical` finding' },
   ];
 
 /**
@@ -135,7 +144,7 @@ function isEnumLineAllowlisted(file: string, line: string): boolean {
 describe('client-package command drift gate', () => {
   const clientFiles = readClientFiles();
 
-  it('ships exactly the intended 10 client commands', () => {
+  it('ships exactly the intended 11 client commands', () => {
     expect(clientFiles).toEqual([...EXPECTED_CLIENT_COMMANDS].sort());
   });
 
@@ -243,6 +252,7 @@ describe('client-package command drift gate', () => {
       'done.md',
       'log-bug.md',
       'my-work.md',
+      'new-project.md',
       'pick-up.md',
     ];
     for (const file of IDENTITY_WRITERS) {

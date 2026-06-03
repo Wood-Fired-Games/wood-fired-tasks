@@ -44,6 +44,10 @@ const KNOWN_MCP_TOOLS = new Set([
   'get_comments',
   'delete_comment',
   'check_health',
+  'wsjf_ranking',
+  'wsjf_history',
+  'rescore_project',
+  'wsjf_health',
 ]);
 
 describe('E2E Regression: Full Task Lifecycle', () => {
@@ -429,7 +433,7 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (14 invocable files)', () => {
+  it('skill file count matches expected (15 invocable files)', () => {
     // Update this count when adding or removing a skill file in
     // `skills/tasks/`. The README ("N Claude Code skill files") and
     // docs/MCP.md ("N pre-built skill files") references should be
@@ -458,14 +462,23 @@ describe('Skill File Validation', () => {
     // frontmatter table that both `/tasks:loop` and `/tasks:loop-dag`
     // reference. Excluded here for the same reason `_enums.md` is — the
     // count tracks invocable skills only.
-    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md']);
+    //
+    // Task #632 (WSJF 2.1) added `wsjf-rubric.md` as a NON-invocable
+    // (`disable-model-invocation: true`) classification CONTRACT referenced
+    // by `decompose.md` and `create-task.md` when they score tasks. It is a
+    // reference document, not a command, so it is excluded here for the same
+    // reason `loop-shared.md` is.
+    //
+    // Task #639 (WSJF 3.3) added `new-project.md` as an INVOCABLE charter
+    // interview command, bumping the invocable count 14 → 15.
+    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'))
       .filter((f) => !f.startsWith('_'))
       .filter((f) => !NON_INVOCABLE_DOCS.has(f));
 
-    expect(skillFiles).toHaveLength(14);
+    expect(skillFiles).toHaveLength(15);
   });
 
   it('each skill file has workflow steps', () => {
@@ -475,7 +488,11 @@ describe('Skill File Validation', () => {
     // frontmatter table that both `/tasks:loop` and `/tasks:loop-dag`
     // reference. Excluded here for the same reason `_enums.md` is — the
     // count tracks invocable skills only.
-    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md']);
+    //
+    // Task #632 (WSJF 2.1) added `wsjf-rubric.md` as a NON-invocable
+    // classification contract (reference doc, not a command) — excluded for
+    // the same reason as `loop-shared.md`.
+    const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
       .filter((f) => f.endsWith('.md'))
