@@ -11,6 +11,8 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v1.16] - 2026-06-03
+
 Ships **WSJF (Weighted Shortest Job First) economic prioritization**. Every task can be scored on its Cost of Delay (Business Value + Time Criticality + Risk/Opportunity-Enablement) divided by Job Size, so `/tasks:loop` and `/tasks:loop-dag` drain work by economic value rather than a hand-set `priority` enum. Scores are computed autonomously at task-creation time against a per-project **value charter**, every score carries a verbatim evidence trail plus append-only history, and a non-blocking degeneracy linter catches the classic WSJF anti-patterns. Fully backward-compatible: projects with no charter and no scores sort by `priority` then age exactly as before.
 
 ### Added
@@ -19,7 +21,7 @@ Ships **WSJF (Weighted Shortest Job First) economic prioritization**. Every task
   - `wsjf_history` — a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes vs the previous entry.
   - `rescore_project` *(mutation)* — deterministically rescore a project's already-scored tasks against the current value charter; opens a rescore run, writes one history row per changed task, skips locked components, returns evaluated/changed/skipped-locked counts.
   - `wsjf_health` — lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, past-deadline stale Time Criticality, high priority-fallback ratio, and score-churn. Empty findings ⇔ healthy.
-  - Registered on both transports — stdio (`src/mcp/tools/wsjf-tools.ts`, wired in `src/mcp/server.ts`) and remote proxy (`src/mcp/remote/register-tools.ts`). MCP tool count rises from 27 to **31** on both transports. See [`docs/MCP.md`](docs/MCP.md).
+  - Registered on both transports — stdio (`src/mcp/tools/wsjf-tools.ts`, wired in `src/mcp/server.ts`) and remote proxy (`src/mcp/remote/register-tools.ts`). MCP tool count rises from 23 to **27** on both transports. See [`docs/MCP.md`](docs/MCP.md).
 - **New REST endpoints** (base scope `/api/v1`). See [`docs/API.md`](docs/API.md).
   - Task-scoped (`src/api/routes/tasks/wsjf.ts`): `GET /tasks/:id/wsjf` (read the four WSJF components + locks), `PUT /tasks/:id/wsjf` (manual-override set/lock of the four components; runs the enum + cross-component contradiction gate and writes a `manual` score-history row), `GET /tasks/:id/score-history` (append-only timeline with actor/charter/rescore-run provenance; backs `wsjf_history`).
   - Project-scoped (`src/api/routes/projects/wsjf.ts`): `GET /projects/:id/charter-history`, `GET /projects/:id/rescore-runs`, `GET /projects/:id/wsjf-ranking` (backs `wsjf_ranking`), `GET /projects/:id/wsjf-health` (backs `wsjf_health`), `POST /projects/:id/rescore` *(mutation, backs `rescore_project`)*.
