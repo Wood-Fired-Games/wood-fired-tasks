@@ -92,6 +92,72 @@ Add this configuration to `~/.claude.json` in the `mcpServers` section:
 
 [IMPORTANT] Use absolute paths for both the MCP server script and the database file.
 
+### Codex CLI Setup (user-level)
+
+[OpenAI Codex](https://github.com/openai/codex) registers MCP servers with
+its own `codex mcp add` command rather than a hand-edited JSON file. The entry
+it writes is **user-level** — it lives in your Codex config (`~/.codex/`) and
+is available in every Codex session on the machine, not scoped to one repo.
+
+The recommended Codex wiring points at the same thin **launcher script** the
+Claude Code remote setup uses (`~/.local/bin/wft-mcp`, see
+[Keeping the API key out of client config](#keeping-the-api-key-out-of-client-config-recommended)).
+That script resolves the API key at spawn time, so Codex's stored config never
+holds a secret:
+
+```bash
+# Generalize the launcher path to your own home — do not hardcode another
+# user's absolute path. The script must be executable (chmod +x).
+codex mcp add wood-fired-tasks -- ~/.local/bin/wft-mcp
+```
+
+`codex mcp add <name> -- <command> [args…]` registers a server named
+`wood-fired-tasks` whose `command` is the launcher. Everything after the `--`
+is the command Codex spawns over stdio.
+
+**Remote (REST API) vs local (direct SQLite).** The launcher above runs the
+**remote** MCP bridge (`dist/mcp/remote/index.js`), which proxies every tool
+call to the deployed REST API over HTTP — it is the recommended single-writer
+path (see the [Configuration](#configuration) callout). It needs `WFT_API_URL`
+to know which API to talk to. There are two ways to provide it:
+
+1. **Inside the launcher (recommended).** The `wft-mcp` script already exports
+   a `WFT_API_URL` default (`export WFT_API_URL="${WFT_API_URL:-…}"`); edit that
+   line to your deployed API host so every client — Codex included — inherits
+   it with no per-client config.
+2. **In Codex's own config**, by passing the env var through at add time:
+
+   ```bash
+   codex mcp add wood-fired-tasks \
+     --env WFT_API_URL=$WFT_API_URL \
+     -- ~/.local/bin/wft-mcp
+   ```
+
+   Supply only the host root (e.g. `https://bugs.example.com`); the remote
+   bridge appends `/api/v1` itself. **Do not** put a real API key or PAT on
+   this command line — let the launcher resolve `WFT_API_KEY` from the
+   server's environment file as described below. If you must scope a token to
+   Codex, use a placeholder in docs (`--env WFT_API_KEY=<your-token>`) and a
+   real minted PAT only in your shell.
+
+If instead you want Codex to talk to a **local, same-host SQLite** database
+directly (no API service, no `WFT_API_URL`), point `codex mcp add` at the
+local entry point and pass `DATABASE_PATH` instead — this is the local variant
+from the [Claude Code Setup](#claude-code-setup) above and carries the same
+single-writer caveats:
+
+```bash
+codex mcp add wood-fired-tasks \
+  --env DATABASE_PATH=~/wood-fired-tasks/data/tasks.db \
+  -- node ~/wood-fired-tasks/dist/mcp/index.js
+```
+
+**Restart Codex after adding the server.** Codex enumerates MCP servers at
+startup, so a freshly added `wood-fired-tasks` entry does **not** appear in an
+already-running session. Quit and relaunch Codex (or start a new session); the
+27 `wood-fired-tasks` tools show up once it reconnects. Verify with
+`codex mcp list`.
+
 ### Automatic Installation
 
 The provided installers handle configuration automatically. Both default to
