@@ -18,7 +18,17 @@ async function main() {
   // Fail-fast: validate configuration before starting server
   loadConfig();
 
-  const { server, app } = await createServer();
+  // Task #703: thread the validated DATABASE_PATH into createServer so the
+  // production server opens the operator-configured database (e.g.
+  // DATABASE_PATH=/var/lib/wft/tasks.db) instead of silently falling back to
+  // createApp's hard-coded './data/tasks.db' default. Without this, setting
+  // DATABASE_PATH only affected the CLI/MCP entry points, never the API server.
+  // Task #703: thread the validated DATABASE_PATH into createServer so the
+  // production server opens the operator-configured database (e.g.
+  // DATABASE_PATH=/var/lib/wft/tasks.db) instead of silently falling back to
+  // createApp's hard-coded './data/tasks.db' default. Without this, setting
+  // DATABASE_PATH only affected the CLI/MCP entry points, never the API server.
+  const { server, app } = await createServer({ dbPath: config.DATABASE_PATH });
 
   const port = config.PORT;
   const host = config.HOST;
