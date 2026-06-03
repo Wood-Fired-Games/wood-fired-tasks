@@ -37,20 +37,20 @@ than duplicating them.
 ### `src/api/` — Fastify HTTP API
 - `server.ts` — app factory. `start.ts` — process entrypoint (`npm run dev`).
 - `routes/health.ts`, `routes/events.ts` — flat route files.
-- `routes/auth/`, `routes/comments/`, `routes/dependencies/`, `routes/me/`, `routes/projects/`, `routes/tasks/`, `routes/web/` — resource folders.
+- `routes/auth/`, `routes/comments/`, `routes/dependencies/`, `routes/me/`, `routes/projects/`, `routes/tasks/`, `routes/web/` — resource folders. WSJF routes live at `routes/tasks/wsjf.ts` (task component get/set + score-history) and `routes/projects/wsjf.ts` (ranking, health, rescore, charter-history, rescore-runs).
 - `plugins/auth.ts` (API-key), `plugins/swagger.ts` (OpenAPI).
 - `hooks/error-handler.ts` — global error hook.
 - Tests: `src/api/__tests__/`. Deeper: [`docs/API.md`](API.md).
 
 ### `src/mcp/` — Model Context Protocol server
 - `server.ts`, `index.ts` — stdio + transport entry points.
-- `tools/` — six files: `comment-tools.ts`, `dependency-tools.ts`, `health-tools.ts`, `project-tools.ts`, `task-tools.ts`, `topology-tools.ts`.
+- `tools/` — eight files: `comment-tools.ts`, `dependency-tools.ts`, `health-tools.ts`, `project-tools.ts`, `task-tools.ts`, `topology-tools.ts`, `wait-for-unblock-tools.ts`, `wsjf-tools.ts`. `wsjf-tools.ts` registers the four WSJF tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health`), bringing the stdio total to 27 (the prior six-file set registered 22; `wait-for-unblock-tools.ts` added 1 and `wsjf-tools.ts` adds 4).
 - `resources/`, `remote/` (HTTP transport), `commands/` (helpers).
 - Tests: `src/mcp/__tests__/`. Deeper: [`docs/MCP.md`](MCP.md).
 
 ### `src/cli/` — Commander-based CLI (`tasks`)
 - `bin/tasks.ts` — entrypoint.
-- `commands/` — one file per subcommand (`backup`, `claim`, `comment-add/-delete/-list`, `completed`, `completions`, `create`, `db-check`, `delete`, `dep-add/-list/-remove`, `doctor`, `health`, `list`, `project-create/-delete/-list/-show/-update`, `show`, `stats`, `subtask-create/-list`, `update`).
+- `commands/` — one file per subcommand (`backup`, `claim`, `comment-add/-delete/-list`, `completed`, `completions`, `create`, `db-check`, `delete`, `dep-add/-list/-remove`, `doctor`, `health`, `list`, `project-create/-delete/-list/-show/-update`, `show`, `stats`, `subtask-create/-list`, `update`, `wsjf`). `commands/wsjf.ts` provides `wsjf-history`, `wsjf-set`, and `charter-history`.
 - `api/` (REST client), `auth/`, `config/`, `output/`, `prompts/` — shared helpers.
 - Tests: `src/cli/__tests__/`. Deeper: [`docs/CLI.md`](CLI.md).
 
@@ -64,7 +64,7 @@ than duplicating them.
 ### `src/db/` — SQLite + migrations
 - `database.ts` — better-sqlite3 connection.
 - `migrate.ts` — umzug runner (`npm run migrate`).
-- `migrations/001-initial-schema.ts` … `012-verification-evidence.ts`.
+- `migrations/001-initial-schema.ts` … `015-wsjf-audit.ts` (WSJF added `013-wsjf-fields.ts`, `014-value-charter.ts`, `015-wsjf-audit.ts`).
 - Tests: `src/db/__tests__/` (includes migration tests).
 
 ### `src/repositories/` — SQL access layer
@@ -74,6 +74,7 @@ than duplicating them.
 
 ### `src/services/` — Business logic
 - `task.service.ts`, `project.service.ts`, `comment.service.ts`, `dependency.service.ts`, `claim-release.service.ts`, `idempotency.service.ts`, `slack.service.ts`, `workflow-engine.ts`, `errors.ts`.
+- WSJF: `wsjf.service.ts` (deterministic scoring gate + ranking/propagation), `wsjf-rescore.service.ts` (transactional rescore against current charter), `wsjf-health.service.ts` (non-blocking degeneracy linter).
 - Tests: `src/services/__tests__/`.
 
 ### `src/schemas/` — Zod schemas
@@ -100,6 +101,7 @@ than duplicating them.
 | Repository / SQL | `src/repositories/<entity>.repository.ts` | `src/repositories/__tests__/` | — |
 | Zod schema | `src/schemas/<entity>.schema.ts` | colocated in `__tests__/` of caller | [`API.md`](API.md) |
 | Database migration | New file in `src/db/migrations/NNN-<slug>.ts` | `src/db/__tests__/` | [`SETUP.md`](SETUP.md) |
+| WSJF scoring / ranking / health | `src/services/wsjf.service.ts`, `wsjf-rescore.service.ts`, `wsjf-health.service.ts` (+ tools `src/mcp/tools/wsjf-tools.ts`, routes `src/api/routes/{tasks,projects}/wsjf.ts`, CLI `src/cli/commands/wsjf.ts`) | `src/services/__tests__/` | [`MCP.md`](MCP.md) / [`API.md`](API.md) |
 | Slack notifier | `src/slack/notifier.ts` / `task-formatter.ts` | `src/slack/__tests__/` | [`SLACK.md`](SLACK.md) |
 | Slack slash command | `src/slack/commands/tasks-command.ts` | `src/slack/__tests__/` | [`SLACK.md`](SLACK.md) |
 | SSE / event bus | `src/events/event-bus.ts`, `sse-manager.ts` | `src/events/__tests__/` | [`API.md`](API.md) |

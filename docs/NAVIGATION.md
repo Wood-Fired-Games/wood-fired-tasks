@@ -166,6 +166,65 @@ statement of what each layer does **not** guarantee.
   `src/__tests__/validate-sha-hook.test.ts`.
 - **Docs:** `docs/RELIABILITY.md`, `docs/hooks/README.md`, `docs/SETUP.md`.
 
+### 20. Change WSJF scoring / ranking / charter behavior
+
+WSJF (Weighted Shortest Job First) scores every task on Cost of Delay
+(Business Value + Time Criticality + Risk/Opportunity) ÷ Job Size and spans the
+full surface stack. The LLM only emits classifications over closed enums +
+verbatim evidence; the **server recomputes every Fibonacci component
+deterministically** (`validateScoreSubmission`). Identify the layer you are
+touching before editing — the scoring math, the read-time ranking, the rescore
+transaction, the health linter, or one of the REST/MCP/CLI adapters.
+
+- **Files (services — the source of truth, surfaces are thin adapters):**
+  - `src/services/wsjf.service.ts` — the deterministic gate
+    (`validateScoreSubmission`, `validateManualScore`), `computeWsjf`, and the
+    read-time `rankFrontier` (blocker-propagated effective WSJF; γ=0.5, cap 3×).
+  - `src/services/wsjf-rescore.service.ts` — `WsjfRescoreService`: re-runs the
+    gate against the current charter in one transaction, skips locked
+    components, writes one history row per changed task.
+  - `src/services/wsjf-health.service.ts` — `WsjfHealthService` /
+    `analyzeWsjfHealth`: non-blocking degeneracy linter (six checks).
+  - `src/repositories/wsjf-history.repository.ts` — `WsjfHistoryRepository`,
+    the append-only owner of the audit tables (INSERT-only; no UPDATE/DELETE).
+- **Files (REST routes):** `src/api/routes/tasks/wsjf.ts` (GET/PUT
+  `/api/v1/tasks/:id/wsjf`, GET `/api/v1/tasks/:id/score-history`),
+  `src/api/routes/projects/wsjf.ts` (GET `/charter-history`, GET
+  `/rescore-runs`, GET `/wsjf-ranking`, GET `/wsjf-health`, POST `/rescore`
+  under `/api/v1/projects/:id`). Route mounting in `src/api/server.ts`.
+- **Files (MCP tools):** `src/mcp/tools/wsjf-tools.ts` (stdio: `wsjf_ranking`,
+  `wsjf_history`, `rescore_project`, `wsjf_health`), registered in
+  `src/mcp/server.ts`; `src/mcp/remote/register-tools.ts` (remote proxies, with
+  `src/mcp/remote/rest-client.ts`). The four tools have **full stdio↔remote
+  parity** — change both transports together.
+- **Files (CLI):** `src/cli/commands/wsjf.ts` (`tasks wsjf-history`,
+  `tasks wsjf-set`, `tasks charter-history`), registered in
+  `src/cli/bin/tasks.ts`. No CLI command exists for ranking / health / rescore —
+  those are MCP + REST only.
+- **Files (charter on project):** the `value_charter` field on `create_project`
+  / `update_project` — `ValueCharter` type in `src/types/task.ts`, validated by
+  `ValueCharterSchema` in `src/schemas/project.schema.ts`.
+- **Files (data model):** the `wsjf_*` columns + `value_charter` + audit tables
+  live in migrations `src/db/migrations/013-wsjf-fields.ts`,
+  `014-value-charter.ts`, `015-wsjf-audit.ts`. WSJF types
+  (`Task` `wsjf_*` fields, `Project`, `ValueCharter`, `ValueTheme`, `Fib`,
+  `WsjfWriteDTO`) live in `src/types/task.ts`; enums in `src/types/wsjf.ts`.
+- **Tests:** the WSJF service suite under `src/services/__tests__/`
+  (`wsjf.functions.test.ts`, `wsjf.validate.test.ts`, `wsjf.rank.test.ts`,
+  `wsjf.health.test.ts`, `wsjf.golden.test.ts`, `wsjf.replay.test.ts`,
+  `wsjf.audit.test.ts`, `wsjf.manual.test.ts`, `wsjf.redundancy.test.ts`,
+  `wsjf.propagation-derived.test.ts`, `wsjf-rescore.test.ts`); the MCP-tool
+  tests `src/mcp/__tests__/wsjf-tools.test.ts` (plus
+  `wsjf-decompose-trigger.test.ts`, `wsjf-single-create.test.ts`); the route
+  tests `src/api/routes/tasks/__tests__/wsjf.test.ts` (+
+  `wsjf-health-surfacing.test.ts`) and
+  `src/api/routes/projects/__tests__/wsjf.test.ts`; the migration tests
+  `src/db/__tests__/migration-013.test.ts` / `-014` / `-015` and
+  `migrations-roundtrip.test.ts`; and
+  `scripts/agent-context/__tests__/interfaces-counts.test.ts`.
+- **Docs:** `docs/MCP.md`, `docs/API.md`, `docs/CLI.md`, `docs/INTERFACES.md`,
+  `docs/AGENT_CONTEXT.md`.
+
 ## Cross-cutting reminders
 
 - Schemas in `src/schemas/` are imported by **every** surface — a one-line change ripples to REST, MCP, CLI types simultaneously. Search consumers before editing.
@@ -188,3 +247,4 @@ statement of what each layer does **not** guarantee.
 | Surface inventory | [`docs/INTERFACES.md`](INTERFACES.md) |
 | Troubleshooting / recovery | [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
 | Loop evidence reliability / anti-fabrication | [`docs/RELIABILITY.md`](RELIABILITY.md) |
+| WSJF / prioritization | [`docs/MCP.md`](MCP.md), [`docs/API.md`](API.md), [`docs/CLI.md`](CLI.md) |

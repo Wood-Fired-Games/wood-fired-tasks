@@ -14,7 +14,7 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 | [`REPO_MAP.md`](REPO_MAP.md) | Compact tree of `src/`, `docs/`, `scripts/` with per-directory ownership. |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | System one-pager: data flow across API, MCP, CLI, Slack, DB. |
 | [`WORKFLOWS.md`](WORKFLOWS.md) | Canonical build, test, lint, migrate, run, smoke recipes. |
-| [`INTERFACES.md`](INTERFACES.md) | Source-verified index of REST routes, MCP tools, CLI commands. |
+| [`INTERFACES.md`](INTERFACES.md) | Source-verified index of REST routes, MCP tools (27 stdio + remote), CLI commands — including the WSJF prioritization surface. |
 | [`NAVIGATION.md`](NAVIGATION.md) | Task-oriented index: "if you want to do X, read these files." |
 | [`ONBOARDING_SMOKE.md`](ONBOARDING_SMOKE.md) | Seven onboarding probe scenarios that prove a fresh agent can navigate the repo from committed context alone. |
 
@@ -26,6 +26,17 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 | [`MCP.md`](MCP.md) | MCP server reference (tool schemas, local stdio + remote HTTP modes). |
 | [`CLI.md`](CLI.md) | `tasks` CLI reference (every subcommand, every flag). |
 | [`SLACK.md`](SLACK.md) | Slack integration reference (manifest, scopes, slash-command surface, notifier). |
+
+### Prioritization (WSJF)
+
+Economic backlog ordering whose differentiators are **variance-enforced column anchoring** (batch scoring forces a usable spread out of an "everything is high" backlog) and **propagation-adjusted effective WSJF** (the dependency graph lifts the prerequisites that unblock the most downstream value). Each task is scored on Cost of Delay (Business Value + Time Criticality + Risk/Opportunity) ÷ Job Size against a per-project value charter; opt-in and backward-compatible. The surface is documented in the references above, not a standalone file.
+
+| Surface | Where |
+|---------|-------|
+| MCP tools: `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` (4 tools, full stdio↔remote parity) | [`MCP.md`](MCP.md) |
+| REST endpoints under `/api/v1/tasks/:id/wsjf`, `/api/v1/tasks/:id/score-history`, `/api/v1/projects/:id/{wsjf-ranking,wsjf-health,rescore,charter-history,rescore-runs}` | [`API.md`](API.md) |
+| CLI commands: `tasks wsjf-history`, `tasks wsjf-set`, `tasks charter-history` | [`CLI.md`](CLI.md) |
+| Charter interview + scoring/selection skills: `/tasks:new-project`, `/tasks:decompose`, `/tasks:loop`, `/tasks:loop-dag` | [`NAVIGATION.md`](NAVIGATION.md), [`skills/tasks/`](../skills/tasks/) |
 
 ### Automation (event-driven)
 

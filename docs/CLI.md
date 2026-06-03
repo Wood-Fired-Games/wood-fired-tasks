@@ -556,6 +556,83 @@ Always emits the bare `TopologyReport` JSON object on stdout (no `{success, data
 
 Returns `0` on every successful classification, **including `DAG_CYCLIC`** (the classifier reporting a hostile topology is not itself a failure). Returns `1` only on argument-parse failures (invalid `--project`) or service-layer exceptions.
 
+## WSJF Commands
+
+WSJF (Weighted Shortest Job First) prioritizes a project's backlog by **Cost of Delay ÷ Job Size**. The CLI covers the history/manual-set surface; the ranking, health-linter, and rescore tools are exposed only via MCP and REST — see [`docs/MCP.md`](MCP.md) and [`docs/API.md`](API.md). Each task carries four Fibonacci-tier components (`value`, `timeCriticality`, `riskOpportunity`, `jobSize`), per-component locks/source, and an append-only score history; each project carries an optional value charter with its own version history.
+
+### tasks wsjf-history <taskId>
+
+Show a task's append-only WSJF score history (oldest-first) as JSON. Opens a read-only handle on the configured `DATABASE_PATH` (no API round-trip).
+
+**Example:**
+
+```bash
+tasks wsjf-history 42
+```
+
+**Output:**
+
+Emits a `{ task_id, total, history }` JSON object on stdout (no `{success, data}` envelope). `history` is the oldest-first array, each row carrying the score inputs (classifications, features, evidence, source, locked), `wsjf_score`/`prev_wsjf_score`, and provenance (`trigger`, `actor_type`, `actor_id`, `charter_version`, `rescore_run_id`). Pipe through `jq` to extract fields, e.g. `jq '.history[-1].wsjf_score'`.
+
+**Exit codes:**
+
+Returns `0` on a successful read (including an empty history for an unscored task). Returns `1` on argument-parse failures (invalid `<taskId>`) or service-layer exceptions.
+
+### tasks wsjf-set <taskId>
+
+Manually set and/or lock a task's four WSJF components. Runs the same enum + cross-component contradiction gate as the REST `PUT /api/v1/tasks/:id/wsjf` endpoint via an in-process `TaskService.updateTask({ wsjf: { …, manual: true } })`, and writes a `manual` score-history row.
+
+**Example:**
+
+```bash
+tasks wsjf-set 42 \
+  --value 8 \
+  --time-criticality 5 \
+  --risk-opportunity 3 \
+  --job-size 2 \
+  --lock value,jobSize
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --value | number | Business Value component (required, Fibonacci tier: 1, 2, 3, 5, 8, 13) |
+| --time-criticality | number | Time Criticality component (required, Fibonacci tier: 1, 2, 3, 5, 8, 13) |
+| --risk-opportunity | number | Risk/Opportunity-Enablement component (required, Fibonacci tier: 1, 2, 3, 5, 8, 13) |
+| --job-size | number | Job Size component (required, Fibonacci tier: 1, 2, 3, 5, 8, 13) |
+| --lock | string | Comma-separated component keys to lock so a rescore never overwrites them: any of `value`, `timeCriticality`, `riskOpportunity`, `jobSize` (optional) |
+
+All four component flags are required (manual set is all-four-or-none). Locked components are preserved verbatim by any later `rescore_project`.
+
+**Output:**
+
+On success, emits a `{ task_id, scored, components, locked }` JSON object on stdout reflecting the persisted state.
+
+**Exit codes:**
+
+Returns `0` on a successful write. Returns `1` on argument-parse failures (missing/invalid component flag, non-Fibonacci tier, unknown `--lock` key), a gate rejection (enum or cross-component contradiction, e.g. `jobSize=1` with `value=13`), or service-layer exceptions.
+
+### tasks charter-history <projectId>
+
+Show a project's value-charter version history (oldest-first) as JSON. Opens a read-only handle on the configured `DATABASE_PATH` (no API round-trip).
+
+**Example:**
+
+```bash
+tasks charter-history 1
+```
+
+**Output:**
+
+Emits a `{ project_id, total, history }` JSON object on stdout (no `{success, data}` envelope). `history` is the oldest-first array, one full charter snapshot per interview version, each row carrying `interview_version`, the self-contained `charter` JSON, `change_kind`, and provenance (`actor_type`, `actor_id`, `changed_at`). Pipe through `jq` to extract fields, e.g. `jq '.history[-1].interview_version'`.
+
+**Exit codes:**
+
+Returns `0` on a successful read (including an empty history for a project with no charter). Returns `1` on argument-parse failures (invalid `<projectId>`) or service-layer exceptions.
+
+> **Note:** a project's value charter is captured through the `/tasks:new-project` interview rather than set directly on the CLI. The `tasks project-create` / `tasks project-update` commands above expose `--name` / `--description` only; if a `value_charter` input is wired onto those commands in a future release it will accept the `ValueCharter` JSON shape documented in [`docs/API.md`](API.md). There is no CLI command for `wsjf_ranking`, `wsjf_health`, or `rescore_project` — use the MCP tools or REST endpoints.
+
 ## Comment Commands
 
 ### tasks comment-add <taskId>

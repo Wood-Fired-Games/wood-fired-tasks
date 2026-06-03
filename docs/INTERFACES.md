@@ -253,6 +253,9 @@ Source: `src/services/`.
 | `idempotency.service.ts` | `get`, `set`, `cleanup` | n/a |
 | `slack.service.ts` | `start`, `stop`, `isEnabled`, `getApp` | n/a (consumes events, does not emit) |
 | `workflow-engine.ts` | `start`, `stop` | re-emits `task.updated`/`status_changed` on cascade |
+| `wsjf.service.ts` | `validateScoreSubmission`, `validateManualScore`, `computeWsjf`, `rankFrontier` | (none — score writes flow through `task.service.ts`; ranking/propagation is read-time only, never persisted) |
+| `wsjf-rescore.service.ts` | deterministic project rescore against the current value charter; skips locked components; writes one `wsjf_score_history` row per changed task + the run record in one transaction | (none — `task.updated` is emitted per changed task via `task.service.ts`) |
+| `wsjf-health.service.ts` | `analyzeWsjfHealth` (pure, non-blocking degeneracy/pitfall linter) | (none) |
 
 `src/services/errors.ts` exports the typed error classes used below — it is
 shared infrastructure, not a service.
@@ -340,7 +343,8 @@ schema and the three return envelopes are byte-identical either way.
 **Parity rule:** any new MCP tool MUST land in both servers in the same PR.
 The drift-detection test enforces the local count; the remote registration
 count is asserted by the `register-tools` unit test's expected-tools list
-(now 23).
+(now 27, matching the 27-tool local total — 4 of which are the WSJF tools and
+1 is `wait_for_unblock`).
 
 ## Pointers
 

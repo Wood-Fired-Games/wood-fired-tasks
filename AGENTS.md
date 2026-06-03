@@ -15,6 +15,8 @@ First-read navigation hub for any AI coding agent working on `wood-fired-tasks`.
 
 All three surfaces sit on a shared core: typed Zod schemas (`src/schemas/`), services (`src/services/`), repositories (`src/repositories/`), and a **better-sqlite3** database (`src/db/`) with umzug migrations. Tests are vitest; lint is biome; Node ≥ 22 ESM throughout. Run `npm run dev` for the REST API, `npm run mcp:dev` for the MCP server, `npm run cli -- <command>` for the CLI. Everything else (build, lint, tests, migrations) is `npm run …`. There is no separate frontend, microservice, or background worker — one process per surface, one shared SQLite file, one TypeScript codebase.
 
+Beyond the flat `priority` enum, the system now ships **WSJF (Weighted Shortest Job First)** economic prioritization: tasks are scored on Cost of Delay (Business Value + Time Criticality + Risk/Opportunity) over Job Size, grounded in a per-project **value charter**, with an append-only score/charter history and a degeneracy linter. WSJF scoring/ranking is exposed across the surfaces — the REST API and MCP server both expose ranking, history, health, and rescore; the CLI covers history, manual set, and charter history. It is backward-compatible: projects with no charter and no scores sort by `priority` then age exactly as before.
+
 ## Read-next by intent
 
 Pick your intent, read the files in order. Files marked `(reserved)` are slots defined by the contract but not yet on disk in this milestone.
@@ -25,6 +27,7 @@ Pick your intent, read the files in order. Files marked `(reserved)` are slots d
 | API change (REST routes) | `docs/API.md` → `src/api/routes/` → an existing test in `src/api/__tests__/` → `docs/INTERFACES.md` |
 | MCP tool change | `docs/MCP.md` → `src/mcp/tools/` → `src/mcp/__tests__/` → `docs/INTERFACES.md` |
 | CLI change | `docs/CLI.md` → `src/cli/commands/` → `src/cli/__tests__/` |
+| WSJF / prioritization change | `docs/MCP.md` → `src/services/` (`wsjf.service.ts`, `wsjf-rescore.service.ts`, `wsjf-health.service.ts`) → `src/api/routes/tasks/wsjf.ts` and `src/api/routes/projects/wsjf.ts` → `docs/INTERFACES.md` |
 | Schema / status / enum change | `src/schemas/` → matching `src/services/` or `src/repositories/` → API/MCP/CLI surface that exposes it |
 | Database migration | `src/db/migrations/` → `src/db/migrate.ts` → `src/db/__tests__/` → `docs/ARCHITECTURE.md` |
 | Slack change | `docs/SLACK.md` → `src/slack/` → `slack-app-manifest.yml` |
@@ -97,6 +100,7 @@ plan→execute→audit loop over a wood-fired-tasks project. They install to
 
 | Skill | Status | One-line purpose |
 |---|---|---|
+| `/tasks:new-project` | OPERATIONAL | Skippable, one-question-at-a-time charter interview that captures a project's **value charter** (mission, ranked value themes, time pressure, risk posture, out-of-scope) feeding WSJF Business Value. See [`skills/tasks/new-project.md`](skills/tasks/new-project.md). |
 | `/tasks:decompose` | OPERATIONAL | Break a project-level goal into 8–25 leaf tasks (or a dependency DAG) ready for an executor. Planner only — never executes. See [`skills/tasks/decompose.md`](skills/tasks/decompose.md) and the design at [`docs/tasks-decompose-design.md`](docs/tasks-decompose-design.md). |
 | `/tasks:loop` | OPERATIONAL | Drain a FLAT-topology backlog sequentially. See [`skills/tasks/loop.md`](skills/tasks/loop.md). |
 | `/tasks:loop-dag` | OPERATIONAL | Drain a DAG-topology backlog wave-by-wave in parallel. See [`skills/tasks/loop-dag.md`](skills/tasks/loop-dag.md). |

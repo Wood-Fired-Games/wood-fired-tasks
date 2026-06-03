@@ -628,7 +628,7 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 
 ### What the Installer Does
 
-1. **Copies skill files** to `~/.claude/commands/tasks/` (every `.md` file in `skills/tasks/`; currently 16)
+1. **Copies skill files** to `~/.claude/commands/tasks/` (every `.md` file in `skills/tasks/`; currently 18, which includes the typed `/tasks:*` slash commands plus shared includes like `_enums`, `loop-shared`, and the `wsjf-rubric` scoring contract)
 2. **Updates MCP server configuration** in `~/.claude.json`:
    - Local: adds/updates the `wood-fired-tasks` entry pointing at `dist/mcp/index.js`
    - Remote: adds/updates the `wood-fired-tasks-remote` entry pointing at `dist/mcp/remote/index.js`
@@ -719,8 +719,13 @@ After installation, you can use these slash commands in Claude Code:
 | Blocked | /tasks:blocked | Mark a task as blocked and record reason |
 | Pick Up | /tasks:pick-up | Assign task to current user and set to in_progress |
 | Add Comment | /tasks:add-comment | Add a comment to a task |
+| New Project | /tasks:new-project | Skippable charter interview capturing the project's value charter (mission, ranked value themes, time pressure, risk posture, out-of-scope) for WSJF Business-Value scoring |
 
-All skills use the MCP tools under the hood for data access.
+All skills use the MCP tools under the hood for data access. The table above
+lists the user-facing slash commands; `skills/tasks/` also ships planning and
+WSJF skills (`decompose`, `loop`, `loop-dag`, `wsjf-rubric`, and shared/enum
+includes) that are invoked from workflows rather than typed directly — see
+[docs/MCP.md](MCP.md) for the WSJF tool surface those skills consume.
 
 ## Database
 
@@ -738,7 +743,7 @@ backward compatibility with older `~/.claude.json` installs.
 
 ### Migrations
 
-Twelve migration files in `src/db/migrations/`:
+Fifteen migration files in `src/db/migrations/`:
 
 1. `001-initial-schema.ts` — Creates `projects`, `tasks`, `task_tags`, `dependencies`, `comments` tables.
 2. `002-task-hierarchy-and-dependencies.ts` — Task hierarchy (`parent_task_id`) and dependency tracking.
@@ -752,6 +757,9 @@ Twelve migration files in `src/db/migrations/`:
 10. `010-identity-uniqueness-indexes.ts` — Adds uniqueness indexes for the legacy `display_name` and the seeded `slack-bot` service account.
 11. `011-acceptance-criteria.ts` — Adds the `tasks.acceptance_criteria` column.
 12. `012-verification-evidence.ts` — Adds the `tasks.verification_evidence` column.
+13. `013-wsjf-fields.ts` — Adds the per-task WSJF columns: four CHECK-constrained Fibonacci component columns (`wsjf_value`, `wsjf_time_criticality`, `wsjf_risk_opportunity`, `wsjf_job_size`) plus five JSON metadata columns (`wsjf_evidence`, `wsjf_locked`, `wsjf_source`, `wsjf_classifications`, `wsjf_features`). All nullable; the all-four-or-none invariant is enforced at the DTO boundary.
+14. `014-value-charter.ts` — Adds the nullable JSON `projects.value_charter` column (per-project Business-Value reference frame captured by `/tasks:new-project`).
+15. `015-wsjf-audit.ts` — Creates the three append-only WSJF audit tables (in FK order): `wsjf_rescore_run` (one row per rescore event), `wsjf_score_history` (one immutable row per score write, storing full classification inputs for replay), and `project_charter_history` (full charter snapshot per interview version), with their supporting indexes.
 
 ### Task statuses
 
@@ -802,9 +810,10 @@ Runs tests in watch mode for active development.
 Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
-- API route integration tests (all 22 REST routes: 1 public health + 21 authenticated)
-- MCP tool tests (all 27 tools)
-- CLI command tests
+- API route integration tests (all REST routes, including the WSJF task/project endpoints under `/api/v1/tasks/:id/wsjf`, `/score-history`, and `/api/v1/projects/:id/wsjf-ranking`, `/wsjf-health`, `/rescore`, `/charter-history`, `/rescore-runs`)
+- MCP tool tests (all 27 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage)
+- WSJF scoring/ranking tests (deterministic `validateScoreSubmission` gate, blocker-propagated `rankFrontier`, `wsjf-rescore` transaction, and the `wsjf-health` degeneracy linter)
+- CLI command tests (including `wsjf-history`, `wsjf-set`, `charter-history`)
 - Event system tests (EventBus, SSEManager, events API)
 - Claim protocol tests (including 20-agent concurrency)
 - Workflow engine tests (auto-complete, auto-unblock, cascade depth)

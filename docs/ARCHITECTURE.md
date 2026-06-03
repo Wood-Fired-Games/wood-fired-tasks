@@ -23,7 +23,8 @@ navigation hub.
                      v       by every surface       |  HTTP -> REST)
             src/services/  <======= SOURCE OF TRUTH<+
                      |   (Task, Project, Dependency, Comment,
-                     |    Idempotency, ClaimRelease, WorkflowEngine, Slack)
+                     |    Idempotency, ClaimRelease, WorkflowEngine, Slack,
+                     |    Wsjf, WsjfRescore, WsjfHealth)
                      v
             src/repositories/  (better-sqlite3 prepared statements)
                      v
@@ -92,6 +93,46 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
 2. Writes through `ProjectRepository`. Tasks reference projects with
    `ON DELETE CASCADE`, so deleting a project removes its tasks.
 3. Emits `project.created`, `project.updated`, `project.deleted`.
+
+### WSJF scoring / ranking
+
+WSJF (Weighted Shortest Job First) layers economic prioritization onto the
+backlog so `/tasks:loop[-dag]` drain work by value-per-effort rather than the
+flat `priority` enum (backward-compatible: unscored projects sort by `priority`
+then age as before). The load-bearing decision is a strict **judgment/math
+split** — the LLM classifies over closed enums + verbatim evidence spans; the
+server recomputes every Fibonacci component deterministically, so no client
+number is trusted and any stored score is replayable without the model.
+
+1. **Charter** — `ProjectService` accepts an optional `value_charter`
+   (`ValueCharterSchema`), the per-project reference frame for Business-Value
+   scoring (set by the `/tasks:new-project` interview; skipping falls back to
+   `priority`). Each write snapshots into `project_charter_history`.
+2. **Scoring gate** — `validateScoreSubmission` (`src/services/wsjf.service.ts`)
+   is the single chokepoint below every write path: Zod enum/shape → theme in
+   charter → each evidence span is a verbatim substring → `jobSizeTier` within
+   `jobSizeBand` → contradiction rules → batch invariants (every Cost-of-Delay
+   column has a `1` anchor; per-column variance ≥ `VARIANCE_FLOOR`). It
+   recomputes the four components and writes the `wsjf_*` columns all-or-none.
+   `computeWsjf = (value + timeCriticality + riskOpportunity) / max(jobSize, 1)`;
+   manual overrides use `validateManualScore` (enum + contradiction only).
+3. **Ranking** — `rankFrontier` (read-time, never persisted) adds blocker
+   propagation: a task's Cost of Delay is lifted by the γ-decayed CoD of its
+   distinct transitive dependents (γ = 0.5, capped at 3×; diamond-safe via BFS
+   over the transitive closure), then divided by job size for `effective_wsjf`.
+   `DAG_CYCLIC` is rejected up front; unscored tasks slot in via
+   `priorityFallbackScore` (urgent→9…low→1). `frontier` scope drops
+   blocked/not-ready tasks; `all` ranks every task.
+4. **Rescore** — `WsjfRescoreService` re-runs the gate against the current
+   charter, **skips locked components**, and commits component updates, one `wsjf_score_history` row per changed task, and the `wsjf_rescore_run` record in one transaction (per-task failures return in `errors[]` without aborting the batch).
+5. **History + linter** — every score write appends an immutable
+   `wsjf_score_history` row (full classifications + features + evidence) in the
+   same transaction. `WsjfHealthService` is a pure, non-blocking linter for six degeneracies (`degenerate-spread`, `cod-no-anchor`, `job-size-collapsed`, `stale-time-criticality`, `high-fallback-ratio`, `score-churn`).
+
+Surface (full stdio↔remote MCP parity): 4 MCP tools (`wsjf_ranking`,
+`wsjf_history`, `rescore_project`, `wsjf_health`), the WSJF REST routes under
+`src/api/routes/{tasks,projects}/wsjf.ts`, and 3 CLI commands — full references
+in [docs/MCP.md](MCP.md), [docs/API.md](API.md), [docs/CLI.md](CLI.md).
 
 ### Comment create / delete
 
@@ -187,14 +228,17 @@ WAL mode is enabled by `src/db/database.ts`:
 
 | Table | Columns (one-liner) | Purpose |
 |---|---|---|
-| `projects` | `id`, `name UNIQUE`, `description`, timestamps | Top-level grouping. |
-| `tasks` | `id`, `title`, `description`, `status`, `priority`, `project_id`, `parent_task_id`, `assignee`, `created_by`, `due_date`, `estimated_minutes`, `version`, `claimed_at`, `completed_at`, timestamps | Core entity. `version` is the CAS counter for atomic claim. |
+| `projects` | `id`, `name UNIQUE`, `description`, `value_charter` (JSON, migration 014), timestamps | Top-level grouping. `value_charter` is the per-project WSJF reference frame (nullable). |
+| `tasks` | `id`, `title`, `description`, `status`, `priority`, `project_id`, `parent_task_id`, `assignee`, `created_by`, `due_date`, `estimated_minutes`, `version`, `claimed_at`, `completed_at`, `wsjf_value`/`wsjf_time_criticality`/`wsjf_risk_opportunity`/`wsjf_job_size` (INTEGER, CHECK ∈ Fibonacci `{1,2,3,5,8,13}`, migration 013), `wsjf_evidence`/`wsjf_locked`/`wsjf_source`/`wsjf_classifications`/`wsjf_features` (JSON), timestamps | Core entity. `version` is the CAS counter for atomic claim. WSJF columns are all-four-or-none (enforced at the DTO boundary), all nullable. |
 | `task_tags` | `task_id`, `tag` (UNIQUE pair) | Side table; `GROUP_CONCAT`-joined on reads. |
 | `tasks_fts` | FTS5 virtual table over `(title, description)` | Full-text search; kept in sync by triggers. |
 | `task_comments` | `id`, `task_id`, `author`, `content`, timestamps | Comments; cascade-delete with task. |
 | `task_dependencies` | `id`, `task_id`, `blocks_task_id`, `CHECK(!=)`, UNIQUE pair | Directed `task_id -> blocks_task_id` edge. |
 | `idempotency_keys` | `key PK`, `response` (JSON), `created_at` | 24 h replay cache. |
 | `slack_channel_subscriptions` | `channel_id`, `project_id`, `event_type`, UNIQUE triple | Outbound notification subscribers. |
+| `wsjf_rescore_run` | `id PK`, `project_id` (FK CASCADE), `triggered_at`, `charter_version`, `actor_type`, `actor_id`, `tasks_evaluated`, `tasks_changed`, `tasks_skipped_locked`, `summary` | Append-only; one row per rescore event (migration 015). |
+| `wsjf_score_history` | `id PK`, `task_id`/`project_id` (FK CASCADE), `changed_at`, `trigger`, `actor_type`, `actor_id`, `charter_version`, `rescore_run_id` (soft FK SET NULL), the four components, `classifications`, `features`, `evidence`, `source`, `locked`, `wsjf_score`, `prev_wsjf_score` | Append-only; one immutable row per score write (full inputs, replay-able). Migration 015. |
+| `project_charter_history` | `id PK`, `project_id` (FK CASCADE), `interview_version`, `charter` (JSON), `change_kind`, `actor_type`, `actor_id`, `changed_at` | Append-only; full charter snapshot per interview version (migration 015). |
 | `_migrations` | `name`, `executed_at` | Umzug bookkeeping (canonical names, no extension). |
 
 ## Migration rules
@@ -210,6 +254,11 @@ WAL mode is enabled by `src/db/database.ts`:
 - SQLite gotchas: `DROP COLUMN` needs referencing indexes dropped first;
   changing a `CHECK` constraint needs the `tasks_new` + copy + rename +
   recreate-indexes + recreate-FTS-triggers pattern (migration 005).
+- Current max is **015** (15 migrations, `001`–`015`). The three WSJF
+  migrations are `013-wsjf-fields` (the `wsjf_*` columns on `tasks`),
+  `014-value-charter` (`projects.value_charter`), and `015-wsjf-audit` (the
+  three append-only tables, created FK-dependency-first with
+  `wsjf_rescore_run` before `wsjf_score_history`).
 
 ## Pagination + filtering contract
 

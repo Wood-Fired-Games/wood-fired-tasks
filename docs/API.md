@@ -205,7 +205,8 @@ Create a new project.
 ```json
 {
   "name": "string (required, max 100 chars)",
-  "description": "string (optional, max 1000 chars)"
+  "description": "string (optional, max 1000 chars)",
+  "value_charter": "ValueCharter object (optional) — see Value charter below"
 }
 ```
 
@@ -216,6 +217,7 @@ Create a new project.
   "id": 1,
   "name": "My Project",
   "description": "Project description",
+  "value_charter": null,
   "created_at": "2026-02-14T12:00:00.000Z",
   "updated_at": "2026-02-14T12:00:00.000Z"
 }
@@ -229,6 +231,8 @@ curl -X POST http://localhost:3000/api/v1/projects \
   -H "Content-Type: application/json" \
   -d '{"name": "My Project", "description": "A test project"}'
 ```
+
+[NOTE] `value_charter` is the per-project reference frame for WSJF Business-Value scoring (see [WSJF Endpoints](#wsjf-endpoints)). It is optional and defaults to `null`; projects with no charter behave exactly as before, sorting by `priority` then age. The field shape is documented under [Value charter](#value-charter).
 
 ### GET /api/v1/projects
 
@@ -304,7 +308,8 @@ Update a project. All fields are optional (partial update).
 ```json
 {
   "name": "string (optional, max 100 chars)",
-  "description": "string (optional, max 1000 chars)"
+  "description": "string (optional, max 1000 chars)",
+  "value_charter": "ValueCharter object (optional) — see Value charter below"
 }
 ```
 
@@ -315,6 +320,7 @@ Update a project. All fields are optional (partial update).
   "id": 1,
   "name": "Updated Project Name",
   "description": "Updated description",
+  "value_charter": null,
   "created_at": "2026-02-14T12:00:00.000Z",
   "updated_at": "2026-02-14T13:00:00.000Z"
 }
@@ -328,6 +334,8 @@ curl -X PUT http://localhost:3000/api/v1/projects/1 \
   -H "Content-Type: application/json" \
   -d '{"name": "Updated Name"}'
 ```
+
+[NOTE] Setting `value_charter` here bumps the charter's `interview_version` and snapshots the prior charter into `project_charter_history` (readable via [`GET /api/v1/projects/:id/charter-history`](#get-apiv1projectsidcharter-history)). See [Value charter](#value-charter) for the field shape.
 
 ### DELETE /api/v1/projects/:id
 
@@ -382,6 +390,8 @@ curl http://localhost:3000/api/v1/projects/1/topology \
 Create a new task.
 
 [IMPORTANT] The `status` field is NOT included in the request body. New tasks always start with status `open`.
+
+[NOTE] When the project has a value charter, the four WSJF components may be auto-populated at task creation. WSJF fields are not set directly through this endpoint's request body — read and override them through the [WSJF Endpoints](#wsjf-endpoints) below.
 
 **Request Body:**
 
@@ -901,6 +911,358 @@ Remove a dependency relationship.
 ```bash
 # Remove dependency: task 42 no longer blocks task 43
 curl -X DELETE http://localhost:3000/api/v1/tasks/42/dependencies/43 \
+  -H "X-API-Key: your-key"
+```
+
+## WSJF Endpoints
+
+WSJF (Weighted Shortest Job First) scores every task on its **Cost of Delay** (Business Value + Time Criticality + Risk/Opportunity-Enablement) divided by **Job Size**, so the autonomous loop runners can drain work by economic value rather than a hand-set `priority` label. Scoring is grounded in a per-project **value charter** and recorded with an append-only history. Projects with no charter and no scored tasks behave exactly as before (sort by `priority` then age).
+
+The four WSJF components are Fibonacci tiers (`1, 2, 3, 5, 8, 13`). The LLM never emits a number: it classifies over closed enums and the server recomputes the components deterministically. A task is treated as scored only when **all four** components are set; otherwise every component is `null` (unscored).
+
+Four of these endpoints back the remote MCP WSJF tools (see [`docs/MCP.md`](MCP.md)): `wsjf_ranking` → `GET /projects/:id/wsjf-ranking`, `wsjf_history` → `GET /tasks/:id/score-history`, `wsjf_health` → `GET /projects/:id/wsjf-health`, `rescore_project` → `POST /projects/:id/rescore`. The `charter-history`, `rescore-runs`, and `GET`/`PUT /tasks/:id/wsjf` endpoints are REST-only (no MCP tool proxy); the task WSJF get/set and charter history are also surfaced via the CLI.
+
+**Authentication:** all WSJF endpoints require `X-API-Key` (same as every `/api/v1` route).
+
+### Value charter
+
+The `value_charter` object on a project (set via [`POST`](#post-apiv1projects) / [`PUT /api/v1/projects/:id`](#put-apiv1projectsid)) is the reference frame for Business-Value scoring:
+
+```json
+{
+  "mission": "string",
+  "value_themes": [
+    { "name": "string", "weight": 5, "description": "string" }
+  ],
+  "time_context": "string",
+  "risk_posture": "string",
+  "out_of_scope": ["string"],
+  "interview_version": 1,
+  "updated_at": "2026-02-14T12:00:00.000Z"
+}
+```
+
+Each `value_themes[].weight` must be a Fibonacci tier (`1, 2, 3, 5, 8, 13`); non-Fibonacci weights are rejected with `400 VALIDATION_ERROR`. `value_charter` is nullable — `null` means the project never ran the charter interview.
+
+### GET /api/v1/projects/:id/wsjf-ranking
+
+Rank a project's tasks by propagation-adjusted WSJF. Backs the `wsjf_ranking` MCP tool. Each task carries its four components, its base vs effective WSJF, and the downstream Cost-of-Delay `propagation` breakdown. Ranking is read-time only and never persisted.
+
+**Query Parameters (optional):**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| scope | string | `frontier` (default) excludes blocked / not-ready tasks; `all` ranks every task. |
+
+**Response:** 200 OK
+
+```json
+{
+  "project_id": 1,
+  "scope": "frontier",
+  "total": 1,
+  "ranking": [
+    {
+      "taskId": 42,
+      "scored": true,
+      "baseWsjf": 8.0,
+      "effectiveWsjf": 11.5,
+      "components": { "value": 8, "timeCriticality": 5, "riskOpportunity": 3, "jobSize": 2 },
+      "propagation": [
+        { "dependentId": 43, "contribution": 7.0 }
+      ],
+      "evidence": { "value": "…", "timeCriticality": "…", "riskOpportunity": "…", "jobSize": "…" }
+    }
+  ]
+}
+```
+
+- Field names are camelCase (`taskId`, `baseWsjf`, `effectiveWsjf`); `baseWsjf` is `null` for an unscored task, `evidence` and `components` are `null` when absent, and each `propagation` edge is `{ dependentId, contribution }` (the γ-decayed downstream Cost-of-Delay contribution).
+- `effective_CoD = base_CoD + Σ dependents' base_CoD · γ^(dist−1)`, capped at `base_CoD · CAP` (γ = 0.5, CAP = 3).
+- Sort: `effectiveWsjf` DESC, then `created_at` ASC, then `id` ASC.
+- Unscored tasks fall back to `priorityFallbackScore` (urgent → 9, high → 6, medium → 3, low → 1) so scored and unscored tasks sort in one coherent space.
+
+**Response:** 404 Not Found — project does not exist. A `DAG_CYCLIC` graph is rejected up front.
+
+**Example:**
+
+```bash
+# Frontier ranking (default)
+curl http://localhost:3000/api/v1/projects/1/wsjf-ranking \
+  -H "X-API-Key: your-key"
+
+# Rank every task
+curl "http://localhost:3000/api/v1/projects/1/wsjf-ranking?scope=all" \
+  -H "X-API-Key: your-key"
+```
+
+### GET /api/v1/projects/:id/wsjf-health
+
+Lint a project's WSJF state for degeneracies and pitfalls. Backs the `wsjf_health` MCP tool. Non-blocking and advisory — empty findings means healthy.
+
+**Response:** 200 OK
+
+```json
+{
+  "project_id": 1,
+  "healthy": false,
+  "scored_task_count": 12,
+  "findings": [
+    {
+      "check": "cod-no-anchor",
+      "severity": "warning",
+      "message": "No task anchors the Time Criticality column to the 1 tier.",
+      "suggestion": "Re-anchor the lowest Time Criticality task to 1 so the column is relatively scaled.",
+      "taskIds": [42, 43]
+    }
+  ]
+}
+```
+
+`healthy` is `true` ⇔ `findings` is empty. Each finding carries a `severity` (`info` / `warning` / `critical`), a `suggestion`, and the `taskIds` it implicates. The six checks are `degenerate-spread`, `cod-no-anchor`, `job-size-collapsed`, `stale-time-criticality`, `high-fallback-ratio`, and `score-churn`.
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/projects/1/wsjf-health \
+  -H "X-API-Key: your-key"
+```
+
+### POST /api/v1/projects/:id/rescore
+
+Deterministically rescore a project's already-scored tasks against the **current** value charter. Backs the `rescore_project` MCP tool. Opens a rescore run, writes one history row per changed task, and **skips locked components** (a locked component keeps its prior value). The component updates, history rows, and run record commit in a single transaction.
+
+[IMPORTANT] This is a mutation. The body is `.strict()` — unknown keys are rejected (`400`). Well-formed but contradictory per-task submissions do not abort the batch; they are returned per-task in the top-level `errors[]` array (still `200`).
+
+**Request Body:**
+
+```json
+{
+  "submissions": [
+    {
+      "task_id": 42,
+      "classification": { "theme": "checkout-reliability", "alignment": "core", "severity": "none", "decay": "flat", "jobSizeTier": 2 },
+      "features": { "fanout": 3, "deadlineDays": null }
+    }
+  ],
+  "actor_type": "user",
+  "actor_id": "stuart"
+}
+```
+
+`submissions` defaults to `[]`. `classification` / `features` are validated by the same `validateScoreSubmission` gate the stdio `rescore_project` tool runs (not re-implemented here). `actor_type` / `actor_id` are optional and default to the authenticated principal.
+
+**Response:** 200 OK
+
+```json
+{
+  "run_id": 7,
+  "project_id": 1,
+  "tasks_evaluated": 12,
+  "tasks_changed": 4,
+  "tasks_skipped_locked": 2,
+  "results": [
+    {
+      "taskId": 42,
+      "changed": true,
+      "skippedLocked": ["value"],
+      "components": { "value": 8, "timeCriticality": 5, "riskOpportunity": 3, "jobSize": 2 },
+      "prevWsjfScore": 6.5,
+      "newWsjfScore": 8.0
+    }
+  ],
+  "errors": [
+    { "taskId": 99, "errors": ["jobSize=1 contradicts value=13"] }
+  ]
+}
+```
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/projects/1/rescore \
+  -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"submissions": []}'
+```
+
+### GET /api/v1/projects/:id/charter-history
+
+Project value-charter version history (oldest-first). One self-contained snapshot per `interview_version`. Also surfaced via the `tasks charter-history <id>` CLI command.
+
+**Response:** 200 OK
+
+```json
+{
+  "project_id": 1,
+  "total": 1,
+  "history": [
+    {
+      "id": 1,
+      "project_id": 1,
+      "interview_version": 1,
+      "charter": { "mission": "...", "value_themes": [], "interview_version": 1 },
+      "change_kind": "overwrite",
+      "actor_type": "agent",
+      "actor_id": "decompose",
+      "changed_at": "2026-02-14T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+`change_kind` is `overwrite` or `partial_update` (nullable). Each row is the PRIOR charter snapshot that was replaced when the interview bumped to `interview_version`.
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/projects/1/charter-history \
+  -H "X-API-Key: your-key"
+```
+
+### GET /api/v1/projects/:id/rescore-runs
+
+Chronological `wsjf_rescore_run` rows (oldest-first), read-only projection.
+
+**Response:** 200 OK
+
+```json
+{
+  "project_id": 1,
+  "total": 1,
+  "runs": [
+    {
+      "id": 7,
+      "project_id": 1,
+      "triggered_at": "2026-02-14T12:00:00.000Z",
+      "charter_version": 2,
+      "actor_type": "agent",
+      "actor_id": "rescore",
+      "tasks_evaluated": 12,
+      "tasks_changed": 4,
+      "tasks_skipped_locked": 2,
+      "summary": "..."
+    }
+  ]
+}
+```
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/projects/1/rescore-runs \
+  -H "X-API-Key: your-key"
+```
+
+### GET /api/v1/tasks/:id/wsjf
+
+Read a task's four WSJF components plus per-component lock flags. Also surfaced via the CLI.
+
+**Response:** 200 OK
+
+```json
+{
+  "task_id": 42,
+  "scored": true,
+  "components": { "value": 8, "timeCriticality": 5, "riskOpportunity": 3, "jobSize": 2 },
+  "evidence": { "value": "…", "timeCriticality": "…", "riskOpportunity": "…", "jobSize": "…" },
+  "locked": { "value": true, "timeCriticality": false, "riskOpportunity": false, "jobSize": false },
+  "source": { "value": "manual", "timeCriticality": "auto", "riskOpportunity": "auto", "jobSize": "auto" },
+  "classifications": { "…": "the LLM enum classifications behind the components" },
+  "features": { "…": "the deterministic inputs (fan-out, parsed deadline, …)" }
+}
+```
+
+An unscored task returns `scored: false` and every WSJF field (`components`, `evidence`, `locked`, `source`, `classifications`, `features`) as `null`.
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/tasks/42/wsjf \
+  -H "X-API-Key: your-key"
+```
+
+### PUT /api/v1/tasks/:id/wsjf
+
+Manual-override set/lock of the four WSJF components. Runs the enum + cross-component contradiction gate and writes a `manual` score-history row. A human can pin one component (recording `source: "manual"`) while agents keep estimating the rest; a subsequent rescore never overwrites a locked component.
+
+[IMPORTANT] All four components must be supplied and each must be a Fibonacci tier (`1, 2, 3, 5, 8, 13`). Contradictory combinations (e.g. `jobSize = 1` with `value = 13`) are rejected with `400 VALIDATION_ERROR`. The body is `.strict()` — unknown keys are rejected. The optional `locked` object (booleans per component, **not** a string array) marks which components survive a rescore. `source` is forced to `manual` server-side for the components you set.
+
+**Request Body:**
+
+```json
+{
+  "value": 8,
+  "timeCriticality": 5,
+  "riskOpportunity": 3,
+  "jobSize": 2,
+  "evidence": { "value": "pinned by product owner", "timeCriticality": "…", "riskOpportunity": "…", "jobSize": "…" },
+  "locked": { "value": true, "timeCriticality": false, "riskOpportunity": false, "jobSize": false }
+}
+```
+
+`evidence` and `locked` are optional (and nullable). `locked` keys are `value`, `timeCriticality`, `riskOpportunity`, `jobSize`.
+
+**Response:** 200 OK — same shape as [`GET /api/v1/tasks/:id/wsjf`](#get-apiv1tasksidwsjf).
+
+**Example:**
+
+```bash
+curl -X PUT http://localhost:3000/api/v1/tasks/42/wsjf \
+  -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "value": 8,
+    "timeCriticality": 5,
+    "riskOpportunity": 3,
+    "jobSize": 2,
+    "locked": { "value": true, "timeCriticality": false, "riskOpportunity": false, "jobSize": false }
+  }'
+```
+
+### GET /api/v1/tasks/:id/score-history
+
+Append-only WSJF score-history timeline (oldest-first), each row carrying its actor, charter version, and rescore-run provenance plus the full LLM classifications and deterministic features (so any score is replayable without the model). Backs the `wsjf_history` MCP tool; also surfaced via the `tasks wsjf-history <id>` CLI command.
+
+**Response:** 200 OK
+
+```json
+{
+  "task_id": 42,
+  "total": 1,
+  "history": [
+    {
+      "id": 1,
+      "task_id": 42,
+      "project_id": 1,
+      "changed_at": "2026-02-14T12:00:00.000Z",
+      "trigger": "create",
+      "actor_type": "agent",
+      "actor_id": "decompose",
+      "charter_version": 1,
+      "rescore_run_id": null,
+      "value": 8,
+      "time_criticality": 5,
+      "risk_opportunity": 3,
+      "job_size": 2,
+      "classifications": { "…": "LLM enum classifications" },
+      "features": { "…": "deterministic inputs" },
+      "evidence": { "value": "…", "timeCriticality": "…", "riskOpportunity": "…", "jobSize": "…" },
+      "source": { "value": "auto", "timeCriticality": "auto", "riskOpportunity": "auto", "jobSize": "auto" },
+      "locked": { "value": false, "timeCriticality": false, "riskOpportunity": false, "jobSize": false },
+      "wsjf_score": 8.0,
+      "prev_wsjf_score": null
+    }
+  ]
+}
+```
+
+The stdio/remote `wsjf_history` MCP tool additionally annotates each row with a `deltas` map (per-component from→to); the raw REST timeline carries the snapshot columns shown above.
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/v1/tasks/42/score-history \
   -H "X-API-Key: your-key"
 ```
 
