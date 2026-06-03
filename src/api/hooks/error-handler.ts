@@ -2,6 +2,64 @@ import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ValidationError, BusinessError, NotFoundError } from '../../services/errors.js';
 
 /**
+ * Resolve the HTTP status code this handler will respond with, mirroring the
+ * branch logic in {@link errorHandler}. Extracted so the logging decision can
+ * be made from the SAME status the client receives, without duplicating the
+ * branch order. Project error classes have fixed statuses; statusCode-bearing
+ * errors carry their own; everything else is an unhandled 500.
+ */
+function resolveStatusCode(error: FastifyError | Error): number {
+  if (error instanceof ValidationError) return 400;
+  if (error instanceof NotFoundError) return 404;
+  if (error instanceof BusinessError) return 422;
+  if ('statusCode' in error) {
+    return (error as FastifyError).statusCode || 400;
+  }
+  return 500;
+}
+
+/**
+ * Log the error server-side at a severity matching whether it is an EXPECTED
+ * client error or an UNEXPECTED server error.
+ *
+ * - 5xx / unhandled (statusCode >= 500 or no statusCode): logged at `error`
+ *   level WITH the full error object (stack included) so real failures stay
+ *   diagnosable. This is unchanged from the original behavior.
+ * - 4xx (expected validation / auth / not-found / rate-limit cases): these are
+ *   deliberately exercised by the test suite and by normal client misuse in
+ *   production; logging each one at `error` with a full stack trace floods
+ *   stdout/stderr and makes a healthy run look alarming. They are downgraded:
+ *     • under test (NODE_ENV==='test') → `debug`, which sits below the default
+ *       `info` log level and is therefore suppressed entirely in a green run.
+ *     • otherwise → `warn`, still visible to operators but without the
+ *       error-level stack-trace noise.
+ *
+ * The distinction is computed from the resolved response status (the same one
+ * the client receives), never a blanket silence: a 500 — or any error that
+ * fails to map to a 4xx — always logs at `error`.
+ */
+function logErrorByStatus(request: FastifyRequest, error: FastifyError | Error): void {
+  const statusCode = resolveStatusCode(error);
+
+  if (statusCode >= 500) {
+    // Unexpected server error — keep the full error + stack at error level.
+    request.log.error(error);
+    return;
+  }
+
+  // Expected client (4xx) error. Downgrade to keep healthy runs quiet while
+  // preserving an operator-visible breadcrumb outside of tests.
+  if (process.env.NODE_ENV === 'test') {
+    request.log.debug({ err: error, statusCode }, 'expected client error');
+  } else {
+    request.log.warn(
+      { err: error, statusCode, code: (error as FastifyError).code },
+      'expected client error'
+    );
+  }
+}
+
+/**
  * Generic, status-appropriate messages used when an error's raw `message` is
  * NOT trusted for verbatim forwarding to the client. These never echo
  * third-party / upstream detail.
@@ -87,9 +145,12 @@ export function errorHandler(
   request: FastifyRequest,
   reply: FastifyReply
 ): void {
-  // Log the FULL error server-side for debugging. This is the only place the
-  // raw message/stack of a non-allowlisted error is ever exposed.
-  request.log.error(error);
+  // Log server-side for debugging. Unexpected (5xx / unhandled) errors keep the
+  // full error + stack at `error` level — the only place the raw message/stack
+  // of a non-allowlisted error is exposed. Expected 4xx errors (validation /
+  // auth / not-found / rate-limit) are downgraded so a healthy run is not
+  // flooded with stack traces. See logErrorByStatus.
+  logErrorByStatus(request, error);
 
   // Map Phase 1 custom errors FIRST (before checking Fastify-specific properties)
   if (error instanceof ValidationError) {
