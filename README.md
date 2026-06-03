@@ -34,27 +34,39 @@ Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are adapt
 
 ## Quick Start
 
+Works from a **fresh clone** with no global install (no `npm link` / no global
+`tasks` binary) — the CLI runs via `npm run cli -- <args>`.
+
 ```bash
-# Clone and install
+# 1. Clone + install
 git clone https://github.com/Wood-Fired-Games/wood-fired-tasks.git
-cd wood-fired-tasks
-npm install
-npm run build
+cd wood-fired-tasks && npm ci
 
-# Set environment variables
-export API_KEYS="your-api-key-here"
+# 2. Env. API_KEYS (server) and API_KEY (client) are SEPARATE vars — set both
+#    to the same value to auth the CLI with a legacy key. (Production: mint a
+#    PAT and run `npm run cli -- login` instead — see Security Model below.)
+export API_KEYS="testkey"          # server: comma-separated admin keys (required)
+export API_KEY="testkey"           # client/CLI: legacy key OR a PAT
 export DATABASE_PATH="./data/tasks.db"
+export API_BASE_URL="http://localhost:3000"   # CLI target (this is the default)
 
-# Run database migrations
-npm run migrate
-
-# Start the API server
-npm start
-
-# Use the CLI
-tasks list
-tasks create --title "My first task" --project 1 --created-by "me"
+# 3. Migrate (honors DATABASE_PATH), build, and start the server in this terminal
+npm run migrate && npm run build && npm start   # listens on PORT (default 3000)
 ```
+
+In a **second terminal** (re-export `API_KEY` + `API_BASE_URL` there too),
+create a project, capture its id, then create a task against it and list:
+
+```bash
+npm run cli -- --json project-create --name "My Project"
+#  → {"success":true,"data":{"project":{"id":2,...}},"metadata":{"id":2}}
+npm run cli -- create --title "My first task" --project 2 --created-by "me"
+npm run cli -- list --project 2
+```
+
+> Do NOT assume a project id 1 exists — always create one first and use the id
+> it returns. `npm run cli --` prints a two-line npm banner; add `--silent`
+> (`npm run cli --silent -- …`) to suppress it.
 
 For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 
