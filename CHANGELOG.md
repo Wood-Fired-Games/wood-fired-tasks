@@ -11,6 +11,20 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+### Fixed
+- **Decompose WSJF schema-drift dogfood finding** (#712). The live `create_task`
+  MCP tool input (`CreateTaskClientSchema.extend({ wsjf_submission, wsjf_trigger })`)
+  exposes *two* WSJF paths — the classified, gate-enforced `wsjf_submission` +
+  `wsjf_trigger` envelope, and a raw pre-computed `wsjf` object (`WsjfWriteSchema`,
+  the manual-override path). `skills/tasks/decompose.md` documented only the
+  former, so an agent inspecting the raw schema could mistake the bare `wsjf`
+  object for the decompose contract and bypass the column-anchored batch gate.
+  Clarified the skill with an explicit "use `wsjf_submission`, NOT the raw `wsjf`
+  object" callout disambiguating the two paths. Runtime behavior unchanged — the
+  tool schema and scoring flow were already correct; only the skill text drifted.
+  Added a `create_task` opt-out test asserting that omitting `wsjf_submission`
+  materializes an unscored task (no history row, null components).
+
 ## [v1.16] - 2026-06-03
 
 Ships **WSJF (Weighted Shortest Job First) economic prioritization**. Every task can be scored on its Cost of Delay (Business Value + Time Criticality + Risk/Opportunity-Enablement) divided by Job Size, so `/tasks:loop` and `/tasks:loop-dag` drain work by economic value rather than a hand-set `priority` enum. Scores are computed autonomously at task-creation time against a per-project **value charter**, every score carries a verbatim evidence trail plus append-only history, and a non-blocking degeneracy linter catches the classic WSJF anti-patterns. Fully backward-compatible: projects with no charter and no scores sort by `priority` then age exactly as before.

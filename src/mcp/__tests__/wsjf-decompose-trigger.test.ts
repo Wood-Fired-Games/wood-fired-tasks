@@ -173,4 +173,36 @@ describe('WSJF decompose batch scoring trigger (#633)', () => {
     expect(timeline).toHaveLength(1);
     expect(timeline[0].trigger).toBe('single_create');
   });
+
+  // Decompose OPT-OUT path (skills/tasks/decompose.md Step 8a opt-out note):
+  // materializing WITHOUT `wsjf_submission` (and without `wsjf_trigger`) creates
+  // an unscored task — no gate, no components, no history row. This is the
+  // documented "WSJF unwanted / no charter" escape hatch; selection falls back
+  // to priority+ID. Guards against the schema's raw `wsjf` path being silently
+  // required.
+  it('omitting wsjf_submission creates an UNSCORED task (decompose opt-out)', async () => {
+    const project = app.projectService.createProject({ name: 'Unscored Proj' });
+    app.projectService.updateProject(project.id, { value_charter: charter });
+
+    const result = (await client.callTool({
+      name: 'create_task',
+      arguments: {
+        title: 'Fix the login crash on submit',
+        project_id: project.id,
+        created_by: 'decompose-agent',
+        // No wsjf_submission, no wsjf_trigger, no raw wsjf — opt out of scoring.
+      },
+    })) as ToolResult;
+    expect(result.isError).toBeFalsy();
+    const task = result.structuredContent as { id: number };
+
+    const stored = app.taskService.getTask(task.id);
+    expect(stored.wsjf_value).toBeNull();
+    expect(stored.wsjf_time_criticality).toBeNull();
+    expect(stored.wsjf_risk_opportunity).toBeNull();
+    expect(stored.wsjf_job_size).toBeNull();
+
+    const timeline = await historyTimeline(task.id);
+    expect(timeline).toHaveLength(0);
+  });
 });
