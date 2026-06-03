@@ -328,6 +328,30 @@ describe('ApiTokenRepository', () => {
       expect(() => repo.touchLastUsed(999999)).not.toThrow();
     });
 
+    // Task #710 — shutdown race containment. The auth chain fires
+    // `setImmediate(() => touchLastUsed(id))`, so the callback can run AFTER
+    // the owning App has been disposed and the better-sqlite3 handle closed
+    // (final request before SIGTERM shutdown, or test teardown that closes
+    // the server/db before the scheduled task drains). Without the `db.open`
+    // guard this throws `TypeError: The database connection is not open`,
+    // which surfaces as a spurious "touchLastUsed failed" warn line. Because
+    // `last_used_at` is observational, the lost-the-race write is silently
+    // dropped — but the call must NOT throw.
+    it('is a no-op (no throw) when the db connection is closed', () => {
+      const inserted = repo.insert({
+        userId,
+        name: 'closed-db',
+        prefix: 'wft_pat_',
+        suffix: 'clsd',
+        hash: 'sha256-touch-closed',
+      });
+
+      db.close();
+      expect(db.open).toBe(false);
+
+      expect(() => repo.touchLastUsed(inserted.id)).not.toThrow();
+    });
+
     it('returns void (no return value contract)', () => {
       const inserted = repo.insert({
         userId,
