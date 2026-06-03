@@ -328,6 +328,40 @@ The API server will start with hot reload enabled. Any changes to TypeScript fil
 
 [TIP] The development server uses `pino-pretty` for colored, human-readable logs.
 
+### 6. Pre-publish smoke test
+
+Before cutting a release, run the fresh-clone smoke recipe to prove the
+documented first-user flow (the [README Quick Start](../README.md#quick-start))
+still works end-to-end from a clean slate:
+
+```bash
+npm run smoke
+# or directly:
+./scripts/smoke/fresh-clone-smoke.sh
+```
+
+What it does, in order: **migrate → build → start the API → `npm run cli --
+project-create` → `npm run cli -- create` → `npm run cli -- list`** — the exact
+subcommands the Quick Start documents, with `--json` to parse the created
+project/task ids.
+
+This smoke is **MANUAL, not part of CI** — it is a maintainer's pre-publish
+check, kept out of the CI matrix because it boots a real HTTP server and builds
+`dist/`. It is hermetic and production-safe:
+
+- It uses a throwaway `mktemp -d` `DATABASE_PATH` and a **non-secret** local key
+  (`API_KEYS=smoke-key` / `API_KEY=smoke-key`) — it never touches the real
+  `./data` directory or any production database.
+- It points `WFT_CREDENTIALS_PATH` at the temp dir so a real cached PAT on your
+  machine can't shadow the env key (matching a brand-new clone with no prior
+  `tasks login`).
+- It binds a non-default `PORT` (override with `SMOKE_PORT=…`) so it won't clash
+  with a server already running on `:3000`.
+- On exit (success or failure) it kills the server and removes the temp dir.
+
+It prints `SMOKE PASS` and exits `0` on success; on any failed step it prints the
+failing step and exits non-zero.
+
 ## Production Deployment
 
 The `deploy/` scripts split host provisioning from app deployment: operators
