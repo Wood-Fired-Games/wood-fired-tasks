@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-03T12:54:56.582Z",
+    "generated_at": "2026-06-03T14:18:58.662Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -351,14 +351,14 @@
       "role": "project-front-door",
       "purpose": "Product-level overview, install, quickstart.",
       "when_to_read": "reference",
-      "line_budget": 800,
+      "line_budget": 820,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
-      "approx_token_budget": 16000,
-      "actual_lines": 799,
-      "sha256": "d4cdaef94b889b6cb23fc19909115b0ddd7766dda9c8d87946381afcb9259d38"
+      "approx_token_budget": 16400,
+      "actual_lines": 802,
+      "sha256": "acba2845e3adea53f5b71de061f138f819e7b7bb0e6c26115c5cb000b6722743"
     },
     {
       "path": "SECURITY.md",
