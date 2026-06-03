@@ -4,21 +4,15 @@ Agents: start at [`AGENTS.md`](../AGENTS.md); the full read-order contract is in
 
 Complete command-line interface reference for Wood Fired Tasks.
 
-**Binary:** `tasks`
-
-After running `npm link`, the `tasks` command is available globally.
-
-For development without linking, use:
-
-```bash
-npx tsx src/cli/bin/tasks.ts <command>
-```
-
-or
-
-```bash
-npm run cli -- <command>
-```
+**Invocation:** From a fresh clone the CLI runs **in-tree** with no global
+install — the path the [README Quick Start](../README.md#quick-start) uses.
+Every `tasks <command>` example below maps to `npm run cli -- <command>
+[options]` (everything after `--` is forwarded verbatim). `npm run cli --`
+prints a two-line npm banner; add `--silent` for clean stdout, or run the entry
+point directly: `npx tsx src/cli/bin/tasks.ts <command>`. Running `npm link`
+once from the project root is **optional** — it installs a global `tasks`
+command so the examples work verbatim from any directory. See
+[SETUP.md → CLI Installation](SETUP.md#cli-installation).
 
 ## Global Options
 
@@ -50,13 +44,21 @@ The CLI requires these environment variables to connect to the API server:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | API_BASE_URL | Base URL of the API server | http://localhost:3000 |
-| API_KEY | API key for authentication | (none - required) |
+| API_KEY | Legacy key the CLI sends as the `X-API-Key` header (one of the server's `API_KEYS`) | (none - required) |
+
+[IMPORTANT] `API_KEY` (client) and the server's `API_KEYS` (plural) are
+**separate** variables. The CLI sends `API_KEY` as the legacy `X-API-Key`
+header, so set it to one of the comma-separated entries in the server's
+`API_KEYS`. That legacy path is **deprecated as of v1.6** but still supported.
+PAT/Bearer auth does **not** come from `API_KEY` — for interactive use prefer
+[`tasks login`](#tasks-login) (OIDC device flow; caches a PAT to the credentials
+file, which takes precedence over `API_KEY`), or pass `--token wft_pat_…`.
 
 [TIP] Add these to your `.bashrc` or `.zshrc`:
 
 ```bash
-export API_BASE_URL=http://localhost:3000
-export API_KEY=your-api-key-here
+export API_BASE_URL=http://localhost:3000   # default; the CLI target
+export API_KEY=your-api-key-here            # legacy key OR a PAT
 ```
 
 ## Task Commands

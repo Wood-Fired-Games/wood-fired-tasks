@@ -251,7 +251,7 @@ matchable row has been backfilled — the UPDATE is guarded by
 ```bash
 git clone https://github.com/Wood-Fired-Games/wood-fired-tasks.git
 cd wood-fired-tasks
-npm install
+npm ci   # fresh, lockfile-exact install (the README Quick Start uses this)
 ```
 
 ### 2. Create Environment File
@@ -279,14 +279,25 @@ API_BASE_URL=http://localhost:3000
 API_KEY=dev-key-1
 ```
 
-[IMPORTANT] The `API_KEYS` variable is required for authentication. Set it to one or more comma-separated keys. These keys will be required in the `X-API-Key` header for all API requests.
+[IMPORTANT] `API_KEYS` (server) and `API_KEY` (client/CLI) are **separate**
+variables — note the plural vs singular. `API_KEYS` is required for the server
+and is a comma-separated list of admin keys accepted in the legacy `X-API-Key`
+header. `API_KEY` is the single value the CLI sends; for legacy-key auth set it
+to one of the entries in `API_KEYS` (the `.env` above uses `dev-key-1` for
+both). The legacy `X-API-Key` path is **deprecated as of v1.6** but still
+supported — PAT/OIDC are preferred; see [OIDC](#oidc-google-configuration) and
+the README "Security Model" for the migration path.
 
 [NOTE] `DATABASE_PATH` is the canonical name validated by `src/config/env.ts`
-and used by the CLI commands. The MCP server also accepts the legacy
-`DB_PATH` as an alias for backward compatibility with older
-`~/.claude.json` installs, but new configurations should use `DATABASE_PATH`.
-See the [Environment Variables](#environment-variables) section below for the
-full list.
+(default `./data/tasks.db`) and is honored consistently across every entry
+point: the API server (`npm start` → `dist/api/start.js`, and `npm run dev`)
+threads it into `createServer` so the process opens the operator-configured
+database; `npm run migrate` resolves it the same way (see
+`resolveMigrateDbPath` in `src/db/migrate.ts`); and the offline CLI commands
+read it directly. The MCP server also accepts the legacy `DB_PATH` as an alias
+for backward compatibility with older `~/.claude.json` installs, but new
+configurations should use `DATABASE_PATH`. See the
+[Environment Variables](#environment-variables) section below for the full list.
 
 ### 3. Build the Project
 
@@ -302,7 +313,10 @@ This compiles TypeScript to JavaScript in the `dist/` directory.
 npm run migrate
 ```
 
-This creates the SQLite database at `DATABASE_PATH` and runs all migrations to set up the schema.
+This creates the SQLite database at `DATABASE_PATH` (default `./data/tasks.db`)
+and runs all migrations to set up the schema. `npm run migrate` honors
+`DATABASE_PATH` — the same env var the API server and CLI read — so the
+migration targets exactly the database the server will open.
 
 ### 5. Start Development Server
 
@@ -384,7 +398,11 @@ npm run migrate
 npm start
 ```
 
-This runs the compiled JavaScript from `dist/api/start.js`.
+This runs the compiled JavaScript from `dist/api/start.js`. The server honors
+`DATABASE_PATH` — `start.js` threads the validated `config.DATABASE_PATH` into
+`createServer`, so it opens the operator-configured database (e.g.
+`/var/lib/wood-fired-tasks/tasks.db`) rather than a hard-coded default. `npm run
+dev` (development) opens the same `DATABASE_PATH`-resolved database.
 
 [TIP] Use a process manager like PM2 or systemd to keep the server running and restart on failure.
 
@@ -533,42 +551,63 @@ gates the release contract enforces.
 
 ## CLI Installation
 
-The CLI can be used in two ways: globally via `npm link` or directly via `npx tsx`.
+From a fresh clone the CLI runs **in-tree** with no global install — this is
+the path the [README Quick Start](../README.md#quick-start) uses. A global
+`tasks` binary via `npm link` is **optional** and only convenient if you want
+to call `tasks` from outside the repo.
 
-### Global Installation (Recommended)
+### In-tree usage (default — no link, no build required)
 
-From the project directory:
+From the project directory, invoke the CLI through the npm script. Everything
+after `--` is passed verbatim to the CLI:
+
+```bash
+npm run cli -- <command> [options]
+```
+
+`npm run cli --` prints a two-line npm banner before the CLI output; add
+`--silent` to suppress it when you need clean stdout (e.g. piping `--json`):
+
+```bash
+npm run cli --silent -- --json project-create --name "My Project"
+```
+
+Equivalently, run the entry point directly with `tsx`:
+
+```bash
+npx tsx src/cli/bin/tasks.ts <command>
+```
+
+### Global installation (optional)
+
+If you want a global `tasks` command runnable from any directory, link the
+package once from the project root:
 
 ```bash
 npm link
 ```
 
-This creates a global `tasks` command that can be run from anywhere.
+This creates a global `tasks` command. Every `npm run cli -- <command>`
+example in [`CLI.md`](CLI.md) then works as a bare `tasks <command>`.
 
 ### Environment Variables for CLI
 
 The CLI needs to know where to find the API server and how to authenticate:
 
 ```bash
-export API_BASE_URL=http://localhost:3000
-export API_KEY=your-api-key-here
+export API_BASE_URL=http://localhost:3000   # default; the CLI target
+export API_KEY=your-api-key-here            # a legacy key (one of API_KEYS)
 ```
+
+`API_KEY` and the server's `API_KEYS` are **separate** variables. For local dev
+with legacy auth, set `API_KEY` to one of the comma-separated values in the
+server's `API_KEYS`; the CLI sends it as the legacy `X-API-Key` header. That
+legacy path is supported but **deprecated as of v1.6**. PAT/Bearer auth does not
+come from `API_KEY` — use `--token wft_pat_…` or, for interactive use,
+`npm run cli -- login` (OIDC device flow) caches a PAT to the credentials file
+and takes precedence over `API_KEY`.
 
 [TIP] Add these to your `.bashrc` or `.zshrc` for persistent configuration.
-
-### Direct Usage (Development)
-
-For development, you can run CLI commands directly without building or linking:
-
-```bash
-npx tsx src/cli/bin/tasks.ts <command>
-```
-
-Or use the npm script:
-
-```bash
-npm run cli -- <command>
-```
 
 ## Claude Code Integration
 
@@ -738,8 +777,10 @@ includes) that are invoked from workflows rather than typed directly — see
 ### Database Path
 
 Set via `DATABASE_PATH` environment variable. Defaults to `./data/tasks.db`.
-The MCP server also accepts the legacy `DB_PATH` as a deprecated alias for
-backward compatibility with older `~/.claude.json` installs.
+Honored consistently by the API server (`npm start` / `npm run dev`), the
+migration CLI (`npm run migrate`), and the offline CLI commands. The MCP server
+also accepts the legacy `DB_PATH` as a deprecated alias for backward
+compatibility with older `~/.claude.json` installs.
 
 ### Migrations
 
@@ -781,7 +822,7 @@ npm run migrate
 
 Each interface creates its own database connection:
 
-- **API Server:** Connection created in `src/index.ts`, shared across all routes
+- **API Server:** Connection created by `createServer` (invoked from `dist/api/start.js`, opened at the validated `DATABASE_PATH`), shared across all routes
 - **CLI:** Connection created per command execution
 - **MCP Server:** Connection created on server start, shared across all tool calls
 
