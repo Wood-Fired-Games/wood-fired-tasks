@@ -253,6 +253,15 @@ the dependency edges via `wood-fired-tasks:add_dependency`.
 
 ### Step 8a — Column-anchored batch WSJF scoring (BEFORE create_task)
 
+> **Opt-out — skip this entire step if WSJF scoring is unwanted.** Batch scoring
+> is opt-in and adds an LLM classification pass over the whole candidate set
+> (extra cost + latency + nondeterminism on every decompose run). To opt out —
+> the user doesn't use WSJF, or the project has no value charter — **materialize
+> in Step 8b WITHOUT a `wsjf_submission` (and without `wsjf_trigger`)**: the
+> tasks are created unscored and ordered by their `priority` field, exactly as
+> before WSJF existed. `/tasks:loop[-dag]` selection falls back to priority+ID
+> unchanged when no task in the project is scored, so nothing downstream breaks.
+
 Before you materialize anything, score the **whole surviving candidate batch
 at once, column-anchored** against the parent project's value charter (fetch
 it via `get_project(project_id)` — the `value_charter`, or `null` when the

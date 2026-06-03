@@ -34,6 +34,15 @@ This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fir
 
 3. **Score the task (WSJF single-create classification)**
 
+   > **Opt-out — skip this whole step if WSJF scoring is unwanted.** Scoring is
+   > opt-in and adds a per-task LLM classification pass (extra cost + latency +
+   > nondeterminism). To opt out — the user doesn't use WSJF, the project has no
+   > value charter, or this is a quick one-off — **omit `wsjf_submission` from
+   > the `create_task` call** and jump to Step 4. The task is created unscored
+   > and ordered by its `priority` field, exactly as before WSJF existed. This
+   > is the create-time analogue of the skippable `/tasks:new-project` charter
+   > interview; nothing downstream breaks on an unscored task.
+
    This step produces a `wsjf_submission` so the new task lands ranked, not
    unscored. It follows the [wsjf-rubric.md](wsjf-rubric.md) classification
    contract — **emit closed-enum classifications + verbatim evidence spans,
