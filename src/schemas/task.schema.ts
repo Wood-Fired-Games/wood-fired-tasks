@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../types/task.js';
-import { WSJF_HISTORY_TRIGGERS } from '../repositories/wsjf-history.repository.js';
+import { WSJF_HISTORY_TRIGGERS } from '../types/wsjf.js';
 import {
   FibSchema,
   WsjfEvidenceSchema,

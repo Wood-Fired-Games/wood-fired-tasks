@@ -5,7 +5,14 @@ import type {
   WsjfSource,
   WsjfClassification,
   WsjfFeatures,
+  WsjfHistoryTrigger,
 } from '../types/wsjf.js';
+// Re-exported from the leaf `types` module so this repository keeps its public
+// surface (`WSJF_HISTORY_TRIGGERS` / `WsjfHistoryTrigger`) while schemas can
+// import the constant without an upstream-layer edge (depcruise
+// `leaves-no-upstream`).
+export { WSJF_HISTORY_TRIGGERS } from '../types/wsjf.js';
+export type { WsjfHistoryTrigger } from '../types/wsjf.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import { AppendOnlyViolationError } from './errors.js';
 
@@ -34,29 +41,6 @@ import { AppendOnlyViolationError } from './errors.js';
  * history row.
  */
 
-/**
- * `trigger` values for a history row.
- *
- * The spec §4.3 / plan §Contracts closed enum is
- * `{create, decompose, single_create, rescore, manual, propagation}`. Task #628
- * adds `update` for the generic `update_task`-driven re-score path (an edit that
- * is neither a fresh create, a decompose batch, a rescore run, nor a manual
- * override). The migration's `trigger` column is `TEXT NOT NULL` with no CHECK,
- * so every value here persists; this union is the TS-level contract. Sibling
- * task #643 uses `manual` via the shared {@link IWsjfHistoryRepository.append}
- * hook.
- */
-export const WSJF_HISTORY_TRIGGERS = [
-  'create',
-  'update',
-  'decompose',
-  'single_create',
-  'rescore',
-  'manual',
-  'propagation',
-] as const;
-
-export type WsjfHistoryTrigger = (typeof WSJF_HISTORY_TRIGGERS)[number];
 
 /**
  * One append-only history write. Components + score are the server-computed

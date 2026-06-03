@@ -22,6 +22,29 @@ export type SeverityClass = 'none' | 'tech_debt' | 'security' | 'data_loss' | 'c
 export type DecayClass = 'flat' | 'slow' | 'fast';
 
 /**
+ * `trigger` values for a `wsjf_score_history` row.
+ *
+ * Spec §4.3 / plan §Contracts closed enum is
+ * `{create, decompose, single_create, rescore, manual, propagation}`; task #628
+ * adds `update` for the generic `update_task`-driven re-score path. The
+ * migration's `trigger` column is `TEXT NOT NULL` with no CHECK, so every value
+ * here persists; this union is the TS-level contract. Defined in this leaf
+ * `types` module so schemas, repositories, and tools share it without an
+ * upstream-layer import (dependency-cruiser `leaves-no-upstream`).
+ */
+export const WSJF_HISTORY_TRIGGERS = [
+  'create',
+  'update',
+  'decompose',
+  'single_create',
+  'rescore',
+  'manual',
+  'propagation',
+] as const;
+
+export type WsjfHistoryTrigger = (typeof WSJF_HISTORY_TRIGGERS)[number];
+
+/**
  * What the LLM emits — never a final number.
  */
 export interface WsjfClassification {
