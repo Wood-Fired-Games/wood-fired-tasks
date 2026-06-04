@@ -371,6 +371,12 @@ For detailed API documentation including request/response schemas, see [docs/API
 
 The `tasks` command provides terminal access to all task operations.
 
+Every `tasks <command>` example below is shorthand for `npm run cli -- <command>`
+(everything after `--` is forwarded verbatim). Running `npm link` once from the
+project root is **optional** — it installs a global `tasks` command so the
+examples work verbatim from any directory. See [docs/CLI.md](docs/CLI.md) for the
+full reference.
+
 **Global Flags:**
 - `--json` - Output in machine-readable JSON format
 - `--no-input` - Disable interactive prompts
