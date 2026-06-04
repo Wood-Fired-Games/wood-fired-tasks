@@ -13,7 +13,17 @@ export default defineConfig({
     // discovers them when invoked via `vitest bench` because that mode uses its
     // own includeBench glob (defaulting to `**/*.bench.{js,ts}`) which ignores
     // this exclude list.
-    exclude: ['dist/**', 'node_modules/**', '**/*.bench.ts'],
+    // '.claude/worktrees/**' (task #717): isolation:"worktree" subagents create
+    // checkouts under .claude/worktrees/ with symlinked node_modules. Without this
+    // exclude, default-root discovery picks up both the worktree copies of our own
+    // tests AND thousands of dependency-bundled *.test.js files, ballooning and
+    // hanging the run. Excluding the dir keeps `npm test` correct while worktrees exist.
+    exclude: [
+      'dist/**',
+      'node_modules/**',
+      '**/*.bench.ts',
+      '.claude/worktrees/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
