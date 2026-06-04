@@ -115,28 +115,27 @@ Due: 2026-02-20T00:00:00Z
 Tags: backend, api
 ```
 
-**JSON output:**
-
-```bash
-tasks create --title "Test" --project 1 --created-by "me" --json
-```
+**JSON output** (`tasks create --title "Test" --project 1 --created-by "me" --json`):
 
 ```json
 {
   "success": true,
   "data": {
-    "id": 42,
-    "title": "Test",
-    "status": "open",
-    "priority": "medium",
-    "project_id": 1,
-    "created_by": "me",
-    "created_at": "2026-02-14T12:00:00.000Z",
-    "updated_at": "2026-02-14T12:00:00.000Z",
-    "tags": []
+    "task": {
+      "id": 42,
+      "title": "Test",
+      "status": "open",
+      "priority": "medium",
+      "project_id": 1
+    }
+  },
+  "metadata": {
+    "id": 42
   }
 }
 ```
+
+The task is nested under `.data.task`; its id is also at `.metadata.id` (extract with `tasks create … --json | jq -r '.metadata.id'`).
 
 ### tasks list
 
@@ -363,6 +362,8 @@ tasks project-create \
 |--------|-------|------|-------------|
 | --name | -n | string | Project name (required, max 100 chars) |
 | --description | -d | string | Project description (optional, max 1000 chars) |
+
+**JSON output:** the created project is nested under `.data.project`; its id is also at `.metadata.id` (extract with `tasks project-create --name "My Project" --json | jq -r '.metadata.id'`).
 
 ### tasks project-list
 
@@ -1456,7 +1457,7 @@ RESPONSE=$(tasks create \
   --json \
   --no-input)
 
-TASK_ID=$(echo "$RESPONSE" | jq -r '.data.id')
+TASK_ID=$(echo "$RESPONSE" | jq -r '.metadata.id')
 
 echo "Created task: $TASK_ID"
 
