@@ -11,10 +11,25 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-This cycle is a **new-user first-run audit + remediation** pass: every gap
-that could break a fresh-clone or fresh-install experience was fixed, the
-Quick Start was made to work verbatim from a clean checkout, and guards were
-added so the documented first-run path can't silently drift again.
+_No changes yet._
+
+## [v1.17] - 2026-06-04
+
+A **reliability + process-hardening** release in two halves, with no change to
+the public API/MCP/CLI/migration surface (still 27 MCP tools and 15 migrations).
+
+**1. New-user first-run reliability.** A new-user first-run audit + remediation
+pass: every gap that could break a fresh-clone or fresh-install experience was
+fixed, the Quick Start was made to work verbatim from a clean checkout, and
+guards were added so the documented first-run path can't silently drift again.
+
+**2. Loop / decompose process-hardening.** The `/tasks:loop`, `/tasks:loop-dag`,
+and `/tasks:decompose` skills gained structural guards — derived from the
+[2026-06-01 WSJF remote-MCP-parity retrospective](docs/retrospectives/2026-06-01-wsjf-remote-parity-planning-gap.md)
+— that stop the "every task PASSed but the feature is unreachable in production"
+failure class: planning now carries a surface-coverage matrix, decompose
+auto-emits remote-parity coverage tasks, and the loops refuse to declare a clean
+"drained → done" until an end-to-end reachability + parity audit is green.
 
 ### Fixed
 - **`DATABASE_PATH` now honored when starting the API server** (#703). Starting
@@ -45,8 +60,31 @@ added so the documented first-run path can't silently drift again.
   tool schema and scoring flow were already correct; only the skill text drifted.
   Added a `create_task` opt-out test asserting that omitting `wsjf_submission`
   materializes an unscored task (no history row, null components).
+- **`docs/CLI.md` `--json` output paths corrected** (#716). The documented JSON
+  paths for `--json` command output had drifted (e.g. `.data.id`); the examples
+  now match the actual emitted shape.
 
 ### Added
+- **Decompose surface-coverage matrix + invariant-rider** (#649). New
+  `docs/superpowers/PLAN-TEMPLATE.md` plan/spec template carries a
+  **surface-coverage matrix** — every capability is mapped across the 8 canonical
+  deployment surfaces (`stdio MCP, remote MCP, REST, CLI, skills, client-package
+  mirror, docs/tool-count, migration/backfill`), and every non-N/A cell must
+  yield a task. `/tasks:decompose` gained a Step 8c **invariant-rider** pass that
+  detects which surfaces a change touches and auto-emits the paired coverage
+  tasks / AC riders (e.g. a new stdio MCP tool auto-emits a remote-proxy parity
+  task) so a surface missing from the plan can't silently drop through
+  decomposition. Documented in `docs/tasks-decompose-design.md`; gated by content
+  tests.
+- **Loop terminal completeness gate** (#650). `/tasks:loop` and `/tasks:loop-dag`
+  no longer treat "0 open tasks" as sufficient to declare a backlog drained.
+  Before exit they run a terminal **invariant + reachability audit** (loop-shared
+  `§O`): the structural `stdio ⊆ remote` MCP parity test plus a reachability
+  smoke that exercises newly-added MCP tools through the **real remote proxy
+  path** (`dist/mcp/remote`), not in-process. On a detected gap the loop
+  materializes a remediation task (an explicit, documented carve-out to the
+  "don't create tasks during the loop" rule) and surfaces it in a new
+  `## Coverage Gaps` LOOP-RUN.md section instead of declaring success.
 - **Fresh-clone smoke recipe** (#708). `npm run smoke` boots a temporary server
   against an isolated `DATABASE_PATH`, runs the documented Quick Start flow
   (migrate → build → start → create project → create task → list) end-to-end,
@@ -70,6 +108,14 @@ added so the documented first-run path can't silently drift again.
 - **SETUP.md and CLI.md aligned with the fixed Quick Start** (#707). The CLI
   reference now frames every `tasks <command>` example as a documented alias for
   `npm run cli -- <command>`, with `npm link` called out as optional.
+- **README CLI Summary notes the `tasks-cmd` alias** (#718). The CLI summary now
+  records that `tasks-cmd` is an alias for the in-tree `npm run cli` invocation.
+
+### Internal
+
+- Test discovery excludes `.claude/worktrees/` so isolated-worktree subagent
+  checkouts don't balloon or hang `npm test` (#717); removed a duplicated comment
+  block in `src/api/start.ts` (#719). No runtime behavior change.
 
 ## [v1.16] - 2026-06-03
 
