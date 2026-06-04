@@ -194,7 +194,7 @@ The wave summary is the LOAD-BEARING audit artifact this skill adds over `/tasks
 
 ### Step 3f — Per-wave integration audit
 
-After §3e records the wave summary, run a per-wave integration audit BEFORE recomputing the next frontier. This is a tighter cadence than `loop.md` §Step 10 (which runs ONCE at loop termination) — because parallel dispatch in §3b means multiple workers may have touched the same file at the same time, an audit per wave catches integration drift while the diff is still small and the orchestrator can still revert before downstream work piles on.
+After §3e records the wave summary, run a per-wave integration audit BEFORE recomputing the next frontier — a tighter cadence than `loop.md` §Step 10 (once at termination). Because parallel dispatch in §3b means multiple workers may have touched the same file simultaneously, a per-wave audit catches integration drift while the diff is still small and the orchestrator can still revert before downstream work piles on.
 
 Reuse the §10b–§10e contract from `loop.md` verbatim, with the scope narrowed to **this wave's worker session commit ranges only**:
 
@@ -213,9 +213,7 @@ After §3f completes (or is suppressed), return to §3a and recompute the next f
 
 When the loop terminates (backlog drained, `--max-waves N` hit, or stalled-tasks check fires), run ONE final integration audit across **all worker sessions from all waves in this run**. This is the cross-wave overlap detector — §3f catches within-wave drift; §4 catches the case where wave 2's worker touched a file that wave 1's worker also touched.
 
-Reuse `loop.md` §Step 10 verbatim for the cross-wave audit. The artifact path is `.planning/loops/<UTC-timestamp>-<project_id>-integration.md` (no `-wave<idx>-` suffix — same naming convention `/tasks:loop` uses).
-
-The per-wave artifacts from §3f and the run-termination artifact from §4 coexist — they describe disjoint scopes (within-wave vs cross-wave) and are independently audit-trail-able. Both live under `.planning/loops/` (gitignored, same rationale as `/tasks:loop`).
+**Terminal completeness gate (BEFORE declaring drained).** Alongside (just before) this run-termination audit, run the **§O terminal completeness gate** — [loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit) — same contract as `loop.md` Step 10·0. It runs the `stdio ⊆ remote` parity invariant audit + the reachability smoke for newly-added MCP tools through the **remote** proxy path, and gates the "backlog drained → done" declaration: **"0 open tasks" alone does NOT declare success — a green §O audit is additionally required.** On RED, materialize a remediation task (the §O carve-out to "don't create tasks during the loop") and surface each gap in the `## Coverage Gaps` LOOP-RUN.md section (§5d) instead of announcing a clean drain. Reuse `loop.md` §Step 10 verbatim for the cross-wave audit. The artifact path is `.planning/loops/<UTC-timestamp>-<project_id>-integration.md` (no `-wave<idx>-` suffix — same naming convention `/tasks:loop` uses). The per-wave artifacts from §3f and the run-termination artifact from §4 coexist — disjoint scopes (within-wave vs cross-wave), independently audit-trail-able, both under `.planning/loops/` (gitignored, same rationale as `/tasks:loop`).
 
 ---
 
@@ -272,9 +270,11 @@ All sections from `loop.md` §9d apply: `## Tasks Closed`, `## Verifier Findings
 
 - **`## Retained Worktrees`** — emitted by the §5g teardown: one bullet per `worktree-agent-*` branch it did NOT remove (un-integrated work), as `` `<path>` (branch `<branch>`) — <n> un-integrated patch(es); inspect with `git cherry <base> <branch>` ``. Sentinel `_No retained worktrees — all run worktrees were fully integrated and removed._` on a clean run; `_No worktrees created (no isolated workers dispatched)._` when no `isolation: "worktree"` workers ran.
 
+- **`## Coverage Gaps`** — the §4 terminal completeness gate (loop-shared.md §O) result: one bullet per detected invariant/reachability gap (the failing audit/tool + the remediation task id materialized via the §O carve-out), or the sentinel `_No coverage gaps: terminal invariant + reachability audit green._` when the audit was green. Schema + blocking semantics: [loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit).
+
 ### 5e. NOT committed (intentional)
 
-Same rationale as `loop.md` §9e — `.planning/` is gitignored per project policy. LOOP-RUN.md and the per-wave / run-termination integration-audit artifacts are local-machine per-run audit trails, not versioned artifacts. The orchestrator MUST NOT `git add` any `.planning/loops/` artifact. It MUST NOT modify `.gitignore`.
+Same rationale as `loop.md` §9e — `.planning/` is gitignored per project policy. LOOP-RUN.md and the per-wave / run-termination integration-audit artifacts are local-machine per-run audit trails, not versioned artifacts. The orchestrator MUST NOT `git add` any `.planning/loops/` artifact, nor modify `.gitignore`.
 
 ### 5f. Termination emit (unconditional)
 
