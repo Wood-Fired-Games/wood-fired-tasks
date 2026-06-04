@@ -97,6 +97,21 @@ export class ApiTokenRepository implements IApiTokenRepository {
   }
 
   touchLastUsed(id: number): void {
+    // Best-effort observational write, fired fire-and-forget from the auth
+    // chain via `setImmediate(...)`. That scheduling means the callback can
+    // run AFTER the owning App has been disposed and `db.close()` called —
+    // e.g. the final authenticated request before a SIGTERM-driven shutdown,
+    // or test teardown that closes the server/db before the scheduled task
+    // drains. Running a prepared statement against a closed better-sqlite3
+    // handle throws `TypeError: The database connection is not open`, which
+    // the caller would warn-log as a spurious "touchLastUsed failed".
+    //
+    // Since `last_used_at` is explicitly observational (Phase 28 Decision Q1),
+    // a write that loses the race with shutdown has nothing to record and is
+    // simply dropped. Guarding on `db.open` keeps that expected case silent
+    // while leaving every OTHER failure mode (locked DB, schema drift) to
+    // throw and surface in the caller's warn log.
+    if (!this.db.open) return;
     this.touchLastUsedStmt.run(id);
   }
 }

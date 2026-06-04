@@ -298,6 +298,28 @@ evidence span so the score is auditable as signal-derived. `features` are the
 deterministic, no-LLM signals (deadline, transitive-dependent count from the
 Step-4 edge set, files-touched when linkable, charter version).
 
+> **Use `wsjf_submission`, NOT the raw `wsjf` object.** The live `create_task`
+> tool input (`CreateTaskClientSchema.extend({ wsjf_submission, wsjf_trigger })`
+> in [`src/mcp/tools/task-tools.ts`](../../src/mcp/tools/task-tools.ts), shape in
+> [`src/schemas/task.schema.ts`](../../src/schemas/task.schema.ts)) exposes **two
+> mutually exclusive WSJF paths** and a decompose run must take exactly one of
+> them:
+> - **`wsjf_submission` ({ classification, features }) + `wsjf_trigger='decompose'`
+>   — the path decompose uses.** Classifications over the fixed enums + verbatim
+>   evidence; the server runs the deterministic gate and **recomputes** the four
+>   Fibonacci components. This is the only path that enforces the column-anchored
+>   batch invariant above.
+> - **The raw `wsjf` object ({ value, timeCriticality, riskOpportunity, jobSize,
+>   … } — `WsjfWriteSchema`) — DO NOT use from decompose.** It is the
+>   manual/pre-computed write path: it trusts client-supplied component numbers
+>   verbatim (no classification gate, no batch-variance check) and stamps history
+>   `trigger='manual'`/`'single_create'`. Passing a raw `wsjf` here would bypass
+>   the anchoring the whole method depends on. Reserve it for human overrides
+>   outside this skill.
+>
+> Pass `wsjf_submission` and `wsjf_trigger` **only**; never populate the raw
+> `wsjf` field in a decompose `create_task` call.
+
 **Propagate a scored parent's VALUE prior to decompose-children (#644).** When
 the goal being decomposed corresponds to an already-WSJF-scored **parent task**
 (you are breaking *that* task into children, not seeding a fresh project),

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { errorHandler } from '../hooks/error-handler.js';
 import { ValidationError, BusinessError, NotFoundError } from '../../services/errors.js';
@@ -23,9 +23,11 @@ function makeHarness(): {
   reply: FastifyReply;
   captured: CapturedReply;
   loggedErrors: unknown[];
+  logCalls: { level: 'error' | 'warn' | 'info' | 'debug'; args: unknown[] }[];
 } {
   const captured: CapturedReply = { statusCode: 0, body: {} };
   const loggedErrors: unknown[] = [];
+  const logCalls: { level: 'error' | 'warn' | 'info' | 'debug'; args: unknown[] }[] = [];
 
   const reply = {
     code(status: number) {
@@ -40,13 +42,29 @@ function makeHarness(): {
 
   const request = {
     log: {
-      error: (err: unknown) => {
-        loggedErrors.push(err);
+      // Only error-level logs feed `loggedErrors` — that's the channel the
+      // audit C7 5xx assertion checks. Expected 4xx errors are now downgraded
+      // to debug/warn (see logErrorByStatus in error-handler.ts); those methods
+      // must exist on the mock so the handler doesn't throw, but they are not
+      // counted as "logged errors" for the C7 leak assertion. `logCalls`
+      // records every call (with level) for the noise-downgrade assertions.
+      error: (...args: unknown[]) => {
+        loggedErrors.push(args[0]);
+        logCalls.push({ level: 'error', args });
+      },
+      warn: (...args: unknown[]) => {
+        logCalls.push({ level: 'warn', args });
+      },
+      info: (...args: unknown[]) => {
+        logCalls.push({ level: 'info', args });
+      },
+      debug: (...args: unknown[]) => {
+        logCalls.push({ level: 'debug', args });
       },
     },
   } as unknown as FastifyRequest;
 
-  return { request, reply, captured, loggedErrors };
+  return { request, reply, captured, loggedErrors, logCalls };
 }
 
 describe('errorHandler allowlist (audit C7)', () => {
@@ -173,5 +191,79 @@ describe('errorHandler allowlist (audit C7)', () => {
     expect(captured.body.error).toBe('INTERNAL_ERROR');
     expect(captured.body.message).toBe('An unexpected error occurred');
     expect(JSON.stringify(captured.body)).not.toContain('boom');
+  });
+});
+
+/**
+ * Task #709: expected client (4xx) errors must NOT be logged at `error` level
+ * (which floods a healthy test run with stack traces), while unexpected
+ * (5xx / unhandled) errors MUST stay at `error` level so real failures remain
+ * diagnosable. The handler reads NODE_ENV to pick debug (test) vs warn (else)
+ * for the 4xx downgrade.
+ */
+describe('errorHandler log-level routing (task #709 — expected vs unexpected)', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+  });
+
+  it('does NOT log expected 4xx errors at error level (downgraded to debug under test)', () => {
+    process.env.NODE_ENV = 'test';
+    for (const err of [
+      new ValidationError({ title: ['Required'] }),
+      new NotFoundError('Task', 99999),
+      new BusinessError('Project already exists'),
+      Object.assign(new Error('querystring/limit Too big'), {
+        statusCode: 400,
+        code: 'FST_ERR_VALIDATION',
+        validation: [{ instancePath: '/limit', message: 'Too big' }],
+      }) as unknown as FastifyError,
+      Object.assign(new Error('Rate limit exceeded, retry in 60'), {
+        statusCode: 429,
+        code: 'TOO_MANY_REQUESTS',
+      }) as unknown as FastifyError,
+    ]) {
+      const { request, reply, loggedErrors, logCalls } = makeHarness();
+      errorHandler(err, request, reply);
+      // No error-level log for an expected client error...
+      expect(loggedErrors).toHaveLength(0);
+      expect(logCalls.some((c) => c.level === 'error')).toBe(false);
+      // ...but the downgraded breadcrumb is still emitted (at debug under test).
+      expect(logCalls.some((c) => c.level === 'debug')).toBe(true);
+    }
+  });
+
+  it('logs unexpected 5xx / unhandled errors at error level with the full error', () => {
+    process.env.NODE_ENV = 'test';
+
+    // No statusCode -> 500 unhandled.
+    {
+      const { request, reply, loggedErrors, logCalls } = makeHarness();
+      const boom = new Error('internal boom');
+      errorHandler(boom, request, reply);
+      expect(loggedErrors).toContain(boom);
+      expect(logCalls.some((c) => c.level === 'error')).toBe(true);
+    }
+
+    // statusCode >= 500 third-party error.
+    {
+      const { request, reply, loggedErrors, logCalls } = makeHarness();
+      const upstream = Object.assign(new Error('db at 10.0.0.5 timed out'), {
+        statusCode: 502,
+        code: 'SOME_THIRDPARTY_CODE',
+      }) as unknown as FastifyError;
+      errorHandler(upstream, request, reply);
+      expect(loggedErrors).toContain(upstream);
+      expect(logCalls.some((c) => c.level === 'error')).toBe(true);
+    }
+  });
+
+  it('downgrades expected 4xx to warn (not error) outside the test env', () => {
+    process.env.NODE_ENV = 'production';
+    const { request, reply, loggedErrors, logCalls } = makeHarness();
+    errorHandler(new NotFoundError('Task', 1), request, reply);
+    expect(loggedErrors).toHaveLength(0);
+    expect(logCalls.some((c) => c.level === 'error')).toBe(false);
+    expect(logCalls.some((c) => c.level === 'warn')).toBe(true);
   });
 });

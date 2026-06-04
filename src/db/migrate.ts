@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { Umzug, type UmzugStorage } from 'umzug';
-import { readdir } from 'fs/promises';
-import { join, dirname } from 'path';
+import { mkdir } from 'fs/promises';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './database.js';
 import { isMain } from '../utils/is-main.js';
@@ -129,22 +129,58 @@ export async function runMigrations(db: Database.Database): Promise<void> {
 }
 
 /**
- * CLI entry point: run migrations on the default database.
+ * Resolve the database path the migration CLI should target.
+ *
+ * Honors `DATABASE_PATH` (the same env var the API/CLI validate via
+ * src/config/env.ts, which carries the documented `./data/tasks.db`
+ * default) and falls back to `./data/tasks.db` when it is unset or empty.
+ * Relative paths are resolved against `cwd` so the returned value is
+ * absolute and stable regardless of where the process later chdir's.
+ *
+ * @param env - environment map (defaults to `process.env`).
+ * @param cwd - base directory for resolving relative paths (defaults to
+ *   `process.cwd()`).
  */
-if (isMain(import.meta.url)) {
-  const dataDir = join(process.cwd(), 'data');
-  const dbPath = join(dataDir, 'tasks.db');
+export function resolveMigrateDbPath(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): string {
+  const raw = env.DATABASE_PATH && env.DATABASE_PATH.length > 0
+    ? env.DATABASE_PATH
+    : './data/tasks.db';
+  return resolve(cwd, raw);
+}
 
-  // Create data directory if it doesn't exist
-  try {
-    await readdir(dataDir);
-  } catch {
-    const { mkdir } = await import('fs/promises');
-    await mkdir(dataDir, { recursive: true });
-  }
+/**
+ * CLI entry point body: resolve the target DB path from `DATABASE_PATH`
+ * (or the documented `./data/tasks.db` fallback), ensure the parent
+ * directory exists, then run all pending migrations.
+ *
+ * Extracted from the `isMain` guard so it is directly unit-testable.
+ */
+export async function migrateCli(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): Promise<string> {
+  const dbPath = resolveMigrateDbPath(env, cwd);
+
+  // Create the parent directory (e.g. ./data, or a user-supplied path) if
+  // it doesn't already exist. `recursive: true` is a no-op when present.
+  await mkdir(dirname(dbPath), { recursive: true });
 
   const db = initDatabase(dbPath);
-  await runMigrations(db);
-  console.log('Migrations complete!');
-  db.close();
+  try {
+    await runMigrations(db);
+  } finally {
+    db.close();
+  }
+  return dbPath;
+}
+
+/**
+ * CLI entry point: run migrations against the DATABASE_PATH-resolved DB.
+ */
+if (isMain(import.meta.url)) {
+  const dbPath = await migrateCli();
+  console.log(`Migrations complete! (${dbPath})`);
 }

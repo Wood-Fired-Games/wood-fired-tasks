@@ -11,6 +11,66 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+This cycle is a **new-user first-run audit + remediation** pass: every gap
+that could break a fresh-clone or fresh-install experience was fixed, the
+Quick Start was made to work verbatim from a clean checkout, and guards were
+added so the documented first-run path can't silently drift again.
+
+### Fixed
+- **`DATABASE_PATH` now honored when starting the API server** (#703). Starting
+  the server (`npm start`) previously ignored `DATABASE_PATH` and opened the
+  default DB, so a new user who set it saw their data land in the wrong file.
+  The start path now resolves `DATABASE_PATH` consistently with the rest of the
+  toolchain.
+- **`npm run migrate` honors `DATABASE_PATH`** (#704), defaulting to
+  `./data/tasks.db` when unset — so migrations and the running server now agree
+  on which database file is in use. (#705) adds end-to-end regression coverage
+  asserting the config path is honored across migrate + server start.
+- **Expected-error test log noise downgraded** (#709). Routes that deliberately
+  exercise client-error (4xx) paths in tests no longer emit error-level logs for
+  those expected outcomes; genuine 5xx server errors still log at error level.
+- **PAT `touchLastUsed` guarded against a shutdown race** (#710). Last-used
+  bookkeeping on personal access tokens no longer attempts to write to an
+  already-closed database during server shutdown, removing a spurious error on
+  exit.
+- **Decompose WSJF schema-drift dogfood finding** (#712). The live `create_task`
+  MCP tool input (`CreateTaskClientSchema.extend({ wsjf_submission, wsjf_trigger })`)
+  exposes *two* WSJF paths — the classified, gate-enforced `wsjf_submission` +
+  `wsjf_trigger` envelope, and a raw pre-computed `wsjf` object (`WsjfWriteSchema`,
+  the manual-override path). `skills/tasks/decompose.md` documented only the
+  former, so an agent inspecting the raw schema could mistake the bare `wsjf`
+  object for the decompose contract and bypass the column-anchored batch gate.
+  Clarified the skill with an explicit "use `wsjf_submission`, NOT the raw `wsjf`
+  object" callout disambiguating the two paths. Runtime behavior unchanged — the
+  tool schema and scoring flow were already correct; only the skill text drifted.
+  Added a `create_task` opt-out test asserting that omitting `wsjf_submission`
+  materializes an unscored task (no history row, null components).
+
+### Added
+- **Fresh-clone smoke recipe** (#708). `npm run smoke` boots a temporary server
+  against an isolated `DATABASE_PATH`, runs the documented Quick Start flow
+  (migrate → build → start → create project → create task → list) end-to-end,
+  and tears the temp DB down — a one-command check that the new-user path works.
+- **README Quick Start drift guard** (#713). A vitest spec
+  (`src/__tests__/readme-quickstart-drift.test.ts`, runs in `npm test`) asserts
+  the README Quick Start keeps using the in-tree `npm run cli --` invocation and
+  never reintroduces a broken first-run pattern (e.g. a bare global `tasks`
+  command or an assumed project id 1).
+- **Codex CLI user-level MCP setup docs** (#711). `docs/MCP.md` now documents
+  registering the server with `codex mcp add … -- ~/.local/bin/wft-mcp`,
+  including that Codex stores the entry user-level and the launcher resolves the
+  API key at spawn time.
+
+### Changed
+- **README Quick Start rewritten to work from a fresh clone** (#706). The Quick
+  Start now runs entirely via `npm run cli -- <args>` with no `npm link` / no
+  global `tasks` binary required, sets `DATABASE_PATH`, clarifies the separate
+  `API_KEYS` (server) vs `API_KEY` (client) vars, and explicitly tells users to
+  create a project and use the returned id rather than assuming id 1.
+- **SETUP.md and CLI.md aligned with the fixed Quick Start** (#707). The CLI
+  reference now frames every `tasks <command>` example as a documented alias for
+  `npm run cli -- <command>`, with `npm link` called out as optional.
+
 ## [v1.16] - 2026-06-03
 
 Ships **WSJF (Weighted Shortest Job First) economic prioritization**. Every task can be scored on its Cost of Delay (Business Value + Time Criticality + Risk/Opportunity-Enablement) divided by Job Size, so `/tasks:loop` and `/tasks:loop-dag` drain work by economic value rather than a hand-set `priority` enum. Scores are computed autonomously at task-creation time against a per-project **value charter**, every score carries a verbatim evidence trail plus append-only history, and a non-blocking degeneracy linter catches the classic WSJF anti-patterns. Fully backward-compatible: projects with no charter and no scores sort by `priority` then age exactly as before.
