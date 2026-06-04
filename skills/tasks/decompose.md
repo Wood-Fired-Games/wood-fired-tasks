@@ -365,6 +365,46 @@ a `wsjf_score_history` row with `trigger='decompose'`. Materialization
 NEVER transitions a task's status, claims it, or comments on it
 (Guardrail 1) — it only creates and edges.
 
+### Step 8c — Invariant-rider coverage pass
+
+**Runs AFTER candidate generation, BEFORE Step 8b materialization completes.**
+After the surviving candidate set exists but before (or interleaved with) the
+`create_task` / `add_dependency` calls, run a **surface-detection pass** over
+the candidates and **auto-emit a coverage task (or attach an AC rider) for
+every touched surface that lacks a covering task**. This is the
+architectural-invariant check the per-task ACs cannot see — each candidate's
+ACs are locally complete, so a cross-cutting surface (e.g. remote-MCP
+reachability) drops silently unless the rider re-derives it from the candidate
+set itself, independent of what the plan listed.
+
+Surfaces checked (the canonical 8 — see
+[`docs/tasks-decompose-design.md`](../../docs/tasks-decompose-design.md)
+§Surface-coverage matrix): `{ stdio MCP, remote MCP, REST, CLI, skills,
+client-package mirror, docs/tool-count, migration/backfill }`.
+
+Detection → emission mappings:
+
+- **A candidate adds a stdio MCP tool** (registers a tool in the stdio server)
+  ⇒ auto-emit a **remote-MCP-parity task**: register the tool in
+  `src/mcp/remote/register-tools.ts` + a backing REST endpoint, AND attach a
+  `stdio ⊆ remote` **parity-test AC rider** so the suite goes RED until the
+  remote proxy exists. This stdio-MCP-tool → remote-MCP-parity-task mapping is
+  the load-bearing one — it is exactly the WSJF gap
+  (`docs/retrospectives/2026-06-01-wsjf-remote-parity-planning-gap.md`) where 4
+  stdio tools shipped PASS yet unreachable in production.
+- **A candidate edits a skill that has a client-package mirror** ⇒ auto-emit a
+  mirror-sync coverage task (skill ⇒ client-package copy stays in parity).
+- **A candidate adds/changes a tool** ⇒ auto-emit a **docs/tool-count** update
+  task (the documented tool count must match the registry).
+- **A candidate adds a column / schema change** ⇒ auto-emit a
+  **migration/backfill** coverage task.
+
+Auto-emitted coverage tasks are created via the same `create_task` /
+`add_dependency` path in Step 8b (and edged to the candidate that triggered
+them), so a surface missing from the plan cannot silently drop through
+decomposition. Record every rider-emitted task in the artifact body §5 with a
+`(rider)` marker so the reader sees which tasks the invariant rider added.
+
 ## Step 9 — Emit `DECOMPOSITION.md`
 
 Write the artifact to

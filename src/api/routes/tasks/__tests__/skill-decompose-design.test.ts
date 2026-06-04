@@ -32,6 +32,29 @@ const DESIGN_DOC_PATH = resolve(
   'docs/tasks-decompose-design.md',
 );
 const SKILL_PATH = resolve(REPO_ROOT, 'skills/tasks/decompose.md');
+const PLAN_TEMPLATE_PATH = resolve(
+  REPO_ROOT,
+  'docs/superpowers/PLAN-TEMPLATE.md',
+);
+const PARITY_RETRO_FILENAME =
+  '2026-06-01-wsjf-remote-parity-planning-gap.md';
+
+/**
+ * The 8 canonical deployment surfaces every decompose plan must check
+ * (retro §Prevent P1). Used by the surface-coverage-matrix assertions
+ * below. Each name must appear in the design doc + plan template, so
+ * deleting any surface from those docs fails the gate.
+ */
+const EIGHT_SURFACES = [
+  'stdio MCP',
+  'remote MCP',
+  'REST',
+  'CLI',
+  'skills',
+  'client-package mirror',
+  'docs/tool-count',
+  'migration/backfill',
+] as const;
 
 const REQUIRED_DESIGN_HEADERS = [
   '# /tasks:decompose Design Spec',
@@ -375,5 +398,72 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
     // 5 USD = checkpoint/continue; 15 USD = halt. Both semantics present.
     expect(/checkpoint/i.test(skill)).toBe(true);
     expect(/HALT|halt/.test(skill)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Surface-coverage matrix + invariant-rider step (task #649 — the
+  // PREVENT-class fix for the WSJF remote-MCP-parity planning gap).
+  //
+  // These assertions are SUBSTANTIVE: deleting any of the 8 surface names,
+  // the invariant-rider section, the stdio→remote-parity mapping, or the
+  // retro citation makes the relevant test go RED. They are NOT vacuous.
+  // -------------------------------------------------------------------------
+
+  const planTemplate = readFileSync(PLAN_TEMPLATE_PATH, 'utf8');
+
+  it('design doc documents the surface-coverage matrix with all 8 surfaces', () => {
+    expect(design.includes('## Surface-coverage matrix')).toBe(true);
+    for (const surface of EIGHT_SURFACES) {
+      expect(design.includes(surface)).toBe(true);
+    }
+    // The "every non-N/A cell yields a task" rule must be stated.
+    expect(/every non-N\/A cell yields a\s+task/i.test(design)).toBe(true);
+  });
+
+  it('design doc documents the invariant-rider step (Step 8c) and the stdio→remote-parity mapping', () => {
+    expect(/invariant.rider/i.test(design)).toBe(true);
+    expect(design.includes('Step 8c')).toBe(true);
+    // The load-bearing mapping: a stdio MCP tool auto-emits a remote-MCP
+    // parity task. Assert the real tokens (remote + parity + register-tools).
+    expect(design.includes('remote')).toBe(true);
+    expect(/parity/i.test(design)).toBe(true);
+    expect(design.includes('src/mcp/remote/register-tools.ts')).toBe(true);
+  });
+
+  it('design doc cites the WSJF remote-parity retro as the motivating example', () => {
+    expect(design.includes(PARITY_RETRO_FILENAME)).toBe(true);
+    expect(design.includes('wsjf_ranking')).toBe(true);
+    expect(design.includes('wsjf_health')).toBe(true);
+  });
+
+  it('plan template exists and contains the Surface-coverage matrix section with all 8 surfaces', () => {
+    expect(planTemplate.includes('## Surface-coverage matrix')).toBe(true);
+    for (const surface of EIGHT_SURFACES) {
+      expect(planTemplate.includes(surface)).toBe(true);
+    }
+    // Every non-N/A cell must map to a task — the load-bearing rule.
+    expect(/every non-N\/A cell MUST map to a task/i.test(planTemplate)).toBe(
+      true,
+    );
+  });
+
+  it('plan template points at the decompose invariant-rider and the retro', () => {
+    expect(/invariant.rider/i.test(planTemplate)).toBe(true);
+    expect(planTemplate.includes(PARITY_RETRO_FILENAME)).toBe(true);
+  });
+
+  it('decompose skill encodes the invariant-rider materialize substep (Step 8c) naming the stdio→remote-parity mapping', () => {
+    expect(skill.includes('Step 8c')).toBe(true);
+    expect(/invariant.rider/i.test(skill)).toBe(true);
+    // Names the load-bearing mapping and the parity test rider.
+    expect(skill.includes('remote-MCP-parity')).toBe(true);
+    expect(/parity/i.test(skill)).toBe(true);
+    expect(skill.includes('src/mcp/remote/register-tools.ts')).toBe(true);
+    // Lists all 8 surfaces so dropping one fails the gate.
+    for (const surface of EIGHT_SURFACES) {
+      expect(skill.includes(surface)).toBe(true);
+    }
+    // Cites the motivating retro.
+    expect(skill.includes(PARITY_RETRO_FILENAME)).toBe(true);
   });
 });
