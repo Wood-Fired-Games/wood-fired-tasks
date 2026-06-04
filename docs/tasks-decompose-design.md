@@ -210,6 +210,59 @@ materialized task ids, dependency edge list, and a cost breakdown.
 | 4    | critic        | ≤ pairs(N) calls / ≤ 4 minutes      | edge set: `{from, to, verdict}`           |
 | 6    | critic        | ≤ 20 tool calls / ≤ 3 minutes       | `COMPLETE` \| `GAPS` \| `DUPLICATES`      |
 
+## Surface-coverage matrix + invariant-rider step
+
+> **Motivating example — the WSJF remote-MCP-parity gap.** See
+> [`docs/retrospectives/2026-06-01-wsjf-remote-parity-planning-gap.md`](retrospectives/2026-06-01-wsjf-remote-parity-planning-gap.md).
+> The WSJF feature added four stdio MCP tools (`wsjf_ranking`, `wsjf_history`,
+> `rescore_project`, `wsjf_health`) registered ONLY in the stdio server —
+> never in the remote proxy (`src/mcp/remote/register-tools.ts`) — so they
+> were unreachable in production, yet every WSJF task closed PASS. Root cause:
+> the plan's "MCP surface" section listed only stdio tasks, and
+> `/tasks:decompose` faithfully decomposed the plan with **no
+> architectural-invariant coverage step**. This section is the PREVENT-class
+> fix (retro §Prevent P1 + P2): a missing surface can no longer drop silently
+> through decomposition.
+
+### The 8-surface coverage matrix
+
+Every capability a goal introduces must be checked against the full set of
+**deployment surfaces** it could need to reach. The canonical surface list is:
+
+`{ stdio MCP, remote MCP, REST, CLI, skills, client-package mirror, docs/tool-count, migration/backfill }`
+
+The plan/spec template (`docs/superpowers/PLAN-TEMPLATE.md`) carries this as a
+markdown table: one row per capability, one column per surface, each cell
+either a `task-id` or `N/A (reason)`. **Rule: every non-N/A cell yields a
+task.** A cell that is neither a task id nor an explicitly reason-annotated
+`N/A` is a planning hole.
+
+### Step 8c — Invariant-rider step (the rider)
+
+`/tasks:decompose` runs an **invariant-rider** recon pass during
+materialization (§Methodology Step 8c in the skill). After candidate
+generation, the rider **detects which surfaces the change touches** —
+independent of whether the plan listed them — and, for each touched surface
+that lacks a covering task, **auto-emits the paired coverage task / AC rider**
+*before* `create_task` / `add_dependency` materialization completes. The rider
+encodes the cross-cutting architectural invariants that per-task ACs cannot
+see (each task's ACs are locally complete; the rider is the global check).
+
+Concrete detection → emission mappings (extend as new surfaces appear):
+
+| Detected change                                        | Auto-emitted coverage                                                                 |
+|--------------------------------------------------------|----------------------------------------------------------------------------------------|
+| Adds a **stdio MCP tool** (registers in the stdio server) | A **remote-MCP-parity task**: register the tool in `src/mcp/remote/register-tools.ts` + a backing REST endpoint, PLUS a `stdio ⊆ remote` parity-test AC rider so the suite goes RED until the remote proxy exists. |
+| Edits a **skill** that has a **client-package mirror** | A mirror-sync coverage task (skill ⇒ client-package copy stays in parity).             |
+| Adds/changes a tool                                    | A **docs/tool-count** update task (the documented tool count must match the registry).|
+| Adds a column / schema change                          | A **migration/backfill** coverage task.                                               |
+
+The stdio-MCP-tool → remote-MCP-parity-task mapping is the load-bearing one:
+it is the exact gap the WSJF retro identified. A surface missing from the plan
+cannot silently drop through decomposition because the rider re-derives the
+touched surfaces from the candidate set itself, not from the plan's surface
+section.
+
 ## Guardrails
 
 ### Guardrail 1 — separation of plan / execute

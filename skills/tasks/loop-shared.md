@@ -579,3 +579,67 @@ Column rules:
 **Kill-safety / idempotency.** Because discovery is `git worktree list` and removal is gated on `git cherry`, re-running the teardown (or the next loop run) re-discovers and removes only the still-present, fully-integrated leftovers — the second run is a no-op. A teardown killed mid-way leaves a consistent partial state the next run finishes. Mirrors §5b's kill-safe posture.
 
 **`/tasks:loop` is NOT affected.** `/tasks:loop` (`loop.md`) is sequential — one worker at a time — and dispatches workers WITHOUT `isolation: "worktree"` (they run in the shared main tree; `isolation` and `--concurrency` are loop-dag-only). It therefore creates no per-worker worktrees or `worktree-agent-*` branches and has nothing to tear down. If a future change ever parallelizes `/tasks:loop`, it must adopt worktree isolation AND port this teardown step.
+
+## §O. Terminal completeness gate (drained→done invariant + reachability audit)
+
+**Called from:** `loop.md` §Step 10 (run termination) and `loop-dag.md` §4 (run-termination integration audit). Both invoke this gate ONCE at loop termination — when the backlog has drained (`list_tasks status=open` empty / frontier empty with no open tasks left) OR the `--max-tasks` / `--max-waves` budget was hit — **BEFORE** the orchestrator declares the pool "done" / exits. It runs alongside (just before) the cross-task integration audit: the integration auditor checks *file overlaps between this run's workers*; this gate checks *whether the aggregate capability is reachable end-to-end through the deployment topology*. They are complementary and BOTH must be green to declare a clean drain.
+
+**Motivating incident (load-bearing — cite it).** `docs/retrospectives/2026-06-01-wsjf-remote-parity-planning-gap.md`: a `/tasks:loop-dag` run drained project 30 (WSJF) with **6/6 tasks PASS-verified**, yet the four new MCP tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health`) were registered **stdio-only** and were **unreachable through the production remote MCP proxy**. Every per-task verifier correctly PASSed each task against its LOCAL acceptance criteria; no AC referenced production reachability. The loop's done-signal — "0 open tasks" — fired while an aggregate capability was broken in production. This is the canonical *green tasks, broken feature*. This gate is the retro's **Detect D3 + Correct C1/C2** fix.
+
+### Blocking semantics (the new contract)
+
+**"0 open tasks" alone does NOT declare success.** A clean drain additionally REQUIRES a GREEN §O audit. If §O is RED, the orchestrator MUST NOT announce a clean drain; it follows the CORRECT carve-out (3) below and surfaces the gap in LOOP-RUN.md `## Coverage Gaps` instead.
+
+### (1) Invariant audit — structural parity + mirror parity
+
+Run the structural `stdio ⊆ remote` parity test (the **stdio-remote-parity** invariant, retro Detect D1):
+
+```bash
+npx vitest run src/mcp/__tests__/stdio-remote-parity.test.ts
+```
+
+This test (`describe('stdio ⊆ remote MCP tool parity (#648)')`) harvests the REAL stdio and remote tool surfaces from their registrars and asserts `toolNames(stdio) ⊆ toolNames(remote) ∪ LOCAL_ONLY_ALLOWLIST`. The moment a run registers a new stdio tool with no remote proxy (and no reason-annotated allowlist entry), this test goes **RED** — converting a silent planning gap into a forced, visible failure. Its pure helper `parityViolations(stdioNames, remoteNames, allowlist)` returns the offending tool names; an empty result means full parity.
+
+Additionally run the **skills↔client-package mirror parity check** *when present* (`client-package/` mirrors `skills/`): any skill content that must be mirrored into the distributed client package but is not is a parity violation. (No dedicated mirror-parity test ships yet; the gate runs it when it exists and otherwise notes it as not-yet-covered — it does NOT block on an absent check.)
+
+**If either invariant audit is RED → the gate is RED.**
+
+### (2) Reachability smoke — newly-added MCP tools via the REAL deployment path
+
+For MCP tools **NEWLY ADDED during this run**, exercise them through the **remote proxy** (`dist/mcp/remote/…`, the path `wft-mcp` → `dist/mcp/remote/index.js` → `src/mcp/remote/register-tools.ts` serves) — **NOT** in-process stdio registration. The retro's shipped smoke failed precisely because it exercised the tool in-process while the remote path was empty.
+
+- **Detect "newly added":** a tool is newly-added if this run's commits touched a tool registrar — files under `src/mcp/tools/` or `src/mcp/register-tools.ts` / `src/mcp/remote/register-tools.ts`. Diff the run's commit range (`git diff --name-only <run_base>..HEAD -- src/mcp/tools src/mcp/register-tools.ts src/mcp/remote/register-tools.ts`) and extract the `registerTool('<name>', …)` names introduced.
+- **Smoke via the remote path:** for each newly-added tool name, confirm it is reachable through the remote proxy — it appears in `harvestRemoteToolNames()` (the remote registrar's surface) AND a remote-proxy invocation reaches its backing REST endpoint (not just stdio registration). In-process-only reachability does NOT count.
+
+**If a newly-added tool is unreachable via the remote path → the gate is RED.**
+
+### (3) On RED — CORRECT (the remediation-task carve-out)
+
+When §O is RED, the loop is **permitted and required** to **MATERIALIZE a remediation task** — the explicit, documented exception to the "Don't create new tasks during the loop" rule (`loop.md` `## Important Rules`). Procedure:
+
+1. Call `wood-fired-tasks:create_task` in the SAME project, titled for the gap (e.g. `"§O terminal-gate: remote-MCP parity/reachability gap"`), the description citing the failing audit verbatim (the parity violation tool names, or the unreachable newly-added tool) and the deployment-path evidence.
+2. Surface every gap in a new LOOP-RUN.md **`## Coverage Gaps`** body section (schema below) INSTEAD of declaring the pool cleanly drained.
+3. The orchestrator does NOT silently close the pool: it announces the gate is RED, lists the remediation task(s), and exits with the gaps recorded.
+
+This is the *integrity carve-out* (retro Correct C1): a detected unreachable surface forces a visible remediation task rather than a clean-looking-but-broken close.
+
+### `## Coverage Gaps` LOOP-RUN.md section schema
+
+A mandatory body section (emitted by both `/tasks:loop` Step 9d and `/tasks:loop-dag` §5d). One bullet per detected gap:
+
+```markdown
+## Coverage Gaps
+
+- **audit:** `stdio-remote-parity` (RED) — stdio tools unreachable via remote: `[wsjf_health, rescore_project]`; remediation task **#<id>**.
+- **reachability:** newly-added tool `wsjf_ranking` not reachable through `dist/mcp/remote` proxy; remediation task **#<id>**.
+```
+
+Each bullet names the failing audit/tool and the remediation task id materialized in (3). When the terminal invariant + reachability audit is GREEN, emit the sentinel paragraph exactly:
+
+```markdown
+## Coverage Gaps
+
+_No coverage gaps: terminal invariant + reachability audit green._
+```
+
+**Anti-vacuity.** The gate's underlying invariant audit genuinely DETECTS unreachable newly-added tools: `parityViolations(['create_task','__new_tool__'], new Set(['create_task']), [])` returns `['__new_tool__']` (RED → triggers the carve-out), and returns `[]` once `__new_tool__` is in the remote set (GREEN). A RED §O can therefore never be papered over by a "0 open tasks" count.

@@ -493,12 +493,11 @@ All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections us
 - **`## Cost Breakdown`** — table with one row per participant (`orchestrator` + `subagent:<task_id>`) plus a `TOTAL` row. Columns: `participant | model | input_tokens | cache_create_tokens | cache_read_tokens | output_tokens | usd`. Primary source: orchestrator-observed `<usage>` blocks. Cross-check: `agent_transactions_v` (post-run, not required at emit time).
 - **`## Replay Instructions`** — fenced ```bash block with the exact `/tasks:loop` arguments to re-grade this run (project name / id, `--max-tasks`, etc.) plus the verification commands the loop trusted (`npm run build && npm test && npm run lint`).
 - **`## WSJF Ranking`** — the ranking snapshot Step 1's WSJF-ordered selection consumed (per-task scores, `effectiveWsjf`, propagation breakdown, γ/CAP). Full table + header + sentinel rules: [loop-shared.md §M](loop-shared.md#m-loop-runmd-wsjf-ranking-snapshot). Sentinel `_No WSJF ranking: project has no WSJF-scored tasks; selection used the priority + ID (or topological) order._` when the project was unscored or WSJF was never probed.
+- **`## Coverage Gaps`** — the §O terminal-completeness-gate result: one bullet per detected invariant/reachability gap (failing audit/tool + remediation task id), or the sentinel when green. Schema + semantics: [loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit).
 
 #### 9e. NOT committed (intentional)
 
-`.planning/` is gitignored per project policy — see the `.gitignore` line `Internal planning + agent workspaces (not for open-source distribution)`. LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact. The trade-off: replay across machines requires manual sharing (copy the file out, attach to a task comment, or paste into a PR description). The benefit: open-source distribution stays clean, and per-run forensic detail never leaks into the public history of a fork.
-
-The orchestrator MUST NOT `git add` the `.planning/loops/` artifact. It MUST NOT modify `.gitignore` to make `.planning/loops/` an exception.
+`.planning/` is gitignored per project policy (`.gitignore`: `Internal planning + agent workspaces (not for open-source distribution)`). LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact: replay across machines requires manual sharing (copy out / attach to a task comment / paste into a PR), but open-source distribution stays clean and per-run forensic detail never leaks into a fork's public history. The orchestrator MUST NOT `git add` the `.planning/loops/` artifact, and MUST NOT modify `.gitignore` to make it an exception.
 
 Return to Step 1.
 
@@ -506,14 +505,13 @@ Return to Step 1.
 
 This is the **terminal step**. It runs ONCE per loop run — never per iteration — after Step 1's "backlog empty" announcement OR after the `--max-tasks N` budget is hit. The goal is to catch the failure mode the per-task verifier cannot see: **ten green tasks that together break the system**. Per-task verifiers grade one task's diff in isolation; only a cross-task auditor sees the union of every worker's edits to the same symbol and can catch the composition bugs that emerge there. Subagent definition: [`skills/agents/integration-auditor.md`](../agents/integration-auditor.md). Inline schema: [`src/lib/loop-run/integration-audit-schema.ts`](../../src/lib/loop-run/integration-audit-schema.ts).
 
+#### 10·0. Terminal completeness gate (before declaring drained)
+
+BEFORE the loop exits / declares the backlog drained, run the **§O terminal completeness gate** — [loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit) — alongside (just before) the integration audit below. It runs the `stdio ⊆ remote` parity invariant audit + the reachability smoke for newly-added MCP tools through the **remote** path, and gates the "drained → done" declaration: **"0 open tasks" alone does NOT declare success — a green §O audit is additionally required.** On RED it materializes a remediation task (the §O carve-out) and records the gap in the `## Coverage Gaps` section instead of announcing a clean drain.
+
 #### 10a. When this step runs
 
-Step 10 runs ONCE at loop termination, **not per iteration**. Triggers:
-
-- The `--max-tasks N` budget has been hit (the orchestrator is about to stop and check in with the user per Section "Drain Budget / Checkpoints").
-- `list_tasks status=open` returned empty (the backlog has drained, the orchestrator is about to exit per Step 1's exit condition).
-
-Step 10 fires AFTER the last Step 9 re-emit of LOOP-RUN.md for the run. Skipping Step 10 because the loop closed only one task is **not allowed** — a single-task loop can still produce an overlap with a prior (pre-loop) commit if the orchestrator picked that task up mid-day, but in practice the overlap detector handles this naturally (one worker session vs zero → no overlap).
+Step 10 runs ONCE at loop termination, **not per iteration**. Triggers: the `--max-tasks N` budget was hit (orchestrator about to stop + check in per "Drain Budget / Checkpoints"), or `list_tasks status=open` returned empty (backlog drained, about to exit per Step 1). It fires AFTER the last Step 9 re-emit of LOOP-RUN.md. Skipping Step 10 because the loop closed only one task is **not allowed** — a single-task loop can still overlap a prior (pre-loop) commit if picked up mid-day, though in practice the overlap detector handles this (one worker session vs zero → no overlap).
 
 #### 10b. Detect overlaps
 
@@ -692,7 +690,7 @@ Defensive halt. Emit a comment in the tasks project's top-level discussion (`add
 - **Commit per task.** One task = one commit (plus an optional pre-loop housekeeping commit). Push after each commit; use `-u <remote> <branch>` on the first push if needed.
 - **Epic-sized tasks → largest coherent slice, defer the rest.** When a task's own acceptance criteria say "incrementally" or "one X per PR" and span more work than fits in a single commit, the orchestrator picks the largest coherent slice that lands cleanly in one commit. Document what was deferred in the close-out comment so the user can promote follow-on tasks. Do *not* let an epic-sized task block the loop, and do *not* split into multiple commits within one task closure. **Inverse:** if all sub-deliverables are small independent config tweaks (each 5-15 lines, no shared touch points), they CAN fit in one commit together — that IS the largest coherent slice. Don't artificially fragment a task whose deliverables don't conflict.
 - **Close duplicates** with a back-reference.
-- **Don't create new tasks during the loop.** Note discoveries in comments on related tasks; the user promotes them later.
+- **Don't create new tasks during the loop.** Note discoveries in comments on related tasks; the user promotes them later — EXCEPT the §O terminal-gate remediation-task carve-out ([loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit)): a RED terminal invariant/reachability audit MUST materialize a remediation task and surface it in `## Coverage Gaps`.
 - **Be honest about manual steps.** If smoke/UAT/deploy was skipped, say so in the comment.
 - **Stop when the budget is hit** (default 3 tasks) and check in with the user — don't silently keep going. **Stop when the backlog is empty:** announce completion and exit; no polling.
 - **Anti-fabrication (load-bearing).** Every evidence value (SHA, row count, exit code, verdict) is quoted from a tool result that already returned in a prior turn — never composed in the same turn as the producing call (Step 6); and the orchestrator never authors its own `verification_evidence` — the verdict comes from a separately dispatched `tasks-verifier` (Step 7). Full rule, honest-scope statement, and the 2026-05-31 motivating incident: [`loop-shared.md` §A](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).

@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-04T01:41:04.830Z",
+    "generated_at": "2026-06-04T19:31:15.253Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -259,8 +259,8 @@
       "status": "present",
       "notes": "Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. 500-line budget allows the 9-step + 4-guardrail + schema + 4-fixture-sketch detail with modest headroom; tighten in a follow-up if/when content peels out into adjacent files.",
       "approx_token_budget": 10000,
-      "actual_lines": 438,
-      "sha256": "ad0e51614c8a76f86b3ecb3ab3609361d19c42fde35a6742cc21f6a1745630a2",
+      "actual_lines": 491,
+      "sha256": "4306ff0771fc95557468987ff070470d9b69d7291140a255ecd7ae478cbf94b0",
       "actual_owner": "Repository maintainers"
     },
     {
