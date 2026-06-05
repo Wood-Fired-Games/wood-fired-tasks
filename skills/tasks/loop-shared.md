@@ -22,6 +22,25 @@ Brief template — adapt to the task. Brief size should scale with codebase qual
 You are implementing wood-fired-tasks task #<id> ("<title>") from project "<project_name>".
 Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit after verifying your work.
 
+## STEP 0 — Worktree base correction (MANDATORY when dispatched with `isolation: "worktree"`)
+
+If this brief was dispatched into an isolated git worktree, the harness may have
+cut that worktree from a STALE base (commonly the repo's configured main branch /
+a fixed ref, NOT the orchestrator's current branch tip). Before reading or writing
+ANY file, reset to the run's integration branch and assert a sentinel — STOP if it
+fails (do NOT silently implement on a stale tree, and do NOT recreate files that
+already exist on the real branch):
+
+    git reset --hard <integration-branch>     # e.g. feat/<...> (the run's branch), or main
+    git log --oneline -1                        # MUST show <expected-tip-sha> "<subject>"
+    ls <2-3 sentinel paths that exist ONLY at the real branch tip>
+
+The orchestrator fills in `<integration-branch>`, `<expected-tip-sha>`, and the
+sentinel paths (files/dirs introduced by earlier commits/waves of THIS run). If
+`git log -1` does not show the expected tip, or any sentinel path is missing,
+report "wrong base — halting" and make NO edits. Omit this whole section only for
+shared-tree (non-`isolation: worktree`) dispatches.
+
 ## Working dir / Cross-repo context
 
 <for single-repo tasks: just restate the working dir line above; this subsection can be omitted.>
@@ -186,6 +205,7 @@ const verifierInputs = {
   worker_subagent_session_id: <string>,  // opaque handle from the Step 4 Agent call
   commit_shas: <string[]>,               // from Step 6's `git rev-parse HEAD` / commit hash
   file_changes: <string[]>,              // from Step 6's `git diff --name-only <prev>..HEAD`
+  base_sha: <string>,                    // expected integration-branch tip the work must sit on
 };
 ```
 
@@ -196,6 +216,8 @@ const verifierInputs = {
 3. If neither exists, **skip the verifier dispatch entirely** and proceed straight to Step 8 with `verification_evidence: { verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` plus a comment noting "no acceptance criteria to grade against — verifier skipped". This is the documented escape hatch.
 
 **Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
+
+**Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration-branch tip and instruct the verifier, as its FIRST check, to assert the worktree's `git rev-parse HEAD` equals `base_sha` (or is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If HEAD does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
 
 **Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
 
