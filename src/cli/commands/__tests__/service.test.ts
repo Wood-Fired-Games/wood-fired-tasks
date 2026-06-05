@@ -16,6 +16,14 @@ import {
   type CommandRunner,
 } from '../service.js';
 
+/** Recording elevation helper. Tracks whether the `--system` path invoked it. */
+function recordingElevatedRunner(responses: Record<string, string> = {}): {
+  runner: CommandRunner;
+  calls: Array<{ cmd: string; args: string[] }>;
+} {
+  return recordingRunner(responses);
+}
+
 function withTempConfigBase<T>(fn: (base: string) => T): T {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-service-cfg-'));
   try {
@@ -410,5 +418,267 @@ describe('defaultRunner elevation guard', () => {
     expect(() => defaultRunner(cmd, ['anything'])).toThrowError(
       /refusing to run elevated command/
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #742: `service install --system` opt-in elevation variant.
+//
+// Invariants exercised below:
+//   1. Default (NO flag) install NEVER invokes the elevation helper on any of
+//      the three platforms, and no elevated token appears in any argv.
+//   2. `install({ system: true })` is the SOLE path that invokes the elevation
+//      helper, and it targets the SYSTEM-scoped unit location per platform.
+// ---------------------------------------------------------------------------
+
+describe('tasks service --system opt-in elevation (task #742)', () => {
+  describe('Linux: default (no flag) install is provably admin-free', () => {
+    it('uses the user runner only and NEVER touches the elevation helper', () => {
+      withTempConfigBase((configBase) => {
+        const { runner, calls } = recordingRunner();
+        const { runner: elevated, calls: elevatedCalls } =
+          recordingElevatedRunner();
+        const backend = new LinuxSystemdBackend({
+          configBase,
+          systemUnitDir: path.join(configBase, 'etc-systemd-system'),
+          runner,
+          elevatedRunner: elevated,
+          log: () => {},
+        });
+
+        backend.install(); // no flag
+
+        // Elevation helper NEVER called.
+        expect(elevatedCalls).toEqual([]);
+        // User-scoped unit written; system path untouched.
+        expect(fs.existsSync(backend.unitPath)).toBe(true);
+        expect(fs.existsSync(backend.systemUnitPath)).toBe(false);
+        // Only `systemctl --user` ran.
+        expect(calls).toEqual([
+          { cmd: 'systemctl', args: ['--user', 'daemon-reload'] },
+          { cmd: 'systemctl', args: ['--user', 'enable', '--now', SERVICE_NAME] },
+        ]);
+        // No elevated token anywhere across BOTH runners' argv.
+        const haystack = JSON.stringify({ calls, elevatedCalls }).toLowerCase();
+        for (const banned of ELEVATION) {
+          expect(haystack).not.toContain(banned);
+        }
+      });
+    });
+  });
+
+  describe('Linux: --system is the SOLE elevating path', () => {
+    it('writes /etc/systemd/system unit + enables via the elevation helper', () => {
+      withTempConfigBase((configBase) => {
+        const systemUnitDir = path.join(configBase, 'etc-systemd-system');
+        const { runner, calls } = recordingRunner();
+        const { runner: elevated, calls: elevatedCalls } =
+          recordingElevatedRunner();
+        const backend = new LinuxSystemdBackend({
+          configBase,
+          systemUnitDir,
+          runner,
+          elevatedRunner: elevated,
+          log: () => {},
+        });
+
+        backend.install({ system: true });
+
+        // SYSTEM-scoped unit written; user-scoped path untouched.
+        const systemUnitPath = path.join(systemUnitDir, SERVICE_UNIT_NAME);
+        expect(fs.existsSync(systemUnitPath)).toBe(true);
+        expect(systemUnitPath).toBe(backend.systemUnitPath);
+        expect(fs.existsSync(backend.unitPath)).toBe(false);
+
+        // The elevation helper is the ONLY runner used (no --user calls).
+        expect(calls).toEqual([]);
+        expect(elevatedCalls).toEqual([
+          { cmd: 'systemctl', args: ['daemon-reload'] },
+          { cmd: 'systemctl', args: ['enable', '--now', SERVICE_NAME] },
+        ]);
+        // Crucially: NO `--user` in the system path.
+        const haystack = JSON.stringify(elevatedCalls);
+        expect(haystack).not.toContain('--user');
+      });
+    });
+  });
+
+  describe('macOS: default (no flag) install is provably admin-free', () => {
+    it('uses the user runner only and NEVER touches the elevation helper', () => {
+      withTempBase('wft-service-mac-', (launchAgentsBase) => {
+        withTempBase('wft-service-macsys-', (launchDaemonsBase) => {
+          const { runner, calls } = recordingRunner();
+          const { runner: elevated, calls: elevatedCalls } =
+            recordingElevatedRunner();
+          const backend = new MacLaunchdBackend({
+            launchAgentsBase,
+            launchDaemonsBase,
+            runner,
+            elevatedRunner: elevated,
+            log: () => {},
+          });
+
+          backend.install(); // no flag
+
+          expect(elevatedCalls).toEqual([]);
+          expect(fs.existsSync(backend.plistPath)).toBe(true);
+          expect(fs.existsSync(backend.daemonPlistPath)).toBe(false);
+          expect(calls).toEqual([
+            { cmd: 'launchctl', args: ['load', '-w', backend.plistPath] },
+          ]);
+          const haystack = JSON.stringify({
+            calls,
+            elevatedCalls,
+          }).toLowerCase();
+          for (const banned of ELEVATION) {
+            expect(haystack).not.toContain(banned);
+          }
+        });
+      });
+    });
+  });
+
+  describe('macOS: --system is the SOLE elevating path', () => {
+    it('writes /Library/LaunchDaemons plist + bootstraps via the helper', () => {
+      withTempBase('wft-service-mac-', (launchAgentsBase) => {
+        withTempBase('wft-service-macsys-', (launchDaemonsBase) => {
+          const { runner, calls } = recordingRunner();
+          const { runner: elevated, calls: elevatedCalls } =
+            recordingElevatedRunner();
+          const backend = new MacLaunchdBackend({
+            launchAgentsBase,
+            launchDaemonsBase,
+            runner,
+            elevatedRunner: elevated,
+            log: () => {},
+          });
+
+          backend.install({ system: true });
+
+          const daemonPlistPath = path.join(
+            launchDaemonsBase,
+            LAUNCHD_PLIST_NAME
+          );
+          expect(fs.existsSync(daemonPlistPath)).toBe(true);
+          expect(daemonPlistPath).toBe(backend.daemonPlistPath);
+          // User LaunchAgent NOT written by the system path.
+          expect(fs.existsSync(backend.plistPath)).toBe(false);
+
+          expect(calls).toEqual([]);
+          expect(elevatedCalls).toEqual([
+            {
+              cmd: 'launchctl',
+              args: ['bootstrap', 'system', daemonPlistPath],
+            },
+          ]);
+        });
+      });
+    });
+  });
+
+  describe('Windows: default (no flag) install is provably admin-free', () => {
+    it('uses the user runner only and NEVER touches the elevation helper', () => {
+      const { runner, calls } = recordingRunner();
+      const { runner: elevated, calls: elevatedCalls } =
+        recordingElevatedRunner();
+      const backend = new WindowsScheduledTaskBackend({
+        runner,
+        elevatedRunner: elevated,
+        cliEntryPoint: 'C:\\wft\\dist\\cli\\bin\\tasks.js',
+        nodeBin: 'C:\\Program Files\\nodejs\\node.exe',
+        log: () => {},
+      });
+
+      backend.install(); // no flag
+
+      expect(elevatedCalls).toEqual([]);
+      const expectedTr =
+        'C:\\Program Files\\nodejs\\node.exe C:\\wft\\dist\\cli\\bin\\tasks.js serve';
+      expect(calls).toEqual([
+        {
+          cmd: 'schtasks',
+          args: [
+            '/Create',
+            '/SC',
+            'ONLOGON',
+            '/TN',
+            WINDOWS_TASK_NAME,
+            '/TR',
+            expectedTr,
+            '/F',
+          ],
+        },
+      ]);
+      // No /RU SYSTEM and no elevation token in the default path.
+      const haystack = JSON.stringify({ calls, elevatedCalls });
+      expect(haystack).not.toContain('/RU');
+      expect(haystack.toUpperCase()).not.toContain('SYSTEM');
+      for (const banned of ELEVATION) {
+        expect(haystack.toLowerCase()).not.toContain(banned);
+      }
+    });
+  });
+
+  describe('Windows: --system is the SOLE elevating path', () => {
+    it('creates a /RU SYSTEM /SC ONSTART task via the elevation helper', () => {
+      const { runner, calls } = recordingRunner();
+      const { runner: elevated, calls: elevatedCalls } =
+        recordingElevatedRunner();
+      const backend = new WindowsScheduledTaskBackend({
+        runner,
+        elevatedRunner: elevated,
+        cliEntryPoint: 'C:\\wft\\dist\\cli\\bin\\tasks.js',
+        nodeBin: 'C:\\Program Files\\nodejs\\node.exe',
+        log: () => {},
+      });
+
+      backend.install({ system: true });
+
+      const expectedTr =
+        'C:\\Program Files\\nodejs\\node.exe C:\\wft\\dist\\cli\\bin\\tasks.js serve';
+      // Only the elevation helper ran; the user runner was untouched.
+      expect(calls).toEqual([]);
+      expect(elevatedCalls).toEqual([
+        {
+          cmd: 'schtasks',
+          args: [
+            '/Create',
+            '/SC',
+            'ONSTART',
+            '/TN',
+            WINDOWS_TASK_NAME,
+            '/TR',
+            expectedTr,
+            '/RU',
+            'SYSTEM',
+            '/F',
+          ],
+        },
+      ]);
+      // The system path DOES carry /RU SYSTEM (by design).
+      const haystack = JSON.stringify(elevatedCalls).toUpperCase();
+      expect(haystack).toContain('/RU');
+      expect(haystack).toContain('SYSTEM');
+    });
+  });
+
+  describe('dispatch seam threads --system through to the backend', () => {
+    it('getServiceBackend(linux).install({system}) uses the elevation helper', () => {
+      withTempConfigBase((configBase) => {
+        const { runner, calls } = recordingRunner();
+        const { runner: elevated, calls: elevatedCalls } =
+          recordingElevatedRunner();
+        const backend = getServiceBackend('linux', {
+          configBase,
+          systemUnitDir: path.join(configBase, 'etc-systemd-system'),
+          runner,
+          elevatedRunner: elevated,
+          log: () => {},
+        });
+        backend.install({ system: true });
+        expect(calls).toEqual([]);
+        expect(elevatedCalls.length).toBeGreaterThan(0);
+      });
+    });
   });
 });

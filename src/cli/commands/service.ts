@@ -21,9 +21,17 @@ import { resolveAssetPath } from '../../assets/resolve.js';
  *   - Windows (Scheduled Task, task #741): a per-user, at-logon scheduled task
  *     created with `schtasks /Create /SC ONLOGON ... /F` (NO `/RU SYSTEM`).
  *
- * Every backend is admin-free: none of them shell out to
+ * Every DEFAULT (user-scoped) backend is admin-free: none of them shell out to
  * sudo / runas / pkexec / doas — the same hard guard used by setup.ts
- * `fixNpmPrefix`. The `--system` (elevated) variant is future work (task #742).
+ * `fixNpmPrefix`.
+ *
+ * The OPT-IN `--system` variant (task #742) installs a SYSTEM-scoped unit
+ * (`/etc/systemd/system`, `/Library/LaunchDaemons`, or a `/RU SYSTEM`
+ * scheduled task) and is the SOLE code path permitted to elevate. It routes
+ * through a separate, sanctioned {@link defaultElevatedRunner} — which, unlike
+ * the non-elevating {@link defaultRunner}, is allowed to prefix `sudo`. The
+ * default user-scoped path never touches that runner, so it remains provably
+ * admin-free.
  */
 
 /** The systemd unit file name written under the user unit directory. */
@@ -31,6 +39,27 @@ export const SERVICE_UNIT_NAME = 'wood-fired-tasks.service';
 
 /** Logical service name passed to `systemctl --user <verb> <name>`. */
 export const SERVICE_NAME = 'wood-fired-tasks';
+
+/**
+ * SYSTEM-scoped systemd unit directory (`--system` opt-in path). Writing here
+ * and running `systemctl enable --now` (no `--user`) requires elevation.
+ */
+export const SYSTEM_SYSTEMD_UNIT_DIR = '/etc/systemd/system';
+
+/**
+ * SYSTEM-scoped macOS LaunchDaemon directory (`--system` opt-in path). Writing
+ * here and `launchctl bootstrap system ...` requires elevation.
+ */
+export const SYSTEM_LAUNCH_DAEMONS_DIR = '/Library/LaunchDaemons';
+
+/** Per-backend install options. `system` selects the elevated, system scope. */
+export interface InstallOptions {
+  /**
+   * When true, install a SYSTEM-scoped unit (the only path that elevates). When
+   * false/omitted, install the admin-free user-scoped unit (default).
+   */
+  system?: boolean;
+}
 
 /**
  * Injectable command runner. Returns captured stdout (trimmed) so `status` can
@@ -66,6 +95,40 @@ export function defaultRunner(cmd: string, args: string[]): string {
 }
 
 /**
+ * SANCTIONED elevation runner — the ONLY runner permitted to elevate, and used
+ * exclusively by the `--system` (system-scoped) install path. On POSIX it
+ * prefixes `sudo` to the target command; on Windows the caller already passes a
+ * `/RU SYSTEM` scheduled task (the OS handles the privileged context) so this
+ * runner just execs verbatim. It is deliberately distinct from
+ * {@link defaultRunner} (which THROWS on any elevated command) so tests can
+ * assert which runner each code path used.
+ *
+ * `is-active` / `is-enabled` exit non-zero for inactive/disabled units while
+ * still printing the state on stdout, so — like {@link defaultRunner} — we
+ * surface stdout on a non-zero exit instead of throwing.
+ */
+export function defaultElevatedRunner(cmd: string, args: string[]): string {
+  // Already-privileged invocations (e.g. schtasks /RU SYSTEM on Windows, or a
+  // command itself in ELEVATION_RE) run verbatim; everything else is wrapped in
+  // `sudo` so the system-scoped systemctl/launchctl calls succeed.
+  let execCmd = cmd;
+  let execArgs = args;
+  if (process.platform !== 'win32' && !ELEVATION_RE.test(cmd)) {
+    execCmd = 'sudo';
+    execArgs = [cmd, ...args];
+  }
+  try {
+    return execFileSync(execCmd, execArgs, { encoding: 'utf8' }).trim();
+  } catch (err: unknown) {
+    const e = err as { stdout?: Buffer | string };
+    if (e && e.stdout != null) {
+      return e.stdout.toString().trim();
+    }
+    throw err;
+  }
+}
+
+/**
  * Resolve the absolute path to the installed CLI entry point that the service
  * should run. Mirrors setup.ts `resolveMcpEntryPoint`: resolved from the
  * package root via `import.meta.url` (NOT cwd), so the generated unit points at
@@ -91,7 +154,7 @@ export interface ServiceStatus {
 
 /** Cross-OS backend contract. */
 export interface ServiceBackend {
-  install(): void;
+  install(options?: InstallOptions): void;
   uninstall(): void;
   status(): ServiceStatus;
 }
@@ -102,8 +165,20 @@ export interface LinuxBackendOptions {
    * `XDG_CONFIG_HOME`, then `$HOME/.config`. Overridable for tests.
    */
   configBase?: string;
+  /**
+   * Injectable base directory for the SYSTEM-scoped unit (`--system`). Defaults
+   * to `/etc/systemd/system`. Overridable for tests so they don't write to a
+   * real root-owned path.
+   */
+  systemUnitDir?: string;
   /** Injectable command runner (tests assert argv; default execs systemctl). */
   runner?: CommandRunner;
+  /**
+   * Injectable SANCTIONED elevation runner used ONLY by the `--system` path.
+   * Defaults to {@link defaultElevatedRunner}. Tests pass a recorder to assert
+   * it is the SOLE runner the system path invokes.
+   */
+  elevatedRunner?: CommandRunner;
   /** Absolute path to the CLI entry point ExecStart should run. */
   cliEntryPoint?: string;
   /** Node binary used to launch the CLI (defaults to process.execPath). */
@@ -126,14 +201,18 @@ export function defaultConfigBase(home: string = os.homedir()): string {
  */
 export class LinuxSystemdBackend implements ServiceBackend {
   private readonly configBase: string;
+  private readonly systemUnitDir: string;
   private readonly runner: CommandRunner;
+  private readonly elevatedRunner: CommandRunner;
   private readonly cliEntryPoint: string;
   private readonly nodeBin: string;
   private readonly log: (line: string) => void;
 
   constructor(options: LinuxBackendOptions = {}) {
     this.configBase = options.configBase ?? defaultConfigBase();
+    this.systemUnitDir = options.systemUnitDir ?? SYSTEM_SYSTEMD_UNIT_DIR;
     this.runner = options.runner ?? defaultRunner;
+    this.elevatedRunner = options.elevatedRunner ?? defaultElevatedRunner;
     this.cliEntryPoint = options.cliEntryPoint ?? resolveCliEntryPoint();
     this.nodeBin = options.nodeBin ?? process.execPath;
     this.log = options.log ?? ((line: string) => console.log(line));
@@ -144,9 +223,14 @@ export class LinuxSystemdBackend implements ServiceBackend {
     return path.join(this.configBase, 'systemd', 'user');
   }
 
-  /** Absolute path to the unit file. */
+  /** Absolute path to the user unit file. */
   get unitPath(): string {
     return path.join(this.unitDir, SERVICE_UNIT_NAME);
+  }
+
+  /** Absolute path to the SYSTEM-scoped unit file (`--system`). */
+  get systemUnitPath(): string {
+    return path.join(this.systemUnitDir, SERVICE_UNIT_NAME);
   }
 
   /** Render the systemd unit text. ExecStart runs the CLI `serve` subcommand. */
@@ -181,13 +265,31 @@ export class LinuxSystemdBackend implements ServiceBackend {
     return this.runner('systemctl', ['--user', ...args]);
   }
 
-  install(): void {
+  install(options: InstallOptions = {}): void {
+    if (options.system) {
+      this.installSystem();
+      return;
+    }
     fs.mkdirSync(this.unitDir, { recursive: true });
     fs.writeFileSync(this.unitPath, this.renderUnit(), 'utf8');
     this.systemctl('daemon-reload');
     this.systemctl('enable', '--now', SERVICE_NAME);
     this.log(`Installed and started user service '${SERVICE_NAME}'.`);
     this.log(`Unit written to ${this.unitPath} (no elevation required).`);
+  }
+
+  /**
+   * SYSTEM-scoped install (`--system`). Writes `/etc/systemd/system/...` and
+   * runs `systemctl enable --now` (NO `--user`) via the SANCTIONED
+   * {@link elevatedRunner}. This is the SOLE elevating path in this backend.
+   */
+  private installSystem(): void {
+    fs.mkdirSync(this.systemUnitDir, { recursive: true });
+    fs.writeFileSync(this.systemUnitPath, this.renderUnit(), 'utf8');
+    this.elevatedRunner('systemctl', ['daemon-reload']);
+    this.elevatedRunner('systemctl', ['enable', '--now', SERVICE_NAME]);
+    this.log(`Installed and started SYSTEM service '${SERVICE_NAME}'.`);
+    this.log(`Unit written to ${this.systemUnitPath} (elevated).`);
   }
 
   uninstall(): void {
@@ -226,8 +328,18 @@ export interface MacBackendOptions {
    * `~/Library/LaunchAgents`. Overridable for tests.
    */
   launchAgentsBase?: string;
+  /**
+   * Injectable base directory for the SYSTEM-scoped LaunchDaemon (`--system`).
+   * Defaults to `/Library/LaunchDaemons`. Overridable for tests.
+   */
+  launchDaemonsBase?: string;
   /** Injectable command runner (tests assert argv; default execs launchctl). */
   runner?: CommandRunner;
+  /**
+   * Injectable SANCTIONED elevation runner used ONLY by the `--system` path.
+   * Defaults to {@link defaultElevatedRunner}.
+   */
+  elevatedRunner?: CommandRunner;
   /** Absolute path to the CLI entry point the agent should run. */
   cliEntryPoint?: string;
   /** Node binary used to launch the CLI (defaults to process.execPath). */
@@ -257,7 +369,9 @@ function escapeXml(value: string): string {
  */
 export class MacLaunchdBackend implements ServiceBackend {
   private readonly launchAgentsBase: string;
+  private readonly launchDaemonsBase: string;
   private readonly runner: CommandRunner;
+  private readonly elevatedRunner: CommandRunner;
   private readonly cliEntryPoint: string;
   private readonly nodeBin: string;
   private readonly log: (line: string) => void;
@@ -265,15 +379,23 @@ export class MacLaunchdBackend implements ServiceBackend {
   constructor(options: MacBackendOptions = {}) {
     this.launchAgentsBase =
       options.launchAgentsBase ?? defaultLaunchAgentsBase();
+    this.launchDaemonsBase =
+      options.launchDaemonsBase ?? SYSTEM_LAUNCH_DAEMONS_DIR;
     this.runner = options.runner ?? defaultRunner;
+    this.elevatedRunner = options.elevatedRunner ?? defaultElevatedRunner;
     this.cliEntryPoint = options.cliEntryPoint ?? resolveCliEntryPoint();
     this.nodeBin = options.nodeBin ?? process.execPath;
     this.log = options.log ?? ((line: string) => console.log(line));
   }
 
-  /** Absolute path to the LaunchAgent plist file. */
+  /** Absolute path to the user LaunchAgent plist file. */
   get plistPath(): string {
     return path.join(this.launchAgentsBase, LAUNCHD_PLIST_NAME);
+  }
+
+  /** Absolute path to the SYSTEM-scoped LaunchDaemon plist file (`--system`). */
+  get daemonPlistPath(): string {
+    return path.join(this.launchDaemonsBase, LAUNCHD_PLIST_NAME);
   }
 
   /**
@@ -314,13 +436,34 @@ export class MacLaunchdBackend implements ServiceBackend {
     return this.runner('launchctl', args);
   }
 
-  install(): void {
+  install(options: InstallOptions = {}): void {
+    if (options.system) {
+      this.installSystem();
+      return;
+    }
     fs.mkdirSync(this.launchAgentsBase, { recursive: true });
     fs.writeFileSync(this.plistPath, this.renderPlist(), 'utf8');
     // `load -w` registers + enables the agent in the user domain (no sudo).
     this.launchctl('load', '-w', this.plistPath);
     this.log(`Installed and started user LaunchAgent '${LAUNCHD_LABEL}'.`);
     this.log(`Plist written to ${this.plistPath} (no elevation required).`);
+  }
+
+  /**
+   * SYSTEM-scoped install (`--system`). Writes a LaunchDaemon plist under
+   * `/Library/LaunchDaemons` and `launchctl bootstrap system ...` via the
+   * SANCTIONED {@link elevatedRunner}. SOLE elevating path in this backend.
+   */
+  private installSystem(): void {
+    fs.mkdirSync(this.launchDaemonsBase, { recursive: true });
+    fs.writeFileSync(this.daemonPlistPath, this.renderPlist(), 'utf8');
+    this.elevatedRunner('launchctl', [
+      'bootstrap',
+      'system',
+      this.daemonPlistPath,
+    ]);
+    this.log(`Installed and started SYSTEM LaunchDaemon '${LAUNCHD_LABEL}'.`);
+    this.log(`Plist written to ${this.daemonPlistPath} (elevated).`);
   }
 
   uninstall(): void {
@@ -357,6 +500,11 @@ export const WINDOWS_TASK_NAME = 'WoodFiredTasks';
 export interface WindowsBackendOptions {
   /** Injectable command runner (tests assert argv; default execs schtasks). */
   runner?: CommandRunner;
+  /**
+   * Injectable SANCTIONED elevation runner used ONLY by the `--system` path.
+   * Defaults to {@link defaultElevatedRunner}.
+   */
+  elevatedRunner?: CommandRunner;
   /** Absolute path to the CLI entry point the task should run. */
   cliEntryPoint?: string;
   /** Node binary used to launch the CLI (defaults to process.execPath). */
@@ -372,12 +520,14 @@ export interface WindowsBackendOptions {
  */
 export class WindowsScheduledTaskBackend implements ServiceBackend {
   private readonly runner: CommandRunner;
+  private readonly elevatedRunner: CommandRunner;
   private readonly cliEntryPoint: string;
   private readonly nodeBin: string;
   private readonly log: (line: string) => void;
 
   constructor(options: WindowsBackendOptions = {}) {
     this.runner = options.runner ?? defaultRunner;
+    this.elevatedRunner = options.elevatedRunner ?? defaultElevatedRunner;
     this.cliEntryPoint = options.cliEntryPoint ?? resolveCliEntryPoint();
     this.nodeBin = options.nodeBin ?? process.execPath;
     this.log = options.log ?? ((line: string) => console.log(line));
@@ -396,7 +546,11 @@ export class WindowsScheduledTaskBackend implements ServiceBackend {
     return this.runner('schtasks', args);
   }
 
-  install(): void {
+  install(options: InstallOptions = {}): void {
+    if (options.system) {
+      this.installSystem();
+      return;
+    }
     // Per-user, at-logon, current-user context. NO /RU SYSTEM, NO elevation.
     // /F overwrites an existing task so install is idempotent.
     this.schtasks(
@@ -411,6 +565,29 @@ export class WindowsScheduledTaskBackend implements ServiceBackend {
     );
     this.log(
       `Installed per-user logon task '${WINDOWS_TASK_NAME}' (no elevation required).`
+    );
+  }
+
+  /**
+   * SYSTEM-scoped install (`--system`). Creates a `/RU SYSTEM /SC ONSTART`
+   * scheduled task via the SANCTIONED {@link elevatedRunner}. Creating a
+   * SYSTEM-context task requires elevation. SOLE elevating path here.
+   */
+  private installSystem(): void {
+    this.elevatedRunner('schtasks', [
+      '/Create',
+      '/SC',
+      'ONSTART',
+      '/TN',
+      WINDOWS_TASK_NAME,
+      '/TR',
+      this.taskRun,
+      '/RU',
+      'SYSTEM',
+      '/F',
+    ]);
+    this.log(
+      `Installed SYSTEM-context task '${WINDOWS_TASK_NAME}' (elevated, /RU SYSTEM).`
     );
   }
 
@@ -466,10 +643,17 @@ export const serviceCommand = new Command('service')
 serviceCommand
   .command('install')
   .description(
-    'Install and start the background service (writes a user-scoped systemd unit; never uses sudo)'
+    'Install and start the background service. Default is user-scoped and never elevates. ' +
+      '--system installs a system-scoped unit (/etc/systemd/system, /Library/LaunchDaemons, ' +
+      'or a /RU SYSTEM scheduled task) and is the ONLY path that elevates (sudo).'
   )
-  .action(() => {
-    getServiceBackend().install();
+  .option(
+    '--system',
+    'install a system-scoped unit (the only path that elevates / uses sudo)',
+    false
+  )
+  .action((opts: { system?: boolean }) => {
+    getServiceBackend().install({ system: opts.system === true });
   });
 
 serviceCommand
