@@ -40,6 +40,8 @@ import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
 import { mcpCommand } from '../commands/mcp.js';
 import { selfUpdateCommand } from '../commands/self-update.js';
+import { serveCommand } from '../commands/serve.js';
+import { setupCommand } from '../commands/setup.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -142,6 +144,14 @@ program.addCommand(mcpCommand);
 // Register self-update command (frictionless distribution, task #739):
 // `tasks self-update` spawns `npm i -g wood-fired-tasks@latest` (no sudo).
 program.addCommand(selfUpdateCommand);
+
+// Register serve command (task #733): boot the API on the app-data DB,
+// migrate-on-start, cwd-independent.
+program.addCommand(serveCommand);
+
+// Register setup command (task #737): merge local MCP entry into ~/.claude.json
+// and copy skills into ~/.claude/commands/tasks/, plus --fix-npm-prefix.
+program.addCommand(setupCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133
