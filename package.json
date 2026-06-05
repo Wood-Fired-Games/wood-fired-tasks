@@ -59,7 +59,20 @@
     "AGENTS.md",
     "CLAUDE.md",
     "llms.txt",
-    "docs/AGENT_CONTEXT.md"
+    "docs/AGENT_CONTEXT.md",
+    "docs/README.md",
+    "docs/NAVIGATION.md",
+    "docs/SETUP.md",
+    "docs/CLI.md",
+    "docs/API.md",
+    "docs/MCP.md",
+    "docs/INTERFACES.md",
+    "docs/USAGE_PATTERNS.md",
+    "docs/WORKFLOWS.md",
+    "docs/SLACK.md",
+    "docs/RELIABILITY.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/ARCHITECTURE.md"
   ],
   "engines": {
     "node": ">=22"
