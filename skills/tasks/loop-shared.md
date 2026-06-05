@@ -691,3 +691,42 @@ _No coverage gaps: terminal invariant + reachability audit green._
 ```
 
 **Anti-vacuity.** The gate's underlying invariant audit genuinely DETECTS unreachable newly-added tools: `parityViolations(['create_task','__new_tool__'], new Set(['create_task']), [])` returns `['__new_tool__']` (RED → triggers the carve-out), and returns `[]` once `__new_tool__` is in the remote set (GREEN). A RED §O can therefore never be papered over by a "0 open tasks" count.
+
+---
+
+## §P. Per-wave drift/meta guard trigger
+
+**Called from:** `loop-dag.md` §3f (per-wave, BEFORE recomputing the next frontier). Reusable by `loop.md` §Step 10 at termination as well, when a run touched CLI/docs/skills surfaces — the contract is the same, only the cadence differs (per-wave vs once-at-end).
+
+**Motivating incident (load-bearing).** A multi-wave `/tasks:loop-dag` run's own changes broke ~14 repo-wide drift/meta guards (a `docs/INTERFACES.md` command count moving 38→40, an agent-context manifest freshness check, a skill extraction line-gate, a README Quick-Start drift guard). Per-task verifiers and the per-wave §3f overlap audit ran only SCOPED tests, so every drift guard stayed RED through all waves and only failed at the final full-suite run — forcing a reactive multi-round fix at the very end. Running the repo's drift/meta guards in-wave, while the diff is still small, is the fix: drift gets attributed to the wave that caused it, not discovered run-wide after the fact.
+
+### Trigger — wave union diff touches CLI/docs/skills paths
+
+After the §3f overlap audit, compute the **union of all file changes across this wave's worker sessions** and check whether any path matches a CLI/docs/skills surface. Illustrative globs (these are EXAMPLES a project configures, NOT hardcoded universals):
+
+- `src/cli/**`, plus any registrar like `program.addCommand(...)` — CLI surface (command counts, help text, option lists drift here).
+- `docs/**`, `README.md` — docs surface (interface tables, Quick-Start blocks, doc-count manifests drift here).
+- `skills/**` — skill surface (extraction line-gates, skill-contract manifests drift here).
+
+If the wave's union diff touches **none** of the configured surfaces, skip this step — there is no drift surface to guard, so move straight on to recomputing the next frontier. If it touches **any**, run the drift/meta guards (below) BEFORE recomputing the next frontier.
+
+### Locating drift guards generically
+
+Do NOT hardcode project-specific guard names. Discover them generically:
+
+- **Test files** whose basename matches `*drift*`, `*interface*`, or `*agent-context*` (e.g. `tool-count-drift.test.ts`, `readme-quickstart-drift.test.ts` — illustrative only).
+- **Repo "check" scripts** declared in `package.json` whose name/intent is a freshness/manifest check (e.g. an `agent-context:check`-style script — illustrative only).
+- **And/or a project-configured list** of guard test paths or scripts, when the project pins one explicitly (preferred when present — it is authoritative over the glob discovery).
+
+### Cheap vs full
+
+Prefer running just the **matched drift-guard subset** for speed — the point of the in-wave cadence is a fast, small-diff signal. Run the discovered guard tests + check scripts directly (e.g. `npx vitest run <matched test paths>` and `npm run <matched check script>`). Fall back to the **full `npm test`** only when the subset can't be located (no matches and no configured list) — a full run is slower but never misses a guard.
+
+### A RED drift guard is a BROKEN integration
+
+A failing drift/meta guard in a wave is handled **exactly like a §10e BROKEN integration** — it is NOT silently deferred to §4. Catching drift in-wave, while the diff is small, is the whole point: do not let it ride to the final full-suite run.
+
+- **Attributable to a wave task** (the drift is caused by one task's diff — e.g. a task that edited the CLI moved the command count): handle it per §10e BROKEN — flip the offending task(s) back to `in_progress`, preserve their PASS evidence, append an `integration_concern` note naming the RED guard, and re-emit LOOP-RUN.md with a `## Integration Failure` body section. The task returns on a later frontier and the worker fixes the drift in the same pass that caused it.
+- **Run-wide / not attributable to one task** (the drift emerges from the combined wave diff, e.g. a manifest freshness count): surface it in the LOOP-RUN.md note — a `## Coverage Gaps` bullet (schema in §O) or a `## Integration Failure` body section — and, where appropriate, materialize a remediation task (the same carve-out §O grants). Do NOT announce a clean wave/drain with a drift guard RED.
+
+Either way the orchestrator records the RED guard's identity (test/script name + symptom) and DOES NOT recompute the next frontier as if the wave were clean.
