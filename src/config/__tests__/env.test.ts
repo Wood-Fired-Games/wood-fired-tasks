@@ -6,6 +6,9 @@ import {
   resetConfig,
   parseApiKeyEntries,
 } from '../env.js';
+// task #731: DATABASE_PATH now defaults to the OS app-data path, not a
+// cwd-relative './data/tasks.db'. Assert against the same source of truth.
+import { defaultDbPath } from '../paths.js';
 
 describe('Configuration Validation', () => {
   const originalEnv = process.env;
@@ -49,7 +52,7 @@ describe('Configuration Validation', () => {
         // opt in to LAN exposure with HOST=0.0.0.0 or a specific LAN IP.
         expect(result.data.HOST).toBe('127.0.0.1');
         expect(result.data.LOG_LEVEL).toBe('info');
-        expect(result.data.DATABASE_PATH).toBe('./data/tasks.db');
+        expect(result.data.DATABASE_PATH).toBe(defaultDbPath);
         expect(result.data.CONNECTION_TIMEOUT).toBe(120000);
         expect(result.data.REQUEST_TIMEOUT).toBe(60000);
         expect(result.data.KEEP_ALIVE_TIMEOUT).toBe(10000);
@@ -69,7 +72,7 @@ describe('Configuration Validation', () => {
         // task #188: default HOST is loopback-only.
         expect(result.data.HOST).toBe('127.0.0.1');
         expect(result.data.LOG_LEVEL).toBe('info');
-        expect(result.data.DATABASE_PATH).toBe('./data/tasks.db');
+        expect(result.data.DATABASE_PATH).toBe(defaultDbPath);
         expect(result.data.CONNECTION_TIMEOUT).toBe(120000);
         expect(result.data.REQUEST_TIMEOUT).toBe(60000);
         expect(result.data.KEEP_ALIVE_TIMEOUT).toBe(10000);
