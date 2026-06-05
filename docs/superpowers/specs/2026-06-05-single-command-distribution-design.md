@@ -248,3 +248,35 @@ Natural DAG roots: **C1** (packaging foundation) and **C2** (asset resolver). **
 runtime spine; **C6→C7** the install spine; **C8/C9** hang off C5; **C10** off C7; **C11** off
 C5+C7; **C12** off the command set. Expect ~14–20 leaf tasks. This is DAG-topology work — drain
 with `/tasks:loop-dag` after decompose.
+
+## Addendum A — Documentation accessibility for npm-only users (2026-06-05)
+
+**Gap found (reviewing materialized tasks 729–747).** The plan ships the *skills* in the tarball
+(task 735) and rewrites doc *content* for the no-clone flow (task 747), but it does **not** make
+the repo's illustrative guides reachable by someone who only ran `npm install`. The `files`
+allowlist ships only `README.md` + a few root policy docs + `docs/AGENT_CONTEXT.md`, and there is
+no command to surface bundled docs — so `docs/USAGE_PATTERNS.md`, `SETUP.md`, `CLI.md`, `API.md`,
+`MCP.md`, `WORKFLOWS.md`, `INTERFACES.md`, `NAVIGATION.md`, etc. are invisible to an npm-only /
+remote-client install. The gap is entirely uncovered by the existing tasks.
+
+**Fix — 3 added tasks (project 36, tagged `decomp-73f4915c…` + `docs-access`):**
+
+- **DA1 — Ship curated user-facing docs in the tarball.** Add the user-facing guide set to
+  `package.json` `files`: `docs/{README,NAVIGATION,SETUP,CLI,API,MCP,INTERFACES,USAGE_PATTERNS,
+  WORKFLOWS,SLACK,RELIABILITY,TROUBLESHOOTING,ARCHITECTURE}.md`. Exclude internal/dev/design docs
+  (REPO_MAP, AGENT_READINESS_AUDIT, CODE_QUALITY_ROADMAP, `*-design.md`, retrospectives/,
+  superpowers/, hooks/, loop-run-*). Sequenced after the other `files`-editing tasks (729, 735)
+  to avoid `package.json` merge conflicts.
+- **DA2 — `wood-fired-tasks docs` CLI subcommand.** `docs list` (enumerate bundled guides),
+  `docs show <name>` (print to stdout), `docs path [<name>]` (print on-disk path), `docs open
+  <name>` (open in the default viewer/browser — cross-platform, admin-free). Resolves bundled
+  docs via the `import.meta.url` asset resolver (task 730) so it works from a global install and
+  for remote-only clients with no server running.
+- **DA3 — Assert docs accessibility in pack-hygiene + smoke.** Extend the tarball-hygiene
+  assertions (task 744) to require the curated guides present and internal docs absent, and
+  extend `smoke:global` (745) + the cross-OS CI matrix (746) to assert `wood-fired-tasks docs
+  list` and `docs show usage-patterns` work from the installed package outside the repo.
+
+The no-clone docs rewrite (task 747) gains a dependency on DA2 so it documents the `docs`
+command. **Out of scope** (consistent with the GUI deferral): serving a docs index from the
+running server or any web docs UI — the CLI `docs` command is the offline access path.
