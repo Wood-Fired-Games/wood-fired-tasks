@@ -259,6 +259,33 @@ async function main() {
     'setup re-run reports the MCP server "already present" (no spurious change)'
   );
 
+  // -- 3c. docs command works from OUTSIDE the repo (task #750) --------------
+  // The bundled guides resolve from the PACKAGE ROOT via the #730 asset
+  // resolver, not cwd — so `docs list` / `docs show` must work from the
+  // outside-the-repo cwd with the temp HOME. No sudo: pure stdout reads.
+  console.log('-- docs list / docs show (from outside the repo) --');
+  const docsList = runOrFail(binPath, ['docs', 'list'], {
+    cwd: outsideCwd,
+    env: setupEnv,
+  });
+  const docsListOut = docsList.stdout ?? '';
+  assert(
+    /(^|\s)usage-patterns(\s|$)/m.test(docsListOut) &&
+      /(^|\s)setup(\s|$)/m.test(docsListOut) &&
+      /(^|\s)cli(\s|$)/m.test(docsListOut),
+    'docs list enumerates the curated guides (usage-patterns, setup, cli)'
+  );
+
+  const docsShow = runOrFail(binPath, ['docs', 'show', 'usage-patterns'], {
+    cwd: outsideCwd,
+    env: setupEnv,
+  });
+  const docsShowOut = docsShow.stdout ?? '';
+  assert(
+    docsShowOut.trim().length > 0 && /^#/m.test(docsShowOut),
+    'docs show usage-patterns prints real guide content (non-empty, has a heading)'
+  );
+
   // -- 4. boot serve against a temp app-data DB, poll /health ----------------
   console.log('-- serve (temp app-data DB) --');
   const dataDir = mkTemp('wft-smoke-data-');
