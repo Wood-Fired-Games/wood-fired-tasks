@@ -403,6 +403,20 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     );
   }
 
+  // Task #752: ~/.claude.json can carry the local-credentials PAT and the
+  // remote WFT_API_KEY env, so tighten it to owner-only (0600) on POSIX after
+  // the merge writes it. Best-effort + guarded so a chmod failure (e.g. an
+  // exotic FS, or Windows where mode is a no-op) never blocks setup. On Windows
+  // the per-user profile dir is already ACL-restricted, so this is a documented
+  // no-op there.
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(claudeJsonPath, 0o600);
+    } catch {
+      /* best-effort: never block setup on a chmod failure */
+    }
+  }
+
   const skills = copySkills(commandsDestDir(home));
   log(
     skills.written.length > 0

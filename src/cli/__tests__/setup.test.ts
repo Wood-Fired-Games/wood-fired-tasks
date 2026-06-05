@@ -6,10 +6,11 @@ import {
   runSetup,
   fixNpmPrefix,
   buildLocalMcpEntry,
+  resolveMcpEntryPoint,
   commandsDestDir,
   agentsDestDir,
 } from '../commands/setup.js';
-import { resolveAssetPath } from '../../assets/resolve.js';
+import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
 
 // The packaged task-skill .md files live under skills/tasks/ (the asset
 // resolver's `resolveAssetPath('skills','tasks')`); `skillsDir()` is the
@@ -162,6 +163,51 @@ describe('tasks setup', () => {
           fs.readFileSync(path.join(agentsDest, name), 'utf8'),
         ]);
       expect(agentSnapshot2).toEqual(agentSnapshot);
+    });
+  });
+
+  it('writes an MCP entry resolving to the INSTALLED package, not a cwd path (task #752)', () => {
+    const entry = buildLocalMcpEntry();
+    const entryPoint = resolveMcpEntryPoint();
+
+    // command is the running Node binary (absolute), args[0] is the resolved
+    // entry point — both absolute, neither cwd-relative.
+    expect(path.isAbsolute(entry.command as string)).toBe(true);
+    expect(entry.args).toBeDefined();
+    const arg0 = (entry.args as string[])[0];
+    expect(path.isAbsolute(arg0)).toBe(true);
+    expect(arg0).toBe(entryPoint);
+
+    // Resolves under the package root, which is derived from import.meta.url
+    // (the asset resolver) — NOT joined onto process.cwd(). This is the
+    // load-bearing assertion: a cwd-relative dist path would break a global
+    // install spawned from an arbitrary directory. We prove resolver-origin by
+    // running the resolver under a DIFFERENT working directory and confirming
+    // the path is unchanged.
+    expect(arg0.startsWith(packageRoot + path.sep)).toBe(true);
+    expect(arg0).toBe(resolveAssetPath('dist', 'mcp', 'index.js'));
+
+    const origCwd = process.cwd();
+    try {
+      process.chdir(os.tmpdir());
+      // Same absolute path regardless of cwd — i.e. NOT cwd-relative.
+      expect(resolveMcpEntryPoint()).toBe(arg0);
+      expect(buildLocalMcpEntry().args?.[0]).toBe(arg0);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  it('tightens ~/.claude.json to 0600 on POSIX after setup (task #752)', () => {
+    withTempHome((home) => {
+      const result = runSetup({ home, log: () => {} });
+      const claudeJson = result.claudeJsonPath;
+      expect(fs.existsSync(claudeJson)).toBe(true);
+
+      if (process.platform !== 'win32') {
+        const mode = fs.statSync(claudeJson).mode & 0o777;
+        expect(mode).toBe(0o600);
+      }
     });
   });
 

@@ -88,6 +88,7 @@
     "test:coverage": "vitest run --coverage",
     "test:bench": "vitest bench --run",
     "migrate": "tsx src/db/migrate.ts",
+    "postinstall": "node scripts/postinstall.cjs",
     "smoke": "./scripts/smoke/fresh-clone-smoke.sh",
     "cli": "tsx src/cli/bin/tasks.ts",
     "mcp:start": "node dist/mcp/index.js",

@@ -46,6 +46,7 @@ import { docsCommand } from '../commands/docs.js';
 import { serviceCommand } from '../commands/service.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
+import { warnIfNotEvenLts } from '../../utils/node-version.js';
 
 // Configure CLI program
 program
@@ -174,6 +175,11 @@ export { program };
 // npm install -g) which a raw string compare against process.argv[1] does
 // not — see src/utils/is-main.ts and wood-fired-tasks #334.
 if (isMain(import.meta.url)) {
+  // Task #752: non-fatal advisory when running on an odd-numbered ("Current",
+  // non-LTS) Node major. Writes one stderr line and returns — never throws,
+  // never exits. `engines.node` stays >=22 as the hard floor.
+  warnIfNotEvenLts();
+
   // Plan 30-05: top-level catch surfaces NotAuthenticatedError as the
   // friendly "Not authenticated. Run: tasks login" + exit 1 contract,
   // rather than the default Commander "unhandled rejection" dump.
