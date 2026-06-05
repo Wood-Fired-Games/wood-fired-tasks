@@ -151,13 +151,7 @@ For each task in the wave's dispatch set (up to `--concurrency K`):
 
 Sequential dispatch (one Agent call, await, next Agent call) is permitted only when `--concurrency 1` is explicitly set — it is the strictly slower path and exists for diagnostic single-step runs. Each parallel worker `Agent` call MUST set `isolation: "worktree"` (parallel workers in a shared tree can `git restore` each other's edits even on disjoint file sets); the per-worker `.claude/worktrees/agent-<id>` worktree + `worktree-agent-*` branch the harness creates is reclaimed at run-end by §5g (loop-shared.md §N) — the harness never auto-cleans them because an edited worktree counts as "changed".
 
-**Stale-base hazard + post-dispatch base-integrity check (MANDATORY for `isolation: "worktree"`).** The `isolation: "worktree"` harness bases each new worktree on a FIXED ref (commonly the repo's configured main branch), NOT necessarily the orchestrator's current branch tip. So a worktree can silently start 1+ commits behind, and a worker that does not self-correct will build on a stale tree — reinventing already-shipped files, or editing a file whose later registrations its edit then reverts. _Motivating incident (2026-06-05, project 36): all four wave-1 worktrees were cut from a 17-commits-stale tag; two workers self-corrected, two did not (one duplicated an existing `resolve.ts`), forcing a re-dispatch._ Three layered defenses, all required:
-
-1. **Write-side (brief):** every worker brief embeds the §A STEP 0 base-correction guard with `<integration-branch>`, `<expected-tip-sha>`, and sentinel paths filled in (files/dirs introduced by earlier commits/waves of THIS run).
-2. **Orchestrator check:** when each worker returns, BEFORE dispatching its verifier (§3d), run `git -C <worktree> rev-parse HEAD` and confirm it equals — or is a descendant of — the expected integration-branch tip. A mismatch is a FAILED DISPATCH: re-dispatch the task with a corrected brief; do NOT verify or integrate a stale-base worktree.
-3. **Read-side (verifier):** pass `base_sha` in the §B envelope so the verifier's FIRST check re-asserts the worktree base and returns `NOT_VERIFIED` on mismatch.
-
-The durable fix is upstream — the worktree harness should base new worktrees on the orchestrator's HEAD (or accept an explicit base ref) — but defenses 1–3 neutralize the hazard regardless of the harness default.
+**Stale-base hazard + post-dispatch base check (MANDATORY for `isolation: "worktree"`).** The worktree harness may base each worktree on a FIXED ref (often the repo's main branch), NOT the orchestrator's current tip — so a worktree can silently start commits behind, and a worker that doesn't self-correct builds on a stale tree (reinventing shipped files, or reverting later registrations). _Incident (2026-06-05, project 36): all four wave-1 worktrees were cut 17 commits stale; two workers self-corrected, two didn't — re-dispatch._ Three required defenses: (1) **write-side** — every brief embeds the §A STEP 0 guard with `<integration-branch>`, `<expected-tip-sha>`, and sentinel paths filled in; (2) **orchestrator** — on each worker's return, BEFORE its verifier, `git -C <worktree> rev-parse HEAD` must equal/descend-from the expected tip, else FAILED DISPATCH (re-dispatch corrected; never integrate a stale-base worktree); (3) **read-side** — pass `base_sha` in the §B envelope so the verifier's first check re-asserts the base and returns `NOT_VERIFIED` on mismatch. Durable fix is upstream (harness basing on the orchestrator HEAD); defenses 1–3 neutralize it meanwhile.
 
 ### Step 3c — Await wave completion
 
@@ -402,5 +396,3 @@ Full PASS commit-message template, close-out comment shape, and declared-scope c
 ### 6e. Integration-auditor overlap detection
 
 INTEGRATION-AUDIT.md artifact schema (frontmatter + per-overlap body block): **[loop-shared.md §D](loop-shared.md#d-integration-auditmd-schema)**. Overlap definition + generated-file exclusion list + per-overlap dispatch + BROKEN-revert protocol + empty-overlap suppression: see `loop.md` §10b–§10e (the contract `/tasks:loop-dag` §3f / §4 reuses verbatim, scoped per-wave for §3f and run-wide for §4).
-
----
