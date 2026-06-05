@@ -136,6 +136,29 @@ If the baseline contradicts what the orchestrator's brief told you to expect (e.
 - Test suite must stay green: `<test>` ends with the same pass count as baseline.
 - <Any task-specific constraints — warning-free, format-untouched, no console additions, etc.>
 
+## Pre-existing blocking defects (mid-implementation discoveries)
+
+Your DEFAULT is to stay strictly in scope (see the `## Hard constraints` above —
+"Don't bulk-edit existing source unless absolutely required"). The only carve-out:
+if while implementing you hit a **pre-existing defect that genuinely BLOCKS an
+acceptance criterion** (e.g. a bug in a helper the AC requires you to use, an
+orphaned/broken test or workflow the AC can't be satisfied around), then:
+
+- (a) **Fix it MINIMALLY and in-scope** — the smallest change that unblocks the AC,
+  nothing more. Do NOT bundle in adjacent cleanups or refactors.
+- (b) **Do NOT silently expand scope, and do NOT leave the AC unsatisfiable without
+  flagging.** Either land the minimal fix and report it, or — if the fix is larger
+  than a minimal patch — STOP and surface it rather than improvising a sweep.
+- (c) **Report it under a dedicated `## Unplanned fixes` section** of your summary
+  (what was broken / why it blocked the AC / how you kept the fix minimal).
+
+This is distinct from the baseline pre-existing-breakage policy (§2c / §F), which is
+about the test suite being RED *before you start* — that policy says STOP and surface
+to the orchestrator. THIS clause is for a defect you discover *mid-implementation*
+that blocks the AC. Cross-reference, don't conflate: a red baseline halts the loop; a
+mid-implementation blocking defect gets a minimal in-scope fix plus an `## Unplanned
+fixes` report.
+
 ## Validation steps (run all before reporting back)
 
 1. `<build>`
@@ -166,6 +189,11 @@ Then the standard fields:
 - Decisions and trade-offs (with one-line rationale each).
 - Things you tried and disabled / deferred (so future tasks pick them up).
 - Output of each validation step (pass/fail + headline numbers only).
+- **`## Unplanned fixes`** — pre-existing defects you had to fix to satisfy an AC
+  (per the `## Pre-existing blocking defects` clause above). For each: what was
+  broken, why it blocked the AC, and how you kept the fix minimal. Write `none`
+  when no AC required touching a pre-existing defect. The orchestrator/verifier
+  assesses this section for justification + non-regression (§B).
 - One-line suggested commit message.
 
 Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator owns those.
@@ -225,6 +253,8 @@ const verifierInputs = {
 **Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration-branch tip and instruct the verifier, as its FIRST check, to assert the worktree's `git rev-parse HEAD` equals `base_sha` (or is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If HEAD does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
 
 **Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
+
+**Unplanned-fixes assessment (load-bearing).** If the worker summary contains an `## Unplanned fixes` section (per §A's `## Pre-existing blocking defects` clause) with content other than `none`, the verifier MUST assess each entry for (i) **justification** — was the fix genuinely necessary to satisfy an acceptance criterion, or did it expand scope — and (ii) **non-regression** — the unplanned fix did not break unrelated behaviour (it is covered by the post-edit test run / does not introduce a new failing FQN). Surface the assessment in `additional_observations`; an unjustified or regression-causing unplanned fix is grounds for a FAIL check rather than a silent PASS.
 
 **Scope-narrowed envelope for declared design-only / slice-of-epic tasks.** If §2a annotated this task with `scope: design-only` (or any other scope-narrowing label — `slice-of-epic`, etc.), the orchestrator MUST narrow `acceptance_criteria` in the envelope to the **in-scope AC bullets only** (the verbatim list recorded in §2a annotation field (b)). The out-of-scope / deferred bullets from §2a annotation field (c) MUST NOT appear in the envelope's `acceptance_criteria` field — the verifier never sees criteria it cannot honestly grade.
 
