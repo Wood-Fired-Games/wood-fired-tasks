@@ -157,7 +157,7 @@ export interface CopySkillsResult {
  */
 export function copySkills(
   destDir: string = commandsDestDir(),
-  sourceDir: string = resolveAssetPath('skills', 'tasks')
+  sourceDir: string = resolveAssetPath('dist', 'skills', 'tasks')
 ): CopySkillsResult {
   const written: string[] = [];
   const files: string[] = [];
@@ -217,7 +217,7 @@ const AGENTS_EXCLUDE = new Set(['README.md']);
  */
 export function copyAgents(
   destDir: string = agentsDestDir(),
-  sourceDir: string = resolveAssetPath('skills', 'agents')
+  sourceDir: string = resolveAssetPath('dist', 'skills', 'agents')
 ): CopyAgentsResult {
   const written: string[] = [];
   const files: string[] = [];

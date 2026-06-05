@@ -12,14 +12,15 @@ import {
 } from '../commands/setup.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
 
-// The packaged task-skill .md files live under skills/tasks/ (the asset
-// resolver's `resolveAssetPath('skills','tasks')`); `skillsDir()` is the
-// parent skills/ directory.
-const tasksSkillsDir = resolveAssetPath('skills', 'tasks');
+// The packaged task-skill .md files SHIP under dist/skills/tasks/ (the asset
+// resolver's `resolveAssetPath('dist','skills','tasks')`) — that is the only
+// `skills/` location included in the npm tarball's `files`, so setup must copy
+// from there for a global install to work.
+const tasksSkillsDir = resolveAssetPath('dist', 'skills', 'tasks');
 
-// Subagent definitions live under skills/agents/ (resolved via the SAME asset
-// resolver, not cwd). README.md is authoring-only and excluded from the copy.
-const agentsSourceDir = resolveAssetPath('skills', 'agents');
+// Subagent definitions ship under dist/skills/agents/ (resolved via the SAME
+// asset resolver, not cwd). README.md is authoring-only and excluded from copy.
+const agentsSourceDir = resolveAssetPath('dist', 'skills', 'agents');
 
 function withTempHome<T>(fn: (home: string) => T): T {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-home-'));

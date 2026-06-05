@@ -11,7 +11,7 @@ import {
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { dataDir } from '../../config/paths.js';
 
-const tasksSkillsDir = resolveAssetPath('skills', 'tasks');
+const tasksSkillsDir = resolveAssetPath('dist', 'skills', 'tasks');
 
 // A FAKE token — never a real secret.
 const FAKE_PAT = 'wft_pat_FAKE_TEST_TOKEN_0123456789';

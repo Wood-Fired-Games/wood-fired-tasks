@@ -41,6 +41,7 @@
   },
   "files": [
     "dist/",
+    "scripts/postinstall.cjs",
     "!dist/**/__tests__/**",
     "!dist/**/*.test.*",
     "!dist/**/*.spec.*",
@@ -93,6 +94,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "postinstall": "node scripts/postinstall.cjs",
     "smoke": "./scripts/smoke/fresh-clone-smoke.sh",
+    "smoke:global": "node scripts/smoke-global.mjs",
     "cli": "tsx src/cli/bin/tasks.ts",
     "mcp:start": "node dist/mcp/index.js",
     "mcp:dev": "tsx src/mcp/index.ts",
