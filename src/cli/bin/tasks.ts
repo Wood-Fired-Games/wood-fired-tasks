@@ -38,6 +38,7 @@ import { createCompletionsCommand } from '../commands/completions.js';
 import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
+import { mcpCommand } from '../commands/mcp.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -133,6 +134,9 @@ program.addCommand(logoutCommand);
 
 // Register whoami command (Plan 30-07).
 program.addCommand(whoamiCommand);
+
+// Register mcp command (task #734): local stdio server / remote HTTP bridge.
+program.addCommand(mcpCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133
