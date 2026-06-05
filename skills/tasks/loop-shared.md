@@ -266,6 +266,29 @@ The `additional_observations` array tells the verifier that the narrowing is *de
 
 **Cross-reference: this is the ONLY legitimate path for an intentional narrowed-scope closure to reach PASS.** Without §2a's scope annotation, the orchestrator passes the full AC list and accepts whatever verdict the verifier returns — there is no inline shortcut, and §7c's "no upgrades" rule still binds. The §7d declared-scope carve-out is a status-level decision predicated on this envelope construction; it does NOT bypass it.
 
+### `verification_evidence` write schema (the object written back to `update_task`)
+
+The spec above is the **input** envelope handed to the verifier. This sub-block is the **output**: the `verification_evidence` object the orchestrator passes verbatim to `wood-fired-tasks:update_task` when it closes the task (loop.md §7d / §Step 8, loop-dag.md §3d). It is the object the verifier emits (per `docs/verifier-contract.md` / `skills/agents/tasks-verifier.md`) and the orchestrator writes unchanged — do NOT reshape it.
+
+```
+verification_evidence: {
+  verdict: "PASS" | "FAIL" | "PARTIAL" | "NOT_VERIFIED",
+  verified_at: <ISO8601>,
+  verifier_session_id: <string>,        // the SEPARATELY DISPATCHED tasks-verifier's id (never the orchestrator's own) — see §L
+  checks: [
+    {
+      name: <string>,
+      status: "PASS" | "FAIL" | "SKIP",  // NOTE: check-level status has NO "PARTIAL" — use SKIP + "UNCHECKABLE:" prefix
+      evidence_url_or_text: <string>     // ⚠ field is `evidence_url_or_text`, NOT `evidence`
+    }
+  ]
+}
+```
+
+**⚠ The per-check field is `evidence_url_or_text` — NOT `evidence`.** A write using `evidence` (or any other name) is rejected by `VerificationEvidenceSchema` (declared `.strict()` in `src/schemas/task.schema.ts`), so the `update_task` call fails validation and the close is lost. This is the friction this sub-block prevents.
+
+**Enum asymmetry (load-bearing).** The top-level `verdict` enum includes `PARTIAL` and `NOT_VERIFIED`; the per-check `status` enum does NOT — it is exactly `PASS` | `FAIL` | `SKIP`. A check that cannot be graded is `SKIP` with an `"UNCHECKABLE: …"` prefix in its `evidence_url_or_text`, never `PARTIAL`. Only `verdict` is required; `verified_at`, `verifier_session_id`, and `checks` are optional (this is what lets the auto-NOT_VERIFIED close emit `{ verdict: "NOT_VERIFIED" }` without fabricating a timestamp or session id).
+
 ---
 
 ## §C. LOOP-RUN.md frontmatter required fields
