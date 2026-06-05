@@ -13,15 +13,17 @@ import { resolveAssetPath } from '../../assets/resolve.js';
  * ZERO admin rights by default.
  *
  * Cross-OS seam: {@link getServiceBackend} dispatches on `process.platform`.
- * Only the Linux (`systemctl --user`) backend is implemented here. macOS
- * (launchd, task #741) and Windows (task #742) are separate tasks; this module
- * intentionally throws a clear "not yet implemented" for those platforms so the
- * seam is explicit rather than silently absent.
+ * Three admin-free backends are implemented:
+ *   - Linux (`systemctl --user`): user-scoped systemd unit under
+ *     `~/.config/systemd/user/`.
+ *   - macOS (launchd, task #741): per-user LaunchAgent plist under
+ *     `~/Library/LaunchAgents/`, driven by `launchctl` in the GUI/user domain.
+ *   - Windows (Scheduled Task, task #741): a per-user, at-logon scheduled task
+ *     created with `schtasks /Create /SC ONLOGON ... /F` (NO `/RU SYSTEM`).
  *
- * The Linux backend is admin-free: it writes a user-scoped systemd unit under
- * `~/.config/systemd/user/` and drives it with `systemctl --user`. It NEVER
- * shells out to sudo / runas / pkexec / doas — the same hard guard used by
- * setup.ts `fixNpmPrefix`.
+ * Every backend is admin-free: none of them shell out to
+ * sudo / runas / pkexec / doas — the same hard guard used by setup.ts
+ * `fixNpmPrefix`. The `--system` (elevated) variant is future work (task #742).
  */
 
 /** The systemd unit file name written under the user unit directory. */
@@ -211,26 +213,244 @@ export class LinuxSystemdBackend implements ServiceBackend {
   }
 }
 
+/** Reverse-DNS LaunchAgent label / plist basename used by the macOS backend. */
+export const LAUNCHD_LABEL = 'com.woodfiredgames.tasks';
+
+/** The LaunchAgent plist file name written under the user LaunchAgents dir. */
+export const LAUNCHD_PLIST_NAME = `${LAUNCHD_LABEL}.plist`;
+
+export interface MacBackendOptions {
+  /**
+   * Injectable base directory for the user LaunchAgents dir. The plist is
+   * written to `<launchAgentsBase>/com.woodfiredgames.tasks.plist`. Defaults to
+   * `~/Library/LaunchAgents`. Overridable for tests.
+   */
+  launchAgentsBase?: string;
+  /** Injectable command runner (tests assert argv; default execs launchctl). */
+  runner?: CommandRunner;
+  /** Absolute path to the CLI entry point the agent should run. */
+  cliEntryPoint?: string;
+  /** Node binary used to launch the CLI (defaults to process.execPath). */
+  nodeBin?: string;
+  /** Injectable logger. */
+  log?: (line: string) => void;
+}
+
+/** Resolve the default user LaunchAgents directory (`~/Library/LaunchAgents`). */
+export function defaultLaunchAgentsBase(home: string = os.homedir()): string {
+  return path.join(home, 'Library', 'LaunchAgents');
+}
+
+/** XML-escape a string for safe inclusion in plist text. */
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * macOS backend: per-user launchd LaunchAgent. Admin-free — operates entirely
+ * in the user (GUI) domain, never `sudo launchctl` / system domain.
+ *
+ * Layout: `<launchAgentsBase>/com.woodfiredgames.tasks.plist`.
+ */
+export class MacLaunchdBackend implements ServiceBackend {
+  private readonly launchAgentsBase: string;
+  private readonly runner: CommandRunner;
+  private readonly cliEntryPoint: string;
+  private readonly nodeBin: string;
+  private readonly log: (line: string) => void;
+
+  constructor(options: MacBackendOptions = {}) {
+    this.launchAgentsBase =
+      options.launchAgentsBase ?? defaultLaunchAgentsBase();
+    this.runner = options.runner ?? defaultRunner;
+    this.cliEntryPoint = options.cliEntryPoint ?? resolveCliEntryPoint();
+    this.nodeBin = options.nodeBin ?? process.execPath;
+    this.log = options.log ?? ((line: string) => console.log(line));
+  }
+
+  /** Absolute path to the LaunchAgent plist file. */
+  get plistPath(): string {
+    return path.join(this.launchAgentsBase, LAUNCHD_PLIST_NAME);
+  }
+
+  /**
+   * Render the LaunchAgent plist. `ProgramArguments` runs `<node> <cli> serve`;
+   * `RunAtLoad` + `KeepAlive` keep it running across logout/reboot.
+   */
+  renderPlist(): string {
+    const programArgs = [this.nodeBin, this.cliEntryPoint, 'serve'];
+    const argEntries = programArgs
+      .map((a) => `    <string>${escapeXml(a)}</string>`)
+      .join('\n');
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+      '<plist version="1.0">',
+      '<dict>',
+      '  <key>Label</key>',
+      `  <string>${LAUNCHD_LABEL}</string>`,
+      '  <key>ProgramArguments</key>',
+      '  <array>',
+      argEntries,
+      '  </array>',
+      '  <key>RunAtLoad</key>',
+      '  <true/>',
+      '  <key>KeepAlive</key>',
+      '  <true/>',
+      '</dict>',
+      '</plist>',
+      '',
+    ].join('\n');
+  }
+
+  /** Guard launchctl against elevation (defense in depth). */
+  private launchctl(...args: string[]): string {
+    if (ELEVATION_RE.test('launchctl')) {
+      throw new Error('refusing to run elevated command');
+    }
+    return this.runner('launchctl', args);
+  }
+
+  install(): void {
+    fs.mkdirSync(this.launchAgentsBase, { recursive: true });
+    fs.writeFileSync(this.plistPath, this.renderPlist(), 'utf8');
+    // `load -w` registers + enables the agent in the user domain (no sudo).
+    this.launchctl('load', '-w', this.plistPath);
+    this.log(`Installed and started user LaunchAgent '${LAUNCHD_LABEL}'.`);
+    this.log(`Plist written to ${this.plistPath} (no elevation required).`);
+  }
+
+  uninstall(): void {
+    // Best-effort unload; tolerate an already-absent agent.
+    this.launchctl('unload', '-w', this.plistPath);
+    if (fs.existsSync(this.plistPath)) {
+      fs.rmSync(this.plistPath);
+    }
+    this.log(`Uninstalled user LaunchAgent '${LAUNCHD_LABEL}'.`);
+  }
+
+  status(): ServiceStatus {
+    const installed = fs.existsSync(this.plistPath);
+    // `launchctl list <label>` prints a plist-like blob with "PID" when running
+    // and exits non-zero when the label is not loaded.
+    const listing = this.launchctl('list', LAUNCHD_LABEL);
+    const loaded = listing.length > 0;
+    const running = /"?PID"?\s*=\s*\d+/.test(listing);
+    return {
+      running,
+      // In the user launchd domain, a loaded agent installed with `-w` is the
+      // "enabled to start at login" signal.
+      enabled: loaded && installed,
+      activeState: running ? 'running' : loaded ? 'loaded' : 'not-loaded',
+      enabledState: loaded ? 'enabled' : 'disabled',
+      installed,
+    };
+  }
+}
+
+/** Scheduled-task name used by the Windows backend. */
+export const WINDOWS_TASK_NAME = 'WoodFiredTasks';
+
+export interface WindowsBackendOptions {
+  /** Injectable command runner (tests assert argv; default execs schtasks). */
+  runner?: CommandRunner;
+  /** Absolute path to the CLI entry point the task should run. */
+  cliEntryPoint?: string;
+  /** Node binary used to launch the CLI (defaults to process.execPath). */
+  nodeBin?: string;
+  /** Injectable logger. */
+  log?: (line: string) => void;
+}
+
+/**
+ * Windows backend: a per-user, at-logon Scheduled Task created with `schtasks`.
+ * Admin-free — the task runs as the *current interactive user* (no `/RU SYSTEM`,
+ * no elevation). Use `/SC ONLOGON` so it relaunches `serve` at each login.
+ */
+export class WindowsScheduledTaskBackend implements ServiceBackend {
+  private readonly runner: CommandRunner;
+  private readonly cliEntryPoint: string;
+  private readonly nodeBin: string;
+  private readonly log: (line: string) => void;
+
+  constructor(options: WindowsBackendOptions = {}) {
+    this.runner = options.runner ?? defaultRunner;
+    this.cliEntryPoint = options.cliEntryPoint ?? resolveCliEntryPoint();
+    this.nodeBin = options.nodeBin ?? process.execPath;
+    this.log = options.log ?? ((line: string) => console.log(line));
+  }
+
+  /** The `/TR` task-run command: `<node> <cli> serve`. */
+  get taskRun(): string {
+    return `${this.nodeBin} ${this.cliEntryPoint} serve`;
+  }
+
+  /** Guard schtasks against elevation (defense in depth). */
+  private schtasks(...args: string[]): string {
+    if (ELEVATION_RE.test('schtasks')) {
+      throw new Error('refusing to run elevated command');
+    }
+    return this.runner('schtasks', args);
+  }
+
+  install(): void {
+    // Per-user, at-logon, current-user context. NO /RU SYSTEM, NO elevation.
+    // /F overwrites an existing task so install is idempotent.
+    this.schtasks(
+      '/Create',
+      '/SC',
+      'ONLOGON',
+      '/TN',
+      WINDOWS_TASK_NAME,
+      '/TR',
+      this.taskRun,
+      '/F'
+    );
+    this.log(
+      `Installed per-user logon task '${WINDOWS_TASK_NAME}' (no elevation required).`
+    );
+  }
+
+  uninstall(): void {
+    this.schtasks('/Delete', '/TN', WINDOWS_TASK_NAME, '/F');
+    this.log(`Uninstalled per-user logon task '${WINDOWS_TASK_NAME}'.`);
+  }
+
+  status(): ServiceStatus {
+    // `schtasks /Query` exits non-zero (and prints nothing) when the task is
+    // absent; prints its status line ("Running"/"Ready"/"Disabled") otherwise.
+    const listing = this.schtasks('/Query', '/TN', WINDOWS_TASK_NAME);
+    const installed = listing.length > 0;
+    const running = /\bRunning\b/i.test(listing);
+    const disabled = /\bDisabled\b/i.test(listing);
+    return {
+      running,
+      enabled: installed && !disabled,
+      activeState: running ? 'running' : installed ? 'ready' : 'not-found',
+      enabledState: installed ? (disabled ? 'disabled' : 'enabled') : 'not-found',
+      installed,
+    };
+  }
+}
+
 /**
  * Cross-OS dispatch seam. Returns the platform-appropriate backend.
- * Linux is implemented; darwin (#741) and win32 (#742) throw a clear
- * "not yet implemented" so the seam is explicit.
+ * Linux, macOS (#741) and Windows (#741) are all implemented and admin-free.
  */
 export function getServiceBackend(
   platform: NodeJS.Platform = process.platform,
-  options: LinuxBackendOptions = {}
+  options: LinuxBackendOptions & MacBackendOptions & WindowsBackendOptions = {}
 ): ServiceBackend {
   switch (platform) {
     case 'linux':
       return new LinuxSystemdBackend(options);
     case 'darwin':
-      throw new Error(
-        "service management is not yet implemented on 'darwin' (tracked by task #741)"
-      );
+      return new MacLaunchdBackend(options);
     case 'win32':
-      throw new Error(
-        "service management is not yet implemented on 'win32' (tracked by task #742)"
-      );
+      return new WindowsScheduledTaskBackend(options);
     default:
       throw new Error(
         `service management is not yet implemented on '${platform}'`
@@ -240,7 +460,7 @@ export function getServiceBackend(
 
 export const serviceCommand = new Command('service')
   .description(
-    'Manage the Wood Fired Tasks background service (Linux: systemctl --user, admin-free)'
+    'Manage the Wood Fired Tasks background service (admin-free: Linux systemctl --user, macOS launchd LaunchAgent, Windows per-user logon task)'
   );
 
 serviceCommand

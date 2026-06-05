@@ -4,15 +4,29 @@ import path from 'node:path';
 import fs from 'node:fs';
 import {
   LinuxSystemdBackend,
+  MacLaunchdBackend,
+  WindowsScheduledTaskBackend,
   getServiceBackend,
   defaultRunner,
   SERVICE_NAME,
   SERVICE_UNIT_NAME,
+  LAUNCHD_LABEL,
+  LAUNCHD_PLIST_NAME,
+  WINDOWS_TASK_NAME,
   type CommandRunner,
 } from '../service.js';
 
 function withTempConfigBase<T>(fn: (base: string) => T): T {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-service-cfg-'));
+  try {
+    return fn(base);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+}
+
+function withTempBase<T>(prefix: string, fn: (base: string) => T): T {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   try {
     return fn(base);
   } finally {
@@ -165,16 +179,229 @@ describe('getServiceBackend dispatch seam', () => {
     expect(getServiceBackend('linux')).toBeInstanceOf(LinuxSystemdBackend);
   });
 
-  it("throws a clear 'not yet implemented' for 'darwin'", () => {
-    expect(() => getServiceBackend('darwin')).toThrowError(
-      /not yet implemented on 'darwin'/
+  it("returns the macOS launchd backend for 'darwin'", () => {
+    expect(getServiceBackend('darwin')).toBeInstanceOf(MacLaunchdBackend);
+  });
+
+  it("returns the Windows scheduled-task backend for 'win32'", () => {
+    expect(getServiceBackend('win32')).toBeInstanceOf(
+      WindowsScheduledTaskBackend
     );
   });
 
-  it("throws a clear 'not yet implemented' for 'win32'", () => {
-    expect(() => getServiceBackend('win32')).toThrowError(
-      /not yet implemented on 'win32'/
+  it('still throws for an unsupported platform', () => {
+    expect(() => getServiceBackend('aix' as NodeJS.Platform)).toThrowError(
+      /not yet implemented on 'aix'/
     );
+  });
+});
+
+describe('tasks service — macOS launchd LaunchAgent backend', () => {
+  it('install writes a per-user plist and NEVER elevates', () => {
+    withTempBase('wft-service-mac-', (launchAgentsBase) => {
+      const { runner, calls } = recordingRunner();
+      const backend = new MacLaunchdBackend({
+        launchAgentsBase,
+        runner,
+        cliEntryPoint: '/opt/wft/dist/cli/bin/tasks.js',
+        nodeBin: '/usr/bin/node',
+        log: () => {},
+      });
+
+      backend.install();
+
+      // Plist written under the injected user LaunchAgents dir.
+      const plistPath = path.join(launchAgentsBase, LAUNCHD_PLIST_NAME);
+      expect(fs.existsSync(plistPath)).toBe(true);
+      const plist = fs.readFileSync(plistPath, 'utf8');
+      expect(plist).toContain(`<string>${LAUNCHD_LABEL}</string>`);
+      expect(plist).toContain('<key>ProgramArguments</key>');
+      // ProgramArguments runs the CLI `serve` subcommand.
+      expect(plist).toContain('<string>/usr/bin/node</string>');
+      expect(plist).toContain(
+        '<string>/opt/wft/dist/cli/bin/tasks.js</string>'
+      );
+      expect(plist).toContain('<string>serve</string>');
+      expect(plist).toContain('<key>RunAtLoad</key>');
+      expect(plist).toContain('<key>KeepAlive</key>');
+
+      // Driven via launchctl in the user (GUI) domain — load -w, no sudo.
+      expect(calls).toEqual([
+        { cmd: 'launchctl', args: ['load', '-w', plistPath] },
+      ]);
+
+      // Hard assertion: no elevated command anywhere.
+      for (const { cmd } of calls) {
+        expect(ELEVATION).not.toContain(cmd.toLowerCase());
+      }
+      const haystack = JSON.stringify(calls).toLowerCase();
+      for (const banned of ELEVATION) {
+        expect(haystack).not.toContain(banned);
+      }
+    });
+  });
+
+  it('uninstall unloads and removes the plist, never elevating', () => {
+    withTempBase('wft-service-mac-', (launchAgentsBase) => {
+      const { runner, calls } = recordingRunner();
+      const backend = new MacLaunchdBackend({
+        launchAgentsBase,
+        runner,
+        log: () => {},
+      });
+
+      backend.install();
+      expect(fs.existsSync(backend.plistPath)).toBe(true);
+
+      calls.length = 0;
+      backend.uninstall();
+
+      expect(fs.existsSync(backend.plistPath)).toBe(false);
+      expect(calls).toEqual([
+        { cmd: 'launchctl', args: ['unload', '-w', backend.plistPath] },
+      ]);
+      for (const { cmd } of calls) {
+        expect(ELEVATION).not.toContain(cmd.toLowerCase());
+      }
+    });
+  });
+
+  it('status reports running when launchctl list shows a PID', () => {
+    withTempBase('wft-service-mac-', (launchAgentsBase) => {
+      const plistPath = path.join(launchAgentsBase, LAUNCHD_PLIST_NAME);
+      const { runner, calls } = recordingRunner({
+        [`list ${LAUNCHD_LABEL}`]: '{\n\t"PID" = 4242;\n}',
+      });
+      const backend = new MacLaunchdBackend({
+        launchAgentsBase,
+        runner,
+        log: () => {},
+      });
+      backend.install();
+      calls.length = 0;
+
+      const status = backend.status();
+      expect(status.running).toBe(true);
+      expect(status.enabled).toBe(true);
+      expect(status.activeState).toBe('running');
+      expect(status.enabledState).toBe('enabled');
+      expect(status.installed).toBe(true);
+      expect(calls).toEqual([
+        { cmd: 'launchctl', args: ['list', LAUNCHD_LABEL] },
+      ]);
+      expect(plistPath).toBe(backend.plistPath);
+    });
+  });
+
+  it('status reports not-loaded when launchctl list is empty and no plist', () => {
+    withTempBase('wft-service-mac-', (launchAgentsBase) => {
+      const { runner } = recordingRunner();
+      const backend = new MacLaunchdBackend({
+        launchAgentsBase,
+        runner,
+        log: () => {},
+      });
+      const status = backend.status();
+      expect(status.running).toBe(false);
+      expect(status.enabled).toBe(false);
+      expect(status.activeState).toBe('not-loaded');
+      expect(status.enabledState).toBe('disabled');
+      expect(status.installed).toBe(false);
+    });
+  });
+});
+
+describe('tasks service — Windows per-user Scheduled Task backend', () => {
+  it('install builds an at-logon per-user schtasks with NO /RU SYSTEM and NO elevation', () => {
+    const { runner, calls } = recordingRunner();
+    const backend = new WindowsScheduledTaskBackend({
+      runner,
+      cliEntryPoint: 'C:\\wft\\dist\\cli\\bin\\tasks.js',
+      nodeBin: 'C:\\Program Files\\nodejs\\node.exe',
+      log: () => {},
+    });
+
+    backend.install();
+
+    const expectedTr =
+      'C:\\Program Files\\nodejs\\node.exe C:\\wft\\dist\\cli\\bin\\tasks.js serve';
+    expect(calls).toEqual([
+      {
+        cmd: 'schtasks',
+        args: [
+          '/Create',
+          '/SC',
+          'ONLOGON',
+          '/TN',
+          WINDOWS_TASK_NAME,
+          '/TR',
+          expectedTr,
+          '/F',
+        ],
+      },
+    ]);
+
+    // No SYSTEM run-as, no elevation anywhere in the argv.
+    const haystack = JSON.stringify(calls);
+    expect(haystack).not.toContain('/RU');
+    expect(haystack.toUpperCase()).not.toContain('SYSTEM');
+    for (const { cmd } of calls) {
+      expect(ELEVATION).not.toContain(cmd.toLowerCase());
+    }
+    for (const banned of ELEVATION) {
+      expect(haystack.toLowerCase()).not.toContain(banned);
+    }
+  });
+
+  it('uninstall deletes the per-user task with /F, never elevating', () => {
+    const { runner, calls } = recordingRunner();
+    const backend = new WindowsScheduledTaskBackend({ runner, log: () => {} });
+
+    backend.uninstall();
+
+    expect(calls).toEqual([
+      {
+        cmd: 'schtasks',
+        args: ['/Delete', '/TN', WINDOWS_TASK_NAME, '/F'],
+      },
+    ]);
+    for (const { cmd } of calls) {
+      expect(ELEVATION).not.toContain(cmd.toLowerCase());
+    }
+  });
+
+  it('status parses a Running query into a structured result', () => {
+    const { runner, calls } = recordingRunner({
+      [`/Query /TN ${WINDOWS_TASK_NAME}`]:
+        'TaskName  Next Run Time  Status\nWoodFiredTasks  N/A  Running',
+    });
+    const backend = new WindowsScheduledTaskBackend({ runner, log: () => {} });
+
+    const status = backend.status();
+    expect(status).toEqual({
+      running: true,
+      enabled: true,
+      activeState: 'running',
+      enabledState: 'enabled',
+      installed: true,
+    });
+    expect(calls).toEqual([
+      {
+        cmd: 'schtasks',
+        args: ['/Query', '/TN', WINDOWS_TASK_NAME],
+      },
+    ]);
+  });
+
+  it('status reports not-found when the task is absent', () => {
+    const { runner } = recordingRunner();
+    const backend = new WindowsScheduledTaskBackend({ runner, log: () => {} });
+    const status = backend.status();
+    expect(status.running).toBe(false);
+    expect(status.enabled).toBe(false);
+    expect(status.activeState).toBe('not-found');
+    expect(status.enabledState).toBe('not-found');
+    expect(status.installed).toBe(false);
   });
 });
 
