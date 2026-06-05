@@ -39,6 +39,42 @@ The building blocks are the `/tasks:*` skills. See
 
 ---
 
+## 0. Get installed — npm-only, no clone
+
+Before any of the loop patterns, you need the CLI, the MCP wiring, and a running
+server. The frictionless path is a global npm install plus two subcommands — **no
+git clone, no build, no admin rights**:
+
+```text
+npm i -g wood-fired-tasks       # ships server + CLI + MCP bridge + /tasks:* skills
+wood-fired-tasks setup          # merges ~/.claude.json + copies skills/subagents
+wood-fired-tasks serve          # migrates the OS app-data DB on start, then listens
+```
+
+Restart Claude Code after `setup` and the `/tasks:*` commands and MCP tools are
+live. Then keep it running and current:
+
+```text
+wood-fired-tasks service install   # Linux: user-scoped systemd unit (admin-free)
+wood-fired-tasks self-update       # npm i -g wood-fired-tasks@latest (no sudo)
+```
+
+**Point at a shared remote server** instead of running one locally — every
+machine then shares one backlog:
+
+```text
+wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…
+```
+
+**Admin-free, always.** No subcommand escalates. If `npm i -g` hits an EACCES on
+a root-owned prefix, run `wood-fired-tasks setup --fix-npm-prefix` and re-run —
+never sudo. The single opt-in elevation is the system-wide service
+(`service install --system`). Full reference: [SETUP.md → Frictionless install](SETUP.md#frictionless-install-npm--no-clone).
+
+> Working from a clone for development? Use `npm run cli -- <command>` in-tree —
+> see [SETUP.md → Development Setup](SETUP.md#development-setup). Every
+> `wood-fired-tasks <command>` below also works as `tasks <command>`.
+
 ## 1. Plan → decompose → loop-dag (the canonical DAG flow)
 
 The flagship pattern. You don't hand-write tasks — you produce a **plan**, let

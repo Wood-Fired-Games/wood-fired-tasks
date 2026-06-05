@@ -66,56 +66,68 @@ Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are adapt
 
 ## Quick Start
 
-Works from a **fresh clone** with no global install. Put your config in a `.env`
-file **once** instead of exporting variables by hand — the CLI loads `.env`
-automatically, so there is nothing to re-export in other terminals.
+Install from npm — **no git clone, no build, no admin rights.** The global
+install ships the server, the `tasks` CLI, the MCP bridge, and the `/tasks:*`
+skills together; `setup` wires them into Claude Code and `serve` runs the API.
 
 ```bash
-# 1. Clone + install
-git clone https://github.com/Wood-Fired-Games/wood-fired-tasks.git
-cd wood-fired-tasks && npm ci
+# 1. Install the CLI globally (never needs sudo — see the admin-free note below)
+npm i -g wood-fired-tasks
 
-# 2. Config — copy the template and set ONE value (API_KEYS).
-cp .env.example .env
-#   edit .env: set API_KEYS=your-key, and add API_KEY=your-key (same value) so
-#   the CLI authenticates with that legacy key. (Production: mint a PAT and run
-#   `npm run cli -- login` instead — see Security Model below.)
+# 2. Wire it into Claude Code: merges the local stdio MCP server into
+#    ~/.claude.json and copies the /tasks:* skills + subagents — idempotent,
+#    no manual JSON editing.
+wood-fired-tasks setup
 
-# 3. Migrate, build, start. The server reads real env vars, so load .env into the
-#    shell once (one line, not four exports), then run:
-set -a; source .env; set +a
-npm run migrate && npm run build && npm start   # listens on PORT (default 3000)
+# 3. Run the API server. Migrates the OS app-data DB on start and listens on
+#    127.0.0.1:3000 (set HOST=0.0.0.0 to expose on the LAN).
+wood-fired-tasks serve
 ```
 
-In a **second terminal**, just create a project, capture its id, then add a task
-and list — **no exports needed**, the CLI reads `.env` for you:
+Restart Claude Code after `setup` and the `/tasks:*` commands and MCP tools are
+live. Then create a project, capture its id, add a task, and list:
 
 ```bash
-npm run cli -- --json project-create --name "My Project"
+wood-fired-tasks --json project-create --name "My Project"
 #  → {"success":true,"data":{"project":{"id":2,...}},"metadata":{"id":2}}
-npm run cli -- create --title "My first task" --project 2 --created-by "me"
-npm run cli -- list --project 2
+wood-fired-tasks create --title "My first task" --project 2 --created-by "me"
+wood-fired-tasks list --project 2
 ```
 
 > Do NOT assume a project id 1 exists — always create one first and use the id
-> it returns. `npm run cli --` prints a two-line npm banner; add `--silent`
-> (`npm run cli --silent -- …`) to suppress it.
+> it returns.
 
-### Wire it into Claude Code (no manual JSON editing)
+**Admin-free guarantee.** No step ever escalates: `setup`, `serve`,
+`self-update`, and `service install` refuse to shell out to `sudo` / `runas` /
+`pkexec` / `doas`. If a global `npm i -g` hits an EACCES on a root-owned npm
+prefix, run `wood-fired-tasks setup --fix-npm-prefix` to point npm at a
+user-writable prefix (`~/.npm-global`) and re-run **without** sudo. The one and
+only path that elevates is the opt-in system-wide service
+(`wood-fired-tasks service install --system`); everything else stays in your
+user scope.
 
-Don't hand-edit `~/.claude.json`. The bundled installer writes the MCP server
-entry and copies the `/tasks:*` skill files for you:
+**Keep it running and up to date.**
 
 ```bash
-./install.sh         # Linux/macOS — local mode: stdio MCP over the in-process SQLite DB
-.\install.ps1        # Windows
+wood-fired-tasks service install   # Linux: user-scoped systemd unit (admin-free)
+wood-fired-tasks self-update       # npm i -g wood-fired-tasks@latest (no sudo)
 ```
 
-Restart Claude Code afterward and the `/tasks:*` commands and MCP tools are live.
-For a shared on-prem server with Windows/Linux/macOS clients pointed at it, see
+**Point at a shared remote server** instead of running it locally:
+
+```bash
+wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…
+```
+
+This writes a `wood-fired-tasks-remote` MCP entry (proxying every tool to the
+REST API) and caches the PAT under your OS config dir. For a full
+Windows/Linux/macOS fleet on one on-prem server, see
 [Multi-OS client fleet](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server).
 
-For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
+Browse the bundled guides from anywhere with `wood-fired-tasks docs list` /
+`docs show setup`. For detailed setup — local, remote, update, serve, and the
+background service — see [docs/SETUP.md](docs/SETUP.md). Working from a clone for
+development instead? See [docs/SETUP.md → Development Setup](docs/SETUP.md#development-setup).
 
 ## Self-hosting
 
