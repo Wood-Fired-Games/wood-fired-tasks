@@ -42,6 +42,7 @@ import { mcpCommand } from '../commands/mcp.js';
 import { selfUpdateCommand } from '../commands/self-update.js';
 import { serveCommand } from '../commands/serve.js';
 import { setupCommand } from '../commands/setup.js';
+import { docsCommand } from '../commands/docs.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -152,6 +153,10 @@ program.addCommand(serveCommand);
 // Register setup command (task #737): merge local MCP entry into ~/.claude.json
 // and copy skills into ~/.claude/commands/tasks/, plus --fix-npm-prefix.
 program.addCommand(setupCommand);
+
+// Register docs command (task #749): browse the bundled user-facing guides
+// (list/show/path/open), resolved via the asset resolver (package root, not cwd).
+program.addCommand(docsCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133
