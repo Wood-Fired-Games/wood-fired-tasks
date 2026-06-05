@@ -44,7 +44,6 @@
     "!dist/**/__tests__/**",
     "!dist/**/*.test.*",
     "!dist/**/*.property.test.*",
-    "!dist/wood-fired-tasks-client.zip",
     "packages/wft-router/dist/",
     "!packages/wft-router/dist/**/__tests__/**",
     "!packages/wft-router/dist/**/*.test.*",

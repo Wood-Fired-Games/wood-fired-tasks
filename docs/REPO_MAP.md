@@ -14,11 +14,10 @@ than duplicating them.
 |------|---------|
 | `src/` | TypeScript sources for API, MCP, CLI, Slack, DB, services. |
 | `docs/` | Authoritative reference + agent-facing docs. |
-| `scripts/` | Repo automation (`aggregate-mutation-reports.ts`, `build-client-package.sh`, `scripts/__tests__/`). |
+| `scripts/` | Repo automation (`aggregate-mutation-reports.ts`, `build-skills.ts`, `scripts/__tests__/`). |
 | `skills/` | Task-loop skill files under `skills/tasks/`. |
 | `tests/` | Cross-cutting test assets outside `src/`: `fixtures/`, `helpers/`, `smoke/` (CLI e2e/install smoke), `verifier-fixtures/`. |
 | `deploy/` | Linux systemd unit, crontab, backup/restore, install notes. |
-| `client-package/` | Packaged install bundle (setup/uninstall for Windows / Linux / macOS, `commands/`). |
 | `.github/workflows/` | CI: `ci.yml`, `bench.yml`, `install-scripts.yml`, `mutation.yml`, `secret-scan.yml`. |
 | `data/` | SQLite DB location (gitignored). |
 | `dist/` | `tsc` build output (gitignored). |
@@ -26,7 +25,7 @@ than duplicating them.
 | `node_modules/` | Dependencies (gitignored). |
 | `.planning/`, `.claude/`, `.codex/`, `.agents/` | Agent workspaces (gitignored, not distributed). |
 | Toolchain config | `package.json`, `package-lock.json`, `tsconfig.json`, `biome.json`, `knip.json`, `.dependency-cruiser.cjs`. |
-| Installers | `install.sh`, `install.ps1`. |
+| Installers | `install.sh`, `install.ps1` — deprecation shims that delegate to `wood-fired-tasks setup` (npm-package install path). |
 | Slack manifest | `slack-app-manifest.yml`. |
 | Root docs | `README.md`, `AGENTS.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE`. |
 | Env / secrets | `.env.example` (template); real `.env` is gitignored. |
@@ -109,7 +108,6 @@ than duplicating them.
 | Deploy script | `deploy/` | none (manual) | `deploy/README` notes |
 | Existing deep doc | `docs/<NAME>.md` | n/a | this map |
 | Skill file | `skills/tasks/<name>.md` | n/a | — |
-| Client-package script | `client-package/setup.{sh,bat,ps1}`, `client-package/commands/` | `scripts/__tests__/` for `build-client-package.sh` | [`SETUP.md`](SETUP.md) |
 | API key auth plugin | `src/api/plugins/auth.ts` | `src/api/__tests__/` | [`API.md`](API.md) |
 | OpenAPI surface | `src/api/plugins/swagger.ts` + route schemas | `src/api/__tests__/` | [`API.md`](API.md) |
 
@@ -126,19 +124,16 @@ than duplicating them.
 
 `deploy/` contains the Linux host bits: systemd unit, crontab, backup/restore
 scripts, and install instructions for the long-running API + MCP service.
-`client-package/` is the per-developer install bundle (`setup.sh`,
-`setup.bat`, `setup.ps1`, `uninstall.*`, `commands/`) used by `install.sh` /
-`install.ps1`. Note: `client-package/setup.{sh,bat,ps1}` write a `bin/tasks.cmd`
-shim with a baked-in API key during installation — treat any change to those
-scripts as security-relevant.
+The per-developer install path is the published npm package plus its `setup`
+subcommand (`npm i -g wood-fired-tasks && wood-fired-tasks setup`); the
+root-level `install.sh` / `install.ps1` are thin deprecation shims that print a
+notice and delegate to `wood-fired-tasks setup`.
 
 ## Secret-sensitive
 
 | Path | Why sensitive |
 |------|---------------|
 | `.env`, `.env.local` | Gitignored; carry API key, Slack tokens, DB path. |
-| `client-package/setup.{sh,bat,ps1}` | Bake an API key into `bin/tasks.cmd` on install. |
-| `bin/tasks.cmd` (installed, not in repo) | Contains baked API key on the developer machine. |
 | `data/*.db` | May contain real task data and Slack tokens in `slack_channel_subscriptions`. |
 | `.gitleaks.toml` | Secret-scan rules — review carefully before relaxing. |
 
