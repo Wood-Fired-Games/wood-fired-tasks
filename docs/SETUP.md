@@ -699,6 +699,105 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 `~/.claude.json` (and any timestamped backup) to the current user only via
 `icacls`. `-Mode local` collects no key.
 
+### Multi-OS client fleet (one shared on-prem server)
+
+The common production shape is one self-hosted API server (per
+[Self-hosting and upgrades](#self-hosting-and-upgrades)) with a fleet of
+Windows, Linux, and macOS workstations all pointing their Claude Code (and/or
+the `tasks` CLI) at it in **remote mode**. Each client runs the stdio remote
+bridge, which proxies every MCP tool call to the shared REST API — so every
+machine sees one backlog.
+
+There are three moving parts: the **server URL** every client must reach, a
+**per-client token**, and the **per-OS installer invocation**.
+
+#### 1. Make the server reachable
+
+- Bind the server to a routable interface (`HOST=0.0.0.0` or a specific LAN IP)
+  — see [Set Production Environment Variables](#2-set-production-environment-variables).
+  By default it is loopback-only and no other machine can reach it.
+- Put it behind a TLS-terminating reverse proxy. This is **required** if you use
+  OIDC browser login (the session cookie is `secure` in production and is
+  dropped over plain HTTP — see the OIDC cookie note above) and strongly
+  recommended regardless, so tokens never cross the network in cleartext.
+- The reachable origin (e.g. `https://tasks.example.com`) is the value every
+  client passes as `WOOD_FIRED_TASKS_URL`.
+
+#### 2. Mint one token per client
+
+Issue a **separate PAT per machine** (or per user-machine pair) so you can
+revoke one client without disturbing the rest. From the server (or any host
+with CLI access to its database):
+
+```bash
+# One PAT per client, labelled so you can identify and revoke it precisely.
+node dist/cli/bin/tasks.js db mint-token --user alice@example.com --name alice-macbook
+node dist/cli/bin/tasks.js db mint-token --user alice@example.com --name alice-winbox
+node dist/cli/bin/tasks.js db mint-token --user bob@example.com   --name bob-linux-ws
+```
+
+Each command prints the raw `wft_pat_…` once — copy it to that machine and
+nowhere else. Bound the blast radius with `--expires-at` and rotate on a
+schedule; see
+[Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents)
+and its rotation/revocation notes. (A legacy `API_KEYS` entry works too, but a
+per-machine PAT is the recommended unit — revocable, attributable, and
+expiry-bounded.)
+
+The remote bridge sends `WFT_API_KEY` as the legacy `X-API-Key` header, and
+automatically as `Authorization: Bearer …` when the value starts with
+`wft_pat_` — so a PAT drops straight into the `WFT_API_KEY` slot.
+
+#### 3. Run the installer in remote mode on each OS
+
+Both installers read the same two env vars — `WOOD_FIRED_TASKS_URL` (written
+into the MCP entry as `WFT_API_URL`) and `WOOD_FIRED_TASKS_API_KEY` (written as
+`WFT_API_KEY`) — and write a `wood-fired-tasks-remote` entry to that machine's
+`~/.claude.json`. Run each from a clone of this repo on the client, with `dist/`
+built (the bridge entry point is `dist/mcp/remote/index.js`):
+
+**Linux / macOS**
+
+```bash
+WOOD_FIRED_TASKS_URL="https://tasks.example.com" \
+WOOD_FIRED_TASKS_API_KEY="wft_pat_…this-machine…" \
+  ./install.sh --mode remote
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:WOOD_FIRED_TASKS_URL     = "https://tasks.example.com"
+$env:WOOD_FIRED_TASKS_API_KEY = "wft_pat_…this-machine…"
+.\install.ps1 -Mode remote
+```
+
+On every OS the token is cached with tightened permissions
+(`~/.config/wood-fired-tasks/api-key` mode 600 on Linux/macOS;
+`%LOCALAPPDATA%\wood-fired-tasks\api-key` user-only ACL on Windows) and
+`~/.claude.json` is locked down to the current user. Restart Claude Code
+afterward.
+
+#### Fleet checklist
+
+| Step | Linux | macOS | Windows |
+|------|-------|-------|---------|
+| Installer prereqs | `jq`, `curl` | `jq`, `curl` (`brew install jq`) | none (native PowerShell JSON) |
+| Set server URL | `WOOD_FIRED_TASKS_URL=…` | `WOOD_FIRED_TASKS_URL=…` | `$env:WOOD_FIRED_TASKS_URL=…` |
+| Provide token | `WOOD_FIRED_TASKS_API_KEY=…` | same | `$env:WOOD_FIRED_TASKS_API_KEY=…` |
+| Run installer | `./install.sh --mode remote` | same | `.\install.ps1 -Mode remote` |
+| MCP server name written | `wood-fired-tasks-remote` | same | same |
+
+Every client writes the identical `wood-fired-tasks-remote` server name pointing
+at the shared `WFT_API_URL`, so a backlog created on one machine is visible from
+all the others. To cut off a single client, revoke its PAT (web `/me` → revoke,
+or rotate per the PAT notes) — the rest of the fleet is unaffected.
+
+> **CLI fleet, not Claude Code?** The same server serves the `tasks` CLI: set
+> `API_BASE_URL=https://tasks.example.com` and authenticate with `tasks login`
+> (OIDC device flow) or pass `--token wft_pat_…` per command. See
+> [CLI Installation](#cli-installation).
+
 ### What the Installer Does
 
 1. **Copies skill files** to `~/.claude/commands/tasks/` (every `.md` file in `skills/tasks/`; currently 18, which includes the typed `/tasks:*` slash commands plus shared includes like `_enums`, `loop-shared`, and the `wsjf-rubric` scoring contract)

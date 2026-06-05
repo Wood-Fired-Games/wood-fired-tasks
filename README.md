@@ -4,23 +4,55 @@
 [![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> ## ✨ New in v1.17 — Safer first run & self-auditing loops
-> A reliability release: the Quick Start now works verbatim from a clean clone (with a one-command `npm run smoke` and a drift guard so it stays that way), and the autonomous `/tasks:loop` / `/tasks:loop-dag` / `/tasks:decompose` skills gained structural guards — a plan-time surface-coverage matrix and a terminal **reachability + parity audit** — that catch the "every task passed but the feature is unreachable in production" failure class before a backlog is declared done. The headline workflow remains **WSJF prioritization** (since v1.16): rank your backlog by **economic value**, not a flat `priority` field most teams leave at "all high," with variance-enforced column anchoring and propagation-adjusted effective WSJF. **→ [See WSJF Prioritization](#wsjf-prioritization).**
+Wood Fired Tasks is open-source coordination infrastructure for fleets of AI coding agents — the missing primitive between "I have one Claude Code session running" and "I have ten of them working the same backlog without stepping on each other." You point Claude Code (or Cursor, Gemini, Codex) and a `tasks` CLI at one shared, SQLite-backed service — over MCP, REST, or the CLI, all at full feature parity — and every surface reads and writes the same source of truth. The coordination primitives are first-class: atomic task claiming with optimistic locking (20 agents race, exactly one wins), workflow automation that auto-unblocks dependents and auto-completes parents as subtasks finish, and a real-time SSE event stream keeping every agent and dashboard in sync. On top of that, a set of `/tasks:*` skills turn a project-level goal into a decomposed, executable, auditable plan — and an optional economic prioritizer (WSJF) can rank the backlog by value-per-effort so the loops drain the most-unblocking work first. Self-hostable and MIT-licensed; one server can be shared by a whole team across Windows, Linux, and macOS.
 
-Wood Fired Tasks is open-source coordination infrastructure for fleets of AI coding agents — the missing primitive between "I have one Claude Code session running" and "I have ten of them working the same backlog without stepping on each other." It ships an MCP server and REST API for agents (Claude Code, Cursor, Gemini, Codex) and a `tasks` CLI for the humans supervising them, all at full feature parity over a shared SQLite service layer so every surface reads and writes the same source of truth. The coordination primitives are first-class: atomic task claiming with optimistic locking (20 agents race, exactly one wins), workflow automation that auto-unblocks dependents and auto-completes parents as subtasks finish, and a real-time SSE event stream keeping every agent and dashboard in sync. It also scores and ranks the backlog by **WSJF (Weighted Shortest Job First)** — a workflow most task trackers do not offer — recovering a usable ranking from the "everything is high" priority field most backlogs degenerate into (variance-enforced column anchoring) and folding the dependency graph's critical path into the order (propagation-adjusted effective WSJF), so the multi-agent loops drain the most-unblocking, highest value-per-effort work first. Self-hostable, MIT-licensed, and ships with a set of `/tasks:*` Claude Code skill files that turn a project-level goal into a decomposed, executable, auditable plan.
+**What you actually do with it:**
+
+- **Coordinate a fleet on one backlog** — many agents claim, complete, and unblock work against a single shared service without colliding.
+- **Go from idea → plan → decompose → execute → audit** with the `/tasks:*` skills (see [The workflow](#the-workflow) and the real-usage [playbook](docs/USAGE_PATTERNS.md)).
+- **Run it on-prem for your team** — one self-hosted server, with Windows/Linux/macOS clients all pointed at it ([multi-OS fleet setup](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server)).
 
 **Key capabilities:**
 
-- REST API with 47 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated) for full task lifecycle management — a single running instance serves up to 40 of them (the OIDC-disabled `/auth/*` stub handlers are mutually exclusive with the live OIDC routes)
-- CLI (`tasks`) with 34 commands for terminal-based operations
-- MCP server with 27 tools for native Claude Code integration (local SQLite or remote HTTP modes)
-- 16 task-loop skill files that ship as Claude Code slash commands today; the underlying recipes are vendor-neutral and any agent harness can consume them
-- **WSJF prioritization** — a workflow most task trackers do not offer. Two properties make it more than a priority field: **variance-enforced column anchoring** (batch scoring forces a usable spread out of a backlog where "everything is high," recovering a real ranking from a degenerate priority enum) and **propagation-adjusted effective WSJF** (the dependency graph injects automated critical-path awareness, surfacing the boring prerequisite that unblocks the most downstream value — an ordering no hand-set priority captures). Scored autonomously and evidence-backed at decompose/create time against a per-project **value charter**. Backward-compatible: unscored projects sort by `priority` then age, exactly as before
-- Real-time Server-Sent Events (SSE) for task change notifications
-- Atomic task claiming with optimistic locking for multi-agent coordination
-- Workflow automation: parent auto-complete and dependency auto-unblock
+- `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
+- MCP server with 27 tools for native agent integration (local SQLite or remote HTTP modes) + cross-platform installers (Linux/macOS and Windows)
+- REST API with 47 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 40 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 34 commands
+- Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
+- Real-time Server-Sent Events (SSE) for task/project change notifications
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
-- Cross-platform installers for Linux/macOS and Windows
+- **Optional WSJF prioritization** — economic backlog ordering most trackers don't offer: variance-enforced column anchoring (recovers a real ranking from an "everything is high" backlog) and propagation-adjusted effective WSJF (surfaces the prerequisite that unblocks the most downstream value). Opt-in and backward-compatible. [Details ↓](#wsjf-prioritization)
+
+## The workflow
+
+The `/tasks:*` skills turn a high-level goal into a drained, audited backlog. The
+canonical lifecycle:
+
+```
+ plan ─────▶ /tasks:decompose ─────▶ /tasks:loop      (FLAT — sequential)
+(brainstorm   into a dedicated         or
+ or your own  project (8–25 tasks    /tasks:loop-dag  (DAG — parallel waves) ─────▶ /tasks:audit
+ plan file)   or a dependency DAG)
+```
+
+- **`/tasks:decompose <plan-or-goal>`** turns a project goal (or a written plan) into
+  8–25 independent leaf tasks or a dependency DAG. It *plans only* — it never executes
+  what it creates, refuses blast-radius goals, and supports `--dry-run`.
+- **`/tasks:loop` / `/tasks:loop-dag`** drain the backlog autonomously: a subagent
+  implements each task, the orchestrator re-verifies with your build/test commands,
+  closes it, commits, and moves on. `loop` runs a FLAT backlog in sequence; `loop-dag`
+  runs a dependency DAG wave-by-wave in parallel.
+- **`/tasks:audit`** grades the closed work against its acceptance criteria.
+
+That is the skeleton. The patterns people actually run — draining a big project across
+many context clears, the *surface-and-file* capture loop, scoped subset loops,
+branch → PR → independent-review → merge, and the single-threaded **live-verified**
+fallback when an autonomous run can't be trusted — are written up with illustrative
+command sequences in **[docs/USAGE_PATTERNS.md](docs/USAGE_PATTERNS.md)**.
+
+Because the loops close tasks on agent-written evidence, they ship with
+anti-fabrication guardrails (the opt-in `WFT_STRICT_EVIDENCE` server gate, an optional
+client-side SHA hook, and skill-level discipline) — see
+[docs/RELIABILITY.md](docs/RELIABILITY.md).
 
 ## For agents
 
@@ -34,28 +66,29 @@ Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are adapt
 
 ## Quick Start
 
-Works from a **fresh clone** with no global install (no `npm link` / no global
-`tasks` binary) — the CLI runs via `npm run cli -- <args>`.
+Works from a **fresh clone** with no global install. Put your config in a `.env`
+file **once** instead of exporting variables by hand — the CLI loads `.env`
+automatically, so there is nothing to re-export in other terminals.
 
 ```bash
 # 1. Clone + install
 git clone https://github.com/Wood-Fired-Games/wood-fired-tasks.git
 cd wood-fired-tasks && npm ci
 
-# 2. Env. API_KEYS (server) and API_KEY (client) are SEPARATE vars — set both
-#    to the same value to auth the CLI with a legacy key. (Production: mint a
-#    PAT and run `npm run cli -- login` instead — see Security Model below.)
-export API_KEYS="testkey"          # server: comma-separated admin keys (required)
-export API_KEY="testkey"           # client/CLI: legacy key OR a PAT
-export DATABASE_PATH="./data/tasks.db"
-export API_BASE_URL="http://localhost:3000"   # CLI target (this is the default)
+# 2. Config — copy the template and set ONE value (API_KEYS).
+cp .env.example .env
+#   edit .env: set API_KEYS=your-key, and add API_KEY=your-key (same value) so
+#   the CLI authenticates with that legacy key. (Production: mint a PAT and run
+#   `npm run cli -- login` instead — see Security Model below.)
 
-# 3. Migrate (honors DATABASE_PATH), build, and start the server in this terminal
+# 3. Migrate, build, start. The server reads real env vars, so load .env into the
+#    shell once (one line, not four exports), then run:
+set -a; source .env; set +a
 npm run migrate && npm run build && npm start   # listens on PORT (default 3000)
 ```
 
-In a **second terminal** (re-export `API_KEY` + `API_BASE_URL` there too),
-create a project, capture its id, then create a task against it and list:
+In a **second terminal**, just create a project, capture its id, then add a task
+and list — **no exports needed**, the CLI reads `.env` for you:
 
 ```bash
 npm run cli -- --json project-create --name "My Project"
@@ -68,11 +101,27 @@ npm run cli -- list --project 2
 > it returns. `npm run cli --` prints a two-line npm banner; add `--silent`
 > (`npm run cli --silent -- …`) to suppress it.
 
+### Wire it into Claude Code (no manual JSON editing)
+
+Don't hand-edit `~/.claude.json`. The bundled installer writes the MCP server
+entry and copies the `/tasks:*` skill files for you:
+
+```bash
+./install.sh         # Linux/macOS — local mode: stdio MCP over the in-process SQLite DB
+.\install.ps1        # Windows
+```
+
+Restart Claude Code afterward and the `/tasks:*` commands and MCP tools are live.
+For a shared on-prem server with Windows/Linux/macOS clients pointed at it, see
+[Multi-OS client fleet](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server).
+
 For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md).
 
 ## Self-hosting
 
 For self-hosted production deploys (including the fork-and-deploy workflow for OSS operators): provision a host once with `deploy/install.sh`, then ship every subsequent release in place with `deploy/upgrade.sh` (atomic backup, migrate, restart, `/health` probe, manual rollback recipe on failure). The full walkthrough — first-time install, in-place upgrades, deploying your fork, manual rollback, and the migration safety contract — lives at [Self-hosting and upgrades](docs/SETUP.md#self-hosting-and-upgrades). When a deploy or a reboot goes sideways, the [Troubleshooting & Recovery runbook](docs/TROUBLESHOOTING.md) covers boot failures (`exit 78`), wrong/stale-database symptoms, and safe backup/restore.
+
+**Sharing one server across a team.** The common shape is a single on-prem server with a fleet of Windows, Linux, and macOS workstations all pointed at it in remote mode (each client proxies its MCP tool calls to the shared REST API, so everyone sees one backlog). The end-to-end recipe — make the server reachable behind TLS, mint one revocable PAT per machine, and run the installer in `--mode remote` on each OS — is the [Multi-OS client fleet](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server) section.
 
 ## Automation (event-driven)
 
@@ -624,56 +673,22 @@ Cascades are depth-limited (max 5 levels) and wrapped in transactions for atomic
 
 ## WSJF Prioritization
 
-Most task trackers give you a flat `priority` enum — `urgent/high/medium/low` — and leave the sequencing to you. In practice that field collapses: on a real backlog almost everything ends up tagged "high," and priority-ordering degenerates into creation-order (FIFO). Wood Fired Tasks adds **WSJF (Weighted Shortest Job First)**, and its value lives in two properties that a priority field structurally cannot provide:
+Most task trackers give you a flat `priority` enum and leave sequencing to you — and in practice that field collapses: almost everything ends up "high," and ordering degenerates into FIFO. **WSJF (Weighted Shortest Job First)** ranks by **economic value** instead — Cost of Delay (Business Value + Time Criticality + Risk/Opportunity) ÷ Job Size. The raw ratio is the least novel part; two properties a `priority` field structurally cannot provide are why it is worth adopting:
 
-1. **Variance-enforced column anchoring (anti-flattening).** Scoring happens in *batch, one Cost-of-Delay column at a time*, and the server **rejects a degenerate batch** — a column with no `1` anchor or with sub-floor variance is re-prompted, not stored. That machine-enforced spread recovers a usable ranking out of a backlog where "everything is high." This is the property that generalizes to virtually every team.
-2. **Propagation-adjusted effective WSJF.** The ranking folds in the *actual dependency graph*: a task's score is lifted by the downstream Cost of Delay of everything it transitively unblocks. This injects automated critical-path awareness — surfacing the modest prerequisite that gates a large high-value subtree, an ordering **no hand-set priority field captures** — and rescues a high-value keystone whose large Job Size would otherwise bury it.
+1. **Variance-enforced column anchoring (anti-flattening).** Scoring runs in *batch, one Cost-of-Delay column at a time*, and the server **rejects a degenerate batch** (a column with no `1` anchor or sub-floor variance) and re-prompts rather than storing it. That machine-enforced spread recovers a usable ranking out of an "everything is high" backlog — the property that generalizes to virtually every team.
+2. **Propagation-adjusted effective WSJF.** A task's score is lifted by the downstream Cost of Delay of everything it transitively unblocks (`effective_CoD = base_CoD + Σ dependents' base_CoD · γ^(dist−1)`, γ=0.5, capped 3×), injecting automated critical-path awareness — surfacing the modest prerequisite that gates a large high-value subtree, an ordering **no hand-set priority captures**.
 
-Under the hood each task's **Cost of Delay** (Business Value + Time Criticality + Risk/Opportunity-Enablement) is divided by **Job Size**, but that raw ratio is the least novel part — the differentiators above are what make WSJF worth adopting. Scores are computed autonomously at task-creation time, grounded in a per-project **value charter**, and every score carries a verbatim **evidence trail** plus an append-only history — with a **degeneracy linter** that catches the classic WSJF anti-patterns before they corrupt your ordering.
+Scores are computed autonomously at decompose/create time against a per-project **value charter**, carry a verbatim **evidence trail** plus append-only history, and are linted for degeneracies by `wsjf_health`. The `/tasks:loop[-dag]` runners then select work by **effective WSJF over the ready frontier** — WSJF only reorders *within* what the DAG already says is ready, so it never changes correctness or the task set. It is fully **opt-in and backward-compatible**: projects with no charter and no scores sort by `priority` then age, exactly as today.
 
-It is fully **backward-compatible** and **opt-in**: projects with no charter and no scores behave exactly as they do today, sorting by `priority` then age.
+**⚠️ FLAT-mode keystone caveat.** The divide-by-Job-Size ratio is safe in DAG mode (topology + propagation compensate), but in a FLAT backlog (`/tasks:loop`, no edges) a stream of tiny tasks can **starve a large high-value one**. `wsjf_health` flags Job-Size collapse; treat the raw ratio with care there.
 
-### When it helps — and one caveat
+### Scoring lifecycle
 
-WSJF only ever reorders work *within the ready frontier*; the dependency graph still decides what is *ready*, so it never changes correctness or the task set. Its payoff is therefore regime-dependent:
+`/tasks:new-project` runs a skippable, one-question-at-a-time interview capturing the **value charter** (mission → 2–4 ranked value themes → time pressure → risk posture → out-of-scope) — the reference frame that makes Business Value relative to *what the project is for* rather than guessed from a task's text. `/tasks:decompose` then scores the whole candidate batch at once against that charter, emitting **classifications over closed enums** plus a verbatim evidence span per component (never a raw number); the server recomputes the Fibonacci components deterministically and rejects degenerate batches. Re-running `/tasks:new-project` versions the charter and offers a deterministic `rescore_project` of already-scored tasks, skipping any human-locked components. Every score and charter write lands an append-only history row, so `wsjf_history(task_id)` answers "why did this value change, when, by whom, under which charter, on what evidence" — replayable without the model.
 
-- **Greatest under constrained concurrency or early termination.** When you have fewer worker slots than the frontier is wide, or you stop early (budget cap, failure halt, time-box), the tasks that get done are the highest value-per-cost *and* most-unblocking set — propagation acts as automated critical-path scheduling. In a sequential `/tasks:loop` the WSJF order is fully realized end-to-end.
-- **Smallest on a clean DAG run to completion with ample parallelism**, where topology already pins every correctness-relevant ordering — there WSJF is insurance plus the propagation insight, not a makespan win.
-- **⚠️ FLAT-mode keystone caveat.** The divide-by-Job-Size ratio is safe in DAG mode (topology compensates and propagation lifts keystones), but in a **FLAT backlog** (`/tasks:loop`, no dependency edges) a stream of tiny tasks can **starve a large high-value one**. The `wsjf_health` linter flags Job-Size collapse, but in FLAT mode treat the raw ratio with care.
+### Surface
 
-### The workflow end-to-end
-
-1. **Charter the project (once, skippable).** `/tasks:new-project` runs a STOP-and-wait, one-question-at-a-time interview that captures the project's **value charter**: mission/wedge → 2–4 ranked value themes (mapped to Fibonacci weights) → time pressure → risk posture → explicit out-of-scope. It auto-detects candidate themes from existing tasks/repo signal and asks you to confirm rather than starting blank. Skipping is valid: no charter is written and scoring falls back to the `priority` enum. The charter is the reference frame that makes Business Value *relative to what the project is for* rather than guessed from a task's text.
-2. **Score autonomously at create time (batch, column-anchored).** When `/tasks:decompose` materializes a backlog, it scores the **whole candidate batch at once, one Cost-of-Delay column at a time**, against the charter — anchoring the lowest-deserving candidate in each column to the `1` tier and spreading the rest relative to it. The agent never emits a number: it emits **classifications over closed enums** (theme + alignment, severity, decay, a `jobSizeTier` bounded by a server-computed band) plus a **verbatim evidence span** per component. The server recomputes the four Fibonacci components deterministically and **rejects degenerate batches** (a column with no `1` anchor, or sub-floor variance) so relative anchoring is enforced, not merely hoped for.
-3. **Select work by effective WSJF over the ready frontier.** `/tasks:loop` and `/tasks:loop-dag` call the server-owned `wsjf_ranking` tool instead of doing math themselves. When a project has ≥ 1 scored task, the priority+ID sort is replaced by the ranking order — descending **effective WSJF**, with unscored tasks slotted via a `priorityFallbackScore` map so scored and unscored sort coherently in one space. Ranking gates on the **ready frontier** and **propagates downstream Cost of Delay onto blockers** (`effective_CoD = base_CoD + Σ dependents' base_CoD · γ^(dist−1)`, γ=0.5, capped at 3×), so a boring prerequisite that unblocks a large high-value subtree rises to the top. WSJF reorders *within* a frontier only — never ahead of a `blocked_by` edge. The ranking snapshot (scores, propagation breakdown, γ/CAP) is written into `LOOP-RUN.md` for reproducibility.
-4. **Living-backlog rescore on re-interview.** Re-running `/tasks:new-project` on an existing charter offers overwrite / partial-edit / abort, bumps `interview_version`, snapshots the prior charter to history, then **prompts** before rescoring. On confirm it calls `rescore_project` to deterministically rescore the project's already-scored tasks against the current charter, writing one history row per changed task and **skipping locked components**.
-5. **Manual per-component locks/overrides.** A human can pin one component (e.g. Business Value) via REST or CLI while agents keep estimating the rest; `wsjf_source` records `auto | manual` per component and rescore **never overwrites locked components**.
-6. **Health linter + audit history.** The non-blocking `wsjf_health` linter is surfaced at loop start and post-rescore: it flags near-identical component sets, a Cost-of-Delay column with no `1` anchor, Job-Size collapse, stale Time Criticality past a deadline, a high fallback ratio, and score-churn across rescores. Findings are advisory — they never block the loop or auto-rescore. Every score write and charter write lands an append-only history row in the same transaction, so `wsjf_history(task_id)` answers "why did this value change, when, by whom, under which charter, on what evidence" — storing the LLM classifications + deterministic features so any score is replayable without the model.
-
-### WSJF MCP tools
-
-Four WSJF tools ship with full stdio↔remote parity (identical names, descriptions, and input schemas):
-
-| Tool | Description |
-|------|-------------|
-| wsjf_ranking | Rank a project's tasks by propagation-adjusted WSJF; `scope="frontier"` (default) excludes blocked/not-ready, `scope="all"` ranks every task; returns ordered list with components, base vs effective WSJF, and downstream Cost-of-Delay propagation breakdown |
-| wsjf_history | Return a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of from→to changes per component |
-| rescore_project | (Mutation) Deterministically rescore a project's already-scored tasks against the current value charter; opens a rescore run, writes one history row per changed task, skips locked components; returns evaluated/changed/skipped-locked counts |
-| wsjf_health | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, past-deadline stale Time Criticality, high priority-fallback ratio, score-churn |
-
-The remote MCP variant proxies these to REST: `wsjf_ranking` → `GET /api/v1/projects/:id/wsjf-ranking`, `wsjf_history` → `GET /api/v1/tasks/:id/score-history`, `wsjf_health` → `GET /api/v1/projects/:id/wsjf-health`, `rescore_project` → `POST /api/v1/projects/:id/rescore`. The charter-history, rescore-runs, and `GET/PUT /api/v1/tasks/:id/wsjf` endpoints are REST-only (no dedicated MCP proxy) and are surfaced via the CLI.
-
-### CLI
-
-| Command | Description |
-|---------|-------------|
-| tasks wsjf-history \<id\> | Show a task's append-only WSJF score history (oldest-first) as JSON |
-| tasks wsjf-set \<id\> --value --time-criticality --risk-opportunity --job-size [--lock] | Manual set/lock of a task's four WSJF components (Fibonacci tiers) |
-| tasks charter-history \<id\> | Show a project's value-charter history (oldest-first) as JSON |
-
-There is no CLI command for `wsjf_ranking`, `wsjf_health`, or `rescore_project` — those are exposed only via MCP + REST.
-
-See [docs/MCP.md](docs/MCP.md) for the WSJF tool schemas and the scoring rubric in [skills/tasks/wsjf-rubric.md](skills/tasks/wsjf-rubric.md).
+The four WSJF MCP tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health`) ship with full stdio↔remote parity and are listed under [MCP Tools Summary → WSJF Tools](#wsjf-tools-4) above; the remote variant proxies them to REST (`/api/v1/projects/:id/{wsjf-ranking,wsjf-health,rescore}`, `/api/v1/tasks/:id/score-history`). Charter-history, rescore-runs, and `GET/PUT /api/v1/tasks/:id/wsjf` are REST-only and surfaced via the CLI ([CLI Summary → WSJF Commands](#wsjf-commands) above). Full scoring rubric: [skills/tasks/wsjf-rubric.md](skills/tasks/wsjf-rubric.md); tool schemas: [docs/MCP.md](docs/MCP.md).
 
 ## Configuration
 
