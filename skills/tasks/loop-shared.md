@@ -735,3 +735,44 @@ A failing drift/meta guard in a wave is handled **exactly like a §10e BROKEN in
 - **Run-wide / not attributable to one task** (the drift emerges from the combined wave diff, e.g. a manifest freshness count): surface it in the LOOP-RUN.md note — a `## Coverage Gaps` bullet (schema in §O) or a `## Integration Failure` body section — and, where appropriate, materialize a remediation task (the same carve-out §O grants). Do NOT announce a clean wave/drain with a drift guard RED.
 
 Either way the orchestrator records the RED guard's identity (test/script name + symptom) and DOES NOT recompute the next frontier as if the wave were clean.
+
+## §Q. Worktree-patch integration mechanics (loop-dag run-end / per-wave)
+
+**Called from:** `loop-dag.md` §3d (PASS branch — committing each worker's changes to the integration branch). `/tasks:loop`'s shared-tree workers commit in place and do NOT need this; loop-dag workers run in ISOLATED worktrees (§3b `isolation: "worktree"`), so their changes live on a `worktree-agent-<id>` branch / tree and MUST be applied to the integration tree by the orchestrator. This section codifies HOW to apply overlapping worktree patches so per-task commit attribution stays clean.
+
+**Motivating incident (load-bearing — cite it).** On 2026-06-05, integrating wave-1 worktrees into the main tree cascaded: a batched `git apply --3way --index` loop hit a conflict on a shared file (e.g. `src/cli/bin/tasks.ts`), left the index dirty, and the NEXT task's `--index` apply got swept into the wrong commit — one commit ended up bundling three tasks' changes. Recovery required a `git reset --soft` and re-slicing the known-good final tree into clean per-task commits via per-file checkout. "One commit per task" was never in doubt; the gap was the *mechanics* of getting overlapping patches onto one tree without cross-contaminating attribution.
+
+### One task at a time (the non-negotiable cadence)
+
+Integrate exactly ONE task's patch, commit it, THEN verify before touching the next:
+
+1. Apply only that task's file-set to the integration tree.
+2. `git add` only that task's paths and commit (one task = one commit, mirroring `loop.md` §Step 6 and the "one task = one commit" rule).
+3. `git show --stat <commit>` and confirm it lists ONLY that task's files. If it lists any other task's file, STOP and re-slice (see kill-safe fallback) — do not proceed.
+4. Confirm the index is clean (`git status --porcelain` empty) BEFORE starting the next task's apply. Never start the next apply with a dirty index.
+
+### Forbid batched dependent applies
+
+Do NOT run a back-to-back loop of `git apply --3way --index` calls across tasks. The failure mode is exactly the 2026-06-05 cascade: a mid-loop conflict on a shared file leaves the index dirty (partially-staged hunks + conflict markers), and the NEXT `--index` apply stages its hunks ON TOP of that dirty index, so the next commit silently bundles the prior task's unresolved/partial changes. One conflict anywhere in the batch corrupts attribution for every task after it. The "verify `git show --stat` before the next apply" gate above only works if applies are NOT batched — sequence them with a commit + verify between each.
+
+### Shared-file recipe (files touched by 2+ worktrees)
+
+For a file edited by two or more worktrees, do NOT replay each worktree's hunks sequentially onto a moving target — sequential replay is precisely what conflicts and cascades. Instead build the merged result ONCE, then slice:
+
+1. **Produce the merged result once.** Either a clean 3-way merge of the contributing branches, OR take the known-good final tree directly — e.g. the last worktree that already contains all prior tasks' changes, or an explicit merge commit that resolves the overlap. Call this `<tree-ish>`.
+2. **Slice per-task commits from that tree.** For each task, in turn:
+   - `git checkout <tree-ish> -- <that task's paths>` — pull only that task's file-set out of the merged tree into the working tree + index.
+   - `git add <that task's paths>` — stage only those paths.
+   - commit — one task's file-set per commit.
+   - `git show --stat <commit>` — confirm only that task's paths are listed; clean index before the next slice.
+
+   Each commit stages ONLY that task's paths, so even a file that several tasks touched lands in exactly one task's commit (whichever task owns it per the decomposition), and the merged content is identical to `<tree-ish>` once all slices are committed.
+
+### Kill-safe re-slice fallback (a cascade already happened)
+
+If a cascade has ALREADY corrupted attribution — a commit bundled multiple tasks' changes — recover without losing the known-good content:
+
+1. `git reset --soft <base>` — moves HEAD back to the integration base while KEEPING the known-good worktree contents staged (soft reset preserves the tree). `<base>` is the same integration base §N captures at run start.
+2. Re-stage and commit per-task via per-file checkout: for each task, `git checkout <tree-ish> -- <task's paths>` (or `git restore --staged` then `git add <task's paths>` against the already-correct tree), commit, and `git show --stat <commit>`-verify — exactly the slice loop above, one task's file-set at a time.
+
+This mirrors §N's kill-safe posture (git state is the source of truth; the operation is re-runnable) and re-establishes the `loop.md` "one task = one commit" invariant after the fact. The known-good final tree content is never discarded — only the commit boundaries are redrawn.
