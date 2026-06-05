@@ -96,6 +96,68 @@ export function copySkills(
   return { sourceDir, destDir, written, files };
 }
 
+/** Default destination for copied agent/subagent definitions. */
+export function agentsDestDir(home: string = os.homedir()): string {
+  return path.join(home, '.claude', 'agents');
+}
+
+export interface CopyAgentsResult {
+  sourceDir: string;
+  destDir: string;
+  /** Files written (changed) this run. */
+  written: string[];
+  /** All agent files considered (basename). */
+  files: string[];
+}
+
+/**
+ * Basenames excluded from the agents copy. `README.md` is authoring docs that
+ * only make sense inside the repo, not a shipped subagent definition (task
+ * #751). Mirrors the build-skills.ts exclusion.
+ */
+const AGENTS_EXCLUDE = new Set(['README.md']);
+
+/**
+ * Copy every shipped `*.md` subagent definition from the asset-resolver source
+ * into destDir (~/.claude/agents/), excluding README.md. These back the
+ * mandatory verifier in /tasks:loop and /tasks:loop-dag. Source is resolved via
+ * the #730 asset resolver (NOT a cwd-relative path); behavior exactly mirrors
+ * copySkills. Idempotent: a file is only (re)written when its bytes differ.
+ */
+export function copyAgents(
+  destDir: string = agentsDestDir(),
+  sourceDir: string = resolveAssetPath('skills', 'agents')
+): CopyAgentsResult {
+  const written: string[] = [];
+  const files: string[] = [];
+
+  const entries = fs.existsSync(sourceDir)
+    ? fs
+        .readdirSync(sourceDir)
+        .filter((f) => f.endsWith('.md') && !AGENTS_EXCLUDE.has(f))
+    : [];
+
+  fs.mkdirSync(destDir, { recursive: true });
+
+  for (const name of entries.sort()) {
+    files.push(name);
+    const srcPath = path.join(sourceDir, name);
+    const destPath = path.join(destDir, name);
+    const srcBytes = fs.readFileSync(srcPath);
+    let needsWrite = true;
+    if (fs.existsSync(destPath)) {
+      const destBytes = fs.readFileSync(destPath);
+      needsWrite = !srcBytes.equals(destBytes);
+    }
+    if (needsWrite) {
+      fs.writeFileSync(destPath, srcBytes);
+      written.push(name);
+    }
+  }
+
+  return { sourceDir, destDir, written, files };
+}
+
 export interface FixNpmPrefixOptions {
   /** Override HOME (testing). */
   home?: string;
@@ -167,6 +229,7 @@ export interface RunSetupResult {
   claudeJsonPath: string;
   claudeJsonChanged: boolean;
   skills: CopySkillsResult;
+  agents: CopyAgentsResult;
   npmPrefix?: FixNpmPrefixResult;
 }
 
@@ -197,6 +260,13 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
       : `Skills already up to date in ${skills.destDir}`
   );
 
+  const agents = copyAgents(agentsDestDir(home));
+  log(
+    agents.written.length > 0
+      ? `Copied ${agents.written.length} agent(s) into ${agents.destDir}`
+      : `Agents already up to date in ${agents.destDir}`
+  );
+
   let npmPrefix: FixNpmPrefixResult | undefined;
   if (options.fixNpmPrefix) {
     npmPrefix = fixNpmPrefix({ home, runner: options.npmRunner, log });
@@ -206,13 +276,14 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     claudeJsonPath,
     claudeJsonChanged: !merge.unchanged,
     skills,
+    agents,
     npmPrefix,
   };
 }
 
 export const setupCommand = new Command('setup')
   .description(
-    'Install the local wood-fired-tasks MCP server into ~/.claude.json and copy skills into ~/.claude/commands/tasks/'
+    'Install the local wood-fired-tasks MCP server into ~/.claude.json, copy skills into ~/.claude/commands/tasks/, and copy subagent definitions into ~/.claude/agents/'
   )
   .option(
     '--fix-npm-prefix',

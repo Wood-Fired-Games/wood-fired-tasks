@@ -52,6 +52,7 @@
     "packages/wft-router/README.md",
     "packages/wft-router/triggers.example.yaml",
     "dist/skills/tasks/",
+    "dist/skills/agents/",
     "LICENSE",
     "README.md",
     "CHANGELOG.md",

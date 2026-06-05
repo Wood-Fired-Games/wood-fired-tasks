@@ -41,8 +41,29 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
-const SRC_DIR = join(REPO_ROOT, 'skills', 'tasks');
-const OUT_DIR = join(REPO_ROOT, 'dist', 'skills', 'tasks');
+
+/**
+ * A skill source dir to process. Each canonical `skills/<name>/` dir is read,
+ * its `*.md` sources have dev links stripped, and the result is emitted into
+ * the matching `dist/skills/<name>/`.
+ *
+ * `exclude` lists basenames that are NOT shipped (e.g. `README.md` author docs
+ * that only make sense inside the repo, not in `~/.claude/agents/`).
+ */
+interface SkillPass {
+  /** Subdirectory name under `skills/` and `dist/skills/`. */
+  name: string;
+  /** Basenames to skip (never emitted to dist). */
+  exclude: string[];
+}
+
+const PASSES: SkillPass[] = [
+  { name: 'tasks', exclude: [] },
+  // Agent/subagent definitions (tasks-verifier, integration-auditor) back the
+  // mandatory verifier in /tasks:loop and /tasks:loop-dag. The authoring
+  // README.md is repo-only and excluded from the tarball (task #751).
+  { name: 'agents', exclude: ['README.md'] },
+];
 
 /**
  * Repo-relative markdown link.
@@ -63,21 +84,33 @@ export function stripDevLinks(markdown: string): string {
   return markdown.replace(DEV_LINK, (_match, text: string) => text);
 }
 
-function main(): void {
-  mkdirSync(OUT_DIR, { recursive: true });
+function buildPass(pass: SkillPass): number {
+  const srcDir = join(REPO_ROOT, 'skills', pass.name);
+  const outDir = join(REPO_ROOT, 'dist', 'skills', pass.name);
+  mkdirSync(outDir, { recursive: true });
 
-  const files = readdirSync(SRC_DIR).filter((f) => f.endsWith('.md'));
-  let count = 0;
+  const excluded = new Set(pass.exclude);
+  const files = readdirSync(srcDir).filter(
+    (f) => f.endsWith('.md') && !excluded.has(f),
+  );
   for (const name of files) {
-    const raw = readFileSync(join(SRC_DIR, name), 'utf8');
+    const raw = readFileSync(join(srcDir, name), 'utf8');
     const processed = stripDevLinks(raw);
-    writeFileSync(join(OUT_DIR, name), processed, 'utf8');
-    count += 1;
+    writeFileSync(join(outDir, name), processed, 'utf8');
   }
 
   console.log(
-    `Built ${count} skill file(s): ${SRC_DIR} -> ${OUT_DIR} (dev links stripped).`,
+    `Built ${files.length} skill file(s): ${srcDir} -> ${outDir} (dev links stripped).`,
   );
+  return files.length;
+}
+
+function main(): void {
+  let total = 0;
+  for (const pass of PASSES) {
+    total += buildPass(pass);
+  }
+  console.log(`Built ${total} skill file(s) total across ${PASSES.length} dir(s).`);
 }
 
 main();

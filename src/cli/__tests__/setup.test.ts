@@ -7,6 +7,7 @@ import {
   fixNpmPrefix,
   buildLocalMcpEntry,
   commandsDestDir,
+  agentsDestDir,
 } from '../commands/setup.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 
@@ -14,6 +15,10 @@ import { resolveAssetPath } from '../../assets/resolve.js';
 // resolver's `resolveAssetPath('skills','tasks')`); `skillsDir()` is the
 // parent skills/ directory.
 const tasksSkillsDir = resolveAssetPath('skills', 'tasks');
+
+// Subagent definitions live under skills/agents/ (resolved via the SAME asset
+// resolver, not cwd). README.md is authoring-only and excluded from the copy.
+const agentsSourceDir = resolveAssetPath('skills', 'agents');
 
 function withTempHome<T>(fn: (home: string) => T): T {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-home-'));
@@ -77,6 +82,33 @@ describe('tasks setup', () => {
           fs.readFileSync(path.join(tasksSkillsDir, name))
         );
       }
+
+      // (c) subagent definitions copied into ~/.claude/agents/ from the asset
+      // resolver (NOT cwd), excluding README.md (task #751).
+      const agentsDest = agentsDestDir(home);
+      expect(agentsDest).toBe(path.join(home, '.claude', 'agents'));
+      const copiedAgents = fs
+        .readdirSync(agentsDest)
+        .filter((f) => f.endsWith('.md'))
+        .sort();
+      const agentSourceSet = fs
+        .readdirSync(agentsSourceDir)
+        .filter((f) => f.endsWith('.md') && f !== 'README.md')
+        .sort();
+      expect(copiedAgents).toEqual(agentSourceSet);
+      expect(copiedAgents).toContain('tasks-verifier.md');
+      expect(copiedAgents).toContain('integration-auditor.md');
+      // README.md is excluded from the shipped/copied set.
+      expect(copiedAgents).not.toContain('README.md');
+      expect(result.agents.sourceDir).toBe(agentsSourceDir);
+      expect(result.agents.files).not.toContain('README.md');
+
+      // Bytes match the source (copied verbatim).
+      for (const name of copiedAgents) {
+        expect(fs.readFileSync(path.join(agentsDest, name))).toEqual(
+          fs.readFileSync(path.join(agentsSourceDir, name))
+        );
+      }
     });
   });
 
@@ -94,11 +126,23 @@ describe('tasks setup', () => {
         .sort()
         .map((name) => [name, fs.readFileSync(path.join(destDir, name), 'utf8')]);
 
+      const agentsDest = agentsDestDir(home);
+      const agentSnapshot = fs
+        .readdirSync(agentsDest)
+        .filter((f) => f.endsWith('.md'))
+        .sort()
+        .map((name) => [
+          name,
+          fs.readFileSync(path.join(agentsDest, name), 'utf8'),
+        ]);
+      expect(agentSnapshot.length).toBeGreaterThan(0);
+
       const second = runSetup({ home, log: () => {} });
 
       // No second-run write.
       expect(second.claudeJsonChanged).toBe(false);
       expect(second.skills.written).toEqual([]);
+      expect(second.agents.written).toEqual([]);
 
       // Byte-stable on disk.
       expect(fs.readFileSync(claudeJson, 'utf8')).toBe(jsonAfterFirst);
@@ -108,6 +152,16 @@ describe('tasks setup', () => {
         .sort()
         .map((name) => [name, fs.readFileSync(path.join(destDir, name), 'utf8')]);
       expect(skillSnapshot2).toEqual(skillSnapshot);
+
+      const agentSnapshot2 = fs
+        .readdirSync(agentsDest)
+        .filter((f) => f.endsWith('.md'))
+        .sort()
+        .map((name) => [
+          name,
+          fs.readFileSync(path.join(agentsDest, name), 'utf8'),
+        ]);
+      expect(agentSnapshot2).toEqual(agentSnapshot);
     });
   });
 
