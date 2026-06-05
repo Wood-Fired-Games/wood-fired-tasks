@@ -610,7 +610,7 @@ Column rules:
 
 ### Blocking semantics (the new contract)
 
-**"0 open tasks" alone does NOT declare success.** A clean drain additionally REQUIRES a GREEN §O audit. If §O is RED, the orchestrator MUST NOT announce a clean drain; it follows the CORRECT carve-out (3) below and surfaces the gap in LOOP-RUN.md `## Coverage Gaps` instead.
+**"0 open tasks" alone does NOT declare success.** A clean drain additionally REQUIRES a GREEN §O audit — across the invariant audit (1), the reachability smoke (2), AND the artifact-level distributable smoke (2b) when the repo ships a distributable. A RED in ANY of these (including a RED artifact smoke — mirroring the §10e BROKEN protocol) blocks the "drained → done" declaration. If §O is RED, the orchestrator MUST NOT announce a clean drain; it follows the CORRECT carve-out (3) below and surfaces the gap in LOOP-RUN.md `## Coverage Gaps` instead.
 
 ### (1) Invariant audit — structural parity + mirror parity
 
@@ -635,6 +635,31 @@ For MCP tools **NEWLY ADDED during this run**, exercise them through the **remot
 
 **If a newly-added tool is unreachable via the remote path → the gate is RED.**
 
+### (2b) Artifact-level distributable smoke — the SHIPPED artifact, exercised from OUTSIDE the repo
+
+**Why this exists (load-bearing).** Per-task verifiers grade against the SOURCE tree, so a capability can be 100% PASS-verified in-repo while the **shipped artifact** (the packed tarball / globally-installed bin) is broken — e.g. an asset resolved from a path that exists in source but is not in the published `files`, a postinstall that references an unshipped file, or a CLI option dropped by a framework bug. These failures are cwd- and packaging-sensitive: they pass in-repo and fail only once installed and run from elsewhere. This smoke closes that gap by exercising the real artifact from a cwd OUTSIDE the repo.
+
+**Trigger (unconditional when the repo ships a distributable).** This smoke runs whenever the target repo ships a distributable — it is NOT gated on a particular task having existed in the run. Detect a distributable generically from `package.json`: it declares a `bin` and/or a `files` allow-list and/or a `prepublishOnly` script, OR it defines a `smoke:global`-style global-install smoke script. If none of these signals is present, the repo ships no distributable and this audit is N/A (skip, not RED).
+
+**Prefer the repo's own script.** If the repo defines a `smoke:global` script (or an equivalent global-install smoke — a script whose name/intent is "install the packed artifact and run the bin from outside the tree"), run THAT and treat its exit code as the verdict:
+
+```bash
+npm run smoke:global
+```
+
+**Generic fallback (no repo script).** Otherwise build the artifact-level smoke generically:
+
+```bash
+tarball=$(npm pack --silent)                      # pack the publishable artifact
+tmp=$(mktemp -d)                                  # temp prefix OUTSIDE the repo
+npm i -g --prefix "$tmp" "$PWD/$tarball"          # install the tarball, not the source tree
+( cd "$tmp" && "$tmp/bin/<shipped-bin-name>" --help )  # run the bin from a cwd OUTSIDE the repo
+```
+
+Assert the shipped `bin` actually runs (non-error exit, expected banner/help/version) from a cwd that is NOT the repo root — cwd-independence is the whole point: the canonical failure was a cwd-relative resolution that passed in-repo and broke once shipped. Exercise any postinstall implicitly (the global install runs it) and, where the repo declares a token/remote-style CLI option, assert it is honored end-to-end through the installed bin.
+
+**If the artifact smoke is RED (repo script fails, pack/install fails, or the installed bin errors / mis-resolves from outside the repo) → the gate is RED.**
+
 ### (3) On RED — CORRECT (the remediation-task carve-out)
 
 When §O is RED, the loop is **permitted and required** to **MATERIALIZE a remediation task** — the explicit, documented exception to the "Don't create new tasks during the loop" rule (`loop.md` `## Important Rules`). Procedure:
@@ -654,6 +679,7 @@ A mandatory body section (emitted by both `/tasks:loop` Step 9d and `/tasks:loop
 
 - **audit:** `stdio-remote-parity` (RED) — stdio tools unreachable via remote: `[wsjf_health, rescore_project]`; remediation task **#<id>**.
 - **reachability:** newly-added tool `wsjf_ranking` not reachable through `dist/mcp/remote` proxy; remediation task **#<id>**.
+- **artifact-smoke:** packed tarball bin unreachable from outside repo (<symptom, e.g. copySkills resolved 0 skills / postinstall MODULE_NOT_FOUND / `--token` ignored); remediation task **#<id>**.
 ```
 
 Each bullet names the failing audit/tool and the remediation task id materialized in (3). When the terminal invariant + reachability audit is GREEN, emit the sentinel paragraph exactly:
