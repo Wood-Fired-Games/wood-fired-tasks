@@ -26,7 +26,12 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 
 If this brief was dispatched into an isolated git worktree, the harness may have
 cut that worktree from a STALE base (commonly the repo's configured main branch /
-a fixed ref, NOT the orchestrator's current branch tip). Before reading or writing
+a fixed ref, NOT the orchestrator's current branch tip). The base ref is chosen by
+the Claude Code platform Agent-tool `isolation: "worktree"` harness (out-of-repo —
+no in-repo code issues the `git worktree add` or selects its base), so this guard
+is the **standing mandatory mitigation**, not a stopgap: there is no in-repo fix to
+make it removable (see loop-dag.md §3b for the ownership evidence + resolution).
+Before reading or writing
 ANY file, reset to the run's integration branch and assert a sentinel — STOP if it
 fails (do NOT silently implement on a stale tree, and do NOT recreate files that
 already exist on the real branch):
