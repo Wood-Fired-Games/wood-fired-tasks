@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import Database from 'better-sqlite3';
+import Database from '../../../db/driver.js';
 import { up } from '../../../db/migrations/006-slack-channel-subscriptions.js';
 import { SlackChannelSubscriptionRepository } from '../channel-subscription.repository.js';
 

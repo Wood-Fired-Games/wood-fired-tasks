@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { IdempotencyService } from '../idempotency.service.js';
 import { initTestDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 /**
  * Dedicated behavioural test for the 24-hour TTL contract enforced in

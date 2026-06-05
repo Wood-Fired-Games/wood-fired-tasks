@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import Database from './driver.js';
 import { Umzug, type UmzugStorage } from 'umzug';
 import { mkdir } from 'fs/promises';
 import { join, dirname, resolve } from 'path';

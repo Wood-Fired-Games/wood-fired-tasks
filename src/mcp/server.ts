@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Database } from 'better-sqlite3';
+import type { Database } from '../db/driver.js';
 import { TaskService } from '../services/task.service.js';
 import { ProjectService } from '../services/project.service.js';
 import { DependencyService } from '../services/dependency.service.js';

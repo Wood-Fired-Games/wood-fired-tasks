@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 export class SlackChannelSubscriptionRepository {
   private insertStmt: Database.Statement;

@@ -27,7 +27,7 @@ import {
   vi,
 } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import nock from 'nock';
 import type { App } from '../../index.js';
 import { resetConfig } from '../../config/env.js';

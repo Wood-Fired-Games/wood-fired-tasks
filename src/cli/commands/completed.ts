@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import Database from 'better-sqlite3';
+import Database from '../../db/driver.js';
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { TaskRepository } from '../../repositories/task.repository.js';

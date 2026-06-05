@@ -30,7 +30,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'fs';
 import { dirname, join, resolve, sep } from 'path';
 import { tmpdir } from 'os';
-import Database from 'better-sqlite3';
+import Database from '../db/driver.js';
 import { resolveMigrateDbPath, migrateCli } from '../db/migrate.js';
 import { createApp, type App } from '../index.js';
 import { createServer } from '../api/server.js';

@@ -21,7 +21,7 @@ import { eventBus } from './events/event-bus.js';
 import { type OidcConfig } from './services/oidc-client.js';
 import { discoverOidcWithRetry } from './services/oidc-boot.js';
 import { startCleanup as startDeviceFlowCleanup } from './services/device-flow-store.js';
-import type Database from 'better-sqlite3';
+import type Database from './db/driver.js';
 import { isMain } from './utils/is-main.js';
 
 /**

@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 /**
  * Migration 007: add completed_at column to tasks

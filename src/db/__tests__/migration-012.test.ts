@@ -4,7 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { initTestDatabase } from '../database.js';
 import { runMigrations } from '../migrate.js';
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

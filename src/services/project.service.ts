@@ -16,7 +16,7 @@ import {
 } from '../schemas/project.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { eventBus } from '../events/event-bus.js';
-import type { Database } from 'better-sqlite3';
+import type { Database } from '../db/driver.js';
 import type { IProjectCharterHistoryRepository } from '../repositories/project-charter-history.repository.js';
 
 /**

@@ -22,7 +22,7 @@ import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
 import { validateVerificationEvidence } from './evidence-validation.js';
-import type Database from 'better-sqlite3';
+import type Database from '../db/driver.js';
 
 /**
  * Sanitized message surfaced to clients when the FTS5 search expression

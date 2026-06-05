@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 /**
  * Migration 014: add `projects.value_charter` column.

@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 export async function up(db: Database.Database): Promise<void> {
   db.transaction(() => {

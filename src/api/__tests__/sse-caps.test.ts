@@ -5,7 +5,7 @@ import { createServer } from '../server.js';
 import { resetConfig } from '../../config/env.js';
 import { generateToken } from '../../services/pat-hash.js';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import type { App } from '../../index.js';
 
 /**

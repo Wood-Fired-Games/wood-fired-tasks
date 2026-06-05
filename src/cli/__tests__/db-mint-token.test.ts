@@ -14,7 +14,7 @@
  * a parser-integration smoke test for `tasks db mint-token` is added in Task 2.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Database from 'better-sqlite3';
+import Database from '../../db/driver.js';
 import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';

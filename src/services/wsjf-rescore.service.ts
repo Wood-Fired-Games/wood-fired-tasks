@@ -27,7 +27,7 @@
 // same history rows (modulo the auto-generated run id / timestamp). Locked
 // components are byte-for-byte preserved.
 
-import type { Database } from 'better-sqlite3';
+import type { Database } from '../db/driver.js';
 import type { ITaskRepository, IProjectRepository } from '../repositories/interfaces.js';
 import type { IWsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
 import type { IWsjfRescoreRepository } from '../repositories/wsjf-rescore.repository.js';

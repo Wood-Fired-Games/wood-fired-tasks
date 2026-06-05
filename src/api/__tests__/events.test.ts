@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import { eventBus } from '../../events/event-bus.js';
 
 // Set API keys before importing server

@@ -29,7 +29,7 @@ import fastifySecureSession from '@fastify/secure-session';
 import fastifyFormbody from '@fastify/formbody';
 import { randomBytes } from 'node:crypto';
 import nock from 'nock';
-import type Database from 'better-sqlite3';
+import type Database from '../../../../db/driver.js';
 
 import authRoutes from '../index.js';
 import deviceCodeRoute from '../device-code.js';

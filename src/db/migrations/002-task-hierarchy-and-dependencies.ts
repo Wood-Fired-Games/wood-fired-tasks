@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import Database from '../driver.js';
 
 export function up(db: Database.Database): void {
   // Run all schema changes in a transaction

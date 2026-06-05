@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../db/driver.js';
 import { ITaskRepository, IDependencyRepository } from '../repositories/interfaces.js';
 import { TaskService } from './task.service.js';
 import { EventBus } from '../events/event-bus.js';

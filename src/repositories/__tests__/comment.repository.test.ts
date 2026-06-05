@@ -4,7 +4,7 @@ import { runMigrations } from '../../db/migrate.js';
 import { CommentRepository } from '../comment.repository.js';
 import { TaskRepository } from '../task.repository.js';
 import { ProjectRepository } from '../project.repository.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 describe('CommentRepository', () => {
   let db: Database.Database;

@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import Database from 'better-sqlite3';
+import Database from '../../db/driver.js';
 import { statfs } from 'fs';
 import { promisify } from 'util';
 import { dirname } from 'path';

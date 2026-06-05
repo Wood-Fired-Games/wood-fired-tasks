@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, rmSync, statSync } from 'fs';
 import { join, resolve, sep } from 'path';
 import { tmpdir } from 'os';
-import Database from 'better-sqlite3';
+import Database from '../driver.js';
 import { resolveMigrateDbPath, migrateCli } from '../migrate.js';
 
 let tmpRoot: string;
