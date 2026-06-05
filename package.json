@@ -34,6 +34,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "wood-fired-tasks": "./dist/cli/bin/tasks.js",
+    "wft": "./dist/cli/bin/tasks.js",
     "tasks": "./dist/cli/bin/tasks.js",
     "wft-router": "./packages/wft-router/dist/bin/wft-router.js"
   },
