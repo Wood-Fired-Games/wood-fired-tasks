@@ -51,6 +51,7 @@
     "packages/wft-router/package.json",
     "packages/wft-router/README.md",
     "packages/wft-router/triggers.example.yaml",
+    "dist/skills/tasks/",
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
@@ -64,7 +65,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc && tsc -p packages/wft-router",
+    "build": "tsc && tsc -p packages/wft-router && npm run build:skills",
+    "build:skills": "tsx scripts/build-skills.ts",
     "start": "node dist/api/start.js",
     "dev": "tsx src/api/start.ts",
     "test": "vitest run",
