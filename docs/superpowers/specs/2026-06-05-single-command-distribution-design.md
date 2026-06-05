@@ -280,3 +280,32 @@ remote-client install. The gap is entirely uncovered by the existing tasks.
 The no-clone docs rewrite (task 747) gains a dependency on DA2 so it documents the `docs`
 command. **Out of scope** (consistent with the GUI deferral): serving a docs index from the
 running server or any web docs UI — the CLI `docs` command is the offline access path.
+
+## Addendum B — Installer-parity coverage gaps (2026-06-05)
+
+**Audit (tasks 729–750 vs the plan + the live `install.sh`/`install.ps1`).** Cross-walk: every
+component C1–C12 and DA1–DA3 and all five success criteria map to ≥1 task. Comparing the new
+`setup`/packaging tasks against what the shell installers actually do surfaced two material gaps
+plus minor ones:
+
+- **G1 (material) — subagent definitions not shipped/installed.** `install.sh` also copies
+  `skills/agents/*.md` (`tasks-verifier`, `integration-auditor`, excluding README) into
+  `~/.claude/agents/`; these back the **mandatory verifier in `/tasks:loop[-dag]`**. Tasks 735
+  (ship) and 737 (setup-copy) only handle `skills/tasks`, so npm-only users would lose the
+  subagents and the loops' verification step.
+- **G2 (material) — setup's MCP entry must resolve to the installed package.** The shell
+  installers write a `dist/mcp/index.js` command that assumes a clone/cwd; the Node `setup` must
+  write an entry whose command/args resolve to the globally-installed package entrypoint
+  (absolute, via the asset resolver, or the `wood-fired-tasks mcp` bin) or Claude Code cannot
+  spawn it.
+- **Minor:** runtime warning on non-even-LTS / current Node (C1 — only `engines>=22` is in 729);
+  `0600` / user-only-ACL perms on `~/.claude.json` + the cached PAT secret (install.sh does this);
+  the optional one-line postinstall "run setup" notice; optional `setup --remote` reachability check.
+
+**Fix — 2 added tasks (project 36, tagged `decomp-73f4915c…` + `installer-parity`):**
+- **GB1 — Ship + install `skills/agents/` subagent definitions.** Build-process `skills/agents/*.md`
+  into the tarball and have `setup` install them to `~/.claude/agents/` (idempotent, resolver-based),
+  with a smoke assertion. Depends on the asset resolver (730), skill build (735), setup (737).
+- **GB2 — Installer-parity hardening.** setup's MCP entry resolves to the installed package; tighten
+  `~/.claude.json` + PAT-secret perms (0600 / user-only ACL); warn on odd/current Node; one-line
+  postinstall notice (no side effects); optional `--remote` reachability check. Depends on 729, 737, 738.
