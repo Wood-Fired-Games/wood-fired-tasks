@@ -450,3 +450,65 @@ jobs:
         #   6. Cleanup trap kills server + removes DB + tarball + tmp dir
         # Local wall time ~10s; well under the 4-min AC budget.
         run: bash tests/smoke/cli-e2e.sh
+
+  # -------------------------------------------------------------------------
+  # Cross-OS global-install smoke matrix — wood-fired-tasks #746.
+  #
+  # The preceding Linux-only gates prove the published tarball's CLI surface
+  # and a REST round-trip. This job proves the END-USER FRICTIONLESS-INSTALL
+  # promise — `npm i -g wood-fired-tasks && wood-fired-tasks setup` → serve —
+  # on ALL THREE supported OSes (linux/mac/windows), the way a brand-new user
+  # experiences it.
+  #
+  # It reuses scripts/smoke-global.mjs (`npm run smoke:global`) verbatim so the
+  # CI leg and the locally-runnable harness CANNOT drift. That single harness
+  # already asserts, entirely inside temp dirs with NO sudo/elevation:
+  #   - `setup` merges the wood-fired-tasks stdio MCP entry into ~/.claude.json
+  #   - `setup` copies the task skills into ~/.claude/commands/tasks/
+  #   - `setup` is idempotent (claude.json bytes unchanged on re-run)
+  #   - `serve` boots against a temp app-data DB, GET /health → 200 healthy,
+  #     the DB is created AND migrations applied (_migrations non-empty)
+  #
+  # The ONE thing the base smoke does not cover — that `setup --remote <url>
+  # --token <pat>` writes the `wood-fired-tasks-remote` MCP entry carrying
+  # WFT_API_URL / WFT_API_KEY — is exercised here by setting SMOKE_REMOTE=1,
+  # an opt-in flag the harness honours (default behaviour unchanged).
+  #
+  # NO sudo / runas / pkexec / doas anywhere: smoke-global.mjs installs into a
+  # user-writable temp --prefix, and it hard-refuses to spawn any elevation
+  # binary. fail-fast:false so a single-OS failure still reports the other two.
+  # -------------------------------------------------------------------------
+  global-install-smoke:
+    name: global-install-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dist artifacts
+        # smoke:global runs `npm run build` itself, but building here first
+        # surfaces a build break as its own step (clearer failure attribution)
+        # and warms the dist tree before the harness packs it.
+        run: npm run build
+
+      - name: Run global-install smoke (incl. setup --remote assertion)
+        # `npm run smoke:global` is pure cross-platform Node (temp-dir based,
+        # no shell built-ins), so it runs identically on win/mac/linux without
+        # a `shell:` override. SMOKE_REMOTE=1 turns on the extra assertion that
+        # `setup --remote` writes the wood-fired-tasks-remote entry with
+        # WFT_API_URL / WFT_API_KEY. No sudo: the harness installs into a
+        # user-writable temp --prefix and refuses any elevation binary.
+        env:
+          SMOKE_REMOTE: '1'
+        run: npm run smoke:global

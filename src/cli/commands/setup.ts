@@ -465,9 +465,20 @@ export const setupCommand = new Command('setup')
     'Personal access token for --remote; written to the remote MCP entry (WFT_API_KEY) and cached under the OS config dir'
   )
   .action((opts: { fixNpmPrefix?: boolean; remote?: string; token?: string }) => {
+    // `--token` is ALSO a global option on the root program (src/cli/bin/tasks.ts),
+    // registered for Bearer-auth override. When a user runs
+    // `setup --remote <url> --token <pat>`, Commander binds `--token` to the
+    // global program, so `opts.token` here is undefined. Fall back to the
+    // global value via optsWithGlobals() so `--token` works regardless of which
+    // scope Commander attaches it to.
+    const globalOpts = setupCommand.parent?.optsWithGlobals() ?? {};
+    const token =
+      typeof opts.token === 'string' && opts.token.length > 0
+        ? opts.token
+        : (globalOpts.token as string | undefined);
     runSetup({
       fixNpmPrefix: Boolean(opts.fixNpmPrefix),
       remote: opts.remote,
-      token: opts.token,
+      token,
     });
   });

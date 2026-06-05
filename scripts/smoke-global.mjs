@@ -361,6 +361,62 @@ async function main() {
   signal('SIGKILL');
   pass('server shut down cleanly');
 
+  // -- 5. OPT-IN: setup --remote writes the remote bridge entry --------------
+  // Gated behind SMOKE_REMOTE=1 so default behaviour is unchanged (backward
+  // compatible). The cross-OS CI matrix sets SMOKE_REMOTE=1 so the one thing
+  // the base smoke does NOT cover — that `setup --remote <url> --token <pat>`
+  // writes the `wood-fired-tasks-remote` MCP entry carrying WFT_API_URL /
+  // WFT_API_KEY — is exercised on every leg without a separate, driftable
+  // shell step.
+  if (process.env.SMOKE_REMOTE === '1') {
+    console.log('-- setup --remote (temp HOME) --');
+    const remoteHome = mkTemp('wft-smoke-remote-home-');
+    const remoteCwd = mkTemp('wft-smoke-remote-cwd-');
+    const remoteUrl = 'https://tasks.example.invalid/api';
+    // 32-char throwaway PAT: non-secret, lives only in the temp HOME + config.
+    const remotePat = 'smoke0pat0smoke0pat0smoke0pat0aa';
+    const remoteEnv = {
+      HOME: remoteHome,
+      USERPROFILE: remoteHome, // Windows parity
+      // Keep the OS config dir inside the temp HOME on every platform so the
+      // cached PAT never lands in the runner's real config tree.
+      XDG_CONFIG_HOME: path.join(remoteHome, '.config'),
+      LOCALAPPDATA: path.join(remoteHome, 'AppData', 'Local'),
+      APPDATA: path.join(remoteHome, 'AppData', 'Roaming'),
+    };
+
+    const remoteSetup = runOrFail(
+      binPath,
+      ['setup', '--remote', remoteUrl, '--token', remotePat],
+      { cwd: remoteCwd, env: remoteEnv }
+    );
+    if (remoteSetup.stdout) console.log(remoteSetup.stdout.trimEnd());
+
+    const remoteClaudeJsonPath = path.join(remoteHome, '.claude.json');
+    assert(
+      existsSync(remoteClaudeJsonPath),
+      `${remoteClaudeJsonPath} created by setup --remote`
+    );
+    const remoteParsed = JSON.parse(readFileSync(remoteClaudeJsonPath, 'utf8'));
+    const remoteMcp = remoteParsed.mcpServers ?? {};
+    const remoteEntry = remoteMcp['wood-fired-tasks-remote'];
+    assert(
+      remoteEntry != null && remoteEntry.type === 'stdio',
+      "setup --remote wrote the 'wood-fired-tasks-remote' stdio MCP entry"
+    );
+    const remoteEntryEnv = remoteEntry?.env ?? {};
+    assert(
+      remoteEntryEnv.WFT_API_URL === remoteUrl,
+      `remote entry carries WFT_API_URL=${remoteUrl}`
+    );
+    assert(
+      remoteEntryEnv.WFT_API_KEY === remotePat,
+      'remote entry carries WFT_API_KEY (the supplied PAT)'
+    );
+  } else {
+    console.log('-- setup --remote: SKIPPED (set SMOKE_REMOTE=1 to enable) --');
+  }
+
   // -- no-sudo affirmation ---------------------------------------------------
   pass('NO sudo/runas/pkexec/doas was invoked (temp --prefix is user-writable)');
 
