@@ -74,8 +74,8 @@ delimited by `---` lines, and MUST appear first in the file.
 | `ended_at` | string | RFC 3339 / ISO-8601 date-time, UTC | Orchestrator end time (last commit pushed). | `2026-05-22T22:18:43Z` |
 | `wall_seconds` | integer | ≥ 0, seconds | `ended_at - started_at` rounded down. Stored explicitly so consumers don't re-parse timestamps. | `16123` |
 | `orchestrator_session_id` | string | Claude Code session id | The *orchestrating* session — joins to `agent_transactions_v.session_id`. | `84ae52df-3d10-4a8e-9b88-7c33e4d0a112` |
-| `total_tokens` | integer | ≥ 0 | Sum of input + cache_create + cache_read + output across orchestrator and all subagents. | `4812334` |
-| `total_usd` | number | ≥ 0, USD | Sum cost across orchestrator and all subagents (cache-discounted). | `7.42` |
+| `total_tokens` | integer \| null | ≥ 0 or null | **Best-effort / approximate**, nullable (`null` when unmeasured). A roll-up of the available subagent `<usage>` blocks, NOT authoritative — orchestrator-session tokens are typically uncaptured at emit time. Present-but-nullable: emit `null`, never omit. | `4812334` |
+| `total_usd` | number \| null | ≥ 0 or null, USD | **Best-effort / approximate**, nullable (`null` when unmeasured). A roll-up of the available subagent `<usage>` blocks (cache-discounted), NOT authoritative — orchestrator-session cost is typically uncaptured at emit time. Present-but-nullable: emit `null`, never omit. | `7.42` |
 | `subagents_dispatched` | integer | ≥ 0 | Count of distinct subagent sessions spawned. | `15` |
 | `tasks_attempted` | integer | ≥ 0 | Tasks picked up during the run (closed + failed + partial + not_verified). | `15` |
 | `tasks_passed` | integer | ≥ 0 | Subset with verdict `PASS`. | `12` |
@@ -100,7 +100,12 @@ Invariant (checked by the validator and re-checked by replay):
   counts MUST match the verdict cells in the `## Tasks Closed` table.
 - **`total_tokens` / `total_usd`** are denormalized roll-ups; the granular
   breakdown is in the `## Cost Breakdown` section so consumers don't have to
-  parse the markdown table to get headline cost.
+  parse the markdown table to get headline cost. They are **best-effort and MAY
+  be `null` when unmeasured** — orchestrator-session tokens/USD are typically
+  not captured at emit time and subagent `<usage>` blocks are only loosely
+  summed, so the artifact does not assert exactness. The authoritative cost
+  figure is the post-run `agent_transactions_v` cross-check (joined on the
+  session ids), NOT this artifact.
 
 ## 4. Body Section Contracts
 
@@ -182,8 +187,13 @@ collapsed by model) and a `TOTAL` row. Columns:
 | `output_tokens` | integer | Completion tokens |
 | `usd` | number | Discounted cost in USD |
 
-Totals row: sum each numeric column. The `usd` total MUST equal frontmatter
-`total_usd` to ±$0.005; the token total MUST equal frontmatter `total_tokens`.
+Totals row: sum each numeric column. Reconciliation is conditional on the
+frontmatter fields being measured (they are best-effort and MAY be `null`):
+when `total_usd` is non-null, the TOTAL row `usd` sum SHOULD reconcile to it to
+±$0.005; when `total_tokens` is non-null, the TOTAL row token sum SHOULD
+reconcile to it. When either frontmatter field is `null`, the Cost Breakdown
+TOTAL row is the best available signal for that figure (no reconciliation
+target exists).
 
 ### 4.5 `## Wave Summary` (`/tasks:loop-dag` only — Wave 4.3 / task #341)
 

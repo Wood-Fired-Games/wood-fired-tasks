@@ -99,6 +99,31 @@ describe('LoopRunFrontmatterSchema', () => {
     expect(LoopRunFrontmatterSchema.safeParse(bad).success).toBe(false);
   });
 
+  // task #759 — total_tokens/total_usd are best-effort and nullable when
+  // unmeasured (orchestrator-session cost not captured at emit time). They are
+  // `.nullable()` (present-but-may-be-null), NOT `.optional()`: `null` is
+  // accepted, but the key must still be present and a string/negative is still
+  // rejected.
+  it('accepts null total_tokens (unmeasured, best-effort)', () => {
+    const ok = { ...VALID, total_tokens: null };
+    expect(LoopRunFrontmatterSchema.safeParse(ok).success).toBe(true);
+  });
+
+  it('accepts null total_usd (unmeasured, best-effort)', () => {
+    const ok = { ...VALID, total_usd: null };
+    expect(LoopRunFrontmatterSchema.safeParse(ok).success).toBe(true);
+  });
+
+  it('rejects a string total_tokens (nullable does not mean any type)', () => {
+    const bad = { ...VALID, total_tokens: '4812334' };
+    expect(LoopRunFrontmatterSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it('rejects negative total_tokens', () => {
+    const bad = { ...VALID, total_tokens: -1 };
+    expect(LoopRunFrontmatterSchema.safeParse(bad).success).toBe(false);
+  });
+
   it('rejects an empty orchestrator_session_id', () => {
     const bad = { ...VALID, orchestrator_session_id: '' };
     expect(LoopRunFrontmatterSchema.safeParse(bad).success).toBe(false);

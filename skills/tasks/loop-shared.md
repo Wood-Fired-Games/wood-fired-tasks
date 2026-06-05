@@ -305,8 +305,8 @@ The YAML frontmatter is the 14 required fields from `docs/loop-run-schema.md` §
 | `ended_at` | `now()` at the moment of this emission, RFC 3339 UTC. |
 | `wall_seconds` | `floor((ended_at - started_at).total_seconds())`. |
 | `orchestrator_session_id` | `$CLAUDE_SESSION_ID` env var if set; literal string `unknown` otherwise. |
-| `total_tokens` | Sum of input + cache_create + cache_read + output across orchestrator + every subagent. **Primary source:** the `<usage>` block returned by each `Agent` call in Steps 4 and 7 (deterministic, immediately available). **Cross-check source:** `agent_transactions_v` filtered by orchestrator + child `session_id`s — authoritative for retrospective audit but not required at emit time. |
-| `total_usd` | Same primary/cross-check split as `total_tokens`; cache-discounted. |
+| `total_tokens` | **Best-effort / approximate — do NOT claim exactness.** A roll-up of the `<usage>` blocks returned by each `Agent` call in Steps 4 and 7 that are available at emit time; orchestrator-session tokens are NOT captured here, so the total is not authoritative. Emit `null` when unmeasured (nullable per `docs/loop-run-schema.md` §3) — the field MUST be present, so emit `null` rather than omitting it. **Authoritative figure:** the post-run `agent_transactions_v` cross-check filtered by orchestrator + child `session_id`s, NOT this artifact. |
+| `total_usd` | Same best-effort/nullable contract as `total_tokens`; cache-discounted roll-up of the available subagent `<usage>` blocks, NOT authoritative. Emit `null` when unmeasured; authoritative figure is the post-run `agent_transactions_v` cross-check. |
 | `subagents_dispatched` | Count of distinct subagent sessions spawned this run (worker dispatches in Step 4 + verifier dispatches in Step 7). |
 | `tasks_attempted` | Tasks picked up so far (Step 1 increments this counter). |
 | `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Decided by the Step 7 verdict for each task. Increments on the corresponding Step 7 branch. |
