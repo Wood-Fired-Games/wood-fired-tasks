@@ -39,6 +39,7 @@ import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
 import { mcpCommand } from '../commands/mcp.js';
+import { selfUpdateCommand } from '../commands/self-update.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -137,6 +138,10 @@ program.addCommand(whoamiCommand);
 
 // Register mcp command (task #734): local stdio server / remote HTTP bridge.
 program.addCommand(mcpCommand);
+
+// Register self-update command (frictionless distribution, task #739):
+// `tasks self-update` spawns `npm i -g wood-fired-tasks@latest` (no sudo).
+program.addCommand(selfUpdateCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133
