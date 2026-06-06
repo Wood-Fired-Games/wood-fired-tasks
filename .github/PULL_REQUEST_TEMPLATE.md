@@ -31,7 +31,8 @@
 - [ ] Affected layers (check all that apply): `api` / `cli` / `mcp` / `slack` / `services` / `events` / `repositories` / `db` / `schemas` / `types` / `utils` / `config` / docs / CI.
 - [ ] Runtime boundaries touched (Zod schemas, MCP tool input, Slack signature handling, SSE event filtering, SQL/FTS query construction) — noted in the PR description.
 - [ ] Test level matches the change (route → integration; service → service test; repository → repo + integration; util → unit; state-machine / dependency-cycle / pagination change → property test under `**/__tests__/*.property.test.ts`).
-- [ ] Local quality gates ran: `npm run quality` (build, tests, lint, lint:deps, depcruise, prod audit).
+- [ ] Local quality gates ran: `npm run quality` (build, tests, lint, **format:check**, lint:deps, depcruise, prod audit).
+- [ ] Strict-flag conventions honored for new/changed code: `exactOptionalPropertyTypes` (omit `undefined` keys via conditional-spread / `omitUndefined`, never widen DTOs to `| undefined`) and `noUncheckedIndexedAccess` (guard-and-bind indexed access — no blanket `arr[i]!`). See `docs/TYPESCRIPT_QUALITY_AUDIT_2026.md` §G / §784.
 - [ ] Security-sensitive surfaces (auth, secrets, SQL/FTS query construction, Slack signature verification, MCP tool argument handling, SSE event leakage) — flagged in the PR description if touched.
 
 <!-- See `docs/CODE_QUALITY_ROADMAP.md` for the full quality contract and the "Ongoing Review Checklist" section. -->

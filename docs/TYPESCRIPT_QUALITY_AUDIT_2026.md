@@ -74,18 +74,21 @@ were already `!`-suppressed before the audit (so they produced 0 probe errors).
 
 ### 1.2 Formatting — [`biome.json`](../biome.json)
 
-- `formatter.enabled` = **`false`**. This is intentional and load-bearing: the
-  `package.json` `format:check` script is hard-wired to `exit 1` with an
-  explanatory message ("format:check is unavailable: biome.json has
-  formatter.enabled=false…"). There is **no format gate in CI or in
+- **UPDATED (§777, 2026-06-06):** `formatter.enabled` is now **`true`** and the
+  formatter is a **live CI gate**. `format:check` = `biome format .`, runs as a
+  step in the `lint` CI job, and is chained into `npm run quality`. The text
+  below describes the **baseline `a872170` state** and is retained as history.
+- *(baseline)* `formatter.enabled` = **`false`**. This was intentional and
+  load-bearing: the `package.json` `format:check` script was hard-wired to
+  `exit 1` with an explanatory message. There was **no format gate in CI or in
   `npm run quality`**.
-- A full formatter *config* exists (indentWidth 2, lineWidth 100, single
-  quotes, semicolons always, trailing commas all) but is dormant until
-  `formatter.enabled: true` plus a one-time reformat sweep lands.
-- **Evidence finding (new):** `biome.json`'s `$schema` pins **2.4.15** while
-  the installed `@biomejs/biome` is **2.4.16**. `npm run lint` emits exactly
-  one **info**-level diagnostic about this (`Expected: 2.4.16 / Found:
-  2.4.15`). Lint is otherwise clean.
+- *(baseline)* A full formatter *config* existed (indentWidth 2, lineWidth 100,
+  single quotes, semicolons always, trailing commas all) but was dormant until
+  `formatter.enabled: true` plus a one-time reformat sweep landed (since done).
+- **Evidence finding (RESOLVED):** at baseline `biome.json`'s `$schema` pinned
+  **2.4.15** while the installed `@biomejs/biome` was **2.4.16**, emitting one
+  **info** diagnostic. As of §777 the schema is pinned to **2.4.16** and `npm
+  run lint` is clean with **0 info**.
 
 ### 1.3 Lint — [`biome.json`](../biome.json) + `package.json` `lint`
 
@@ -208,7 +211,10 @@ concurrency-cancel; all actions SHA-pinned; Node 22). Jobs:
 
 - **`secret-scan.yml`** runs **gitleaks** full-history (PR/push/weekly cron)
   + artifact hygiene.
-- **`format:check` is NOT a CI gate** (formatter disabled — §1.2).
+- **UPDATED (§777):** `format:check` (`biome format .`) **IS now a CI gate** — a
+  step in the `lint` job (`ci.yml:85-86`), alongside the escape-hatch budget
+  step (`ci.yml:87-88`). The "NOT a CI gate" note below was the baseline state.
+- *(baseline)* `format:check` was NOT a CI gate (formatter disabled — §1.2).
 - Composite local gate: `npm run quality` = build && test && lint &&
   lint:deps && depcruise && prod audit. `prepublishOnly` = build && test &&
   lint:deps && audit && pack:check.
@@ -233,6 +239,12 @@ The agent-context manifest is CI-verified (`agent-context:check`).
 ---
 
 ## 2. Comparison to Modern TS Service Practices
+
+> **POST-MILESTONE NOTE (§777, 2026-06-06):** the table below is the **baseline
+> `a872170`** reading. Project 37 has since moved several rows: "Full strict
+> surface" → **Meets** (all 3 flags ON), "Formatter" → **Meets** (enabled +
+> gated), "Runtime boundary validation" → improved (#774 response validation).
+> See §777.B for the after-state scorecard. "Async safety" remains **Below**.
 
 How the repo measures against high-standard TypeScript service norms (2026):
 
@@ -264,6 +276,11 @@ The gaps are concentrated and well understood, not systemic.
 Scale: **0–5**, where 5 = at or above the high-standard TS-service norm,
 3 = solid/acceptable with a known gap, ≤2 = a real gap worth prioritizing.
 "Charter weight" maps the area to project-37's value themes.
+
+> **POST-MILESTONE NOTE (§777):** the scores below are the **baseline** snapshot.
+> The after-milestone re-score (compiler strictness 3.5→5, formatting 1.5→4.5,
+> CI/release 4.5→5, runtime-boundary 3.5→4) is in **§777.B**. Async safety (2)
+> is unchanged and is the top recommended follow-up.
 
 | # | Area | Score | Charter theme (weight) | Evidence basis |
 | --- | --- | :---: | --- | --- |
@@ -327,6 +344,14 @@ charter weights, not the old roadmap's phase numbers.
 The old roadmap remains the authoritative *narrative*; this audit is the
 **point-in-time numeric ground truth** as of `a872170`. The items below are
 the open work, deduplicated against the old roadmap's "Remaining open items".
+
+> **POST-MILESTONE NOTE (§777):** §4.2's P1–P8 were the baseline plan. By
+> closeout: **P2 DONE** (all 3 strict flags ON, #763/#780/#784), **P3 partially
+> DONE** (#774 response validation; MCP/Slack casts still budgeted),
+> **P4 DONE** (schema drift resolved), **P5 DONE** (formatter enabled + gated),
+> **P6/P7 DONE** (#772 mutation survivors / #771 complexity report),
+> **P8 DONE** (this reconciliation + roadmap refresh). **P1 (async-safety lint)
+> is the one open high-charter item** — see §777.E follow-up F1.
 
 ### 4.2 Prioritized improvements (charter-weighted)
 
@@ -1316,3 +1341,221 @@ already neutralizes them). **Follow-up:** a small mop-up task should replace the
 with guard-and-bind / empty-state handling per §D to bring the no-blanket-`!` rule to
 100% coverage across the index-access surface (slack/ and events/sse-manager were
 out of #782/#783 scope). Note these are NOT regressions — they pre-date the audit.
+
+---
+
+## §777 — Final quality ratchet review (project-37 closeout)
+
+> **Project 37, final task #777.** This is the milestone's closeout deliverable
+> and the evidence anchor for closing project 37. It records the verification
+> commands + dates, a before→after scorecard, confirms every landed gate is
+> reflected in CI / the PR template / the docs (and fixes the spots that were
+> stale), marks the strictness ratchets DONE rather than "planned", and captures
+> the remaining high-value gaps as explicit recommended follow-up tasks for a
+> human to promote. No task API was called and no tasks were created by this
+> review — the follow-ups in §777.E are a planning list only.
+
+### §777.A — Verification commands + dates
+
+Run from the worktree root on **2026-06-06**, on `feat/typescript-quality-audit`
+at HEAD `7c1b051` (tip = #784, the strictness-ratchet close):
+
+```bash
+# Base / tree identity
+git rev-parse HEAD                       # 7c1b051… (#784 descendant)
+git log --oneline -15                    # confirms #763,#774,#771,#773,#778,#779,
+                                         #   #780,#772,#781,#782,#783,#784 all landed
+
+# Active strictness flags (all three now ON, permanent)
+grep -nE "noPropertyAccessFromIndexSignature|exactOptionalPropertyTypes|noUncheckedIndexedAccess" tsconfig.json
+#   18: noPropertyAccessFromIndexSignature: true
+#   19: exactOptionalPropertyTypes: true
+#   20: noUncheckedIndexedAccess: true
+
+# Formatter is now ENABLED (was disabled at the §1.2 baseline) + real gate
+grep -n '"formatter"' biome.json         # formatter.enabled: true; schema pinned 2.4.16
+node -e "console.log(require('./package.json').scripts['format:check'])"  # => "biome format ."
+node -e "console.log(require('./package.json').scripts.quality)"          # now CHAINS format:check
+
+# Milestone tree is green
+npm run build                            # exit 0 (tsc && tsc -p packages/wft-router && build:skills)
+
+# Agent-context manifest refreshed to reflect the milestone's doc edits
+npm run agent-context:gen                # Wrote .agent-context.json (28 files, 10 groups)
+npm run agent-context:check              # agent-context:check OK. (was: out of date)
+```
+
+### §777.B — Before→after scorecard (milestone movement)
+
+"Before" = the §1 baseline at `a872170` (audit start, 2026-06-05). "After" =
+this commit `7c1b051` (2026-06-06, all project-37 tasks landed).
+
+| Dimension | Before (baseline `a872170`) | After (`7c1b051`) | Moved by |
+| --- | --- | --- | --- |
+| `noPropertyAccessFromIndexSignature` | **OFF** (deferred) | **ON** | #763 |
+| `exactOptionalPropertyTypes` | **OFF** (deferred) | **ON** | #778→#779→#780 |
+| `noUncheckedIndexedAccess` | **OFF** (deferred) | **ON** | #781→#782→#783→#784 |
+| Biome formatter | `enabled:false`, **no gate**, `format:check` hard-`exit 1` | `enabled:true`, **`format:check` = `biome format .`**, CI gate live | formatter-enable sweep (landed; see §777.C) |
+| `npm run quality` chain | build·test·lint·lint:deps·depcruise·audit | **+ `format:check`** inserted after lint | formatter-enable |
+| biome `$schema` drift | 2.4.15 vs installed 2.4.16 (1 info diag) | **2.4.16** — resolved, lint clean 0 info | schema bump |
+| API/CLI response Zod validation | routes-in only; list/task/project responses cast | **responses validated** through schemas | #774 |
+| Advisory complexity report | none | **`npm run quality:complexity`** + CI `complexity` job (advisory) + calibrated outlier inventory | #771 |
+| Benchmark / perf policy | benches exist, no policy doc | **`docs/BENCHMARK_POLICY.md`** (hot-path, baseline, advisory-vs-block rule) | #773 |
+| Mutation-survivor coverage | 75% break gate only | **+ cascade-depth survivor tests** + "when to request a run" policy | #772 |
+| Escape-hatch budget | none | **CI-gated ratchet** (`scripts/quality/escape-hatch-budget.mjs`) + policy | #766 (prior wave, confirmed live) |
+| Agent-context manifest | stale (line/sha drift) | **regenerated, check green** | #777 (this task) |
+
+**Scorecard areas (§3) re-scored after the milestone:**
+
+| # | Area | Before | After | Why it moved |
+| --- | --- | :---: | :---: | --- |
+| 1 | Compiler strictness | 3.5 | **5** | all three deferred strict flags ON (#763/#780/#784) |
+| 2 | Formatting | 1.5 | **4.5** | formatter enabled + `format:check` is a live CI gate + schema drift gone |
+| 3 | Lint | 2.5 | **3** | schema-drift info cleared; rule set still minimal-by-design (async-safety still a follow-up) |
+| 4 | Async safety | 2 | **2** | UNCHANGED — no-floating-promises lint still absent (recommended follow-up F1) |
+| 5 | Runtime boundary validation | 3.5 | **4** | API/CLI response validation closed (#774); MCP/Slack casts still budgeted |
+| 6 | Testing / coverage | 4.5 | 4.5 | already strong; #772 added targeted survivor tests |
+| 7 | Mutation testing | 4.5 | 4.5 | #772 added survivor tests + run policy; gate unchanged |
+| 8 | Dependency boundaries | 5 | 5 | unchanged (already maxed) |
+| 9 | CI / release | 4.5 | **5** | format-check + escape-hatch budget now gating; complexity advisory job added |
+| 10 | Docs | 4 | **4.5** | this audit + roadmap + BENCHMARK_POLICY + complexity calibration |
+
+**Net:** the milestone closed the entire strict-flag ratchet (area 1 → 5),
+turned formatting from the worst area into a live gate (area 2 → 4.5), and
+hardened the response boundary (area 5). The single remaining sub-3 area is
+**async safety** (area 4) — the highest-charter-weight residual gap and the
+top recommended follow-up below.
+
+### §777.C — Landed gates are reflected in CI / PR template / docs (verified)
+
+Checked each landed gate against the three surfaces; refs are file:line at
+`7c1b051`.
+
+**CI — [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):**
+
+| Gate | Reflected in CI | Ref |
+| --- | --- | --- |
+| Build (tsc, incl. router + skills, under all 3 strict flags) | `build` job | `ci.yml:90-101` |
+| Lint (biome) | `lint` job step | `ci.yml:83-84` |
+| **Format check** (`biome format .`) | `lint` job step — **NOW LIVE** | `ci.yml:85-86` |
+| **Escape-hatch budget** ratchet | `lint` job step | `ci.yml:87-88` |
+| Coverage thresholds | `coverage` job | `ci.yml:34-45` |
+| Import boundaries / cycles | `depcruise` job | `ci.yml:60-71` |
+| Unused-dep drift | `deps` job | `ci.yml:47-58` |
+| Prod audit | `audit` job | `ci.yml:103-114` |
+| **Complexity report** (advisory) | `complexity` job, `continue-on-error: true` | `ci.yml:116-134` |
+| Agent-context manifest/links/budget | `agent-context` job | `ci.yml:136-147` |
+| Vendor-neutrality | `vendor-neutrality` job | `ci.yml:149-160` |
+| Router pack / OCI / host-manifests | `pack-smoke` / `oci-build` / `host-manifests` | `ci.yml:162-265` |
+
+Mutation (`mutation.yml`) and benchmark (`bench.yml`) stay on their own
+nightly/label/dispatch workflows by design (expensive; §1.5, BENCHMARK_POLICY).
+
+**Doc-staleness fixed by this review (CI/format reflection):** §1.2, §1.9,
+§3 (area 2), §4.1, and the §2 comparison row all asserted the formatter was
+**disabled / not a CI gate** and that the schema was drifted at 2.4.15. Both are
+now false — see §777.F for the inline corrections applied.
+
+**PR template — [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md):**
+The "Quality" section already prompts affected layers, runtime boundaries, test
+level, the `npm run quality` composite, and security-sensitive surfaces
+(`PULL_REQUEST_TEMPLATE.md:29-37`). `npm run quality` now transitively runs
+`format:check` + the escape-hatch budget, so those gates ARE covered by the
+existing checkbox. This review **adds one strictness-flag bullet** to the
+Quality section so contributors explicitly account for the now-active
+`exactOptionalPropertyTypes` / `noUncheckedIndexedAccess` conventions
+(omit-undefined, guard-and-bind) when adding optional-field / indexed-access
+code — see §777.F.
+
+**Roadmap — [`docs/CODE_QUALITY_ROADMAP.md`](CODE_QUALITY_ROADMAP.md):** the
+"Deferred flags", Phase-6 formatter-deferred status, and "Definition Of Done"
+strict-flag/format lines were stale (all three flags + the formatter are now
+DONE). Corrected in §777.F.
+
+### §777.D — Obsolete roadmap statements marked complete
+
+The strictness ratchets and the formatter enable are **no longer planned** — they
+landed. This review updates `docs/CODE_QUALITY_ROADMAP.md` to mark them DONE
+(Phase 2 "Deferred flags", Phase 6 formatter status, the "Definition Of Done"
+strict-flag + format bullets, and "Remaining open items"). The full edits are
+itemized in §777.F.
+
+### §777.E — Recommended follow-up tasks (for a human to promote)
+
+These are **proposed tasks**, NOT created here (no task API was called). Each has
+enough detail to become a task directly.
+
+1. **F1 — Async-safety lint (no-floating-promises / no-unhandled-promise).**
+   *Charter: Defect prevention (13) — highest residual.* Biome is not
+   type-aware, so this needs a typescript-eslint layer (or equivalent) scoped to
+   floating/misused promises only, ratcheted warning-free. This is the only
+   sub-3 scorecard area left (§777.B area 4) and the single highest-value gap.
+   Note a partial guard already exists from the prior milestone (commit `8a81d83`
+   "Biome type-aware floating/misused-promise lint gate") — F1 should **verify
+   coverage/escape gaps** of that gate rather than assume none exists.
+
+2. **F2 — Retire the 4 pre-existing blanket bracket-index `!` escape hatches.**
+   *Charter: Defect prevention (13).* Surfaced by the #784 flag-flip but invisible
+   to the #781 probe (the `!` suppressed the error). Replace each with
+   guard-and-bind / empty-state per §D approved patterns:
+   - `src/slack/formatters/project-formatter.ts:45` — `projects[i]!` (index-loop body)
+   - `src/slack/notifier.ts:99` — `results[i]!` (index-loop body)
+   - `src/slack/commands/tasks-command.ts:109` — `args[i]!` (arg-parse loop)
+   - `src/events/sse-manager.ts:203` — `this.eventBuffer[0]!.id` (first-element after `length>0`)
+   `slack/` and `events/sse-manager` were out of the #782/#783 scope, so this
+   brings the no-blanket-`!` rule to 100% across the index-access surface. Not
+   regressions — they pre-date the audit. (Full table in §784.)
+
+3. **F3 — Re-scope the vendor-neutrality exemption marker in
+   `packages/wft-router/src/sse/client.ts`.** *Charter: Boundary integrity (8).*
+   The `WFT-NEUTRALITY-EXEMPT-LINE` marker is mis-scoped around the `cursor_gap`
+   SSE log: it is sprinkled across the *comment* lines (`:20-21,405-406,433-434`)
+   and the `logger.warn('cursor_gap', {` block (`:436-437`) more broadly than the
+   single line that genuinely needs the exemption. Tighten the marker to the exact
+   line(s) the `check:vendor-neutrality` gate would otherwise flag, so the
+   exemption surface is minimal and auditable. Confirm green with
+   `npm run check:vendor-neutrality`. (Cited at `client.ts:436` in the #777
+   discovery comment.)
+
+4. **F4 — Agent-context manifest freshness — ADDRESSED here, keep watching.**
+   *Charter: Maintainability (2).* The `.agent-context.json` manifest was stale
+   (line-count + sha256 drift from the milestone's doc edits to
+   `CODE_QUALITY_ROADMAP.md` et al.). This review ran `npm run agent-context:gen`
+   and `agent-context:check` now passes (§777.A). NOTE the generator tracks a
+   fixed doc set (28 files / 10 groups) and does **not** auto-add new docs like
+   `BENCHMARK_POLICY.md` / `TYPESCRIPT_QUALITY_AUDIT_2026.md` as standalone
+   entries — if those should be first-class manifest entries, that is a separate
+   config change to `scripts/agent-context/` (proposed follow-up, low priority).
+
+5. **F5 (optional) — Lint-posture decision above `recommended:false`.**
+   *Charter: Defect prevention (13) / velocity (5).* The repo runs a deliberately
+   minimal 2-rule Biome set. Decide explicitly whether to stay minimal-by-design
+   or adopt a curated subset above `recommended:false` (pairs naturally with F1).
+   Cheap; clarifies intent. (Was roadmap P4.)
+
+### §777.F — Edits applied by this review
+
+Doc + manifest only (no source/behaviour changes):
+
+- **`.agent-context.json`** — regenerated via `npm run agent-context:gen`;
+  `agent-context:check` now exits 0 (was: out of date). Diff is line-count/sha256
+  refresh for the milestone-edited docs + the generator's canonical array reflow;
+  no doc-set membership change.
+- **`docs/CODE_QUALITY_ROADMAP.md`** — marked the three strict flags and the
+  formatter DONE (Phase 2 "Deferred flags", Phase 6 status, "Definition Of Done",
+  "Remaining open items"); updated the stale "no formatter / no build in CI /
+  101 files·1300 tests" facts to point at this milestone.
+- **`docs/TYPESCRIPT_QUALITY_AUDIT_2026.md`** — this §777 section; plus inline
+  corrections to §1.2 / §1.9 / §2 / §3-area-2 / §4.1 noting the formatter is now
+  enabled + gated and the biome schema drift is resolved.
+- **`.github/PULL_REQUEST_TEMPLATE.md`** — added one strictness-conventions bullet
+  to the "Quality" section.
+
+### §777.G — Self-attestation (#777)
+
+No secret, token, password, API key, or absolute local path was introduced. No
+task API was called and no tasks were created — §777.E is a planning list only.
+`npm run build` exits 0 at this commit. `npm run agent-context:check` exits 0
+after the regen. Source code was not modified (the 4 `!` sites, the
+vendor-neutrality marker, and the async-safety gap are documented follow-ups
+F1–F3, not fixed here per the task's "document, don't fix" scope).

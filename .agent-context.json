@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-05T22:41:24.124Z",
+    "generated_at": "2026-06-06T08:55:34.744Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -189,8 +189,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 12000,
-      "actual_lines": 270,
-      "sha256": "027548ca67cb0a6dc0f3a479bca43600ab6a6627517e74a74f0f30337596d1cf"
+      "actual_lines": 275,
+      "sha256": "ba97e42510186b604f1fb21d6997a3d74620506a80ed872371d6f6e2506bc7ab"
     },
     {
       "path": "docs/TROUBLESHOOTING.md",
@@ -217,8 +217,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 666,
-      "sha256": "5d03247f96473af3387462ffc35ea55970a9812732ec5fe18fbdf5afadc81e85"
+      "actual_lines": 874,
+      "sha256": "763dc03e75e1925f46487410ec3b1468f1562e2d969582f4f913376d318aedd0"
     },
     {
       "path": "docs/verifier-contract.md",
@@ -315,8 +315,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1800,
-      "actual_lines": 71,
-      "sha256": "5c43bcd310bf595bec06a605b24097ca7d046fda737e57f07497c155b2ce9e1d",
+      "actual_lines": 72,
+      "sha256": "ab4363bd2f7b7f532de550b72697ac9d70e5af4ea40060e833e52ab2ab89cfcc",
       "actual_owner": "Repository maintainers"
     },
     {

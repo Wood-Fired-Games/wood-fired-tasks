@@ -14,9 +14,11 @@ The repository is already in a healthy state for a small TypeScript service:
 
 - `tsconfig.json` enables `strict`, `forceConsistentCasingInFileNames`,
   declaration output, and Node16 module resolution.
-- `npm run build` compiles the production TypeScript surface.
-- `npm test` runs the Vitest suite; the latest baseline run reported 101 test
-  files and 1300 tests.
+- `npm run build` compiles the production TypeScript surface; it also runs as
+  the `build` CI job on every PR (project 37).
+- `npm test` runs the Vitest suite; as of the project-37 audit (`a872170`) the
+  suite is **247 test files / ~2,931 cases** (the older "101 files / 1300 tests"
+  figure is stale — see `docs/TYPESCRIPT_QUALITY_AUDIT_2026.md` §1.4).
 - `vitest.config.ts` enforces coverage thresholds at 85% lines, functions,
   and statements, with 75% branches.
 - `stryker.config.js` and `.github/workflows/mutation.yml` provide mutation
@@ -82,11 +84,19 @@ Strengths:
 
 Gaps:
 
-- No ESLint, typescript-eslint, Biome, Prettier, or equivalent formatter
-  configuration is present.
-- No CI job currently catches unused variables, floating promises, missing
+> **STALE (corrected project 37):** the two bullets below describe the
+> pre-tooling state. Biome **is** present (lint + formatter both enabled and
+> gated in CI); the `lint`, `build`, `depcruise`, and `complexity` CI jobs now
+> exist; `format:check` is a live gate. The accurate **residual** gap is
+> narrower: no type-aware **async-safety** lint (no-floating-promises /
+> no-unhandled-promise), and a deliberately minimal `recommended:false` rule
+> set. See `docs/TYPESCRIPT_QUALITY_AUDIT_2026.md` §1.3 / §777.
+
+- ~~No ESLint, typescript-eslint, Biome, Prettier, or equivalent formatter
+  configuration is present.~~
+- ~~No CI job currently catches unused variables, floating promises, missing
   awaits, unsafe assignment/member access, complexity, import cycles, or
-  formatting drift.
+  formatting drift.~~
 
 Direction:
 
@@ -251,10 +261,15 @@ Strengths:
 
 Gaps:
 
-- CI does not run `npm run build` in the main workflow.
-- CI has no lint/format gate.
-- Release checks are documented but not fully encoded into `prepublishOnly` or
-  a single local quality command.
+> **STALE (corrected project 37):** all three bullets below are now closed. CI
+> runs `npm run build` (`build` job), lint + format are gated (`lint` job:
+> `biome check`, `biome format .`, escape-hatch budget), and `npm run quality` +
+> `prepublishOnly` encode the local quality floor. Retained for provenance.
+
+- ~~CI does not run `npm run build` in the main workflow.~~
+- ~~CI has no lint/format gate.~~
+- ~~Release checks are documented but not fully encoded into `prepublishOnly` or
+  a single local quality command.~~
 
 Direction:
 
@@ -351,14 +366,21 @@ Suggested order:
 5. `exactOptionalPropertyTypes`
 6. `noUncheckedIndexedAccess`
 
-Deferred flags (still off, with rationale):
+Strict-flag ratchet — **ALL THREE NOW DONE (project 37, 2026-06):**
 
-- `noPropertyAccessFromIndexSignature` — deferred; needs a sweep of
-  `Record<string, any>` / dynamic access patterns; coupled with task #266.
-- `exactOptionalPropertyTypes` — deferred; broad churn around
-  optional-vs-undefined call sites and schema inference.
-- `noUncheckedIndexedAccess` — deferred; introduces `T | undefined` at every
-  index access; requires significant control-flow refactoring.
+- `noPropertyAccessFromIndexSignature` — **DONE (#763).** 210 TS4111 sites, all
+  genuine index-signature/`Record`/external-payload accesses, pure
+  `obj.foo`→`obj['foo']` conversions; zero escape hatches.
+- `exactOptionalPropertyTypes` — **DONE (#778 audit → #779 services/repos →
+  #780 surfaces + enable).** The omit-undefined / conditional-spread convention
+  (preserve the absent/`null`/value three-state — never widen DTOs to
+  `| undefined`) is documented in
+  [`docs/TYPESCRIPT_QUALITY_AUDIT_2026.md`](TYPESCRIPT_QUALITY_AUDIT_2026.md) §G.
+- `noUncheckedIndexedAccess` — **DONE (#781 inventory → #782 core → #783 surface
+  → #784 enable).** 30 errors resolved via guard-and-bind / tuple-type /
+  empty-state; the `distance.get(cur)!` anti-pattern retired. 4 pre-existing
+  blanket `!` sites remain as a documented mop-up follow-up (audit §784 / §777.E
+  F2).
 
 ### Phase 3: Reduce Unsafe Casts And Untyped Boundaries
 
@@ -568,22 +590,19 @@ Status:
 - **Landed in task #269.** Four tightly-scoped CI/automation tweaks:
   1. `npm run build` added as the `build` CI job in
      `.github/workflows/ci.yml`.
-  2. `format:check` is **intentionally omitted from CI and from
-     `npm run quality`**; Biome's formatter is disabled in `biome.json`
-     (`formatter.enabled=false`), so a real format gate requires a
-     separate follow-on task that enables `formatter.enabled: true` and
-     lands the one-time reformat sweep. The `format:check` script is
-     kept in `package.json` but now exits non-zero with an explanatory
-     message so it cannot silently pass as a false-positive gate.
-     **Recommend that formatter-enable + reformat sweep as the next
-     quality task.**
+  2. **UPDATED (project 37, 2026-06): the formatter is now ENABLED and gated.**
+     `biome.json` has `formatter.enabled: true`, `format:check` = `biome
+     format .`, it runs as a step in the `lint` CI job, and it is chained into
+     `npm run quality`. The one-time reformat sweep landed. (The text below is
+     the historical #269 state, when `formatter.enabled=false` and `format:check`
+     was a deliberate `exit 1` placeholder — kept for provenance.)
   3. `.github/dependabot.yml` configured for `npm` and `github-actions`
      ecosystems on a weekly Monday cadence, with patch/minor grouping to
      cut PR noise.
   4. `npm run quality` composite script chains build, test, lint,
+     **format:check** (added once the formatter was enabled — project 37),
      lint:deps, depcruise, and production audit (fail-fast `&&` order,
-     cheapest gate first). `format:check` is deliberately excluded
-     until the formatter is enabled.
+     cheapest gate first).
   5. `prepublishOnly` script chains the minimum release-safe subset:
      build, test, lint:deps, production audit, and pack:check. Lint and
      format are intentionally omitted from `prepublishOnly` since they
@@ -785,17 +804,21 @@ Use this checklist when reviewing non-trivial PRs:
 
 Status as of task #271 (Phase 8 close-out):
 
+> **PROJECT 37 UPDATE (2026-06):** the two items below are now fully DONE — see
+> the inline strikethroughs. The milestone closeout review is
+> [`docs/TYPESCRIPT_QUALITY_AUDIT_2026.md`](TYPESCRIPT_QUALITY_AUDIT_2026.md) §777.
+
 - **Lint gate: DONE.** Biome lint runs as the `lint` CI job and locally via
-  `npm run lint` (0/0 baseline, warning-free). **Format gate: DEFERRED** —
-  Biome formatter is intentionally disabled in `biome.json`; enabling it
-  requires a one-time reformat sweep, called out as the recommended
-  follow-on under Phase 6 status.
-- **Stricter TypeScript flags: PARTIALLY DONE.**
+  `npm run lint` (0/0 baseline, warning-free). **Format gate: DONE
+  (project 37)** — `formatter.enabled: true`, `format:check` = `biome format .`
+  runs in the `lint` CI job and in `npm run quality`; the one-time reformat
+  sweep landed. (Was DEFERRED at the #271 close.)
+- **Stricter TypeScript flags: DONE (project 37).**
   `useUnknownInCatchVariables`, `noFallthroughCasesInSwitch`, and
-  `noImplicitOverride` landed in task #265. **DEFERRED:**
-  `noPropertyAccessFromIndexSignature`, `exactOptionalPropertyTypes`, and
-  `noUncheckedIndexedAccess` — rationale captured under Phase 2 "Deferred
-  flags".
+  `noImplicitOverride` landed in task #265. The three formerly-deferred flags —
+  `noPropertyAccessFromIndexSignature` (#763), `exactOptionalPropertyTypes`
+  (#778/#779/#780), and `noUncheckedIndexedAccess` (#781/#782/#783/#784) — are
+  now **ON and permanent**. See Phase 2 "Strict-flag ratchet".
 - **Unsafe casts reduced, localized, or documented: DONE for the priority
   targets.** Repository row reads funnel through
   `src/repositories/row-mapper.ts` (task #266); remaining ad-hoc casts are
@@ -810,9 +833,10 @@ Status as of task #271 (Phase 8 close-out):
   toolchain (task #771); calibrated outlier inventory + dispositions are in
   the Phase 4 "Complexity Calibration" section. No blocking gate was added.
 - **Build, tests, coverage, dependency hygiene, audit, lint, and format
-  easy to run locally and visible in CI: MOSTLY DONE.** `npm run quality`
-  chains build, test, lint, lint:deps, depcruise, and prod audit; CI runs
-  the same gates. Format is the only deferred element (see Phase 6 status).
+  easy to run locally and visible in CI: DONE (project 37).** `npm run quality`
+  chains build, test, lint, **format:check**, lint:deps, depcruise, and prod
+  audit; CI runs the same gates (plus the escape-hatch budget step). Format is
+  no longer deferred — the formatter is enabled and `format:check` is a live gate.
 - **Dependency update automation: DONE.** `.github/dependabot.yml`
   configured for `npm` and `github-actions` on a weekly Monday cadence
   with patch/minor grouping (task #269).
@@ -826,12 +850,25 @@ Status as of task #271 (Phase 8 close-out):
 Remaining open items (tracked as follow-on tasks, not blockers for this
 roadmap closeout):
 
-- Formatter enable + one-time reformat sweep (Phase 6 follow-on).
+- ~~Formatter enable + one-time reformat sweep~~ — **DONE (project 37).**
 - Complexity reporting calibration pass — **DONE (task #771)**; advisory
   `npm run quality:complexity` + Phase 4 "Complexity Calibration" section.
   Any per-outlier refactor remains a tracked follow-on.
-- Remaining strict-TS flag ratchet for `noPropertyAccessFromIndexSignature`,
-  `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` (Phase 2
-  deferred list).
-- Mutation review for high-risk / low-score modules and additional date-
-  filter / idempotency-TTL property tests (Phase 7 follow-on).
+- ~~Remaining strict-TS flag ratchet~~ — **DONE (project 37):**
+  `noPropertyAccessFromIndexSignature` (#763), `exactOptionalPropertyTypes`
+  (#778/#779/#780), `noUncheckedIndexedAccess` (#781/#782/#783/#784) all ON.
+- Mutation review for high-risk / low-score modules — **DONE (task #772)** for
+  the WorkflowEngine cascade-depth survivors + run policy; additional date-
+  filter / idempotency-TTL property tests remain a Phase 7 follow-on.
+
+**New follow-ups surfaced by the project-37 closeout (§777.E of the audit):**
+
+- **Async-safety lint** (no-floating-promises / no-unhandled-promise) — the one
+  open high-charter-weight gap; needs a typescript-eslint layer since Biome is
+  not type-aware. Verify the partial floating/misused-promise gate from `8a81d83`
+  for coverage holes rather than assuming none.
+- **Retire the 4 pre-existing blanket bracket-index `!`** (slack formatters /
+  notifier / tasks-command + sse-manager) per the no-blanket-`!` rule — audit §784.
+- **Re-scope the vendor-neutrality exemption marker** at
+  `packages/wft-router/src/sse/client.ts` (`cursor_gap` SSE log) to the minimal
+  line set.
