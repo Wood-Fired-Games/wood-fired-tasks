@@ -3,7 +3,7 @@ import { Writable } from 'stream';
 import Fastify from 'fastify';
 import pino from 'pino';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { seedIdentities } from '../../services/identity-seeder.js';

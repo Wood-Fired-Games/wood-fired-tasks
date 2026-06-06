@@ -8,7 +8,7 @@ import { ClaimReleaseService } from '../claim-release.service.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { DependencyRepository } from '../../repositories/dependency.repository.js';
 import { eventBus } from '../../events/event-bus.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import type { App } from '../../index.js';
 import type { Task } from '../../types/task.js';
 import type { TaskEvent } from '../../events/types.js';

@@ -218,8 +218,14 @@ call.
 | wsjf | `wsjf-history` | `commands/wsjf.ts` | WSJF 4.5 (#645): show a task's append-only WSJF score history (oldest-first). |
 | wsjf | `wsjf-set` | `commands/wsjf.ts` | WSJF 4.5 (#645): set / lock a task's WSJF components via the manual gate. |
 | wsjf | `charter-history` | `commands/wsjf.ts` | WSJF 4.5 (#645): show a project's value-charter history (oldest-first). |
+| distribution | `mcp` | `commands/mcp.ts` | Frictionless distribution (#734): launch the MCP bridge — local stdio server by default, remote HTTP bridge when `WFT_API_URL`/`--remote` is set. |
+| distribution | `serve` | `commands/serve.ts` | Frictionless distribution (#733): boot the API server on the OS app-data DB, migrate-on-start, cwd-independent. |
+| distribution | `setup` | `commands/setup.ts` | Frictionless distribution (#737): merge the local MCP entry into `~/.claude.json` and copy skills into `~/.claude/commands/tasks/`; `--fix-npm-prefix` for no-sudo global installs. |
+| distribution | `self-update` | `commands/self-update.ts` | Frictionless distribution (#739): `npm i -g wood-fired-tasks@latest` with no-sudo EACCES remediation. |
+| distribution | `docs` | `commands/docs.ts` | Frictionless distribution (#749): browse bundled user guides — `docs list`/`show`/`path`/`open`, resolved via the asset resolver (package root, not cwd). |
+| distribution | `service` | `commands/service.ts` | Frictionless distribution (#740/#741/#742): manage the background service — `install`/`uninstall`/`status`, admin-free by default (Linux systemctl --user, macOS launchd, Windows per-user logon task); `install --system` is the sole elevating path. |
 
-**Total: 34 commands wired into Commander** (counted by
+**Total: 40 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine

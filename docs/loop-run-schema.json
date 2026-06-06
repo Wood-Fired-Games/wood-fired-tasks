@@ -53,14 +53,14 @@
       "description": "Claude Code session id of the orchestrating session. Joins to agent_transactions_v.session_id."
     },
     "total_tokens": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "minimum": 0,
-      "description": "Sum of input + cache_create + cache_read + output tokens across orchestrator and all subagents."
+      "description": "Best-effort roll-up of input + cache_create + cache_read + output tokens across the subagent <usage> blocks available at emit time; NOT authoritative. `null` when unmeasured (orchestrator-session tokens are not captured at emit time). Present-but-nullable: emit `null`, never omit. Authoritative figure is the post-run agent_transactions_v cross-check."
     },
     "total_usd": {
-      "type": "number",
+      "type": ["number", "null"],
       "minimum": 0,
-      "description": "Sum cost in USD across orchestrator and all subagents (cache-discounted)."
+      "description": "Best-effort roll-up of USD cost across the subagent <usage> blocks available at emit time (cache-discounted); NOT authoritative. `null` when unmeasured (orchestrator-session USD not captured at emit time). Present-but-nullable: emit `null`, never omit. Authoritative figure is the post-run agent_transactions_v cross-check."
     },
     "subagents_dispatched": {
       "type": "integer",

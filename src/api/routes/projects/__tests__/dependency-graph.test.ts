@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
 
 /**

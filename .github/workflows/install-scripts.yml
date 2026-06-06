@@ -79,48 +79,6 @@ jobs:
         run: test -x deploy/upgrade.sh
 
   # -------------------------------------------------------------------------
-  # Lint the full client-package bundle's POSIX shell scripts. The client
-  # package (distributed as wood-fired-tasks-client.zip by
-  # scripts/build-client-package.sh) ships setup.sh + uninstall.sh to end
-  # users on Linux/macOS, so both must pass shellcheck -S warning exactly
-  # like the root installer. scripts/build-client-package.sh is the producer
-  # of that bundle and is linted here too so a bad change to the packaging
-  # script cannot land silently. Task #386 introduced this coverage.
-  #
-  # The bundle's Windows/DOS surfaces are linted by the psscriptanalyzer
-  # job (setup.ps1, uninstall.ps1). The .bat shims (setup.bat, uninstall.bat)
-  # have NO linter in this repo — there is no batch-file static analyzer in
-  # the toolchain — so they are intentionally not gated here; they are thin
-  # launchers that delegate to the .ps1 scripts.
-  # -------------------------------------------------------------------------
-  shellcheck-client-package:
-    name: shellcheck client-package/*.sh
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install shellcheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-          shellcheck --version
-      - name: Run shellcheck on the client-package bundle scripts
-        # setup.sh + uninstall.sh ship to end users; build-client-package.sh
-        # produces the bundle. All three must be clean at -S warning.
-        run: shellcheck -S warning client-package/setup.sh client-package/uninstall.sh scripts/build-client-package.sh
-      - name: Verify all three scripts parse as valid bash (bash -n)
-        run: |
-          bash -n client-package/setup.sh
-          bash -n client-package/uninstall.sh
-          bash -n scripts/build-client-package.sh
-      - name: Verify uninstall.sh is executable
-        # setup.sh is intentionally tracked non-executable (mode 0644);
-        # scripts/build-client-package.sh chmod +x's it into the bundle and
-        # the docs invoke it as `bash setup.sh`. Only uninstall.sh ships
-        # with the executable bit set in-tree, so only it is gated here.
-        run: test -x client-package/uninstall.sh
-
-  # -------------------------------------------------------------------------
   # Lint install.ps1 with PSScriptAnalyzer on a Windows runner.
   # The installer is intentionally interactive (Write-Host w/ colors), so
   # we only fail on Errors here — the noisy Write-Host warnings are
@@ -135,18 +93,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Run PSScriptAnalyzer
         shell: pwsh
-        # Lint the root installer AND the client-package bundle's PowerShell
-        # surfaces (setup.ps1 + uninstall.ps1), which ship to Windows end
-        # users via wood-fired-tasks-client.zip. Task #386 extended coverage
-        # from install.ps1 alone to the full bundle. Severity stays Error:
-        # these installers are intentionally interactive (Write-Host w/
-        # colors), so the noisy informational/warning rules are accepted by
-        # design; only real Errors fail the build.
+        # Lint the root installer (now a thin deprecation shim that delegates
+        # to `wood-fired-tasks setup`). Severity stays Error: the shim is
+        # intentionally interactive (Write-Host), so the noisy informational/
+        # warning rules are accepted by design; only real Errors fail the build.
         run: |
           $targets = @(
-            'install.ps1',
-            'client-package/setup.ps1',
-            'client-package/uninstall.ps1'
+            'install.ps1'
           )
           if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
             Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
@@ -174,27 +127,19 @@ jobs:
   # Smoke-test install.sh on Linux + macOS.
   #
   # install.sh does not download a release artifact — it wires up Claude
-  # Code skill files and an MCP server entry in ~/.claude.json that points
-  # at the local checkout's dist/mcp/index.js. Since task #258 split the
-  # installer into local (default) vs remote modes, this job exercises both:
+  # install.sh is now a thin DEPRECATION SHIM (task #743). The git-clone
+  # installer has been retired in favour of the published npm package +
+  # `wood-fired-tasks setup`. This job no longer asserts MCP-wiring side
+  # effects; it asserts the shim's contract:
   #
-  #   Local mode (default):
-  #     1. run install.sh — should NOT prompt, NOT read WOOD_FIRED_TASKS_API_KEY
-  #     2. assert ~/.claude.json's 'wood-fired-tasks' MCP entry has DATABASE_PATH
-  #     3. assert that entry has NO WFT_API_KEY / WOOD_FIRED_TASKS_API_KEY env
-  #     4. assert no secret file was written (local mode never touches it)
+  #   1. exits 0 (never blocks the caller)
+  #   2. prints the deprecation notice + the supported `npm i -g
+  #      wood-fired-tasks && wood-fired-tasks setup` path
+  #   3. writes NO ~/.claude.json and NO secret file (a shim has no side
+  #      effects when the published binary is absent, which it is in CI)
   #
-  #   Remote mode:
-  #     1. run install.sh --mode remote with WOOD_FIRED_TASKS_API_KEY env var
-  #     2. assert ~/.claude.json's 'wood-fired-tasks-remote' MCP entry has
-  #        WFT_API_URL + WFT_API_KEY
-  #     3. assert secret file is mode 0600
-  #
-  # Alpine / Debian / Fedora are intentionally skipped — they would
-  # multiply runner minutes without testing behaviour that differs from
-  # ubuntu-latest at the install.sh layer. The only OS-specific code paths
-  # in install.sh are `stat -c` (Linux) vs `stat -f` (macOS), which the
-  # ubuntu + macos matrix legs already cover.
+  # ubuntu + macos legs are retained so the POSIX-sh shim is exercised on
+  # both platforms.
   # -------------------------------------------------------------------------
   smoke-unix:
     name: smoke install.sh (${{ matrix.os }})
@@ -207,109 +152,39 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '22'
-          cache: 'npm'
 
-      - name: Install jq (macOS)
-        if: runner.os == 'macOS'
-        run: brew install jq
+      - name: Run install.sh — deprecation shim must exit 0
+        run: sh install.sh
 
-      - name: Verify prerequisites
+      - name: Assert install.sh prints the deprecation notice + supported path
         run: |
-          jq --version
-          curl --version | head -1
+          out="$(sh install.sh 2>&1)"
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -qi 'DEPRECATED' || { echo "missing DEPRECATED notice"; exit 1; }
+          printf '%s\n' "$out" | grep -q 'wood-fired-tasks setup' || { echo "missing 'wood-fired-tasks setup' guidance"; exit 1; }
+          echo "deprecation notice present — OK"
 
-      - name: Build local artifacts (dist/mcp/index.js, dist/mcp/remote/index.js)
+      - name: Assert shim wrote no ~/.claude.json and no secret file
         run: |
-          npm ci
-          npm run build
-          test -f dist/mcp/index.js || { echo "build did not produce dist/mcp/index.js"; exit 1; }
-          test -f dist/mcp/remote/index.js || { echo "build did not produce dist/mcp/remote/index.js"; exit 1; }
-
-      # ----- LOCAL MODE -----------------------------------------------------
-      - name: Run install.sh in local mode (default) — even with API key env set, it must be ignored
-        env:
-          # Intentionally set the env var: local mode must silently ignore it
-          # so existing users who leave it exported don't end up with a key
-          # in ~/.claude.json. Task #258.
-          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-must-NOT-leak-into-config
-          # Skip the health probe — no service is running in CI.
-          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
-        run: bash install.sh
-
-      - name: Assert skill files were copied (local)
-        run: |
-          dest="$HOME/.claude/commands/tasks"
-          test -d "$dest" || { echo "skills dest dir missing: $dest"; exit 1; }
-          count=$(find "$dest" -maxdepth 1 -name "*.md" -type f | wc -l)
-          echo "found $count skill files in $dest"
-          test "$count" -ge 1 || { echo "no skill files were copied"; exit 1; }
-
-      - name: Assert local MCP entry has DATABASE_PATH and NO API key
-        run: |
-          test -f "$HOME/.claude.json" || { echo "~/.claude.json missing"; exit 1; }
-          jq -e '.mcpServers["wood-fired-tasks"].command == "node"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks"].args[0] | startswith("/") and endswith("/dist/mcp/index.js")' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks"].env.DATABASE_PATH | startswith("/") and endswith("/data/tasks.db")' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
-          # Task #258: local MCP must NOT carry any API key in its env.
-          jq -e '.mcpServers["wood-fired-tasks"].env | has("WFT_API_KEY") | not' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks"].env | has("WOOD_FIRED_TASKS_API_KEY") | not' "$HOME/.claude.json" >/dev/null
-          echo "local MCP entry has DATABASE_PATH and no API key — OK"
-
-      - name: Assert no secret file written by local mode
-        run: |
+          if [ -f "$HOME/.claude.json" ]; then
+            echo "ERROR: shim wrote ~/.claude.json — it must not"
+            exit 1
+          fi
           secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-tasks/api-key"
           if [ -f "$secret" ]; then
-            echo "ERROR: local mode wrote $secret — it must not"
+            echo "ERROR: shim wrote $secret — it must not"
             exit 1
           fi
-          echo "no secret file present after local install — OK"
-
-      - name: Assert install.sh --help exits 0
-        run: bash install.sh --help
-
-      # ----- REMOTE MODE ----------------------------------------------------
-      - name: Run install.sh --mode remote with env-var API key
-        env:
-          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-not-a-real-secret
-          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
-        run: bash install.sh --mode remote
-
-      - name: Assert remote MCP entry has WFT_API_URL + WFT_API_KEY
-        run: |
-          jq -e '.mcpServers["wood-fired-tasks-remote"].command == "node"' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks-remote"].args[0] | startswith("/") and endswith("/dist/mcp/remote/index.js")' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks-remote"] | has("cwd") | not' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks-remote"].env.WFT_API_KEY | length > 0' "$HOME/.claude.json" >/dev/null
-          jq -e '.mcpServers["wood-fired-tasks-remote"].env.WFT_API_URL | length > 0' "$HOME/.claude.json" >/dev/null
-          echo "remote MCP entry present and well-formed"
-
-      - name: Assert secret file permissions are 0600 (remote)
-        run: |
-          secret="${XDG_CONFIG_HOME:-$HOME/.config}/wood-fired-tasks/api-key"
-          test -f "$secret" || { echo "secret file missing: $secret"; exit 1; }
-          mode=$(stat -c '%a' "$secret" 2>/dev/null || stat -f '%Lp' "$secret")
-          echo "secret file mode: $mode"
-          test "$mode" = "600" || { echo "expected 600, got $mode"; exit 1; }
-
-      - name: Assert install.sh rejects invalid --mode
-        run: |
-          if bash install.sh --mode bogus 2>/dev/null; then
-            echo "ERROR: install.sh accepted --mode bogus"
-            exit 1
-          fi
-          echo "install.sh rejected --mode bogus — OK"
+          echo "shim produced no side effects — OK"
 
   # -------------------------------------------------------------------------
   # Smoke-test install.ps1 on Windows.
   #
-  # Mirrors smoke-unix: build dist/ locally, exercise both local (default,
-  # no API key) and remote (-Mode remote, env-var API key) install paths,
-  # then assert ~/.claude.json + (remote only) secret file landed correctly.
-  # Task #258 split the installer into the two modes.
+  # install.ps1 is now a thin DEPRECATION SHIM (task #743). It prints the
+  # deprecation notice + the supported `npm i -g wood-fired-tasks ;
+  # wood-fired-tasks setup` path and exits 0 with no side effects when the
+  # published binary is absent (as it is in CI). This job asserts that
+  # contract.
   # -------------------------------------------------------------------------
   smoke-windows:
     name: smoke install.ps1 (windows-latest)
@@ -318,107 +193,28 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '22'
-          cache: 'npm'
 
-      - name: Build local artifacts (dist/mcp/index.js, dist/mcp/remote/index.js)
+      - name: Run install.ps1 — deprecation shim must exit 0
         shell: pwsh
-        run: |
-          npm ci
-          npm run build
-          if (-not (Test-Path 'dist/mcp/index.js')) {
-            Write-Error "build did not produce dist/mcp/index.js"
-            exit 1
-          }
-          if (-not (Test-Path 'dist/mcp/remote/index.js')) {
-            Write-Error "build did not produce dist/mcp/remote/index.js"
-            exit 1
-          }
-
-      # ----- LOCAL MODE (default) ------------------------------------------
-      - name: Run install.ps1 in local mode (default) — API key env var must be ignored
-        shell: pwsh
-        env:
-          # Intentionally set: local mode must silently drop it. Task #258.
-          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-must-NOT-leak-into-config
-          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
         run: ./install.ps1
 
-      - name: Assert skill files were copied (local)
+      - name: Assert install.ps1 prints the deprecation notice + supported path
         shell: pwsh
         run: |
-          $dest = Join-Path $env:USERPROFILE '.claude\commands\tasks'
-          if (-not (Test-Path $dest)) { Write-Error "skills dest dir missing: $dest"; exit 1 }
-          $count = (Get-ChildItem -Path $dest -Filter '*.md' -File).Count
-          Write-Host "found $count skill files in $dest"
-          if ($count -lt 1) { Write-Error "no skill files were copied"; exit 1 }
+          $out = ./install.ps1 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'DEPRECATED') { Write-Error "missing DEPRECATED notice"; exit 1 }
+          if ($out -notmatch 'wood-fired-tasks setup') { Write-Error "missing 'wood-fired-tasks setup' guidance"; exit 1 }
+          Write-Host "deprecation notice present — OK"
 
-      - name: Assert local MCP entry has DATABASE_PATH and NO API key
-        shell: pwsh
-        run: |
-          $cfg = Join-Path $env:USERPROFILE '.claude.json'
-          if (-not (Test-Path $cfg)) { Write-Error "$cfg missing"; exit 1 }
-          $json = Get-Content $cfg -Raw | ConvertFrom-Json
-          $entry = $json.mcpServers.'wood-fired-tasks'
-          if ($entry.command -ne 'node') { Write-Error "local MCP command mismatch"; exit 1 }
-          # args[0] must be an ABSOLUTE path ending in dist/mcp/index.js — Claude
-          # Code ignores the `cwd` field, so a relative path breaks the MCP server.
-          if (-not ([System.IO.Path]::IsPathRooted($entry.args[0]))) { Write-Error "local MCP args[0] not absolute: $($entry.args[0])"; exit 1 }
-          if (-not ($entry.args[0] -like '*dist\mcp\index.js' -or $entry.args[0] -like '*dist/mcp/index.js')) { Write-Error "local MCP args[0] mismatch: $($entry.args[0])"; exit 1 }
-          if (-not ([System.IO.Path]::IsPathRooted($entry.env.DATABASE_PATH))) { Write-Error "DATABASE_PATH not absolute: $($entry.env.DATABASE_PATH)"; exit 1 }
-          if ($entry.PSObject.Properties.Name -contains 'cwd') { Write-Error "local MCP entry contains cwd — Claude Code ignores it; installer must not write it"; exit 1 }
-          if ($entry.env.PSObject.Properties.Name -contains 'WFT_API_KEY') {
-            Write-Error "local MCP entry contains WFT_API_KEY — task #258 forbids this"
-            exit 1
-          }
-          if ($entry.env.PSObject.Properties.Name -contains 'WOOD_FIRED_TASKS_API_KEY') {
-            Write-Error "local MCP entry contains WOOD_FIRED_TASKS_API_KEY — task #258 forbids this"
-            exit 1
-          }
-          Write-Host "local MCP entry has DATABASE_PATH and no API key — OK"
-
-      - name: Assert no secret file written by local mode
-        shell: pwsh
-        run: |
-          $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-tasks\api-key'
-          if (Test-Path $secret) {
-            Write-Error "local mode wrote $secret — it must not"
-            exit 1
-          }
-          Write-Host "no secret file present after local install — OK"
-
-      # ----- REMOTE MODE ---------------------------------------------------
-      - name: Run install.ps1 -Mode remote with env-var API key
-        shell: pwsh
-        env:
-          WOOD_FIRED_TASKS_API_KEY: ci-smoke-test-key-not-a-real-secret
-          WOOD_FIRED_TASKS_URL: http://127.0.0.1:1
-        run: ./install.ps1 -Mode remote
-
-      - name: Assert remote MCP entry has WFT_API_URL + WFT_API_KEY
+      - name: Assert shim wrote no ~/.claude.json and no secret file
         shell: pwsh
         run: |
           $cfg = Join-Path $env:USERPROFILE '.claude.json'
-          $json = Get-Content $cfg -Raw | ConvertFrom-Json
-          $entry = $json.mcpServers.'wood-fired-tasks-remote'
-          if ($entry.command -ne 'node') { Write-Error "remote MCP command mismatch"; exit 1 }
-          if (-not ([System.IO.Path]::IsPathRooted($entry.args[0]))) { Write-Error "remote MCP args[0] not absolute: $($entry.args[0])"; exit 1 }
-          if (-not ($entry.args[0] -like '*dist\mcp\remote\index.js' -or $entry.args[0] -like '*dist/mcp/remote/index.js')) { Write-Error "remote MCP args[0] mismatch: $($entry.args[0])"; exit 1 }
-          if ($entry.PSObject.Properties.Name -contains 'cwd') { Write-Error "remote MCP entry contains cwd — Claude Code ignores it; installer must not write it"; exit 1 }
-          if ([string]::IsNullOrWhiteSpace($entry.env.WFT_API_KEY)) { Write-Error "WFT_API_KEY missing"; exit 1 }
-          if ([string]::IsNullOrWhiteSpace($entry.env.WFT_API_URL)) { Write-Error "WFT_API_URL missing"; exit 1 }
-          Write-Host "remote MCP entry present and well-formed"
-
-      - name: Assert secret file exists (remote)
-        shell: pwsh
-        run: |
+          if (Test-Path $cfg) { Write-Error "shim wrote $cfg — it must not"; exit 1 }
           $secret = Join-Path $env:LOCALAPPDATA 'wood-fired-tasks\api-key'
-          if (-not (Test-Path $secret)) { Write-Error "secret file missing: $secret"; exit 1 }
-          $content = Get-Content $secret -Raw
-          if ([string]::IsNullOrWhiteSpace($content)) { Write-Error "secret file empty"; exit 1 }
-          Write-Host "secret file present: $secret"
+          if (Test-Path $secret) { Write-Error "shim wrote $secret — it must not"; exit 1 }
+          Write-Host "shim produced no side effects — OK"
 
   # -------------------------------------------------------------------------
   # Regression smoke for the globally-linked `tasks` CLI.
@@ -654,3 +450,65 @@ jobs:
         #   6. Cleanup trap kills server + removes DB + tarball + tmp dir
         # Local wall time ~10s; well under the 4-min AC budget.
         run: bash tests/smoke/cli-e2e.sh
+
+  # -------------------------------------------------------------------------
+  # Cross-OS global-install smoke matrix — wood-fired-tasks #746.
+  #
+  # The preceding Linux-only gates prove the published tarball's CLI surface
+  # and a REST round-trip. This job proves the END-USER FRICTIONLESS-INSTALL
+  # promise — `npm i -g wood-fired-tasks && wood-fired-tasks setup` → serve —
+  # on ALL THREE supported OSes (linux/mac/windows), the way a brand-new user
+  # experiences it.
+  #
+  # It reuses scripts/smoke-global.mjs (`npm run smoke:global`) verbatim so the
+  # CI leg and the locally-runnable harness CANNOT drift. That single harness
+  # already asserts, entirely inside temp dirs with NO sudo/elevation:
+  #   - `setup` merges the wood-fired-tasks stdio MCP entry into ~/.claude.json
+  #   - `setup` copies the task skills into ~/.claude/commands/tasks/
+  #   - `setup` is idempotent (claude.json bytes unchanged on re-run)
+  #   - `serve` boots against a temp app-data DB, GET /health → 200 healthy,
+  #     the DB is created AND migrations applied (_migrations non-empty)
+  #
+  # The ONE thing the base smoke does not cover — that `setup --remote <url>
+  # --token <pat>` writes the `wood-fired-tasks-remote` MCP entry carrying
+  # WFT_API_URL / WFT_API_KEY — is exercised here by setting SMOKE_REMOTE=1,
+  # an opt-in flag the harness honours (default behaviour unchanged).
+  #
+  # NO sudo / runas / pkexec / doas anywhere: smoke-global.mjs installs into a
+  # user-writable temp --prefix, and it hard-refuses to spawn any elevation
+  # binary. fail-fast:false so a single-OS failure still reports the other two.
+  # -------------------------------------------------------------------------
+  global-install-smoke:
+    name: global-install-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dist artifacts
+        # smoke:global runs `npm run build` itself, but building here first
+        # surfaces a build break as its own step (clearer failure attribution)
+        # and warms the dist tree before the harness packs it.
+        run: npm run build
+
+      - name: Run global-install smoke (incl. setup --remote assertion)
+        # `npm run smoke:global` is pure cross-platform Node (temp-dir based,
+        # no shell built-ins), so it runs identically on win/mac/linux without
+        # a `shell:` override. SMOKE_REMOTE=1 turns on the extra assertion that
+        # `setup --remote` writes the wood-fired-tasks-remote entry with
+        # WFT_API_URL / WFT_API_KEY. No sudo: the harness installs into a
+        # user-writable temp --prefix and refuses any elevation binary.
+        env:
+          SMOKE_REMOTE: '1'
+        run: npm run smoke:global

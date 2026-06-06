@@ -32,8 +32,15 @@ export const LoopRunFrontmatterSchema = z.object({
   ended_at: z.string().datetime(),
   wall_seconds: z.number().int().nonnegative(),
   orchestrator_session_id: z.string().min(1),
-  total_tokens: z.number().int().nonnegative(),
-  total_usd: z.number().nonnegative(),
+  // Best-effort roll-up of available subagent <usage> blocks; NOT authoritative.
+  // `null` when unmeasured (orchestrator-session tokens are not captured at emit
+  // time, so the total cannot be asserted as exact). Present-but-nullable
+  // (`.nullable()`, not `.optional()`): the key MUST be emitted — emit `null`,
+  // never omit. Authoritative figure is the post-run agent_transactions_v join.
+  total_tokens: z.number().int().nonnegative().nullable(),
+  // Best-effort roll-up; `null` when unmeasured (orchestrator-session USD not
+  // captured at emit time). Present-but-nullable, same contract as total_tokens.
+  total_usd: z.number().nonnegative().nullable(),
   subagents_dispatched: z.number().int().nonnegative(),
   tasks_attempted: z.number().int().nonnegative(),
   tasks_passed: z.number().int().nonnegative(),

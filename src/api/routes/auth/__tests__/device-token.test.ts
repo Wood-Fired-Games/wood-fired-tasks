@@ -37,7 +37,7 @@ import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
 import { parseApiKeyEntries } from '../../../../config/env.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../../../db/driver.js';
 
 const EXPECTED_CLIENT_ID = 'cli-test-client.example.com';
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';

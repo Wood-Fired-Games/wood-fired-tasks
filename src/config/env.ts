@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { defaultDbPath } from './paths.js';
 
 /**
  * sysexits.h standard exit codes
@@ -61,7 +62,11 @@ export const configSchema = z.object({
   HOST: z.string().min(1).default('127.0.0.1'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   API_KEYS: z.string().min(1, 'API_KEYS is required and cannot be empty'),
-  DATABASE_PATH: z.string().min(1).default('./data/tasks.db'),
+  // task #731: default the DB to the OS app-data dir (env-paths) so a
+  // quick-start `npx`/global install does not write a cwd-relative
+  // `./data/tasks.db` (which moves with the process and is easy to lose).
+  // An explicit `DATABASE_PATH` env var still wins.
+  DATABASE_PATH: z.string().min(1).default(defaultDbPath),
   CONNECTION_TIMEOUT: z.string().min(1).default('120000').transform(Number),
   REQUEST_TIMEOUT: z.string().min(1).default('60000').transform(Number),
   KEEP_ALIVE_TIMEOUT: z.string().min(1).default('10000').transform(Number),

@@ -34,7 +34,7 @@
  */
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { UserRepository } from '../../repositories/user.repository.js';

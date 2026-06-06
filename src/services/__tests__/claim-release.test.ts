@@ -3,7 +3,7 @@ import { ClaimReleaseService } from '../claim-release.service.js';
 import { initTestDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { eventBus } from '../../events/event-bus.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 describe('ClaimReleaseService', () => {
   let db: Database.Database;

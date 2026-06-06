@@ -6,7 +6,7 @@ import { TaskRepository } from '../../repositories/task.repository.js';
 import { ProjectRepository } from '../../repositories/project.repository.js';
 import { CommentService } from '../comment.service.js';
 import { ValidationError, NotFoundError } from '../errors.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 describe('CommentService', () => {
   let db: Database.Database;

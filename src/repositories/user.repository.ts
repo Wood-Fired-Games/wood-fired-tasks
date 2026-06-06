@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../db/driver.js';
 import type { User, UserUpsertInput } from '../types/identity.js';
 import type { IUserRepository } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';

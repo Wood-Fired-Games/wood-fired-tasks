@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 /**
  * Migration 010: partial UNIQUE indexes backing the boot-time seeder's

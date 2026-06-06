@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Database } from 'better-sqlite3';
+import type { Database } from '../../db/driver.js';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { VERSION } from '../../utils/version.js';

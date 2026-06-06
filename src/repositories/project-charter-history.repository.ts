@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../db/driver.js';
 import type { ValueCharter } from '../types/task.js';
 import { mapRows } from './row-mapper.js';
 import { AppendOnlyViolationError } from './errors.js';

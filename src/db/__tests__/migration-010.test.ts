@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { initTestDatabase } from '../database.js';
 import { runMigrations } from '../migrate.js';
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 /**
  * Integration tests for migration 010: partial UNIQUE indexes that back the

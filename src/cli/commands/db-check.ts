@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import Database from 'better-sqlite3';
+import Database from '../../db/driver.js';
 import { colorSuccess, colorError } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';

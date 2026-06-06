@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../db/driver.js';
 import { eventBus } from '../events/event-bus.js';
 import type { Task } from '../types/task.js';
 

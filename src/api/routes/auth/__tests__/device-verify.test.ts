@@ -29,7 +29,7 @@ import fastifyFormbody from '@fastify/formbody';
 import pino from 'pino';
 import { randomBytes } from 'node:crypto';
 import * as cheerio from 'cheerio';
-import type Database from 'better-sqlite3';
+import type Database from '../../../../db/driver.js';
 
 import authPlugin from '../../../plugins/auth.js';
 import deviceHtmlRoute from '../device-html.js';

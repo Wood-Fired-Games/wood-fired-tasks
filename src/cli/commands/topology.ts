@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import Database from 'better-sqlite3';
+import Database from '../../db/driver.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { DependencyRepository } from '../../repositories/dependency.repository.js';
 import { TopologyService } from '../../services/topology.service.js';

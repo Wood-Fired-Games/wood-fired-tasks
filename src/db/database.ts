@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import Database from './driver.js';
 
 /**
  * Initialize a SQLite database with proper configuration.

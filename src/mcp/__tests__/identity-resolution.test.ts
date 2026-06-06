@@ -23,7 +23,7 @@
  * paths run end-to-end. Pattern mirrors `src/cli/__tests__/db-mint-token.test.ts`.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
+import Database from '../../db/driver.js';
 import { runMigrations } from '../../db/migrate.js';
 import { seedIdentities } from '../../services/identity-seeder.js';
 import { parseApiKeyEntries } from '../../config/env.js';

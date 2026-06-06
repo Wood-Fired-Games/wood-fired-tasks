@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 /**
  * Migration 008: identity tables (users, api_tokens).

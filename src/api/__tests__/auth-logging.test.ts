@@ -10,7 +10,7 @@ import { seedIdentities } from '../../services/identity-seeder.js';
 import { parseApiKeyEntries } from '../../config/env.js';
 import { UserRepository } from '../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../repositories/api-token.repository.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 /**
  * Phase 28 (Plan 28-04): the chain auth plugin reads `fastify.userRepository`

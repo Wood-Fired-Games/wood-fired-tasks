@@ -22,6 +22,30 @@ Brief template — adapt to the task. Brief size should scale with codebase qual
 You are implementing wood-fired-tasks task #<id> ("<title>") from project "<project_name>".
 Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit after verifying your work.
 
+## STEP 0 — Worktree base correction (MANDATORY when dispatched with `isolation: "worktree"`)
+
+If this brief was dispatched into an isolated git worktree, the harness may have
+cut that worktree from a STALE base (commonly the repo's configured main branch /
+a fixed ref, NOT the orchestrator's current branch tip). The base ref is chosen by
+the Claude Code platform Agent-tool `isolation: "worktree"` harness (out-of-repo —
+no in-repo code issues the `git worktree add` or selects its base), so this guard
+is the **standing mandatory mitigation**, not a stopgap: there is no in-repo fix to
+make it removable (see loop-dag.md §3b for the ownership evidence + resolution).
+Before reading or writing
+ANY file, reset to the run's integration branch and assert a sentinel — STOP if it
+fails (do NOT silently implement on a stale tree, and do NOT recreate files that
+already exist on the real branch):
+
+    git reset --hard <integration-branch>     # e.g. feat/<...> (the run's branch), or main
+    git log --oneline -1                        # MUST show <expected-tip-sha> "<subject>"
+    ls <2-3 sentinel paths that exist ONLY at the real branch tip>
+
+The orchestrator fills in `<integration-branch>`, `<expected-tip-sha>`, and the
+sentinel paths (files/dirs introduced by earlier commits/waves of THIS run). If
+`git log -1` does not show the expected tip, or any sentinel path is missing,
+report "wrong base — halting" and make NO edits. Omit this whole section only for
+shared-tree (non-`isolation: worktree`) dispatches.
+
 ## Working dir / Cross-repo context
 
 <for single-repo tasks: just restate the working dir line above; this subsection can be omitted.>
@@ -112,6 +136,29 @@ If the baseline contradicts what the orchestrator's brief told you to expect (e.
 - Test suite must stay green: `<test>` ends with the same pass count as baseline.
 - <Any task-specific constraints — warning-free, format-untouched, no console additions, etc.>
 
+## Pre-existing blocking defects (mid-implementation discoveries)
+
+Your DEFAULT is to stay strictly in scope (see the `## Hard constraints` above —
+"Don't bulk-edit existing source unless absolutely required"). The only carve-out:
+if while implementing you hit a **pre-existing defect that genuinely BLOCKS an
+acceptance criterion** (e.g. a bug in a helper the AC requires you to use, an
+orphaned/broken test or workflow the AC can't be satisfied around), then:
+
+- (a) **Fix it MINIMALLY and in-scope** — the smallest change that unblocks the AC,
+  nothing more. Do NOT bundle in adjacent cleanups or refactors.
+- (b) **Do NOT silently expand scope, and do NOT leave the AC unsatisfiable without
+  flagging.** Either land the minimal fix and report it, or — if the fix is larger
+  than a minimal patch — STOP and surface it rather than improvising a sweep.
+- (c) **Report it under a dedicated `## Unplanned fixes` section** of your summary
+  (what was broken / why it blocked the AC / how you kept the fix minimal).
+
+This is distinct from the baseline pre-existing-breakage policy (§2c / §F), which is
+about the test suite being RED *before you start* — that policy says STOP and surface
+to the orchestrator. THIS clause is for a defect you discover *mid-implementation*
+that blocks the AC. Cross-reference, don't conflate: a red baseline halts the loop; a
+mid-implementation blocking defect gets a minimal in-scope fix plus an `## Unplanned
+fixes` report.
+
 ## Validation steps (run all before reporting back)
 
 1. `<build>`
@@ -142,6 +189,11 @@ Then the standard fields:
 - Decisions and trade-offs (with one-line rationale each).
 - Things you tried and disabled / deferred (so future tasks pick them up).
 - Output of each validation step (pass/fail + headline numbers only).
+- **`## Unplanned fixes`** — pre-existing defects you had to fix to satisfy an AC
+  (per the `## Pre-existing blocking defects` clause above). For each: what was
+  broken, why it blocked the AC, and how you kept the fix minimal. Write `none`
+  when no AC required touching a pre-existing defect. The orchestrator/verifier
+  assesses this section for justification + non-regression (§B).
 - One-line suggested commit message.
 
 Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator owns those.
@@ -186,6 +238,7 @@ const verifierInputs = {
   worker_subagent_session_id: <string>,  // opaque handle from the Step 4 Agent call
   commit_shas: <string[]>,               // from Step 6's `git rev-parse HEAD` / commit hash
   file_changes: <string[]>,              // from Step 6's `git diff --name-only <prev>..HEAD`
+  base_sha: <string>,                    // expected integration-branch tip the work must sit on
 };
 ```
 
@@ -197,7 +250,11 @@ const verifierInputs = {
 
 **Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
 
+**Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration-branch tip and instruct the verifier, as its FIRST check, to assert the worktree's `git rev-parse HEAD` equals `base_sha` (or is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If HEAD does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
+
 **Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
+
+**Unplanned-fixes assessment (load-bearing).** If the worker summary contains an `## Unplanned fixes` section (per §A's `## Pre-existing blocking defects` clause) with content other than `none`, the verifier MUST assess each entry for (i) **justification** — was the fix genuinely necessary to satisfy an acceptance criterion, or did it expand scope — and (ii) **non-regression** — the unplanned fix did not break unrelated behaviour (it is covered by the post-edit test run / does not introduce a new failing FQN). Surface the assessment in `additional_observations`; an unjustified or regression-causing unplanned fix is grounds for a FAIL check rather than a silent PASS.
 
 **Scope-narrowed envelope for declared design-only / slice-of-epic tasks.** If §2a annotated this task with `scope: design-only` (or any other scope-narrowing label — `slice-of-epic`, etc.), the orchestrator MUST narrow `acceptance_criteria` in the envelope to the **in-scope AC bullets only** (the verbatim list recorded in §2a annotation field (b)). The out-of-scope / deferred bullets from §2a annotation field (c) MUST NOT appear in the envelope's `acceptance_criteria` field — the verifier never sees criteria it cannot honestly grade.
 
@@ -208,6 +265,29 @@ The orchestrator MUST also populate `additional_observations` in the envelope wi
 The `additional_observations` array tells the verifier that the narrowing is *deliberate* (an orchestrator planning decision), not a discovery gap the verifier should flag as UNCHECKABLE. Without this observation, the verifier may try to grade the missing AC bullets and emit spurious SKIP checks.
 
 **Cross-reference: this is the ONLY legitimate path for an intentional narrowed-scope closure to reach PASS.** Without §2a's scope annotation, the orchestrator passes the full AC list and accepts whatever verdict the verifier returns — there is no inline shortcut, and §7c's "no upgrades" rule still binds. The §7d declared-scope carve-out is a status-level decision predicated on this envelope construction; it does NOT bypass it.
+
+### `verification_evidence` write schema (the object written back to `update_task`)
+
+The spec above is the **input** envelope handed to the verifier. This sub-block is the **output**: the `verification_evidence` object the orchestrator passes verbatim to `wood-fired-tasks:update_task` when it closes the task (loop.md §7d / §Step 8, loop-dag.md §3d). It is the object the verifier emits (per `docs/verifier-contract.md` / `skills/agents/tasks-verifier.md`) and the orchestrator writes unchanged — do NOT reshape it.
+
+```
+verification_evidence: {
+  verdict: "PASS" | "FAIL" | "PARTIAL" | "NOT_VERIFIED",
+  verified_at: <ISO8601>,
+  verifier_session_id: <string>,        // the SEPARATELY DISPATCHED tasks-verifier's id (never the orchestrator's own) — see §L
+  checks: [
+    {
+      name: <string>,
+      status: "PASS" | "FAIL" | "SKIP",  // NOTE: check-level status has NO "PARTIAL" — use SKIP + "UNCHECKABLE:" prefix
+      evidence_url_or_text: <string>     // ⚠ field is `evidence_url_or_text`, NOT `evidence`
+    }
+  ]
+}
+```
+
+**⚠ The per-check field is `evidence_url_or_text` — NOT `evidence`.** A write using `evidence` (or any other name) is rejected by `VerificationEvidenceSchema` (declared `.strict()` in `src/schemas/task.schema.ts`), so the `update_task` call fails validation and the close is lost. This is the friction this sub-block prevents.
+
+**Enum asymmetry (load-bearing).** The top-level `verdict` enum includes `PARTIAL` and `NOT_VERIFIED`; the per-check `status` enum does NOT — it is exactly `PASS` | `FAIL` | `SKIP`. A check that cannot be graded is `SKIP` with an `"UNCHECKABLE: …"` prefix in its `evidence_url_or_text`, never `PARTIAL`. Only `verdict` is required; `verified_at`, `verifier_session_id`, and `checks` are optional (this is what lets the auto-NOT_VERIFIED close emit `{ verdict: "NOT_VERIFIED" }` without fabricating a timestamp or session id).
 
 ---
 
@@ -225,8 +305,8 @@ The YAML frontmatter is the 14 required fields from `docs/loop-run-schema.md` §
 | `ended_at` | `now()` at the moment of this emission, RFC 3339 UTC. |
 | `wall_seconds` | `floor((ended_at - started_at).total_seconds())`. |
 | `orchestrator_session_id` | `$CLAUDE_SESSION_ID` env var if set; literal string `unknown` otherwise. |
-| `total_tokens` | Sum of input + cache_create + cache_read + output across orchestrator + every subagent. **Primary source:** the `<usage>` block returned by each `Agent` call in Steps 4 and 7 (deterministic, immediately available). **Cross-check source:** `agent_transactions_v` filtered by orchestrator + child `session_id`s — authoritative for retrospective audit but not required at emit time. |
-| `total_usd` | Same primary/cross-check split as `total_tokens`; cache-discounted. |
+| `total_tokens` | **Best-effort / approximate — do NOT claim exactness.** A roll-up of the `<usage>` blocks returned by each `Agent` call in Steps 4 and 7 that are available at emit time; orchestrator-session tokens are NOT captured here, so the total is not authoritative. Emit `null` when unmeasured (nullable per `docs/loop-run-schema.md` §3) — the field MUST be present, so emit `null` rather than omitting it. **Authoritative figure:** the post-run `agent_transactions_v` cross-check filtered by orchestrator + child `session_id`s, NOT this artifact. |
+| `total_usd` | Same best-effort/nullable contract as `total_tokens`; cache-discounted roll-up of the available subagent `<usage>` blocks, NOT authoritative. Emit `null` when unmeasured; authoritative figure is the post-run `agent_transactions_v` cross-check. |
 | `subagents_dispatched` | Count of distinct subagent sessions spawned this run (worker dispatches in Step 4 + verifier dispatches in Step 7). |
 | `tasks_attempted` | Tasks picked up so far (Step 1 increments this counter). |
 | `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Decided by the Step 7 verdict for each task. Increments on the corresponding Step 7 branch. |
@@ -588,7 +668,7 @@ Column rules:
 
 ### Blocking semantics (the new contract)
 
-**"0 open tasks" alone does NOT declare success.** A clean drain additionally REQUIRES a GREEN §O audit. If §O is RED, the orchestrator MUST NOT announce a clean drain; it follows the CORRECT carve-out (3) below and surfaces the gap in LOOP-RUN.md `## Coverage Gaps` instead.
+**"0 open tasks" alone does NOT declare success.** A clean drain additionally REQUIRES a GREEN §O audit — across the invariant audit (1), the reachability smoke (2), AND the artifact-level distributable smoke (2b) when the repo ships a distributable. A RED in ANY of these (including a RED artifact smoke — mirroring the §10e BROKEN protocol) blocks the "drained → done" declaration. If §O is RED, the orchestrator MUST NOT announce a clean drain; it follows the CORRECT carve-out (3) below and surfaces the gap in LOOP-RUN.md `## Coverage Gaps` instead.
 
 ### (1) Invariant audit — structural parity + mirror parity
 
@@ -613,6 +693,31 @@ For MCP tools **NEWLY ADDED during this run**, exercise them through the **remot
 
 **If a newly-added tool is unreachable via the remote path → the gate is RED.**
 
+### (2b) Artifact-level distributable smoke — the SHIPPED artifact, exercised from OUTSIDE the repo
+
+**Why this exists (load-bearing).** Per-task verifiers grade against the SOURCE tree, so a capability can be 100% PASS-verified in-repo while the **shipped artifact** (the packed tarball / globally-installed bin) is broken — e.g. an asset resolved from a path that exists in source but is not in the published `files`, a postinstall that references an unshipped file, or a CLI option dropped by a framework bug. These failures are cwd- and packaging-sensitive: they pass in-repo and fail only once installed and run from elsewhere. This smoke closes that gap by exercising the real artifact from a cwd OUTSIDE the repo.
+
+**Trigger (unconditional when the repo ships a distributable).** This smoke runs whenever the target repo ships a distributable — it is NOT gated on a particular task having existed in the run. Detect a distributable generically from `package.json`: it declares a `bin` and/or a `files` allow-list and/or a `prepublishOnly` script, OR it defines a `smoke:global`-style global-install smoke script. If none of these signals is present, the repo ships no distributable and this audit is N/A (skip, not RED).
+
+**Prefer the repo's own script.** If the repo defines a `smoke:global` script (or an equivalent global-install smoke — a script whose name/intent is "install the packed artifact and run the bin from outside the tree"), run THAT and treat its exit code as the verdict:
+
+```bash
+npm run smoke:global
+```
+
+**Generic fallback (no repo script).** Otherwise build the artifact-level smoke generically:
+
+```bash
+tarball=$(npm pack --silent)                      # pack the publishable artifact
+tmp=$(mktemp -d)                                  # temp prefix OUTSIDE the repo
+npm i -g --prefix "$tmp" "$PWD/$tarball"          # install the tarball, not the source tree
+( cd "$tmp" && "$tmp/bin/<shipped-bin-name>" --help )  # run the bin from a cwd OUTSIDE the repo
+```
+
+Assert the shipped `bin` actually runs (non-error exit, expected banner/help/version) from a cwd that is NOT the repo root — cwd-independence is the whole point: the canonical failure was a cwd-relative resolution that passed in-repo and broke once shipped. Exercise any postinstall implicitly (the global install runs it) and, where the repo declares a token/remote-style CLI option, assert it is honored end-to-end through the installed bin.
+
+**If the artifact smoke is RED (repo script fails, pack/install fails, or the installed bin errors / mis-resolves from outside the repo) → the gate is RED.**
+
 ### (3) On RED — CORRECT (the remediation-task carve-out)
 
 When §O is RED, the loop is **permitted and required** to **MATERIALIZE a remediation task** — the explicit, documented exception to the "Don't create new tasks during the loop" rule (`loop.md` `## Important Rules`). Procedure:
@@ -632,6 +737,7 @@ A mandatory body section (emitted by both `/tasks:loop` Step 9d and `/tasks:loop
 
 - **audit:** `stdio-remote-parity` (RED) — stdio tools unreachable via remote: `[wsjf_health, rescore_project]`; remediation task **#<id>**.
 - **reachability:** newly-added tool `wsjf_ranking` not reachable through `dist/mcp/remote` proxy; remediation task **#<id>**.
+- **artifact-smoke:** packed tarball bin unreachable from outside repo (<symptom, e.g. copySkills resolved 0 skills / postinstall MODULE_NOT_FOUND / `--token` ignored); remediation task **#<id>**.
 ```
 
 Each bullet names the failing audit/tool and the remediation task id materialized in (3). When the terminal invariant + reachability audit is GREEN, emit the sentinel paragraph exactly:
@@ -643,3 +749,83 @@ _No coverage gaps: terminal invariant + reachability audit green._
 ```
 
 **Anti-vacuity.** The gate's underlying invariant audit genuinely DETECTS unreachable newly-added tools: `parityViolations(['create_task','__new_tool__'], new Set(['create_task']), [])` returns `['__new_tool__']` (RED → triggers the carve-out), and returns `[]` once `__new_tool__` is in the remote set (GREEN). A RED §O can therefore never be papered over by a "0 open tasks" count.
+
+---
+
+## §P. Per-wave drift/meta guard trigger
+
+**Called from:** `loop-dag.md` §3f (per-wave, BEFORE recomputing the next frontier). Reusable by `loop.md` §Step 10 at termination as well, when a run touched CLI/docs/skills surfaces — the contract is the same, only the cadence differs (per-wave vs once-at-end).
+
+**Motivating incident (load-bearing).** A multi-wave `/tasks:loop-dag` run's own changes broke ~14 repo-wide drift/meta guards (a `docs/INTERFACES.md` command count moving 38→40, an agent-context manifest freshness check, a skill extraction line-gate, a README Quick-Start drift guard). Per-task verifiers and the per-wave §3f overlap audit ran only SCOPED tests, so every drift guard stayed RED through all waves and only failed at the final full-suite run — forcing a reactive multi-round fix at the very end. Running the repo's drift/meta guards in-wave, while the diff is still small, is the fix: drift gets attributed to the wave that caused it, not discovered run-wide after the fact.
+
+### Trigger — wave union diff touches CLI/docs/skills paths
+
+After the §3f overlap audit, compute the **union of all file changes across this wave's worker sessions** and check whether any path matches a CLI/docs/skills surface. Illustrative globs (these are EXAMPLES a project configures, NOT hardcoded universals):
+
+- `src/cli/**`, plus any registrar like `program.addCommand(...)` — CLI surface (command counts, help text, option lists drift here).
+- `docs/**`, `README.md` — docs surface (interface tables, Quick-Start blocks, doc-count manifests drift here).
+- `skills/**` — skill surface (extraction line-gates, skill-contract manifests drift here).
+
+If the wave's union diff touches **none** of the configured surfaces, skip this step — there is no drift surface to guard, so move straight on to recomputing the next frontier. If it touches **any**, run the drift/meta guards (below) BEFORE recomputing the next frontier.
+
+### Locating drift guards generically
+
+Do NOT hardcode project-specific guard names. Discover them generically:
+
+- **Test files** whose basename matches `*drift*`, `*interface*`, or `*agent-context*` (e.g. `tool-count-drift.test.ts`, `readme-quickstart-drift.test.ts` — illustrative only).
+- **Repo "check" scripts** declared in `package.json` whose name/intent is a freshness/manifest check (e.g. an `agent-context:check`-style script — illustrative only).
+- **And/or a project-configured list** of guard test paths or scripts, when the project pins one explicitly (preferred when present — it is authoritative over the glob discovery).
+
+### Cheap vs full
+
+Prefer running just the **matched drift-guard subset** for speed — the point of the in-wave cadence is a fast, small-diff signal. Run the discovered guard tests + check scripts directly (e.g. `npx vitest run <matched test paths>` and `npm run <matched check script>`). Fall back to the **full `npm test`** only when the subset can't be located (no matches and no configured list) — a full run is slower but never misses a guard.
+
+### A RED drift guard is a BROKEN integration
+
+A failing drift/meta guard in a wave is handled **exactly like a §10e BROKEN integration** — it is NOT silently deferred to §4. Catching drift in-wave, while the diff is small, is the whole point: do not let it ride to the final full-suite run.
+
+- **Attributable to a wave task** (the drift is caused by one task's diff — e.g. a task that edited the CLI moved the command count): handle it per §10e BROKEN — flip the offending task(s) back to `in_progress`, preserve their PASS evidence, append an `integration_concern` note naming the RED guard, and re-emit LOOP-RUN.md with a `## Integration Failure` body section. The task returns on a later frontier and the worker fixes the drift in the same pass that caused it.
+- **Run-wide / not attributable to one task** (the drift emerges from the combined wave diff, e.g. a manifest freshness count): surface it in the LOOP-RUN.md note — a `## Coverage Gaps` bullet (schema in §O) or a `## Integration Failure` body section — and, where appropriate, materialize a remediation task (the same carve-out §O grants). Do NOT announce a clean wave/drain with a drift guard RED.
+
+Either way the orchestrator records the RED guard's identity (test/script name + symptom) and DOES NOT recompute the next frontier as if the wave were clean.
+
+## §Q. Worktree-patch integration mechanics (loop-dag run-end / per-wave)
+
+**Called from:** `loop-dag.md` §3d (PASS branch — committing each worker's changes to the integration branch). `/tasks:loop`'s shared-tree workers commit in place and do NOT need this; loop-dag workers run in ISOLATED worktrees (§3b `isolation: "worktree"`), so their changes live on a `worktree-agent-<id>` branch / tree and MUST be applied to the integration tree by the orchestrator. This section codifies HOW to apply overlapping worktree patches so per-task commit attribution stays clean.
+
+**Motivating incident (load-bearing — cite it).** On 2026-06-05, integrating wave-1 worktrees into the main tree cascaded: a batched `git apply --3way --index` loop hit a conflict on a shared file (e.g. `src/cli/bin/tasks.ts`), left the index dirty, and the NEXT task's `--index` apply got swept into the wrong commit — one commit ended up bundling three tasks' changes. Recovery required a `git reset --soft` and re-slicing the known-good final tree into clean per-task commits via per-file checkout. "One commit per task" was never in doubt; the gap was the *mechanics* of getting overlapping patches onto one tree without cross-contaminating attribution.
+
+### One task at a time (the non-negotiable cadence)
+
+Integrate exactly ONE task's patch, commit it, THEN verify before touching the next:
+
+1. Apply only that task's file-set to the integration tree.
+2. `git add` only that task's paths and commit (one task = one commit, mirroring `loop.md` §Step 6 and the "one task = one commit" rule).
+3. `git show --stat <commit>` and confirm it lists ONLY that task's files. If it lists any other task's file, STOP and re-slice (see kill-safe fallback) — do not proceed.
+4. Confirm the index is clean (`git status --porcelain` empty) BEFORE starting the next task's apply. Never start the next apply with a dirty index.
+
+### Forbid batched dependent applies
+
+Do NOT run a back-to-back loop of `git apply --3way --index` calls across tasks. The failure mode is exactly the 2026-06-05 cascade: a mid-loop conflict on a shared file leaves the index dirty (partially-staged hunks + conflict markers), and the NEXT `--index` apply stages its hunks ON TOP of that dirty index, so the next commit silently bundles the prior task's unresolved/partial changes. One conflict anywhere in the batch corrupts attribution for every task after it. The "verify `git show --stat` before the next apply" gate above only works if applies are NOT batched — sequence them with a commit + verify between each.
+
+### Shared-file recipe (files touched by 2+ worktrees)
+
+For a file edited by two or more worktrees, do NOT replay each worktree's hunks sequentially onto a moving target — sequential replay is precisely what conflicts and cascades. Instead build the merged result ONCE, then slice:
+
+1. **Produce the merged result once.** Either a clean 3-way merge of the contributing branches, OR take the known-good final tree directly — e.g. the last worktree that already contains all prior tasks' changes, or an explicit merge commit that resolves the overlap. Call this `<tree-ish>`.
+2. **Slice per-task commits from that tree.** For each task, in turn:
+   - `git checkout <tree-ish> -- <that task's paths>` — pull only that task's file-set out of the merged tree into the working tree + index.
+   - `git add <that task's paths>` — stage only those paths.
+   - commit — one task's file-set per commit.
+   - `git show --stat <commit>` — confirm only that task's paths are listed; clean index before the next slice.
+
+   Each commit stages ONLY that task's paths, so even a file that several tasks touched lands in exactly one task's commit (whichever task owns it per the decomposition), and the merged content is identical to `<tree-ish>` once all slices are committed.
+
+### Kill-safe re-slice fallback (a cascade already happened)
+
+If a cascade has ALREADY corrupted attribution — a commit bundled multiple tasks' changes — recover without losing the known-good content:
+
+1. `git reset --soft <base>` — moves HEAD back to the integration base while KEEPING the known-good worktree contents staged (soft reset preserves the tree). `<base>` is the same integration base §N captures at run start.
+2. Re-stage and commit per-task via per-file checkout: for each task, `git checkout <tree-ish> -- <task's paths>` (or `git restore --staged` then `git add <task's paths>` against the already-correct tree), commit, and `git show --stat <commit>`-verify — exactly the slice loop above, one task's file-set at a time.
+
+This mirrors §N's kill-safe posture (git state is the source of truth; the operation is re-runnable) and re-establishes the `loop.md` "one task = one commit" invariant after the fact. The known-good final tree content is never discarded — only the commit boundaries are redrawn.

@@ -507,7 +507,7 @@ This is the **terminal step**. It runs ONCE per loop run — never per iteration
 
 #### 10·0. Terminal completeness gate (before declaring drained)
 
-BEFORE the loop exits / declares the backlog drained, run the **§O terminal completeness gate** — [loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit) — alongside (just before) the integration audit below. It runs the `stdio ⊆ remote` parity invariant audit + the reachability smoke for newly-added MCP tools through the **remote** path, and gates the "drained → done" declaration: **"0 open tasks" alone does NOT declare success — a green §O audit is additionally required.** On RED it materializes a remediation task (the §O carve-out) and records the gap in the `## Coverage Gaps` section instead of announcing a clean drain.
+BEFORE the loop exits / declares the backlog drained, run the **§O terminal completeness gate** — [loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit) — alongside (just before) the integration audit below. It runs the `stdio ⊆ remote` parity invariant audit, the reachability smoke for newly-added MCP tools through the **remote** path, AND — unconditionally when the repo ships a distributable — an **artifact-level smoke** (prefer the repo's `smoke:global`; else pack → install the tarball to a temp prefix → run the shipped bin from OUTSIDE the repo), and gates the "drained → done" declaration: **"0 open tasks" alone does NOT declare success — a green §O audit is additionally required.** On RED it materializes a remediation task (the §O carve-out) and records the gap in the `## Coverage Gaps` section instead of announcing a clean drain.
 
 #### 10a. When this step runs
 

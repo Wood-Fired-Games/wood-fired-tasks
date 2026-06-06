@@ -38,8 +38,15 @@ import { createCompletionsCommand } from '../commands/completions.js';
 import { loginCommand } from '../commands/login.js';
 import { logoutCommand } from '../commands/logout.js';
 import { whoamiCommand } from '../commands/whoami.js';
+import { mcpCommand } from '../commands/mcp.js';
+import { selfUpdateCommand } from '../commands/self-update.js';
+import { serveCommand } from '../commands/serve.js';
+import { setupCommand } from '../commands/setup.js';
+import { docsCommand } from '../commands/docs.js';
+import { serviceCommand } from '../commands/service.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
+import { warnIfNotEvenLts } from '../../utils/node-version.js';
 
 // Configure CLI program
 program
@@ -134,6 +141,29 @@ program.addCommand(logoutCommand);
 // Register whoami command (Plan 30-07).
 program.addCommand(whoamiCommand);
 
+// Register mcp command (task #734): local stdio server / remote HTTP bridge.
+program.addCommand(mcpCommand);
+
+// Register self-update command (frictionless distribution, task #739):
+// `tasks self-update` spawns `npm i -g wood-fired-tasks@latest` (no sudo).
+program.addCommand(selfUpdateCommand);
+
+// Register serve command (task #733): boot the API on the app-data DB,
+// migrate-on-start, cwd-independent.
+program.addCommand(serveCommand);
+
+// Register setup command (task #737): merge local MCP entry into ~/.claude.json
+// and copy skills into ~/.claude/commands/tasks/, plus --fix-npm-prefix.
+program.addCommand(setupCommand);
+
+// Register docs command (task #749): browse the bundled user-facing guides
+// (list/show/path/open), resolved via the asset resolver (package root, not cwd).
+program.addCommand(docsCommand);
+
+// Register service command (task #740): manage the background service
+// (Linux: systemctl --user, admin-free); mac/Windows backends land in #741/#742.
+program.addCommand(serviceCommand);
+
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133
 // and src/index.ts — only auto-parse when invoked as a script.
@@ -145,6 +175,11 @@ export { program };
 // npm install -g) which a raw string compare against process.argv[1] does
 // not — see src/utils/is-main.ts and wood-fired-tasks #334.
 if (isMain(import.meta.url)) {
+  // Task #752: non-fatal advisory when running on an odd-numbered ("Current",
+  // non-LTS) Node major. Writes one stderr line and returns — never throws,
+  // never exits. `engines.node` stays >=22 as the hard floor.
+  warnIfNotEvenLts();
+
   // Plan 30-05: top-level catch surfaces NotAuthenticatedError as the
   // friendly "Not authenticated. Run: tasks login" + exit 1 contract,
   // rather than the default Commander "unhandled rejection" dump.

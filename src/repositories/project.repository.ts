@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type Database from '../db/driver.js';
 import type { Project, CreateProjectDTO, ValueCharter } from '../types/task.js';
 import {
   DEFAULT_PAGE_LIMIT,

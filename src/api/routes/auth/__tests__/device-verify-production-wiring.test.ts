@@ -36,7 +36,7 @@ import { randomBytes } from 'node:crypto';
 import nock from 'nock';
 import * as cheerio from 'cheerio';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../../../db/driver.js';
 
 import { resetConfig } from '../../../../config/env.js';
 import {

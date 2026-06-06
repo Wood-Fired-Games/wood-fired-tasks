@@ -9,7 +9,7 @@ const MockDatabase = vi.fn(function MockDatabase(this: Record<string, unknown>) 
   this.close = mockDbClose;
 });
 
-vi.mock('better-sqlite3', () => {
+vi.mock('../../db/driver.js', () => {
   return { default: MockDatabase };
 });
 
@@ -97,7 +97,7 @@ describe('backup command', () => {
 
     await program.parseAsync(['node', 'test', 'backup']);
 
-    const Database = (await import('better-sqlite3')).default;
+    const Database = (await import('../../db/driver.js')).default;
     expect(Database).toHaveBeenCalledWith('./data/tasks.db', { readonly: true });
     expect(mockDbBackup).toHaveBeenCalled();
     expect(process.exitCode).toBe(0);
@@ -120,7 +120,7 @@ describe('backup command', () => {
 
     await program.parseAsync(['node', 'test', 'backup']);
 
-    const Database = (await import('better-sqlite3')).default;
+    const Database = (await import('../../db/driver.js')).default;
     expect(Database).toHaveBeenCalledWith('/custom/path/tasks.db', { readonly: true });
   });
 
@@ -129,7 +129,7 @@ describe('backup command', () => {
 
     await program.parseAsync(['node', 'test', 'backup']);
 
-    const Database = (await import('better-sqlite3')).default;
+    const Database = (await import('../../db/driver.js')).default;
     expect(Database).toHaveBeenCalledWith('./data/tasks.db', { readonly: true });
   });
 
@@ -176,7 +176,7 @@ describe('backup command', () => {
     );
     expect(process.exitCode).toBe(1);
     // Should NOT attempt to open the DB
-    const Database = (await import('better-sqlite3')).default;
+    const Database = (await import('../../db/driver.js')).default;
     expect(Database).not.toHaveBeenCalled();
   });
 

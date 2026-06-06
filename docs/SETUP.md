@@ -2,12 +2,211 @@
 
 Complete setup instructions for Wood Fired Tasks in development, production, and Claude Code environments.
 
+This guide opens with the **frictionless npm install** — the recommended path
+for most users: one global install, no git clone, no build, no admin rights.
+The [Development Setup](#development-setup) and [Production Deployment](#production-deployment)
+/ [Self-hosting and upgrades](#self-hosting-and-upgrades) sections below remain
+the canonical references for contributors and operators self-hosting a shared
+server from a checkout.
+
+## Frictionless install (npm — no clone)
+
+Install the published package globally and let the bundled subcommands do the
+wiring. The global install ships everything together — the API server, the
+`tasks` CLI, the local and remote MCP bridges, and the `/tasks:*` skills +
+subagents — so there is **nothing to clone and nothing to build**.
+
+```bash
+# 1. Install the CLI globally. Never needs sudo (see the admin-free guarantee).
+npm i -g wood-fired-tasks
+
+# 2. Wire it into Claude Code (idempotent; no manual ~/.claude.json editing).
+wood-fired-tasks setup
+
+# 3. Run the API server (migrates the OS app-data DB on start).
+wood-fired-tasks serve
+```
+
+The same binary is invokable as `wood-fired-tasks` (and, if you prefer the short
+form, the package also exposes `tasks`). Every `tasks <command>` example
+elsewhere in the docs works verbatim as `wood-fired-tasks <command>`.
+
+### Admin-free guarantee
+
+**No first-class subcommand ever escalates privileges.** `setup`, `serve`,
+`self-update`, `docs`, and `service install` (user scope) all hard-refuse to
+shell out to `sudo`, `runas`, `pkexec`, or `doas` — the same elevation guard is
+implemented in `src/cli/commands/setup.ts` (`fixNpmPrefix`),
+`src/cli/commands/self-update.ts` (`eaccesRemediation`),
+`src/cli/commands/service.ts` (`defaultRunner`), and `src/cli/commands/docs.ts`
+(`openDoc`). The **only** path that elevates is the opt-in system-wide service
+(`wood-fired-tasks service install --system`); see
+[Background service](#background-service-keep-the-server-running).
+
+If `npm i -g wood-fired-tasks` fails with `EACCES`/`EPERM` because your global
+npm prefix is root-owned, **do not use sudo.** Repair the prefix instead:
+
+```bash
+# Point npm at a user-writable global prefix (~/.npm-global) — no elevation.
+wood-fired-tasks setup --fix-npm-prefix
+# Follow the printed guidance (adds ~/.npm-global/bin to PATH), then re-run:
+npm i -g wood-fired-tasks
+```
+
+`--fix-npm-prefix` runs `npm config set prefix ~/.npm-global` and prints the
+`export PATH="$HOME/.npm-global/bin:$PATH"` line to add to your shell profile.
+After that, `npm i -g` and `wood-fired-tasks self-update` both work without sudo
+forever.
+
+### `wood-fired-tasks setup` — local Claude Code wiring
+
+`setup` does three things, all idempotent (re-runnable; a file is only rewritten
+when its bytes change):
+
+1. **Merges the local stdio MCP server** entry (`wood-fired-tasks`) into
+   `~/.claude.json`, pointing at the bundled `dist/mcp/index.js`. The path is
+   resolved from the installed package root, so it is correct regardless of the
+   directory you run `setup` from.
+2. **Copies the `/tasks:*` skill files** into `~/.claude/commands/tasks/`.
+3. **Copies the subagent definitions** into `~/.claude/agents/` (these back the
+   mandatory verifier in `/tasks:loop` and `/tasks:loop-dag`).
+
+Restart Claude Code afterward and the `/tasks:*` slash commands and MCP tools
+are live. The local MCP server opens the SQLite database in-process; it does not
+talk to the REST API and needs no API key.
+
+| Flag | Effect |
+|------|--------|
+| (none) | Local wiring: write the `wood-fired-tasks` stdio MCP entry + copy skills/agents. |
+| `--fix-npm-prefix` | Configure a user-writable npm global prefix (`~/.npm-global`) to dodge EACCES on `npm i -g`. Never uses sudo. |
+| `--remote <url>` | Write the **remote** MCP bridge entry (`wood-fired-tasks-remote`) pointed at a deployed REST API instead of the local one. Requires `--token`. |
+| `--token <pat>` | PAT for `--remote`: written as `WFT_API_KEY` on the remote MCP entry and cached under the OS config dir. |
+
+### `wood-fired-tasks setup --remote` — point at a shared server
+
+To use a shared/remote Wood Fired Tasks server instead of running one locally,
+pass `--remote <url>` and `--token <pat>` together:
+
+```bash
+wood-fired-tasks setup \
+  --remote https://tasks.example.com \
+  --token  wft_pat_…this-machine…
+```
+
+This writes a **`wood-fired-tasks-remote`** entry to `~/.claude.json` (distinct
+from the local `wood-fired-tasks` entry — the two coexist) whose `env` carries
+`WFT_API_URL` (the base URL) and `WFT_API_KEY` (the PAT). That entry spawns the
+remote stdio bridge (`dist/mcp/remote/index.js`), which proxies every MCP tool
+call to the REST API over HTTP, so every machine sees one backlog.
+
+The PAT is also **cached under your OS config dir** (`remote-token`, mode `0600`
+on POSIX) — operator configuration, never the data dir where the SQLite DB
+lives. `--remote` without `--token` is an error: a token is required so
+`WFT_API_KEY` can be set on the entry. Mint a per-machine PAT with
+`tasks db mint-token` (see [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents))
+and revoke it independently to cut off a single client. For the full
+Windows/Linux/macOS fleet recipe, see
+[Multi-OS client fleet](#multi-os-client-fleet-one-shared-on-prem-server).
+
+### `wood-fired-tasks serve` — run the API server
+
+`serve` boots the REST API as a first-class subcommand, so npm-only users never
+touch `npm start` or a checkout:
+
+```bash
+wood-fired-tasks serve                 # 127.0.0.1:3000 (loopback only)
+wood-fired-tasks serve --port 8080     # override the port
+HOST=0.0.0.0 wood-fired-tasks serve    # expose on the LAN
+```
+
+It opens the database at `DATABASE_PATH`, which **defaults to the OS app-data
+path** (resolved by `src/config/paths.ts`, not a hardcoded `./data`), and runs
+**all pending migrations before it begins listening** (migrate-on-start) — so a
+request that lands after boot always hits a migrated schema. Launched from any
+directory, it migrates and serves the same app-data DB. The bind host comes from
+`HOST` (default `127.0.0.1`; set `0.0.0.0` to expose) and the port from `PORT`
+unless `--port` overrides it. The unauthenticated `GET /health` route returns
+200 once the server is up.
+
+### `wood-fired-tasks self-update` — upgrade in place
+
+```bash
+wood-fired-tasks self-update
+```
+
+This runs `npm i -g wood-fired-tasks@latest` and exits with npm's exit code. It
+**never escalates**: on an EACCES (root-owned global prefix) it prints the
+writable-prefix remediation (the same `~/.npm-global` fix as `--fix-npm-prefix`)
+and exits non-zero rather than suggesting sudo. The database schema needs no
+special handling — it migrates automatically the next time `serve` (or the
+background service) boots against the upgraded binary. A best-effort
+`update-notifier` nudge surfaces a "newer version available" hint before the
+upgrade runs.
+
+> The task-level `tasks update <id>` command is unrelated — that edits a task's
+> fields. Use `self-update` to upgrade the CLI itself.
+
+### Background service (keep the server running)
+
+Register `serve` as a background service so it survives logout/reboot —
+**admin-free by default**:
+
+```bash
+wood-fired-tasks service install    # install + start
+wood-fired-tasks service status     # is it running / enabled?
+wood-fired-tasks service uninstall  # stop + remove
+```
+
+On **Linux** this writes a **user-scoped systemd unit** at
+`~/.config/systemd/user/wood-fired-tasks.service` and drives it with
+`systemctl --user` — no `sudo`, no system unit, no root. The unit's `ExecStart`
+runs the installed CLI's `serve` subcommand with `Restart=on-failure`.
+`service status` reports `running`, `enabled`, and `installed` (add the global
+`--json` flag for machine-readable output).
+
+**Scope elevation.** A user-scoped service stops when the user's systemd session
+ends (no lingering enabled). The **only** way to run system-wide — surviving
+across users and starting at boot independent of login — is the opt-in
+`wood-fired-tasks service install --system` path, which is the sole subcommand
+that requires elevated privileges. Everything else stays in user scope.
+
+> **macOS and Windows.** Service management is currently **Linux-only**. The
+> macOS (launchd) and Windows backends are landing in tasks #741 and #742
+> respectively; until then `service install` on those platforms exits with a
+> clear "not yet implemented" message naming the tracking task. `serve`,
+> `setup`, `self-update`, and `docs` work on all three platforms today.
+
+### `wood-fired-tasks docs` — read the bundled guides
+
+The user-facing guides ship inside the npm tarball, so you can read them from
+anywhere without a checkout:
+
+```bash
+wood-fired-tasks docs list                 # friendly name -> file
+wood-fired-tasks docs show setup           # print this guide to stdout
+wood-fired-tasks docs path cli             # absolute on-disk path of a guide
+wood-fired-tasks docs open usage-patterns  # open with the OS default app (no sudo)
+```
+
+Guides are resolved from the package root (where the tarball ships them), not
+the current directory, so these work even from inside `node_modules/` after a
+global install. The catalog includes `setup`, `usage-patterns`, `cli`, `api`,
+`mcp`, `navigation`, `interfaces`, `workflows`, `slack`, `reliability`,
+`troubleshooting`, `architecture`, `agent-context`, and `readme`.
+
 ## Prerequisites
 
 - **Node.js 22 or higher** — matches the CI matrix (`actions/setup-node` with
   `node-version: '22'`) and is enforced by the `engines` field in
   `package.json`.
 - **npm** — comes with Node.js.
+
+The npm-only flow above (`npm i -g wood-fired-tasks` → `setup` → `serve`) needs
+**only Node.js + npm** — `setup` merges `~/.claude.json` with native Node JSON
+handling, so `jq`/`curl` are **not** required. The `jq` / `curl` prerequisites
+below apply only to the **clone-based** `install.sh` installer used by the
+development/self-hosting paths.
+
 - **jq** — required by `install.sh` to merge the MCP server entry into
   `~/.claude.json` safely (raw heredocs would mis-quote the API key on
   embedded `"`/`\`/newline). Install with:
@@ -698,6 +897,105 @@ Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
 (user-only ACL) → masked prompt. The installer tightens the ACL on
 `~/.claude.json` (and any timestamped backup) to the current user only via
 `icacls`. `-Mode local` collects no key.
+
+### Multi-OS client fleet (one shared on-prem server)
+
+The common production shape is one self-hosted API server (per
+[Self-hosting and upgrades](#self-hosting-and-upgrades)) with a fleet of
+Windows, Linux, and macOS workstations all pointing their Claude Code (and/or
+the `tasks` CLI) at it in **remote mode**. Each client runs the stdio remote
+bridge, which proxies every MCP tool call to the shared REST API — so every
+machine sees one backlog.
+
+There are three moving parts: the **server URL** every client must reach, a
+**per-client token**, and the **per-OS installer invocation**.
+
+#### 1. Make the server reachable
+
+- Bind the server to a routable interface (`HOST=0.0.0.0` or a specific LAN IP)
+  — see [Set Production Environment Variables](#2-set-production-environment-variables).
+  By default it is loopback-only and no other machine can reach it.
+- Put it behind a TLS-terminating reverse proxy. This is **required** if you use
+  OIDC browser login (the session cookie is `secure` in production and is
+  dropped over plain HTTP — see the OIDC cookie note above) and strongly
+  recommended regardless, so tokens never cross the network in cleartext.
+- The reachable origin (e.g. `https://tasks.example.com`) is the value every
+  client passes as `WOOD_FIRED_TASKS_URL`.
+
+#### 2. Mint one token per client
+
+Issue a **separate PAT per machine** (or per user-machine pair) so you can
+revoke one client without disturbing the rest. From the server (or any host
+with CLI access to its database):
+
+```bash
+# One PAT per client, labelled so you can identify and revoke it precisely.
+node dist/cli/bin/tasks.js db mint-token --user alice@example.com --name alice-macbook
+node dist/cli/bin/tasks.js db mint-token --user alice@example.com --name alice-winbox
+node dist/cli/bin/tasks.js db mint-token --user bob@example.com   --name bob-linux-ws
+```
+
+Each command prints the raw `wft_pat_…` once — copy it to that machine and
+nowhere else. Bound the blast radius with `--expires-at` and rotate on a
+schedule; see
+[Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents)
+and its rotation/revocation notes. (A legacy `API_KEYS` entry works too, but a
+per-machine PAT is the recommended unit — revocable, attributable, and
+expiry-bounded.)
+
+The remote bridge sends `WFT_API_KEY` as the legacy `X-API-Key` header, and
+automatically as `Authorization: Bearer …` when the value starts with
+`wft_pat_` — so a PAT drops straight into the `WFT_API_KEY` slot.
+
+#### 3. Run the installer in remote mode on each OS
+
+Both installers read the same two env vars — `WOOD_FIRED_TASKS_URL` (written
+into the MCP entry as `WFT_API_URL`) and `WOOD_FIRED_TASKS_API_KEY` (written as
+`WFT_API_KEY`) — and write a `wood-fired-tasks-remote` entry to that machine's
+`~/.claude.json`. Run each from a clone of this repo on the client, with `dist/`
+built (the bridge entry point is `dist/mcp/remote/index.js`):
+
+**Linux / macOS**
+
+```bash
+WOOD_FIRED_TASKS_URL="https://tasks.example.com" \
+WOOD_FIRED_TASKS_API_KEY="wft_pat_…this-machine…" \
+  ./install.sh --mode remote
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:WOOD_FIRED_TASKS_URL     = "https://tasks.example.com"
+$env:WOOD_FIRED_TASKS_API_KEY = "wft_pat_…this-machine…"
+.\install.ps1 -Mode remote
+```
+
+On every OS the token is cached with tightened permissions
+(`~/.config/wood-fired-tasks/api-key` mode 600 on Linux/macOS;
+`%LOCALAPPDATA%\wood-fired-tasks\api-key` user-only ACL on Windows) and
+`~/.claude.json` is locked down to the current user. Restart Claude Code
+afterward.
+
+#### Fleet checklist
+
+| Step | Linux | macOS | Windows |
+|------|-------|-------|---------|
+| Installer prereqs | `jq`, `curl` | `jq`, `curl` (`brew install jq`) | none (native PowerShell JSON) |
+| Set server URL | `WOOD_FIRED_TASKS_URL=…` | `WOOD_FIRED_TASKS_URL=…` | `$env:WOOD_FIRED_TASKS_URL=…` |
+| Provide token | `WOOD_FIRED_TASKS_API_KEY=…` | same | `$env:WOOD_FIRED_TASKS_API_KEY=…` |
+| Run installer | `./install.sh --mode remote` | same | `.\install.ps1 -Mode remote` |
+| MCP server name written | `wood-fired-tasks-remote` | same | same |
+
+Every client writes the identical `wood-fired-tasks-remote` server name pointing
+at the shared `WFT_API_URL`, so a backlog created on one machine is visible from
+all the others. To cut off a single client, revoke its PAT (web `/me` → revoke,
+or rotate per the PAT notes) — the rest of the fleet is unaffected.
+
+> **CLI fleet, not Claude Code?** The same server serves the `tasks` CLI: set
+> `API_BASE_URL=https://tasks.example.com` and authenticate with `tasks login`
+> (OIDC device flow) or pass `--token wft_pat_…` per command. See
+> [CLI Installation](#cli-installation).
 
 ### What the Installer Does
 

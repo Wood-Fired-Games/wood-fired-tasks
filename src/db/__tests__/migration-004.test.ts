@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { initTestDatabase } from '../database.js';
-import type Database from 'better-sqlite3';
+import type Database from '../driver.js';
 
 /**
  * Integration tests for migration 004: claim protocol.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance } from 'fastify';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 import { SESSION_LIFETIME_SECONDS } from '../../web/session-constants.js';
 import { resetConfig } from '../../config/env.js';
 import { extractSessionCookie } from '../../../tests/helpers/session-cookie.js';

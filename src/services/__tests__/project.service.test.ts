@@ -7,7 +7,7 @@ import { ProjectService } from '../project.service.js';
 import type { ValueCharter } from '../../types/task.js';
 import { ValidationError, BusinessError, NotFoundError } from '../errors.js';
 import { eventBus } from '../../events/event-bus.js';
-import type Database from 'better-sqlite3';
+import type Database from '../../db/driver.js';
 
 describe('ProjectService', () => {
   let db: Database.Database;

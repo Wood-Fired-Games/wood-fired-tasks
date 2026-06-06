@@ -401,7 +401,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'project-front-door',
     purpose: 'Product-level overview, install, quickstart.',
     when_to_read: 'reference',
-    line_budget: 820,
+    line_budget: 850,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',

@@ -19,7 +19,6 @@
       "!**/.agents/**",
       "!**/data/**",
       "!**/tmp/**",
-      "!**/client-package/**",
       "!**/*.db",
       "!**/*.db-wal",
       "!**/*.db-shm",
