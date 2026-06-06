@@ -48,19 +48,16 @@ describe('PAT chain plugin — last_used_at debounce (PAT-03)', () => {
   let touchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
-    process.env.API_KEYS = 'test-key';
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     db = result.app.db;
     await server.ready();
 
-    // The legacy seed creates user with display_name='key_test-key' for the
-    // bare 'test-key' entry — reuse it as the owner for our PAT rows.
-    const row = db
-      .prepare("SELECT id FROM users WHERE display_name = 'key_test-key' LIMIT 1")
-      .get() as { id: number } | undefined;
-    if (!row) throw new Error('test setup: legacy user not seeded');
-    legacyUserId = row.id;
+    // v2.0 auth cutover (#799/#801): X-API-Key + legacy credential seeding
+    // were removed. Seed a real principal directly to own the PAT rows minted
+    // by this debounce test.
+    const info = db.prepare(`INSERT INTO users (display_name) VALUES (?)`).run('debounce-user');
+    legacyUserId = Number(info.lastInsertRowid);
 
     // Decorated repo instance survives across requests; spy on its prototype-
     // bound method.

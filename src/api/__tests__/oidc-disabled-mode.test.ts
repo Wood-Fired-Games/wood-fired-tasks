@@ -43,7 +43,6 @@ describe('OIDC disabled mode (no OIDC_ISSUER_URL)', () => {
   beforeAll(async () => {
     // Hard-clear all OIDC vars and session secret so the env loader sees a
     // pristine disabled configuration. resetConfig() drops the Proxy cache.
-    process.env.API_KEYS = 'test-key';
     delete process.env.OIDC_ISSUER_URL;
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;
@@ -60,15 +59,13 @@ describe('OIDC disabled mode (no OIDC_ISSUER_URL)', () => {
     app = result.app;
     db = result.app.db;
 
-    // Resolve the seeded legacy user so we can mint PATs for the
-    // session_required assertion.
-    const row = db
-      .prepare(`SELECT id FROM users WHERE display_name = ? AND is_legacy = 1`)
-      .get('key_test-key') as { id: number } | undefined;
-    if (row === undefined) {
-      throw new Error('seeded legacy user not found');
-    }
-    legacyUserId = row.id;
+    // v2.0 auth cutover (#799/#801): X-API-Key + legacy credential seeding
+    // were removed. Seed a real principal directly so we can mint PATs for the
+    // PAT-auth assertions below.
+    const info = db
+      .prepare(`INSERT INTO users (display_name) VALUES (?)`)
+      .run('oidc-disabled-user');
+    legacyUserId = Number(info.lastInsertRowid);
   });
 
   afterAll(async () => {
@@ -126,11 +123,19 @@ describe('OIDC disabled mode (no OIDC_ISSUER_URL)', () => {
     expect(r.body).toMatch(/state_mismatch/);
   });
 
-  it('legacy X-API-Key on /api/v1/tasks → 200 (Phase 28 invariant)', async () => {
+  it('PAT auth on /api/v1/tasks → 200 (auth surface intact in OIDC-disabled mode)', async () => {
+    // v2.0: X-API-Key is gone; a PAT is the non-session auth method that must
+    // keep working when OIDC is disabled.
+    const { token, prefix, suffix, hash } = generateToken();
+    db.prepare(
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(legacyUserId, 'tasks-probe', prefix, suffix, hash, '[]', null);
+
     const r = await server.inject({
       method: 'GET',
       url: '/api/v1/tasks',
-      headers: { 'x-api-key': 'test-key' },
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(r.statusCode).toBe(200);
   });

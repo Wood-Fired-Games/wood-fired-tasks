@@ -40,8 +40,6 @@ import { generateToken, hashToken } from '../../services/pat-hash.js';
 // Test harness
 // ---------------------------------------------------------------------------
 
-process.env.API_KEYS = 'test-key';
-
 interface Harness {
   server: FastifyInstance;
   db: Database.Database;
@@ -142,7 +140,6 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   let legacyUserCookie: string;
 
   beforeAll(async () => {
-    process.env.API_KEYS = 'test-key';
     // Phase 29: enable @fastify/secure-session so the production session
     // strategy can read `session.user`. The boot-time conditional at
     // `src/api/server.ts:301` gates secure-session on this var.
@@ -154,24 +151,24 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     const server = result.server;
     const db = result.app.db;
 
-    // Resolve the seeded legacy user.
+    // v2.0 auth cutover (#799/#801): X-API-Key + legacy credential seeding
+    // were removed. Seed the primary principal (the session subject for these
+    // sessionOnly routes) directly as a legacy-flagged user.
+    const legacyInfo = db
+      .prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`)
+      .run('legacy-user');
     const legacyRow = db
       .prepare(
         `SELECT id, display_name, email, is_legacy, is_service_account
-         FROM users WHERE display_name = ? AND is_legacy = 1`,
+         FROM users WHERE id = ?`,
       )
-      .get('key_test-key') as
-      | {
-          id: number;
-          display_name: string;
-          email: string | null;
-          is_legacy: number;
-          is_service_account: number;
-        }
-      | undefined;
-    if (legacyRow === undefined) {
-      throw new Error('test setup: seeded legacy user not found');
-    }
+      .get(Number(legacyInfo.lastInsertRowid)) as {
+      id: number;
+      display_name: string;
+      email: string | null;
+      is_legacy: number;
+      is_service_account: number;
+    };
 
     // Insert a second, independent legacy user so we can test cross-user
     // isolation on revoke.
@@ -318,18 +315,6 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         .get(body.id) as { scopes: string; expires_at: string };
       expect(row.scopes).toBe('["a","b"]');
       expect(row.expires_at).toBe(expiresAt);
-    });
-
-    it('also rejects legacy x-api-key auth with 403 session_required', async () => {
-      const res = await harness.server.inject({
-        method: 'POST',
-        url: '/api/v1/me/tokens',
-        headers: { 'x-api-key': 'test-key' },
-        payload: { name: 'legacy-mint' },
-      });
-      expect(res.statusCode).toBe(403);
-      const body = JSON.parse(res.body);
-      expect(body.error).toBe('session_required');
     });
 
     it('rejects invalid body (missing name) with 400', async () => {

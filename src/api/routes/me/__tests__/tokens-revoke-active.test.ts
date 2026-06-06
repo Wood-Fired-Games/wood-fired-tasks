@@ -48,7 +48,6 @@ describe('Phase 30 Plan 30-03 — DELETE /api/v1/me/tokens/active', () => {
   let oidcUserCookie: string;
 
   beforeAll(async () => {
-    process.env.API_KEYS = 'test-key';
     process.env.SESSION_COOKIE_SECRET = randomBytes(32).toString('base64');
     delete process.env.NODE_ENV;
     resetConfig();
@@ -57,15 +56,19 @@ describe('Phase 30 Plan 30-03 — DELETE /api/v1/me/tokens/active', () => {
     const server = result.server;
     const db = result.app.db;
 
+    // v2.0 auth cutover (#799/#801): X-API-Key + legacy credential seeding
+    // were removed. Seed a legacy-flagged user directly; the revoke-active
+    // route's "no token id present" branch is now reachable only via session
+    // (X-API-Key is gone), so this user is kept for the session-cookie path.
+    const legacyInfo = db
+      .prepare(`INSERT INTO users (display_name, is_legacy, is_service_account) VALUES (?, 1, 0)`)
+      .run('legacy-user');
     const legacyRow = db
       .prepare(
         `SELECT id, display_name, email, is_legacy, is_service_account
-         FROM users WHERE display_name = ? AND is_legacy = 1`,
+         FROM users WHERE id = ?`,
       )
-      .get('key_test-key') as UserRow | undefined;
-    if (legacyRow === undefined) {
-      throw new Error('test setup: seeded legacy user not found');
-    }
+      .get(Number(legacyInfo.lastInsertRowid)) as UserRow;
 
     const oidcInfo = db
       .prepare(
@@ -153,11 +156,15 @@ describe('Phase 30 Plan 30-03 — DELETE /api/v1/me/tokens/active', () => {
     expect(body.message.length).toBeGreaterThan(0);
   });
 
-  it('4. legacy-authed (X-API-Key): returns 400 NO_TOKEN_ID', async () => {
+  it('4. legacy-flagged user (session-authed, no token id): returns 400 NO_TOKEN_ID', async () => {
+    // v2.0: X-API-Key is gone, so a non-PAT principal can only reach this
+    // route via a session cookie. A legacy-flagged user with no carried
+    // tokenId must still hit the NO_TOKEN_ID branch.
+    const legacyCookie = await signInSessionFor(harness.server, harness.legacyUser.id);
     const res = await harness.server.inject({
       method: 'DELETE',
       url: '/api/v1/me/tokens/active',
-      headers: { 'x-api-key': 'test-key' },
+      headers: { cookie: legacyCookie },
     });
 
     expect(res.statusCode).toBe(400);
