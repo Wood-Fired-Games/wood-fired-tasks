@@ -554,8 +554,8 @@ export class TaskService {
         metadata: {
           source,
           from: existing.status,
-          to: result.data.status!,
-        } as any, // Metadata can include additional fields beyond the base type
+          to: result.data.status,
+        },
       });
     }
 

@@ -1,6 +1,6 @@
 import type Database from '../db/driver.js';
 import type { ValueCharter } from '../types/task.js';
-import { mapRows } from './row-mapper.js';
+import { mapRow, mapRows } from './row-mapper.js';
 import { AppendOnlyViolationError } from './errors.js';
 
 /**
@@ -128,7 +128,7 @@ export class ProjectCharterHistoryRepository implements IProjectCharterHistoryRe
   }
 
   countByProjectId(projectId: number): number {
-    const result = this.countByProjectIdStmt.get(projectId) as { count: number } | undefined;
+    const result = mapRow<{ count: number }>(this.countByProjectIdStmt, projectId);
     return result?.count ?? 0;
   }
 
