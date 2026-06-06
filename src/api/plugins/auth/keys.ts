@@ -14,6 +14,7 @@
  * sse-caps.test.ts, the legacy strategy module) keep working unchanged.
  */
 import { createHash } from 'crypto';
+import type { ApiKeyEntry } from '../../../config/env.js';
 
 /**
  * Placeholder substrings rejected in production keys (case-insensitive contains check).
@@ -47,6 +48,24 @@ const MIN_PRODUCTION_KEY_LENGTH = 32;
  */
 export function hashKey(key: string): Buffer {
   return createHash('sha256').update(key, 'utf8').digest();
+}
+
+/**
+ * Pre-compute the SHA-256 hash + label for each parsed API_KEYS entry.
+ *
+ * A pure key-hashing utility (NOT an auth strategy): it returns one
+ * `{ hash, label }` record per entry so callers can constant-time-compare a
+ * supplied key against the configured set without re-hashing per request. The
+ * MCP boot path (`src/mcp/index.ts`, `src/mcp/identity-resolution.ts`) relies
+ * on this independently of the REST auth chain.
+ *
+ * Relocated here from the (now-removed) legacy X-API-Key strategy as part of
+ * the v2.0 auth cutover (Phase 0) so it survives that strategy's deletion.
+ */
+export function precomputeHashedEntries(
+  entries: ApiKeyEntry[],
+): Array<{ hash: Buffer; label: string }> {
+  return entries.map((e) => ({ hash: hashKey(e.key), label: e.label }));
 }
 
 /**

@@ -3,7 +3,7 @@ import { createApp } from '../index.js';
 import { createMcpServer } from './server.js';
 import { resolveActorUserIdWithPath } from './identity-resolution.js';
 import { parseApiKeyEntries } from '../config/env.js';
-import { precomputeHashedEntries } from '../api/plugins/auth/strategies/legacy.js';
+import { precomputeHashedEntries } from '../api/plugins/auth/keys.js';
 
 /**
  * MCP server stdio entry point

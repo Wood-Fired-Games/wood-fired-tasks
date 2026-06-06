@@ -2,7 +2,9 @@
  * Phase 28 (Plan 28-04) — unified auth chain plugin.
  *
  * Replaces the legacy single-strategy plugin at `src/api/plugins/auth.ts`
- * with a three-strategy chain (PAT → session-stub → legacy API_KEYS). The
+ * with a two-strategy chain (PAT → session). The legacy X-API-Key strategy
+ * was removed in the v2.0 auth cutover (Phase 0, task #799); a request that
+ * bears only an X-API-Key header now falls through to the catch-all 401. The
  * file at `src/api/plugins/auth.ts` survives as a thin re-export shim so
  * existing `import authPlugin from './plugins/auth.js'` callers (server.ts,
  * auth-logging.test.ts) keep working without churn.
@@ -13,26 +15,24 @@
  *      route registers).
  *   2. Validate `process.env.API_KEYS` in production (throws synchronously,
  *      which Fastify bubbles up to createServer → exits with non-zero).
- *   3. Pre-compute SHA-256 hashes of every configured API_KEYS entry once
- *      at register time; feed the result into the legacy strategy on every
- *      request so it never re-hashes.
- *   4. Register a `preHandler` hook that:
+ *   3. Register a `preHandler` hook that:
  *      a. Short-circuits when `request.routeOptions.config.skipAuth === true`.
- *      b. Walks PAT → session-stub → legacy. First match wins. PAT failure
- *         does NOT fall through to legacy — see `enforceSessionOnly` /
- *         strategy-fail short-circuit below.
+ *      b. Walks PAT → session. First match wins. PAT failure does NOT fall
+ *         through to session — see `enforceSessionOnly` / strategy-fail
+ *         short-circuit below.
  *      c. On a successful match, populates `request.user`, `request.authMethod`,
- *         `request.tokenId` (and `request.apiKeyLabel` for legacy), re-childs
- *         the request logger with `{ user_id, token_id, auth_method,
- *         apiKeyLabel }` so every downstream log line carries audit fields,
- *         and enforces `config.sessionOnly` post-auth.
+ *         `request.tokenId`, re-childs the request logger with
+ *         `{ user_id, token_id, auth_method, apiKeyLabel }` so every
+ *         downstream log line carries audit fields, and enforces
+ *         `config.sessionOnly` post-auth.
  *      d. On a strategy `fail` outcome, emits one `auth.failure` warn log via
  *         the Phase 27 `logAuthFailure` helper and returns a uniform 401
  *         (the distinct `reasonCode` lives ONLY in the audit log — never in
  *         the response body).
  *      e. On total fall-through (every strategy returned `skip`), emits a
  *         catch-all `auth.failure` log tagged `strategy: 'legacy'`,
- *         `reasonCode: 'missing_credential'` (per Plan-04 Decision Q6).
+ *         `reasonCode: 'missing_credential'` (the tag name is retained for
+ *         audit-feed continuity even though the legacy strategy is gone).
  *
  * Side-effect contracts:
  *   - PAT match schedules `setImmediate(() => apiTokenRepository.touchLastUsed(
@@ -50,13 +50,12 @@
  */
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
-import { parseApiKeyEntries, config, type ApiKeyEntry } from '../../../config/env.js';
-import { hashKey, validateApiKeysForProduction } from './keys.js';
+import { parseApiKeyEntries, type ApiKeyEntry } from '../../../config/env.js';
+import { validateApiKeysForProduction } from './keys.js';
 import { logAuthFailure, type AuthFailureReason } from '../../../services/auth-audit.js';
 import type { AuthenticatedUser, AuthResult } from '../../../types/identity.js';
 import { tryAuth as tryPat, type PatDeps } from './strategies/pat.js';
 import { tryAuth as trySession } from './strategies/session.js';
-import { tryAuth as tryLegacy, precomputeHashedEntries } from './strategies/legacy.js';
 import { shouldTouchLastUsed } from '../../../services/pat-touch-debounce.js';
 
 /**
@@ -232,7 +231,6 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
       'No API keys configured in API_KEYS env var. All API requests will be rejected.',
     );
   }
-  const hashedEntries = precomputeHashedEntries(entries);
 
   // Decorators MUST land before any route registers in this scope. The fp()
   // wrap below lifts these into the parent scope so sibling /api/v1/* routes
@@ -296,66 +294,16 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
         return;
       }
 
-      // 3. Legacy API_KEYS
-      const legacyOutcome = await tryLegacy(request, {
-        userRepository: fastify.userRepository,
-        hashedEntries,
-      });
-      if (legacyOutcome.kind === 'fail') {
-        return sendUnauthorized(request, reply, 'legacy', legacyOutcome.reasonCode);
-      }
-      if (legacyOutcome.kind === 'match') {
-        applyPrincipal(request, legacyOutcome.result, legacyOutcome.label);
-        // Plan 31-05 (MIGR-02): emit one warn log per legacy-authed request
-        // so operators can grep their log feed for sunset-readiness reporting
-        // (`event: 'legacy_auth_used'`). The onSend hook below stamps the
-        // RFC 8594 Deprecation/Sunset headers; this line is the canonical
-        // audit signal — the headers are advisory to the client, the log
-        // is the operator-side source of truth.
-        request.log.warn(
-          {
-            event: 'legacy_auth_used',
-            userId: legacyOutcome.result.user.id,
-            apiKeyLabel: legacyOutcome.label,
-            requestId: request.id,
-            requestUrl: request.url,
-            sunset: config.LEGACY_AUTH_SUNSET_DATE,
-          },
-          'legacy_auth_used',
-        );
-        if (enforceSessionOnly(request, reply)) return;
-        return;
-      }
-
-      // 4. Catch-all — no strategy saw a credential. Per Plan-04 Decision
-      // Q6, the audit log records `strategy: 'legacy', reasonCode:
-      // 'missing_credential'` so the failure mode matches the pre-split
-      // plugin's "missing X-API-Key" branch.
+      // 3. Catch-all — no strategy saw a credential (the legacy X-API-Key
+      // strategy was removed in the v2.0 auth cutover, Phase 0). A request
+      // bearing only an X-API-Key header and no PAT/session now falls
+      // through to here and receives a uniform 401. The audit log records
+      // `strategy: 'legacy', reasonCode: 'missing_credential'` so the
+      // failure mode still classifies as a missing-credential event.
       return sendUnauthorized(request, reply, 'legacy', 'missing_credential');
     } catch (err) {
       return sendInternalError(request, reply, err);
     }
-  });
-
-  // Plan 31-05 (MIGR-02): RFC 8594 Deprecation + Sunset response headers
-  // for every legacy-X-API-Key-authed request. Gated strictly on
-  // `request.authMethod === 'legacy'` so PAT, session, anonymous (skipAuth),
-  // and failed-auth responses NEVER carry the headers (Pitfall 4 in
-  // 31-RESEARCH §Common Pitfalls).
-  //
-  // Callback-style (4-arg) signature is used INTENTIONALLY rather than async
-  // — registering an async onSend hook inside this fp()-wrapped plugin
-  // delays `reply.sent` from becoming true synchronously when the preHandler
-  // calls `reply.send()` (e.g. from `enforceSessionOnly`'s 403). The
-  // me-tokens session-only tests then see the route handler run after the
-  // 403 reply was queued. The synchronous callback form keeps reply.send()
-  // synchronous, preserving the Phase 28 sessionOnly invariant.
-  fastify.addHook('onSend', (request, reply, payload, done) => {
-    if (request.authMethod === 'legacy') {
-      reply.header('Deprecation', 'true');
-      reply.header('Sunset', config.LEGACY_AUTH_SUNSET_DATE);
-    }
-    done(null, payload);
   });
 };
 
