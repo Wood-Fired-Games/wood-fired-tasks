@@ -43,10 +43,7 @@ program.option('--json', 'Output as JSON (machine-readable)');
 program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
 program.option('--force', 'Skip confirmation prompts for destructive actions');
 // Plan 30-05: --token global flag (mirrors tasks.ts behavior).
-program.option(
-  '--token <token>',
-  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)',
-);
+program.option('--token <token>', 'Use the given PAT as Bearer auth (overrides credentials file)');
 program.hook('preAction', () => {
   const t = program.opts()['token'];
   setTokenOverride(typeof t === 'string' && t.length > 0 ? t : null);
