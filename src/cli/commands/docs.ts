@@ -73,15 +73,21 @@ export interface DocEntry {
 
 /** Build the catalog as resolved entries (path + existence), sorted by name. */
 export function listDocs(): DocEntry[] {
-  return docNames().map((name) => {
+  const entries: DocEntry[] = [];
+  for (const name of docNames()) {
+    // `name` is a DOCS_CATALOG key, so the lookup is always present; the guard
+    // satisfies noUncheckedIndexedAccess without a non-null assertion.
+    const file = DOCS_CATALOG[name];
+    if (file === undefined) continue;
     const docPath = resolveDocPath(name);
-    return {
+    entries.push({
       name,
-      file: DOCS_CATALOG[name],
+      file,
       path: docPath,
       exists: fs.existsSync(docPath),
-    };
-  });
+    });
+  }
+  return entries;
 }
 
 /** Read a bundled guide's full text content (resolved via the asset resolver). */

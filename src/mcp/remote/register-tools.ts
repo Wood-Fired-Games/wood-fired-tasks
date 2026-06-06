@@ -1157,7 +1157,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           }:\n`,
         ];
         timeline.forEach((entry) => {
-          const s = entry.deltas['wsjf_score'];
+          // `wsjf_score` is always written into `deltas` (it is in
+          // WSJF_COMPONENT_KEYS), but the Record lookup is `| undefined` under
+          // noUncheckedIndexedAccess; default to a null/null pair so the
+          // rendered output is unchanged in the (unreachable) missing case.
+          const s = entry.deltas['wsjf_score'] ?? { from: null, to: null };
           summary.push(
             `- ${entry.changed_at} [${entry.trigger}] wsjf ${
               s.from === null ? '∅' : s.from

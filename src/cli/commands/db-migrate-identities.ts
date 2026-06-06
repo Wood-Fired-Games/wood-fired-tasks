@@ -146,7 +146,10 @@ function resolveValue(
 ): { userId: number | null; source: ResolvedMapping['source'] } {
   // 1. alias-map (highest priority).
   if (aliasMap && Object.prototype.hasOwnProperty.call(aliasMap, value)) {
-    return { userId: aliasMap[value], source: 'alias-map' };
+    const aliasId = aliasMap[value];
+    if (aliasId !== undefined) {
+      return { userId: aliasId, source: 'alias-map' };
+    }
   }
 
   // 2. Email match — guarded so findByEmail's null/empty throw is never hit.

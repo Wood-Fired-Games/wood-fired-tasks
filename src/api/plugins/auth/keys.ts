@@ -74,6 +74,7 @@ export function validateApiKeysForProduction(keys: string[]): void {
     const k = keys[i];
     const idx = i + 1;
 
+    if (k === undefined) continue;
     if (k.length === 0) {
       errors.push(`key #${idx}: empty value`);
       continue;
