@@ -95,13 +95,9 @@ type (`wft_pat_` PATs), which every later phase relies on.
   this in `docs/SETUP.md`.
 
 ### Migration & versioning
-- **Breaking change → v2.0.0.** Anyone still authenticating via X-API-Key
-  (`API_KEYS` env + a non-PAT `WFT_API_KEY` baked into `claude.json`) must
-  re-login (OIDC) or re-mint a PAT *before* upgrading.
-- Add an upgrade note to `CHANGELOG.md` / `docs/SETUP.md`:
-  *"X-API-Key authentication has been removed. Re-login with `tasks login`
-  (OIDC) or re-mint a personal access token; update any baked `WFT_API_KEY`
-  values to a `wft_pat_…` token."*
+See the dedicated **Migration to v2.0** section below. Key point for Phase 0:
+the legacy removal is **code-only** — `is_legacy` rows stay inert, so v2.0 needs
+**no destructive DB migration**. The break is in *auth acceptance*, not data.
 
 ### Phase 0 acceptance
 - The auth chain rejects any X-API-Key request with the standard 401.
@@ -184,12 +180,22 @@ Extract the device-flow body currently inline in `loginCommand.action`
 wrapper that maps CLI flags → `runDeviceLogin` and renders text/JSON output.
 
 ### `setup --remote <url>` flow
-1. Attempt **device-flow login** inline via `runDeviceLogin({ baseUrl: url })`.
-2. **OIDC on** → browser opens, user approves, server mints `cli-<host>-<date>`,
-   the CLI receives the PAT → `writeCredentials({ active: { token, server: url,
-   … } })`. Zero host minting.
-3. **OIDC off** → `requestDeviceCode` returns `501 OIDC_DISABLED`. Fall back to
-   manual PAT:
+1. **Probe `GET /health/detailed`** to read the server's `oidc` state
+   (`disabled | ready | degraded`) and branch deterministically — rather than
+   attempting the device flow and catching a 501:
+   - `ready`  → device-flow path (step 2).
+   - `disabled` → manual-PAT path (step 3) with a clear "this server has no
+     browser login" message; do not attempt the device flow.
+   - `degraded` → OIDC is configured but IdP discovery is currently failing;
+     inform the user, offer manual PAT now or retry later. Do not silently
+     attempt the device flow (it would fail).
+   - probe unreachable / non-2xx → surface a connectivity error naming the URL;
+     offer manual PAT (`--token`) as the escape hatch.
+2. **Device-flow login** (`ready`) via `runDeviceLogin({ baseUrl: url })`:
+   browser opens, user approves, server mints `cli-<host>-<date>`, the CLI
+   receives the PAT → `writeCredentials({ active: { token, server: url, … } })`.
+   Zero host minting.
+3. **Manual PAT** (`disabled`/`degraded`/operator choice):
    - TTY → `promptSecret("Paste a personal access token:")`.
    - non-TTY → require `--token <pat>` (error with guidance if absent).
    - The pasted token is stored via `writeCredentials` (same store).
@@ -244,6 +250,99 @@ Effects:
 
 ---
 
+## Phase 3 — Server-side OIDC enablement & `tasks doctor`
+
+Client-driven remote onboarding *requires* the server to have OIDC enabled.
+OIDC stays an **env-config** concern (no setup command mutates server config),
+but v2.0 makes that state legible and verifiable.
+
+### Server OIDC recipe (docs + boot log)
+- Document the all-or-nothing env set in `docs/SETUP.md`:
+  `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`,
+  plus `SESSION_COOKIE_SECRET` (with a generation one-liner, e.g.
+  `openssl rand -hex 32`). Note the discovery-retry vars and the `degraded`
+  state semantics.
+- `serve` logs the resolved OIDC state on boot (`disabled | ready | degraded`)
+  so an operator sees immediately whether browser login / device flow is
+  available, without curling `/health/detailed`.
+
+### New unit: `tasks doctor`
+A diagnostic command that reports actionable readiness in both contexts and is
+the migration safety net:
+
+- **Server context** (run on/against the server, or with `--server <url>`):
+  - Are all OIDC_* vars set together? Is `SESSION_COOKIE_SECRET` present?
+  - Read `/health/detailed` → report `oidc: ready/disabled/degraded`; for
+    `degraded`, surface the discovery error so the operator can fix the IdP/URL.
+  - Warn explicitly if device flow will `501` (OIDC disabled) — i.e.
+    client-driven onboarding won't work until OIDC is configured.
+- **Client/migration context:**
+  - Detect a **legacy-shaped credential**: a `WFT_API_KEY` (env or baked in a
+    `claude.json` remote entry) that does **not** start with `wft_pat_`, or an
+    `API_KEYS` env present on a v2.0 server. Print exact remediation
+    (`setup --remote <url>` / `tasks login` / re-mint a PAT).
+  - Confirm the credentials file exists, is `0600`, and its token is a PAT.
+  - Confirm the configured remote is reachable and the token authenticates
+    (a probe request).
+
+`tasks doctor` is read-only (no writes/mutations) and exits non-zero when a
+blocking problem is found, so it can gate CI / pre-upgrade checks.
+
+### Phase 3 acceptance
+- `serve` boot log states the OIDC state on every start.
+- `tasks doctor` against an OIDC-ready server reports `ready` and exits 0;
+  against an OIDC-off server it reports `disabled` + the device-flow warning.
+- `tasks doctor` detects a non-PAT `WFT_API_KEY` (env or `claude.json`) and an
+  `API_KEYS` env, printing the documented remediation, and exits non-zero.
+- Tests cover each `oidc` state via stubbed `/health/detailed`, and the
+  legacy-credential detector via env/`claude.json` fixtures.
+
+---
+
+## Migration to v2.0
+
+Two things migrate — the schema (trivial) and auth (the real work).
+
+### Schema — automatic, no destructive change
+- `serve` runs all pending Umzug migrations **before** listening
+  (`src/index.ts:128`, `serve.ts`). Restarting the upgraded server migrates the
+  app-data DB automatically.
+- The legacy sunset is **code-only**: `is_legacy` rows remain (inert). v2.0 adds
+  **no destructive migration**; existing data is forward-compatible.
+
+### Auth cutover — the actual migration
+The moment a v2.0 server boots, X-API-Key is rejected. Sequence to avoid
+lockout:
+
+1. **Before upgrading the server**, ensure every client/integration holds a PAT:
+   - interactive users: `tasks login` (OIDC) or `setup --remote <url>`;
+   - service/automation: `tasks db mint-token --user <id> --name <label>` and
+     update the consumer's `WFT_API_KEY` to the `wft_pat_…` value.
+2. **Run `tasks doctor`** on clients/servers to surface any remaining
+   legacy-shaped credentials and get exact remediation.
+3. **Upgrade the server**: `npm i -g wood-fired-tasks@2` (or `tasks self-update`)
+   → restart the service → migrate-on-serve runs.
+
+### Client upgrade
+- `tasks self-update` bumps the client to 2.x.
+- A baked `WFT_API_KEY` that is already a `wft_pat_…` keeps working (bridge env
+  precedence #1). A legacy-key value breaks → re-run **`setup --remote <url>`**
+  (idempotent): it replaces the baked-key entry with a URL-only entry and stores
+  a fresh PAT in the credentials file. This is the canonical client migration
+  command.
+
+### Runway
+- **Straight to v2.0** (no interim v1.x hard-warning release). The
+  `tasks doctor` legacy-credential detector + the existing `legacy_auth_used`
+  warning + the `CHANGELOG`/`docs/SETUP.md` migration note are the guidance for
+  stragglers. A hard 401 after upgrade is made actionable by `doctor`.
+- `CHANGELOG.md` / `docs/SETUP.md` note: *"X-API-Key authentication has been
+  removed. Re-login with `tasks login` (OIDC), re-run `setup --remote`, or
+  re-mint a PAT; update any baked `WFT_API_KEY` to a `wft_pat_…` token. Run
+  `tasks doctor` to check."*
+
+---
+
 ## Components summary
 
 | Unit | Change | Purpose |
@@ -256,8 +355,11 @@ Effects:
 | `src/cli/auth/runDeviceLogin` | **new/extract (Phase 2)** | Shared device-flow core for `login` + `setup` |
 | `src/cli/commands/login.ts` | **edit (Phase 2)** | Call the extracted core |
 | `src/mcp/remote/index.ts` (`resolveRemoteConfig`) | **edit (Phase 2)** | Credentials-file fallback |
+| `setup --remote` health probe | **new (Phase 2)** | `GET /health/detailed` → branch on `oidc` state |
+| `src/cli/commands/doctor.ts` | **new (Phase 3)** | OIDC readiness + legacy-credential detector (read-only) |
+| `src/cli/commands/serve.ts` | **edit (Phase 3)** | Log resolved OIDC state on boot |
 | `src/cli/commands/service.ts` | **reuse** | User-scoped service install for Service mode |
-| `docs/SETUP.md`, `CHANGELOG.md` | **edit** | v2.0 migration note + no-OIDC bootstrap docs |
+| `docs/SETUP.md`, `CHANGELOG.md` | **edit** | OIDC server recipe + v2.0 migration note + no-OIDC bootstrap docs |
 
 ## Testing strategy
 
@@ -268,17 +370,23 @@ Effects:
   mode-resolution tests (each flag; TTY menu dispatch with injected prompt;
   non-TTY → Local); service-mode orchestration asserts the install path is
   invoked.
-- **Phase 2:** device-flow integration via the existing mock server (OIDC-on →
-  credentials written + URL-only `claude.json` entry); 501 stub → manual-paste
-  fallback; `resolveRemoteConfig` precedence (env → file → fail); re-login
-  rotation reflected by the bridge.
+- **Phase 2:** `/health/detailed` probe branch (stubbed `ready`/`disabled`/
+  `degraded`/unreachable → correct path); device-flow integration via the
+  existing mock server (OIDC-on → credentials written + URL-only `claude.json`
+  entry); manual-paste fallback; `resolveRemoteConfig` precedence
+  (env → file → fail); re-login rotation reflected by the bridge.
+- **Phase 3:** `tasks doctor` per `oidc` state (stubbed `/health/detailed`);
+  legacy-credential detector via env + `claude.json` fixtures (non-PAT
+  `WFT_API_KEY`, `API_KEYS` present) asserts remediation text + non-zero exit;
+  `serve` boot-log states OIDC state.
 - All phases: `npm run build` + `npm run lint` + full `vitest` suite green.
 
 ## Open risks
 
 - **Upgrade breakage** for any remaining X-API-Key users — mitigated by the v2.0
-  major bump and an explicit migration note. (Confirm no first-party deployment
-  still relies on X-API-Key before release.)
+  major bump, the `tasks doctor` legacy-credential detector, and an explicit
+  migration note. (Confirm no first-party deployment still relies on X-API-Key
+  before release — `tasks doctor` against each is the check.)
 - **Bridge spawned in a context without the credentials file** (e.g. a service
   account running as a different user) — env precedence #1 remains the escape
   hatch; documented.
