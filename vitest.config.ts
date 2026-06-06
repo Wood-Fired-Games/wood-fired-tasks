@@ -19,6 +19,18 @@ export default defineConfig({
     // tests AND thousands of dependency-bundled *.test.js files, ballooning and
     // hanging the run. Excluding the dir keeps `npm test` correct while worktrees exist.
     exclude: ['dist/**', 'node_modules/**', '**/*.bench.ts', '.claude/worktrees/**'],
+    // task #773: `vitest bench` uses its OWN include/exclude globs and does NOT
+    // inherit `test.exclude` above. Without this block, bench mode re-discovers
+    // every `*.bench.ts` checked out under `.claude/worktrees/agent-*/` (the
+    // isolation:"worktree" subagent checkouts from task #717), so each bench ran
+    // N+1 times — once for the canonical tree and once per live sibling worktree.
+    // That inflated runtime and polluted the comparison output with duplicate
+    // suites. Mirror the worktree/dist/node_modules excludes here so `npm run
+    // test:bench` only ever discovers the canonical `*.bench.ts` files.
+    benchmark: {
+      include: ['**/*.bench.ts'],
+      exclude: ['dist/**', 'node_modules/**', '.claude/worktrees/**'],
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

@@ -639,7 +639,10 @@ Progress notes (task #270):
   - Additional benchmark files. Three benchmarks exist today
     (`sse-manager.bench.ts`, `cycle-detector.bench.ts`,
     `task.repository.bench.ts`) — only add more when a concrete hot path
-    with regression risk is identified.
+    with regression risk is identified. The benchmark / performance-regression
+    policy (hot paths, stable invocation, recorded baselines, advisory-vs-
+    blocking CI rule) is documented in
+    [`BENCHMARK_POLICY.md`](BENCHMARK_POLICY.md).
 
 ### Phase 8: Adopt PR And Release Quality Checklist
 
