@@ -82,6 +82,8 @@ jobs:
       - run: npm ci
       - name: Lint (biome check)
         run: npm run lint
+      - name: Format check (biome format, fails on unformatted files)
+        run: npm run format:check
       - name: Escape-hatch budget (fail on new unexplained production casts)
         run: node scripts/quality/escape-hatch-budget.mjs
 
