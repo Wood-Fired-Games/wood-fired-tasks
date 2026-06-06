@@ -9,8 +9,12 @@
 /** The closed Fibonacci tier set used for every WSJF component score. */
 export type Fib = 1 | 2 | 3 | 5 | 8 | 13;
 
-/** Canonical ordered Fibonacci tiers. Typed `readonly Fib[]`. */
-export const FIB: readonly Fib[] = [1, 2, 3, 5, 8, 13];
+/**
+ * Canonical ordered Fibonacci tiers. Typed as a fixed-shape readonly tuple so
+ * that compile-time-constant indices are typed present (no `| undefined` under
+ * `noUncheckedIndexedAccess`). Computed indices still require an in-range guard.
+ */
+export const FIB = [1, 2, 3, 5, 8, 13] as const satisfies readonly Fib[];
 
 /** How well a task aligns with a charter value theme. */
 export type AlignmentClass = 'none' | 'weak' | 'direct' | 'core';

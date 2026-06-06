@@ -136,6 +136,7 @@ export class TopologyService {
     let hasCycle = false;
     for (let i = 0; i < projectEdges.length; i++) {
       const held = projectEdges[i];
+      if (held === undefined) continue;
       const rest = [...projectEdges.slice(0, i), ...projectEdges.slice(i + 1)];
       const detector = new CycleDetector(
         rest.map((e) => ({ task_id: e.from, blocks_task_id: e.to })),

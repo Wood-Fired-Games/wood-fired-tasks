@@ -295,7 +295,10 @@ export function analyzeWsjfHealth(
     let reversals = 0;
     let prevDir = 0;
     for (let i = 1; i < series.length; i++) {
-      const delta = series[i] - series[i - 1];
+      const cur = series[i];
+      const prev = series[i - 1];
+      if (cur === undefined || prev === undefined) continue;
+      const delta = cur - prev;
       if (delta === 0) continue;
       const dir = delta > 0 ? 1 : -1;
       if (prevDir !== 0 && dir !== prevDir) reversals++;

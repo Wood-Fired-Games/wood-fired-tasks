@@ -229,7 +229,11 @@ export class DependencyGraphService {
     // cycle. `topology` still reports `DAG_CYCLIC`.
     if (rootIds.length === 0 && tasks.length > 0) {
       const allIdsSorted = tasks.map((t) => t.id).sort(compareTasks);
-      rootIds = [allIdsSorted[0]];
+      const [syntheticRoot] = allIdsSorted;
+      // tasks.length > 0 guarantees a first element after the sort.
+      if (syntheticRoot !== undefined) {
+        rootIds = [syntheticRoot];
+      }
     }
 
     // Topology label (N3): inline classifier. Reuses the inDegree map we
@@ -498,6 +502,7 @@ function renderTextLines(ctx: TextRenderContext, counter: TreeCounter): string[]
         break;
       }
       const childId = childIds[i];
+      if (childId === undefined) continue;
       const last = i === childIds.length - 1;
       walk(childId, childPrefix, last, false, nextVisited);
     }

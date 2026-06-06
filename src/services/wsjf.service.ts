@@ -173,7 +173,10 @@ export function jobSizeBand(filesTouched: number | null, text: string): [Fib, Fi
 function oneStepDown(weight: Fib): Fib {
   const idx = FIB.indexOf(weight);
   if (idx <= 0) return 1;
-  return FIB[idx - 1];
+  const lower = FIB[idx - 1];
+  // idx > 0 guaranteed above, so idx - 1 is a valid in-range FIB index.
+  if (lower === undefined) return 1;
+  return lower;
 }
 
 /**
@@ -739,7 +742,9 @@ export async function rankFrontier(
     let head = 0;
     while (head < queue.length) {
       const cur = queue[head++];
-      const d = distance.get(cur)!;
+      if (cur === undefined) throw new Error('wsjf: BFS queue cursor out of range');
+      const d = distance.get(cur);
+      if (d === undefined) throw new Error('wsjf: BFS visited node missing distance');
       for (const next of downstream.get(cur) ?? []) {
         if (!distance.has(next)) {
           distance.set(next, d + 1);
@@ -755,7 +760,8 @@ export async function rankFrontier(
     for (const depId of dependentIds) {
       const depBase = baseCoD.get(depId);
       if (depBase === undefined) continue; // unscored dependents contribute nothing
-      const dist = distance.get(depId)!;
+      const dist = distance.get(depId);
+      if (dist === undefined) continue; // depId came from distance.keys(); defensive only
       const contribution = depBase * Math.pow(PROPAGATION_GAMMA, dist - 1);
       if (contribution === 0) continue;
       contributions.push({ dependentId: depId, contribution });
@@ -904,7 +910,14 @@ export function fibMedianBucket(samples: Fib[]): Fib {
   const ordinals = samples.map(fibOrdinal).sort((a, b) => a - b);
   // Lower median: for odd N the true middle; for even N the lower of the two.
   const mid = Math.floor((ordinals.length - 1) / 2);
-  return FIB[ordinals[mid]];
+  // `samples` is non-empty (guarded above), so `mid` is a valid index into
+  // `ordinals`, and every ordinal is a valid in-range FIB index.
+  const ordinal = ordinals[mid];
+  const tier = ordinal === undefined ? undefined : FIB[ordinal];
+  if (tier === undefined) {
+    throw new Error('fibMedianBucket: median ordinal fell outside the FIB table');
+  }
+  return tier;
 }
 
 /**

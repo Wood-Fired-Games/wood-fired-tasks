@@ -73,7 +73,10 @@ export class EventBus<Events extends Record<string, unknown>> {
           }
         }
       }
-      this.bufferStack[this.bufferStack.length - 1].push({
+      // length > 0 guarded above, so the top-of-stack buffer is present.
+      const activeBuffer = this.bufferStack[this.bufferStack.length - 1];
+      if (activeBuffer === undefined) throw new Error('event-bus: active buffer missing');
+      activeBuffer.push({
         event: eventName,
         payload,
       });
@@ -110,7 +113,9 @@ export class EventBus<Events extends Record<string, unknown>> {
       if (!threw && popped) {
         if (this.bufferStack.length > 0) {
           // Nested transaction committing — defer to the parent's buffer.
+          // length > 0 guarded above, so the parent buffer is present.
           const parent = this.bufferStack[this.bufferStack.length - 1];
+          if (parent === undefined) throw new Error('event-bus: parent buffer missing');
           for (const entry of popped) parent.push(entry);
         } else {
           // Outermost transaction committing — flush to live subscribers

@@ -346,7 +346,9 @@ export function parseApiKeyEntries(raw: string | undefined): ApiKeyEntry[] {
   const rawParts = raw.split(',');
 
   for (let i = 0; i < rawParts.length; i++) {
-    const part = rawParts[i].trim();
+    const rawPart = rawParts[i];
+    if (rawPart === undefined) continue;
+    const part = rawPart.trim();
     if (part.length === 0) {
       // Empty segment from trailing/double comma — silently skip.
       continue;

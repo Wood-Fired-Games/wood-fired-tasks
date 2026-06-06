@@ -12,6 +12,7 @@ import {
   PROPAGATION_GAMMA,
   PROPAGATION_CAP,
 } from '../wsjf.service.js';
+import { FIB } from '../../types/wsjf.js';
 import type { Fib, AlignmentClass, SeverityClass, DecayClass } from '../../types/wsjf.js';
 
 describe('wsjf deterministic functions (task #622)', () => {
@@ -101,6 +102,25 @@ describe('wsjf deterministic functions (task #622)', () => {
       [3, 'direct', 2],
     ])('ubvFromThemeAlignment(%i, %s) === %i', (weight, alignment, expected) => {
       expect(ubvFromThemeAlignment(weight, alignment)).toBe(expected);
+    });
+  });
+
+  // Task #782 (noUncheckedIndexedAccess remediation): `FIB` was retyped from
+  // `readonly Fib[]` to a fixed-shape `as const` tuple, and the computed-index
+  // lookups in `oneStepDown` / `fibMedianBucket` gained explicit guards. These
+  // pin the FIB table shape and the `ubvFromThemeAlignment` saturation floor
+  // (which routes through `oneStepDown`'s `idx <= 0 → 1` fallback branch).
+  describe('FIB tuple integrity + oneStepDown saturation (task #782)', () => {
+    it('FIB is the canonical 6-tier tuple in ascending order', () => {
+      expect(FIB).toEqual([1, 2, 3, 5, 8, 13]);
+      expect(FIB).toHaveLength(6);
+    });
+
+    it('ubvFromThemeAlignment saturates at 1 (oneStepDown idx<=0 fallback)', () => {
+      // weight 1 is FIB[0]; one step down clamps at 1 rather than indexing FIB[-1].
+      expect(ubvFromThemeAlignment(1, 'direct')).toBe(1);
+      expect(ubvFromThemeAlignment(1, 'weak')).toBe(1);
+      expect(ubvFromThemeAlignment(2, 'weak')).toBe(1); // 2→1→1 (saturates)
     });
   });
 

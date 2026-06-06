@@ -129,7 +129,9 @@ function generateUserCode(): string {
     for (const byte of buf) {
       if (out.length === 8) break;
       if (byte < 248) {
-        out.push(USER_CODE_ALPHABET[byte % 31]);
+        // byte % 31 ∈ [0, 30] is always an in-range index of the 31-char alphabet.
+        const ch = USER_CODE_ALPHABET[byte % 31];
+        if (ch !== undefined) out.push(ch);
       }
     }
   }

@@ -416,6 +416,7 @@ export class WsjfRescoreService {
       let head = 0;
       while (head < queue.length) {
         const cur = queue[head++];
+        if (cur === undefined) throw new Error('wsjf-rescore: BFS queue cursor out of range');
         for (const next of downstream.get(cur) ?? []) {
           if (!seen.has(next)) {
             seen.add(next);
