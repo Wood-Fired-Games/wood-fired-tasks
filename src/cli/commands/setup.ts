@@ -8,9 +8,10 @@ import { resolveAssetPath } from '../../assets/resolve.js';
 import { configDir as defaultConfigDir } from '../../config/paths.js';
 import { resolvePathHint } from '../util/path-hint.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
-import { selectFromMenu, type PromptIO } from '../util/prompt.js';
+import { selectFromMenu, promptSecret, type PromptIO } from '../util/prompt.js';
 import { shouldPrompt } from '../prompts/interactive.js';
 import { getServiceBackend } from './service.js';
+import { runDeviceLogin } from './login.js';
 
 /**
  * `tasks setup` (task #737).
@@ -471,7 +472,95 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
  */
 export type SetupMode = 'local' | 'service' | 'remote';
 
+/**
+ * Coarse OIDC subsystem state reported by `GET /health/detailed` (task #357).
+ * Mirrors the server's `oidc.state` enum so the remote-setup branch selector
+ * (#807) can route deterministically.
+ */
+export type OidcState = 'ready' | 'disabled' | 'degraded';
+
+/**
+ * Onboarding methods `setup --remote` can choose between, derived from the
+ * server's probed OIDC state.
+ *  - `device-flow` → RFC 8628 browser login via {@link runDeviceLogin}.
+ *  - `manual-pat`  → paste / `--token` a PAT and persist it.
+ */
+export type RemoteOnboardingMethod = 'device-flow' | 'manual-pat';
+
+/**
+ * Result of probing `GET /health/detailed` for the OIDC state.
+ *  - `{ ok: true, oidc }` — the probe returned 2xx and an `oidc.state`.
+ *  - `{ ok: false, reason }` — network error / non-2xx / unparseable body.
+ *    The `reason` is surfaced to the user before falling back to manual PAT.
+ */
+export type OidcProbeResult = { ok: true; oidc: OidcState } | { ok: false; reason: string };
+
+/** Injectable probe signature so tests can drive each branch without a server. */
+export type OidcProbe = (baseUrl: string) => Promise<OidcProbeResult>;
+
+/**
+ * Default OIDC probe: `GET <baseUrl>/health/detailed` and read `oidc.state`.
+ *
+ * `/health/detailed` is auth-protected on the server (X-API-Key), but the only
+ * field we need — `oidc.state` — is returned in the JSON body regardless of the
+ * auth-derived status code as long as the route renders. We treat ANY non-2xx
+ * or unparseable/missing `oidc.state` as a probe failure and fall back to the
+ * manual-PAT escape hatch (the route may not even exist on an older server).
+ */
+export async function probeOidcState(baseUrl: string): Promise<OidcProbeResult> {
+  const probeUrl = new URL('/health/detailed', baseUrl).toString();
+  let response: Response;
+  try {
+    response = await fetch(probeUrl, { method: 'GET' });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: `could not reach ${probeUrl}: ${message}` };
+  }
+
+  if (!response.ok) {
+    return { ok: false, reason: `${probeUrl} returned HTTP ${response.status}` };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return { ok: false, reason: `${probeUrl} returned a non-JSON body` };
+  }
+
+  const oidc = (body as { oidc?: { state?: unknown } } | null)?.oidc?.state;
+  if (oidc === 'ready' || oidc === 'disabled' || oidc === 'degraded') {
+    return { ok: true, oidc };
+  }
+  return { ok: false, reason: `${probeUrl} did not report an oidc.state` };
+}
+
+/**
+ * Map a probe outcome to the onboarding method (task #807).
+ *  - `ready`    → device-flow.
+ *  - `disabled` → manual-PAT (the server has no browser login).
+ *  - `degraded` → manual-PAT (OIDC is configured but discovery is failing; the
+ *    device flow would fail, so offer the manual path after informing the user).
+ *  - probe failure → manual-PAT (connectivity escape hatch).
+ */
+export function selectRemoteOnboardingMethod(probe: OidcProbeResult): RemoteOnboardingMethod {
+  if (!probe.ok) return 'manual-pat';
+  return probe.oidc === 'ready' ? 'device-flow' : 'manual-pat';
+}
+
 export interface RunSetupInteractiveOptions extends RunSetupOptions {
+  /**
+   * Injectable OIDC-state probe for the `--remote` path (#807). Defaults to
+   * {@link probeOidcState} (a real `GET /health/detailed`). Tests stub this to
+   * drive the ready / disabled / degraded / probe-failure branches.
+   */
+  oidcProbe?: OidcProbe;
+  /**
+   * Injectable device-flow login seam (#806). Defaults to the exported
+   * {@link runDeviceLogin}. Tests stub this to assert the `ready` branch routes
+   * here without standing up a full device-flow server.
+   */
+  deviceLogin?: typeof runDeviceLogin;
   /**
    * Explicit mode selected via `--local` / `--service` / `--remote`. When set,
    * the menu is SKIPPED and the chosen path runs non-interactively. When
@@ -506,9 +595,27 @@ export interface RunSetupServiceResult {
   mode: 'service';
 }
 
+/**
+ * Result returned by the `--remote` onboarding path (#807). Records the OIDC
+ * state the probe observed (or its failure) and the onboarding method that was
+ * routed to, so callers (and tests) can assert the branch selection.
+ */
+export interface RunSetupRemoteResult {
+  mode: 'remote';
+  /** Probed OIDC state, or `null` when the probe failed (network/non-2xx). */
+  oidc: OidcState | null;
+  /** The onboarding method the branch selector chose. */
+  method: RemoteOnboardingMethod;
+  /** True when the chosen path completed successfully. */
+  ok: boolean;
+  /** The synchronous claude.json/skills setup, when the path ran it. */
+  setup?: RunSetupResult;
+}
+
 export type RunSetupInteractiveResult =
-  | (RunSetupResult & { mode: 'local' | 'remote' })
-  | RunSetupServiceResult;
+  | (RunSetupResult & { mode: 'local' })
+  | RunSetupServiceResult
+  | RunSetupRemoteResult;
 
 /** Present the Local / Service / Remote menu and resolve the chosen mode. */
 export function selectSetupMode(io?: PromptIO): Promise<SetupMode> {
@@ -536,8 +643,10 @@ export function selectSetupMode(io?: PromptIO): Promise<SetupMode> {
  *     the original `runSetup` behavior).
  *
  * The `service` path delegates to the user-scoped install from service.ts; the
- * `local` and `remote` paths delegate to {@link runSetup} (so all existing
- * idempotency / 0600 / asset-resolver guarantees are preserved verbatim).
+ * `local` path delegates to {@link runSetup} (so all existing idempotency /
+ * 0600 / asset-resolver guarantees are preserved verbatim). The `remote` path
+ * delegates to {@link runRemoteOnboarding}, which probes `/health/detailed` and
+ * branches on the server's OIDC state (#807).
  */
 export async function runSetupInteractive(
   options: RunSetupInteractiveOptions = {},
@@ -564,13 +673,100 @@ export async function runSetupInteractive(
     return { mode: 'service' };
   }
 
-  // local + remote both flow through the existing synchronous runSetup. The
-  // remote path is selected purely by the presence of `options.remote`; this
-  // task only needs `--remote` to be a dispatchable branch (full device-flow
-  // self-provisioning is #807/#808/#809), so we forward whatever remote/token
-  // were supplied and let runSetup validate them.
+  // Remote: probe the server's OIDC state and branch to the right onboarding
+  // method BEFORE choosing how to authenticate (#807).
+  if (mode === 'remote') {
+    return runRemoteOnboarding(options);
+  }
+
+  // Local flows through the existing synchronous runSetup verbatim, preserving
+  // all idempotency / 0600 / asset-resolver guarantees.
   const result = runSetup(options);
-  return { ...result, mode };
+  return { ...result, mode: 'local' };
+}
+
+/**
+ * `setup --remote` onboarding selector (task #807, Phase 2).
+ *
+ * BEFORE choosing an onboarding method, probe `GET /health/detailed` to read
+ * the server's OIDC state, then branch deterministically:
+ *   - `ready`    → device-flow path via {@link runDeviceLogin} (#806).
+ *   - `disabled` → manual-PAT entry (the server has no browser login).
+ *   - `degraded` → inform the user, then offer the manual-PAT path.
+ *   - probe failure (network / non-2xx) → fall back to manual-PAT entry.
+ *
+ * The probe, the prompt seam, and the device-login seam are all injectable so
+ * each branch is testable without a live server (see setup.remote.test.ts).
+ *
+ * NOTE: the deeper write specifics — a URL-only `claude.json` entry for the
+ * device-flow path (#808) and full manual-PAT persistence (#809) — are
+ * downstream. This task implements the PROBE + BRANCH ROUTING and makes each
+ * branch invoke the right action with a minimal-but-functional manual path.
+ */
+export async function runRemoteOnboarding(
+  options: RunSetupInteractiveOptions = {},
+): Promise<RunSetupRemoteResult> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  const baseUrl = options.remote;
+  if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
+    throw new Error('remote onboarding requires a --remote <url> base URL.');
+  }
+
+  const probe = options.oidcProbe ?? probeOidcState;
+  const deviceLogin = options.deviceLogin ?? runDeviceLogin;
+
+  // 1. Probe the OIDC state.
+  log(`Probing ${baseUrl} for its OIDC state…`);
+  const probeResult = await probe(baseUrl);
+
+  // 2. Inform on degraded / probe failure so the user understands the fallback.
+  if (!probeResult.ok) {
+    log(`Could not determine the server's OIDC state (${probeResult.reason}).`);
+    log('Falling back to manual personal-access-token entry.');
+  } else if (probeResult.oidc === 'disabled') {
+    log('This server has no browser login (OIDC disabled); using manual PAT entry.');
+  } else if (probeResult.oidc === 'degraded') {
+    log(
+      'This server has OIDC configured but discovery is currently failing ' +
+        '(degraded); browser login is unavailable. Offering manual PAT entry.',
+    );
+  } else {
+    log('This server supports browser login (OIDC ready); using the device flow.');
+  }
+
+  // 3. Branch on the selected method.
+  const method = selectRemoteOnboardingMethod(probeResult);
+  const oidc = probeResult.ok ? probeResult.oidc : null;
+
+  if (method === 'device-flow') {
+    const result = await deviceLogin({
+      baseUrl,
+      clientId: process.env['OIDC_CLIENT_ID'] ?? 'wft-cli',
+      hostname: os.hostname(),
+      openBrowser: true,
+      isJson: false,
+    });
+    return { mode: 'remote', oidc, method, ok: result.ok };
+  }
+
+  // method === 'manual-pat': obtain a PAT (prompt on TTY, else require --token)
+  // and persist it. The minimal-but-functional persistence here reuses the
+  // existing PAT cache + remote MCP entry writer via runSetup; the deeper
+  // credentials-store specifics are #809's concern.
+  let token = options.token;
+  if (
+    (typeof token !== 'string' || token.length === 0) &&
+    (options.isInteractive ?? shouldPrompt)()
+  ) {
+    token = await promptSecret('Paste a personal access token: ', options.promptIO);
+  }
+  if (typeof token !== 'string' || token.length === 0) {
+    log('No personal access token supplied. Re-run with --token <pat> to finish remote setup.');
+    return { mode: 'remote', oidc, method, ok: false };
+  }
+
+  const setup = runSetup({ ...options, remote: baseUrl, token });
+  return { mode: 'remote', oidc, method, ok: true, setup };
 }
 
 export const setupCommand = new Command('setup')

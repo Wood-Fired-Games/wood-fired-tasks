@@ -458,6 +458,10 @@ describe('tasks setup — modes (task #805)', () => {
           mode: 'remote',
           remote: 'http://tasks.example.local:3000',
           token: FAKE_PAT,
+          // Inject the OIDC probe so this test stays deterministic (no network).
+          // `disabled` routes to the manual-PAT path, which — given --token — runs
+          // the synchronous remote setup that writes the remote MCP entry.
+          oidcProbe: async () => ({ ok: true, oidc: 'disabled' }),
           isInteractive: () => {
             prompted = true;
             return true;
@@ -468,10 +472,14 @@ describe('tasks setup — modes (task #805)', () => {
           },
         });
 
+        // The mode menu was never consulted (mode was explicit). The manual-PAT
+        // path here uses the provided --token, so no secret prompt is needed.
         expect(prompted).toBe(false);
         expect(result.mode).toBe('remote');
-        if (result.mode !== 'service') {
-          expect(result.remote).toBe(true);
+        if (result.mode === 'remote') {
+          expect(result.method).toBe('manual-pat');
+          expect(result.ok).toBe(true);
+          expect(result.setup?.remote).toBe(true);
           const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
           expect(doc.mcpServers['wood-fired-tasks-remote']).toBeDefined();
         }
