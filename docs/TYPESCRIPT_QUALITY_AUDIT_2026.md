@@ -605,3 +605,153 @@ by 1 below the live count makes the script exit 1 with
 category and refs; restoring the baseline returns it to exit 0. This was
 confirmed during task #766 by temporarily setting `production.as_any` from 10 to
 9 (exit 1) and then restoring it (exit 0).
+
+## Security & Dependency Automation Review
+
+_Added for task #775 (project 37, phase 6). A read-only verification of the
+repo's security and dependency-update automation as it stands today. Every
+control below was confirmed by reading the actual config file; no secrets,
+tokens, or local paths are reproduced here — only generic references._
+
+### A. Current controls (each cited to a real file/setting)
+
+**1. Dependabot — [`.github/dependabot.yml`](../.github/dependabot.yml)**
+
+Two ecosystems are covered, both on a **weekly** cadence (Monday 06:00
+`Etc/UTC`):
+
+- `npm` (root `/`): `open-pull-requests-limit: 10`; grouped into `npm-patch`
+  (patch updates) and `npm-minor` (minor updates); labels
+  `dependencies`, `automated`. Major npm bumps are intentionally **not**
+  grouped, so each lands as its own reviewable PR.
+- `github-actions` (root `/`): `open-pull-requests-limit: 5`; a single
+  `gh-actions` group covering `patch`, `minor`, **and** `major`; labels
+  `dependencies`, `github-actions`. This is what keeps the pinned-action
+  SHAs (below) from going stale.
+
+**2. npm audit gates — [`package.json`](../package.json) + [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)**
+
+The production audit is a **hard gate** in three independent places, all using
+the same command `npm audit --omit=dev --audit-level=high`:
+
+- CI `audit` job (`ci.yml`) — runs on every PR and push; fails the build on a
+  high/critical advisory in production dependencies.
+- `quality` script (`package.json`) — the full local gate
+  (`build && test && lint && lint:deps && depcruise && npm audit --omit=dev
+  --audit-level=high`). `quality:full` aliases it; `quality:fast` is the same
+  chain **minus** the audit for inner-loop speed.
+- `prepublishOnly` hook (`package.json`) — re-runs the audit as part of the
+  release-safe subset, so a vulnerable prod dep blocks `npm publish` even if CI
+  were bypassed.
+
+**Dev-dependency advisory policy is explicit and intentional:** the `--omit=dev`
+flag means dev-only advisories are **not** release blockers. This is documented
+in [`docs/RELEASE.md`](./RELEASE.md) ("dev-dep audit advisory") and is the
+deliberate posture — dev tooling CVEs are visible (`npm audit` without the flag
+surfaces them) but do not gate merges or publishes.
+
+**3. Pinned GitHub Actions — `.github/workflows/*.yml` (all six workflows)**
+
+Every third-party action is pinned to a **full 40-character commit SHA** with a
+trailing `# vX.Y.Z` comment for readability — never to a floating tag. Verified
+across all `uses:` lines in `ci.yml`, `publish.yml`, `secret-scan.yml`,
+`bench.yml`, `mutation.yml`, and `install-scripts.yml`. Actions in use:
+`actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
+`actions/download-artifact`, `docker/setup-qemu-action`,
+`docker/setup-buildx-action`, `docker/build-push-action` — all SHA-pinned. This
+is the supply-chain mitigation against a compromised/retagged upstream action;
+Dependabot's `github-actions` ecosystem (above) advances the SHAs on a reviewed
+PR cadence.
+
+**4. Least-privilege workflow permissions — all workflows**
+
+Every workflow declares a top-level `permissions:` block. Five of six are
+`contents: read` only. The lone exception is
+[`publish.yml`](../.github/workflows/publish.yml), which adds `id-token: write`
+solely to mint the OIDC token for npm trusted publishing — there is **no
+long-lived `NPM_TOKEN` secret** in the repo. `publish.yml` also sets a
+`concurrency` group with `cancel-in-progress: false` so two release runs cannot
+race.
+
+**5. Secret scanning + artifact hygiene — [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml)**
+
+Two jobs, both required green on `main` before a release:
+
+- **`gitleaks`** — full git-history scan. The CLI binary is installed directly
+  from the upstream release (downloaded then verified with a pinned
+  `sha256sum -c`), deliberately avoiding the now paid-for-orgs
+  `gitleaks-action`. Allowlist lives in `.gitleaks.toml`. SARIF report uploaded
+  as an artifact.
+- **`hygiene`** — fails if any tracked file matches sensitive patterns
+  (`.env*` except `.env.example`, `data/*.db`, `*.pem`, `*.key`) and runs
+  `npm run pack:check` to confirm the publish tarball stays clean.
+
+Triggers: `pull_request` → `main`, `push` → `main`, a **weekly** Monday 08:00
+UTC `schedule` cron, and manual `workflow_dispatch`. The workflow header also
+records that no untrusted user input (issue/PR titles, comment bodies) is
+interpolated into any `run:` block — a script-injection mitigation.
+
+**6. Auth / MCP / Slack-sensitive surface coverage — [`SECURITY.md`](../SECURITY.md)**
+
+`SECURITY.md` is current and covers the sensitive surfaces explicitly:
+
+- **Scope** names the Fastify REST API (`src/api/`), **both** MCP transports
+  (stdio + remote HTTP under `src/mcp/`), the CLI (`src/cli/`), and the Slack
+  integration (`src/slack/`, including signed-request verification and the
+  EventBus → Slack notifier).
+- **Security-relevant issues** call out auth bypass, secret/Slack-token
+  exposure, pino redaction gaps, SQL/FTS5 injection, SSRF, MCP prompt-injection
+  vectors, and Slack signature-verification/replay bypass.
+- The **Authentication Architecture** and **"Authentication Is Not
+  Authorization"** sections document the PAT / OIDC-session / legacy
+  `X-API-Key` chain, the no-RBAC full-access credential model, the
+  "run production behind HTTPS" cookie footgun, and the "never add
+  reflect-any-origin CORS with credentials" warning.
+- Supported-versions table lists `v1.17` as latest with `main` (HEAD); this is
+  the field most prone to drift and should be bumped each release.
+
+### B. Gaps / risks (current, honest)
+
+1. **Branch-protection ↔ RELEASE.md drift is manual.** `docs/RELEASE.md`
+   explicitly states there is "no automated drift detector yet" between the
+   required-status-checks table and the live branch-protection API rule.
+   A required check renamed in CI but not in the protection rule (or vice
+   versa) is caught only by a human.
+2. **`SECURITY.md` supported-version table is hand-maintained.** It currently
+   reads `v1.17`; nothing fails CI if a release forgets to bump it. Low
+   severity but it is the most visible staleness vector.
+3. **Dev-dependency advisories are non-gating by policy.** Correct for release
+   velocity, but it means a high-severity dev-tooling CVE (e.g. a build/test
+   dep) is visible only to whoever runs a bare `npm audit`. No scheduled job
+   surfaces dev advisories on a cadence.
+4. **Dependabot has no `npm` security-update-only escalation channel.** It runs
+   weekly for version bumps; GitHub's security updates are separate and depend
+   on Dependabot alerts being enabled at the repo level (not assertable from
+   the checked-in config alone).
+5. **`enforce_admins: false`** (per RELEASE.md) means an admin can merge over a
+   failing required check. Intentional for operator flexibility, but it is a
+   policy-level bypass of the gates above.
+
+### C. Prioritized recommendations
+
+1. **(Low effort, high value)** Add a lightweight CI check, or a release-time
+   checklist line, that fails/flags when the `SECURITY.md` supported-version
+   table's "latest" tag does not match the newest git tag — closes gap B.2.
+2. **(Medium)** Add the branch-protection drift detector RELEASE.md already
+   wishes for: a scheduled job diffing the required-checks table against
+   `gh api .../branches/main/protection` — closes gap B.1.
+3. **(Low)** Run a **non-gating** dev-dependency `npm audit` (without
+   `--omit=dev`) on the existing weekly secret-scan cron and surface the result
+   as an advisory artifact, so dev CVEs get periodic visibility without
+   blocking merges — addresses gap B.3 while preserving the explicit policy.
+4. **(Process)** Confirm Dependabot **security updates + alerts** are enabled at
+   the repository settings level (not just the version-update schedule in
+   `dependabot.yml`) — addresses gap B.4.
+
+### D. Self-attestation
+
+No secret, token, password, API key, or local absolute path was introduced by
+this section — only generic references to env-var *names* (`NPM_TOKEN`,
+`SESSION_COOKIE_SECRET`, `API_KEYS`) as they already appear in the cited docs,
+never any value. All controls were verified by reading the live config files
+listed above.

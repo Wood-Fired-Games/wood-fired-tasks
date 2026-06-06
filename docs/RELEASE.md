@@ -266,5 +266,10 @@ git push origin vX.Y
 npm publish
 ```
 
-The npm `prepublishOnly` chain (if added later) should re-run
-`npm test && npm run pack:check` as a defensive last step.
+The npm `prepublishOnly` hook already runs as a defensive last step on
+`npm publish` — it re-runs `npm run build && npm test && npm run lint:deps
+&& npm audit --omit=dev --audit-level=high && npm run pack:check` (see
+`package.json` `scripts.prepublishOnly`). Note that releases are normally
+cut by pushing the `vX.Y` tag, which fires `.github/workflows/publish.yml`
+(OIDC trusted publishing, no long-lived `NPM_TOKEN`); the manual
+`npm publish` above is the fallback path.
