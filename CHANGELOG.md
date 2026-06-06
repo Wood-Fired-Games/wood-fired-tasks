@@ -13,6 +13,78 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v1.18] - 2026-06-06
+
+A **distribution + quality** release. The headline is frictionless single-command
+npm distribution (#31); alongside it the codebase quality floor was raised with
+evidence-backed, incremental compiler/lint/boundary gates (#32). No change to the
+public MCP/REST/migration surface — still **27 MCP tools and 15 migrations** — the
+new surface is the CLI (`wood-fired-tasks` / `wft` bins and their subcommands).
+
+### Added
+- **Frictionless npm distribution** (#31). `wood-fired-tasks` is now installable,
+  configurable, updatable, and runnable from a single npm command with no `git
+  clone` and no admin privileges, identically on Windows/Linux/macOS. Adds the
+  `wood-fired-tasks` + `wft` bin aliases, ships the `/tasks:*` skills inside the
+  tarball, defaults the database to the OS app-data dir, and migrates-on-start.
+  New CLI subcommands:
+  - `serve` (#733) — run the API with migrate-on-start + app-data DB default.
+  - `mcp` (#734) — local stdio MCP server and remote bridge.
+  - `setup` (#737) — merge `~/.claude.json` + copy skills, with `--fix-npm-prefix`;
+    `--remote`/`--token` for a remote MCP entry + PAT cache (#738).
+  - `update` (#739) — self-update with no-sudo EACCES remediation.
+  - `service` (#740) — install/uninstall/status; Linux systemd `--user`, macOS
+    launchd + Windows Scheduled-Task backends (#741), opt-in `--system`
+    elevation variant (#742).
+  - `docs` (#749) — list/show/path/open the shipped docs.
+  Installer-parity hardening (#752): absolute MCP entry path, `0600` perms on the
+  cached credential, a Node-version warning, and a postinstall notice.
+- **API/CLI response validation** (#774). The CLI and remote MCP proxy now
+  Zod-validate task/project/list REST responses against the same server schemas
+  (single source of truth) instead of casting `response.json() as T`, turning a
+  malformed/version-skewed body into a clear "bad response from server" error
+  rather than a downstream `undefined`.
+- **Advisory cognitive-complexity report** (#771) — `npm run quality:complexity`,
+  continue-on-error in CI (calibration-first, gates only egregious outliers).
+- **Benchmark / perf-regression policy** (#773) — `docs/BENCHMARK_POLICY.md`;
+  fixed a vitest-bench worktree N+1 discovery bug.
+- **Mutation-survivor tests** (#772) — killed the `cascadeDepth--` survivors;
+  mutation-run policy documented.
+- **Async-safety lint coverage audit + gate decision** (#785, F1) — documented
+  audit of the #762 Biome floating/misused-promise gate; recorded the Biome-only
+  decision and the fire-and-forget `void` convention
+  (`docs/ASYNC_PROMISE_LINTING.md`).
+- **Lint-posture calibration + decision** (#788, F5) — measured Biome
+  `recommended:true` against the production tree (493 findings across 18 rules)
+  and recorded the stay-minimal decision with rationale.
+
+### Changed
+- **Compiler strictness ratchets — all now ON, behaviour-preserving** (#32):
+  `noPropertyAccessFromIndexSignature` (#763, 210 sites dot→bracket),
+  `exactOptionalPropertyTypes` (#778→#779→#780, via an `omitUndefined` helper and
+  a clean Fastify generic-variance fix), and `noUncheckedIndexedAccess`
+  (#781→#784, 30 errors guarded with guard-and-bind / tuple / empty-state — no
+  blanket `!`).
+- **`client-package/` retired** (#743) — converted `install.sh`/`install.ps1` to
+  deprecation shims; the skills it mirrored now ship in the npm tarball and via
+  `tasks setup`.
+- **Retired 4 pre-existing blanket non-null index assertions** (#786, F2) in
+  `slack/` + `events/sse-manager`, bringing the no-blanket-`!` rule to 100% across
+  the index-access surface. Runtime behaviour unchanged.
+
+### Fixed
+- **Windows ESM migration loading** — migrations are imported via a `file://` URL
+  (`5f8e167`) and the migration glob resolves with POSIX separators (`d6f4150`),
+  fixing `npm run serve`/migrate on Windows; the global-install smoke shell-spawns
+  the installed `.cmd` bin on Windows (`7eab2ab`).
+- **Vendor-neutrality exempt marker re-scoped** (#787, F3) — the
+  `WFT-NEUTRALITY-EXEMPT-LINE` marker on the wft-router `cursor_gap` SSE log was
+  tightened to the exact violating line.
+
+### Security
+- **Cached credential file hardened to `0600`** (#752) as part of installer-parity
+  hardening, so a PAT cached by `tasks setup --remote` is not world-readable.
+
 ## [v1.17] - 2026-06-04
 
 A **reliability + process-hardening** release in two halves, with no change to
