@@ -59,7 +59,6 @@ const WAIT_MAX_TIMEOUT_SECONDS = 1800;
  * the timeout semantics (no throw) are byte-identical to the stdio tool.
  */
 export function registerRemoteTools(server: McpServer, client: RestClient): void {
-
   // ── Task tools (9) ──────────────────────────────────────────────────────
 
   // Tool: create_task
@@ -71,7 +70,9 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const task = await client.createTask(args as unknown as import('../../cli/api/types.js').CreateTaskInput);
+        const task = await client.createTask(
+          args as unknown as import('../../cli/api/types.js').CreateTaskInput,
+        );
         return {
           content: [
             {
@@ -84,10 +85,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to create task'
+          error instanceof Error ? error.message : 'Failed to create task',
         );
       }
-    }
+    },
   );
 
   // Tool: get_task
@@ -131,10 +132,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get task'
+          error instanceof Error ? error.message : 'Failed to get task',
         );
       }
-    }
+    },
   );
 
   // Tool: update_task
@@ -163,10 +164,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to update task'
+          error instanceof Error ? error.message : 'Failed to update task',
         );
       }
-    }
+    },
   );
 
   // Tool: list_tasks (paginated)
@@ -181,7 +182,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       try {
         const { verbose, ...filters } = args;
         const page = await client.listTasksPaginated(
-          filters as unknown as import('../../cli/api/types.js').TaskFilters
+          filters as unknown as import('../../cli/api/types.js').TaskFilters,
         );
         if (page.data.length === 0) {
           return {
@@ -203,9 +204,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           `Found ${page.data.length} of ${page.total} task(s) (limit=${page.limit}, offset=${page.offset}):\n`,
         ];
         page.data.forEach((task) => {
-          summary.push(
-            `- [${task.id}] ${task.title} (${task.status}, ${task.priority})`
-          );
+          summary.push(`- [${task.id}] ${task.title} (${task.status}, ${task.priority})`);
         });
         const payloadTasks = verbose ? page.data : page.data.map(toCompactTask);
         return {
@@ -225,10 +224,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list tasks'
+          error instanceof Error ? error.message : 'Failed to list tasks',
         );
       }
-    }
+    },
   );
 
   // Tool: delete_task
@@ -254,10 +253,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to delete task'
+          error instanceof Error ? error.message : 'Failed to delete task',
         );
       }
-    }
+    },
   );
 
   // Tool: claim_task
@@ -286,10 +285,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to claim task'
+          error instanceof Error ? error.message : 'Failed to claim task',
         );
       }
-    }
+    },
   );
 
   // Tool: list_subtasks (paginated)
@@ -351,10 +350,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list subtasks'
+          error instanceof Error ? error.message : 'Failed to list subtasks',
         );
       }
-    }
+    },
   );
 
   // Tool: get_subtasks (paginated)
@@ -394,10 +393,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get subtasks'
+          error instanceof Error ? error.message : 'Failed to get subtasks',
         );
       }
-    }
+    },
   );
 
   // Tool: completion_report
@@ -414,7 +413,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     async (args) => {
       try {
         const report = await client.getCompletionReport(
-          args as unknown as import('../../cli/api/types.js').CompletionReportInput
+          args as unknown as import('../../cli/api/types.js').CompletionReportInput,
         );
 
         const summary = [
@@ -439,10 +438,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get completion report'
+          error instanceof Error ? error.message : 'Failed to get completion report',
         );
       }
-    }
+    },
   );
 
   // ── Project tools (5) ────────────────────────────────────────────────────
@@ -472,10 +471,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to create project'
+          error instanceof Error ? error.message : 'Failed to create project',
         );
       }
-    }
+    },
   );
 
   // Tool: get_project
@@ -490,10 +489,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     async (args) => {
       try {
         const project = await client.getProject(args.id);
-        const summary = [
-          `Project: ${project.name}`,
-          `Created: ${project.created_at}`,
-        ];
+        const summary = [`Project: ${project.name}`, `Created: ${project.created_at}`];
         if (project.description) {
           summary.push(`Description: ${project.description}`);
         }
@@ -509,10 +505,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get project'
+          error instanceof Error ? error.message : 'Failed to get project',
         );
       }
-    }
+    },
   );
 
   // Tool: list_projects (paginated)
@@ -571,10 +567,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list projects'
+          error instanceof Error ? error.message : 'Failed to list projects',
         );
       }
-    }
+    },
   );
 
   // Tool: update_project
@@ -605,10 +601,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to update project'
+          error instanceof Error ? error.message : 'Failed to update project',
         );
       }
-    }
+    },
   );
 
   // Tool: delete_project
@@ -634,10 +630,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to delete project'
+          error instanceof Error ? error.message : 'Failed to delete project',
         );
       }
-    }
+    },
   );
 
   // ── Dependency tools (3) ─────────────────────────────────────────────────
@@ -646,8 +642,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   server.registerTool(
     'add_dependency',
     {
-      description:
-        'Add a dependency relationship between tasks (task_id blocks blocks_task_id)',
+      description: 'Add a dependency relationship between tasks (task_id blocks blocks_task_id)',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
         blocks_task_id: z.number().int().positive(),
@@ -677,10 +672,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to add dependency'
+          error instanceof Error ? error.message : 'Failed to add dependency',
         );
       }
-    }
+    },
   );
 
   // Tool: remove_dependency
@@ -707,18 +702,17 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to remove dependency'
+          error instanceof Error ? error.message : 'Failed to remove dependency',
         );
       }
-    }
+    },
   );
 
   // Tool: get_dependencies
   server.registerTool(
     'get_dependencies',
     {
-      description:
-        'Get all dependencies for a task (tasks it blocks and tasks that block it)',
+      description: 'Get all dependencies for a task (tasks it blocks and tasks that block it)',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
       }),
@@ -744,10 +738,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get dependencies'
+          error instanceof Error ? error.message : 'Failed to get dependencies',
         );
       }
-    }
+    },
   );
 
   // ── Comment tools (3) ───────────────────────────────────────────────────
@@ -789,10 +783,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to add comment'
+          error instanceof Error ? error.message : 'Failed to add comment',
         );
       }
-    }
+    },
   );
 
   // Tool: get_comments (paginated)
@@ -831,10 +825,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get comments'
+          error instanceof Error ? error.message : 'Failed to get comments',
         );
       }
-    }
+    },
   );
 
   // Tool: delete_comment
@@ -866,10 +860,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to delete comment'
+          error instanceof Error ? error.message : 'Failed to delete comment',
         );
       }
-    }
+    },
   );
 
   // ── Health tool (1) ─────────────────────────────────────────────────────
@@ -919,7 +913,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           }),
         };
       }
-    }
+    },
   );
 
   // ── Topology tool (1) ────────────────────────────────────────────────────
@@ -961,10 +955,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to check topology'
+          error instanceof Error ? error.message : 'Failed to check topology',
         );
       }
-    }
+    },
   );
 
   // ── WSJF tools (4) ────────────────────────────────────────────────────────
@@ -1008,9 +1002,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         ranking.forEach((r, idx) => {
           summary.push(
             `${idx + 1}. [${r.taskId}] effectiveWsjf=${r.effectiveWsjf.toFixed(3)}` +
-              (r.scored
-                ? ` (scored, base=${r.baseWsjf?.toFixed(3)})`
-                : ' (unscored)')
+              (r.scored ? ` (scored, base=${r.baseWsjf?.toFixed(3)})` : ' (unscored)'),
           );
         });
         return {
@@ -1024,10 +1016,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to rank tasks'
+          error instanceof Error ? error.message : 'Failed to rank tasks',
         );
       }
-    }
+    },
   );
 
   // Tool: wsjf_history
@@ -1052,15 +1044,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         // the immediately-preceding row (oldest-first) — identical to stdio.
         const timeline = rows.map((row, i) => {
           const prev = i > 0 ? rows[i - 1] : null;
-          const deltas: Record<
-            string,
-            { from: number | null; to: number | null }
-          > = {};
+          const deltas: Record<string, { from: number | null; to: number | null }> = {};
           for (const key of WSJF_COMPONENT_KEYS) {
-            const to =
-              (row as unknown as Record<string, number | null>)[key] ?? null;
+            const to = (row as unknown as Record<string, number | null>)[key] ?? null;
             const from = prev
-              ? (prev as unknown as Record<string, number | null>)[key] ?? null
+              ? ((prev as unknown as Record<string, number | null>)[key] ?? null)
               : null;
             deltas[key] = { from, to };
           }
@@ -1076,7 +1064,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           summary.push(
             `- ${entry.changed_at} [${entry.trigger}] wsjf ${
               s.from === null ? '∅' : s.from
-            }→${s.to === null ? '∅' : s.to}`
+            }→${s.to === null ? '∅' : s.to}`,
           );
         });
         return {
@@ -1089,10 +1077,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to read WSJF history'
+          error instanceof Error ? error.message : 'Failed to read WSJF history',
         );
       }
-    }
+    },
   );
 
   // Tool: rescore_project (MUTATION)
@@ -1115,7 +1103,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               task_id: z.number().int().positive(),
               classification: z.record(z.string(), z.unknown()),
               features: z.record(z.string(), z.unknown()),
-            })
+            }),
           )
           .default([]),
         actor_type: z.string().optional(),
@@ -1134,7 +1122,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           {
             ...(args.actor_type !== undefined && { actor_type: args.actor_type }),
             ...(args.actor_id !== undefined && { actor_id: args.actor_id }),
-          }
+          },
         );
         const summary = [
           `Rescore run ${result.run_id} for project ${result.project_id}: ` +
@@ -1142,9 +1130,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             `${result.tasks_skipped_locked} with locked components preserved.`,
         ];
         if (result.errors.length > 0) {
-          summary.push(
-            `\n${result.errors.length} task(s) had validation errors:`
-          );
+          summary.push(`\n${result.errors.length} task(s) had validation errors:`);
           for (const e of result.errors) {
             summary.push(`- [${e.taskId}] ${e.errors.join('; ')}`);
           }
@@ -1156,10 +1142,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to rescore project'
+          error instanceof Error ? error.message : 'Failed to rescore project',
         );
       }
-    }
+    },
   );
 
   // Tool: wsjf_health
@@ -1189,9 +1175,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               `finding(s) across ${report.scored_task_count} scored task(s):\n`,
         ];
         for (const f of report.findings) {
-          summary.push(
-            `- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`
-          );
+          summary.push(`- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`);
         }
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
@@ -1200,10 +1184,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to check WSJF health'
+          error instanceof Error ? error.message : 'Failed to check WSJF health',
         );
       }
-    }
+    },
   );
 
   // ── Wait tool (1) ────────────────────────────────────────────────────────
@@ -1239,10 +1223,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       // Clamp to [1, MAX]. Zod already rejects <=0 / non-int, so the lower
       // bound is defensive; the upper bound is the real clamp the caller sees
       // via applied_timeout_seconds. Identical to the stdio tool.
-      const appliedTimeoutSeconds = Math.min(
-        Math.max(1, requested),
-        WAIT_MAX_TIMEOUT_SECONDS
-      );
+      const appliedTimeoutSeconds = Math.min(Math.max(1, requested), WAIT_MAX_TIMEOUT_SECONDS);
 
       // Race handling (acceptance #3/#4): OPEN THE STREAM FIRST, then re-read
       // the current status. A blocked->open transition could land in the tiny
@@ -1256,7 +1237,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       const waitPromise = client.waitForUnblockViaSse(
         args.task_id,
         appliedTimeoutSeconds * 1000,
-        abortController.signal
+        abortController.signal,
       );
 
       // Now (after opening the stream) read the current projection. This both
@@ -1274,7 +1255,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         });
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to wait for unblock'
+          error instanceof Error ? error.message : 'Failed to wait for unblock',
         );
       }
 
@@ -1310,7 +1291,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         // same McpError shape the other remote tools produce.
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to wait for unblock'
+          error instanceof Error ? error.message : 'Failed to wait for unblock',
         );
       }
 
@@ -1342,7 +1323,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to wait for unblock'
+          error instanceof Error ? error.message : 'Failed to wait for unblock',
         );
       }
       const payload = {
@@ -1359,6 +1340,6 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         ],
         structuredContent: toStructuredContent(payload),
       };
-    }
+    },
   );
 }

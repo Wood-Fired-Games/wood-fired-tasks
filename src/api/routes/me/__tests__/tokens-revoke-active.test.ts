@@ -9,15 +9,7 @@
 //   - The existing DELETE /:id route MUST keep its session-only contract;
 //     numeric ids still route to the :id handler (no shadowing).
 
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
@@ -40,10 +32,7 @@ interface Harness {
   oidcUser: UserRow;
 }
 
-function mintPatViaDb(
-  db: Database.Database,
-  userId: number,
-): { id: number; token: string } {
+function mintPatViaDb(db: Database.Database, userId: number): { id: number; token: string } {
   const { token, prefix, suffix, hash } = generateToken();
   const info = db
     .prepare(
@@ -109,10 +98,7 @@ describe('Phase 30 Plan 30-03 — DELETE /api/v1/me/tokens/active', () => {
 
   beforeEach(async () => {
     harness.db.prepare('DELETE FROM api_tokens').run();
-    oidcUserCookie = await signInSessionFor(
-      harness.server,
-      harness.oidcUser.id,
-    );
+    oidcUserCookie = await signInSessionFor(harness.server, harness.oidcUser.id);
   });
 
   it('1. PAT-authed: returns 204 and the token row is now revoked', async () => {
@@ -127,9 +113,9 @@ describe('Phase 30 Plan 30-03 — DELETE /api/v1/me/tokens/active', () => {
     expect(res.statusCode).toBe(204);
     expect(res.body).toBe('');
 
-    const row = harness.db
-      .prepare('SELECT revoked_at FROM api_tokens WHERE id = ?')
-      .get(id) as { revoked_at: string | null };
+    const row = harness.db.prepare('SELECT revoked_at FROM api_tokens WHERE id = ?').get(id) as {
+      revoked_at: string | null;
+    };
     expect(row.revoked_at).not.toBeNull();
   });
 
@@ -234,9 +220,9 @@ describe('Phase 30 Plan 30-03 — DELETE /api/v1/me/tokens/active', () => {
     // Session-authed call on a numeric id → 204 (existing /:id route).
     expect(res.statusCode).toBe(204);
 
-    const row = harness.db
-      .prepare('SELECT revoked_at FROM api_tokens WHERE id = ?')
-      .get(id) as { revoked_at: string | null };
+    const row = harness.db.prepare('SELECT revoked_at FROM api_tokens WHERE id = ?').get(id) as {
+      revoked_at: string | null;
+    };
     expect(row.revoked_at).not.toBeNull();
   });
 

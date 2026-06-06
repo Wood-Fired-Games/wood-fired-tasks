@@ -43,10 +43,7 @@ const MAX_TIMEOUT_SECONDS = 1800;
  * `get_task`; the service read IS the authorization boundary, so an
  * unauthorized caller gets the exact same error envelope `get_task` produces.
  */
-export function registerWaitForUnblockTools(
-  server: McpServer,
-  taskService: TaskService,
-): void {
+export function registerWaitForUnblockTools(server: McpServer, taskService: TaskService): void {
   server.registerTool(
     'wait_for_unblock',
     {
@@ -70,10 +67,7 @@ export function registerWaitForUnblockTools(
         // Clamp to [1, MAX]. Zod already rejects <=0 / non-int, so the lower
         // bound is defensive; the upper bound is the real clamp the caller
         // sees via applied_timeout_seconds.
-        const appliedTimeoutSeconds = Math.min(
-          Math.max(1, requested),
-          MAX_TIMEOUT_SECONDS,
-        );
+        const appliedTimeoutSeconds = Math.min(Math.max(1, requested), MAX_TIMEOUT_SECONDS);
 
         // Race handling (acceptance #3): SUBSCRIBE FIRST, then re-check the
         // current status. A blocked->open transition could land in the tiny
@@ -91,11 +85,7 @@ export function registerWaitForUnblockTools(
             // attached via an `as any` cast at the emit site,
             // task.service.ts:283-292), so narrow with a local cast.
             const m = event.metadata as { from?: string; to?: string };
-            return (
-              event.data.id === args.task_id &&
-              m.from === 'blocked' &&
-              m.to === 'open'
-            );
+            return event.data.id === args.task_id && m.from === 'blocked' && m.to === 'open';
           },
           { timeoutMs: appliedTimeoutSeconds * 1000, signal: abortController.signal },
         );

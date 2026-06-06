@@ -33,17 +33,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TriggersConfig } from '../config/triggers-schema.js';
 import { IdempotencyStore } from '../dispatch/index.js';
 import { ExitCode, type SSEEvent } from '../sse/index.js';
-import {
-  WftRouterDaemon,
-  mapSSEEvent,
-  type DaemonDeps,
-  type HandlerRegistry,
-} from '../daemon.js';
-import type {
-  Handler,
-  HandlerContext,
-  HandlerOutcome,
-} from '../handlers/index.js';
+import { WftRouterDaemon, mapSSEEvent, type DaemonDeps, type HandlerRegistry } from '../daemon.js';
+import type { Handler, HandlerContext, HandlerOutcome } from '../handlers/index.js';
 import { createDaemon, runDaemon } from '../bin/wft-router.js';
 
 // ---------------------------------------------------------------------------
@@ -69,9 +60,7 @@ function memStore(): IdempotencyStore {
  * then returns a clean exit code. Honours the AbortSignal — if aborted
  * before exhaustion, it stops early.
  */
-function sseSourceFromEvents(
-  events: readonly SSEEvent[],
-): DaemonDeps['sseSource'] {
+function sseSourceFromEvents(events: readonly SSEEvent[]): DaemonDeps['sseSource'] {
   return async function* gen(signal: AbortSignal) {
     for (const ev of events) {
       if (signal.aborted) break;
@@ -203,7 +192,12 @@ describe('WftRouterDaemon — handler invocation order (AC #1)', () => {
     };
 
     const events: SSEEvent[] = [
-      taskEvent('1', 'task.status_changed', { id: 100, status: 'done' }, { to: 'done', source: 'user' }),
+      taskEvent(
+        '1',
+        'task.status_changed',
+        { id: 100, status: 'done' },
+        { to: 'done', source: 'user' },
+      ),
       taskEvent('2', 'task.created', { id: 101, status: 'open' }),
     ];
 
@@ -403,7 +397,12 @@ describe('createDaemon / runDaemon — no-flag boot (AC #4)', () => {
     const store = memStore();
 
     const events: SSEEvent[] = [
-      taskEvent('99', 'task.status_changed', { id: 5, status: 'done' }, { to: 'done', source: 'user' }),
+      taskEvent(
+        '99',
+        'task.status_changed',
+        { id: 5, status: 'done' },
+        { to: 'done', source: 'user' },
+      ),
     ];
 
     const code = await runDaemon({

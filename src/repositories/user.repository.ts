@@ -27,15 +27,13 @@ export class UserRepository implements IUserRepository {
     this.findByIdStmt = db.prepare('SELECT * FROM users WHERE id = ?');
 
     this.findByOidcSubStmt = db.prepare(
-      'SELECT * FROM users WHERE oidc_provider = ? AND oidc_sub = ?'
+      'SELECT * FROM users WHERE oidc_provider = ? AND oidc_sub = ?',
     );
 
-    this.findBySlackUserIdStmt = db.prepare(
-      'SELECT * FROM users WHERE slack_user_id = ?'
-    );
+    this.findBySlackUserIdStmt = db.prepare('SELECT * FROM users WHERE slack_user_id = ?');
 
     this.findLegacyByDisplayNameStmt = db.prepare(
-      'SELECT * FROM users WHERE is_legacy = 1 AND display_name = ? LIMIT 1'
+      'SELECT * FROM users WHERE is_legacy = 1 AND display_name = ? LIMIT 1',
     );
 
     // ORDER BY id ASC LIMIT 1 makes "first match wins" deterministic in
@@ -43,7 +41,7 @@ export class UserRepository implements IUserRepository {
     // provisioning is expected to enforce uniqueness as it populates the
     // column; until then, the lowest-id row is the canonical resolution.
     this.findByEmailStmt = db.prepare(
-      'SELECT * FROM users WHERE LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1'
+      'SELECT * FROM users WHERE LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1',
     );
 
     // Phase 31 (Plan 31-01): used by mcp-bot boot and slack-bot fallback to
@@ -90,14 +88,10 @@ export class UserRepository implements IUserRepository {
    */
   findByOidcSub(provider: string, sub: string): User | null {
     if (provider == null || provider === '') {
-      throw new TypeError(
-        'UserRepository.findByOidcSub: provider must be a non-empty string',
-      );
+      throw new TypeError('UserRepository.findByOidcSub: provider must be a non-empty string');
     }
     if (sub == null || sub === '') {
-      throw new TypeError(
-        'UserRepository.findByOidcSub: sub must be a non-empty string',
-      );
+      throw new TypeError('UserRepository.findByOidcSub: sub must be a non-empty string');
     }
     return mapRow<User>(this.findByOidcSubStmt, provider, sub) ?? null;
   }
@@ -123,9 +117,7 @@ export class UserRepository implements IUserRepository {
    */
   findByEmail(email: string): User | null {
     if (email == null || email === '') {
-      throw new TypeError(
-        'UserRepository.findByEmail: email must be a non-empty string',
-      );
+      throw new TypeError('UserRepository.findByEmail: email must be a non-empty string');
     }
     return mapRow<User>(this.findByEmailStmt, email) ?? null;
   }
@@ -177,26 +169,17 @@ export class UserRepository implements IUserRepository {
    */
   insert(input: UserUpsertInput): User {
     if (input.provider == null || input.provider === '') {
-      throw new TypeError(
-        'UserRepository.insert: provider must be a non-empty string',
-      );
+      throw new TypeError('UserRepository.insert: provider must be a non-empty string');
     }
     if (input.sub == null || input.sub === '') {
-      throw new TypeError(
-        'UserRepository.insert: sub must be a non-empty string',
-      );
+      throw new TypeError('UserRepository.insert: sub must be a non-empty string');
     }
     if (input.displayName == null || input.displayName === '') {
-      throw new TypeError(
-        'UserRepository.insert: displayName must be a non-empty string',
-      );
+      throw new TypeError('UserRepository.insert: displayName must be a non-empty string');
     }
-    const row = this.insertStmt.get(
-      input.provider,
-      input.sub,
-      input.email,
-      input.displayName,
-    ) as User | undefined;
+    const row = this.insertStmt.get(input.provider, input.sub, input.email, input.displayName) as
+      | User
+      | undefined;
     if (!row) {
       // Defensive: better-sqlite3's RETURNING * always populates on success.
       // If we somehow get here, surface it loudly rather than returning a
@@ -228,14 +211,9 @@ export class UserRepository implements IUserRepository {
    * @throws TypeError when `id` is not a positive integer, or when
    *         `patch.displayName` is supplied but null/empty.
    */
-  updateProfile(
-    id: number,
-    patch: { email?: string | null; displayName?: string },
-  ): User | null {
+  updateProfile(id: number, patch: { email?: string | null; displayName?: string }): User | null {
     if (!Number.isInteger(id) || id <= 0) {
-      throw new TypeError(
-        'UserRepository.updateProfile: id must be a positive integer',
-      );
+      throw new TypeError('UserRepository.updateProfile: id must be a positive integer');
     }
     const sets: string[] = [];
     const params: Array<string | null> = [];

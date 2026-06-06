@@ -51,9 +51,7 @@ interface CheckResult {
  */
 const ADAPTER_AGENTS_LINK_RE = /\]\((?:\.\/)?AGENTS\.md(?:#[^)]*)?\)/;
 
-function normalizeForCompare(
-  m: AgentContextManifest,
-): Omit<AgentContextManifest, '_generated'> & {
+function normalizeForCompare(m: AgentContextManifest): Omit<AgentContextManifest, '_generated'> & {
   _generated: Omit<AgentContextManifest['_generated'], 'generated_at'>;
 } {
   const { generated_at: _ignored, ...generatedRest } = m._generated;
@@ -73,9 +71,7 @@ export function runChecks(repoRoot: string): CheckResult {
     if (entry.status !== 'present') continue;
 
     if (entry.actual_lines === undefined) {
-      errors.push(
-        `File "${entry.path}" is marked status=present but does not exist on disk.`,
-      );
+      errors.push(`File "${entry.path}" is marked status=present but does not exist on disk.`);
       continue;
     }
 
@@ -88,9 +84,7 @@ export function runChecks(repoRoot: string): CheckResult {
 
     if (!OWNER_LINE_EXEMPT.has(entry.path)) {
       if (entry.actual_owner === undefined) {
-        errors.push(
-          `File "${entry.path}" is missing an "Owner:" line in its first 3 lines.`,
-        );
+        errors.push(`File "${entry.path}" is missing an "Owner:" line in its first 3 lines.`);
       }
     }
   }
@@ -118,20 +112,14 @@ export function runChecks(repoRoot: string): CheckResult {
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);
   if (!existsSync(manifestAbsPath)) {
-    errors.push(
-      `Manifest file "${MANIFEST_PATH}" is missing — run \`npm run agent-context:gen\`.`,
-    );
+    errors.push(`Manifest file "${MANIFEST_PATH}" is missing — run \`npm run agent-context:gen\`.`);
   } else {
     const onDiskText = readFileSync(manifestAbsPath, 'utf8');
     let onDisk: AgentContextManifest;
     try {
       onDisk = JSON.parse(onDiskText) as AgentContextManifest;
     } catch (err) {
-      errors.push(
-        `Manifest file "${MANIFEST_PATH}" is not valid JSON: ${
-          (err as Error).message
-        }`,
-      );
+      errors.push(`Manifest file "${MANIFEST_PATH}" is not valid JSON: ${(err as Error).message}`);
       return { errors, warnings };
     }
     const a = JSON.stringify(normalizeForCompare(onDisk));

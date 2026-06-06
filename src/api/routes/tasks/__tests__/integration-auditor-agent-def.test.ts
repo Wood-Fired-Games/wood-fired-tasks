@@ -29,16 +29,17 @@ function frontmatterToolsLine(markdown: string): string {
   const fmEnd = lines.findIndex((line, idx) => idx > fmStart && line.trim() === '---');
   if (fmEnd < 0) return '';
   const fmBlock = lines.slice(fmStart + 1, fmEnd).join('\n');
-  const toolsLine = fmBlock
-    .split('\n')
-    .find((line) => line.trim().startsWith('tools:'));
+  const toolsLine = fmBlock.split('\n').find((line) => line.trim().startsWith('tools:'));
   return toolsLine ?? '';
 }
 
 describe('skills/agents/integration-auditor.md — frontmatter + body contract (#317)', () => {
   const agent = readFileSync(AGENT_PATH, 'utf8');
   const toolsLine = frontmatterToolsLine(agent);
-  const body = agent.split(/^---\s*$/m).slice(2).join('---'); // everything after second `---`
+  const body = agent
+    .split(/^---\s*$/m)
+    .slice(2)
+    .join('---'); // everything after second `---`
 
   it('frontmatter has a non-empty tools: line', () => {
     expect(toolsLine.length).toBeGreaterThan(0);

@@ -3,9 +3,7 @@ import { escapeHtml, html, unsafe, layout } from '../html.js';
 
 describe('escapeHtml', () => {
   it('escapes <script> tag (XSS vector 1)', () => {
-    expect(escapeHtml('<script>alert(1)</script>')).toBe(
-      '&lt;script&gt;alert(1)&lt;/script&gt;',
-    );
+    expect(escapeHtml('<script>alert(1)</script>')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 
   it('escapes attribute-break onerror (XSS vector 2)', () => {
@@ -26,9 +24,7 @@ describe('escapeHtml', () => {
   });
 
   it('escapes svg onload (XSS vector 5)', () => {
-    expect(escapeHtml('<svg/onload=alert(1)>')).toBe(
-      '&lt;svg/onload=alert(1)&gt;',
-    );
+    expect(escapeHtml('<svg/onload=alert(1)>')).toBe('&lt;svg/onload=alert(1)&gt;');
   });
 
   it('returns empty string for null', () => {
@@ -56,9 +52,7 @@ describe('escapeHtml', () => {
 describe('html tagged template', () => {
   it('auto-escapes plain string interpolation', () => {
     const evil = '<script>alert(1)</script>';
-    expect(html`<p>${evil}</p>`).toBe(
-      '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>',
-    );
+    expect(html`<p>${evil}</p>`).toBe('<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>');
   });
 
   it('does NOT escape unsafe()-wrapped values', () => {
@@ -103,9 +97,7 @@ describe('layout', () => {
     const out = layout({ title: 'X', body: '' });
     expect(out).toMatch(/^<!doctype html>/i);
     expect(out).toContain('<meta charset="utf-8">');
-    expect(out).toContain(
-      '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    );
+    expect(out).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
   });
 
   it('wraps body in <main>', () => {

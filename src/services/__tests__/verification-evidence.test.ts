@@ -156,7 +156,7 @@ describe('TaskService — verification_evidence (#312)', () => {
         verification_evidence: {
           verdict: 'BOGUS',
         } as unknown as { verdict: 'PASS' },
-      })
+      }),
     ).toThrow(ValidationError);
   });
 
@@ -175,7 +175,7 @@ describe('TaskService — verification_evidence (#312)', () => {
             },
           ],
         },
-      })
+      }),
     ).toThrow(ValidationError);
   });
 });

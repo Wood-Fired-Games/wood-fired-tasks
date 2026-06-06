@@ -45,7 +45,7 @@ program.option('--force', 'Skip confirmation prompts for destructive actions');
 // Plan 30-05: --token global flag (mirrors tasks.ts behavior).
 program.option(
   '--token <token>',
-  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)'
+  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)',
 );
 program.hook('preAction', () => {
   const t = program.opts().token;

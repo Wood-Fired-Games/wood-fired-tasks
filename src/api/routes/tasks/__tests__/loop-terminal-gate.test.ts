@@ -45,9 +45,7 @@ describe('§O terminal completeness gate — documentation contract (#650)', () 
 
   it('§O names the stdio-remote-parity invariant audit test', () => {
     expect(loopShared).toContain('stdio-remote-parity');
-    expect(loopShared).toContain(
-      'npx vitest run src/mcp/__tests__/stdio-remote-parity.test.ts',
-    );
+    expect(loopShared).toContain('npx vitest run src/mcp/__tests__/stdio-remote-parity.test.ts');
     // Mirror parity is documented as part of the invariant audit.
     expect(loopShared.toLowerCase()).toContain('client-package');
     expect(loopShared.toLowerCase()).toContain('mirror parity');
@@ -68,9 +66,7 @@ describe('§O terminal completeness gate — documentation contract (#650)', () 
     expect(loopShared).toContain('## Coverage Gaps');
     // The carve-out is explicitly framed as the exception to the
     // "Don't create new tasks during the loop" rule.
-    expect(loopShared.toLowerCase()).toContain(
-      "don't create new tasks during the loop",
-    );
+    expect(loopShared.toLowerCase()).toContain("don't create new tasks during the loop");
     expect(loopShared.toLowerCase()).toContain('carve-out');
     // Empty-state sentinel is defined verbatim.
     expect(loopShared).toContain(
@@ -80,9 +76,7 @@ describe('§O terminal completeness gate — documentation contract (#650)', () 
 
   it('§O states blocking semantics: 0 open tasks alone is not success', () => {
     expect(loopShared).toContain('"0 open tasks"');
-    expect(loopShared.toLowerCase()).toContain(
-      'does not declare success',
-    );
+    expect(loopShared.toLowerCase()).toContain('does not declare success');
   });
 
   it('loop.md Step 10 references the §O terminal gate before declaring drained', () => {
@@ -95,7 +89,7 @@ describe('§O terminal completeness gate — documentation contract (#650)', () 
   });
 
   it('loop.md "don\'t create new tasks" rule carries the §O carve-out clause', () => {
-    expect(loop).toContain('Don\'t create new tasks during the loop.');
+    expect(loop).toContain("Don't create new tasks during the loop.");
     expect(loop).toContain('§O terminal-gate remediation-task carve-out');
   });
 
@@ -120,13 +114,9 @@ describe('§O terminal completeness gate — documentation contract (#650)', () 
 describe('§O invariant audit genuinely detects unreachable newly-added tools (#650)', () => {
   it('parityViolations flags a synthetic stdio-only newly-added tool (gate RED)', () => {
     // A new stdio tool with no remote counterpart → RED → triggers the carve-out.
-    expect(
-      parityViolations(
-        ['create_task', '__new_tool__'],
-        new Set(['create_task']),
-        [],
-      ),
-    ).toEqual(['__new_tool__']);
+    expect(parityViolations(['create_task', '__new_tool__'], new Set(['create_task']), [])).toEqual(
+      ['__new_tool__'],
+    );
   });
 
   it('parityViolations returns [] once the tool is reachable via remote (gate GREEN)', () => {
@@ -146,8 +136,6 @@ describe('§O invariant audit genuinely detects unreachable newly-added tools (#
       ]),
     ).toEqual([]);
     // …but the exemption MUST carry a reason — empty reasons are rejected.
-    expect(() =>
-      validateAllowlist([{ name: '__local_only__', reason: '   ' }]),
-    ).toThrow();
+    expect(() => validateAllowlist([{ name: '__local_only__', reason: '   ' }])).toThrow();
   });
 });

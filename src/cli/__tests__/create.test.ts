@@ -96,7 +96,17 @@ describe('create command', () => {
       tags: [],
     });
 
-    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'alice']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'create',
+      '-t',
+      'Test task',
+      '-p',
+      '1',
+      '-c',
+      'alice',
+    ]);
 
     expect(createTask).toHaveBeenCalledWith({
       title: 'Test task',
@@ -174,7 +184,17 @@ describe('create command', () => {
       tags: [],
     });
 
-    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'alice']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'create',
+      '-t',
+      'Test task',
+      '-p',
+      '1',
+      '-c',
+      'alice',
+    ]);
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('created successfully'));
   });
@@ -209,10 +229,20 @@ describe('create command', () => {
       new ApiClientError('Task creation failed', 400, {
         error: 'VALIDATION_ERROR',
         message: 'Task creation failed',
-      })
+      }),
     );
 
-    await program.parseAsync(['node', 'test', 'create', '-t', 'Test task', '-p', '1', '-c', 'alice']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'create',
+      '-t',
+      'Test task',
+      '-p',
+      '1',
+      '-c',
+      'alice',
+    ]);
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -240,7 +270,18 @@ describe('create command', () => {
     vi.mocked(createTask).mockResolvedValue(mockTask);
 
     // Global options like --json go before subcommand name
-    await program.parseAsync(['node', 'test', '--json', 'create', '-t', 'JSON test task', '-p', '1', '-c', 'alice']);
+    await program.parseAsync([
+      'node',
+      'test',
+      '--json',
+      'create',
+      '-t',
+      'JSON test task',
+      '-p',
+      '1',
+      '-c',
+      'alice',
+    ]);
 
     expect(jsonOutput).toHaveBeenCalledWith({ task: mockTask }, { id: mockTask.id });
     // Should NOT show success message in JSON mode
@@ -295,8 +336,8 @@ describe('create command', () => {
     const { createTask } = await import('../api/client.js');
     const { promptForMissing } = await import('../prompts/interactive.js');
 
-    vi.mocked(promptForMissing).mockImplementation(
-      (field, value) => Promise.resolve(value || 'Prompted title')
+    vi.mocked(promptForMissing).mockImplementation((field, value) =>
+      Promise.resolve(value || 'Prompted title'),
     );
 
     vi.mocked(createTask).mockResolvedValue({

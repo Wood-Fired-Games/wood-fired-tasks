@@ -18,8 +18,7 @@ async function main() {
   // commands). DB_PATH is accepted as a deprecated alias for backward
   // compatibility with older ~/.claude.json installs produced by install.sh
   // / install.ps1 before task #217. New installs should set DATABASE_PATH.
-  const dbPath =
-    process.env.DATABASE_PATH || process.env.DB_PATH || './data/tasks.db';
+  const dbPath = process.env.DATABASE_PATH || process.env.DB_PATH || './data/tasks.db';
 
   // Initialize application (database, repositories, services)
   const app = await createApp(dbPath);
@@ -123,7 +122,7 @@ async function mainWithRetry(maxAttempts = 3, delayMs = 500): Promise<void> {
       if (isTransientError(err) && attempt < maxAttempts) {
         console.error(
           `MCP startup attempt ${attempt} failed (transient), retrying...`,
-          err instanceof Error ? err.message : String(err)
+          err instanceof Error ? err.message : String(err),
         );
         await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       } else {

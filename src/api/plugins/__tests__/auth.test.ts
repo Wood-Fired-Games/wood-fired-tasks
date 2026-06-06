@@ -4,24 +4,18 @@ import { validateApiKeysForProduction, hashKey } from '../auth.js';
 
 describe('validateApiKeysForProduction', () => {
   it('rejects an empty list of keys', () => {
-    expect(() => validateApiKeysForProduction([])).toThrow(
-      /at least one key/i,
-    );
+    expect(() => validateApiKeysForProduction([])).toThrow(/at least one key/i);
   });
 
   it('rejects a key shorter than 32 characters', () => {
-    expect(() => validateApiKeysForProduction(['short'])).toThrow(
-      /at least 32 characters/i,
-    );
+    expect(() => validateApiKeysForProduction(['short'])).toThrow(/at least 32 characters/i);
   });
 
   it('rejects a key shorter than 32 even if it has good entropy', () => {
     // 31 chars, mixed
     const key = 'k1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o';
     expect(key).toHaveLength(31);
-    expect(() => validateApiKeysForProduction([key])).toThrow(
-      /at least 32 characters/i,
-    );
+    expect(() => validateApiKeysForProduction([key])).toThrow(/at least 32 characters/i);
   });
 
   it('rejects a key containing the change-me-to-a-real-key phrase (case-insensitive, padded long)', () => {
@@ -34,9 +28,7 @@ describe('validateApiKeysForProduction', () => {
 
   it('rejects a key containing the changeme phrase', () => {
     const padded = 'CHANGEME' + 'Q'.repeat(30);
-    expect(() => validateApiKeysForProduction([padded])).toThrow(
-      /placeholder phrase "changeme"/,
-    );
+    expect(() => validateApiKeysForProduction([padded])).toThrow(/placeholder phrase "changeme"/);
   });
 
   it('rejects a key containing the placeholder phrase', () => {
@@ -49,9 +41,7 @@ describe('validateApiKeysForProduction', () => {
   it('rejects a key containing the example phrase', () => {
     const padded = 'example-example-example-example-x';
     expect(padded.length).toBeGreaterThanOrEqual(32);
-    expect(() => validateApiKeysForProduction([padded])).toThrow(
-      /placeholder phrase "example"/,
-    );
+    expect(() => validateApiKeysForProduction([padded])).toThrow(/placeholder phrase "example"/);
   });
 
   it('rejects an exact placeholder value (test)', () => {
@@ -61,9 +51,7 @@ describe('validateApiKeysForProduction', () => {
   });
 
   it('rejects an exact placeholder value (dev)', () => {
-    expect(() => validateApiKeysForProduction(['dev'])).toThrow(
-      /matches known placeholder value/i,
-    );
+    expect(() => validateApiKeysForProduction(['dev'])).toThrow(/matches known placeholder value/i);
   });
 
   it('rejects an exact placeholder value (placeholder)', () => {
@@ -72,16 +60,12 @@ describe('validateApiKeysForProduction', () => {
 
   it('rejects a key that is a single character repeated', () => {
     const key = 'a'.repeat(32);
-    expect(() => validateApiKeysForProduction([key])).toThrow(
-      /single character repeated/i,
-    );
+    expect(() => validateApiKeysForProduction([key])).toThrow(/single character repeated/i);
   });
 
   it('rejects a key that is uppercase single character repeated', () => {
     const key = 'Z'.repeat(40);
-    expect(() => validateApiKeysForProduction([key])).toThrow(
-      /single character repeated/i,
-    );
+    expect(() => validateApiKeysForProduction([key])).toThrow(/single character repeated/i);
   });
 
   it('accepts a 32-character key with mixed entropy', () => {
@@ -91,10 +75,7 @@ describe('validateApiKeysForProduction', () => {
   });
 
   it('accepts multiple valid keys', () => {
-    const keys = [
-      'k1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6',
-      'mNpQrStUvWxYz1234567890aBcDeFgHi',
-    ];
+    const keys = ['k1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6', 'mNpQrStUvWxYz1234567890aBcDeFgHi'];
     expect(() => validateApiKeysForProduction(keys)).not.toThrow();
   });
 
@@ -116,9 +97,7 @@ describe('validateApiKeysForProduction', () => {
       expect(err.message).not.toContain(secret);
     }
     // The secret has 36 chars and no placeholder, so the only failure should be 'short'
-    expect(() =>
-      validateApiKeysForProduction([secret]),
-    ).not.toThrow();
+    expect(() => validateApiKeysForProduction([secret])).not.toThrow();
   });
 });
 

@@ -40,9 +40,7 @@ describe('stats command', () => {
     process.env.NO_COLOR = '1';
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     program = await setupProgram();
   });
@@ -112,7 +110,7 @@ describe('stats command', () => {
     expect(env.success).toBe(true);
     expect(Array.isArray(env.data.statusCounts)).toBe(true);
     expect(env.data.recentActivity).toEqual(
-      expect.objectContaining({ created: expect.any(Number), updated: expect.any(Number) })
+      expect.objectContaining({ created: expect.any(Number), updated: expect.any(Number) }),
     );
     expect(Array.isArray(env.data.agentProductivity)).toBe(true);
   });

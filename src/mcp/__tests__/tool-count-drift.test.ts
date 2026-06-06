@@ -58,11 +58,7 @@ const DOMAIN_TO_FILE: Record<string, string> = {
 
 /** Lines that mention the *remote* MCP server's tool count are intentionally
  *  different from the local count and must not trigger this drift test. */
-const REMOTE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [
-  /remote/i,
-  /rest-backed/i,
-  /\bsubset\b/i,
-];
+const REMOTE_CONTEXT_PATTERNS: ReadonlyArray<RegExp> = [/remote/i, /rest-backed/i, /\bsubset\b/i];
 
 function countRegisterToolCalls(filePath: string): number {
   const src = readFileSync(filePath, 'utf-8');
@@ -70,7 +66,7 @@ function countRegisterToolCalls(filePath: string): number {
 }
 
 function staticToolCountFromTree(): number {
-  const files = readdirSync(TOOLS_DIR).filter(f => f.endsWith('.ts'));
+  const files = readdirSync(TOOLS_DIR).filter((f) => f.endsWith('.ts'));
   return files.reduce((acc, f) => acc + countRegisterToolCalls(join(TOOLS_DIR, f)), 0);
 }
 
@@ -173,10 +169,7 @@ describe('MCP tool-count drift regression (task #260)', () => {
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'tool-count-drift-test', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'tool-count-drift-test', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
     const listed = await client.listTools();
     actualToolCount = listed.tools.length;
@@ -204,9 +197,7 @@ describe('MCP tool-count drift regression (task #260)', () => {
     for (const docRel of PUBLIC_DOCS) {
       const abs = join(REPO_ROOT, docRel);
       const content = readFileSync(abs, 'utf-8');
-      const claims = extractCountClaims(docRel, content).filter(
-        c => c.scope === 'total',
-      );
+      const claims = extractCountClaims(docRel, content).filter((c) => c.scope === 'total');
 
       for (const claim of claims) {
         if (claim.claimedCount !== actualToolCount) {
@@ -228,9 +219,7 @@ describe('MCP tool-count drift regression (task #260)', () => {
   it('per-domain counts in docs/MCP.md match per-file registerTool counts', () => {
     const mcpDocAbs = join(REPO_ROOT, 'docs/MCP.md');
     const content = readFileSync(mcpDocAbs, 'utf-8');
-    const claims = extractCountClaims('docs/MCP.md', content).filter(
-      c => c.scope !== 'total',
-    );
+    const claims = extractCountClaims('docs/MCP.md', content).filter((c) => c.scope !== 'total');
 
     const mismatches: string[] = [];
     for (const claim of claims) {
@@ -254,10 +243,9 @@ describe('MCP tool-count drift regression (task #260)', () => {
       }
     }
 
-    expect(
-      mismatches,
-      `Per-domain tool-count drift detected:\n${mismatches.join('\n')}`,
-    ).toEqual([]);
+    expect(mismatches, `Per-domain tool-count drift detected:\n${mismatches.join('\n')}`).toEqual(
+      [],
+    );
   });
 
   it('count-claim extractor ignores false positives like "21 days" / port "3000"', () => {
@@ -270,7 +258,7 @@ describe('MCP tool-count drift regression (task #260)', () => {
       'A subset of 20 tools for remote use.', // <- skipped (remote context)
     ].join('\n');
     const claims = extractCountClaims('synthetic.md', sample);
-    const totals = claims.filter(c => c.scope === 'total');
+    const totals = claims.filter((c) => c.scope === 'total');
     expect(totals).toHaveLength(1);
     expect(totals[0].claimedCount).toBe(21);
   });

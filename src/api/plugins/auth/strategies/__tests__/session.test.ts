@@ -63,9 +63,7 @@ function makeRequest(opts: MakeRequestOpts): {
   const req = {
     headers: {},
     log: { warn },
-    ...(opts.withSession
-      ? { session: { get: sessionGet, delete: sessionDelete } }
-      : {}),
+    ...(opts.withSession ? { session: { get: sessionGet, delete: sessionDelete } } : {}),
   } as unknown as FastifyRequest;
   return { req, sessionGet, sessionDelete, warn };
 }

@@ -96,10 +96,7 @@ export function resolveActiveSessionUser(
   if (!row || row.disabled_at !== null) {
     // Case (3): missing OR disabled. Clear the session AND log.
     session.delete();
-    request.log.warn(
-      { user_id: payload.id },
-      'web.user_disabled_during_active_session',
-    );
+    request.log.warn({ user_id: payload.id }, 'web.user_disabled_during_active_session');
     return null;
   }
 

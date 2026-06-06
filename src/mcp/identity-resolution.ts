@@ -129,11 +129,7 @@ export type ResolutionPath =
  * tag to emit and which error message to throw when `allowBadPat` is
  * false.
  */
-type PatRejectReason =
-  | 'unknown'
-  | 'revoked'
-  | 'expired'
-  | 'user-disabled';
+type PatRejectReason = 'unknown' | 'revoked' | 'expired' | 'user-disabled';
 
 /**
  * Resolve the active MCP actor user.id from the supplied environment.
@@ -155,9 +151,10 @@ export function resolveActorUserId(input: ResolveActorUserIdInput): number {
  * when a PAT is supplied but is invalid/revoked/expired/owned by a
  * disabled user AND `allowBadPat` is false (the default — see WR-02).
  */
-export function resolveActorUserIdWithPath(
-  input: ResolveActorUserIdInput,
-): { actorUserId: number; path: ResolutionPath } {
+export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): {
+  actorUserId: number;
+  path: ResolutionPath;
+} {
   const {
     apiKey,
     apiTokenRepo,

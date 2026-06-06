@@ -27,10 +27,7 @@ export const deleteCommand = new Command('delete')
       const task = await getTask(id);
 
       // Confirm deletion (unless --force)
-      const confirmed = await confirmAction(
-        `Delete task '${task.title}'?`,
-        false
-      );
+      const confirmed = await confirmAction(`Delete task '${task.title}'?`, false);
 
       if (!confirmed) {
         if (isJsonMode) {

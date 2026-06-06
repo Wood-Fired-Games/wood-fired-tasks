@@ -24,39 +24,30 @@ import { getOrCreateCsrfToken } from '../auth/csrf.js';
 import { resolveActiveSessionUser } from '../../../web/session-user.js';
 
 const meWeb: FastifyPluginAsync = async (fastify) => {
-  fastify.get(
-    '/me',
-    { config: { skipAuth: true } },
-    async (request, reply) => {
-      // CR-02 fix: re-read the user row + check disabled_at on every
-      // request. resolveActiveSessionUser clears the session if the user
-      // was disabled mid-session, mirroring the /api/v1 chain's behavior
-      // so the web UI cannot be used by a disabled user for up to 8h.
-      const sessionUser = resolveActiveSessionUser(
-        request,
-        fastify.userRepository,
+  fastify.get('/me', { config: { skipAuth: true } }, async (request, reply) => {
+    // CR-02 fix: re-read the user row + check disabled_at on every
+    // request. resolveActiveSessionUser clears the session if the user
+    // was disabled mid-session, mirroring the /api/v1 chain's behavior
+    // so the web UI cannot be used by a disabled user for up to 8h.
+    const sessionUser = resolveActiveSessionUser(request, fastify.userRepository);
+    if (!sessionUser) {
+      return reply.header('Cache-Control', 'no-store').redirect('/auth/login?next=/me', 302);
+    }
+    const csrf = getOrCreateCsrfToken(request);
+    const authenticatedAt = request.session.get('authenticatedAt') ?? null;
+    return reply
+      .header('Content-Type', 'text/html; charset=utf-8')
+      .header('Cache-Control', 'no-store')
+      .code(200)
+      .send(
+        renderMe({
+          user: sessionUser,
+          authMethod: 'session',
+          csrf,
+          authenticatedAt,
+        }),
       );
-      if (!sessionUser) {
-        return reply
-          .header('Cache-Control', 'no-store')
-          .redirect('/auth/login?next=/me', 302);
-      }
-      const csrf = getOrCreateCsrfToken(request);
-      const authenticatedAt = request.session.get('authenticatedAt') ?? null;
-      return reply
-        .header('Content-Type', 'text/html; charset=utf-8')
-        .header('Cache-Control', 'no-store')
-        .code(200)
-        .send(
-          renderMe({
-            user: sessionUser,
-            authMethod: 'session',
-            csrf,
-            authenticatedAt,
-          }),
-        );
-    },
-  );
+  });
 };
 
 export default meWeb;

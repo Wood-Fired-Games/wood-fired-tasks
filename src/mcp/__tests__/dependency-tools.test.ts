@@ -60,7 +60,7 @@ describe('MCP Dependency Tools', () => {
       app.projectService,
       app.dependencyService,
       app.commentService,
-      app.db
+      app.db,
     );
 
     // Create paired in-memory transports
@@ -70,10 +70,7 @@ describe('MCP Dependency Tools', () => {
     await server.connect(serverTransport);
 
     // Create and connect client
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 

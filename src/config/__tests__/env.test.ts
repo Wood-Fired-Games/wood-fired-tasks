@@ -1,11 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  configSchema,
-  ExitCodes,
-  CliExitCodes,
-  resetConfig,
-  parseApiKeyEntries,
-} from '../env.js';
+import { configSchema, ExitCodes, CliExitCodes, resetConfig, parseApiKeyEntries } from '../env.js';
 // task #731: DATABASE_PATH now defaults to the OS app-data path, not a
 // cwd-relative './data/tasks.db'. Assert against the same source of truth.
 import { defaultDbPath } from '../paths.js';
@@ -209,9 +203,7 @@ describe('Configuration Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const apiKeyError = result.error.issues.find(
-          (issue) => issue.path[0] === 'API_KEYS'
-        );
+        const apiKeyError = result.error.issues.find((issue) => issue.path[0] === 'API_KEYS');
         expect(apiKeyError).toBeDefined();
         // Zod reports this as a required/invalid type error
         expect(apiKeyError?.code).toBe('invalid_type');
@@ -225,9 +217,7 @@ describe('Configuration Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const apiKeyError = result.error.issues.find(
-          (issue) => issue.path[0] === 'API_KEYS'
-        );
+        const apiKeyError = result.error.issues.find((issue) => issue.path[0] === 'API_KEYS');
         expect(apiKeyError).toBeDefined();
       }
     });
@@ -365,9 +355,7 @@ describe('Configuration Validation', () => {
     });
 
     it('parses mixed bare and labelled entries', () => {
-      const entries = parseApiKeyEntries(
-        'abc12345xxxxxxxx,def456:ci-bot,ghi789:alice-laptop',
-      );
+      const entries = parseApiKeyEntries('abc12345xxxxxxxx,def456:ci-bot,ghi789:alice-laptop');
       expect(entries).toEqual([
         { key: 'abc12345xxxxxxxx', label: 'key_abc12345' },
         { key: 'def456', label: 'ci-bot' },
@@ -405,24 +393,18 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects an entry with empty key before ":"', () => {
-      expect(() => parseApiKeyEntries(':label-only')).toThrow(
-        /empty key before ':'/,
-      );
+      expect(() => parseApiKeyEntries(':label-only')).toThrow(/empty key before ':'/);
     });
 
     it('rejects an entry containing more than one ":"', () => {
-      expect(() => parseApiKeyEntries('abc:def:ghi')).toThrow(
-        /multiple ':' separators/,
-      );
+      expect(() => parseApiKeyEntries('abc:def:ghi')).toThrow(/multiple ':' separators/);
     });
 
     it('rejects label containing ":" via the multiple-colon rule', () => {
       // A label like "ci:bot" produces two colons in the entry, which is
       // ambiguous (could be key="ci:bot", label="" or key="ci", label="bot").
       // We reject rather than guess.
-      expect(() => parseApiKeyEntries('abc:ci:bot')).toThrow(
-        /multiple ':' separators/,
-      );
+      expect(() => parseApiKeyEntries('abc:ci:bot')).toThrow(/multiple ':' separators/);
     });
 
     it('does NOT log or surface the raw key in error messages', () => {
@@ -633,7 +615,9 @@ describe('Configuration Validation', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         const errorMessages = result.error.issues.map((i) => i.message).join(' ');
-        expect(errorMessages).toContain('SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together');
+        expect(errorMessages).toContain(
+          'SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together',
+        );
       }
     });
 
@@ -645,9 +629,7 @@ describe('Configuration Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const slackError = result.error.issues.find(
-          (issue) => issue.path[0] === 'SLACK_APP_TOKEN'
-        );
+        const slackError = result.error.issues.find((issue) => issue.path[0] === 'SLACK_APP_TOKEN');
         expect(slackError).toBeDefined();
       }
     });
@@ -703,9 +685,7 @@ describe('Configuration Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const errorMessages = result.error.issues
-          .map((i) => i.message)
-          .join(' ');
+        const errorMessages = result.error.issues.map((i) => i.message).join(' ');
         expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
       }
     });
@@ -718,9 +698,7 @@ describe('Configuration Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const errorMessages = result.error.issues
-          .map((i) => i.message)
-          .join(' ');
+        const errorMessages = result.error.issues.map((i) => i.message).join(' ');
         expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
       }
     });
@@ -735,9 +713,7 @@ describe('Configuration Validation', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const errorMessages = result.error.issues
-          .map((i) => i.message)
-          .join(' ');
+        const errorMessages = result.error.issues.map((i) => i.message).join(' ');
         expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
       }
     });

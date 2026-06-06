@@ -39,14 +39,11 @@ describe('migration 013: tasks WSJF columns', () => {
   });
 
   function makeProject(): number {
-    return db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
-      .lastInsertRowid as number;
+    return db.prepare('INSERT INTO projects (name) VALUES (?)').run('p').lastInsertRowid as number;
   }
 
   it('adds the four INTEGER component columns as nullable, no default', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
       name: string;
       type: string;
       notnull: number;
@@ -62,9 +59,7 @@ describe('migration 013: tasks WSJF columns', () => {
   });
 
   it('adds the five TEXT JSON columns as nullable, no default', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
       name: string;
       type: string;
       notnull: number;
@@ -85,9 +80,9 @@ describe('migration 013: tasks WSJF columns', () => {
       db
         .prepare(
           `INSERT INTO tasks (title, project_id, created_by, wsjf_value)
-           VALUES (?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?)`,
         )
-        .run('bad', projectId, 'tester', 4)
+        .run('bad', projectId, 'tester', 4),
     ).toThrow();
   });
 
@@ -96,12 +91,12 @@ describe('migration 013: tasks WSJF columns', () => {
     const taskId = db
       .prepare(
         `INSERT INTO tasks (title, project_id, created_by, wsjf_value)
-         VALUES (?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?)`,
       )
       .run('good', projectId, 'tester', 8).lastInsertRowid as number;
-    const row = db
-      .prepare('SELECT wsjf_value FROM tasks WHERE id = ?')
-      .get(taskId) as { wsjf_value: number };
+    const row = db.prepare('SELECT wsjf_value FROM tasks WHERE id = ?').get(taskId) as {
+      wsjf_value: number;
+    };
     expect(row.wsjf_value).toBe(8);
   });
 
@@ -113,10 +108,10 @@ describe('migration 013: tasks WSJF columns', () => {
           db
             .prepare(
               `INSERT INTO tasks (title, project_id, created_by, ${name})
-               VALUES (?, ?, ?, ?)`
+               VALUES (?, ?, ?, ?)`,
             )
             .run(`bad-${name}`, projectId, 'tester', 4),
-        `column ${name} should reject 4`
+        `column ${name} should reject 4`,
       ).toThrow();
     }
   });
@@ -124,15 +119,13 @@ describe('migration 013: tasks WSJF columns', () => {
   it('existing rows (inserted without WSJF fields) load with NULL values', () => {
     const projectId = makeProject();
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('legacy', projectId, 'tester').lastInsertRowid as number;
 
     const row = db
       .prepare(
         `SELECT ${[...INTEGER_COLUMNS, ...TEXT_COLUMNS].join(', ')}
-         FROM tasks WHERE id = ?`
+         FROM tasks WHERE id = ?`,
       )
       .get(taskId) as Record<string, unknown>;
     for (const name of [...INTEGER_COLUMNS, ...TEXT_COLUMNS]) {
@@ -146,12 +139,12 @@ describe('migration 013: tasks WSJF columns', () => {
     const taskId = db
       .prepare(
         `INSERT INTO tasks (title, project_id, created_by, wsjf_evidence)
-         VALUES (?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?)`,
       )
       .run('t', projectId, 'tester', evidence).lastInsertRowid as number;
-    const row = db
-      .prepare('SELECT wsjf_evidence FROM tasks WHERE id = ?')
-      .get(taskId) as { wsjf_evidence: string | null };
+    const row = db.prepare('SELECT wsjf_evidence FROM tasks WHERE id = ?').get(taskId) as {
+      wsjf_evidence: string | null;
+    };
     expect(row.wsjf_evidence).toBe(evidence);
   });
 
@@ -159,9 +152,9 @@ describe('migration 013: tasks WSJF columns', () => {
     const { down } = await import('../migrations/013-wsjf-fields.js');
     await down(db);
 
-    const names = (
-      db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>
-    ).map((c) => c.name);
+    const names = (db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>).map(
+      (c) => c.name,
+    );
     for (const name of [...INTEGER_COLUMNS, ...TEXT_COLUMNS]) {
       expect(names, `column ${name} should be dropped`).not.toContain(name);
     }
@@ -175,7 +168,7 @@ describe('migration 013: tasks WSJF columns', () => {
     const before = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='tasks'`
+         WHERE type='table' AND name='tasks'`,
       )
       .all();
 
@@ -186,7 +179,7 @@ describe('migration 013: tasks WSJF columns', () => {
     const after = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='tasks'`
+         WHERE type='table' AND name='tasks'`,
       )
       .all();
 

@@ -17,7 +17,7 @@ describe('ClaimReleaseService', () => {
     // Create a test project
     db.prepare(
       `INSERT INTO projects (name, created_at, updated_at)
-       VALUES ('Test Project', datetime('now'), datetime('now'))`
+       VALUES ('Test Project', datetime('now'), datetime('now'))`,
     ).run();
     projectId = 1;
 
@@ -50,14 +50,8 @@ describe('ClaimReleaseService', () => {
         ?, 'in_progress', 'medium', ?, ?, 'creator',
         datetime('now', ?), datetime('now', '-60 minutes'),
         datetime('now', ?), 2
-      )`
-    ).run(
-      title,
-      projectId,
-      assignee,
-      `-${claimedMinutesAgo} minutes`,
-      `-${updatedAgo} minutes`
-    );
+      )`,
+    ).run(title, projectId, assignee, `-${claimedMinutesAgo} minutes`, `-${updatedAgo} minutes`);
 
     return db.prepare('SELECT last_insert_rowid() as id').get() as any as number;
   }
@@ -67,7 +61,7 @@ describe('ClaimReleaseService', () => {
       // Create an unclaimed task
       db.prepare(
         `INSERT INTO tasks (title, status, priority, project_id, created_by, created_at, updated_at)
-         VALUES ('Unclaimed Task', 'open', 'medium', ?, 'creator', datetime('now'), datetime('now'))`
+         VALUES ('Unclaimed Task', 'open', 'medium', ?, 'creator', datetime('now'), datetime('now'))`,
       ).run(projectId);
 
       const stale = service.findStaleClaims();
@@ -113,7 +107,7 @@ describe('ClaimReleaseService', () => {
           'Completed Task', 'done', 'medium', ?, 'agent-1', 'creator',
           datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
           datetime('now', '-35 minutes'), 3
-        )`
+        )`,
       ).run(projectId);
 
       const stale = service.findStaleClaims();
@@ -129,7 +123,7 @@ describe('ClaimReleaseService', () => {
           'Closed Task', 'closed', 'medium', ?, 'agent-1', 'creator',
           datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
           datetime('now', '-35 minutes'), 4
-        )`
+        )`,
       ).run(projectId);
 
       const stale = service.findStaleClaims();
@@ -155,7 +149,7 @@ describe('ClaimReleaseService', () => {
     it('returns false when task has no assignee', () => {
       db.prepare(
         `INSERT INTO tasks (title, status, priority, project_id, created_by, created_at, updated_at)
-         VALUES ('Open Task', 'open', 'medium', ?, 'creator', datetime('now'), datetime('now'))`
+         VALUES ('Open Task', 'open', 'medium', ?, 'creator', datetime('now'), datetime('now'))`,
       ).run(projectId);
 
       const released = service.releaseClaim(1);
@@ -171,7 +165,7 @@ describe('ClaimReleaseService', () => {
           'Done Task', 'done', 'medium', ?, 'agent-1', 'creator',
           datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
           datetime('now', '-35 minutes'), 3
-        )`
+        )`,
       ).run(projectId);
 
       const released = service.releaseClaim(1);
@@ -246,14 +240,16 @@ describe('ClaimReleaseService', () => {
           'Stale But Done', 'done', 'medium', ?, 'agent-2', 'creator',
           datetime('now', '-40 minutes'), datetime('now', '-60 minutes'),
           datetime('now', '-35 minutes'), 3
-        )`
+        )`,
       ).run(projectId);
 
       const released = service.sweep();
       expect(released).toBe(1); // Only the in_progress task
 
       // Verify done task was NOT touched
-      const doneTask = db.prepare('SELECT * FROM tasks WHERE title = ?').get('Stale But Done') as any;
+      const doneTask = db
+        .prepare('SELECT * FROM tasks WHERE title = ?')
+        .get('Stale But Done') as any;
       expect(doneTask.status).toBe('done');
       expect(doneTask.assignee).toBe('agent-2');
     });

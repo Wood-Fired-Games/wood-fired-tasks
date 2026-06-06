@@ -80,9 +80,7 @@ describe('Task #705 — migrate and API startup share the configured DB path', (
     // The CLI resolves and targets exactly the configured path (absolute).
     expect(returned).toBe(resolve(target));
     // The pure resolver agrees with the CLI's chosen path.
-    expect(resolveMigrateDbPath({ DATABASE_PATH: target }, tmpRoot)).toBe(
-      returned,
-    );
+    expect(resolveMigrateDbPath({ DATABASE_PATH: target }, tmpRoot)).toBe(returned);
     assertMigrated(target);
     // The default location must NOT have been created — proves no hardcoding.
     expect(existsSync(join(tmpRoot, 'data', 'tasks.db'))).toBe(false);
@@ -143,10 +141,7 @@ describe('Task #705 — migrate and API startup share the configured DB path', (
     const configuredPath = join(tmpRoot, 'shared', 'tasks.db');
 
     // 1. The migration CLI targets it (the resolver is what migrateCli uses).
-    const migratePath = resolveMigrateDbPath(
-      { DATABASE_PATH: configuredPath },
-      tmpRoot,
-    );
+    const migratePath = resolveMigrateDbPath({ DATABASE_PATH: configuredPath }, tmpRoot);
     await migrateCli({ DATABASE_PATH: configuredPath }, tmpRoot);
 
     // 2. The API server (via the start.ts-shaped call) opens it too.

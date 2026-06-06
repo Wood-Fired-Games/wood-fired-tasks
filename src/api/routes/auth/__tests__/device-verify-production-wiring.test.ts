@@ -25,13 +25,7 @@
  *     401, then sessionOnly… actually the chain returns 401 here; we
  *     assert NOT 500 since that was the symptom).
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import nock from 'nock';
 import * as cheerio from 'cheerio';
@@ -86,9 +80,7 @@ describe('CR-01 regression — /auth/device/verify wired in auth-chain scope', (
     nock.disableNetConnect();
     nock.enableNetConnect('127.0.0.1');
 
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const { createServer } = await import('../../../server.js');
     const result = await createServer({ dbPath: ':memory:' });
@@ -97,22 +89,18 @@ describe('CR-01 regression — /auth/device/verify wired in auth-chain scope', (
 
     // Probe to seed session.user the same way the OIDC callback would.
     // skipAuth so the chain doesn't demand credentials to mint the cookie.
-    server.post(
-      '/__test/sign-in',
-      { config: { skipAuth: true } },
-      async (request, reply) => {
-        const { id } = request.body as { id: number };
-        request.session.set('user', {
-          id,
-          displayName: 'CR-01 Test',
-          email: 'cr01@example.com',
-          isLegacy: false,
-          isServiceAccount: false,
-        });
-        request.session.set('authenticatedAt', Date.now());
-        return reply.code(204).send();
-      },
-    );
+    server.post('/__test/sign-in', { config: { skipAuth: true } }, async (request, reply) => {
+      const { id } = request.body as { id: number };
+      request.session.set('user', {
+        id,
+        displayName: 'CR-01 Test',
+        email: 'cr01@example.com',
+        isLegacy: false,
+        isServiceAccount: false,
+      });
+      request.session.set('authenticatedAt', Date.now());
+      return reply.code(204).send();
+    });
     await server.ready();
 
     const info = db

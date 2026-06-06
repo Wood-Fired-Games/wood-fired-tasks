@@ -22,9 +22,7 @@ describe('Migration 007: Completed At', () => {
   it('adds the completed_at column after running migrations', async () => {
     await runMigrations(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).toContain('completed_at');
   });
@@ -34,7 +32,7 @@ describe('Migration 007: Completed At', () => {
 
     const indexes = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_completed_at'"
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_completed_at'",
       )
       .all() as { name: string }[];
     expect(indexes).toHaveLength(1);
@@ -91,15 +89,13 @@ describe('Migration 007: Completed At', () => {
     const { down } = await import('../migrations/007-completed-at.js');
     await down(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).not.toContain('completed_at');
 
     const indexes = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_completed_at'"
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_completed_at'",
       )
       .all() as { name: string }[];
     expect(indexes).toHaveLength(0);

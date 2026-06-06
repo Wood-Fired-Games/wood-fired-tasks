@@ -19,12 +19,11 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
     openapi: {
       info: {
         title: 'Wood Fired Tasks API',
-        description: 'Task management REST API for Wood Fired Games. Designed for LLM agent consumption.',
+        description:
+          'Task management REST API for Wood Fired Games. Designed for LLM agent consumption.',
         version: VERSION,
       },
-      servers: [
-        { url: 'http://localhost:3000', description: 'Development' },
-      ],
+      servers: [{ url: 'http://localhost:3000', description: 'Development' }],
       components: {
         securitySchemes: {
           apiKey: {

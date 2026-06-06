@@ -137,8 +137,6 @@ describe('effectiveOrigin', () => {
   });
 
   it('falls back to localhost when OIDC_REDIRECT_URI is empty string', () => {
-    expect(effectiveOrigin({ OIDC_REDIRECT_URI: '', PORT: 4000 })).toBe(
-      'http://localhost:4000',
-    );
+    expect(effectiveOrigin({ OIDC_REDIRECT_URI: '', PORT: 4000 })).toBe('http://localhost:4000');
   });
 });

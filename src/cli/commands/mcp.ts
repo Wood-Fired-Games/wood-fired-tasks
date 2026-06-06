@@ -60,12 +60,9 @@ Examples:
   tasks mcp                              Launch the local stdio MCP server
   WFT_API_URL=http://host:3000 tasks mcp Launch the remote HTTP bridge
   tasks mcp --remote http://host:3000    Launch the remote HTTP bridge
-`
+`,
   )
-  .option(
-    '--remote <url>',
-    'Launch the remote HTTP bridge against the given REST API base URL'
-  )
+  .option('--remote <url>', 'Launch the remote HTTP bridge against the given REST API base URL')
   .action(async () => {
     const opts = mcpCommand.opts<{ remote?: string }>();
 

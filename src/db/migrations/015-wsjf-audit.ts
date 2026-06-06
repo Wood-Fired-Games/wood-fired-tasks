@@ -91,15 +91,15 @@ export async function up(db: Database.Database): Promise<void> {
     // Indexes per plan task 1.4 / spec §4.3.
     db.exec(
       `CREATE INDEX idx_wsjf_score_history_task_changed
-         ON wsjf_score_history(task_id, changed_at)`
+         ON wsjf_score_history(task_id, changed_at)`,
     );
     db.exec(
       `CREATE INDEX idx_wsjf_score_history_rescore_run
-         ON wsjf_score_history(rescore_run_id)`
+         ON wsjf_score_history(rescore_run_id)`,
     );
     db.exec(
       `CREATE INDEX idx_project_charter_history_project_version
-         ON project_charter_history(project_id, interview_version)`
+         ON project_charter_history(project_id, interview_version)`,
     );
   })();
 }

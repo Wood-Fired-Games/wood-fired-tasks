@@ -27,10 +27,7 @@ export const projectDeleteCommand = new Command('project-delete')
       const project = await getProject(id);
 
       // Confirm deletion (unless --force)
-      const confirmed = await confirmAction(
-        `Delete project '${project.name}'?`,
-        false
-      );
+      const confirmed = await confirmAction(`Delete project '${project.name}'?`, false);
 
       if (!confirmed) {
         if (isJsonMode) {

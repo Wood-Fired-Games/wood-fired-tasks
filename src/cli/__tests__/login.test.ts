@@ -18,19 +18,10 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import {
-  mkdtempSync,
-  rmSync,
-  existsSync,
-  readFileSync,
-  statSync,
-} from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parse } from 'smol-toml';
-import {
-  startDeviceFlowServer,
-  type DeviceFlowServer,
-} from './helpers/device-flow-server.js';
+import { startDeviceFlowServer, type DeviceFlowServer } from './helpers/device-flow-server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -132,10 +123,9 @@ describe('tasks login (subprocess)', () => {
       ],
     });
 
-    const res = await runLogin(
-      ['--no-browser', '--server', server.baseUrl],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
 
     expect(res.exitCode).toBe(0);
     expect(res.stderr).toContain('Logged in as Test User');
@@ -172,10 +162,9 @@ describe('tasks login (subprocess)', () => {
       tokenResponses: [{ status: 200, body: successEnvelope }],
     });
 
-    const res = await runLogin(
-      ['--json', '--no-browser', '--server', server.baseUrl],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--json', '--no-browser', '--server', server.baseUrl], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
 
     expect(res.exitCode).toBe(0);
     const lines = res.stdout
@@ -198,10 +187,9 @@ describe('tasks login (subprocess)', () => {
       tokenResponses: [{ status: 400, body: { error: 'expired_token' } }],
     });
 
-    const res = await runLogin(
-      ['--no-browser', '--server', server.baseUrl],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
 
     expect(res.exitCode).toBe(1);
     expect(res.stderr).toContain('Login link expired');
@@ -231,9 +219,7 @@ describe('tasks login (subprocess)', () => {
     // surfaces are acceptable network-failure outcomes; assert on the
     // union.
     const combined = res.stderr;
-    expect(
-      /Could not reach|Failed to start device flow|fetch failed/.test(combined),
-    ).toBe(true);
+    expect(/Could not reach|Failed to start device flow|fetch failed/.test(combined)).toBe(true);
     // And the credentials file MUST NOT exist.
     const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     expect(existsSync(credPath)).toBe(false);
@@ -244,10 +230,9 @@ describe('tasks login (subprocess)', () => {
       tokenResponses: [{ status: 200, body: successEnvelope }],
     });
 
-    const res = await runLogin(
-      ['--no-browser', '--server', server.baseUrl],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
     expect(res.exitCode).toBe(0);
     const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
     const body = readFileSync(credPath, 'utf8');
@@ -261,13 +246,7 @@ describe('tasks login (subprocess)', () => {
     });
 
     const res = await runLogin(
-      [
-        '--no-browser',
-        '--server',
-        server.baseUrl,
-        '--token-name',
-        'cli-testbox-2026-05-22',
-      ],
+      ['--no-browser', '--server', server.baseUrl, '--token-name', 'cli-testbox-2026-05-22'],
       { XDG_CONFIG_HOME: tmpDir },
     );
     expect(res.exitCode).toBe(0);
@@ -276,48 +255,43 @@ describe('tasks login (subprocess)', () => {
     expect(codeBodies[0]!.token_name).toBe('cli-testbox-2026-05-22');
   });
 
-  it(
-    'slow_down handling: --json emits {event:slow_down, interval:10}',
-    async () => {
-      server = await startDeviceFlowServer({
-        tokenResponses: [
-          { status: 400, body: { error: 'slow_down' } },
-          { status: 200, body: successEnvelope },
-        ],
-      });
+  it('slow_down handling: --json emits {event:slow_down, interval:10}', async () => {
+    server = await startDeviceFlowServer({
+      tokenResponses: [
+        { status: 400, body: { error: 'slow_down' } },
+        { status: 200, body: successEnvelope },
+      ],
+    });
 
-      const res = await runLogin(
-        ['--json', '--no-browser', '--server', server.baseUrl],
-        { XDG_CONFIG_HOME: tmpDir },
-        // Initial interval=1 + slow_down → interval=6 → 6s sleep before
-        // second poll. The subprocess timeout (25s) and the vitest test
-        // timeout (30s, third arg below) both have to clear this.
-        25_000,
-      );
-      expect(res.exitCode).toBe(0);
-      const events = res.stdout
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0)
-        .map((l) => JSON.parse(l) as Record<string, unknown>);
-      const slowDowns = events.filter((e) => e.event === 'slow_down');
-      expect(slowDowns).toHaveLength(1);
-      // initial interval=1, slow_down +5 → 6.
-      expect(slowDowns[0]!.interval).toBe(6);
-      expect(events[events.length - 1]!.event).toBe('logged_in');
-    },
-    30_000,
-  );
+    const res = await runLogin(
+      ['--json', '--no-browser', '--server', server.baseUrl],
+      { XDG_CONFIG_HOME: tmpDir },
+      // Initial interval=1 + slow_down → interval=6 → 6s sleep before
+      // second poll. The subprocess timeout (25s) and the vitest test
+      // timeout (30s, third arg below) both have to clear this.
+      25_000,
+    );
+    expect(res.exitCode).toBe(0);
+    const events = res.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    const slowDowns = events.filter((e) => e.event === 'slow_down');
+    expect(slowDowns).toHaveLength(1);
+    // initial interval=1, slow_down +5 → 6.
+    expect(slowDowns[0]!.interval).toBe(6);
+    expect(events[events.length - 1]!.event).toBe('logged_in');
+  }, 30_000);
 
   it('--no-browser suppresses the "Opening browser..." stderr line', async () => {
     server = await startDeviceFlowServer({
       tokenResponses: [{ status: 200, body: successEnvelope }],
     });
 
-    const res = await runLogin(
-      ['--no-browser', '--server', server.baseUrl],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
     expect(res.exitCode).toBe(0);
     expect(res.stderr).not.toContain('Opening browser');
     // User code IS still printed inline as the manual-copy fallback.
@@ -329,10 +303,9 @@ describe('tasks login (subprocess)', () => {
       tokenResponses: [{ status: 200, body: successEnvelope }],
     });
 
-    const res = await runLogin(
-      ['--no-browser', '--server', server.baseUrl],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
     expect(res.exitCode).toBe(0);
     const combined = res.stdout + res.stderr;
     expect(combined).not.toContain('wft_pat_');

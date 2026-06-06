@@ -43,7 +43,7 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
       });
 
       return reply.code(201).send(comment);
-    }
+    },
   );
 
   // GET /tasks/:id/comments - Get comments for a task (paginated)
@@ -65,13 +65,10 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const { id } = request.params;
 
-      const result = fastify.commentService.getCommentsPaginated(
-        id,
-        request.query
-      );
+      const result = fastify.commentService.getCommentsPaginated(id, request.query);
 
       return reply.send(result);
-    }
+    },
   );
 
   // DELETE /tasks/:id/comments/:commentId - Delete comment
@@ -98,7 +95,7 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
       fastify.commentService.deleteComment(commentId, id);
 
       return reply.code(204).send();
-    }
+    },
   );
 };
 

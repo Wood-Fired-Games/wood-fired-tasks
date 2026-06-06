@@ -74,10 +74,7 @@ const APP_DIR = 'wft-router';
  * paths like `D:\x` count as absolute even when this code runs under
  * Linux) and `path.posix.isAbsolute` for everything else.
  */
-function isAbsoluteForPlatform(
-  value: string,
-  platform: NodeJS.Platform,
-): boolean {
+function isAbsoluteForPlatform(value: string, platform: NodeJS.Platform): boolean {
   if (platform === 'win32') {
     return win32.isAbsolute(value);
   }
@@ -97,11 +94,7 @@ function applyOverride(
   fallback: string,
   platform: NodeJS.Platform,
 ): string {
-  if (
-    envValue !== undefined &&
-    envValue.length > 0 &&
-    isAbsoluteForPlatform(envValue, platform)
-  ) {
+  if (envValue !== undefined && envValue.length > 0 && isAbsoluteForPlatform(envValue, platform)) {
     return envValue;
   }
   return fallback;

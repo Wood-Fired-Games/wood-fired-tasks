@@ -37,7 +37,10 @@ describe('fix-9 / secret-redaction', () => {
     );
 
     const secret = 'Bearer xyz-super-secret-token';
-    logger.info({ headers: { authorization: secret, cookie: 'session=leak' } }, 'dispatching webhook');
+    logger.info(
+      { headers: { authorization: secret, cookie: 'session=leak' } },
+      'dispatching webhook',
+    );
 
     const out = sink.text();
     // The cleartext secret never appears on the log surface.

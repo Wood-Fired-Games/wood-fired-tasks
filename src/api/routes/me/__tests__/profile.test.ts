@@ -14,15 +14,7 @@
 // real server, seeds users + a PAT, and exercises the three auth methods
 // against the live chain.
 
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
@@ -47,10 +39,7 @@ interface Harness {
 }
 
 /** Mint a PAT for `userId` directly via SQL and return the plaintext. */
-function mintPatViaDb(
-  db: Database.Database,
-  userId: number,
-): { id: number; token: string } {
+function mintPatViaDb(db: Database.Database, userId: number): { id: number; token: string } {
   const { token, prefix, suffix, hash } = generateToken();
   const info = db
     .prepare(
@@ -130,10 +119,7 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
 
   beforeEach(async () => {
     harness.db.prepare('DELETE FROM api_tokens').run();
-    oidcUserCookie = await signInSessionFor(
-      harness.server,
-      harness.oidcUser.id,
-    );
+    oidcUserCookie = await signInSessionFor(harness.server, harness.oidcUser.id);
   });
 
   it('1. session-authed: returns 200 with profile + ISO authenticatedAt', async () => {

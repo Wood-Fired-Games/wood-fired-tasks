@@ -98,9 +98,7 @@ export type HandlerRegistry = Record<TriggersRule['do'], Handler>;
  * {@link ExitCode}. The daemon never imports `runSSEClient` directly through
  * this seam so tests can hand it a fake generator they fully control.
  */
-export type SSESourceFactory = (
-  signal: AbortSignal,
-) => AsyncGenerator<SSEEvent, ExitCode>;
+export type SSESourceFactory = (signal: AbortSignal) => AsyncGenerator<SSEEvent, ExitCode>;
 
 /** Minimal structured-logger surface the daemon needs (pino-compatible). */
 export interface DaemonLogger extends HandlerLogger {
@@ -342,8 +340,7 @@ export class WftRouterDaemon {
     this.debouncer =
       deps.debouncer ??
       new Debouncer<DispatchPayload>({
-        windowMs:
-          this.config.defaults?.debounce_ms ?? WFT_ROUTER_DEFAULTS.debounce_ms,
+        windowMs: this.config.defaults?.debounce_ms ?? WFT_ROUTER_DEFAULTS.debounce_ms,
         now,
       });
     this.shutdown = deps.shutdown ?? new GracefulShutdown();
@@ -478,10 +475,7 @@ export class WftRouterDaemon {
 
     const mapped = mapSSEEvent(ev);
     if (mapped === null) {
-      this.logger.warn(
-        { event_id: ev.id, event_name: ev.event },
-        'wft_router_event_unmappable',
-      );
+      this.logger.warn({ event_id: ev.id, event_name: ev.event }, 'wft_router_event_unmappable');
       return;
     }
 
@@ -563,10 +557,7 @@ export class WftRouterDaemon {
     // Stage 5: build context + dispatch the matching handler.
     const handler = this.handlers[rule.do];
     if (handler === undefined) {
-      this.logger.error(
-        { rule_name: rule.name, do: rule.do },
-        'wft_router_no_handler_for_rule',
-      );
+      this.logger.error({ rule_name: rule.name, do: rule.do }, 'wft_router_no_handler_for_rule');
       return;
     }
 
@@ -608,12 +599,9 @@ export class WftRouterDaemon {
     identity: DispatchIdentity,
   ): HandlerContext {
     const tokenEnvName = readTokenEnv(rule.with);
-    const resolvedFromEnv =
-      tokenEnvName !== undefined ? this.env[tokenEnvName] : undefined;
+    const resolvedFromEnv = tokenEnvName !== undefined ? this.env[tokenEnvName] : undefined;
     const authToken =
-      resolvedFromEnv !== undefined && resolvedFromEnv.length > 0
-        ? resolvedFromEnv
-        : this.apiKey;
+      resolvedFromEnv !== undefined && resolvedFromEnv.length > 0 ? resolvedFromEnv : this.apiKey;
 
     const ctx: HandlerContext = {
       store: this.store,
@@ -659,10 +647,7 @@ export class WftRouterDaemon {
         );
         return;
       case 'suppressed':
-        this.logger.info(
-          { ...base, reason: outcome.reason },
-          'wft_router_dispatch_suppressed',
-        );
+        this.logger.info({ ...base, reason: outcome.reason }, 'wft_router_dispatch_suppressed');
         return;
       case 'failed':
         if (outcome.retryable) {

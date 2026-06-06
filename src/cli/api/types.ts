@@ -133,8 +133,8 @@ export interface DependencyResponse {
  * Dependency list response with both directions.
  */
 export interface DependencyListResponse {
-  blocks: DependencyResponse[];        // Tasks this task blocks
-  blocked_by: DependencyResponse[];    // Tasks that block this task
+  blocks: DependencyResponse[]; // Tasks this task blocks
+  blocked_by: DependencyResponse[]; // Tasks that block this task
 }
 
 /**

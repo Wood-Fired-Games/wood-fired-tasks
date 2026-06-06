@@ -27,15 +27,7 @@
 // return value. The 21 existing test cases retain their original
 // assertions.
 
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
@@ -115,9 +107,7 @@ function mintPatViaDb(
       );
     const id = Number(info.lastInsertRowid);
     if (opts.revoked) {
-      db.prepare(
-        "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?",
-      ).run(id);
+      db.prepare("UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?").run(id);
     }
     return { id, token };
   }
@@ -137,9 +127,7 @@ function mintPatViaDb(
     );
   const id = Number(info.lastInsertRowid);
   if (opts.revoked) {
-    db.prepare(
-      "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?",
-    ).run(id);
+    db.prepare("UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?").run(id);
   }
   return { id, token };
 }
@@ -188,9 +176,7 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     // Insert a second, independent legacy user so we can test cross-user
     // isolation on revoke.
     const secondInfo = db
-      .prepare(
-        `INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`,
-      )
+      .prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`)
       .run('test-user-b');
     const secondRow = db
       .prepare(
@@ -229,10 +215,7 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
     // path (signInSessionFor mounts a /__test/session-sign-in probe route
     // on first call). Tests that need to be unauthenticated simply omit
     // the cookie header.
-    legacyUserCookie = await signInSessionFor(
-      harness.server,
-      harness.legacyUser.id,
-    );
+    legacyUserCookie = await signInSessionFor(harness.server, harness.legacyUser.id);
   });
 
   // -------------------------------------------------------------------------
@@ -261,9 +244,7 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
 
       // The persisted hash matches what would be computed from the
       // one-time `token` field.
-      const row = harness.db
-        .prepare('SELECT * FROM api_tokens WHERE id = ?')
-        .get(body.id) as {
+      const row = harness.db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(body.id) as {
         user_id: number;
         name: string;
         prefix: string;
@@ -282,9 +263,9 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         userId: harness.legacyUser.id,
       });
 
-      const before = harness.db
-        .prepare('SELECT COUNT(*) as c FROM api_tokens')
-        .get() as { c: number };
+      const before = harness.db.prepare('SELECT COUNT(*) as c FROM api_tokens').get() as {
+        c: number;
+      };
 
       const res = await harness.server.inject({
         method: 'POST',
@@ -298,9 +279,9 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(body.error).toBe('session_required');
       expect(body.message).toContain('Personal Access Token');
 
-      const after = harness.db
-        .prepare('SELECT COUNT(*) as c FROM api_tokens')
-        .get() as { c: number };
+      const after = harness.db.prepare('SELECT COUNT(*) as c FROM api_tokens').get() as {
+        c: number;
+      };
       expect(after.c).toBe(before.c);
     });
 
@@ -430,7 +411,7 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
   // List — GET /api/v1/me/tokens
   // -------------------------------------------------------------------------
   describe('GET /api/v1/me/tokens', () => {
-    it('5. returns the caller\'s tokens (no hash, no token, no cross-user rows)', async () => {
+    it("5. returns the caller's tokens (no hash, no token, no cross-user rows)", async () => {
       // Seed 2 tokens for the legacy user + 1 for the second user. Explicit
       // `createdAt` timestamps so the repository's `ORDER BY created_at
       // DESC` produces a deterministic newest-first ordering — without
@@ -530,13 +511,13 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(res.statusCode).toBe(204);
       expect(res.body).toBe('');
 
-      const row = harness.db
-        .prepare('SELECT revoked_at FROM api_tokens WHERE id = ?')
-        .get(id) as { revoked_at: string | null };
+      const row = harness.db.prepare('SELECT revoked_at FROM api_tokens WHERE id = ?').get(id) as {
+        revoked_at: string | null;
+      };
       expect(row.revoked_at).not.toBeNull();
     });
 
-    it('8. returns 404 (no existence leak) when revoking another user\'s token', async () => {
+    it("8. returns 404 (no existence leak) when revoking another user's token", async () => {
       const { id } = mintPatViaDb(harness.db, {
         userId: harness.secondUser.id,
         name: 'belongs-to-user-b',
@@ -556,9 +537,9 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(body.error).toBe('NOT_FOUND');
 
       // Token still NOT revoked.
-      const row = harness.db
-        .prepare('SELECT revoked_at FROM api_tokens WHERE id = ?')
-        .get(id) as { revoked_at: string | null };
+      const row = harness.db.prepare('SELECT revoked_at FROM api_tokens WHERE id = ?').get(id) as {
+        revoked_at: string | null;
+      };
       expect(row.revoked_at).toBeNull();
     });
 

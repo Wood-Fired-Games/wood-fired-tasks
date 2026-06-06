@@ -6,14 +6,13 @@ import { convertToMcpError } from '../errors.js';
 
 export function registerDependencyTools(
   server: McpServer,
-  dependencyService: DependencyService
+  dependencyService: DependencyService,
 ): void {
   // add_dependency - Create a dependency relationship
   server.registerTool(
     'add_dependency',
     {
-      description:
-        'Add a dependency relationship between tasks (task_id blocks blocks_task_id)',
+      description: 'Add a dependency relationship between tasks (task_id blocks blocks_task_id)',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
         blocks_task_id: z.number().int().positive(),
@@ -45,7 +44,7 @@ export function registerDependencyTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // remove_dependency - Remove a dependency relationship
@@ -73,15 +72,14 @@ export function registerDependencyTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // get_dependencies - Get all dependencies for a task
   server.registerTool(
     'get_dependencies',
     {
-      description:
-        'Get all dependencies for a task (tasks it blocks and tasks that block it)',
+      description: 'Get all dependencies for a task (tasks it blocks and tasks that block it)',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
       }),
@@ -108,6 +106,6 @@ export function registerDependencyTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 }

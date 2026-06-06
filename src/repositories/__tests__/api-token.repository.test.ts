@@ -7,11 +7,7 @@ import { ApiTokenRepository } from '../api-token.repository.js';
 /**
  * Helper: insert a parent users row (FK satisfaction for api_tokens.user_id).
  */
-function insertUser(
-  db: Database.Database,
-  display_name: string,
-  id?: number
-): number {
+function insertUser(db: Database.Database, display_name: string, id?: number): number {
   const stmt = db.prepare(`
     INSERT INTO users (id, display_name, is_legacy)
     VALUES (?, ?, 1)
@@ -37,7 +33,7 @@ function insertToken(
     last_used_at?: string | null;
     revoked_at?: string | null;
     expires_at?: string | null;
-  }
+  },
 ): number {
   const stmt = db.prepare(`
     INSERT INTO api_tokens (
@@ -216,7 +212,7 @@ describe('ApiTokenRepository', () => {
           prefix: 'wft_pat_',
           suffix: 'orph',
           hash: 'sha256-insert-orphan',
-        })
+        }),
       ).toThrow(/FOREIGN KEY/i);
     });
 
@@ -243,7 +239,7 @@ describe('ApiTokenRepository', () => {
           last_used_at: null,
           revoked_at: null,
           expires_at: null,
-        })
+        }),
       );
     });
   });

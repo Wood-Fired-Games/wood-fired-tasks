@@ -109,9 +109,9 @@ describe('validateScoreSubmission (task #626)', () => {
     const sub = validSubmission({ themeName: null });
     const res = validateScoreSubmission(sub, ctxWith());
     expect(res.ok).toBe(false);
-    expect(
-      res.errors.some((e) => e.includes('only allowed when the project has no charter')),
-    ).toBe(true);
+    expect(res.errors.some((e) => e.includes('only allowed when the project has no charter'))).toBe(
+      true,
+    );
   });
 
   it('allows themeName=null only when charter is null', () => {
@@ -131,10 +131,7 @@ describe('validateScoreSubmission (task #626)', () => {
 
   it('rejects jobSizeTier outside the jobSizeBand', () => {
     // filesTouched 1 → band [1,2]; jobSizeTier 8 is outside it.
-    const sub = validSubmission(
-      { jobSizeTier: 8 },
-      { filesTouched: 1 },
-    );
+    const sub = validSubmission({ jobSizeTier: 8 }, { filesTouched: 1 });
     const res = validateScoreSubmission(sub, ctxWith());
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => e.includes('outside the allowed band'))).toBe(true);
@@ -142,10 +139,7 @@ describe('validateScoreSubmission (task #626)', () => {
 
   it('rejects the jobSize=1 && value=13 contradiction', () => {
     // filesTouched 1 → band [1,2] admits jobSizeTier 1; theme weight 13 × core → value 13.
-    const sub = validSubmission(
-      { jobSizeTier: 1 },
-      { filesTouched: 1 },
-    );
+    const sub = validSubmission({ jobSizeTier: 1 }, { filesTouched: 1 });
     const res = validateScoreSubmission(sub, ctxWith());
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => e.includes('contradiction'))).toBe(true);
@@ -160,9 +154,7 @@ describe('validateScoreSubmission (task #626)', () => {
     ];
     const res = validateScoreSubmission(validSubmission(), ctxWith({ batch }));
     expect(res.ok).toBe(false);
-    expect(
-      res.errors.some((e) => e.includes('column "value" has no 1 anchor')),
-    ).toBe(true);
+    expect(res.errors.some((e) => e.includes('column "value" has no 1 anchor'))).toBe(true);
   });
 
   it('rejects a degenerate batch where all components are identical (variance floor)', () => {
@@ -176,9 +168,7 @@ describe('validateScoreSubmission (task #626)', () => {
     const res = validateScoreSubmission(validSubmission(), ctxWith({ batch }));
     expect(res.ok).toBe(false);
     // Zero variance < floor on every CoD column, and no 1 anchor either.
-    expect(
-      res.errors.some((e) => e.includes(`variance below floor ${VARIANCE_FLOOR}`)),
-    ).toBe(true);
+    expect(res.errors.some((e) => e.includes(`variance below floor ${VARIANCE_FLOOR}`))).toBe(true);
   });
 
   it('accepts a well-anchored, varied batch', () => {
@@ -192,10 +182,7 @@ describe('validateScoreSubmission (task #626)', () => {
   });
 
   it('uses decay class for time criticality when no deadline date', () => {
-    const sub = validSubmission(
-      { decay: 'fast' },
-      { daysUntilDeadline: null },
-    );
+    const sub = validSubmission({ decay: 'fast' }, { daysUntilDeadline: null });
     const res = validateScoreSubmission(sub, ctxWith());
     expect(res.ok).toBe(true);
     expect(res.components?.timeCriticality).toBe(5); // fast → 5

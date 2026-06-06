@@ -37,9 +37,7 @@ export type StructuredContent = { [x: string]: unknown };
  * the ONLY sanctioned `as unknown as { [x: string]: unknown }` in the MCP
  * layer; see the module header for why it cannot be avoided.
  */
-export function toStructuredContent<T extends object>(
-  value: T,
-): StructuredContent {
+export function toStructuredContent<T extends object>(value: T): StructuredContent {
   // SDK-boundary cast (isolated): interfaces don't satisfy the SDK's index
   // signature even though they are valid JSON objects at runtime.
   return value as unknown as StructuredContent;

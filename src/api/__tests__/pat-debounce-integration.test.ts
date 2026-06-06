@@ -1,12 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import { createServer } from '../server.js';
@@ -41,13 +33,7 @@ function mintPatRow(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, revoked_at, expires_at)
        VALUES (?, ?, ?, ?, ?, '[]', NULL, NULL)`,
     )
-    .run(
-      opts.userId,
-      opts.name ?? 'debounce-test-token',
-      prefix,
-      suffix,
-      hash,
-    );
+    .run(opts.userId, opts.name ?? 'debounce-test-token', prefix, suffix, hash);
   return { token, tokenId: Number(info.lastInsertRowid) };
 }
 
@@ -71,9 +57,7 @@ describe('PAT chain plugin — last_used_at debounce (PAT-03)', () => {
     // The legacy seed creates user with display_name='key_test-key' for the
     // bare 'test-key' entry — reuse it as the owner for our PAT rows.
     const row = db
-      .prepare(
-        "SELECT id FROM users WHERE display_name = 'key_test-key' LIMIT 1",
-      )
+      .prepare("SELECT id FROM users WHERE display_name = 'key_test-key' LIMIT 1")
       .get() as { id: number } | undefined;
     if (!row) throw new Error('test setup: legacy user not seeded');
     legacyUserId = row.id;

@@ -6,10 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 // Absolute path to scripts/pack-check.mjs (resolved from this test's own
 // location — repo root is two levels up from scripts/__tests__/).
-const scriptsDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-);
+const scriptsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(scriptsDir, '..');
 const scriptPath = path.join(scriptsDir, 'pack-check.mjs');
 

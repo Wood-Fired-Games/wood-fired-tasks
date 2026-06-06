@@ -130,7 +130,7 @@ export class EventBus<Events extends Record<string, unknown>> {
               } catch (error) {
                 console.error(
                   `Error in event handler during transaction flush for ${entry.event}:`,
-                  error
+                  error,
                 );
               }
             }
@@ -152,7 +152,7 @@ export class EventBus<Events extends Record<string, unknown>> {
   subscribe<K extends keyof Events>(
     event: K,
     handler: (payload: Events[K]) => void,
-    options?: SubscribeOptions
+    options?: SubscribeOptions,
   ): () => void {
     // Wrap handler in try/catch to prevent subscriber errors from crashing EventBus
     const wrappedHandler = (payload: Events[K]) => {

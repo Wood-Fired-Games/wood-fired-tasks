@@ -34,7 +34,7 @@ export const statsCommand = new Command('stats')
       // Query 1: Task counts by status
       const statusRows = db
         .prepare<[], StatusRow>(
-          'SELECT status, COUNT(*) as count FROM tasks GROUP BY status ORDER BY status'
+          'SELECT status, COUNT(*) as count FROM tasks GROUP BY status ORDER BY status',
         )
         .all();
 
@@ -43,14 +43,14 @@ export const statsCommand = new Command('stats')
       // Query 2a: Created in last 24h
       const createdRow = db
         .prepare<[], CountRow>(
-          "SELECT COUNT(*) as count FROM tasks WHERE created_at >= datetime('now', '-24 hours')"
+          "SELECT COUNT(*) as count FROM tasks WHERE created_at >= datetime('now', '-24 hours')",
         )
         .get();
 
       // Query 2b: Updated in last 24h
       const updatedRow = db
         .prepare<[], CountRow>(
-          "SELECT COUNT(*) as count FROM tasks WHERE updated_at >= datetime('now', '-24 hours')"
+          "SELECT COUNT(*) as count FROM tasks WHERE updated_at >= datetime('now', '-24 hours')",
         )
         .get();
 
@@ -68,7 +68,7 @@ export const statsCommand = new Command('stats')
            WHERE assignee IS NOT NULL
              AND updated_at >= datetime('now', '-7 days')
            GROUP BY assignee
-           ORDER BY task_count DESC`
+           ORDER BY task_count DESC`,
         )
         .all();
 
@@ -90,7 +90,7 @@ export const statsCommand = new Command('stats')
       // Right-align counts: find widest count for padding
       const maxCountWidth = Math.max(
         ...statusRows.map((r) => String(r.count).length),
-        String(total).length
+        String(total).length,
       );
 
       console.log(colorBold('Task Counts by Status:'));
@@ -112,7 +112,7 @@ export const statsCommand = new Command('stats')
       } else {
         for (const row of agentRows) {
           console.log(
-            `  ${row.assignee.padEnd(12)} ${row.task_count} tasks (${row.completed} done, ${row.in_progress} in progress)`
+            `  ${row.assignee.padEnd(12)} ${row.task_count} tasks (${row.completed} done, ${row.in_progress} in progress)`,
           );
         }
       }

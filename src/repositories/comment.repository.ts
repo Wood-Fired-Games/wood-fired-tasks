@@ -1,10 +1,6 @@
 import type Database from '../db/driver.js';
 import type { Comment, CreateCommentDTO } from '../types/task.js';
-import {
-  DEFAULT_PAGE_LIMIT,
-  DEFAULT_PAGE_OFFSET,
-  MAX_PAGE_LIMIT,
-} from '../types/task.js';
+import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
 import type { ICommentRepository, PaginationOptions } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 
@@ -14,12 +10,14 @@ function resolvePagination(pagination?: PaginationOptions): {
 } {
   const rawLimit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
   const rawOffset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
-  const limit = Number.isFinite(rawLimit) && Number.isInteger(rawLimit) && rawLimit > 0
-    ? Math.min(rawLimit, MAX_PAGE_LIMIT)
-    : DEFAULT_PAGE_LIMIT;
-  const offset = Number.isFinite(rawOffset) && Number.isInteger(rawOffset) && rawOffset >= 0
-    ? rawOffset
-    : DEFAULT_PAGE_OFFSET;
+  const limit =
+    Number.isFinite(rawLimit) && Number.isInteger(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, MAX_PAGE_LIMIT)
+      : DEFAULT_PAGE_LIMIT;
+  const offset =
+    Number.isFinite(rawOffset) && Number.isInteger(rawOffset) && rawOffset >= 0
+      ? rawOffset
+      : DEFAULT_PAGE_OFFSET;
   return { limit, offset };
 }
 
@@ -41,18 +39,16 @@ export class CommentRepository implements ICommentRepository {
       VALUES (@task_id, @author, @content, @created_at, @author_user_id)
     `);
 
-    this.findByIdStmt = db.prepare(
-      'SELECT * FROM task_comments WHERE id = ?'
-    );
+    this.findByIdStmt = db.prepare('SELECT * FROM task_comments WHERE id = ?');
 
     this.findByTaskIdStmt = db.prepare(
-      'SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?'
+      'SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?',
     );
 
     this.deleteStmt = db.prepare('DELETE FROM task_comments WHERE id = ?');
 
     this.countByTaskIdStmt = db.prepare(
-      'SELECT COUNT(*) as count FROM task_comments WHERE task_id = ?'
+      'SELECT COUNT(*) as count FROM task_comments WHERE task_id = ?',
     );
   }
 

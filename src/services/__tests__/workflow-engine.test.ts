@@ -142,7 +142,7 @@ describe('WorkflowEngine', () => {
 
       // Find the status_changed event for the parent task
       const parentEvent = receivedEvents.find(
-        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done',
       );
 
       expect(parentEvent).toBeDefined();
@@ -312,7 +312,7 @@ describe('WorkflowEngine', () => {
 
       // Find the status_changed event for B transitioning to 'open'
       const unblockEvent = receivedEvents.find(
-        (e) => e.data.id === taskB.id && (e.metadata as any).to === 'open'
+        (e) => e.data.id === taskB.id && (e.metadata as any).to === 'open',
       );
 
       expect(unblockEvent).toBeDefined();
@@ -390,20 +390,20 @@ describe('WorkflowEngine', () => {
 
       // Find events for the parent task (auto-completed by workflow)
       const parentDoneEvent = receivedEvents.find(
-        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done',
       );
       expect(parentDoneEvent).toBeDefined();
       expect(parentDoneEvent!.metadata.source).toBe('workflow');
 
       // Find events for child tasks (done by user)
       const child1DoneEvent = receivedEvents.find(
-        (e) => e.data.id === child1.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === child1.id && (e.metadata as any).to === 'done',
       );
       expect(child1DoneEvent).toBeDefined();
       expect(child1DoneEvent!.metadata.source).toBe('user');
 
       const child2DoneEvent = receivedEvents.find(
-        (e) => e.data.id === child2.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === child2.id && (e.metadata as any).to === 'done',
       );
       expect(child2DoneEvent).toBeDefined();
       expect(child2DoneEvent!.metadata.source).toBe('user');
@@ -466,8 +466,9 @@ describe('WorkflowEngine', () => {
       // for the parent's done transition (the workflow cascade step)
       const originalUpdate = taskService.updateTask.bind(taskService);
       let callCount = 0;
-      const spy = vi.spyOn(taskService, 'updateTask').mockImplementation(
-        (id: number, input: unknown, source?: 'user' | 'workflow') => {
+      const spy = vi
+        .spyOn(taskService, 'updateTask')
+        .mockImplementation((id: number, input: unknown, source?: 'user' | 'workflow') => {
           callCount++;
           // The cascade triggers:
           //   1. open -> in_progress for parent (workflow)
@@ -480,8 +481,7 @@ describe('WorkflowEngine', () => {
             }
           }
           return originalUpdate(id, input, source);
-        }
-      );
+        });
 
       // Mark child 2 done -- should trigger cascade that fails
       markDone(child2.id);

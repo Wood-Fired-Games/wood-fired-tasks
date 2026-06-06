@@ -32,10 +32,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import {
-  findByDeviceCode,
-  remove,
-} from '../../../services/device-flow-store.js';
+import { findByDeviceCode, remove } from '../../../services/device-flow-store.js';
 import { toAuthenticatedUser } from '../../plugins/auth/strategies/pat.js';
 
 export interface DeviceTokenRouteOptions {
@@ -56,181 +53,162 @@ const BodySchema = z.object({
   client_id: z.string().min(1),
 });
 
-const deviceTokenRoute: FastifyPluginAsync<DeviceTokenRouteOptions> = async (
-  fastify,
-  opts,
-) => {
+const deviceTokenRoute: FastifyPluginAsync<DeviceTokenRouteOptions> = async (fastify, opts) => {
   // Plan 30-04 — token endpoint reads userRepository to build the success
   // envelope's `user` field. Fail fast at register time if the host app
   // didn't wire it.
   if (!fastify.hasDecorator('userRepository')) {
-    throw new Error(
-      'deviceTokenRoute requires userRepository to be decorated before registration',
-    );
+    throw new Error('deviceTokenRoute requires userRepository to be decorated before registration');
   }
 
-  fastify.post(
-    '/auth/device/token',
-    { config: { skipAuth: true } },
-    async (request, reply) => {
-      // request.body is either the parsed JSON object OR the formbody plugin's
-      // parsed URLSearchParams shape — both surface as plain objects to Zod.
-      const parsed = BodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({ error: 'invalid_request' });
-      }
-      const { grant_type, device_code, client_id } = parsed.data;
+  fastify.post('/auth/device/token', { config: { skipAuth: true } }, async (request, reply) => {
+    // request.body is either the parsed JSON object OR the formbody plugin's
+    // parsed URLSearchParams shape — both surface as plain objects to Zod.
+    const parsed = BodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+    const { grant_type, device_code, client_id } = parsed.data;
 
-      // 1. unsupported_grant_type
-      if (grant_type !== DEVICE_CODE_GRANT) {
-        return reply.code(400).send({ error: 'unsupported_grant_type' });
-      }
+    // 1. unsupported_grant_type
+    if (grant_type !== DEVICE_CODE_GRANT) {
+      return reply.code(400).send({ error: 'unsupported_grant_type' });
+    }
 
-      // 2. invalid_client
-      if (client_id !== opts.expectedClientId) {
-        return reply.code(400).send({ error: 'invalid_client' });
-      }
+    // 2. invalid_client
+    if (client_id !== opts.expectedClientId) {
+      return reply.code(400).send({ error: 'invalid_client' });
+    }
 
-      // 3. expired_token — unknown OR past expiresAt.
-      const session = findByDeviceCode(device_code);
-      if (!session) {
-        return reply.code(400).send({ error: 'expired_token' });
-      }
-      const now = Date.now();
-      if (now > session.expiresAt) {
-        return reply.code(400).send({ error: 'expired_token' });
-      }
+    // 3. expired_token — unknown OR past expiresAt.
+    const session = findByDeviceCode(device_code);
+    if (!session) {
+      return reply.code(400).send({ error: 'expired_token' });
+    }
+    const now = Date.now();
+    if (now > session.expiresAt) {
+      return reply.code(400).send({ error: 'expired_token' });
+    }
 
-      // 4. slow_down rate gate. The "(interval - 1)" formula is RFC 8628's
-      // gentle-tolerance phrasing: a client whose clock drift gives it a
-      // poll arriving ~1s early is NOT considered abusive. We mutate
-      // BEFORE sending so the next poll sees the new pace.
-      //
-      // WR-04 (Phase 30 review) — cap interval growth at 60 s. Without
-      // a ceiling, a hostile client polling at sub-interval cadence can
-      // drive `session.interval` past the session's 600 s TTL in seconds
-      // (50 ms intervals × 200 hits = 1005 s). A legitimate CLI that
-      // shares the same device_code (e.g. on-host adversary that read
-      // /proc/<pid>/cmdline) then receives `interval=1005`, adds the
-      // RFC-mandated +5, and stops polling effectively until the
-      // session expires — a denial-of-service against the legitimate
-      // login. The 60 s cap keeps a misbehaving client paying the
-      // back-off cost while preserving the legitimate CLI's ability to
-      // complete the flow within the TTL.
-      if (
-        session.lastPollAt > 0 &&
-        now - session.lastPollAt < (session.interval - 1) * 1000
-      ) {
-        session.interval = Math.min(session.interval + 5, 60);
-        session.lastPollAt = now;
-        request.log.debug(
-          { event: 'device_flow_poll', status: session.status, slow_down: true },
-          'device flow poll',
-        );
-        return reply.code(400).send({ error: 'slow_down' });
-      }
-
-      // 5. Normal poll path — record the timestamp BEFORE dispatching so
-      // the next call sees a fresh lastPollAt regardless of outcome.
+    // 4. slow_down rate gate. The "(interval - 1)" formula is RFC 8628's
+    // gentle-tolerance phrasing: a client whose clock drift gives it a
+    // poll arriving ~1s early is NOT considered abusive. We mutate
+    // BEFORE sending so the next poll sees the new pace.
+    //
+    // WR-04 (Phase 30 review) — cap interval growth at 60 s. Without
+    // a ceiling, a hostile client polling at sub-interval cadence can
+    // drive `session.interval` past the session's 600 s TTL in seconds
+    // (50 ms intervals × 200 hits = 1005 s). A legitimate CLI that
+    // shares the same device_code (e.g. on-host adversary that read
+    // /proc/<pid>/cmdline) then receives `interval=1005`, adds the
+    // RFC-mandated +5, and stops polling effectively until the
+    // session expires — a denial-of-service against the legitimate
+    // login. The 60 s cap keeps a misbehaving client paying the
+    // back-off cost while preserving the legitimate CLI's ability to
+    // complete the flow within the TTL.
+    if (session.lastPollAt > 0 && now - session.lastPollAt < (session.interval - 1) * 1000) {
+      session.interval = Math.min(session.interval + 5, 60);
       session.lastPollAt = now;
-
       request.log.debug(
-        { event: 'device_flow_poll', status: session.status, slow_down: false },
+        { event: 'device_flow_poll', status: session.status, slow_down: true },
         'device flow poll',
       );
+      return reply.code(400).send({ error: 'slow_down' });
+    }
 
-      switch (session.status) {
-        case 'pending':
+    // 5. Normal poll path — record the timestamp BEFORE dispatching so
+    // the next call sees a fresh lastPollAt regardless of outcome.
+    session.lastPollAt = now;
+
+    request.log.debug(
+      { event: 'device_flow_poll', status: session.status, slow_down: false },
+      'device flow poll',
+    );
+
+    switch (session.status) {
+      case 'pending':
+        return reply.code(400).send({ error: 'authorization_pending' });
+      case 'approved': {
+        // Plan 30-04: the verify handler mints the PAT and stashes
+        // {tokenId, token} on the session via recordMintedToken. The
+        // CLI may poll between approve() and the mint completing (a
+        // narrow window, but real — DB outage path keeps the session
+        // in approved/unminted state). In that case the CLI must keep
+        // polling, NOT receive a half-built envelope.
+        if (
+          session.mintedToken === null ||
+          session.mintedTokenId === null ||
+          session.approvedUserId === null
+        ) {
           return reply.code(400).send({ error: 'authorization_pending' });
-        case 'approved': {
-          // Plan 30-04: the verify handler mints the PAT and stashes
-          // {tokenId, token} on the session via recordMintedToken. The
-          // CLI may poll between approve() and the mint completing (a
-          // narrow window, but real — DB outage path keeps the session
-          // in approved/unminted state). In that case the CLI must keep
-          // polling, NOT receive a half-built envelope.
-          if (
-            session.mintedToken === null ||
-            session.mintedTokenId === null ||
-            session.approvedUserId === null
-          ) {
-            return reply
-              .code(400)
-              .send({ error: 'authorization_pending' });
-          }
-          // Look up the approver to project an AuthenticatedUser into
-          // the success envelope. Anything missing here is a bug — the
-          // user existed when verify ran, and the FK ON DELETE CASCADE
-          // would have killed the api_tokens row too. Treat as 500-class.
-          const userRow = fastify.userRepository.findById(
-            session.approvedUserId,
-          );
-          if (!userRow) {
-            request.log.error(
-              {
-                event: 'device_flow_user_vanished',
-                userId: session.approvedUserId,
-                tokenId: session.mintedTokenId,
-              },
-              'approved user not found at token delivery',
-            );
-            // WR-02 (Phase 30 review) — purge the orphan PAT row + drop
-            // the session so a) the user_id-less row doesn't linger in
-            // the DB until the FK cascade catches up, and b) the
-            // plaintext PAT held by `session.mintedToken` clears from
-            // process memory immediately (instead of waiting the
-            // remaining TTL × poll-frequency cycles). Both operations
-            // are best-effort: a failed revoke is logged but does not
-            // change the response (the CLI still gets expired_token).
-            try {
-              fastify.apiTokenRepository.revoke(
-                session.mintedTokenId,
-                session.approvedUserId,
-              );
-            } catch (revokeErr) {
-              request.log.error(
-                {
-                  err: revokeErr,
-                  event: 'pat_orphan_revoke_failed',
-                  userId: session.approvedUserId,
-                  tokenId: session.mintedTokenId,
-                },
-                'failed to revoke orphan PAT for vanished user',
-              );
-            }
-            remove(session.deviceCode);
-            return reply.code(400).send({ error: 'expired_token' });
-          }
-          const successEnvelope = {
-            token: session.mintedToken,
-            token_type: 'PAT' as const,
-            token_id: session.mintedTokenId,
-            user: toAuthenticatedUser(userRow),
-          };
-          // One-shot consumption — Threat T-30-04-01 mitigation. We
-          // remove BEFORE sending so a hypothetical synchronous replay
-          // would already see expired_token. (fastify.inject is async
-          // so this ordering matters; production CLI polls are also
-          // network-async.) The captured envelope above is the only
-          // copy of session.mintedToken that survives `remove`.
-          remove(session.deviceCode);
-          request.log.info(
+        }
+        // Look up the approver to project an AuthenticatedUser into
+        // the success envelope. Anything missing here is a bug — the
+        // user existed when verify ran, and the FK ON DELETE CASCADE
+        // would have killed the api_tokens row too. Treat as 500-class.
+        const userRow = fastify.userRepository.findById(session.approvedUserId);
+        if (!userRow) {
+          request.log.error(
             {
-              event: 'device_flow_token_issued',
+              event: 'device_flow_user_vanished',
               userId: session.approvedUserId,
               tokenId: session.mintedTokenId,
             },
-            'device-flow PAT delivered',
+            'approved user not found at token delivery',
           );
-          return reply.code(200).send(successEnvelope);
-        }
-        case 'denied':
-          return reply.code(400).send({ error: 'access_denied' });
-        case 'expired':
+          // WR-02 (Phase 30 review) — purge the orphan PAT row + drop
+          // the session so a) the user_id-less row doesn't linger in
+          // the DB until the FK cascade catches up, and b) the
+          // plaintext PAT held by `session.mintedToken` clears from
+          // process memory immediately (instead of waiting the
+          // remaining TTL × poll-frequency cycles). Both operations
+          // are best-effort: a failed revoke is logged but does not
+          // change the response (the CLI still gets expired_token).
+          try {
+            fastify.apiTokenRepository.revoke(session.mintedTokenId, session.approvedUserId);
+          } catch (revokeErr) {
+            request.log.error(
+              {
+                err: revokeErr,
+                event: 'pat_orphan_revoke_failed',
+                userId: session.approvedUserId,
+                tokenId: session.mintedTokenId,
+              },
+              'failed to revoke orphan PAT for vanished user',
+            );
+          }
+          remove(session.deviceCode);
           return reply.code(400).send({ error: 'expired_token' });
+        }
+        const successEnvelope = {
+          token: session.mintedToken,
+          token_type: 'PAT' as const,
+          token_id: session.mintedTokenId,
+          user: toAuthenticatedUser(userRow),
+        };
+        // One-shot consumption — Threat T-30-04-01 mitigation. We
+        // remove BEFORE sending so a hypothetical synchronous replay
+        // would already see expired_token. (fastify.inject is async
+        // so this ordering matters; production CLI polls are also
+        // network-async.) The captured envelope above is the only
+        // copy of session.mintedToken that survives `remove`.
+        remove(session.deviceCode);
+        request.log.info(
+          {
+            event: 'device_flow_token_issued',
+            userId: session.approvedUserId,
+            tokenId: session.mintedTokenId,
+          },
+          'device-flow PAT delivered',
+        );
+        return reply.code(200).send(successEnvelope);
       }
-    },
-  );
+      case 'denied':
+        return reply.code(400).send({ error: 'access_denied' });
+      case 'expired':
+        return reply.code(400).send({ error: 'expired_token' });
+    }
+  });
 };
 
 export default deviceTokenRoute;

@@ -53,9 +53,7 @@ const VALID_TASK_ENTRY: AuditTaskEntry = {
 
 describe('AuditRunFrontmatterSchema', () => {
   it('accepts a well-formed frontmatter block', () => {
-    expect(AuditRunFrontmatterSchema.safeParse(VALID_FRONTMATTER).success).toBe(
-      true,
-    );
+    expect(AuditRunFrontmatterSchema.safeParse(VALID_FRONTMATTER).success).toBe(true);
   });
 
   it('exposes every required frontmatter field in the schema shape', () => {
@@ -212,10 +210,7 @@ describe('AuditTaskEntrySchema', () => {
 
   it('accepts each of COVERED / PARTIAL / MISSING', () => {
     for (const score of ['COVERED', 'PARTIAL', 'MISSING'] as const) {
-      expect(
-        AuditTaskEntrySchema.safeParse({ ...VALID_TASK_ENTRY, score })
-          .success,
-      ).toBe(true);
+      expect(AuditTaskEntrySchema.safeParse({ ...VALID_TASK_ENTRY, score }).success).toBe(true);
     }
   });
 

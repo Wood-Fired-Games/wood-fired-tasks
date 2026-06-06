@@ -13,23 +13,16 @@
 // Bodies are intentionally type-only; the assertions run at compile time.
 
 import { describe, it, expectTypeOf } from 'vitest';
-import Fastify, {
-  type FastifyRequest,
-  type RouteOptions,
-} from 'fastify';
+import Fastify, { type FastifyRequest, type RouteOptions } from 'fastify';
 import type { AuthenticatedUser, AuthMethod } from '../identity.js';
 
 describe('FastifyRequest augmentation', () => {
   it('user is AuthenticatedUser | null (NON-optional)', () => {
-    expectTypeOf<FastifyRequest['user']>().toEqualTypeOf<
-      AuthenticatedUser | null
-    >();
+    expectTypeOf<FastifyRequest['user']>().toEqualTypeOf<AuthenticatedUser | null>();
   });
 
   it('authMethod is AuthMethod | null (NON-optional)', () => {
-    expectTypeOf<FastifyRequest['authMethod']>().toEqualTypeOf<
-      AuthMethod | null
-    >();
+    expectTypeOf<FastifyRequest['authMethod']>().toEqualTypeOf<AuthMethod | null>();
   });
 
   it('tokenId is number | null (NON-optional)', () => {
@@ -39,9 +32,7 @@ describe('FastifyRequest augmentation', () => {
   it('apiKeyLabel from Phase 27 augmentation still compiles', () => {
     // The auth.ts augmentation declares `apiKeyLabel?: string` — merging
     // means it must be assignable from `string | undefined`.
-    expectTypeOf<FastifyRequest['apiKeyLabel']>().toEqualTypeOf<
-      string | undefined
-    >();
+    expectTypeOf<FastifyRequest['apiKeyLabel']>().toEqualTypeOf<string | undefined>();
   });
 });
 

@@ -46,9 +46,7 @@ describe('Task #383: @fastify/helmet security headers on the JSON API surface', 
 
     // helmet default is SAMEORIGIN.
     expect(response.headers['x-frame-options']).toBeDefined();
-    expect(String(response.headers['x-frame-options']).toUpperCase()).toContain(
-      'SAMEORIGIN',
-    );
+    expect(String(response.headers['x-frame-options']).toUpperCase()).toContain('SAMEORIGIN');
   });
 
   it('does NOT emit a global Content-Security-Policy on JSON API responses (CSP is left to the HTML routes)', async () => {

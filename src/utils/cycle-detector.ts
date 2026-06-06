@@ -70,11 +70,7 @@ export class CycleDetector {
   /**
    * DFS with recursion stack to detect back edges (cycles)
    */
-  private dfs(
-    node: number,
-    visited: Set<number>,
-    recStack: Set<number>
-  ): boolean {
+  private dfs(node: number, visited: Set<number>, recStack: Set<number>): boolean {
     visited.add(node);
     recStack.add(node);
 

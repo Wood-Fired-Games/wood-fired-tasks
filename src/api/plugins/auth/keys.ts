@@ -21,12 +21,7 @@ import { createHash } from 'crypto';
  * Substring matches catch keys that embed an obvious placeholder phrase even if
  * padded to satisfy the length floor (e.g. "change-me-to-a-real-keyxxxxxxxxxx").
  */
-const PLACEHOLDER_SUBSTRINGS = [
-  'change-me-to-a-real-key',
-  'changeme',
-  'placeholder',
-  'example',
-];
+const PLACEHOLDER_SUBSTRINGS = ['change-me-to-a-real-key', 'changeme', 'placeholder', 'example'];
 
 /**
  * Placeholder values rejected in production keys (exact lowercase match).

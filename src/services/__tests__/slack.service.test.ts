@@ -52,9 +52,7 @@ describe('SlackService', () => {
 
       await service.start();
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('disabled')
-      );
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('disabled'));
     });
 
     it('should handle stop() gracefully when never started', async () => {
@@ -118,9 +116,7 @@ describe('SlackService', () => {
 
       await service.start();
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Socket Mode')
-      );
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Socket Mode'));
     });
   });
 
@@ -154,9 +150,7 @@ describe('SlackService', () => {
       mockAppInstance.stop.mockResolvedValue(undefined);
       await service.stop();
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('disconnected')
-      );
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('disconnected'));
     });
 
     it('should not call app.stop() twice on repeated stop() calls', async () => {

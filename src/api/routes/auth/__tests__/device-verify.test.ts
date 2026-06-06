@@ -119,16 +119,12 @@ async function buildHarness(): Promise<Harness> {
 
   // Probe — seeds session.user the way the OIDC callback does. skipAuth so
   // the chain doesn't need credentials to set the cookie.
-  app.post(
-    '/__test/sign-in',
-    { config: { skipAuth: true } },
-    async (request: any, reply: any) => {
-      const { userId } = request.body as { userId: number };
-      request.session.set('user', { id: userId });
-      request.session.set('authenticatedAt', Date.now());
-      return reply.code(204).send();
-    },
-  );
+  app.post('/__test/sign-in', { config: { skipAuth: true } }, async (request: any, reply: any) => {
+    const { userId } = request.body as { userId: number };
+    request.session.set('user', { id: userId });
+    request.session.set('authenticatedAt', Date.now());
+    return reply.code(204).send();
+  });
 
   await app.register(deviceHtmlRoute, { origin: ORIGIN });
   await app.ready();
@@ -196,10 +192,7 @@ function postVerify(
   });
 }
 
-function mintPatRow(
-  db: Database.Database,
-  userId: number,
-): { token: string; tokenId: number } {
+function mintPatRow(db: Database.Database, userId: number): { token: string; tokenId: number } {
   const { token, prefix, suffix, hash } = generateToken();
   const info = db
     .prepare(
@@ -247,11 +240,7 @@ describe('POST /auth/device/verify', () => {
 
   it('3. valid session, no _csrf field → 403 (renders device page with CSRF error)', async () => {
     const cookie = await signIn(harness.app, harness.legacyUserId);
-    const r = await postVerify(
-      harness.app,
-      { user_code: 'ABCDEFGH' },
-      { cookie },
-    );
+    const r = await postVerify(harness.app, { user_code: 'ABCDEFGH' }, { cookie });
     expect(r.statusCode).toBe(403);
     expect(String(r.headers['content-type'])).toMatch(/text\/html/);
     const $ = cheerio.load(r.body);
@@ -444,13 +433,15 @@ describe('POST /auth/device/verify', () => {
       // DB has the new api_tokens row.
       const row = harness.db
         .prepare('SELECT * FROM api_tokens WHERE id = ?')
-        .get(after?.mintedTokenId) as {
-          user_id: number;
-          name: string;
-          hash: string;
-          scopes: string;
-          expires_at: string | null;
-        } | undefined;
+        .get(after?.mintedTokenId) as
+        | {
+            user_id: number;
+            name: string;
+            hash: string;
+            scopes: string;
+            expires_at: string | null;
+          }
+        | undefined;
       expect(row).toBeDefined();
       expect(row?.user_id).toBe(harness.legacyUserId);
       expect(row?.name).toBe(`cli-laptop-${todayUtc()}`);
@@ -513,13 +504,11 @@ describe('POST /auth/device/verify', () => {
 
       // Both succeeded, both produced api_tokens rows with the SAME name.
       const rows = harness.db
-        .prepare(
-          'SELECT id, name FROM api_tokens WHERE id IN (?, ?) ORDER BY id ASC',
-        )
+        .prepare('SELECT id, name FROM api_tokens WHERE id IN (?, ?) ORDER BY id ASC')
         .all(a1?.mintedTokenId, a2?.mintedTokenId) as Array<{
-          id: number;
-          name: string;
-        }>;
+        id: number;
+        name: string;
+      }>;
       expect(rows).toHaveLength(2);
       expect(rows[0].name).toBe(rows[1].name);
       expect(rows[0].name).toBe(`cli-samehost-${todayUtc()}`);
@@ -554,9 +543,7 @@ describe('POST /auth/device/verify', () => {
         expect(r.statusCode).toBe(500);
         expect(String(r.headers['content-type'])).toMatch(/text\/html/);
         const $ = cheerio.load(r.body);
-        expect($('p.error').text().toLowerCase()).toContain(
-          'could not complete sign-in',
-        );
+        expect($('p.error').text().toLowerCase()).toContain('could not complete sign-in');
       } finally {
         repo.insert = original;
       }

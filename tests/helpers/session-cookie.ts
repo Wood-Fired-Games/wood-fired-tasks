@@ -76,27 +76,20 @@ export function extractSessionCookie(
  *     production session strategy's `findById` returns non-null and the
  *     `disabled_at IS NULL` gate passes.
  */
-export async function signInSessionFor(
-  server: FastifyInstance,
-  userId: number,
-): Promise<string> {
+export async function signInSessionFor(server: FastifyInstance, userId: number): Promise<string> {
   const PROBE_PATH = '/__test/session-sign-in';
   if (!server.hasRoute({ method: 'POST', url: PROBE_PATH })) {
-    server.post(
-      PROBE_PATH,
-      { config: { skipAuth: true } },
-      async (request, reply) => {
-        const body = request.body as { userId: number };
-        const row = server.userRepository.findById(body.userId);
-        if (!row) {
-          return reply.code(404).send({ error: 'user_not_found' });
-        }
-        // Mirror the OIDC-callback session payload (Plan 29-06).
-        request.session.set('user', { id: row.id });
-        request.session.set('authenticatedAt', Date.now());
-        return reply.code(204).send();
-      },
-    );
+    server.post(PROBE_PATH, { config: { skipAuth: true } }, async (request, reply) => {
+      const body = request.body as { userId: number };
+      const row = server.userRepository.findById(body.userId);
+      if (!row) {
+        return reply.code(404).send({ error: 'user_not_found' });
+      }
+      // Mirror the OIDC-callback session payload (Plan 29-06).
+      request.session.set('user', { id: row.id });
+      request.session.set('authenticatedAt', Date.now());
+      return reply.code(204).send();
+    });
     await server.ready();
   }
 
@@ -107,9 +100,7 @@ export async function signInSessionFor(
     headers: { 'content-type': 'application/json' },
   });
   if (res.statusCode !== 204) {
-    throw new Error(
-      `signInSessionFor: probe returned ${res.statusCode}: ${res.body}`,
-    );
+    throw new Error(`signInSessionFor: probe returned ${res.statusCode}: ${res.body}`);
   }
   const cookie = extractSessionCookie(res);
   if (!cookie) {

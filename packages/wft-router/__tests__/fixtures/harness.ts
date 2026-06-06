@@ -20,11 +20,7 @@ import { join } from 'node:path';
 import { IdempotencyStore } from '../../src/dispatch/index.js';
 import { ExitCode, type SSEEvent } from '../../src/sse/index.js';
 import type { DaemonDeps, HandlerRegistry } from '../../src/daemon.js';
-import type {
-  Handler,
-  HandlerContext,
-  HandlerOutcome,
-} from '../../src/handlers/index.js';
+import type { Handler, HandlerContext, HandlerOutcome } from '../../src/handlers/index.js';
 import type { TriggersConfig } from '../../src/config/triggers-schema.js';
 
 // ---------------------------------------------------------------------------
@@ -37,9 +33,7 @@ import type { TriggersConfig } from '../../src/config/triggers-schema.js';
  * aborted before exhaustion it stops early. No real socket is opened, so the
  * fixtures never bind a port and never race a real network read.
  */
-export function sseSourceFromEvents(
-  events: readonly SSEEvent[],
-): DaemonDeps['sseSource'] {
+export function sseSourceFromEvents(events: readonly SSEEvent[]): DaemonDeps['sseSource'] {
   return async function* gen(signal: AbortSignal) {
     for (const ev of events) {
       if (signal.aborted) {
@@ -227,7 +221,9 @@ export interface RecordingHandler {
   calls: Array<{ rule_name: string; event_id: string; ctx: HandlerContext }>;
 }
 
-export function recordingHandler(outcome: HandlerOutcome = { kind: 'succeeded' }): RecordingHandler {
+export function recordingHandler(
+  outcome: HandlerOutcome = { kind: 'succeeded' },
+): RecordingHandler {
   const calls: RecordingHandler['calls'] = [];
   const handler: Handler = async (ctx: HandlerContext): Promise<HandlerOutcome> => {
     calls.push({ rule_name: ctx.identity.rule_name, event_id: ctx.identity.event_id, ctx });

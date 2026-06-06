@@ -79,10 +79,7 @@ export function formatProjectList(projects: Project[]): KnownBlock[] {
  *     Created, Updated
  */
 export function formatProjectDetail(project: Project): KnownBlock[] {
-  const nameText =
-    project.name.length > 147
-      ? project.name.slice(0, 147) + '...'
-      : project.name;
+  const nameText = project.name.length > 147 ? project.name.slice(0, 147) + '...' : project.name;
 
   const header: HeaderBlock = {
     type: 'header',
@@ -93,9 +90,7 @@ export function formatProjectDetail(project: Project): KnownBlock[] {
     },
   };
 
-  const descText = project.description
-    ? truncate(project.description, 200)
-    : '_none_';
+  const descText = project.description ? truncate(project.description, 200) : '_none_';
 
   const fieldsSection: SectionBlock = {
     type: 'section',

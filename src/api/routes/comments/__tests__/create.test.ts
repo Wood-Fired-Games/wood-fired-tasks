@@ -55,9 +55,7 @@ describe('POST /api/v1/tasks/:id/comments — author_user_id injection', () => {
     author_user_id: number | null;
   } {
     return db
-      .prepare(
-        'SELECT id, author, author_user_id FROM task_comments WHERE id = ?',
-      )
+      .prepare('SELECT id, author, author_user_id FROM task_comments WHERE id = ?')
       .get(id) as { id: number; author: string; author_user_id: number | null };
   }
 

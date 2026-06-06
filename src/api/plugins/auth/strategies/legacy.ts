@@ -66,10 +66,7 @@ export function precomputeHashedEntries(
  * The strategy emits NO log lines — the chain owns audit logging via
  * Phase 27's `logAuthFailure` helper.
  */
-export async function tryAuth(
-  request: FastifyRequest,
-  deps: LegacyDeps,
-): Promise<StrategyOutcome> {
+export async function tryAuth(request: FastifyRequest, deps: LegacyDeps): Promise<StrategyOutcome> {
   const supplied = request.headers['x-api-key'];
   if (typeof supplied !== 'string' || supplied.length === 0) {
     return { kind: 'skip' };

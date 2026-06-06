@@ -47,19 +47,10 @@ function seedToken(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, '[]', NULL, ?)`,
     )
-    .run(
-      opts.userId,
-      opts.name,
-      prefix,
-      suffix,
-      hash,
-      opts.createdAt ?? new Date().toISOString(),
-    );
+    .run(opts.userId, opts.name, prefix, suffix, hash, opts.createdAt ?? new Date().toISOString());
   const id = Number(info.lastInsertRowid);
   if (opts.revoked) {
-    db.prepare(
-      "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?",
-    ).run(id);
+    db.prepare("UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?").run(id);
   }
   return { id };
 }
@@ -80,26 +71,22 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
 
     // Probe route: set session.user for tests. Mounted at top level so it
     // shares the secure-session scope.
-    server.post(
-      '/_test/sign-in',
-      { config: { skipAuth: true } },
-      async (request, reply) => {
-        const body = request.body as {
-          id: number;
-          displayName: string;
-          email: string | null;
-        };
-        request.session.set('user', {
-          id: body.id,
-          displayName: body.displayName,
-          email: body.email,
-          isLegacy: false,
-          isServiceAccount: false,
-        });
-        request.session.set('authenticatedAt', Date.now());
-        return reply.send({ ok: true });
-      },
-    );
+    server.post('/_test/sign-in', { config: { skipAuth: true } }, async (request, reply) => {
+      const body = request.body as {
+        id: number;
+        displayName: string;
+        email: string | null;
+      };
+      request.session.set('user', {
+        id: body.id,
+        displayName: body.displayName,
+        email: body.email,
+        isLegacy: false,
+        isServiceAccount: false,
+      });
+      request.session.set('authenticatedAt', Date.now());
+      return reply.send({ ok: true });
+    });
     await server.ready();
 
     // Insert a real user row so apiTokenRepository writes have a valid FK.
@@ -142,9 +129,7 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.headers['referrer-policy']).toBe('same-origin');
-      expect(res.headers['content-security-policy']).toContain(
-        "frame-ancestors 'none'",
-      );
+      expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
     });
 
     it('stamps the same headers on GET /me (authenticated)', async () => {
@@ -155,9 +140,7 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
       });
       expect(res.statusCode).toBe(200);
       expect(res.headers['x-frame-options']).toBe('DENY');
-      expect(res.headers['content-security-policy']).toContain(
-        "default-src 'self'",
-      );
+      expect(res.headers['content-security-policy']).toContain("default-src 'self'");
     });
 
     it('stamps the same headers on GET /me/tokens (authenticated)', async () => {
@@ -168,9 +151,7 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
       });
       expect(res.statusCode).toBe(200);
       expect(res.headers['x-frame-options']).toBe('DENY');
-      expect(res.headers['content-security-policy']).toContain(
-        "frame-ancestors 'none'",
-      );
+      expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
     });
   });
 
@@ -343,9 +324,7 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
       expect(res.headers.location).toBe('/auth/login?next=/me');
 
       // Re-enable so subsequent tests reuse the user.
-      harness.db
-        .prepare('UPDATE users SET disabled_at = NULL WHERE id = ?')
-        .run(harness.userId);
+      harness.db.prepare('UPDATE users SET disabled_at = NULL WHERE id = ?').run(harness.userId);
     });
 
     it('CR-02: GET /me/tokens redirects to /auth/login when user is disabled mid-session', async () => {
@@ -361,9 +340,7 @@ describe('Phase 29 Plan 07 — web pages (DOM structure)', () => {
       expect(res.statusCode).toBe(302);
       expect(res.headers.location).toBe('/auth/login?next=/me/tokens');
 
-      harness.db
-        .prepare('UPDATE users SET disabled_at = NULL WHERE id = ?')
-        .run(harness.userId);
+      harness.db.prepare('UPDATE users SET disabled_at = NULL WHERE id = ?').run(harness.userId);
     });
 
     it('renders revoked tokens in a separate section (greyed)', async () => {

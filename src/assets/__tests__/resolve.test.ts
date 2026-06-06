@@ -41,10 +41,7 @@ describe('assets/resolve', () => {
   it('computes package root from import.meta.url, not process.cwd()', () => {
     expect(isAbsolute(packageRoot)).toBe(true);
     // The resolver source must not reference process.cwd().
-    const src = readFileSync(
-      fileURLToPath(new URL('../resolve.ts', import.meta.url)),
-      'utf8',
-    );
+    const src = readFileSync(fileURLToPath(new URL('../resolve.ts', import.meta.url)), 'utf8');
     expect(src).not.toContain('process.cwd');
   });
 });

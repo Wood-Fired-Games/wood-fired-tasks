@@ -58,12 +58,7 @@ const PROBES: readonly ProbeScenario[] = [
   {
     name: 'probe-mcp',
     prompt: 'Add a new MCP tool `archive_task`.',
-    expectedFiles: [
-      'AGENTS.md',
-      'docs/MCP.md',
-      'src/mcp/tools/task-tools.ts',
-      'src/mcp/__tests__',
-    ],
+    expectedFiles: ['AGENTS.md', 'docs/MCP.md', 'src/mcp/tools/task-tools.ts', 'src/mcp/__tests__'],
     dirPaths: ['src/mcp/__tests__'],
     expectedCommands: ['build', 'test'],
   },
@@ -107,23 +102,13 @@ const PROBES: readonly ProbeScenario[] = [
   {
     name: 'probe-docs',
     prompt: 'Add a new section to the README explaining the SSE protocol.',
-    expectedFiles: [
-      'AGENTS.md',
-      'docs/AGENT_CONTEXT.md',
-      'README.md',
-      'docs/API.md',
-    ],
+    expectedFiles: ['AGENTS.md', 'docs/AGENT_CONTEXT.md', 'README.md', 'docs/API.md'],
     expectedCommands: ['lint', 'agent-context:check'],
   },
   {
     name: 'probe-release',
     prompt: 'Cut a v1.1.0 release.',
-    expectedFiles: [
-      'AGENTS.md',
-      'docs/RELEASE.md',
-      'CHANGELOG.md',
-      'package.json',
-    ],
+    expectedFiles: ['AGENTS.md', 'docs/RELEASE.md', 'CHANGELOG.md', 'package.json'],
     expectedCommands: ['prepublishOnly', 'pack:check'],
   },
 ];
@@ -210,21 +195,13 @@ describe('onboarding smoke (task #282)', () => {
         const dirSet = new Set(probe.dirPaths ?? []);
         for (const rel of probe.expectedFiles) {
           const abs = resolve(repoRoot, rel);
-          expect(existsSync(abs), `${probe.name}: missing path "${rel}"`).toBe(
-            true,
-          );
+          expect(existsSync(abs), `${probe.name}: missing path "${rel}"`).toBe(true);
           const isDir = dirSet.has(rel);
           const st = statSync(abs);
           if (isDir) {
-            expect(
-              st.isDirectory(),
-              `${probe.name}: "${rel}" should be a directory`,
-            ).toBe(true);
+            expect(st.isDirectory(), `${probe.name}: "${rel}" should be a directory`).toBe(true);
           } else {
-            expect(
-              st.isFile(),
-              `${probe.name}: "${rel}" should be a regular file`,
-            ).toBe(true);
+            expect(st.isFile(), `${probe.name}: "${rel}" should be a regular file`).toBe(true);
           }
         }
       });
@@ -263,10 +240,7 @@ describe('onboarding smoke (task #282)', () => {
   }
 
   it('cross-references the human procedure (docs/ONBOARDING_SMOKE.md) by name', () => {
-    const doc = readFileSync(
-      resolve(repoRoot, 'docs/ONBOARDING_SMOKE.md'),
-      'utf8',
-    );
+    const doc = readFileSync(resolve(repoRoot, 'docs/ONBOARDING_SMOKE.md'), 'utf8');
     for (const probe of PROBES) {
       expect(
         doc.includes(probe.name),

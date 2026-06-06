@@ -9,9 +9,7 @@ import {
 describe('project.schema — ValueCharter', () => {
   const validCharter = {
     mission: 'win the checkout wedge',
-    value_themes: [
-      { name: 'checkout reliability', weight: 8, description: 'no dropped carts' },
-    ],
+    value_themes: [{ name: 'checkout reliability', weight: 8, description: 'no dropped carts' }],
     time_context: 'launch window Q3',
     risk_posture: 'security + outage first',
     out_of_scope: ['marketing site'],
@@ -36,26 +34,21 @@ describe('project.schema — ValueCharter', () => {
   it('rejects a non-Fibonacci theme weight', () => {
     const bad = {
       ...validCharter,
-      value_themes: [
-        { name: 'theme', weight: 4, description: 'd' },
-      ],
+      value_themes: [{ name: 'theme', weight: 4, description: 'd' }],
     };
     const res = ValueCharterSchema.safeParse(bad);
     expect(res.success).toBe(false);
   });
 
   it('rejects a theme weight of 7 via ValueThemeSchema directly', () => {
-    expect(
-      ValueThemeSchema.safeParse({ name: 't', weight: 7, description: 'd' })
-        .success
-    ).toBe(false);
+    expect(ValueThemeSchema.safeParse({ name: 't', weight: 7, description: 'd' }).success).toBe(
+      false,
+    );
   });
 
   it('allows null via the nullable charter schema', () => {
     expect(ValueCharterNullableSchema.safeParse(null).success).toBe(true);
-    expect(ValueCharterNullableSchema.safeParse(validCharter).success).toBe(
-      true
-    );
+    expect(ValueCharterNullableSchema.safeParse(validCharter).success).toBe(true);
   });
 
   it('rejects a charter missing the required mission field', () => {
@@ -75,9 +68,7 @@ describe('project.schema — ValueCharter', () => {
 describe('project schema parity (task.schema barrel ≡ project.schema source)', () => {
   const validCharter = {
     mission: 'win the checkout wedge',
-    value_themes: [
-      { name: 'reliability', weight: 8, description: 'no dropped carts' },
-    ],
+    value_themes: [{ name: 'reliability', weight: 8, description: 'no dropped carts' }],
     time_context: 'launch window Q3',
     risk_posture: 'security + outage first',
     out_of_scope: ['marketing site'],
@@ -94,9 +85,7 @@ describe('project schema parity (task.schema barrel ≡ project.schema source)',
   });
 
   it('the barrel Create/Update schemas accept and retain a value_charter', async () => {
-    const { CreateProjectSchema, UpdateProjectSchema } = await import(
-      '../task.schema.js'
-    );
+    const { CreateProjectSchema, UpdateProjectSchema } = await import('../task.schema.js');
     const created = CreateProjectSchema.safeParse({
       name: 'p',
       value_charter: validCharter,
@@ -109,14 +98,15 @@ describe('project schema parity (task.schema barrel ≡ project.schema source)',
     expect(updated.success && updated.data.value_charter).toEqual(validCharter);
 
     // null clears; a malformed charter (off-scale weight) is rejected.
-    expect(
-      UpdateProjectSchema.safeParse({ value_charter: null }).success
-    ).toBe(true);
+    expect(UpdateProjectSchema.safeParse({ value_charter: null }).success).toBe(true);
     expect(
       CreateProjectSchema.safeParse({
         name: 'p',
-        value_charter: { ...validCharter, value_themes: [{ name: 't', weight: 7, description: 'd' }] },
-      }).success
+        value_charter: {
+          ...validCharter,
+          value_themes: [{ name: 't', weight: 7, description: 'd' }],
+        },
+      }).success,
     ).toBe(false);
   });
 });

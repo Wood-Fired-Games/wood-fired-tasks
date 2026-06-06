@@ -43,7 +43,7 @@ export const loginCommand = new Command('login')
     '--token-name <name>',
     'Name for the minted PAT (currently advisory; reserved for v1.7 explicit naming)',
   )
-  .option('--no-browser', "Skip auto-opening the verification URL in a browser")
+  .option('--no-browser', 'Skip auto-opening the verification URL in a browser')
   .option(
     '--server <url>',
     'Override API_BASE_URL for this invocation (stored in credentials file)',
@@ -139,9 +139,7 @@ export const loginCommand = new Command('login')
         if (opened) {
           process.stderr.write('(Opening browser...)\n');
         } else {
-          process.stderr.write(
-            '(Could not auto-open browser. Open the URL above manually.)\n',
-          );
+          process.stderr.write('(Could not auto-open browser. Open the URL above manually.)\n');
         }
       }
     }

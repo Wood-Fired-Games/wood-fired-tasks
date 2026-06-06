@@ -284,17 +284,12 @@ describe('computeBackoffMs', () => {
 
 describe('runSSEClient — happy path', () => {
   it('yields one event and exits cleanly when the server aborts', async () => {
-    const { fetchImpl, calls } = recordingFetch([
-      sseResponse('id: 1\ndata: hello\n\n'),
-    ]);
+    const { fetchImpl, calls } = recordingFetch([sseResponse('id: 1\ndata: hello\n\n')]);
     const controller = new AbortController();
     const logger = spyLogger();
     const clock = fakeClock(0);
 
-    const gen = runSSEClient(
-      baseOpts({ fetchImpl, logger, clock }),
-      controller.signal,
-    );
+    const gen = runSSEClient(baseOpts({ fetchImpl, logger, clock }), controller.signal);
 
     const first = await gen.next();
     expect(first.done).toBe(false);
@@ -309,9 +304,7 @@ describe('runSSEClient — happy path', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe('http://localhost:3000/api/v1/events');
-    expect(calls[0]?.headers['Authorization']).toBe(
-      `Bearer ${PAT_PREFIX}ABCDEFG1234567890`,
-    );
+    expect(calls[0]?.headers['Authorization']).toBe(`Bearer ${PAT_PREFIX}ABCDEFG1234567890`);
     expect(calls[0]?.headers['Last-Event-Id']).toBeUndefined();
   });
 
@@ -353,9 +346,7 @@ describe('runSSEClient — happy path', () => {
 
     const url = new URL(calls[0]?.url ?? '');
     expect(url.pathname).toBe('/api/v1/events');
-    expect(url.searchParams.get('event_types')).toBe(
-      'task.status_changed,task.created',
-    );
+    expect(url.searchParams.get('event_types')).toBe('task.status_changed,task.created');
   });
 });
 
@@ -484,9 +475,7 @@ describe('runSSEClient — >15 min watchdog', () => {
     // Multiple connection attempts were tried before the watchdog tripped.
     expect(calls.length).toBeGreaterThan(1);
     // The watchdog logged its trip reason.
-    expect(
-      logger.warns.find((w) => w.msg === 'sse_endpoint_unreachable'),
-    ).toBeDefined();
+    expect(logger.warns.find((w) => w.msg === 'sse_endpoint_unreachable')).toBeDefined();
   });
 
   it('does NOT trip the watchdog when a healthy connection resets failure tracking', async () => {
@@ -546,8 +535,7 @@ describe('runSSEClient — incremental delivery on a long-lived stream (regressi
   it('yields events as they arrive, before the stream closes', async () => {
     const ac = new AbortController();
     const body =
-      'id: 1\nevent: task.status_changed\ndata: {"x":1}\n\n' +
-      'id: 2\nevent: ping\ndata: {}\n\n';
+      'id: 1\nevent: task.status_changed\ndata: {"x":1}\n\n' + 'id: 2\nevent: ping\ndata: {}\n\n';
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(body));
@@ -618,9 +606,7 @@ describe('runSSEClient — idle/read timeout guards a half-open socket (regressi
     expect(calls.length).toBeGreaterThanOrEqual(2);
     expect(
       logger.warns.some(
-        (w) =>
-          w.msg === 'sse_network_error' &&
-          String(w.fields?.message).includes('idle timeout'),
+        (w) => w.msg === 'sse_network_error' && String(w.fields?.message).includes('idle timeout'),
       ),
     ).toBe(true);
   });

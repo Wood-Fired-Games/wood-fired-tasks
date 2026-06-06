@@ -18,10 +18,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { FastifyRequest } from 'fastify';
-import {
-  getOrCreateCsrfToken,
-  verifyCsrfToken,
-} from '../csrf.js';
+import { getOrCreateCsrfToken, verifyCsrfToken } from '../csrf.js';
 
 function fakeRequest(initial: Record<string, unknown> = {}): FastifyRequest {
   const store = new Map<string, unknown>(Object.entries(initial));

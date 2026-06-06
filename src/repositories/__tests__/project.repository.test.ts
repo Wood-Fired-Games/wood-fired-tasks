@@ -89,13 +89,11 @@ describe('ProjectRepository', () => {
     // Create a task belonging to this project
     db.prepare(
       `INSERT INTO tasks (title, project_id, status, priority, created_by)
-       VALUES (?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?)`,
     ).run('Test Task', project.id, 'open', 'medium', 'user1');
 
     // Verify task exists
-    const tasksBefore = db
-      .prepare('SELECT * FROM tasks WHERE project_id = ?')
-      .all(project.id);
+    const tasksBefore = db.prepare('SELECT * FROM tasks WHERE project_id = ?').all(project.id);
     expect(tasksBefore).toHaveLength(1);
 
     // Delete the project
@@ -106,9 +104,7 @@ describe('ProjectRepository', () => {
     expect(found).toBeNull();
 
     // Verify tasks are cascade-deleted
-    const tasksAfter = db
-      .prepare('SELECT * FROM tasks WHERE project_id = ?')
-      .all(project.id);
+    const tasksAfter = db.prepare('SELECT * FROM tasks WHERE project_id = ?').all(project.id);
     expect(tasksAfter).toHaveLength(0);
   });
 
@@ -156,9 +152,7 @@ describe('ProjectRepository', () => {
     expect(byName?.value_charter).toEqual(sampleCharter);
 
     const all = repo.findAll();
-    expect(all.find((p) => p.id === created.id)?.value_charter).toEqual(
-      sampleCharter
-    );
+    expect(all.find((p) => p.id === created.id)?.value_charter).toEqual(sampleCharter);
   });
 
   it('should update value_charter and clear it with explicit null', () => {

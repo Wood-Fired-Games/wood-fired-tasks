@@ -269,8 +269,8 @@ describe('POST /api/v1/tasks/:id/claim', () => {
           url: `/api/v1/tasks/${task.id}/claim`,
           headers,
           payload: { assignee: `agent-${i}` },
-        })
-      )
+        }),
+      ),
     );
 
     const successes = results.filter((r) => r.statusCode === 200);

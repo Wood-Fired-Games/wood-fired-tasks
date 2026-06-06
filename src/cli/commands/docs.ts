@@ -107,7 +107,7 @@ const ELEVATION = /^(sudo|runas|pkexec|doas)$/i;
  */
 export function openCommandFor(
   filePath: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
 ): { cmd: string; args: string[] } {
   if (platform === 'darwin') {
     return { cmd: 'open', args: [filePath] };
@@ -129,7 +129,7 @@ export function openDoc(
   options: {
     platform?: NodeJS.Platform;
     runner?: OpenRunner;
-  } = {}
+  } = {},
 ): { cmd: string; args: string[]; path: string } {
   const docPath = resolveDocPath(name);
   if (!fs.existsSync(docPath)) {
@@ -174,7 +174,7 @@ Examples:
   tasks docs show usage-patterns
   tasks docs path cli
   tasks docs open setup
-`
+`,
   );
 
 docsCommand

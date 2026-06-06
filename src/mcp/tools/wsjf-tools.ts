@@ -5,10 +5,7 @@ import { convertToMcpError } from '../errors.js';
 import { rankFrontier } from '../../services/wsjf.service.js';
 import type { RankDeps, ScoreSubmission } from '../../services/wsjf.service.js';
 import type { IWsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
-import type {
-  WsjfRescoreService,
-  RescoreSubmission,
-} from '../../services/wsjf-rescore.service.js';
+import type { WsjfRescoreService, RescoreSubmission } from '../../services/wsjf-rescore.service.js';
 import type { WsjfHealthService } from '../../services/wsjf-health.service.js';
 
 /**
@@ -69,10 +66,7 @@ const COMPONENT_KEYS = [
  * @param server the MCP server to register tools on.
  * @param deps   the {@link WsjfToolDeps} collaborators (RankDeps + history repo).
  */
-export function registerWsjfTools(
-  server: McpServer,
-  deps: WsjfToolDeps,
-): void {
+export function registerWsjfTools(server: McpServer, deps: WsjfToolDeps): void {
   // -------------------------------------------------------------------------
   // Tool: wsjf_ranking
   // -------------------------------------------------------------------------
@@ -80,7 +74,7 @@ export function registerWsjfTools(
     'wsjf_ranking',
     {
       description:
-        'Rank a project\'s tasks by propagation-adjusted WSJF (Weighted Shortest ' +
+        "Rank a project's tasks by propagation-adjusted WSJF (Weighted Shortest " +
         'Job First). `scope="frontier"` (default) excludes not-ready/blocked tasks; ' +
         '`scope="all"` ranks every task. Returns an ordered list (descending ' +
         'effective WSJF) where each entry carries its components, base vs effective ' +
@@ -152,7 +146,7 @@ export function registerWsjfTools(
           for (const key of COMPONENT_KEYS) {
             const to = (row as unknown as Record<string, number | null>)[key] ?? null;
             const from = prev
-              ? (prev as unknown as Record<string, number | null>)[key] ?? null
+              ? ((prev as unknown as Record<string, number | null>)[key] ?? null)
               : null;
             deltas[key] = { from, to };
           }
@@ -206,7 +200,7 @@ export function registerWsjfTools(
       'rescore_project',
       {
         description:
-          'Deterministically rescore a project\'s already-scored tasks against ' +
+          "Deterministically rescore a project's already-scored tasks against " +
           'its current value charter. Accepts written-back classifications ' +
           '(one per task), recomputes the four WSJF components, opens a rescore ' +
           'run, writes one append-only history row per changed task linked by ' +
@@ -316,9 +310,7 @@ export function registerWsjfTools(
                 `finding(s) across ${report.scoredTaskCount} scored task(s):\n`,
           ];
           for (const f of report.findings) {
-            summary.push(
-              `- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`,
-            );
+            summary.push(`- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`);
           }
 
           return {

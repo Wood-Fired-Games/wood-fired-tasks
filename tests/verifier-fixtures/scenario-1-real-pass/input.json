@@ -6,8 +6,5 @@
     "aaaa1111bbbb2222cccc3333dddd4444eeee5555",
     "ffff6666aaaa7777bbbb8888cccc9999dddd0000"
   ],
-  "file_changes": [
-    "src/utils/slug.ts",
-    "src/utils/__tests__/slug.test.ts"
-  ]
+  "file_changes": ["src/utils/slug.ts", "src/utils/__tests__/slug.test.ts"]
 }

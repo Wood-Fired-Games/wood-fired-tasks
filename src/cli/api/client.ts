@@ -29,7 +29,11 @@ import type {
  */
 function unwrapPage<T>(payload: PaginatedResponse<T> | T[]): T[] {
   if (Array.isArray(payload)) return payload;
-  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    Array.isArray((payload as PaginatedResponse<T>).data)
+  ) {
     return (payload as PaginatedResponse<T>).data;
   }
   // Unexpected shape: behave as empty rather than crashing the CLI.
@@ -45,7 +49,11 @@ function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
   if (Array.isArray(payload)) {
     return { data: payload, total: payload.length, limit: payload.length, offset: 0 };
   }
-  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    Array.isArray((payload as PaginatedResponse<T>).data)
+  ) {
     return payload as PaginatedResponse<T>;
   }
   return { data: [], total: 0, limit: 0, offset: 0 };
@@ -61,7 +69,7 @@ export class ApiClientError extends Error {
     message: string,
     public statusCode: number,
     public apiError: ApiErrorResponse,
-    requestId?: string
+    requestId?: string,
   ) {
     super(message);
     this.name = 'ApiClientError';
@@ -134,7 +142,7 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
         errorBody.message || `Request failed with status ${response.status}`,
         response.status,
         errorBody,
-        requestId
+        requestId,
       );
     }
 
@@ -186,7 +194,7 @@ export async function listTasks(filters?: TaskFilters): Promise<TaskResponse[]> 
  * List tasks and return the full pagination envelope.
  */
 export async function listTasksPaginated(
-  filters?: TaskFilters
+  filters?: TaskFilters,
 ): Promise<PaginatedResponse<TaskResponse>> {
   const endpoint = buildTaskListEndpoint(filters);
   const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
@@ -251,11 +259,11 @@ export async function createProject(data: CreateProjectInput): Promise<ProjectRe
 /**
  * List projects (paginated). Returns the rows only.
  */
-export async function listProjects(
-  pagination?: PaginationParams
-): Promise<ProjectResponse[]> {
+export async function listProjects(pagination?: PaginationParams): Promise<ProjectResponse[]> {
   const endpoint = buildProjectListEndpoint(pagination);
-  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
+  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(
+    endpoint,
+  );
   return unwrapPage(payload);
 }
 
@@ -263,10 +271,12 @@ export async function listProjects(
  * List projects and return the full pagination envelope.
  */
 export async function listProjectsPaginated(
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<PaginatedResponse<ProjectResponse>> {
   const endpoint = buildProjectListEndpoint(pagination);
-  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
+  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(
+    endpoint,
+  );
   return asPage(payload);
 }
 
@@ -292,7 +302,10 @@ export async function getProject(id: number): Promise<ProjectResponse> {
 /**
  * Update a project by ID.
  */
-export async function updateProject(id: number, data: UpdateProjectInput): Promise<ProjectResponse> {
+export async function updateProject(
+  id: number,
+  data: UpdateProjectInput,
+): Promise<ProjectResponse> {
   return apiRequest<ProjectResponse>(`/api/v1/projects/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
@@ -315,7 +328,7 @@ export async function deleteProject(id: number): Promise<void> {
  */
 export async function addDependency(
   taskId: number,
-  data: CreateDependencyInput
+  data: CreateDependencyInput,
 ): Promise<DependencyResponse> {
   return apiRequest<DependencyResponse>(`/api/v1/tasks/${taskId}/dependencies`, {
     method: 'POST',
@@ -326,10 +339,7 @@ export async function addDependency(
 /**
  * Remove a dependency relationship.
  */
-export async function removeDependency(
-  taskId: number,
-  blocksTaskId: number
-): Promise<void> {
+export async function removeDependency(taskId: number, blocksTaskId: number): Promise<void> {
   await apiRequest<void>(`/api/v1/tasks/${taskId}/dependencies/${blocksTaskId}`, {
     method: 'DELETE',
   });
@@ -349,7 +359,7 @@ export async function getDependencies(taskId: number): Promise<DependencyListRes
  */
 export async function addComment(
   taskId: number,
-  data: CreateCommentInput
+  data: CreateCommentInput,
 ): Promise<CommentResponse> {
   return apiRequest<CommentResponse>(`/api/v1/tasks/${taskId}/comments`, {
     method: 'POST',
@@ -362,10 +372,12 @@ export async function addComment(
  */
 export async function getComments(
   taskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<CommentResponse[]> {
   const endpoint = buildCommentsEndpoint(taskId, pagination);
-  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(
+    endpoint,
+  );
   return unwrapPage(payload);
 }
 
@@ -374,10 +386,12 @@ export async function getComments(
  */
 export async function getCommentsPaginated(
   taskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<PaginatedResponse<CommentResponse>> {
   const endpoint = buildCommentsEndpoint(taskId, pagination);
-  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(
+    endpoint,
+  );
   return asPage(payload);
 }
 
@@ -412,7 +426,7 @@ export async function deleteComment(taskId: number, commentId: number): Promise<
  */
 export async function createSubtask(
   parentTaskId: number,
-  data: CreateTaskInput
+  data: CreateTaskInput,
 ): Promise<TaskResponse> {
   return apiRequest<TaskResponse>('/api/v1/tasks', {
     method: 'POST',
@@ -425,7 +439,7 @@ export async function createSubtask(
  */
 export async function getSubtasks(
   parentTaskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<TaskResponse[]> {
   const endpoint = buildSubtasksEndpoint(parentTaskId, pagination);
   const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
@@ -437,7 +451,7 @@ export async function getSubtasks(
  */
 export async function getSubtasksPaginated(
   parentTaskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<PaginatedResponse<TaskResponse>> {
   const endpoint = buildSubtasksEndpoint(parentTaskId, pagination);
   const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
@@ -465,7 +479,7 @@ function buildSubtasksEndpoint(parentTaskId: number, pagination?: PaginationPara
 export async function claimTask(
   taskId: number,
   assignee: string,
-  idempotencyKey?: string
+  idempotencyKey?: string,
 ): Promise<TaskResponse> {
   const headers: Record<string, string> = {};
   if (idempotencyKey) {
@@ -494,9 +508,6 @@ export async function checkHealth(): Promise<HealthResponse> {
  * Wrap an API call with a spinner.
  * The spinner description should match the operation (e.g., "Fetching tasks...").
  */
-export async function withApiSpinner<T>(
-  message: string,
-  fn: () => Promise<T>
-): Promise<T> {
+export async function withApiSpinner<T>(message: string, fn: () => Promise<T>): Promise<T> {
   return withSpinner(message, fn);
 }

@@ -53,10 +53,7 @@ export function getOrCreateCsrfToken(request: FastifyRequest): string {
  * existence of a token (length 64) is not a secret — knowing whether the
  * caller has a session at all is observable via the cookie itself.
  */
-export function verifyCsrfToken(
-  request: FastifyRequest,
-  supplied: unknown,
-): boolean {
+export function verifyCsrfToken(request: FastifyRequest, supplied: unknown): boolean {
   if (typeof supplied !== 'string' || supplied.length !== TOKEN_HEX_LEN) {
     return false;
   }
@@ -73,10 +70,7 @@ export function verifyCsrfToken(
   // timingSafeEqual requires equal-length Buffers; the length-64 / hex-shape
   // prechecks above ensure both decode to identical 32-byte buffers.
   try {
-    return timingSafeEqual(
-      Buffer.from(expected, 'hex'),
-      Buffer.from(supplied, 'hex'),
-    );
+    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(supplied, 'hex'));
   } catch {
     return false;
   }

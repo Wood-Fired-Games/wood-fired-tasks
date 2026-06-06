@@ -57,8 +57,9 @@ describe('WSJF CLI commands', () => {
     process.env.DATABASE_PATH = dbPath;
     process.env.NO_COLOR = '1';
 
-    const { wsjfHistoryCommand, wsjfSetCommand, charterHistoryCommand } =
-      await import('../commands/wsjf.js');
+    const { wsjfHistoryCommand, wsjfSetCommand, charterHistoryCommand } = await import(
+      '../commands/wsjf.js'
+    );
     program = new Command();
     program.addCommand(wsjfHistoryCommand);
     program.addCommand(wsjfSetCommand);
@@ -236,12 +237,7 @@ describe('WSJF CLI commands', () => {
     projectService.updateProject(project.id, { value_charter: charter(3, 'v3') });
     db.close();
 
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'charter-history',
-      String(project.id),
-    ]);
+    await program.parseAsync(['node', 'tasks', 'charter-history', String(project.id)]);
     expect(process.exitCode).toBe(0);
     const out = JSON.parse(stdout());
     expect(out.project_id).toBe(project.id);

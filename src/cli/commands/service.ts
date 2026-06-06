@@ -355,10 +355,7 @@ export function defaultLaunchAgentsBase(home: string = os.homedir()): string {
 
 /** XML-escape a string for safe inclusion in plist text. */
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -377,10 +374,8 @@ export class MacLaunchdBackend implements ServiceBackend {
   private readonly log: (line: string) => void;
 
   constructor(options: MacBackendOptions = {}) {
-    this.launchAgentsBase =
-      options.launchAgentsBase ?? defaultLaunchAgentsBase();
-    this.launchDaemonsBase =
-      options.launchDaemonsBase ?? SYSTEM_LAUNCH_DAEMONS_DIR;
+    this.launchAgentsBase = options.launchAgentsBase ?? defaultLaunchAgentsBase();
+    this.launchDaemonsBase = options.launchDaemonsBase ?? SYSTEM_LAUNCH_DAEMONS_DIR;
     this.runner = options.runner ?? defaultRunner;
     this.elevatedRunner = options.elevatedRunner ?? defaultElevatedRunner;
     this.cliEntryPoint = options.cliEntryPoint ?? resolveCliEntryPoint();
@@ -404,9 +399,7 @@ export class MacLaunchdBackend implements ServiceBackend {
    */
   renderPlist(): string {
     const programArgs = [this.nodeBin, this.cliEntryPoint, 'serve'];
-    const argEntries = programArgs
-      .map((a) => `    <string>${escapeXml(a)}</string>`)
-      .join('\n');
+    const argEntries = programArgs.map((a) => `    <string>${escapeXml(a)}</string>`).join('\n');
     return [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -457,11 +450,7 @@ export class MacLaunchdBackend implements ServiceBackend {
   private installSystem(): void {
     fs.mkdirSync(this.launchDaemonsBase, { recursive: true });
     fs.writeFileSync(this.daemonPlistPath, this.renderPlist(), 'utf8');
-    this.elevatedRunner('launchctl', [
-      'bootstrap',
-      'system',
-      this.daemonPlistPath,
-    ]);
+    this.elevatedRunner('launchctl', ['bootstrap', 'system', this.daemonPlistPath]);
     this.log(`Installed and started SYSTEM LaunchDaemon '${LAUNCHD_LABEL}'.`);
     this.log(`Plist written to ${this.daemonPlistPath} (elevated).`);
   }
@@ -553,19 +542,8 @@ export class WindowsScheduledTaskBackend implements ServiceBackend {
     }
     // Per-user, at-logon, current-user context. NO /RU SYSTEM, NO elevation.
     // /F overwrites an existing task so install is idempotent.
-    this.schtasks(
-      '/Create',
-      '/SC',
-      'ONLOGON',
-      '/TN',
-      WINDOWS_TASK_NAME,
-      '/TR',
-      this.taskRun,
-      '/F'
-    );
-    this.log(
-      `Installed per-user logon task '${WINDOWS_TASK_NAME}' (no elevation required).`
-    );
+    this.schtasks('/Create', '/SC', 'ONLOGON', '/TN', WINDOWS_TASK_NAME, '/TR', this.taskRun, '/F');
+    this.log(`Installed per-user logon task '${WINDOWS_TASK_NAME}' (no elevation required).`);
   }
 
   /**
@@ -586,9 +564,7 @@ export class WindowsScheduledTaskBackend implements ServiceBackend {
       'SYSTEM',
       '/F',
     ]);
-    this.log(
-      `Installed SYSTEM-context task '${WINDOWS_TASK_NAME}' (elevated, /RU SYSTEM).`
-    );
+    this.log(`Installed SYSTEM-context task '${WINDOWS_TASK_NAME}' (elevated, /RU SYSTEM).`);
   }
 
   uninstall(): void {
@@ -619,7 +595,7 @@ export class WindowsScheduledTaskBackend implements ServiceBackend {
  */
 export function getServiceBackend(
   platform: NodeJS.Platform = process.platform,
-  options: LinuxBackendOptions & MacBackendOptions & WindowsBackendOptions = {}
+  options: LinuxBackendOptions & MacBackendOptions & WindowsBackendOptions = {},
 ): ServiceBackend {
   switch (platform) {
     case 'linux':
@@ -629,28 +605,25 @@ export function getServiceBackend(
     case 'win32':
       return new WindowsScheduledTaskBackend(options);
     default:
-      throw new Error(
-        `service management is not yet implemented on '${platform}'`
-      );
+      throw new Error(`service management is not yet implemented on '${platform}'`);
   }
 }
 
-export const serviceCommand = new Command('service')
-  .description(
-    'Manage the Wood Fired Tasks background service (admin-free: Linux systemctl --user, macOS launchd LaunchAgent, Windows per-user logon task)'
-  );
+export const serviceCommand = new Command('service').description(
+  'Manage the Wood Fired Tasks background service (admin-free: Linux systemctl --user, macOS launchd LaunchAgent, Windows per-user logon task)',
+);
 
 serviceCommand
   .command('install')
   .description(
     'Install and start the background service. Default is user-scoped and never elevates. ' +
       '--system installs a system-scoped unit (/etc/systemd/system, /Library/LaunchDaemons, ' +
-      'or a /RU SYSTEM scheduled task) and is the ONLY path that elevates (sudo).'
+      'or a /RU SYSTEM scheduled task) and is the ONLY path that elevates (sudo).',
   )
   .option(
     '--system',
     'install a system-scoped unit (the only path that elevates / uses sudo)',
-    false
+    false,
   )
   .action((opts: { system?: boolean }) => {
     getServiceBackend().install({ system: opts.system === true });
@@ -676,6 +649,6 @@ serviceCommand
     process.stdout.write(
       `running: ${status.running} (${status.activeState})\n` +
         `enabled: ${status.enabled} (${status.enabledState})\n` +
-        `installed: ${status.installed}\n`
+        `installed: ${status.installed}\n`,
     );
   });

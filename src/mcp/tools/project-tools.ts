@@ -1,10 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toStructuredContent } from '../lib/structured-content.js';
 import { ProjectService } from '../../services/project.service.js';
-import {
-  CreateProjectSchema,
-  ValueCharterNullableSchema,
-} from '../../schemas/project.schema.js';
+import { CreateProjectSchema, ValueCharterNullableSchema } from '../../schemas/project.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
 
@@ -18,10 +15,7 @@ import { convertToMcpError } from '../errors.js';
  * - update_project: Update existing project
  * - delete_project: Delete project by ID
  */
-export function registerProjectTools(
-  server: McpServer,
-  projectService: ProjectService
-): void {
+export function registerProjectTools(server: McpServer, projectService: ProjectService): void {
   // Tool: create_project
   server.registerTool(
     'create_project',
@@ -47,7 +41,7 @@ export function registerProjectTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: get_project
@@ -62,10 +56,7 @@ export function registerProjectTools(
     async (args) => {
       try {
         const project = projectService.getProject(args.id);
-        const summary = [
-          `Project: ${project.name}`,
-          `Created: ${project.created_at}`,
-        ];
+        const summary = [`Project: ${project.name}`, `Created: ${project.created_at}`];
         if (project.description) {
           summary.push(`Description: ${project.description}`);
         }
@@ -82,7 +73,7 @@ export function registerProjectTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: list_projects (paginated)
@@ -144,7 +135,7 @@ export function registerProjectTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: update_project
@@ -179,7 +170,7 @@ export function registerProjectTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: delete_project
@@ -205,6 +196,6 @@ export function registerProjectTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 }

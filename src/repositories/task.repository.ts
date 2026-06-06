@@ -6,16 +6,8 @@ import type {
   TaskFilters,
   VerificationEvidence,
 } from '../types/task.js';
-import {
-  DEFAULT_PAGE_LIMIT,
-  DEFAULT_PAGE_OFFSET,
-  MAX_PAGE_LIMIT,
-} from '../types/task.js';
-import type {
-  ITaskRepository,
-  CompletionRangeFilters,
-  PaginationOptions,
-} from './interfaces.js';
+import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
+import type { ITaskRepository, CompletionRangeFilters, PaginationOptions } from './interfaces.js';
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
@@ -35,12 +27,14 @@ function resolvePagination(pagination?: PaginationOptions): {
   const rawLimit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
   const rawOffset = pagination?.offset ?? DEFAULT_PAGE_OFFSET;
   // Clamp to [1, MAX_PAGE_LIMIT]; non-finite or non-integer values collapse to default.
-  const limit = Number.isFinite(rawLimit) && Number.isInteger(rawLimit) && rawLimit > 0
-    ? Math.min(rawLimit, MAX_PAGE_LIMIT)
-    : DEFAULT_PAGE_LIMIT;
-  const offset = Number.isFinite(rawOffset) && Number.isInteger(rawOffset) && rawOffset >= 0
-    ? rawOffset
-    : DEFAULT_PAGE_OFFSET;
+  const limit =
+    Number.isFinite(rawLimit) && Number.isInteger(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, MAX_PAGE_LIMIT)
+      : DEFAULT_PAGE_LIMIT;
+  const offset =
+    Number.isFinite(rawOffset) && Number.isInteger(rawOffset) && rawOffset >= 0
+      ? rawOffset
+      : DEFAULT_PAGE_OFFSET;
   return { limit, offset };
 }
 
@@ -67,9 +61,7 @@ function normalizeTaskTimestamps<T extends { updated_at: string }>(task: T): T {
  * the Zod schema is enforced at the boundary on write — read-side parsing
  * trusts the bytes were validated on the way in.
  */
-function parseVerificationEvidence(
-  raw: string | null | undefined
-): VerificationEvidence | null {
+function parseVerificationEvidence(raw: string | null | undefined): VerificationEvidence | null {
   if (raw === null || raw === undefined) return null;
   try {
     return JSON.parse(raw) as VerificationEvidence;
@@ -87,7 +79,7 @@ function parseVerificationEvidence(
  * not mutated underneath any other reader.
  */
 function inflateVerificationEvidence<
-  T extends { verification_evidence?: string | VerificationEvidence | null }
+  T extends { verification_evidence?: string | VerificationEvidence | null },
 >(task: T): T & { verification_evidence: VerificationEvidence | null } {
   const raw = task.verification_evidence;
   const parsed = typeof raw === 'string' ? parseVerificationEvidence(raw) : (raw ?? null);
@@ -179,10 +171,10 @@ export class TaskRepository implements ITaskRepository {
     `);
 
     // Join projects so every Task row carries the project_name display
-     // field. INNER JOIN is safe because `tasks.project_id` is NOT NULL with
-     // a FK to projects(id) (orphan rows are impossible under
-     // `PRAGMA foreign_keys = ON`). The `tasks` columns are explicitly
-     // expanded by `t.*` and the join adds `p.name as project_name`.
+    // field. INNER JOIN is safe because `tasks.project_id` is NOT NULL with
+    // a FK to projects(id) (orphan rows are impossible under
+    // `PRAGMA foreign_keys = ON`). The `tasks` columns are explicitly
+    // expanded by `t.*` and the join adds `p.name as project_name`.
     this.findByIdStmt = db.prepare(
       `SELECT t.*, p.name as project_name
        FROM tasks t INNER JOIN projects p ON p.id = t.project_id
@@ -190,14 +182,10 @@ export class TaskRepository implements ITaskRepository {
     );
     this.deleteStmt = db.prepare('DELETE FROM tasks WHERE id = ?');
     this.findTagsByTaskIdStmt = db.prepare(
-      'SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag'
+      'SELECT tag FROM task_tags WHERE task_id = ? ORDER BY tag',
     );
-    this.insertTagStmt = db.prepare(
-      'INSERT INTO task_tags (task_id, tag) VALUES (?, ?)'
-    );
-    this.deleteTagsByTaskIdStmt = db.prepare(
-      'DELETE FROM task_tags WHERE task_id = ?'
-    );
+    this.insertTagStmt = db.prepare('INSERT INTO task_tags (task_id, tag) VALUES (?, ?)');
+    this.deleteTagsByTaskIdStmt = db.prepare('DELETE FROM task_tags WHERE task_id = ?');
   }
 
   create(dto: CreateTaskDTO, tags?: string[]): Task & { tags: string[] } {
@@ -269,9 +257,11 @@ export class TaskRepository implements ITaskRepository {
     // Inflate it to the typed object the Task contract expects before
     // returning. The cast is narrow: better-sqlite3 surfaces the column as
     // `string | null`, which the inflateVerificationEvidence helper accepts.
-    const task = mapRow<Omit<Task, 'verification_evidence'> & {
-      verification_evidence: string | null;
-    }>(this.findByIdStmt, id);
+    const task = mapRow<
+      Omit<Task, 'verification_evidence'> & {
+        verification_evidence: string | null;
+      }
+    >(this.findByIdStmt, id);
     if (!task) {
       return null;
     }
@@ -280,9 +270,7 @@ export class TaskRepository implements ITaskRepository {
     const tagRows = mapRows<{ tag: string }>(this.findTagsByTaskIdStmt, id);
     const tags = tagRows.map((row) => row.tag);
 
-    return normalizeTaskTimestamps(
-      inflateWsjf(inflateVerificationEvidence({ ...task, tags }))
-    );
+    return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
   }
 
   findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }> {
@@ -312,16 +300,11 @@ export class TaskRepository implements ITaskRepository {
     return rows.map((row) => {
       const { tags_csv, ...task } = row;
       const tags = tags_csv ? tags_csv.split(',').sort() : [];
-      return normalizeTaskTimestamps(
-        inflateWsjf(inflateVerificationEvidence({ ...task, tags }))
-      );
+      return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
     });
   }
 
-  update(
-    id: number,
-    updates: UpdateTaskDTO
-  ): Task & { tags: string[] } {
+  update(id: number, updates: UpdateTaskDTO): Task & { tags: string[] } {
     const result = this.db.transaction(() => {
       // Build dynamic UPDATE SET clause
       const fields: string[] = [];
@@ -346,10 +329,8 @@ export class TaskRepository implements ITaskRepository {
           status: string;
           completed_at: string | null;
         }>(this.findByIdStmt, id);
-        const movingIntoDone =
-          updates.status === 'done' && current?.status !== 'done';
-        const movingOutOfDone =
-          current?.status === 'done' && updates.status !== 'done';
+        const movingIntoDone = updates.status === 'done' && current?.status !== 'done';
+        const movingOutOfDone = current?.status === 'done' && updates.status !== 'done';
 
         if (movingIntoDone) {
           fields.push("completed_at = datetime('now')");
@@ -426,8 +407,7 @@ export class TaskRepository implements ITaskRepository {
         params.wsjf_evidence = w === null ? null : serializeWsjfMember(w.evidence);
         params.wsjf_locked = w === null ? null : serializeWsjfMember(w.locked);
         params.wsjf_source = w === null ? null : serializeWsjfMember(w.source);
-        params.wsjf_classifications =
-          w === null ? null : serializeWsjfMember(w.classifications);
+        params.wsjf_classifications = w === null ? null : serializeWsjfMember(w.classifications);
         params.wsjf_features = w === null ? null : serializeWsjfMember(w.features);
       }
 
@@ -436,9 +416,7 @@ export class TaskRepository implements ITaskRepository {
 
       // Run update if there are fields to update
       if (fields.length > 0) {
-        const updateStmt = this.db.prepare(
-          `UPDATE tasks SET ${fields.join(', ')} WHERE id = @id`
-        );
+        const updateStmt = this.db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = @id`);
         updateStmt.run(params);
       }
 
@@ -514,11 +492,9 @@ export class TaskRepository implements ITaskRepository {
 
     if (filters.tags !== undefined && filters.tags.length > 0) {
       // Use EXISTS with parameterized IN clause
-      const tagPlaceholders = filters.tags
-        .map((_, i) => `@tag${i}`)
-        .join(', ');
+      const tagPlaceholders = filters.tags.map((_, i) => `@tag${i}`).join(', ');
       whereClauses.push(
-        `EXISTS (SELECT 1 FROM task_tags tt WHERE tt.task_id = t.id AND tt.tag IN (${tagPlaceholders}))`
+        `EXISTS (SELECT 1 FROM task_tags tt WHERE tt.task_id = t.id AND tt.tag IN (${tagPlaceholders}))`,
       );
       filters.tags.forEach((tag, i) => {
         params[`tag${i}`] = tag;
@@ -527,9 +503,7 @@ export class TaskRepository implements ITaskRepository {
 
     if (filters.search !== undefined) {
       // Use FTS5 MATCH for text search
-      whereClauses.push(
-        't.id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH @search)'
-      );
+      whereClauses.push('t.id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH @search)');
       params.search = filters.search;
     }
 
@@ -540,17 +514,16 @@ export class TaskRepository implements ITaskRepository {
     // and FAIL.
     if (filters.verified === true) {
       whereClauses.push(
-        "json_extract(t.verification_evidence, '$.verdict') IN ('PASS', 'PARTIAL')"
+        "json_extract(t.verification_evidence, '$.verdict') IN ('PASS', 'PARTIAL')",
       );
     } else if (filters.verified === false) {
       whereClauses.push(
-        "(t.verification_evidence IS NULL OR json_extract(t.verification_evidence, '$.verdict') IN ('NOT_VERIFIED', 'FAIL'))"
+        "(t.verification_evidence IS NULL OR json_extract(t.verification_evidence, '$.verdict') IN ('NOT_VERIFIED', 'FAIL'))",
       );
     }
 
     // Build final query
-    const whereClause =
-      whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     // Apply pagination so the server never materializes an unbounded result
     // set. The schema layer caps `limit` at 500; this is a defence in depth
@@ -602,10 +575,7 @@ export class TaskRepository implements ITaskRepository {
     if (includeTags) {
       let rows: Array<Task & { tags_csv: string | null }>;
       try {
-        rows = mapRows<Task & { tags_csv: string | null }>(
-          this.db.prepare(query),
-          params,
-        );
+        rows = mapRows<Task & { tags_csv: string | null }>(this.db.prepare(query), params);
       } catch (err) {
         if (filters.search !== undefined && isSqliteFtsSyntaxError(err)) {
           throw new FtsSyntaxError((err as Error).message);
@@ -648,10 +618,7 @@ export class TaskRepository implements ITaskRepository {
     // when omitted (legacy 2-arg callers) the column stays NULL.
     const claimTransaction = this.db.transaction(() => {
       // Read current task state
-      const task = mapRow<import('../types/task.js').Task>(
-        this.findByIdStmt,
-        id,
-      );
+      const task = mapRow<import('../types/task.js').Task>(this.findByIdStmt, id);
       if (!task) return null;
 
       // CAS: only claim if unassigned and status is 'open'
@@ -660,14 +627,9 @@ export class TaskRepository implements ITaskRepository {
          SET assignee = ?, assignee_user_id = ?, status = 'in_progress',
              version = version + 1,
              claimed_at = datetime('now'), updated_at = datetime('now')
-         WHERE id = ? AND assignee IS NULL AND status = 'open' AND version = ?`
+         WHERE id = ? AND assignee IS NULL AND status = 'open' AND version = ?`,
       );
-      const info = claimStmt.run(
-        assignee,
-        assigneeUserId ?? null,
-        id,
-        task.version,
-      );
+      const info = claimStmt.run(assignee, assigneeUserId ?? null, id, task.version);
 
       if (info.changes === 0) {
         // CAS failed - task was already claimed or status changed
@@ -681,10 +643,7 @@ export class TaskRepository implements ITaskRepository {
     return claimTransaction.immediate();
   }
 
-  findChildren(
-    parentId: number,
-    pagination?: PaginationOptions
-  ): Array<Task & { tags: string[] }> {
+  findChildren(parentId: number, pagination?: PaginationOptions): Array<Task & { tags: string[] }> {
     const { limit, offset } = resolvePagination(pagination);
     const query = `
       SELECT
@@ -721,9 +680,7 @@ export class TaskRepository implements ITaskRepository {
    */
   countChildren(parentId: number): number {
     const result = mapRow<{ count: number }>(
-      this.db.prepare(
-        'SELECT COUNT(*) as count FROM tasks WHERE parent_task_id = ?',
-      ),
+      this.db.prepare('SELECT COUNT(*) as count FROM tasks WHERE parent_task_id = ?'),
       parentId,
     );
     // COUNT(*) always returns exactly one row — `result` is never undefined.
@@ -778,11 +735,9 @@ export class TaskRepository implements ITaskRepository {
     }
 
     if (filters.tags !== undefined && filters.tags.length > 0) {
-      const tagPlaceholders = filters.tags
-        .map((_, i) => `@tag${i}`)
-        .join(', ');
+      const tagPlaceholders = filters.tags.map((_, i) => `@tag${i}`).join(', ');
       whereClauses.push(
-        `EXISTS (SELECT 1 FROM task_tags tt WHERE tt.task_id = t.id AND tt.tag IN (${tagPlaceholders}))`
+        `EXISTS (SELECT 1 FROM task_tags tt WHERE tt.task_id = t.id AND tt.tag IN (${tagPlaceholders}))`,
       );
       filters.tags.forEach((tag, i) => {
         params[`tag${i}`] = tag;
@@ -790,9 +745,7 @@ export class TaskRepository implements ITaskRepository {
     }
 
     if (filters.search !== undefined) {
-      whereClauses.push(
-        't.id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH @search)'
-      );
+      whereClauses.push('t.id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH @search)');
       params.search = filters.search;
     }
 
@@ -800,16 +753,15 @@ export class TaskRepository implements ITaskRepository {
     // so paginated callers get a `total` that matches the visible result set.
     if (filters.verified === true) {
       whereClauses.push(
-        "json_extract(t.verification_evidence, '$.verdict') IN ('PASS', 'PARTIAL')"
+        "json_extract(t.verification_evidence, '$.verdict') IN ('PASS', 'PARTIAL')",
       );
     } else if (filters.verified === false) {
       whereClauses.push(
-        "(t.verification_evidence IS NULL OR json_extract(t.verification_evidence, '$.verdict') IN ('NOT_VERIFIED', 'FAIL'))"
+        "(t.verification_evidence IS NULL OR json_extract(t.verification_evidence, '$.verdict') IN ('NOT_VERIFIED', 'FAIL'))",
       );
     }
 
-    const whereClause =
-      whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const query = `
       SELECT COUNT(DISTINCT t.id) as count
@@ -832,9 +784,7 @@ export class TaskRepository implements ITaskRepository {
     return result?.count ?? 0;
   }
 
-  findCompletedInRange(
-    filters: CompletionRangeFilters
-  ): Array<Task & { tags: string[] }> {
+  findCompletedInRange(filters: CompletionRangeFilters): Array<Task & { tags: string[] }> {
     // Use SQLite's datetime() to normalize comparison: completed_at may be
     // stored as ISO8601 ("2026-04-12T16:17:17Z") or SQLite format
     // ("2026-04-12 16:17:17") depending on whether the timestamp came from
@@ -873,10 +823,7 @@ export class TaskRepository implements ITaskRepository {
       ORDER BY t.completed_at ASC
     `;
 
-    const rows = mapRows<Task & { tags_csv: string | null }>(
-      this.db.prepare(query),
-      params,
-    );
+    const rows = mapRows<Task & { tags_csv: string | null }>(this.db.prepare(query), params);
 
     return rows.map((row) => {
       const { tags_csv, ...task } = row;

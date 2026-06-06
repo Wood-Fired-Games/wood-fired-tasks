@@ -33,8 +33,7 @@ const webRoutes: FastifyPluginAsync = async (fastify) => {
   // CSP — JSON responses cannot be framed and the CSP would be noise.
   fastify.addHook('onSend', async (_request, reply, payload) => {
     const contentType = reply.getHeader('content-type');
-    const isHtml =
-      typeof contentType === 'string' && contentType.includes('text/html');
+    const isHtml = typeof contentType === 'string' && contentType.includes('text/html');
     if (isHtml) {
       for (const [name, value] of Object.entries(HTML_SECURITY_HEADERS)) {
         // `header()` does not overwrite an existing header by default in

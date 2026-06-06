@@ -93,9 +93,7 @@ async function main() {
       nodeEnv: config.NODE_ENV,
     },
     `Server listening on http://${host}:${port}` +
-      (host === '127.0.0.1'
-        ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)'
-        : '')
+      (host === '127.0.0.1' ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)' : ''),
   );
 }
 

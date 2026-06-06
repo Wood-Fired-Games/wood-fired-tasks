@@ -68,9 +68,7 @@ function matchFrame(taskId: number): string {
 
 describe('RestClient.waitForUnblockViaSse', () => {
   it('resolves true on a matching task.status_changed frame', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValue(sseResponse([matchFrame(42)], { keepOpen: true }));
+    const fetchImpl = vi.fn().mockResolvedValue(sseResponse([matchFrame(42)], { keepOpen: true }));
     const client = new RestClient('http://localhost:3000', 'test-key');
     const result = await client.waitForUnblockViaSse(
       42,
@@ -80,9 +78,7 @@ describe('RestClient.waitForUnblockViaSse', () => {
     );
     expect(result).toBe(true);
     // The stream URL filters to status_changed events.
-    expect(fetchImpl.mock.calls[0][0]).toContain(
-      '/api/v1/events?event_types=task.status_changed',
-    );
+    expect(fetchImpl.mock.calls[0][0]).toContain('/api/v1/events?event_types=task.status_changed');
   });
 
   it('ignores non-matching frames (wrong id / wrong transition) then resolves on the match', async () => {
@@ -94,9 +90,11 @@ describe('RestClient.waitForUnblockViaSse', () => {
       data: { id: 42 },
       metadata: { from: 'open', to: 'blocked' },
     })}\n\n`;
-    const fetchImpl = vi.fn().mockResolvedValue(
-      sseResponse([wrongId, wrongTransition, matchFrame(42)], { keepOpen: true }),
-    );
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        sseResponse([wrongId, wrongTransition, matchFrame(42)], { keepOpen: true }),
+      );
     const client = new RestClient('http://localhost:3000', 'test-key');
     const result = await client.waitForUnblockViaSse(
       42,
@@ -253,11 +251,7 @@ describe('wait_for_unblock remote tool handler', () => {
       task: { id: 7, status: 'open', title: 't' },
       applied_timeout_seconds: 60,
     });
-    expect(client.waitForUnblockViaSse).toHaveBeenCalledWith(
-      7,
-      60_000,
-      expect.any(AbortSignal),
-    );
+    expect(client.waitForUnblockViaSse).toHaveBeenCalledWith(7, 60_000, expect.any(AbortSignal));
   });
 
   it('timeout: blocked task + SSE resolves false yields the timeout envelope (no throw)', async () => {
@@ -285,8 +279,8 @@ describe('wait_for_unblock remote tool handler', () => {
     client.getTask.mockRejectedValue(new Error('API request failed: Not Found'));
     client.waitForUnblockViaSse.mockReturnValue(new Promise<boolean>(() => {}));
 
-    await expect(
-      handlers.get('wait_for_unblock')!({ task_id: 404 }),
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('wait_for_unblock')!({ task_id: 404 })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 });

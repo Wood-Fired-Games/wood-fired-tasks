@@ -14,21 +14,21 @@ describe('resolveRemoteConfig (remote MCP fail-fast env validation)', () => {
   });
 
   it('throws a readable error when WFT_API_URL is unset', () => {
-    expect(() =>
-      resolveRemoteConfig({ WFT_API_KEY: 'abc123' })
-    ).toThrowError(/WFT_API_URL must be set/);
+    expect(() => resolveRemoteConfig({ WFT_API_KEY: 'abc123' })).toThrowError(
+      /WFT_API_URL must be set/,
+    );
   });
 
   it('throws a readable error when WFT_API_URL is empty string', () => {
-    expect(() =>
-      resolveRemoteConfig({ WFT_API_URL: '', WFT_API_KEY: 'abc123' })
-    ).toThrowError(/WFT_API_URL must be set/);
+    expect(() => resolveRemoteConfig({ WFT_API_URL: '', WFT_API_KEY: 'abc123' })).toThrowError(
+      /WFT_API_URL must be set/,
+    );
   });
 
   it('throws a readable error when WFT_API_URL is only whitespace', () => {
-    expect(() =>
-      resolveRemoteConfig({ WFT_API_URL: '   ', WFT_API_KEY: 'abc123' })
-    ).toThrowError(/WFT_API_URL must be set/);
+    expect(() => resolveRemoteConfig({ WFT_API_URL: '   ', WFT_API_KEY: 'abc123' })).toThrowError(
+      /WFT_API_URL must be set/,
+    );
   });
 
   it('does NOT silently default to any host when WFT_API_URL is unset', () => {
@@ -45,14 +45,14 @@ describe('resolveRemoteConfig (remote MCP fail-fast env validation)', () => {
   });
 
   it('throws a readable error when WFT_API_KEY is unset', () => {
-    expect(() =>
-      resolveRemoteConfig({ WFT_API_URL: 'http://localhost:3000' })
-    ).toThrowError(/WFT_API_KEY must be set/);
+    expect(() => resolveRemoteConfig({ WFT_API_URL: 'http://localhost:3000' })).toThrowError(
+      /WFT_API_KEY must be set/,
+    );
   });
 
   it('throws a readable error when WFT_API_KEY is empty string', () => {
     expect(() =>
-      resolveRemoteConfig({ WFT_API_URL: 'http://localhost:3000', WFT_API_KEY: '' })
+      resolveRemoteConfig({ WFT_API_URL: 'http://localhost:3000', WFT_API_KEY: '' }),
     ).toThrowError(/WFT_API_KEY must be set/);
   });
 

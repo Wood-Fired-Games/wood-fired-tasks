@@ -32,17 +32,9 @@ import { fileURLToPath } from 'node:url';
 
 import { EX_CONFIG, loadAndValidateTriggers } from '../config/triggers-schema.js';
 import { IdempotencyStore } from '../dispatch/index.js';
-import {
-  DEFAULT_HANDLER_REGISTRY,
-  WftRouterDaemon,
-  type DaemonDeps,
-} from '../daemon.js';
+import { DEFAULT_HANDLER_REGISTRY, WftRouterDaemon, type DaemonDeps } from '../daemon.js';
 import { getLogger } from '../logging/index.js';
-import {
-  MetricsRegistry,
-  startMetricsServer,
-  type MetricsServerHandle,
-} from '../metrics.js';
+import { MetricsRegistry, startMetricsServer, type MetricsServerHandle } from '../metrics.js';
 import { getPaths } from '../paths/index.js';
 import { runSSEClient, type SSEClientOptions } from '../sse/index.js';
 
@@ -142,14 +134,10 @@ export interface RunDaemonOptions {
  * Importable by tests (AC #4) so the no-flag boot path can be exercised
  * against a stubbed API without invoking the process-exiting `main()`.
  */
-export async function createDaemon(
-  opts: RunDaemonOptions,
-): Promise<WftRouterDaemon> {
+export async function createDaemon(opts: RunDaemonOptions): Promise<WftRouterDaemon> {
   const loaded = await loadAndValidateTriggers(opts.configPath);
   if (!loaded.ok) {
-    const err = new Error(
-      `triggers.yaml validation failed:\n${loaded.errors.join('\n')}`,
-    );
+    const err = new Error(`triggers.yaml validation failed:\n${loaded.errors.join('\n')}`);
     (err as Error & { exitCode?: number }).exitCode = EX_CONFIG;
     throw err;
   }
@@ -246,12 +234,9 @@ async function main(): Promise<void> {
   // No flag → boot the daemon: resolve config + endpoint + token, construct
   // the daemon with real deps, start it, and install SIGTERM/SIGINT → stop().
   const paths = getPaths();
-  const configPath =
-    readStringFlag(argv, '--config') ?? join(paths.config, 'triggers.yaml');
-  const endpoint =
-    readStringFlag(argv, '--endpoint') ?? process.env.WFT_ROUTER_ENDPOINT ?? '';
-  const apiKey =
-    readStringFlag(argv, '--token') ?? process.env.WFT_ROUTER_TOKEN ?? '';
+  const configPath = readStringFlag(argv, '--config') ?? join(paths.config, 'triggers.yaml');
+  const endpoint = readStringFlag(argv, '--endpoint') ?? process.env.WFT_ROUTER_ENDPOINT ?? '';
+  const apiKey = readStringFlag(argv, '--token') ?? process.env.WFT_ROUTER_TOKEN ?? '';
 
   if (endpoint.length === 0) {
     console.error('wft-router: --endpoint (or WFT_ROUTER_ENDPOINT) is required');

@@ -159,9 +159,7 @@ describe('update command', () => {
 
     await program.parseAsync(['node', 'test', 'update', '1']);
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('No updates specified')
-    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('No updates specified'));
     expect(process.exitCode).toBe(1);
     expect(updateTask).not.toHaveBeenCalled();
   });
@@ -194,7 +192,7 @@ describe('update command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'update', '999', '-s', 'done']);
@@ -220,14 +218,7 @@ describe('update command', () => {
       tags: ['bug', 'ui', 'frontend'],
     });
 
-    await program.parseAsync([
-      'node',
-      'test',
-      'update',
-      '1',
-      '--tags',
-      'bug, ui, frontend',
-    ]);
+    await program.parseAsync(['node', 'test', 'update', '1', '--tags', 'bug, ui, frontend']);
 
     expect(updateTask).toHaveBeenCalledWith(1, {
       tags: ['bug', 'ui', 'frontend'],
@@ -256,7 +247,19 @@ describe('update command', () => {
     vi.mocked(updateTask).mockResolvedValue(mockTask);
 
     // Global options like --json go before subcommand name
-    await program.parseAsync(['node', 'test', '--json', 'update', '5', '-s', 'done', '--priority', 'high', '-a', 'bob']);
+    await program.parseAsync([
+      'node',
+      'test',
+      '--json',
+      'update',
+      '5',
+      '-s',
+      'done',
+      '--priority',
+      'high',
+      '-a',
+      'bob',
+    ]);
 
     expect(jsonOutput).toHaveBeenCalledWith({ task: mockTask }, { id: mockTask.id });
     // Should NOT show success message in JSON mode

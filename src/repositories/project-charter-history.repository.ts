@@ -75,9 +75,7 @@ function parseCharter(raw: unknown): ValueCharter | null {
   }
 }
 
-export class ProjectCharterHistoryRepository
-  implements IProjectCharterHistoryRepository
-{
+export class ProjectCharterHistoryRepository implements IProjectCharterHistoryRepository {
   private readonly insertStmt: Database.Statement;
   private readonly findByProjectIdStmt: Database.Statement;
   private readonly countByProjectIdStmt: Database.Statement;
@@ -116,10 +114,7 @@ export class ProjectCharterHistoryRepository
   }
 
   findByProjectId(projectId: number): ProjectCharterHistoryRow[] {
-    const rows = mapRows<Record<string, unknown>>(
-      this.findByProjectIdStmt,
-      projectId,
-    );
+    const rows = mapRows<Record<string, unknown>>(this.findByProjectIdStmt, projectId);
     return rows.map((row) => ({
       id: row.id as number,
       project_id: row.project_id as number,
@@ -133,9 +128,7 @@ export class ProjectCharterHistoryRepository
   }
 
   countByProjectId(projectId: number): number {
-    const result = this.countByProjectIdStmt.get(projectId) as
-      | { count: number }
-      | undefined;
+    const result = this.countByProjectIdStmt.get(projectId) as { count: number } | undefined;
     return result?.count ?? 0;
   }
 
@@ -147,4 +140,3 @@ export class ProjectCharterHistoryRepository
     throw new AppendOnlyViolationError(CHARTER_HISTORY_TABLE, 'DELETE');
   }
 }
-

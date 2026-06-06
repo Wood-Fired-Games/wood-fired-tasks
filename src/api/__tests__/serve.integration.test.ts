@@ -82,8 +82,7 @@ describe('Task #733 — serve boots from any cwd, migrates app-data DB, /health 
       // --- /health 200 -------------------------------------------------
       const addr = server.server.address();
       expect(addr).not.toBeNull();
-      const port =
-        typeof addr === 'object' && addr !== null ? addr.port : booted.port;
+      const port = typeof addr === 'object' && addr !== null ? addr.port : booted.port;
       const res = await fetch(`http://127.0.0.1:${port}/health`);
       expect(res.status).toBe(200);
 
@@ -93,9 +92,7 @@ describe('Task #733 — serve boots from any cwd, migrates app-data DB, /health 
       // --- Migrations ran: a known table exists ------------------------
       // Verify via the live app handle first (it opened the same file).
       const liveRow = app.db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'"
-        )
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
         .get() as { name?: string } | undefined;
       expect(liveRow?.name).toBe('tasks');
 
@@ -105,9 +102,7 @@ describe('Task #733 — serve boots from any cwd, migrates app-data DB, /health 
       const ro = new Database(defaultDbPath, { readonly: true });
       try {
         const row = ro
-          .prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'"
-          )
+          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
           .get() as { name?: string } | undefined;
         expect(row?.name).toBe('tasks');
       } finally {

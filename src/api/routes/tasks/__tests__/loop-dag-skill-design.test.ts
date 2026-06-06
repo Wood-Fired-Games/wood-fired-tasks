@@ -93,9 +93,7 @@ describe('/tasks:loop-dag skill — DAG executor contract (#341)', () => {
   it('§3a defines the frontier as open tasks whose blocked_by edges are all satisfied', () => {
     // The textual definition of the frontier MUST appear verbatim — this
     // is the algorithmic invariant the test fixture above exercises.
-    expect(skill).toMatch(
-      /frontier.+open tasks whose\s+`blocked_by`\s+edges are ALL closed/,
-    );
+    expect(skill).toMatch(/frontier.+open tasks whose\s+`blocked_by`\s+edges are ALL closed/);
   });
 
   it('§3b dispatches workers in parallel under a --concurrency cap', () => {
@@ -182,9 +180,7 @@ describe('/tasks:loop-dag skill — DAG executor contract (#341)', () => {
     // Shared path convention — keeps `.planning/loops/` consistent so
     // tooling reading either /tasks:loop or /tasks:loop-dag artifacts
     // does not need to special-case the path.
-    expect(skill).toMatch(
-      /\.planning\/loops\/<UTC-timestamp>-<project_id>\.md/,
-    );
+    expect(skill).toMatch(/\.planning\/loops\/<UTC-timestamp>-<project_id>\.md/);
   });
 
   it('Important Rules pin the generator/critic separation and DAG-only refusal contract', () => {

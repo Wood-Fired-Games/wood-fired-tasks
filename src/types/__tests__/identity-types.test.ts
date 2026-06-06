@@ -8,11 +8,7 @@
 // error and `npm test` will refuse to load the file.
 
 import { describe, it, expectTypeOf } from 'vitest';
-import type {
-  AuthenticatedUser,
-  AuthMethod,
-  AuthResult,
-} from '../identity.js';
+import type { AuthenticatedUser, AuthMethod, AuthResult } from '../identity.js';
 
 describe('AuthenticatedUser', () => {
   it('has the exact camelCase boundary shape', () => {

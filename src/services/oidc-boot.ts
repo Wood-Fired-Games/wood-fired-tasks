@@ -65,11 +65,7 @@ const defaultSleep = (ms: number): Promise<void> =>
  * Compute the backoff for the wait that FOLLOWS attempt `attempt` (1-based):
  * baseDelayMs * 2^(attempt-1), capped at maxDelayMs. Exported for tests.
  */
-export function backoffDelayMs(
-  attempt: number,
-  baseDelayMs: number,
-  maxDelayMs: number,
-): number {
+export function backoffDelayMs(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
   const raw = baseDelayMs * 2 ** (attempt - 1);
   return Math.min(raw, maxDelayMs);
 }
@@ -97,19 +93,13 @@ export async function discoverOidcWithRetry(
       // gate on that before getting here, but guard defensively so a null
       // never masquerades as a "successful" discovery.
       if (cfg === null) {
-        throw new Error(
-          'initOidc returned null despite OIDC_ISSUER_URL being set',
-        );
+        throw new Error('initOidc returned null despite OIDC_ISSUER_URL being set');
       }
       return { ok: true, config: cfg, attempts: attempt };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxAttempts) {
-        const delayMs = backoffDelayMs(
-          attempt,
-          opts.baseDelayMs,
-          opts.maxDelayMs,
-        );
+        const delayMs = backoffDelayMs(attempt, opts.baseDelayMs, opts.maxDelayMs);
         opts.onRetry?.({ attempt, delayMs, error: lastError });
         await sleep(delayMs);
       }

@@ -147,8 +147,7 @@ export function aggregateReports(reports: StrykerReport[]): AggregateResult {
   const totalDetected = killed + timeout;
   const totalUndetected = survived + noCoverage;
   const totalCovered = totalDetected + totalUndetected;
-  const totalMutants =
-    totalCovered + compileError + runtimeError + ignored + pending;
+  const totalMutants = totalCovered + compileError + runtimeError + ignored + pending;
 
   const score = totalCovered === 0 ? 0 : (totalDetected / totalCovered) * 100;
 
@@ -195,9 +194,7 @@ export function formatSummary(r: AggregateResult, threshold: number | null): str
   ];
   if (threshold !== null) {
     const pass = r.score >= threshold;
-    lines.push(
-      `Threshold:        ${threshold}% (${pass ? 'PASS' : 'FAIL'})`,
-    );
+    lines.push(`Threshold:        ${threshold}% (${pass ? 'PASS' : 'FAIL'})`);
   }
   lines.push('────────────────────────────────────────────────────────────');
   return lines.join('\n');

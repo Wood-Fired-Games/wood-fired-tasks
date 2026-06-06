@@ -141,7 +141,11 @@ export const createTaskInProject: Handler = async (
       { rule_name: identity.rule_name, event_id: identity.event_id },
       'create_task_no_payload',
     );
-    return { kind: 'failed', retryable: false, detail: 'no with: block or rendered payload supplied' };
+    return {
+      kind: 'failed',
+      retryable: false,
+      detail: 'no with: block or rendered payload supplied',
+    };
   }
 
   // Serialize once — the same JSON is persisted in the idempotency row and

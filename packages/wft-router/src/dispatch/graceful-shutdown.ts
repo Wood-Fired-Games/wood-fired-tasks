@@ -134,8 +134,7 @@ export class GracefulShutdown {
     this.signals = options.signals ?? (['SIGTERM', 'SIGINT'] as NodeJS.Signals[]);
     this.proc = options.proc ?? (process as unknown as ShutdownProc);
     this.now = options.now ?? Date.now;
-    this.setTimer =
-      options.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
+    this.setTimer = options.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
     this.clearTimer =
       options.clearTimer ??
       ((handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>));

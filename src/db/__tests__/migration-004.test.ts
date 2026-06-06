@@ -32,18 +32,17 @@ describe('Migration 004: Claim Protocol — data semantics', () => {
     await up002(db);
     await up003(db);
 
-    const projectId = (db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('Pre-004 Project').lastInsertRowid) as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('Pre-004 Project')
+      .lastInsertRowid as number;
 
     db.prepare(
       `INSERT INTO tasks (title, project_id, created_by, status)
-       VALUES (?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?)`,
     ).run('Legacy open task', projectId, 'tester', 'open');
 
     db.prepare(
       `INSERT INTO tasks (title, project_id, created_by, status)
-       VALUES (?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?)`,
     ).run('Legacy in_progress task', projectId, 'tester', 'in_progress');
 
     const { up: up004 } = await import('../migrations/004-claim-protocol.js');

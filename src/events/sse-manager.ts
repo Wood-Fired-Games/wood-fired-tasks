@@ -64,7 +64,7 @@ export class SSEManager {
     // stored read-only and consulted on every `canAccept` call.
     private readonly maxConnectionsPerKey = 4,
     private readonly maxConnectionsPerIp = 8,
-    private readonly maxConnections = 200
+    private readonly maxConnections = 200,
   ) {
     this.startHeartbeat();
   }
@@ -104,7 +104,7 @@ export class SSEManager {
     reply: FastifyReply,
     filters: { project_id?: number; event_types?: string[] },
     lastEventId?: number,
-    meta: { apiKeyFingerprint: string; ip: string } = { apiKeyFingerprint: '', ip: '' }
+    meta: { apiKeyFingerprint: string; ip: string } = { apiKeyFingerprint: '', ip: '' },
   ): void {
     // Store connection. task #194: only the fingerprint is retained — the
     // caller (events route) computes it via hashKey(rawKey).slice(0,16) so
@@ -150,7 +150,7 @@ export class SSEManager {
 
   private matchesFilters(
     event: EventPayload<unknown>,
-    filters: { project_id?: number; event_types?: string[] }
+    filters: { project_id?: number; event_types?: string[] },
   ): boolean {
     // Filter by event type
     if (filters.event_types && !filters.event_types.includes(event.eventType)) {
@@ -232,7 +232,7 @@ export class SSEManager {
     // Remove events older than TTL
     const cutoff = Date.now() - this.bufferTtlMs;
     this.eventBuffer = this.eventBuffer.filter(
-      (e) => new Date(e.event.timestamp).getTime() > cutoff
+      (e) => new Date(e.event.timestamp).getTime() > cutoff,
     );
   }
 

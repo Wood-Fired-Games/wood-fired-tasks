@@ -86,9 +86,7 @@ describe('validateVerificationEvidence (pure)', () => {
       ),
     ).toBe(true);
     // callerId omitted → that sub-check is skipped
-    expect(
-      validateVerificationEvidence(ev, { ...baseCtx, callerId: null }),
-    ).toEqual([]);
+    expect(validateVerificationEvidence(ev, { ...baseCtx, callerId: null })).toEqual([]);
   });
 
   it('rejects empty check evidence_url_or_text', () => {
@@ -117,9 +115,7 @@ describe('validateVerificationEvidence (pure)', () => {
       verifier_session_id: 'critic-1',
     };
     const v = validateVerificationEvidence(ev, baseCtx);
-    expect(v.some((m) => m.includes('verdict PASS requires at least one'))).toBe(
-      true,
-    );
+    expect(v.some((m) => m.includes('verdict PASS requires at least one'))).toBe(true);
   });
 
   it('allows NOT_VERIFIED with no checks (only PASS requires checks)', () => {

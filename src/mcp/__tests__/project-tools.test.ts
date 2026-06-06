@@ -45,7 +45,7 @@ describe('MCP Project Tools', () => {
       app.projectService,
       app.dependencyService,
       app.commentService,
-      app.db
+      app.db,
     );
 
     // Create paired in-memory transports
@@ -55,10 +55,7 @@ describe('MCP Project Tools', () => {
     await server.connect(serverTransport);
 
     // Create and connect client
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -529,9 +526,7 @@ describe('MCP Project Tools', () => {
           updates: {
             value_charter: {
               ...validCharter,
-              value_themes: [
-                { name: 'Bad', weight: 4, description: 'invalid weight' },
-              ],
+              value_themes: [{ name: 'Bad', weight: 4, description: 'invalid weight' }],
             },
           },
         },

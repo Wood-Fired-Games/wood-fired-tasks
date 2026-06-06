@@ -1,7 +1,4 @@
-import type {
-  IDependencyRepository,
-  ITaskRepository,
-} from '../repositories/interfaces.js';
+import type { IDependencyRepository, ITaskRepository } from '../repositories/interfaces.js';
 import type { Dependency } from '../types/task.js';
 import { CreateDependencySchema } from '../schemas/dependency.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
@@ -13,7 +10,7 @@ import { CycleDetector } from '../utils/cycle-detector.js';
 export class DependencyService {
   constructor(
     private readonly dependencyRepo: IDependencyRepository,
-    private readonly taskRepo: ITaskRepository
+    private readonly taskRepo: ITaskRepository,
   ) {}
 
   /**
@@ -59,7 +56,7 @@ export class DependencyService {
     const detector = new CycleDetector(existingDeps);
     if (detector.wouldCreateCycle(task_id, blocks_task_id)) {
       throw new BusinessError(
-        `Cannot add dependency: Task ${task_id} blocking Task ${blocks_task_id} would create a circular dependency`
+        `Cannot add dependency: Task ${task_id} blocking Task ${blocks_task_id} would create a circular dependency`,
       );
     }
 
@@ -74,10 +71,7 @@ export class DependencyService {
   removeDependency(taskId: number, blocksTaskId: number): void {
     const deleted = this.dependencyRepo.delete(taskId, blocksTaskId);
     if (!deleted) {
-      throw new NotFoundError(
-        'Dependency',
-        `${taskId}->${blocksTaskId}` as any
-      );
+      throw new NotFoundError('Dependency', `${taskId}->${blocksTaskId}` as any);
     }
   }
 

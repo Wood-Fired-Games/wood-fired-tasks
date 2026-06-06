@@ -34,7 +34,7 @@ export const depRemoveCommand = new Command('dep-remove')
       // Confirm removal (unless --force)
       const confirmed = await confirmAction(
         `Remove dependency: Task ${id} blocks Task ${blocksId}?`,
-        false
+        false,
       );
 
       if (!confirmed) {
@@ -51,9 +51,14 @@ export const depRemoveCommand = new Command('dep-remove')
 
       // Display success
       if (isJsonMode) {
-        jsonOutput({}, { message: `Dependency removed: Task ${id} no longer blocks Task ${blocksId}` });
+        jsonOutput(
+          {},
+          { message: `Dependency removed: Task ${id} no longer blocks Task ${blocksId}` },
+        );
       } else {
-        console.log(colorSuccess(`Dependency removed: Task ${id} no longer blocks Task ${blocksId}`));
+        console.log(
+          colorSuccess(`Dependency removed: Task ${id} no longer blocks Task ${blocksId}`),
+        );
       }
     } catch (error) {
       handleError(error);

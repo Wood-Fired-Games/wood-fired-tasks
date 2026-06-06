@@ -9,11 +9,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  httpRequest,
-  HttpNetworkError,
-  HttpTimeoutError,
-} from '../http-client.js';
+import { httpRequest, HttpNetworkError, HttpTimeoutError } from '../http-client.js';
 
 describe('httpRequest', () => {
   it('returns status + body text and does not throw on non-2xx', async () => {
@@ -55,7 +51,12 @@ describe('httpRequest', () => {
         });
       })) as typeof fetch;
 
-    const promise = httpRequest({ method: 'GET', url: 'https://x.example', fetchImpl, timeoutMs: 100 });
+    const promise = httpRequest({
+      method: 'GET',
+      url: 'https://x.example',
+      fetchImpl,
+      timeoutMs: 100,
+    });
     // Attach the rejection handler BEFORE advancing the clock so the
     // eventual rejection is never observed as "unhandled".
     const assertion = expect(promise).rejects.toBeInstanceOf(HttpTimeoutError);
@@ -85,7 +86,12 @@ describe('httpRequest', () => {
       })) as typeof fetch;
 
     await expect(
-      httpRequest({ method: 'GET', url: 'https://x.example', fetchImpl, signal: controller.signal }),
+      httpRequest({
+        method: 'GET',
+        url: 'https://x.example',
+        fetchImpl,
+        signal: controller.signal,
+      }),
     ).rejects.toBeInstanceOf(HttpNetworkError);
   });
 });

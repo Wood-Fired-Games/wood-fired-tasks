@@ -249,7 +249,11 @@ describe('GracefulShutdown.dispose', () => {
     const host = makeFakeTimerHost();
     const gs = new GracefulShutdown({
       proc,
-      signals: ['SIGTERM' as NodeJS.Signals, 'SIGINT' as NodeJS.Signals, 'SIGHUP' as NodeJS.Signals],
+      signals: [
+        'SIGTERM' as NodeJS.Signals,
+        'SIGINT' as NodeJS.Signals,
+        'SIGHUP' as NodeJS.Signals,
+      ],
       setTimer: host.setTimer,
       clearTimer: host.clearTimer,
     });

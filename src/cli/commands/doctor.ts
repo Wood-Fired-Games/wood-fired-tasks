@@ -39,7 +39,8 @@ export const doctorCommand = new Command('doctor')
         // Check WAL mode
         const journalMode = db.pragma('journal_mode', { simple: true }) as string;
         dbStatus = 'PASS';
-        dbMessage = journalMode === 'wal' ? 'Connected (SQLite WAL mode)' : `Connected (${journalMode} mode)`;
+        dbMessage =
+          journalMode === 'wal' ? 'Connected (SQLite WAL mode)' : `Connected (${journalMode} mode)`;
       } finally {
         db.close();
       }
@@ -65,7 +66,7 @@ export const doctorCommand = new Command('doctor')
       const stats = await statfsAsync(dirname(dbPath));
       diskFree = stats.bavail * stats.bsize;
       diskTotal = stats.blocks * stats.bsize;
-      diskFreePercent = (diskFree / diskTotal * 100).toFixed(1);
+      diskFreePercent = ((diskFree / diskTotal) * 100).toFixed(1);
       const freeNum = parseFloat(diskFreePercent);
 
       if (freeNum < 5) {
@@ -78,7 +79,8 @@ export const doctorCommand = new Command('doctor')
       diskMessage = `${diskFreePercent}% free (${formatBytes(diskFree)} / ${formatBytes(diskTotal)})`;
     } catch (error) {
       diskStatus = 'FAIL';
-      diskMessage = error instanceof Error ? `Disk check failed: ${error.message}` : 'Disk check failed';
+      diskMessage =
+        error instanceof Error ? `Disk check failed: ${error.message}` : 'Disk check failed';
     }
 
     // --- Check 3: Config validity ---
@@ -117,19 +119,16 @@ export const doctorCommand = new Command('doctor')
         config: { status: configStatus, errors: configErrors },
       });
     } else {
-      const dbLabel = dbStatus === 'PASS'
-        ? colorSuccess('[PASS]')
-        : colorError('[FAIL]');
+      const dbLabel = dbStatus === 'PASS' ? colorSuccess('[PASS]') : colorError('[FAIL]');
 
-      const diskLabel = diskStatus === 'PASS'
-        ? colorSuccess('[PASS]')
-        : diskStatus === 'WARN'
-          ? colorWarn('[WARN]')
-          : colorError('[FAIL]');
+      const diskLabel =
+        diskStatus === 'PASS'
+          ? colorSuccess('[PASS]')
+          : diskStatus === 'WARN'
+            ? colorWarn('[WARN]')
+            : colorError('[FAIL]');
 
-      const configLabel = configStatus === 'PASS'
-        ? colorSuccess('[PASS]')
-        : colorError('[FAIL]');
+      const configLabel = configStatus === 'PASS' ? colorSuccess('[PASS]') : colorError('[FAIL]');
 
       console.log(`Database:  ${dbLabel} ${dbMessage}`);
 

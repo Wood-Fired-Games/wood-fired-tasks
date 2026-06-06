@@ -204,8 +204,7 @@ describe('project WSJF remote-parity REST surface', () => {
 
   // A full auto WSJF write whose evidence spans are verbatim substrings of the
   // seed description (so the gate accepts the rescore submission).
-  const seedDescription =
-    'aligns with reliability theme; launch window closes Q3';
+  const seedDescription = 'aligns with reliability theme; launch window closes Q3';
   const autoWsjf = {
     value: 13,
     timeCriticality: 8,
@@ -434,8 +433,16 @@ describe('project WSJF remote-parity REST surface', () => {
       headers,
       payload: {
         submissions: [
-          { task_id: lockedTask, classification: weakSubmission.classification, features: weakSubmission.features },
-          { task_id: unlockedTask, classification: weakSubmission.classification, features: weakSubmission.features },
+          {
+            task_id: lockedTask,
+            classification: weakSubmission.classification,
+            features: weakSubmission.features,
+          },
+          {
+            task_id: unlockedTask,
+            classification: weakSubmission.classification,
+            features: weakSubmission.features,
+          },
         ],
       },
     });
@@ -471,9 +478,7 @@ describe('project WSJF remote-parity REST surface', () => {
     });
     expect(hist.statusCode).toBe(200);
     const histBody = hist.json();
-    expect(
-      histBody.history.some((h: { trigger: string }) => h.trigger === 'rescore'),
-    ).toBe(true);
+    expect(histBody.history.some((h: { trigger: string }) => h.trigger === 'rescore')).toBe(true);
   });
 
   it('POST /:id/rescore rejects malformed input (bad task_id) with 400', async () => {
@@ -482,9 +487,7 @@ describe('project WSJF remote-parity REST surface', () => {
       url: `/api/v1/projects/${projectId}/rescore`,
       headers,
       payload: {
-        submissions: [
-          { task_id: -1, classification: {}, features: {} },
-        ],
+        submissions: [{ task_id: -1, classification: {}, features: {} }],
       },
     });
     expect(response.statusCode).toBe(400);

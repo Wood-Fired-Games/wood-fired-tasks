@@ -30,8 +30,7 @@ const C = (
   timeCriticality: number,
   riskOpportunity: number,
   jobSize: number,
-): WsjfComponents =>
-  ({ value, timeCriticality, riskOpportunity, jobSize } as WsjfComponents);
+): WsjfComponents => ({ value, timeCriticality, riskOpportunity, jobSize }) as WsjfComponents;
 
 /** Build a scored snapshot with overridable deadline/ready. */
 function snap(
@@ -80,11 +79,7 @@ describe('analyzeWsjfHealth (#646) — healthy backlog is silent', () => {
 describe('analyzeWsjfHealth (#646) — degenerate-spread', () => {
   it('fires when all scored WSJF scores are near-identical', () => {
     // value 3, TC 1, RR 1 (anchored), jobSize 1 → all score exactly 5.0.
-    const snaps = [
-      snap(1, C(3, 1, 1, 1)),
-      snap(2, C(3, 1, 1, 1)),
-      snap(3, C(3, 1, 1, 1)),
-    ];
+    const snaps = [snap(1, C(3, 1, 1, 1)), snap(2, C(3, 1, 1, 1)), snap(3, C(3, 1, 1, 1))];
     const report = analyzeWsjfHealth(7, snaps, NO_HISTORY);
     expect(fired(report.findings)).toContain('degenerate-spread');
     const f = report.findings.find((x) => x.check === 'degenerate-spread')!;
@@ -103,23 +98,13 @@ describe('analyzeWsjfHealth (#646) — degenerate-spread', () => {
 describe('analyzeWsjfHealth (#646) — cod-no-anchor', () => {
   it('fires when a Cost-of-Delay column has no 1 anchor', () => {
     // Time Criticality never takes the value 1 across the set.
-    const snaps = [
-      snap(1, C(1, 2, 1, 5)),
-      snap(2, C(5, 3, 1, 3)),
-      snap(3, C(8, 5, 1, 8)),
-    ];
+    const snaps = [snap(1, C(1, 2, 1, 5)), snap(2, C(5, 3, 1, 3)), snap(3, C(8, 5, 1, 8))];
     const report = analyzeWsjfHealth(7, snaps, NO_HISTORY);
-    const anchorFindings = report.findings.filter(
-      (x) => x.check === 'cod-no-anchor',
-    );
+    const anchorFindings = report.findings.filter((x) => x.check === 'cod-no-anchor');
     expect(anchorFindings.length).toBeGreaterThan(0);
     // The missing column is Time Criticality, not value/riskOpportunity.
-    expect(anchorFindings.some((f) => f.message.includes('Time Criticality'))).toBe(
-      true,
-    );
-    expect(anchorFindings.some((f) => f.message.includes('User-Business Value'))).toBe(
-      false,
-    );
+    expect(anchorFindings.some((f) => f.message.includes('Time Criticality'))).toBe(true);
+    expect(anchorFindings.some((f) => f.message.includes('User-Business Value'))).toBe(false);
     expect(anchorFindings[0].severity).toBe('warning');
     expect(anchorFindings[0].suggestion.length).toBeGreaterThan(0);
   });
@@ -132,11 +117,7 @@ describe('analyzeWsjfHealth (#646) — cod-no-anchor', () => {
 
 describe('analyzeWsjfHealth (#646) — job-size-collapsed', () => {
   it('fires when every Job Size is 1 or 2', () => {
-    const snaps = [
-      snap(1, C(1, 1, 1, 1)),
-      snap(2, C(13, 8, 5, 2)),
-      snap(3, C(5, 3, 8, 1)),
-    ];
+    const snaps = [snap(1, C(1, 1, 1, 1)), snap(2, C(13, 8, 5, 2)), snap(3, C(5, 3, 8, 1))];
     const report = analyzeWsjfHealth(7, snaps, NO_HISTORY);
     const f = report.findings.find((x) => x.check === 'job-size-collapsed');
     expect(f).toBeDefined();
@@ -204,9 +185,7 @@ describe('analyzeWsjfHealth (#646) — score-churn across rescores', () => {
 
   it('fires when a task value flaps across consecutive rescores', () => {
     // 5 → 9 → 4 → 8 : up, down, up = 2 reversals (≥ threshold 2).
-    const byTask = new Map<number, HealthHistoryPoint[]>([
-      [2, history([5, 9, 4, 8])],
-    ]);
+    const byTask = new Map<number, HealthHistoryPoint[]>([[2, history([5, 9, 4, 8])]]);
     const report = analyzeWsjfHealth(7, [snap(2, C(5, 3, 8, 3))], byTask);
     const f = report.findings.find((x) => x.check === 'score-churn');
     expect(f).toBeDefined();
@@ -217,9 +196,7 @@ describe('analyzeWsjfHealth (#646) — score-churn across rescores', () => {
 
   it('is silent on a monotonically converging score series', () => {
     // 3 → 5 → 6 → 6 : never reverses direction.
-    const byTask = new Map<number, HealthHistoryPoint[]>([
-      [2, history([3, 5, 6, 6])],
-    ]);
+    const byTask = new Map<number, HealthHistoryPoint[]>([[2, history([3, 5, 6, 6])]]);
     const report = analyzeWsjfHealth(7, [snap(2, C(5, 3, 8, 3))], byTask);
     expect(fired(report.findings)).not.toContain('score-churn');
   });
@@ -349,8 +326,18 @@ describe('WsjfHealthService + wsjf_health tool (#646)', () => {
   });
 
   it('reports healthy on a well-formed scored backlog', async () => {
-    await createScoredTask('anchor', { value: 1, timeCriticality: 1, riskOpportunity: 1, jobSize: 8 });
-    await createScoredTask('big', { value: 13, timeCriticality: 8, riskOpportunity: 5, jobSize: 1 });
+    await createScoredTask('anchor', {
+      value: 1,
+      timeCriticality: 1,
+      riskOpportunity: 1,
+      jobSize: 8,
+    });
+    await createScoredTask('big', {
+      value: 13,
+      timeCriticality: 8,
+      riskOpportunity: 5,
+      jobSize: 1,
+    });
     await createScoredTask('mid', { value: 5, timeCriticality: 3, riskOpportunity: 8, jobSize: 3 });
     await createScoredTask('low', { value: 8, timeCriticality: 5, riskOpportunity: 2, jobSize: 5 });
 

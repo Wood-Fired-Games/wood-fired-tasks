@@ -33,9 +33,7 @@ function makeMockLogger() {
   return { warn: vi.fn() };
 }
 
-function baseCtx(
-  overrides: Partial<AuthFailureContext> = {},
-): AuthFailureContext {
+function baseCtx(overrides: Partial<AuthFailureContext> = {}): AuthFailureContext {
   return {
     strategy: 'pat',
     reasonCode: 'unknown_token',
@@ -109,14 +107,11 @@ describe('logAuthFailure', () => {
     expect(payload.strategy).toBe(strategy);
   });
 
-  it.each(ALL_REASON_CODES)(
-    'accepts reasonCode %s without throwing',
-    (reasonCode) => {
-      expect(() => logAuthFailure(mock, baseCtx({ reasonCode }))).not.toThrow();
-      const [payload] = mock.warn.mock.calls[0] as [Record<string, unknown>, string?];
-      expect(payload.reasonCode).toBe(reasonCode);
-    },
-  );
+  it.each(ALL_REASON_CODES)('accepts reasonCode %s without throwing', (reasonCode) => {
+    expect(() => logAuthFailure(mock, baseCtx({ reasonCode }))).not.toThrow();
+    const [payload] = mock.warn.mock.calls[0] as [Record<string, unknown>, string?];
+    expect(payload.reasonCode).toBe(reasonCode);
+  });
 
   describe('no secret leak (fuzz across strategy × reasonCode)', () => {
     for (const strategy of ALL_STRATEGIES) {
@@ -159,9 +154,7 @@ describe('logAuthFailure', () => {
     logAuthFailure(mock, baseCtx());
     const [payload] = mock.warn.mock.calls[0] as [Record<string, unknown>, string?];
     const keys = Object.keys(payload).sort();
-    expect(keys).toEqual(
-      ['peerIp', 'reasonCode', 'requestId', 'strategy', 'tag'].sort(),
-    );
+    expect(keys).toEqual(['peerIp', 'reasonCode', 'requestId', 'strategy', 'tag'].sort());
   });
 
   it('TypeScript signature rejects unknown strategy at compile time', () => {

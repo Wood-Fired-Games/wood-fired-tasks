@@ -45,10 +45,7 @@ type RevokeResult =
   | { kind: 'http_error'; status: number; snippet: string }
   | { kind: 'network_error'; message: string };
 
-async function revokeServerSide(
-  server: string,
-  token: string,
-): Promise<RevokeResult> {
+async function revokeServerSide(server: string, token: string): Promise<RevokeResult> {
   const url = `${server}/api/v1/me/tokens/active`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
@@ -135,9 +132,7 @@ export const logoutCommand = new Command('logout')
           warning: 'token was already invalid',
         });
       } else {
-        process.stderr.write(
-          'Logged out (server-side token was already invalid)\n',
-        );
+        process.stderr.write('Logged out (server-side token was already invalid)\n');
       }
       return;
     }

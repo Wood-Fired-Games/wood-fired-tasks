@@ -79,16 +79,14 @@ afterEach(() => {
 /** Helper: spy on globalThis.fetch and return a captured request object. */
 function captureFetch(responseBody: unknown = { status: 'healthy' }, status = 200) {
   const captured: { url?: string; init?: RequestInit } = {};
-  const fetchSpy = vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation(async (url, init) => {
-      captured.url = String(url);
-      captured.init = init as RequestInit;
-      return new Response(JSON.stringify(responseBody), {
-        status,
-        headers: { 'content-type': 'application/json' },
-      });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    captured.url = String(url);
+    captured.init = init as RequestInit;
+    return new Response(JSON.stringify(responseBody), {
+      status,
+      headers: { 'content-type': 'application/json' },
     });
+  });
   return { captured, fetchSpy };
 }
 

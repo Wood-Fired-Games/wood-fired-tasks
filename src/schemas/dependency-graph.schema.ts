@@ -53,18 +53,17 @@ export interface DependencyGraphTreeNode {
   children: DependencyGraphTreeNode[];
 }
 
-export const DependencyGraphTreeNodeSchema: z.ZodType<DependencyGraphTreeNode> =
-  z.lazy(() =>
-    z.object({
-      id: z.number().int().positive(),
-      title: z.string(),
-      status: z.enum(TASK_STATUSES),
-      priority: z.enum(TASK_PRIORITIES),
-      depth: z.number().int().nonnegative(),
-      blocked_by_count: z.number().int().nonnegative(),
-      children: z.array(DependencyGraphTreeNodeSchema),
-    }),
-  );
+export const DependencyGraphTreeNodeSchema: z.ZodType<DependencyGraphTreeNode> = z.lazy(() =>
+  z.object({
+    id: z.number().int().positive(),
+    title: z.string(),
+    status: z.enum(TASK_STATUSES),
+    priority: z.enum(TASK_PRIORITIES),
+    depth: z.number().int().nonnegative(),
+    blocked_by_count: z.number().int().nonnegative(),
+    children: z.array(DependencyGraphTreeNodeSchema),
+  }),
+);
 
 /** `format=tree` response. */
 export const DependencyGraphTreeResponseSchema = z.object({
@@ -76,9 +75,7 @@ export const DependencyGraphTreeResponseSchema = z.object({
   /** True iff tree expansion hit MAX_TREE_NODES and stopped early. */
   truncated: z.boolean(),
 });
-export type DependencyGraphTreeResponse = z.infer<
-  typeof DependencyGraphTreeResponseSchema
->;
+export type DependencyGraphTreeResponse = z.infer<typeof DependencyGraphTreeResponseSchema>;
 
 /** `format=graph` response. Each task appears exactly once. */
 export const DependencyGraphGraphResponseSchema = z.object({
@@ -101,9 +98,7 @@ export const DependencyGraphGraphResponseSchema = z.object({
   total_tasks: z.number().int().nonnegative(),
   total_edges: z.number().int().nonnegative(),
 });
-export type DependencyGraphGraphResponse = z.infer<
-  typeof DependencyGraphGraphResponseSchema
->;
+export type DependencyGraphGraphResponse = z.infer<typeof DependencyGraphGraphResponseSchema>;
 
 /** `format=text` response — pre-rendered box-drawing lines. */
 export const DependencyGraphTextResponseSchema = z.object({
@@ -115,9 +110,7 @@ export const DependencyGraphTextResponseSchema = z.object({
   /** True iff tree expansion hit MAX_TREE_NODES and stopped early. */
   truncated: z.boolean(),
 });
-export type DependencyGraphTextResponse = z.infer<
-  typeof DependencyGraphTextResponseSchema
->;
+export type DependencyGraphTextResponse = z.infer<typeof DependencyGraphTextResponseSchema>;
 
 /**
  * Discriminated union of all three shapes. The `format` literal on each
@@ -129,12 +122,8 @@ export const DependencyGraphResponseSchema = z.discriminatedUnion('format', [
   DependencyGraphGraphResponseSchema,
   DependencyGraphTextResponseSchema,
 ]);
-export type DependencyGraphResult = z.infer<
-  typeof DependencyGraphResponseSchema
->;
+export type DependencyGraphResult = z.infer<typeof DependencyGraphResponseSchema>;
 
 /** Format query parameter. Defaults to `tree`. */
-export const DependencyGraphFormatSchema = z
-  .enum(['tree', 'graph', 'text'])
-  .default('tree');
+export const DependencyGraphFormatSchema = z.enum(['tree', 'graph', 'text']).default('tree');
 export type DependencyGraphFormat = z.infer<typeof DependencyGraphFormatSchema>;

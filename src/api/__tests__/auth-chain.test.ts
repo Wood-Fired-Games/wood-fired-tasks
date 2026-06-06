@@ -151,9 +151,9 @@ function mintPatRow(
   // Use UPDATE for revoked_at because parameterised datetime('now') needs to
   // run server-side, not bind as a literal.
   if (opts.revoked) {
-    db.prepare(
-      "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?",
-    ).run(Number(info.lastInsertRowid));
+    db.prepare("UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ?").run(
+      Number(info.lastInsertRowid),
+    );
   }
   return { token, tokenId: Number(info.lastInsertRowid) };
 }
@@ -209,8 +209,7 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
         url: '/api/v1/probe',
         headers: {
           // valid PAT shape, but never inserted into api_tokens
-          authorization:
-            'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+          authorization: 'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
         },
       });
       expect(res.statusCode).toBe(401);

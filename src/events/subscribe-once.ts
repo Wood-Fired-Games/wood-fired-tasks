@@ -51,14 +51,11 @@ export interface SubscribeOnceOptions {
  * @param options - Timeout (required) and optional abort signal
  * @returns Promise resolving with the first matching event payload
  */
-export function subscribeOnce<
-  Events extends Record<string, unknown>,
-  K extends keyof Events,
->(
+export function subscribeOnce<Events extends Record<string, unknown>, K extends keyof Events>(
   bus: EventBus<Events>,
   eventType: K,
   predicate: (event: Events[K]) => boolean,
-  options: SubscribeOnceOptions
+  options: SubscribeOnceOptions,
 ): Promise<Events[K]> {
   return new Promise<Events[K]>((resolve, reject) => {
     const { signal } = options;

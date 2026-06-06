@@ -51,14 +51,10 @@ describe('agent-context manifest', () => {
     const fresh = buildManifest({ repoRoot });
     for (const entry of fresh.files) {
       if (entry.status !== 'present') continue;
-      expect(
-        entry.actual_lines,
-        `actual_lines missing for ${entry.path}`,
-      ).toBeDefined();
-      expect(
-        entry.actual_lines!,
-        `line budget overrun for ${entry.path}`,
-      ).toBeLessThanOrEqual(entry.line_budget);
+      expect(entry.actual_lines, `actual_lines missing for ${entry.path}`).toBeDefined();
+      expect(entry.actual_lines!, `line budget overrun for ${entry.path}`).toBeLessThanOrEqual(
+        entry.line_budget,
+      );
     }
   });
 
@@ -96,9 +92,7 @@ describe('agent-context manifest', () => {
 
   it('exposes the same groups in MANIFEST_GROUPS and the built manifest', () => {
     const fresh = buildManifest({ repoRoot });
-    expect(Object.keys(fresh.groups).sort()).toEqual(
-      Object.keys(MANIFEST_GROUPS).sort(),
-    );
+    expect(Object.keys(fresh.groups).sort()).toEqual(Object.keys(MANIFEST_GROUPS).sort());
   });
 
   it('uses only relative paths and never absolute or parent-escaping paths', () => {
@@ -112,10 +106,7 @@ describe('agent-context manifest', () => {
     }
     for (const [key, files] of Object.entries(fresh.groups)) {
       for (const p of files) {
-        expect(
-          forbidden.test(p),
-          `group ${key} contains non-relative path "${p}"`,
-        ).toBe(false);
+        expect(forbidden.test(p), `group ${key} contains non-relative path "${p}"`).toBe(false);
       }
     }
   });
@@ -125,10 +116,7 @@ describe('agent-context manifest', () => {
     const known = new Set(fresh.files.map((f) => f.path));
     for (const [key, files] of Object.entries(fresh.groups)) {
       for (const p of files) {
-        expect(
-          known.has(p),
-          `group ${key} references unknown path "${p}"`,
-        ).toBe(true);
+        expect(known.has(p), `group ${key} references unknown path "${p}"`).toBe(true);
       }
     }
   });
@@ -182,9 +170,7 @@ describe('agent-context manifest', () => {
 
   it('declares every committed adapter and they all link to AGENTS.md', () => {
     const fresh = buildManifest({ repoRoot });
-    const adapters = fresh.files.filter(
-      (f) => f.authority === 'adapter' && f.status === 'present',
-    );
+    const adapters = fresh.files.filter((f) => f.authority === 'adapter' && f.status === 'present');
     // Sanity: the two adapters introduced in #285 must be present.
     const paths = new Set(adapters.map((a) => a.path));
     expect(paths.has('CLAUDE.md')).toBe(true);
@@ -196,17 +182,14 @@ describe('agent-context manifest', () => {
       const abs = resolve(repoRoot, a.path);
       expect(existsSync(abs), `${a.path} should exist on disk`).toBe(true);
       const text = readFileSync(abs, 'utf8');
-      expect(
-        adapterLinkRe.test(text),
-        `${a.path} must link to AGENTS.md (adapter-link rule)`,
-      ).toBe(true);
+      expect(adapterLinkRe.test(text), `${a.path} must link to AGENTS.md (adapter-link rule)`).toBe(
+        true,
+      );
     }
 
     // And the committed tree must not surface any adapter-link errors.
     const { errors } = runChecks(repoRoot);
-    const adapterLinkErrors = errors.filter((e) =>
-      e.includes('does not link to AGENTS.md'),
-    );
+    const adapterLinkErrors = errors.filter((e) => e.includes('does not link to AGENTS.md'));
     expect(adapterLinkErrors).toEqual([]);
   });
 });

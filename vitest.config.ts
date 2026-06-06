@@ -18,12 +18,7 @@ export default defineConfig({
     // exclude, default-root discovery picks up both the worktree copies of our own
     // tests AND thousands of dependency-bundled *.test.js files, ballooning and
     // hanging the run. Excluding the dir keeps `npm test` correct while worktrees exist.
-    exclude: [
-      'dist/**',
-      'node_modules/**',
-      '**/*.bench.ts',
-      '.claude/worktrees/**',
-    ],
+    exclude: ['dist/**', 'node_modules/**', '**/*.bench.ts', '.claude/worktrees/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

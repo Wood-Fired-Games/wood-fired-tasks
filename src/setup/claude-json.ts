@@ -71,9 +71,7 @@ function isRetryableRenameError(err: unknown): boolean {
  * newline, only one key mutated), so a second merge with the same entry leaves
  * the file bytes unchanged.
  */
-export function mergeClaudeJson(
-  options: MergeClaudeJsonOptions,
-): MergeClaudeJsonResult {
+export function mergeClaudeJson(options: MergeClaudeJsonOptions): MergeClaudeJsonResult {
   const filePath = options.filePath ?? defaultClaudeJsonPath();
   const serverName = options.serverName ?? DEFAULT_SERVER_NAME;
   const entry = options.entry;
@@ -89,9 +87,7 @@ export function mergeClaudeJson(
     if (trimmed.length > 0) {
       const value = JSON.parse(trimmed) as unknown;
       if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        throw new Error(
-          `Refusing to merge: ${filePath} does not contain a JSON object`,
-        );
+        throw new Error(`Refusing to merge: ${filePath} does not contain a JSON object`);
       }
       parsed = value as Record<string, unknown>;
     }

@@ -139,22 +139,20 @@ describe('WorkflowEngine: cascade rollback on taskRepo.update failure (regressio
     // the regression this test guards against.
     const originalUpdate = TaskRepository.prototype.update;
     let parentUpdateCount = 0;
-    const updateSpy = vi.spyOn(TaskRepository.prototype, 'update').mockImplementation(
-      function (
-        this: TaskRepository,
-        id: number,
-        updates: Parameters<TaskRepository['update']>[1]
-      ) {
-        if (id === parent.id) {
-          parentUpdateCount++;
-          if (parentUpdateCount >= 2) {
-            // Second parent update == the workflow's done transition.
-            throw new Error('Simulated taskRepo.update crash mid-cascade');
-          }
+    const updateSpy = vi.spyOn(TaskRepository.prototype, 'update').mockImplementation(function (
+      this: TaskRepository,
+      id: number,
+      updates: Parameters<TaskRepository['update']>[1],
+    ) {
+      if (id === parent.id) {
+        parentUpdateCount++;
+        if (parentUpdateCount >= 2) {
+          // Second parent update == the workflow's done transition.
+          throw new Error('Simulated taskRepo.update crash mid-cascade');
         }
-        return originalUpdate.call(this, id, updates);
       }
-    );
+      return originalUpdate.call(this, id, updates);
+    });
 
     // Trigger the cascade. The workflow attempt to update the parent will
     // throw; the outer transaction should roll back without re-throwing

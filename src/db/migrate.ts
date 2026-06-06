@@ -69,8 +69,10 @@ class SQLiteStorage implements UmzugStorage {
   }
 
   async executed(): Promise<string[]> {
-    const rows = this.db.prepare('SELECT name FROM _migrations ORDER BY name').all() as { name: string }[];
-    return rows.map(row => row.name);
+    const rows = this.db.prepare('SELECT name FROM _migrations ORDER BY name').all() as {
+      name: string;
+    }[];
+    return rows.map((row) => row.name);
   }
 }
 
@@ -145,9 +147,8 @@ export function resolveMigrateDbPath(
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
 ): string {
-  const raw = env.DATABASE_PATH && env.DATABASE_PATH.length > 0
-    ? env.DATABASE_PATH
-    : './data/tasks.db';
+  const raw =
+    env.DATABASE_PATH && env.DATABASE_PATH.length > 0 ? env.DATABASE_PATH : './data/tasks.db';
   return resolve(cwd, raw);
 }
 

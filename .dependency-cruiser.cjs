@@ -13,14 +13,16 @@ module.exports = {
     {
       name: 'leaves-no-upstream',
       severity: 'error',
-      comment: 'src/db, src/types, src/schemas must not import entry-point or business-logic layers.',
+      comment:
+        'src/db, src/types, src/schemas must not import entry-point or business-logic layers.',
       from: { path: '^src/(db|types|schemas)/' },
       to: { path: '^src/(api|cli|mcp|slack|services|events|repositories)/' },
     },
     {
       name: 'repositories-layer',
       severity: 'error',
-      comment: 'src/repositories may only import db, types, schemas, utils, config, and other repositories.',
+      comment:
+        'src/repositories may only import db, types, schemas, utils, config, and other repositories.',
       from: { path: '^src/repositories/' },
       to: {
         path: '^src/',
@@ -30,7 +32,8 @@ module.exports = {
     {
       name: 'events-layer',
       severity: 'error',
-      comment: 'src/events may import schemas, types, utils, config — not entry points, services, or repositories.',
+      comment:
+        'src/events may import schemas, types, utils, config — not entry points, services, or repositories.',
       from: { path: '^src/events/' },
       to: { path: '^src/(api|cli|mcp|slack|services|repositories)/' },
     },

@@ -44,9 +44,7 @@ describe('RestClient', () => {
   });
 
   it('strips trailing slash from baseUrl', () => {
-    expect((client as unknown as { baseUrl: string }).baseUrl).toBe(
-      'http://localhost:3000'
-    );
+    expect((client as unknown as { baseUrl: string }).baseUrl).toBe('http://localhost:3000');
   });
 
   it('sends X-API-Key header on every request', async () => {
@@ -75,9 +73,7 @@ describe('RestClient', () => {
       await patClient.listTasks();
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
-      expect(headers['Authorization']).toBe(
-        'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
-      );
+      expect(headers['Authorization']).toBe('Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567');
       // The PAT path MUST NOT also stamp X-API-Key — the server's auth
       // chain treats X-API-Key as the legacy strategy and could log a
       // deprecation warning for what should be a modern PAT request.
@@ -85,10 +81,7 @@ describe('RestClient', () => {
     });
 
     it('uses X-API-Key when apiKey does NOT start with wft_pat_ (legacy path)', async () => {
-      const legacyClient = new RestClient(
-        'http://localhost:3000',
-        'legacy-style-no-prefix',
-      );
+      const legacyClient = new RestClient('http://localhost:3000', 'legacy-style-no-prefix');
       fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
       await legacyClient.listTasks();
       const init = fetchMock.mock.calls[0][1] as RequestInit;
@@ -149,7 +142,7 @@ describe('RestClient', () => {
 
   it('falls back to status text when body is not JSON', async () => {
     fetchMock.mockResolvedValue(
-      new Response('not json', { status: 500, statusText: 'Internal Server Error' })
+      new Response('not json', { status: 500, statusText: 'Internal Server Error' }),
     );
     await expect(client.getTask(1)).rejects.toThrow(/HTTP 500/);
   });
@@ -173,9 +166,7 @@ describe('RestClient', () => {
   });
 
   it('listTasksPaginated returns the envelope shape', async () => {
-    fetchMock.mockResolvedValue(
-      ok({ data: [{ id: 1 }], total: 1, limit: 50, offset: 0 })
-    );
+    fetchMock.mockResolvedValue(ok({ data: [{ id: 1 }], total: 1, limit: 50, offset: 0 }));
     const page = await client.listTasksPaginated();
     expect(page.total).toBe(1);
     expect(page.data).toHaveLength(1);
@@ -246,7 +237,7 @@ describe('RestClient', () => {
 
   it('listProjects unwraps a paginated envelope', async () => {
     fetchMock.mockResolvedValue(
-      ok({ data: [{ id: 1, name: 'p' }], total: 1, limit: 50, offset: 0 })
+      ok({ data: [{ id: 1, name: 'p' }], total: 1, limit: 50, offset: 0 }),
     );
     const projects = await client.listProjects();
     expect(projects).toHaveLength(1);
@@ -333,7 +324,7 @@ describe('RestClient', () => {
         by_assignee: [],
         by_priority: [],
         daily_throughput: [],
-      })
+      }),
     );
     await client.getCompletionReport({ days: 14 });
     const url = fetchMock.mock.calls[0][0] as string;
@@ -351,7 +342,7 @@ describe('RestClient', () => {
         by_assignee: [],
         by_priority: [],
         daily_throughput: [],
-      })
+      }),
     );
     await client.getCompletionReport({
       start: '2026-01-01T00:00:00Z',
@@ -376,7 +367,7 @@ describe('RestClient', () => {
         by_assignee: [],
         by_priority: [],
         daily_throughput: [],
-      })
+      }),
     );
     await client.getCompletionReport({});
     const url = fetchMock.mock.calls[0][0] as string;
@@ -389,9 +380,14 @@ describe('RestClient', () => {
         status: 'healthy',
         timestamp: 't',
         version: '1.12.0',
-        database: { path: '/tmp/tasks.db', projects: 2, maxTaskId: 9, latestActivity: '2026-05-25T00:00:00.000Z' },
+        database: {
+          path: '/tmp/tasks.db',
+          projects: 2,
+          maxTaskId: 9,
+          latestActivity: '2026-05-25T00:00:00.000Z',
+        },
         checks: { database: 'ok' },
-      })
+      }),
     );
     const health = await client.checkHealth();
     expect(health.status).toBe('healthy');

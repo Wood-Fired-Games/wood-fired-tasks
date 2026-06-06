@@ -46,7 +46,9 @@ function claimInput(overrides: Partial<Parameters<IdempotencyStore['claim']>[0]>
 }
 
 /** Create an in-memory store with an optional pinned clock. */
-function makeMemoryStore(opts: { now?: () => number; idempotencyWindowMs?: number } = {}): IdempotencyStore {
+function makeMemoryStore(
+  opts: { now?: () => number; idempotencyWindowMs?: number } = {},
+): IdempotencyStore {
   return new IdempotencyStore({
     dbPath: ':memory:',
     now: opts.now,
@@ -76,9 +78,7 @@ describe('IdempotencyStore.claim', () => {
       expect(store.claim(claimInput())).toEqual({ kind: 'ALREADY_PENDING' });
       // Verify only one row exists.
       const dbHandle = (store as unknown as { db: BetterSqlite.Database }).db;
-      const row = dbHandle
-        .prepare('SELECT COUNT(*) AS n FROM dispatch_log')
-        .get() as { n: number };
+      const row = dbHandle.prepare('SELECT COUNT(*) AS n FROM dispatch_log').get() as { n: number };
       expect(row.n).toBe(1);
     } finally {
       store.close();
@@ -170,26 +170,26 @@ describe('IdempotencyStore.complete', () => {
     const store = makeMemoryStore();
     try {
       store.claim(claimInput());
-      expect(
-        store.complete('rule-A', 'evt-1', 'PENDING' as DispatchStatus),
-      ).toBe(false);
+      expect(store.complete('rule-A', 'evt-1', 'PENDING' as DispatchStatus)).toBe(false);
     } finally {
       store.close();
     }
   });
 
-  it.each<DispatchStatus>(['SUCCEEDED', 'FAILED', 'PERMANENTLY_FAILED', 'SUPERSEDED'])(
-    'accepts terminal status %s',
-    (status) => {
-      const store = makeMemoryStore();
-      try {
-        store.claim(claimInput({ event_id: `evt-${status}` }));
-        expect(store.complete('rule-A', `evt-${status}`, status)).toBe(true);
-      } finally {
-        store.close();
-      }
-    },
-  );
+  it.each<DispatchStatus>([
+    'SUCCEEDED',
+    'FAILED',
+    'PERMANENTLY_FAILED',
+    'SUPERSEDED',
+  ])('accepts terminal status %s', (status) => {
+    const store = makeMemoryStore();
+    try {
+      store.claim(claimInput({ event_id: `evt-${status}` }));
+      expect(store.complete('rule-A', `evt-${status}`, status)).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
 });
 
 describe('IdempotencyStore.replayPending (crash recovery)', () => {
@@ -394,9 +394,9 @@ describe('IdempotencyStore.claim atomicity (db.transaction wrapping)', () => {
 
       // And only one row landed.
       const dbHandle = (store as unknown as { db: BetterSqlite.Database }).db;
-      const { n } = dbHandle
-        .prepare('SELECT COUNT(*) AS n FROM dispatch_log')
-        .get() as { n: number };
+      const { n } = dbHandle.prepare('SELECT COUNT(*) AS n FROM dispatch_log').get() as {
+        n: number;
+      };
       expect(n).toBe(1);
     } finally {
       store.close();

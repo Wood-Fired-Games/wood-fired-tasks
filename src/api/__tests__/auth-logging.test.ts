@@ -239,9 +239,7 @@ describe('X-API-Key log redaction', () => {
       // Phase 28: the chain plugin's legacy strategy looks up the seeded
       // `users` row matching `display_name = label`. Boot a DB with both
       // labels seeded so both keys land on a real principal.
-      const id = await bootIdentityDb(
-        `${labelledKeyRaw}:ci-bot,${bareKeyRaw}`,
-      );
+      const id = await bootIdentityDb(`${labelledKeyRaw}:ci-bot,${bareKeyRaw}`);
       db = id.db;
       const dest = new Writable({
         write(chunk, _enc, cb) {
@@ -269,10 +267,7 @@ describe('X-API-Key log redaction', () => {
       // can confirm it propagates into per-request logs. This stand-in
       // mirrors what a real request-completion log would carry.
       server.get('/api/v1/tasks', async (req: any) => {
-        req.log.info(
-          { apiKeyLabel: req.apiKeyLabel },
-          'route reached with apiKeyLabel',
-        );
+        req.log.info({ apiKeyLabel: req.apiKeyLabel }, 'route reached with apiKeyLabel');
         return { ok: true, label: req.apiKeyLabel };
       });
       await server.ready();
@@ -288,7 +283,7 @@ describe('X-API-Key log redaction', () => {
       }
     });
 
-    it('attaches the labelled key\'s label to request.apiKeyLabel', async () => {
+    it("attaches the labelled key's label to request.apiKeyLabel", async () => {
       captured.length = 0;
       const res = await server.inject({
         method: 'GET',

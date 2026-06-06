@@ -13,9 +13,8 @@ const exclusions = [
   '!src/cli/bin/tasks.ts',
 ];
 const shardGlobsRaw = process.env.STRYKER_MUTATE_GLOBS;
-const includes = shardGlobsRaw && shardGlobsRaw.trim()
-  ? shardGlobsRaw.trim().split(/\s+/)
-  : ['src/**/*.ts'];
+const includes =
+  shardGlobsRaw && shardGlobsRaw.trim() ? shardGlobsRaw.trim().split(/\s+/) : ['src/**/*.ts'];
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {

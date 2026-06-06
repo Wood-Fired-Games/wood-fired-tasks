@@ -249,15 +249,9 @@ describe('resolvePaths — Windows (AppData)', () => {
       home: winHome,
     });
 
-    expect(paths.config).toBe(
-      join('C:\\Users\\operator\\AppData\\Roaming', APP_DIR),
-    );
-    expect(paths.data).toBe(
-      join('C:\\Users\\operator\\AppData\\Local', APP_DIR),
-    );
-    expect(paths.state).toBe(
-      join('C:\\Users\\operator\\AppData\\Local', APP_DIR, 'state'),
-    );
+    expect(paths.config).toBe(join('C:\\Users\\operator\\AppData\\Roaming', APP_DIR));
+    expect(paths.data).toBe(join('C:\\Users\\operator\\AppData\\Local', APP_DIR));
+    expect(paths.state).toBe(join('C:\\Users\\operator\\AppData\\Local', APP_DIR, 'state'));
   });
 
   it('falls back to ~\\AppData\\Roaming and ~\\AppData\\Local when env is empty', () => {
@@ -269,9 +263,7 @@ describe('resolvePaths — Windows (AppData)', () => {
 
     expect(paths.config).toBe(join(winHome, 'AppData', 'Roaming', APP_DIR));
     expect(paths.data).toBe(join(winHome, 'AppData', 'Local', APP_DIR));
-    expect(paths.state).toBe(
-      join(winHome, 'AppData', 'Local', APP_DIR, 'state'),
-    );
+    expect(paths.state).toBe(join(winHome, 'AppData', 'Local', APP_DIR, 'state'));
   });
 
   it('ignores empty-string APPDATA/LOCALAPPDATA and uses fallbacks', () => {
@@ -283,9 +275,7 @@ describe('resolvePaths — Windows (AppData)', () => {
 
     expect(paths.config).toBe(join(winHome, 'AppData', 'Roaming', APP_DIR));
     expect(paths.data).toBe(join(winHome, 'AppData', 'Local', APP_DIR));
-    expect(paths.state).toBe(
-      join(winHome, 'AppData', 'Local', APP_DIR, 'state'),
-    );
+    expect(paths.state).toBe(join(winHome, 'AppData', 'Local', APP_DIR, 'state'));
   });
 
   it('honors WFT_ROUTER_* overrides on win32 (when absolute)', () => {
@@ -303,9 +293,7 @@ describe('resolvePaths — Windows (AppData)', () => {
     expect(paths.config).toBe('D:\\config\\wft-router');
     expect(paths.state).toBe('D:\\state\\wft-router');
     // data is untouched by the overrides above, so it still resolves via LOCALAPPDATA.
-    expect(paths.data).toBe(
-      join('C:\\Users\\operator\\AppData\\Local', APP_DIR),
-    );
+    expect(paths.data).toBe(join('C:\\Users\\operator\\AppData\\Local', APP_DIR));
   });
 
   it('treats Windows absolute drive-letter paths as absolute for override gating', () => {

@@ -1,6 +1,12 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import type { TaskResponse, ProjectResponse, DependencyListResponse, CommentResponse, HealthResponse } from '../api/types.js';
+import type {
+  TaskResponse,
+  ProjectResponse,
+  DependencyListResponse,
+  CommentResponse,
+  HealthResponse,
+} from '../api/types.js';
 
 /**
  * Detect if JSON output mode is enabled via --json flag.
@@ -188,7 +194,7 @@ export function formatTaskDetail(task: TaskResponse): string {
   lines.push(`${bold('Assignee:')}    ${task.assignee || '-'}`);
   lines.push(`${bold('Created by:')}  ${task.created_by}`);
   lines.push(
-    `${bold('Due date:')}    ${task.due_date ? new Date(task.due_date).toLocaleString() : '-'}`
+    `${bold('Due date:')}    ${task.due_date ? new Date(task.due_date).toLocaleString() : '-'}`,
   );
   lines.push(`${bold('Tags:')}        ${task.tags.length > 0 ? task.tags.join(', ') : '-'}`);
   lines.push(`${bold('Created:')}     ${new Date(task.created_at).toLocaleString()}`);
@@ -215,9 +221,7 @@ export function formatTaskDetail(task: TaskResponse): string {
   if (task.verification_evidence) {
     const ve = task.verification_evidence;
     const checkCount = Array.isArray(ve.checks) ? ve.checks.length : 0;
-    const verifiedAt = ve.verified_at
-      ? new Date(ve.verified_at).toLocaleString()
-      : '-';
+    const verifiedAt = ve.verified_at ? new Date(ve.verified_at).toLocaleString() : '-';
     lines.push('');
     lines.push(`${bold('Verification:')}`);
     lines.push(`  ${bold('Verdict:')}     ${ve.verdict}`);
@@ -258,12 +262,7 @@ export function formatProjectTable(projects: ProjectResponse[]): string {
         : project.description
       : '-';
 
-    table.push([
-      project.id,
-      project.name,
-      desc,
-      new Date(project.created_at).toLocaleDateString(),
-    ]);
+    table.push([project.id, project.name, desc, new Date(project.created_at).toLocaleDateString()]);
   }
 
   return table.toString();
@@ -354,16 +353,25 @@ export function formatHealthStatus(health: HealthResponse): string {
   const bold = (text: string) => (useColor ? chalk.bold(text) : text);
 
   // Service status
-  const statusText = health.status === 'healthy'
-    ? useColor ? chalk.green('OK') + ' ' + chalk.green('\u2713') : 'OK \u2713'
-    : useColor ? chalk.red('ERROR') + ' ' + chalk.red('\u2717') : 'ERROR \u2717';
+  const statusText =
+    health.status === 'healthy'
+      ? useColor
+        ? chalk.green('OK') + ' ' + chalk.green('\u2713')
+        : 'OK \u2713'
+      : useColor
+        ? chalk.red('ERROR') + ' ' + chalk.red('\u2717')
+        : 'ERROR \u2717';
   lines.push(`${bold('Service Status:')} ${statusText}`);
 
   // Database status
   const dbStatus = health.checks.database === 'ok';
   const dbText = dbStatus
-    ? useColor ? chalk.green('Connected') + ' ' + chalk.green('\u2713') : 'Connected \u2713'
-    : useColor ? chalk.red('Disconnected') + ' ' + chalk.red('\u2717') : 'Disconnected \u2717';
+    ? useColor
+      ? chalk.green('Connected') + ' ' + chalk.green('\u2713')
+      : 'Connected \u2713'
+    : useColor
+      ? chalk.red('Disconnected') + ' ' + chalk.red('\u2717')
+      : 'Disconnected \u2717';
   lines.push(`${bold('Database:')} ${dbText}`);
 
   // Version

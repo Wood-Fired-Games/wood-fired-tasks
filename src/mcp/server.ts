@@ -176,7 +176,7 @@ export function createMcpServer(
     },
     async () => {
       return getEventsResourceContent(apiUrl);
-    }
+    },
   );
 
   return server;

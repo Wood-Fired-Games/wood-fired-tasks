@@ -46,9 +46,7 @@ describe('doctor command', () => {
     process.env.NODE_ENV = 'test';
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     process.exitCode = 0;
   });
 

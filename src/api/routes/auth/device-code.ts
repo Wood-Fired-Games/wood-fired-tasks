@@ -52,56 +52,49 @@ const BodySchema = z.object({
   scope: z.string().optional(),
 });
 
-const deviceCodeRoute: FastifyPluginAsync<DeviceCodeRouteOptions> = async (
-  fastify,
-  opts,
-) => {
-  fastify.post(
-    '/auth/device/code',
-    { config: { skipAuth: true } },
-    async (request, reply) => {
-      // Manual Zod parse so the error envelope matches RFC 8628 verbatim
-      // (`{error: 'invalid_request'}`) — Fastify's default 400 carries the
-      // `statusCode/error/message` triplet which is not what RFC 8628 wants.
-      const parsed = BodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({
-          error: 'invalid_request',
-          error_description: 'client_id is required',
-        });
-      }
-      const { client_id, hostname } = parsed.data;
+const deviceCodeRoute: FastifyPluginAsync<DeviceCodeRouteOptions> = async (fastify, opts) => {
+  fastify.post('/auth/device/code', { config: { skipAuth: true } }, async (request, reply) => {
+    // Manual Zod parse so the error envelope matches RFC 8628 verbatim
+    // (`{error: 'invalid_request'}`) — Fastify's default 400 carries the
+    // `statusCode/error/message` triplet which is not what RFC 8628 wants.
+    const parsed = BodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'invalid_request',
+        error_description: 'client_id is required',
+      });
+    }
+    const { client_id, hostname } = parsed.data;
 
-      if (client_id !== opts.expectedClientId) {
-        return reply.code(400).send({ error: 'invalid_client' });
-      }
+    if (client_id !== opts.expectedClientId) {
+      return reply.code(400).send({ error: 'invalid_client' });
+    }
 
-      const session = createSession({
+    const session = createSession({
+      clientId: client_id,
+      hostname: hostname ?? null,
+    });
+
+    // Audit log — no secrets. `event` is the canonical correlation key
+    // pluggable into the analytics DB downstream.
+    request.log.info(
+      {
+        event: 'device_flow_started',
         clientId: client_id,
         hostname: hostname ?? null,
-      });
+      },
+      'device flow started',
+    );
 
-      // Audit log — no secrets. `event` is the canonical correlation key
-      // pluggable into the analytics DB downstream.
-      request.log.info(
-        {
-          event: 'device_flow_started',
-          clientId: client_id,
-          hostname: hostname ?? null,
-        },
-        'device flow started',
-      );
-
-      return reply.code(200).send({
-        device_code: session.deviceCode,
-        user_code: session.userCode,
-        verification_uri: `${opts.origin}/auth/device`,
-        verification_uri_complete: `${opts.origin}/auth/device?user_code=${session.userCode}`,
-        expires_in: 600 as const,
-        interval: 5 as const,
-      });
-    },
-  );
+    return reply.code(200).send({
+      device_code: session.deviceCode,
+      user_code: session.userCode,
+      verification_uri: `${opts.origin}/auth/device`,
+      verification_uri_complete: `${opts.origin}/auth/device?user_code=${session.userCode}`,
+      expires_in: 600 as const,
+      interval: 5 as const,
+    });
+  });
 };
 
 export default deviceCodeRoute;

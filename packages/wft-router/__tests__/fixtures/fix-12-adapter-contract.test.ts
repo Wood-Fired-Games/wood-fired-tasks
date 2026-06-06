@@ -30,12 +30,7 @@ import {
  * to a probe file, then exits with `exitCode`. Echoing to a file (not stdout)
  * keeps stdout free for the session-id channel.
  */
-function writeAdapter(
-  dir: string,
-  name: string,
-  probePath: string,
-  exitCode: number,
-): void {
+function writeAdapter(dir: string, name: string, probePath: string, exitCode: number): void {
   const script = `
 const fs = require('node:fs');
 let stdin = '';

@@ -21,9 +21,11 @@ function main(): void {
   const out = `${JSON.stringify(manifest, null, 2)}\n`;
   const dest = resolve(repoRoot, MANIFEST_PATH);
   writeFileSync(dest, out, 'utf8');
-  console.log(`Wrote ${MANIFEST_PATH} (${manifest.files.length} files, ${
-    Object.keys(manifest.groups).length
-  } groups).`);
+  console.log(
+    `Wrote ${MANIFEST_PATH} (${manifest.files.length} files, ${
+      Object.keys(manifest.groups).length
+    } groups).`,
+  );
 }
 
 main();

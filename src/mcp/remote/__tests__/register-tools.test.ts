@@ -24,12 +24,10 @@ type Handler = (args: Record<string, unknown>) => Promise<{
 function makeFakeServer() {
   const handlers = new Map<string, Handler>();
   const server = {
-    registerTool: vi.fn(
-      (name: string, _config: unknown, cb: Handler) => {
-        handlers.set(name, cb);
-        return { name };
-      }
-    ),
+    registerTool: vi.fn((name: string, _config: unknown, cb: Handler) => {
+      handlers.set(name, cb);
+      return { name };
+    }),
   };
   return { server, handlers };
 }
@@ -77,7 +75,7 @@ describe('registerRemoteTools', () => {
     client = makeMockClient();
     registerRemoteTools(
       server as unknown as Parameters<typeof registerRemoteTools>[0],
-      client as unknown as Parameters<typeof registerRemoteTools>[1]
+      client as unknown as Parameters<typeof registerRemoteTools>[1],
     );
   });
 
@@ -159,9 +157,7 @@ describe('registerRemoteTools', () => {
 
   it('get_task error path', async () => {
     client.getTask.mockRejectedValue(new Error('nope'));
-    await expect(handlers.get('get_task')!({ id: 1 })).rejects.toBeInstanceOf(
-      McpError
-    );
+    await expect(handlers.get('get_task')!({ id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('update_task summary includes status + priority', async () => {
@@ -178,9 +174,9 @@ describe('registerRemoteTools', () => {
 
   it('update_task error path', async () => {
     client.updateTask.mockRejectedValue(new Error('x'));
-    await expect(
-      handlers.get('update_task')!({ id: 1, updates: {} })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('update_task')!({ id: 1, updates: {} })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 
   it('list_tasks returns "no tasks" message when result is empty', async () => {
@@ -229,16 +225,13 @@ describe('registerRemoteTools', () => {
       offset: 0,
     });
     const r = await handlers.get('list_tasks')!({ verbose: true });
-    const tasks = (r.structuredContent as { tasks: Array<Record<string, unknown>> })
-      .tasks;
+    const tasks = (r.structuredContent as { tasks: Array<Record<string, unknown>> }).tasks;
     expect(tasks[0]).toHaveProperty('description', 'long-desc');
   });
 
   it('list_tasks error path', async () => {
     client.listTasksPaginated.mockRejectedValue(new Error('y'));
-    await expect(handlers.get('list_tasks')!({})).rejects.toBeInstanceOf(
-      McpError
-    );
+    await expect(handlers.get('list_tasks')!({})).rejects.toBeInstanceOf(McpError);
   });
 
   it('delete_task success', async () => {
@@ -249,9 +242,7 @@ describe('registerRemoteTools', () => {
 
   it('delete_task error path', async () => {
     client.deleteTask.mockRejectedValue(new Error('z'));
-    await expect(
-      handlers.get('delete_task')!({ id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('delete_task')!({ id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('claim_task success', async () => {
@@ -262,9 +253,9 @@ describe('registerRemoteTools', () => {
 
   it('claim_task error path', async () => {
     client.claimTask.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('claim_task')!({ task_id: 1, assignee: 'a' })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('claim_task')!({ task_id: 1, assignee: 'a' })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 
   it('list_subtasks empty path', async () => {
@@ -291,9 +282,7 @@ describe('registerRemoteTools', () => {
 
   it('list_subtasks error path', async () => {
     client.getSubtasksPaginated.mockRejectedValue(new Error('x'));
-    await expect(
-      handlers.get('list_subtasks')!({ task_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('list_subtasks')!({ task_id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('get_subtasks returns text summary', async () => {
@@ -309,9 +298,7 @@ describe('registerRemoteTools', () => {
 
   it('get_subtasks error path', async () => {
     client.getSubtasksPaginated.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('get_subtasks')!({ task_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('get_subtasks')!({ task_id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('completion_report with rows shows aggregates', async () => {
@@ -347,9 +334,7 @@ describe('registerRemoteTools', () => {
 
   it('completion_report error path', async () => {
     client.getCompletionReport.mockRejectedValue(new Error('q'));
-    await expect(
-      handlers.get('completion_report')!({ days: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('completion_report')!({ days: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   // ── Project tools ────────────────────────────────────────────────────────
@@ -362,9 +347,7 @@ describe('registerRemoteTools', () => {
 
   it('create_project error path', async () => {
     client.createProject.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('create_project')!({ name: 'p' })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('create_project')!({ name: 'p' })).rejects.toBeInstanceOf(McpError);
   });
 
   it('get_project with description', async () => {
@@ -392,9 +375,7 @@ describe('registerRemoteTools', () => {
 
   it('get_project error path', async () => {
     client.getProject.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('get_project')!({ id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('get_project')!({ id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('list_projects empty', async () => {
@@ -421,9 +402,7 @@ describe('registerRemoteTools', () => {
 
   it('list_projects error path', async () => {
     client.listProjectsPaginated.mockRejectedValue(new Error('e'));
-    await expect(handlers.get('list_projects')!({})).rejects.toBeInstanceOf(
-      McpError
-    );
+    await expect(handlers.get('list_projects')!({})).rejects.toBeInstanceOf(McpError);
   });
 
   it('update_project success', async () => {
@@ -475,9 +454,9 @@ describe('registerRemoteTools', () => {
 
   it('update_project error path', async () => {
     client.updateProject.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('update_project')!({ id: 1, updates: {} })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('update_project')!({ id: 1, updates: {} })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 
   it('delete_project success', async () => {
@@ -488,9 +467,7 @@ describe('registerRemoteTools', () => {
 
   it('delete_project error path', async () => {
     client.deleteProject.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('delete_project')!({ id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('delete_project')!({ id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   // ── Dependency tools ─────────────────────────────────────────────────────
@@ -512,7 +489,7 @@ describe('registerRemoteTools', () => {
   it('add_dependency error path', async () => {
     client.addDependency.mockRejectedValue(new Error('e'));
     await expect(
-      handlers.get('add_dependency')!({ task_id: 1, blocks_task_id: 2 })
+      handlers.get('add_dependency')!({ task_id: 1, blocks_task_id: 2 }),
     ).rejects.toBeInstanceOf(McpError);
   });
 
@@ -528,7 +505,7 @@ describe('registerRemoteTools', () => {
   it('remove_dependency error path', async () => {
     client.removeDependency.mockRejectedValue(new Error('e'));
     await expect(
-      handlers.get('remove_dependency')!({ task_id: 1, blocks_task_id: 2 })
+      handlers.get('remove_dependency')!({ task_id: 1, blocks_task_id: 2 }),
     ).rejects.toBeInstanceOf(McpError);
   });
 
@@ -550,9 +527,9 @@ describe('registerRemoteTools', () => {
 
   it('get_dependencies error path', async () => {
     client.getDependencies.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('get_dependencies')!({ task_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('get_dependencies')!({ task_id: 1 })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 
   // ── Comment tools ───────────────────────────────────────────────────────
@@ -576,7 +553,7 @@ describe('registerRemoteTools', () => {
   it('add_comment error path', async () => {
     client.addComment.mockRejectedValue(new Error('e'));
     await expect(
-      handlers.get('add_comment')!({ task_id: 1, author: 'a', content: 'c' })
+      handlers.get('add_comment')!({ task_id: 1, author: 'a', content: 'c' }),
     ).rejects.toBeInstanceOf(McpError);
   });
 
@@ -593,9 +570,7 @@ describe('registerRemoteTools', () => {
 
   it('get_comments error path', async () => {
     client.getCommentsPaginated.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('get_comments')!({ task_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('get_comments')!({ task_id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('delete_comment success', async () => {
@@ -607,9 +582,9 @@ describe('registerRemoteTools', () => {
 
   it('delete_comment error path', async () => {
     client.deleteComment.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('delete_comment')!({ comment_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('delete_comment')!({ comment_id: 1 })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 
   // ── Health tool ─────────────────────────────────────────────────────────
@@ -673,7 +648,7 @@ describe('registerRemoteTools', () => {
     const r = await handlers.get('topology_check')!({ project_id: 42 });
     expect(client.getTopology).toHaveBeenCalledWith(42);
     expect(r.content[0].text).toBe(
-      'Project 42: topology=DAG, advisory=/tasks:loop-dag, edges=2, roots=1, leaves=1'
+      'Project 42: topology=DAG, advisory=/tasks:loop-dag, edges=2, roots=1, leaves=1',
     );
     // structuredContent must be the raw TopologyReport, unchanged — this is
     // what makes the remote tool indistinguishable from the stdio one.
@@ -696,9 +671,9 @@ describe('registerRemoteTools', () => {
 
   it('topology_check error path wraps in McpError', async () => {
     client.getTopology.mockRejectedValue(new Error('boom'));
-    await expect(
-      handlers.get('topology_check')!({ project_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('topology_check')!({ project_id: 1 })).rejects.toBeInstanceOf(
+      McpError,
+    );
   });
 
   // ── WSJF tools (remote parity, WSJF 1.10) ─────────────────────────────────
@@ -750,9 +725,7 @@ describe('registerRemoteTools', () => {
 
   it('wsjf_ranking error path wraps in McpError', async () => {
     client.getWsjfRanking.mockRejectedValue(new Error('boom'));
-    await expect(
-      handlers.get('wsjf_ranking')!({ project_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('wsjf_ranking')!({ project_id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('wsjf_history annotates deltas + formats timeline', async () => {
@@ -795,9 +768,7 @@ describe('registerRemoteTools', () => {
 
   it('wsjf_history error path wraps in McpError', async () => {
     client.getWsjfHistory.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('wsjf_history')!({ task_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('wsjf_history')!({ task_id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 
   it('rescore_project proxies submissions + formats run summary with errors', async () => {
@@ -812,16 +783,14 @@ describe('registerRemoteTools', () => {
     });
     const r = await handlers.get('rescore_project')!({
       project_id: 4,
-      submissions: [
-        { task_id: 12, classification: { a: 1 }, features: { b: 2 } },
-      ],
+      submissions: [{ task_id: 12, classification: { a: 1 }, features: { b: 2 } }],
       actor_type: 'agent',
       actor_id: 'bot-1',
     });
     expect(client.rescoreProject).toHaveBeenCalledWith(
       4,
       [{ task_id: 12, classification: { a: 1 }, features: { b: 2 } }],
-      { actor_type: 'agent', actor_id: 'bot-1' }
+      { actor_type: 'agent', actor_id: 'bot-1' },
     );
     expect(r.content[0].text).toContain('Rescore run 99 for project 4');
     expect(r.content[0].text).toContain('3 evaluated, 1 changed, 1 with locked');
@@ -846,7 +815,7 @@ describe('registerRemoteTools', () => {
   it('rescore_project error path wraps in McpError', async () => {
     client.rescoreProject.mockRejectedValue(new Error('e'));
     await expect(
-      handlers.get('rescore_project')!({ project_id: 1, submissions: [] })
+      handlers.get('rescore_project')!({ project_id: 1, submissions: [] }),
     ).rejects.toBeInstanceOf(McpError);
   });
 
@@ -881,13 +850,13 @@ describe('registerRemoteTools', () => {
     });
     const r = await handlers.get('wsjf_health')!({ project_id: 8 });
     expect(r.content[0].text).toContain('1 finding(s)');
-    expect(r.content[0].text).toContain('[warning] degenerate-spread: Scores too close. Fix: Spread them.');
+    expect(r.content[0].text).toContain(
+      '[warning] degenerate-spread: Scores too close. Fix: Spread them.',
+    );
   });
 
   it('wsjf_health error path wraps in McpError', async () => {
     client.getWsjfHealth.mockRejectedValue(new Error('e'));
-    await expect(
-      handlers.get('wsjf_health')!({ project_id: 1 })
-    ).rejects.toBeInstanceOf(McpError);
+    await expect(handlers.get('wsjf_health')!({ project_id: 1 })).rejects.toBeInstanceOf(McpError);
   });
 });

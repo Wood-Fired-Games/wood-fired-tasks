@@ -95,9 +95,7 @@ describe('claim command', () => {
     await program.parseAsync(['node', 'test', 'claim', '1', '-a', 'agent-1']);
 
     expect(claimTask).toHaveBeenCalledWith(1, 'agent-1', undefined);
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('claimed by agent-1')
-    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('claimed by agent-1'));
   });
 
   it('outputs JSON when --json flag set', async () => {
@@ -110,12 +108,10 @@ describe('claim command', () => {
 
     expect(jsonOutput).toHaveBeenCalledWith(
       { task: mockClaimedTask },
-      { id: mockClaimedTask.id, assignee: mockClaimedTask.assignee }
+      { id: mockClaimedTask.id, assignee: mockClaimedTask.assignee },
     );
     // Should NOT show terminal success message in JSON mode
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('claimed by')
-    );
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('claimed by'));
   });
 
   it('shows error for non-existent task (404)', async () => {
@@ -125,7 +121,7 @@ describe('claim command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'claim', '999', '-a', 'agent-1']);
@@ -141,7 +137,7 @@ describe('claim command', () => {
       new ApiClientError('Task is already claimed', 409, {
         error: 'CONFLICT',
         message: 'Task is already claimed by agent-1',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'claim', '1', '-a', 'agent-2']);
@@ -155,9 +151,7 @@ describe('claim command', () => {
 
     await program.parseAsync(['node', 'test', 'claim', 'abc', '-a', 'agent-1']);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Invalid task ID')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid task ID'));
     expect(process.exitCode).toBe(1);
     expect(claimTask).not.toHaveBeenCalled();
   });
@@ -188,9 +182,14 @@ describe('claim command', () => {
     vi.mocked(claimTask).mockResolvedValue(mockClaimedTask);
 
     await program.parseAsync([
-      'node', 'test', 'claim', '1',
-      '-a', 'agent-1',
-      '--idempotency-key', 'retry-key-123',
+      'node',
+      'test',
+      'claim',
+      '1',
+      '-a',
+      'agent-1',
+      '--idempotency-key',
+      'retry-key-123',
     ]);
 
     expect(claimTask).toHaveBeenCalledWith(1, 'agent-1', 'retry-key-123');

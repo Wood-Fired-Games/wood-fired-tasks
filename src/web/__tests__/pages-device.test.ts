@@ -19,10 +19,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
-import {
-  renderDevicePage,
-  renderDeviceApprovedPage,
-} from '../pages/device.js';
+import { renderDevicePage, renderDeviceApprovedPage } from '../pages/device.js';
 
 const CSRF = 'a'.repeat(64);
 

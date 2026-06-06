@@ -58,7 +58,7 @@ const profileRoutes: FastifyPluginAsyncZod = async (fastify) => {
         tags: ['me'],
         description:
           "Return the authenticated caller's identity. Accepts session, " +
-          "Personal Access Token (Bearer), or legacy `X-API-Key` auth. The " +
+          'Personal Access Token (Bearer), or legacy `X-API-Key` auth. The ' +
           'response envelope is minimal by design — internal columns ' +
           '(provider, sub, etc.) NEVER leak.',
         response: {

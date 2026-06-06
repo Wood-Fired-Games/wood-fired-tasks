@@ -43,7 +43,7 @@ const manager = new SSEManager(
   24 * 60 * 60 * 1000, // maxConnectionAgeMs
   CONNECTION_COUNT + 10, // maxConnectionsPerKey — disable per-key cap
   CONNECTION_COUNT + 10, // maxConnectionsPerIp — disable per-ip cap
-  CONNECTION_COUNT + 10 // maxConnections — disable global cap
+  CONNECTION_COUNT + 10, // maxConnections — disable global cap
 );
 
 // Register N mixed-filter connections so matchesFilters() exercises both
@@ -52,19 +52,15 @@ for (let i = 0; i < CONNECTION_COUNT; i++) {
   const filters: { project_id?: number; event_types?: string[] } = {};
   if (i % 3 === 0) filters.project_id = (i % 5) + 1;
   if (i % 4 === 0) filters.event_types = ['task.created', 'task.updated'];
-  manager.addConnection(
-    `bench-conn-${i}`,
-    createMockReply(),
-    filters,
-    undefined,
-    { apiKeyFingerprint: `fp-${i}`, ip: `10.0.0.${i % 250}` }
-  );
+  manager.addConnection(`bench-conn-${i}`, createMockReply(), filters, undefined, {
+    apiKeyFingerprint: `fp-${i}`,
+    ip: `10.0.0.${i % 250}`,
+  });
 }
 
 // eslint-disable-next-line no-console
 console.log(
-  `[bench seed] sse_connections=${CONNECTION_COUNT} ` +
-    `soft_ceiling_ms=${SOFT_CEILING_MS}`
+  `[bench seed] sse_connections=${CONNECTION_COUNT} ` + `soft_ceiling_ms=${SOFT_CEILING_MS}`,
 );
 
 describe('SSEManager.broadcast (bench)', () => {
@@ -79,7 +75,7 @@ describe('SSEManager.broadcast (bench)', () => {
       };
       manager.broadcast(event);
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 
   bench(
@@ -93,6 +89,6 @@ describe('SSEManager.broadcast (bench)', () => {
       };
       manager.broadcast(event);
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 });

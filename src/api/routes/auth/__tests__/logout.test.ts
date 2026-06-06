@@ -16,11 +16,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { extractSessionCookie } from '../../../../../tests/helpers/session-cookie.js';
-import {
-  mountAuthRoutes,
-  setupOidcHappyPath,
-  type AuthTestHarness,
-} from './oidc-test-setup.js';
+import { mountAuthRoutes, setupOidcHappyPath, type AuthTestHarness } from './oidc-test-setup.js';
 
 interface SignedInState {
   cookie: string;
@@ -32,10 +28,7 @@ interface SignedInState {
  * cookie. Also seeds a CSRF token into the session via the
  * /_test/seed-csrf probe and returns the cookie that carries it.
  */
-async function signInAndSeedCsrf(
-  harness: AuthTestHarness,
-  sub: string,
-): Promise<SignedInState> {
+async function signInAndSeedCsrf(harness: AuthTestHarness, sub: string): Promise<SignedInState> {
   const loginResp = await harness.server.inject({
     method: 'GET',
     url: '/auth/login',
@@ -186,26 +179,21 @@ describe('POST /auth/logout', () => {
     // and is why the clearing Set-Cookie is the documented mechanism.
     const setCookieRaw = r.headers['set-cookie'];
     expect(setCookieRaw).toBeDefined();
-    const setCookieList = Array.isArray(setCookieRaw)
-      ? setCookieRaw
-      : [setCookieRaw as string];
+    const setCookieList = Array.isArray(setCookieRaw) ? setCookieRaw : [setCookieRaw as string];
     const clearing = setCookieList.find((c) => c.startsWith('wft_session='));
     expect(clearing).toBeDefined();
     // The clearing Set-Cookie either has an empty value OR an Expires
     // attribute in the past (epoch). Both are valid expiry signals.
     const hasEmptyValue = /^wft_session=;/.test(clearing as string);
     const hasPastExpiry =
-      /Expires=Thu, 01 Jan 1970/i.test(clearing as string) ||
-      /Max-Age=0/i.test(clearing as string);
+      /Expires=Thu, 01 Jan 1970/i.test(clearing as string) || /Max-Age=0/i.test(clearing as string);
     expect(hasEmptyValue || hasPastExpiry).toBe(true);
   });
 
   it('redirects 302 to /auth/login when discovery has no end_session_endpoint', async () => {
     // Different harness — discovery missing end_session_endpoint.
     await harness.close();
-    const { getDiscoveryFixture } = await import(
-      '../../../../../tests/helpers/oidc-fixtures.js'
-    );
+    const { getDiscoveryFixture } = await import('../../../../../tests/helpers/oidc-fixtures.js');
     const trimmed: Record<string, unknown> = { ...getDiscoveryFixture() };
     delete trimmed.end_session_endpoint;
 

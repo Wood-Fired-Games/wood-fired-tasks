@@ -34,7 +34,10 @@ describe('formatProjectList', () => {
   it('returns a HeaderBlock "Projects (N)" for non-empty array', () => {
     const projects = [makeProject({ id: 1, name: 'Alpha' })];
     const blocks = formatProjectList(projects);
-    const header = blocks[0] as { type: string; text: { type: string; text: string; emoji: boolean } };
+    const header = blocks[0] as {
+      type: string;
+      text: { type: string; text: string; emoji: boolean };
+    };
     expect(header.type).toBe('header');
     expect(header.text.text).toBe('Projects (1)');
     expect(header.text.type).toBe('plain_text');
@@ -90,11 +93,7 @@ describe('formatProjectList', () => {
   });
 
   it('adds a DividerBlock between projects (not after last)', () => {
-    const projects = [
-      makeProject({ id: 1 }),
-      makeProject({ id: 2 }),
-      makeProject({ id: 3 }),
-    ];
+    const projects = [makeProject({ id: 1 }), makeProject({ id: 2 }), makeProject({ id: 3 })];
     const blocks = formatProjectList(projects);
     // header + section + divider + section + divider + section = 6
     expect(blocks).toHaveLength(6);
@@ -118,7 +117,10 @@ describe('formatProjectDetail', () => {
   it('returns a HeaderBlock with the project name', () => {
     const project = makeProject({ name: 'My Project' });
     const blocks = formatProjectDetail(project);
-    const header = blocks[0] as { type: string; text: { type: string; text: string; emoji: boolean } };
+    const header = blocks[0] as {
+      type: string;
+      text: { type: string; text: string; emoji: boolean };
+    };
     expect(header.type).toBe('header');
     expect(header.text.type).toBe('plain_text');
     expect(header.text.text).toBe('My Project');

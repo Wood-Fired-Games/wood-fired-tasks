@@ -51,7 +51,7 @@ export class WorkflowEngine {
     private readonly taskRepo: ITaskRepository,
     private readonly dependencyRepo: IDependencyRepository,
     private readonly eventBus: EventBus<any>,
-    private readonly db: Database.Database
+    private readonly db: Database.Database,
   ) {}
 
   /**
@@ -67,7 +67,7 @@ export class WorkflowEngine {
     const unsub = this.eventBus.subscribe(
       'task.status_changed',
       (event: TaskEvent) => this.handleStatusChanged(event),
-      { ignoreTransaction: true }
+      { ignoreTransaction: true },
     );
     this.unsubscribes.push(unsub);
   }
@@ -164,7 +164,11 @@ export class WorkflowEngine {
    * Auto-complete parent when ALL children are done.
    * Parents in 'blocked' or 'closed' status are skipped (invalid transition to 'done').
    */
-  private handleParentAutoComplete(task: { id: number; parent_task_id: number | null; status: string }): void {
+  private handleParentAutoComplete(task: {
+    id: number;
+    parent_task_id: number | null;
+    status: string;
+  }): void {
     // Only react if the task has a parent
     if (!task.parent_task_id) {
       return;

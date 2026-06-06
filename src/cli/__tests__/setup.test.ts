@@ -44,9 +44,9 @@ describe('tasks setup', () => {
             mcpServers: { 'some-other': { type: 'stdio', command: 'x' } },
           },
           null,
-          2
+          2,
         ) + '\n',
-        'utf8'
+        'utf8',
       );
 
       const result = runSetup({ home, log: () => {} });
@@ -81,7 +81,7 @@ describe('tasks setup', () => {
       // Bytes match the source (copied verbatim).
       for (const name of copied) {
         expect(fs.readFileSync(path.join(destDir, name))).toEqual(
-          fs.readFileSync(path.join(tasksSkillsDir, name))
+          fs.readFileSync(path.join(tasksSkillsDir, name)),
         );
       }
 
@@ -108,7 +108,7 @@ describe('tasks setup', () => {
       // Bytes match the source (copied verbatim).
       for (const name of copiedAgents) {
         expect(fs.readFileSync(path.join(agentsDest, name))).toEqual(
-          fs.readFileSync(path.join(agentsSourceDir, name))
+          fs.readFileSync(path.join(agentsSourceDir, name)),
         );
       }
     });
@@ -133,10 +133,7 @@ describe('tasks setup', () => {
         .readdirSync(agentsDest)
         .filter((f) => f.endsWith('.md'))
         .sort()
-        .map((name) => [
-          name,
-          fs.readFileSync(path.join(agentsDest, name), 'utf8'),
-        ]);
+        .map((name) => [name, fs.readFileSync(path.join(agentsDest, name), 'utf8')]);
       expect(agentSnapshot.length).toBeGreaterThan(0);
 
       const second = runSetup({ home, log: () => {} });
@@ -159,10 +156,7 @@ describe('tasks setup', () => {
         .readdirSync(agentsDest)
         .filter((f) => f.endsWith('.md'))
         .sort()
-        .map((name) => [
-          name,
-          fs.readFileSync(path.join(agentsDest, name), 'utf8'),
-        ]);
+        .map((name) => [name, fs.readFileSync(path.join(agentsDest, name), 'utf8')]);
       expect(agentSnapshot2).toEqual(agentSnapshot);
     });
   });
@@ -228,9 +222,7 @@ describe('tasks setup', () => {
       expect(fs.existsSync(result.binDir)).toBe(true);
 
       // Configures via npm config set prefix — no elevation.
-      expect(ran).toEqual([
-        { cmd: 'npm', args: ['config', 'set', 'prefix', result.prefix] },
-      ]);
+      expect(ran).toEqual([{ cmd: 'npm', args: ['config', 'set', 'prefix', result.prefix] }]);
 
       // Hard assertion: no sudo/runas/pkexec/doas anywhere in invocations
       // or printed guidance.

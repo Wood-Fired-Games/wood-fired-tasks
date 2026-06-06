@@ -66,7 +66,10 @@ describe('REST /api/v1/tasks — acceptance_criteria field (#311)', () => {
       },
     });
     expect(createResp.statusCode).toBe(201);
-    const created = JSON.parse(createResp.body) as { id: number; acceptance_criteria: string | null };
+    const created = JSON.parse(createResp.body) as {
+      id: number;
+      acceptance_criteria: string | null;
+    };
     expect(created.acceptance_criteria).toBe(md);
 
     const getResp = await server.inject({
@@ -91,7 +94,10 @@ describe('REST /api/v1/tasks — acceptance_criteria field (#311)', () => {
       },
     });
     expect(createResp.statusCode).toBe(201);
-    const created = JSON.parse(createResp.body) as { id: number; acceptance_criteria: string | null };
+    const created = JSON.parse(createResp.body) as {
+      id: number;
+      acceptance_criteria: string | null;
+    };
     expect(created.acceptance_criteria).toBeNull();
 
     // Sanity: same value when re-fetched.

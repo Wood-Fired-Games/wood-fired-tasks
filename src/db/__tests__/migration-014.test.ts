@@ -24,9 +24,12 @@ describe('migration 014: projects.value_charter', () => {
   });
 
   it('adds projects.value_charter as nullable TEXT', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('projects')")
-      .all() as Array<{ name: string; type: string; notnull: number; dflt_value: unknown }>;
+    const cols = db.prepare("PRAGMA table_info('projects')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: unknown;
+    }>;
     const col = cols.find((c) => c.name === 'value_charter');
     expect(col).toBeDefined();
     expect(col?.type).toBe('TEXT');
@@ -35,22 +38,19 @@ describe('migration 014: projects.value_charter', () => {
   });
 
   it('existing rows (inserted without value_charter) load with NULL value', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT value_charter FROM projects WHERE id = ?')
-      .get(projectId) as { value_charter: string | null };
+    const row = db.prepare('SELECT value_charter FROM projects WHERE id = ?').get(projectId) as {
+      value_charter: string | null;
+    };
     expect(row.value_charter).toBeNull();
   });
 
   it('round-trips a populated JSON string verbatim', () => {
     const charter = JSON.stringify({
       mission: 'win the checkout wedge',
-      value_themes: [
-        { name: 'checkout reliability', weight: 8, description: 'no dropped carts' },
-      ],
+      value_themes: [{ name: 'checkout reliability', weight: 8, description: 'no dropped carts' }],
       time_context: 'launch window Q3',
       risk_posture: 'security + outage first',
       out_of_scope: ['marketing site'],
@@ -62,9 +62,9 @@ describe('migration 014: projects.value_charter', () => {
       .prepare('INSERT INTO projects (name, value_charter) VALUES (?, ?)')
       .run('p', charter).lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT value_charter FROM projects WHERE id = ?')
-      .get(projectId) as { value_charter: string | null };
+    const row = db.prepare('SELECT value_charter FROM projects WHERE id = ?').get(projectId) as {
+      value_charter: string | null;
+    };
     expect(row.value_charter).toBe(charter);
   });
 
@@ -76,39 +76,33 @@ describe('migration 014: projects.value_charter', () => {
 
     const row = db
       .prepare(
-        "SELECT json_extract(value_charter, '$.interview_version') AS v FROM projects WHERE id = ?"
+        "SELECT json_extract(value_charter, '$.interview_version') AS v FROM projects WHERE id = ?",
       )
       .get(projectId) as { v: number };
     expect(row.v).toBe(3);
   });
 
   it('updating value_charter from NULL -> value -> NULL works', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     const charter = JSON.stringify({ mission: 'm', interview_version: 1 });
-    db.prepare('UPDATE projects SET value_charter = ? WHERE id = ?').run(
-      charter,
-      projectId
-    );
+    db.prepare('UPDATE projects SET value_charter = ? WHERE id = ?').run(charter, projectId);
     expect(
       (
-        db
-          .prepare('SELECT value_charter FROM projects WHERE id = ?')
-          .get(projectId) as { value_charter: string | null }
-      ).value_charter
+        db.prepare('SELECT value_charter FROM projects WHERE id = ?').get(projectId) as {
+          value_charter: string | null;
+        }
+      ).value_charter,
     ).toBe(charter);
 
-    db.prepare('UPDATE projects SET value_charter = NULL WHERE id = ?').run(
-      projectId
-    );
+    db.prepare('UPDATE projects SET value_charter = NULL WHERE id = ?').run(projectId);
     expect(
       (
-        db
-          .prepare('SELECT value_charter FROM projects WHERE id = ?')
-          .get(projectId) as { value_charter: string | null }
-      ).value_charter
+        db.prepare('SELECT value_charter FROM projects WHERE id = ?').get(projectId) as {
+          value_charter: string | null;
+        }
+      ).value_charter,
     ).toBeNull();
   });
 
@@ -116,9 +110,7 @@ describe('migration 014: projects.value_charter', () => {
     const { down } = await import('../migrations/014-value-charter.js');
     await down(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('projects')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('projects')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).not.toContain('value_charter');
     // Sanity: unrelated columns survive.
@@ -130,7 +122,7 @@ describe('migration 014: projects.value_charter', () => {
     const before = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='projects'`
+         WHERE type='table' AND name='projects'`,
       )
       .all();
 
@@ -141,7 +133,7 @@ describe('migration 014: projects.value_charter', () => {
     const after = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='projects'`
+         WHERE type='table' AND name='projects'`,
       )
       .all();
 

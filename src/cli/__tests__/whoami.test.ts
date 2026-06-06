@@ -13,18 +13,9 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  chmodSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import {
-  startLogoutWhoamiServer,
-  type LogoutWhoamiServer,
-} from './helpers/logout-server.js';
+import { startLogoutWhoamiServer, type LogoutWhoamiServer } from './helpers/logout-server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,21 +37,17 @@ function runWhoami(
   timeoutMs = 15_000,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [tsxCli, cliEntry, 'whoami', ...args],
-      {
-        env: {
-          ...process.env,
-          ...env,
-          FORCE_COLOR: '0',
-          NO_COLOR: '1',
-          CI: '1',
-        },
-        cwd: repoRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
+    const child = spawn(process.execPath, [tsxCli, cliEntry, 'whoami', ...args], {
+      env: {
+        ...process.env,
+        ...env,
+        FORCE_COLOR: '0',
+        NO_COLOR: '1',
+        CI: '1',
       },
-    );
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -184,10 +171,7 @@ describe('tasks whoami (subprocess)', () => {
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
-    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<
-      string,
-      unknown
-    >;
+    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
     expect(envelope.event).toBe('not_logged_in');
   });
 
@@ -196,11 +180,7 @@ describe('tasks whoami (subprocess)', () => {
       meResponse: { status: 200, body: STUART_ME },
       tokensResponse: {
         status: 200,
-        body: tokenListWith(
-          17,
-          'cli-stuart-laptop-2026-05-23',
-          '2026-05-23T12:34:56.000Z',
-        ),
+        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
     });
     seedCredentials(tmpDir, {
@@ -213,9 +193,7 @@ describe('tasks whoami (subprocess)', () => {
     expect(res.exitCode).toBe(0);
     expect(res.stdout).toContain('Display name: Stuart Jeff');
     expect(res.stdout).toContain('Email:        stuart@woodfiredgames.com');
-    expect(res.stdout).toContain(
-      'Active token: cli-stuart-laptop-2026-05-23 (id 17)',
-    );
+    expect(res.stdout).toContain('Active token: cli-stuart-laptop-2026-05-23 (id 17)');
     expect(res.stdout).toContain('Last used:    2026-05-23T12:34:56.000Z');
     expect(res.stdout).toContain(`Server:       ${server.baseUrl}`);
 
@@ -230,11 +208,7 @@ describe('tasks whoami (subprocess)', () => {
       meResponse: { status: 200, body: STUART_ME },
       tokensResponse: {
         status: 200,
-        body: tokenListWith(
-          17,
-          'cli-stuart-laptop-2026-05-23',
-          '2026-05-23T12:34:56.000Z',
-        ),
+        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
     });
     seedCredentials(tmpDir, {
@@ -293,9 +267,10 @@ describe('tasks whoami (subprocess)', () => {
     // --json should also omit the token block.
     const resJson = await runWhoami(['--json'], { XDG_CONFIG_HOME: tmpDir });
     expect(resJson.exitCode).toBe(0);
-    const envelope = JSON.parse(
-      resJson.stdout.trim().split('\n').slice(-1)[0]!,
-    ) as Record<string, unknown>;
+    const envelope = JSON.parse(resJson.stdout.trim().split('\n').slice(-1)[0]!) as Record<
+      string,
+      unknown
+    >;
     expect(envelope.token).toBeUndefined();
     expect((envelope.user as { id: number }).id).toBe(1);
   });
@@ -351,9 +326,10 @@ describe('tasks whoami (subprocess)', () => {
 
     const res = await runWhoami(['--json'], { XDG_CONFIG_HOME: tmpDir });
     expect(res.exitCode).toBe(0);
-    const envelope = JSON.parse(
-      res.stdout.trim().split('\n').slice(-1)[0]!,
-    ) as Record<string, unknown>;
+    const envelope = JSON.parse(res.stdout.trim().split('\n').slice(-1)[0]!) as Record<
+      string,
+      unknown
+    >;
     expect((envelope.user as { id: number }).id).toBe(1);
     expect(envelope.token).toBeUndefined();
     expect(envelope.server).toBeDefined();
@@ -364,11 +340,7 @@ describe('tasks whoami (subprocess)', () => {
       meResponse: { status: 200, body: STUART_ME },
       tokensResponse: {
         status: 200,
-        body: tokenListWith(
-          17,
-          'cli-stuart-laptop-2026-05-23',
-          '2026-05-23T12:34:56.000Z',
-        ),
+        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
     });
     seedCredentials(tmpDir, {
@@ -383,9 +355,7 @@ describe('tasks whoami (subprocess)', () => {
       API_KEY: 'legacy-api-key-also-set',
     });
     expect(resText.exitCode).toBe(0);
-    expect(resText.stdout).toContain(
-      '(API_KEY env var ignored — credentials file in use)',
-    );
+    expect(resText.stdout).toContain('(API_KEY env var ignored — credentials file in use)');
 
     // JSON mode: fallback field set.
     const resJson = await runWhoami(['--json'], {
@@ -393,9 +363,10 @@ describe('tasks whoami (subprocess)', () => {
       API_KEY: 'legacy-api-key-also-set',
     });
     expect(resJson.exitCode).toBe(0);
-    const envelope = JSON.parse(
-      resJson.stdout.trim().split('\n').slice(-1)[0]!,
-    ) as Record<string, unknown>;
+    const envelope = JSON.parse(resJson.stdout.trim().split('\n').slice(-1)[0]!) as Record<
+      string,
+      unknown
+    >;
     expect(envelope.fallback).toBe('API_KEY env ignored');
   });
 
@@ -404,11 +375,7 @@ describe('tasks whoami (subprocess)', () => {
       meResponse: { status: 200, body: STUART_ME },
       tokensResponse: {
         status: 200,
-        body: tokenListWith(
-          17,
-          'cli-stuart-laptop-2026-05-23',
-          '2026-05-23T12:34:56.000Z',
-        ),
+        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
     });
     seedCredentials(tmpDir, {

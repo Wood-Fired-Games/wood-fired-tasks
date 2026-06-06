@@ -54,7 +54,7 @@ function logErrorByStatus(request: FastifyRequest, error: FastifyError | Error):
   } else {
     request.log.warn(
       { err: error, statusCode, code: (error as FastifyError).code },
-      'expected client error'
+      'expected client error',
     );
   }
 }
@@ -143,7 +143,7 @@ function isMessageAllowlisted(error: FastifyError): boolean {
 export function errorHandler(
   error: FastifyError | Error,
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ): void {
   // Log server-side for debugging. Unexpected (5xx / unhandled) errors keep the
   // full error + stack at `error` level — the only place the raw message/stack
@@ -190,7 +190,7 @@ export function errorHandler(
     // internal/upstream detail is never forwarded verbatim.
     const message = isMessageAllowlisted(fastifyError)
       ? error.message
-      : GENERIC_STATUS_MESSAGES[statusCode] ?? 'An unexpected error occurred';
+      : (GENERIC_STATUS_MESSAGES[statusCode] ?? 'An unexpected error occurred');
 
     reply.code(statusCode).send({
       error: fastifyError.code || 'REQUEST_ERROR',

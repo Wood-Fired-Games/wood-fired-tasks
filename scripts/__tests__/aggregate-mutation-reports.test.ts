@@ -10,9 +10,7 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function shard(
-  files: Record<string, Array<{ status: string }>>,
-): StrykerReport {
+function shard(files: Record<string, Array<{ status: string }>>): StrykerReport {
   const entries = Object.entries(files).map(([path, mutants]) => [
     path,
     {
@@ -46,11 +44,7 @@ describe('aggregateReports', () => {
   it('treats Timeout as detected', () => {
     const r = aggregateReports([
       shard({
-        'src/a.ts': [
-          { status: 'Killed' },
-          { status: 'Timeout' },
-          { status: 'Survived' },
-        ],
+        'src/a.ts': [{ status: 'Killed' }, { status: 'Timeout' }, { status: 'Survived' }],
       }),
     ]);
     expect(r.score).toBeCloseTo(66.6667, 3);
@@ -124,10 +118,7 @@ describe('aggregateReports', () => {
   it('silently skips unknown statuses (forward-compat)', () => {
     const r = aggregateReports([
       shard({
-        'src/a.ts': [
-          { status: 'Killed' },
-          { status: 'FutureStatus' as 'Killed' },
-        ],
+        'src/a.ts': [{ status: 'Killed' }, { status: 'FutureStatus' as 'Killed' }],
       }),
     ]);
     expect(r.killed).toBe(1);
@@ -136,9 +127,7 @@ describe('aggregateReports', () => {
   });
 
   it('throws on missing "files" object', () => {
-    expect(() =>
-      aggregateReports([{} as StrykerReport]),
-    ).toThrow(/missing "files" object/);
+    expect(() => aggregateReports([{} as StrykerReport])).toThrow(/missing "files" object/);
   });
 
   it('handles empty shards (no files) without crashing', () => {
@@ -170,9 +159,7 @@ describe('aggregateReports', () => {
 
 describe('formatSummary', () => {
   it('includes PASS when score meets threshold', () => {
-    const r = aggregateReports([
-      shard({ 'src/a.ts': [{ status: 'Killed' }] }),
-    ]);
+    const r = aggregateReports([shard({ 'src/a.ts': [{ status: 'Killed' }] })]);
     const out = formatSummary(r, 75);
     expect(out).toContain('Threshold:        75%');
     expect(out).toContain('(PASS)');
@@ -190,9 +177,7 @@ describe('formatSummary', () => {
   });
 
   it('omits threshold line when threshold is null', () => {
-    const r = aggregateReports([
-      shard({ 'src/a.ts': [{ status: 'Killed' }] }),
-    ]);
+    const r = aggregateReports([shard({ 'src/a.ts': [{ status: 'Killed' }] })]);
     const out = formatSummary(r, null);
     expect(out).not.toContain('Threshold:');
   });
@@ -231,9 +216,7 @@ describe('parseArgs', () => {
   });
 
   it('rejects non-numeric threshold', () => {
-    expect(() => parseArgs(['--threshold', 'high', 'a.json'])).toThrow(
-      /must be numeric/,
-    );
+    expect(() => parseArgs(['--threshold', 'high', 'a.json'])).toThrow(/must be numeric/);
   });
 
   it('rejects --threshold without a value', () => {

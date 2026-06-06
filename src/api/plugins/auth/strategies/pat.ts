@@ -67,10 +67,7 @@ export function toAuthenticatedUser(user: User): AuthenticatedUser {
  * 4) does both centrally after a strategy returns. Keeps this function
  * pure and unit-testable without a Fastify instance.
  */
-export async function tryAuth(
-  request: FastifyRequest,
-  deps: PatDeps,
-): Promise<StrategyOutcome> {
+export async function tryAuth(request: FastifyRequest, deps: PatDeps): Promise<StrategyOutcome> {
   const auth = request.headers.authorization;
   if (typeof auth !== 'string') {
     return { kind: 'skip' };

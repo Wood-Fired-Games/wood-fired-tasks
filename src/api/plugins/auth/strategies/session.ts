@@ -80,10 +80,7 @@ export async function tryAuth(
   const row = deps.userRepository.findById(payload.id);
   if (!row || row.disabled_at !== null) {
     session.delete();
-    request.log.warn(
-      { user_id: payload.id },
-      'session.user_disabled_during_active_session',
-    );
+    request.log.warn({ user_id: payload.id }, 'session.user_disabled_during_active_session');
     return { kind: 'skip' };
   }
 

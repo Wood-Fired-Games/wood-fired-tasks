@@ -21,7 +21,7 @@ export const backupCommand = new Command('backup')
   .option(
     '-o, --output <path>',
     'Backup destination path',
-    `./tasks-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`
+    `./tasks-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`,
   )
   .action(async (options) => {
     const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
@@ -57,9 +57,9 @@ export const backupCommand = new Command('backup')
       } else {
         console.log(
           colorSuccess(`Backup created successfully`) +
-          `\n  Path:   ${destPath}` +
-          `\n  Size:   ${formatSize(size)}` +
-          `\n  Source: ${dbPath}`
+            `\n  Path:   ${destPath}` +
+            `\n  Size:   ${formatSize(size)}` +
+            `\n  Source: ${dbPath}`,
         );
       }
     } catch (error) {

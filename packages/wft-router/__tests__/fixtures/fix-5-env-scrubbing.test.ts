@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  DEFAULT_ENV_ALLOWLIST,
-  buildChildEnv,
-  shellExec,
-} from '../../src/handlers/shell-exec.js';
+import { DEFAULT_ENV_ALLOWLIST, buildChildEnv, shellExec } from '../../src/handlers/shell-exec.js';
 import type { HandlerContext } from '../../src/handlers/index.js';
 import { createFixtureStore, silentLogger, taskEvent, type FixtureStore } from './harness.js';
 

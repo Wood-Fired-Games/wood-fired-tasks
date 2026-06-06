@@ -230,9 +230,7 @@ function buildBody(value: unknown): { body: string | undefined; jsonDefaulted: b
  * The `webhook_post` handler. See module header for the full lifecycle
  * contract. One attempt, one {@link HandlerOutcome}.
  */
-export const webhookPost: Handler = async (
-  ctx: HandlerContext,
-): Promise<HandlerOutcome> => {
+export const webhookPost: Handler = async (ctx: HandlerContext): Promise<HandlerOutcome> => {
   const { store, logger, identity } = ctx;
 
   // --- 1. Resolve the rendered payload. ----------------------------------

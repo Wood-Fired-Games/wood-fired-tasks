@@ -37,14 +37,14 @@ describe('IdempotencyService TTL + cleanup boundary', () => {
   function insertAged(key: string, response: object, sqliteOffset: string): void {
     db.prepare(
       `INSERT INTO idempotency_keys (key, response, created_at)
-       VALUES (?, ?, datetime('now', ?))`
+       VALUES (?, ?, datetime('now', ?))`,
     ).run(key, JSON.stringify(response), sqliteOffset);
   }
 
   function rowExists(key: string): boolean {
-    const row = db
-      .prepare(`SELECT 1 AS hit FROM idempotency_keys WHERE key = ?`)
-      .get(key) as { hit: number } | undefined;
+    const row = db.prepare(`SELECT 1 AS hit FROM idempotency_keys WHERE key = ?`).get(key) as
+      | { hit: number }
+      | undefined;
     return row?.hit === 1;
   }
 

@@ -65,9 +65,7 @@ interface Harness {
 async function buildEnabledHarness(): Promise<Harness> {
   // Discovery interceptor — initOidc requires it.
   nock.disableNetConnect();
-  nock(ISSUER)
-    .get('/.well-known/openid-configuration')
-    .reply(200, getDiscoveryFixture());
+  nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
   const oidcConfig = await initOidc({
     NODE_ENV: 'test',

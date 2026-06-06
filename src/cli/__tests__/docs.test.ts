@@ -34,14 +34,7 @@ function withTempCwd<T>(fn: (dir: string) => T): T {
 describe('tasks docs catalog', () => {
   it('enumerates the shipped guides by friendly name', () => {
     const names = docNames();
-    for (const expected of [
-      'usage-patterns',
-      'setup',
-      'cli',
-      'api',
-      'mcp',
-      'navigation',
-    ]) {
+    for (const expected of ['usage-patterns', 'setup', 'cli', 'api', 'mcp', 'navigation']) {
       expect(names).toContain(expected);
     }
     // Catalog maps each name to a .md file in package.json `files`.
@@ -82,10 +75,7 @@ describe('tasks docs resolution (asset resolver, not cwd)', () => {
 
   it('show (readDoc) returns the real bundled content from a temp cwd', () => {
     // Capture the on-disk truth from the repo first.
-    const truth = fs.readFileSync(
-      path.join(packageRoot, 'docs', 'USAGE_PATTERNS.md'),
-      'utf8'
-    );
+    const truth = fs.readFileSync(path.join(packageRoot, 'docs', 'USAGE_PATTERNS.md'), 'utf8');
     expect(truth.length).toBeGreaterThan(0);
 
     withTempCwd(() => {
@@ -120,9 +110,7 @@ describe('tasks docs open (cross-platform, no elevation)', () => {
       expect(ran[0].cmd).toBe(c.cmd);
       expect(result.cmd).toBe(c.cmd);
       // The resolved doc path is passed through to the opener.
-      expect(ran[0].args).toContain(
-        path.join(packageRoot, 'docs', 'SETUP.md')
-      );
+      expect(ran[0].args).toContain(path.join(packageRoot, 'docs', 'SETUP.md'));
     }
   });
 

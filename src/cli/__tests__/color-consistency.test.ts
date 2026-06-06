@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import chalk from 'chalk';
-import { colorSuccess, colorError, colorWarn, colorInfo, colorBold, shouldUseColor } from '../output/formatters.js';
+import {
+  colorSuccess,
+  colorError,
+  colorWarn,
+  colorInfo,
+  colorBold,
+  shouldUseColor,
+} from '../output/formatters.js';
 
 describe('Color consistency', () => {
   const originalEnv = { ...process.env };
@@ -66,7 +73,7 @@ describe('Color consistency', () => {
     beforeEach(() => {
       delete process.env.NO_COLOR;
       // Remove --json from argv if present
-      process.argv = process.argv.filter(a => a !== '--json');
+      process.argv = process.argv.filter((a) => a !== '--json');
       // Force chalk to produce ANSI codes (chalk disables color in non-TTY/test environments)
       chalk.level = 1;
     });

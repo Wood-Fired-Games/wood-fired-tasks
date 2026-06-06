@@ -45,10 +45,7 @@ describe('MCP — verification_evidence (#312)', () => {
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -89,8 +86,7 @@ describe('MCP — verification_evidence (#312)', () => {
     })) as ToolResult;
     expect(updated.isError).not.toBe(true);
     expect(
-      (updated.structuredContent as { verification_evidence: unknown })
-        .verification_evidence
+      (updated.structuredContent as { verification_evidence: unknown }).verification_evidence,
     ).toEqual(evidence);
 
     const fetched = (await client.callTool({
@@ -98,8 +94,7 @@ describe('MCP — verification_evidence (#312)', () => {
       arguments: { id },
     })) as ToolResult;
     expect(
-      (fetched.structuredContent as { verification_evidence: unknown })
-        .verification_evidence
+      (fetched.structuredContent as { verification_evidence: unknown }).verification_evidence,
     ).toEqual(evidence);
   });
 
@@ -130,16 +125,14 @@ describe('MCP — verification_evidence (#312)', () => {
       result.isError === true ||
       (Array.isArray(result.content) &&
         result.content.some(
-          (c) =>
-            typeof c.text === 'string' &&
-            /(invalid|verdict|enum|BOGUS)/i.test(c.text),
+          (c) => typeof c.text === 'string' && /(invalid|verdict|enum|BOGUS)/i.test(c.text),
         ));
     expect(errored).toBe(true);
 
     // Defense in depth: the row's verification_evidence remained NULL.
-    const row = app.db
-      .prepare('SELECT verification_evidence FROM tasks WHERE id = ?')
-      .get(id) as { verification_evidence: string | null };
+    const row = app.db.prepare('SELECT verification_evidence FROM tasks WHERE id = ?').get(id) as {
+      verification_evidence: string | null;
+    };
     expect(row.verification_evidence).toBeNull();
   });
 });

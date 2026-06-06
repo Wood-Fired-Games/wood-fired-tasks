@@ -19,7 +19,7 @@ export const claimCommand = new Command('claim')
       }
 
       const task = await withApiSpinner('Claiming task...', () =>
-        claimTask(id, options.assignee, options.idempotencyKey)
+        claimTask(id, options.assignee, options.idempotencyKey),
       );
 
       // Check if JSON mode

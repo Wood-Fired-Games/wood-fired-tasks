@@ -64,7 +64,7 @@ export function registerCommentTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // get_comments - Get comments for a task (paginated)
@@ -105,7 +105,7 @@ export function registerCommentTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // delete_comment - Delete a comment
@@ -133,6 +133,6 @@ export function registerCommentTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 }

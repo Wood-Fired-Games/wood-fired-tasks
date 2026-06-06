@@ -31,9 +31,7 @@ describe('topology command', () => {
   beforeEach(async () => {
     process.exitCode = 0;
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     tmpDir = mkdtempSync(join(tmpdir(), 'wft-topology-'));
     dbPath = join(tmpDir, 'tasks.db');
@@ -118,9 +116,9 @@ describe('topology command', () => {
     // a non-zero-exit outcome to the test runner.
     program.exitOverride();
     program.commands.forEach((c) => c.exitOverride());
-    await expect(
-      program.parseAsync(['node', 'tasks', 'topology']),
-    ).rejects.toMatchObject({ exitCode: 1 });
+    await expect(program.parseAsync(['node', 'tasks', 'topology'])).rejects.toMatchObject({
+      exitCode: 1,
+    });
   });
 
   it('fails with non-zero exit when --project is non-numeric', async () => {
@@ -136,13 +134,7 @@ describe('topology command', () => {
 
   it('emits a FLAT JSON report for a 0-edge project', async () => {
     const projectId = seedFlatProject(3);
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'topology',
-      '--project',
-      String(projectId),
-    ]);
+    await program.parseAsync(['node', 'tasks', 'topology', '--project', String(projectId)]);
     expect(stdoutSpy).toHaveBeenCalled();
     const written = stdoutSpy.mock.calls.map((c) => String(c[0])).join('');
     const report = JSON.parse(written);
@@ -156,13 +148,7 @@ describe('topology command', () => {
 
   it('emits a DAG JSON report with deterministic edge ordering', async () => {
     const { projectId, ids } = seedDiamondProject();
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'topology',
-      '--project',
-      String(projectId),
-    ]);
+    await program.parseAsync(['node', 'tasks', 'topology', '--project', String(projectId)]);
     const written = stdoutSpy.mock.calls.map((c) => String(c[0])).join('');
     const report = JSON.parse(written);
     expect(report.topology).toBe('DAG');

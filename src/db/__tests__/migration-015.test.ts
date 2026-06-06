@@ -29,7 +29,7 @@ describe('migration 015: WSJF audit tables', () => {
       .prepare(
         `SELECT name FROM sqlite_master WHERE type='table' AND name IN
            ('wsjf_score_history','project_charter_history','wsjf_rescore_run')
-         ORDER BY name`
+         ORDER BY name`,
       )
       .all() as Array<{ name: string }>;
     expect(tables.map((t) => t.name)).toEqual([
@@ -46,7 +46,7 @@ describe('migration 015: WSJF audit tables', () => {
            ('idx_wsjf_score_history_task_changed',
             'idx_wsjf_score_history_rescore_run',
             'idx_project_charter_history_project_version')
-         ORDER BY name`
+         ORDER BY name`,
       )
       .all() as Array<{ name: string }>;
     expect(indexes.map((i) => i.name)).toEqual([
@@ -69,34 +69,26 @@ describe('migration 015: WSJF audit tables', () => {
     const charterVersion = db
       .prepare("PRAGMA index_info('idx_project_charter_history_project_version')")
       .all() as Array<{ name: string }>;
-    expect(charterVersion.map((c) => c.name)).toEqual([
-      'project_id',
-      'interview_version',
-    ]);
+    expect(charterVersion.map((c) => c.name)).toEqual(['project_id', 'interview_version']);
   });
 
   it('declares FK columns against projects(id) / tasks(id) only', () => {
-    const fks = db
-      .prepare("PRAGMA foreign_key_list('wsjf_score_history')")
-      .all() as Array<{ table: string; from: string; to: string }>;
+    const fks = db.prepare("PRAGMA foreign_key_list('wsjf_score_history')").all() as Array<{
+      table: string;
+      from: string;
+      to: string;
+    }>;
     const targets = fks.map((f) => `${f.table}(${f.to})`).sort();
-    expect(targets).toEqual([
-      'projects(id)',
-      'tasks(id)',
-      'wsjf_rescore_run(id)',
-    ]);
+    expect(targets).toEqual(['projects(id)', 'tasks(id)', 'wsjf_rescore_run(id)']);
     // Critically: no FK references projects.value_charter (migration 014).
     expect(fks.every((f) => f.to === 'id')).toBe(true);
   });
 
   it('inserts a wsjf_score_history row that reads back identically', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('t', projectId, 'tester').lastInsertRowid as number;
 
     const row = {
@@ -159,7 +151,7 @@ describe('migration 015: WSJF audit tables', () => {
            (@task_id, @project_id, @changed_at, @trigger, @actor_type, @actor_id,
             @charter_version, @rescore_run_id, @value, @time_criticality,
             @risk_opportunity, @job_size, @classifications, @features, @evidence,
-            @source, @locked, @wsjf_score, @prev_wsjf_score)`
+            @source, @locked, @wsjf_score, @prev_wsjf_score)`,
       )
       .run(row).lastInsertRowid as number;
 
@@ -169,7 +161,7 @@ describe('migration 015: WSJF audit tables', () => {
                 charter_version, rescore_run_id, value, time_criticality,
                 risk_opportunity, job_size, classifications, features, evidence,
                 source, locked, wsjf_score, prev_wsjf_score
-         FROM wsjf_score_history WHERE id = ?`
+         FROM wsjf_score_history WHERE id = ?`,
       )
       .get(id);
 
@@ -177,13 +169,10 @@ describe('migration 015: WSJF audit tables', () => {
   });
 
   it('links wsjf_score_history.rescore_run_id to a wsjf_rescore_run row', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('t', projectId, 'tester').lastInsertRowid as number;
 
     const runId = db
@@ -191,7 +180,7 @@ describe('migration 015: WSJF audit tables', () => {
         `INSERT INTO wsjf_rescore_run
            (project_id, charter_version, actor_type, actor_id,
             tasks_evaluated, tasks_changed, tasks_skipped_locked, summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(projectId, 3, 'agent', 'sess-x', 10, 4, 1, JSON.stringify({ up: 4 }))
       .lastInsertRowid as number;
@@ -200,7 +189,7 @@ describe('migration 015: WSJF audit tables', () => {
       .prepare(
         `INSERT INTO wsjf_score_history
            (task_id, project_id, trigger, rescore_run_id, value)
-         VALUES (?, ?, 'rescore', ?, 8)`
+         VALUES (?, ?, 'rescore', ?, 8)`,
       )
       .run(taskId, projectId, runId).lastInsertRowid as number;
 
@@ -217,7 +206,7 @@ describe('migration 015: WSJF audit tables', () => {
     const tables = db
       .prepare(
         `SELECT name FROM sqlite_master WHERE type='table' AND name IN
-           ('wsjf_score_history','project_charter_history','wsjf_rescore_run')`
+           ('wsjf_score_history','project_charter_history','wsjf_rescore_run')`,
       )
       .all() as Array<{ name: string }>;
     expect(tables).toEqual([]);
@@ -226,7 +215,7 @@ describe('migration 015: WSJF audit tables', () => {
     const survivors = db
       .prepare(
         `SELECT name FROM sqlite_master WHERE type='table'
-           AND name IN ('projects','tasks')`
+           AND name IN ('projects','tasks')`,
       )
       .all() as Array<{ name: string }>;
     expect(survivors.map((s) => s.name).sort()).toEqual(['projects', 'tasks']);
@@ -242,7 +231,7 @@ describe('migration 015: WSJF audit tables', () => {
               'idx_wsjf_score_history_task_changed',
               'idx_wsjf_score_history_rescore_run',
               'idx_project_charter_history_project_version')
-           ORDER BY name`
+           ORDER BY name`,
         )
         .all();
 

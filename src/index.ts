@@ -262,13 +262,7 @@ export async function createApp(dbPath?: string): Promise<App> {
   );
 
   // Create and start WorkflowEngine (with db for transaction atomicity)
-  const workflowEngine = new WorkflowEngine(
-    taskService,
-    taskRepo,
-    dependencyRepo,
-    eventBus,
-    db
-  );
+  const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
   workflowEngine.start();
 
   // Phase 30 Plan 08 — start the device-flow store's periodic cleanup

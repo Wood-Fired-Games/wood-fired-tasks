@@ -32,17 +32,9 @@ import type { ITaskRepository, IProjectRepository } from '../repositories/interf
 import type { IWsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
 import type { IWsjfRescoreRepository } from '../repositories/wsjf-rescore.repository.js';
 import type { Task, ValueCharter, WsjfWriteDTO } from '../types/task.js';
-import type {
-  WsjfComponents,
-  WsjfComponentKey,
-  WsjfLocks,
-} from '../types/wsjf.js';
+import type { WsjfComponents, WsjfComponentKey, WsjfLocks } from '../types/wsjf.js';
 import type { TopologyService } from './topology.service.js';
-import {
-  computeWsjf,
-  validateScoreSubmission,
-  type ScoreSubmission,
-} from './wsjf.service.js';
+import { computeWsjf, validateScoreSubmission, type ScoreSubmission } from './wsjf.service.js';
 import { MAX_PAGE_LIMIT } from '../types/task.js';
 import { BusinessError } from './errors.js';
 
@@ -279,9 +271,7 @@ export class WsjfRescoreService {
 
       const prevWsjfScore = computeWsjf(prevComponents);
       const newWsjfScore = computeWsjf(merged);
-      const changed = COMPONENT_KEYS.some(
-        (key) => merged[key] !== prevComponents[key],
-      );
+      const changed = COMPONENT_KEYS.some((key) => merged[key] !== prevComponents[key]);
 
       pending.push({
         task,
@@ -297,9 +287,7 @@ export class WsjfRescoreService {
 
     const tasksEvaluated = pending.length;
     const changedPending = pending.filter((p) => p.changed);
-    const skippedLockedCount = pending.filter(
-      (p) => p.skippedLocked.length > 0,
-    ).length;
+    const skippedLockedCount = pending.filter((p) => p.skippedLocked.length > 0).length;
 
     // Open the run + write linked history + persist changed components, all in
     // one transaction. The run id is the FK every history row links by.

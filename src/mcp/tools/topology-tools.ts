@@ -15,10 +15,7 @@ import { convertToMcpError } from '../errors.js';
  * Input schema rejects non-positive / non-integer project IDs at the SDK
  * layer — those never reach the service.
  */
-export function registerTopologyTools(
-  server: McpServer,
-  topologyService: TopologyService,
-): void {
+export function registerTopologyTools(server: McpServer, topologyService: TopologyService): void {
   server.registerTool(
     'topology_check',
     {

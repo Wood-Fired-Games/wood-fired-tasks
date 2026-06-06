@@ -91,9 +91,7 @@ export async function mountAuthRoutes(
 
   // Discovery interceptor must be installed before initOidc runs.
   const discoveryDoc = opts.discoveryOverride ?? getDiscoveryFixture();
-  nock(ISSUER)
-    .get('/.well-known/openid-configuration')
-    .reply(200, discoveryDoc);
+  nock(ISSUER).get('/.well-known/openid-configuration').reply(200, discoveryDoc);
 
   const oidcConfig = await initOidc(makeEnv());
   if (!oidcConfig) {
@@ -248,9 +246,7 @@ export async function setupOidcHappyPath(opts: HappyPathOpts): Promise<{
   };
   await installOidcInterceptors({
     tokenResponse,
-    ...(opts.discoveryOverride !== undefined
-      ? { discoveryOverride: opts.discoveryOverride }
-      : {}),
+    ...(opts.discoveryOverride !== undefined ? { discoveryOverride: opts.discoveryOverride } : {}),
   });
   return { idToken, tokenResponse };
 }

@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  shouldTouchLastUsed,
-  resetDebounceCacheForTests,
-} from '../pat-touch-debounce.js';
+import { shouldTouchLastUsed, resetDebounceCacheForTests } from '../pat-touch-debounce.js';
 
 /**
  * Unit tests for the in-process per-token debounce gate used by the chain

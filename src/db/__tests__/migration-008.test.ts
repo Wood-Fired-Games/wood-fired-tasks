@@ -27,9 +27,7 @@ describe('Migration 008: Identity Tables', () => {
   it('creates users table with expected columns', async () => {
     await runMigrations(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('users')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('users')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name).sort();
 
     expect(names).toEqual(
@@ -44,16 +42,14 @@ describe('Migration 008: Identity Tables', () => {
         'is_service_account',
         'created_at',
         'disabled_at',
-      ].sort()
+      ].sort(),
     );
   });
 
   it('creates api_tokens table with expected columns', async () => {
     await runMigrations(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('api_tokens')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('api_tokens')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name).sort();
 
     expect(names).toEqual(
@@ -69,7 +65,7 @@ describe('Migration 008: Identity Tables', () => {
         'last_used_at',
         'revoked_at',
         'expires_at',
-      ].sort()
+      ].sort(),
     );
   });
 
@@ -78,7 +74,7 @@ describe('Migration 008: Identity Tables', () => {
 
     const row = db
       .prepare(
-        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_users_oidc_sub_provider'"
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_users_oidc_sub_provider'",
       )
       .get() as { sql: string | null } | undefined;
 
@@ -94,7 +90,7 @@ describe('Migration 008: Identity Tables', () => {
 
     const row = db
       .prepare(
-        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_users_slack_user_id'"
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_users_slack_user_id'",
       )
       .get() as { sql: string | null } | undefined;
 
@@ -107,9 +103,10 @@ describe('Migration 008: Identity Tables', () => {
   it('creates unique index on api_tokens.hash and non-unique index on api_tokens.user_id', async () => {
     await runMigrations(db);
 
-    const indexList = db
-      .prepare("PRAGMA index_list('api_tokens')")
-      .all() as Array<{ name: string; unique: number }>;
+    const indexList = db.prepare("PRAGMA index_list('api_tokens')").all() as Array<{
+      name: string;
+      unique: number;
+    }>;
     const byName: Record<string, { unique: number }> = {};
     for (const idx of indexList) byName[idx.name] = { unique: idx.unique };
 
@@ -124,12 +121,8 @@ describe('Migration 008: Identity Tables', () => {
     await runMigrations(db);
 
     // Two legacy users with no OIDC binding should both insert.
-    db.prepare(
-      `INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`
-    ).run('legacy-one');
-    db.prepare(
-      `INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`
-    ).run('legacy-two');
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`).run('legacy-one');
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`).run('legacy-two');
 
     const count = db.prepare('SELECT COUNT(*) AS c FROM users').get() as {
       c: number;
@@ -142,16 +135,16 @@ describe('Migration 008: Identity Tables', () => {
 
     db.prepare(
       `INSERT INTO users (display_name, oidc_provider, oidc_sub)
-       VALUES (?, ?, ?)`
+       VALUES (?, ?, ?)`,
     ).run('first', 'google', 'abc');
 
     expect(() =>
       db
         .prepare(
           `INSERT INTO users (display_name, oidc_provider, oidc_sub)
-           VALUES (?, ?, ?)`
+           VALUES (?, ?, ?)`,
         )
-        .run('second', 'google', 'abc')
+        .run('second', 'google', 'abc'),
     ).toThrow();
   });
 
@@ -165,12 +158,12 @@ describe('Migration 008: Identity Tables', () => {
 
     db.prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash)
-       VALUES (?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?)`,
     ).run(userId, 'token-1', 'wft_pat_', 'AAAA', 'hash-aaaa');
 
     db.prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash)
-       VALUES (?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?)`,
     ).run(userId, 'token-2', 'wft_pat_', 'BBBB', 'hash-bbbb');
 
     const before = db
@@ -207,7 +200,7 @@ describe('Migration 008: Identity Tables', () => {
 
     const tables = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','api_tokens')"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','api_tokens')",
       )
       .all() as Array<{ name: string }>;
     expect(tables).toHaveLength(0);
@@ -224,7 +217,7 @@ describe('Migration 008: Identity Tables', () => {
            'idx_users_slack_user_id',
            'idx_api_tokens_hash',
            'idx_api_tokens_user_id'
-         )`
+         )`,
       )
       .all() as Array<{ name: string }>;
     expect(indexes).toHaveLength(0);
@@ -238,7 +231,7 @@ describe('Migration 008: Identity Tables', () => {
     // bleeding into this round-trip — see MIGRATION_008_OBJECTS comment.
     const placeholders = MIGRATION_008_OBJECTS.map(() => '?').join(',');
     const snapshotStmt = db.prepare(
-      `SELECT name, type, sql FROM sqlite_master WHERE name IN (${placeholders}) ORDER BY type, name`
+      `SELECT name, type, sql FROM sqlite_master WHERE name IN (${placeholders}) ORDER BY type, name`,
     );
 
     const before = snapshotStmt.all(...MIGRATION_008_OBJECTS);

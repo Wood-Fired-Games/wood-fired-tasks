@@ -1,5 +1,8 @@
 import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.js';
-import type { IWsjfHistoryRepository, WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
+import type {
+  IWsjfHistoryRepository,
+  WsjfHistoryTrigger,
+} from '../repositories/wsjf-history.repository.js';
 import {
   Task,
   VALID_STATUS_TRANSITIONS,
@@ -17,7 +20,12 @@ import {
   derivePropagatedValuePrior,
   type PropagatedValuePrior,
 } from './wsjf.service.js';
-import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
+import {
+  CreateTaskSchema,
+  UpdateTaskSchema,
+  TaskFiltersSchema,
+  CompletionReportSchema,
+} from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
@@ -154,8 +162,7 @@ export class TaskService {
       locked: args.wsjf.locked ?? null,
       actorType: args.actorType ?? null,
       actorId: args.actorId ?? null,
-      charterVersion:
-        args.charterVersion ?? args.wsjf.features?.charterVersion ?? null,
+      charterVersion: args.charterVersion ?? args.wsjf.features?.charterVersion ?? null,
       rescoreRunId: args.rescoreRunId ?? null,
     });
   }
@@ -168,10 +175,7 @@ export class TaskService {
   private currentWsjfScore(
     task: Pick<
       Task,
-      | 'wsjf_value'
-      | 'wsjf_time_criticality'
-      | 'wsjf_risk_opportunity'
-      | 'wsjf_job_size'
+      'wsjf_value' | 'wsjf_time_criticality' | 'wsjf_risk_opportunity' | 'wsjf_job_size'
     >,
   ): number | null {
     if (
@@ -219,9 +223,7 @@ export class TaskService {
     if (result.data.parent_task_id) {
       const parentTask = this.taskRepo.findById(result.data.parent_task_id);
       if (!parentTask) {
-        throw new BusinessError(
-          `Parent task with id ${result.data.parent_task_id} does not exist`
-        );
+        throw new BusinessError(`Parent task with id ${result.data.parent_task_id} does not exist`);
       }
 
       // Ensure parent task is in the same project
@@ -283,7 +285,7 @@ export class TaskService {
       eventType: 'task.created',
       timestamp: new Date().toISOString(),
       data: task,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     return task;
@@ -351,9 +353,7 @@ export class TaskService {
    * can render "page X of Y" navigation without re-issuing the query without
    * filters. Used by the REST list endpoint and the MCP list_tasks tool.
    */
-  listTasksPaginated(
-    filters?: unknown
-  ): PaginatedResponse<Task & { tags: string[] }> {
+  listTasksPaginated(filters?: unknown): PaginatedResponse<Task & { tags: string[] }> {
     const parsed = this.parseFilters(filters);
     const limit = parsed.limit ?? DEFAULT_PAGE_LIMIT;
     const offset = parsed.offset ?? DEFAULT_PAGE_OFFSET;
@@ -440,17 +440,13 @@ export class TaskService {
     ) {
       // `assignee_user_id` is selected by `findById` (SELECT t.*) but is not
       // declared on the base Task type, so read it through a narrow cast.
-      const existingAssigneeUserId = (
-        existing as { assignee_user_id?: number | null }
-      ).assignee_user_id;
-      const violations = validateVerificationEvidence(
-        result.data.verification_evidence,
-        {
-          taskAssignee: existing.assignee,
-          taskAssigneeUserId: existingAssigneeUserId ?? null,
-          callerId: callerId ?? null,
-        },
-      );
+      const existingAssigneeUserId = (existing as { assignee_user_id?: number | null })
+        .assignee_user_id;
+      const violations = validateVerificationEvidence(result.data.verification_evidence, {
+        taskAssignee: existing.assignee,
+        taskAssigneeUserId: existingAssigneeUserId ?? null,
+        callerId: callerId ?? null,
+      });
       if (violations.length > 0) {
         throw new ValidationError({ verification_evidence: violations });
       }
@@ -462,7 +458,7 @@ export class TaskService {
       const validTargets = VALID_STATUS_TRANSITIONS[existing.status];
       if (!validTargets.includes(result.data.status!)) {
         throw new BusinessError(
-          `Invalid status transition from '${existing.status}' to '${result.data.status}'. Valid transitions: ${validTargets.join(', ')}`
+          `Invalid status transition from '${existing.status}' to '${result.data.status}'. Valid transitions: ${validTargets.join(', ')}`,
         );
       }
     }
@@ -486,8 +482,7 @@ export class TaskService {
     // was checked.
     const updatesForRepo = { ...result.data };
     const isClosingTransition =
-      statusChanged &&
-      (result.data.status === 'done' || result.data.status === 'closed');
+      statusChanged && (result.data.status === 'done' || result.data.status === 'closed');
     if (
       isClosingTransition &&
       result.data.verification_evidence === undefined &&
@@ -523,14 +518,9 @@ export class TaskService {
         throw new ValidationError({ wsjf: manualCheck.errors });
       }
     }
-    const wsjfTrigger: WsjfHistoryTrigger =
-      wsjfUpdate?.manual === true ? 'manual' : 'update';
+    const wsjfTrigger: WsjfHistoryTrigger = wsjfUpdate?.manual === true ? 'manual' : 'update';
     let updatedTask: Task & { tags: string[] };
-    if (
-      wsjfUpdate !== undefined &&
-      wsjfUpdate !== null &&
-      this.wsjfAuditEnabled()
-    ) {
+    if (wsjfUpdate !== undefined && wsjfUpdate !== null && this.wsjfAuditEnabled()) {
       const prevWsjfScore = this.currentWsjfScore(existing);
       updatedTask = this.db!.transaction(() => {
         const updated = this.taskRepo.update(id, updatesForRepo);
@@ -552,7 +542,7 @@ export class TaskService {
       eventType: 'task.updated',
       timestamp: new Date().toISOString(),
       data: updatedTask,
-      metadata: { source }
+      metadata: { source },
     });
 
     // If status changed, also emit task.status_changed event
@@ -564,8 +554,8 @@ export class TaskService {
         metadata: {
           source,
           from: existing.status,
-          to: result.data.status!
-        } as any // Metadata can include additional fields beyond the base type
+          to: result.data.status!,
+        } as any, // Metadata can include additional fields beyond the base type
       });
     }
 
@@ -587,7 +577,7 @@ export class TaskService {
       eventType: 'task.deleted',
       timestamp: new Date().toISOString(),
       data: existing,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     this.taskRepo.delete(id);
@@ -652,7 +642,9 @@ export class TaskService {
 
     // Validate task is in claimable state
     if (existing.status !== 'open') {
-      throw new BusinessError(`Task ${taskId} cannot be claimed: status is '${existing.status}', must be 'open'`);
+      throw new BusinessError(
+        `Task ${taskId} cannot be claimed: status is '${existing.status}', must be 'open'`,
+      );
     }
 
     if (existing.assignee) {
@@ -671,7 +663,7 @@ export class TaskService {
       eventType: 'task.claimed',
       timestamp: new Date().toISOString(),
       data: claimed,
-      metadata: { source }
+      metadata: { source },
     });
 
     return claimed;
@@ -707,9 +699,10 @@ export class TaskService {
       const completedAt = t.completed_at ?? t.updated_at;
       const startMs = Date.parse(t.created_at);
       const endMs = Date.parse(completedAt);
-      const seconds = Number.isFinite(startMs) && Number.isFinite(endMs)
-        ? Math.max(0, Math.round((endMs - startMs) / 1000))
-        : 0;
+      const seconds =
+        Number.isFinite(startMs) && Number.isFinite(endMs)
+          ? Math.max(0, Math.round((endMs - startMs) / 1000))
+          : 0;
       return {
         id: t.id,
         title: t.title,
@@ -731,16 +724,18 @@ export class TaskService {
         project_id: k as number,
         count: v,
       })),
-      by_assignee: aggregate(rows, (r) => r.assignee ?? '(unassigned)').map(
-        ([k, v]) => ({ assignee: k as string, count: v })
-      ),
+      by_assignee: aggregate(rows, (r) => r.assignee ?? '(unassigned)').map(([k, v]) => ({
+        assignee: k as string,
+        count: v,
+      })),
       by_priority: aggregate(rows, (r) => r.priority).map(([k, v]) => ({
         priority: k as TaskPriority,
         count: v,
       })),
-      daily_throughput: aggregate(rows, (r) =>
-        r.completed_at.slice(0, 10)
-      ).map(([k, v]) => ({ date: k as string, count: v })),
+      daily_throughput: aggregate(rows, (r) => r.completed_at.slice(0, 10)).map(([k, v]) => ({
+        date: k as string,
+        count: v,
+      })),
     };
   }
 
@@ -753,7 +748,7 @@ export class TaskService {
    */
   getSubtasks(
     taskId: number,
-    pagination?: { limit?: number; offset?: number }
+    pagination?: { limit?: number; offset?: number },
   ): Array<Task & { tags: string[] }> {
     // Verify parent task exists
     const parentTask = this.taskRepo.findById(taskId);
@@ -770,7 +765,7 @@ export class TaskService {
    */
   getSubtasksPaginated(
     taskId: number,
-    pagination?: { limit?: number; offset?: number }
+    pagination?: { limit?: number; offset?: number },
   ): PaginatedResponse<Task & { tags: string[] }> {
     const parentTask = this.taskRepo.findById(taskId);
     if (!parentTask) {
@@ -801,7 +796,7 @@ function resolveRange(input: CompletionReportInput): { start: string; end: strin
 
 function aggregate<T, K extends string | number>(
   rows: T[],
-  key: (row: T) => K
+  key: (row: T) => K,
 ): Array<[K, number]> {
   const counts = new Map<K, number>();
   for (const row of rows) {
@@ -809,6 +804,6 @@ function aggregate<T, K extends string | number>(
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) =>
-    b[1] !== a[1] ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0]))
+    b[1] !== a[1] ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0])),
   );
 }

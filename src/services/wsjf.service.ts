@@ -156,10 +156,7 @@ const HEAVY_KEYWORDS = ['refactor', 'migrate', 'rewrite', 'new subsystem'];
  * Accepts the deterministic `filesTouched` count (or null when not linkable)
  * directly — callers holding a full `WsjfFeatures` pass `f.filesTouched`.
  */
-export function jobSizeBand(
-  filesTouched: number | null,
-  text: string,
-): [Fib, Fib] {
+export function jobSizeBand(filesTouched: number | null, text: string): [Fib, Fib] {
   if (filesTouched !== null) {
     if (filesTouched <= 1) return [1, 2];
     if (filesTouched <= 3) return [2, 5];
@@ -191,10 +188,7 @@ function oneStepDown(weight: Fib): Fib {
  *
  * oneStepDown: 13→8, 8→5, 5→3, 3→2, 2→1, 1→1.
  */
-export function ubvFromThemeAlignment(
-  weight: Fib,
-  a: AlignmentClass,
-): Fib {
+export function ubvFromThemeAlignment(weight: Fib, a: AlignmentClass): Fib {
   switch (a) {
     case 'core':
       return weight;
@@ -321,15 +315,10 @@ function populationVariance(xs: number[]): number {
  * (charter-less / themeName=null) the weight defaults to 1 so UBV collapses to
  * the alignment floor — keeping the gate pure and avoiding NaN.
  */
-function ubvFor(
-  classification: WsjfClassification,
-  charter: ValueCharter | null,
-): Fib {
+function ubvFor(classification: WsjfClassification, charter: ValueCharter | null): Fib {
   let weight: Fib = 1;
   if (charter && classification.themeName !== null) {
-    const theme = charter.value_themes.find(
-      (t) => t.name === classification.themeName,
-    );
+    const theme = charter.value_themes.find((t) => t.name === classification.themeName);
     if (theme) weight = theme.weight;
   }
   return ubvFromThemeAlignment(weight, classification.alignment);
@@ -349,9 +338,7 @@ function ubvFor(
 export function checkComponentContradictions(c: WsjfComponents): string[] {
   const errors: string[] = [];
   if (c.jobSize === 1 && c.value === 13) {
-    errors.push(
-      'contradiction: jobSize=1 (trivial effort) but value=13 (max business value)',
-    );
+    errors.push('contradiction: jobSize=1 (trivial effort) but value=13 (max business value)');
   }
   return errors;
 }
@@ -405,10 +392,7 @@ export function validateManualScore(input: unknown): ValidateResult {
  *
  * On success returns server-computed `components` (any client number ignored).
  */
-export function validateScoreSubmission(
-  s: ScoreSubmission,
-  ctx: ValidateContext,
-): ValidateResult {
+export function validateScoreSubmission(s: ScoreSubmission, ctx: ValidateContext): ValidateResult {
   const errors: string[] = [];
 
   // 1. Enum membership / shape — the schema rejects off-scale Fibonacci tiers,
@@ -436,13 +420,9 @@ export function validateScoreSubmission(
   } else if (classification.themeName === null) {
     errors.push('themeName=null is only allowed when the project has no charter');
   } else {
-    const known = ctx.charter.value_themes.some(
-      (t) => t.name === classification.themeName,
-    );
+    const known = ctx.charter.value_themes.some((t) => t.name === classification.themeName);
     if (!known) {
-      errors.push(
-        `themeName "${classification.themeName}" is not a theme in the project charter`,
-      );
+      errors.push(`themeName "${classification.themeName}" is not a theme in the project charter`);
     }
   }
 
@@ -459,17 +439,12 @@ export function validateScoreSubmission(
   for (const key of ['value', 'timeCriticality', 'riskOpportunity', 'jobSize'] as const) {
     const span = classification.evidence[key];
     if (!source.includes(span)) {
-      errors.push(
-        `evidence.${key} span is not a verbatim substring of the source text: "${span}"`,
-      );
+      errors.push(`evidence.${key} span is not a verbatim substring of the source text: "${span}"`);
     }
   }
 
   // 4. jobSizeTier within the deterministic band.
-  const [bandLow, bandHigh] = jobSizeBand(
-    features.filesTouched,
-    ctx.sourceText ?? '',
-  );
+  const [bandLow, bandHigh] = jobSizeBand(features.filesTouched, ctx.sourceText ?? '');
   if (classification.jobSizeTier < bandLow || classification.jobSizeTier > bandHigh) {
     errors.push(
       `jobSizeTier ${classification.jobSizeTier} is outside the allowed band [${bandLow}, ${bandHigh}]`,
@@ -578,9 +553,7 @@ export interface PropagatedValuePrior {
  * returned object NEVER carries time-criticality / risk / job-size: those are
  * objective and MUST be scored fresh per child (design spec §8.5).
  */
-export function derivePropagatedValuePrior(
-  parent: PropagationParent,
-): PropagatedValuePrior | null {
+export function derivePropagatedValuePrior(parent: PropagationParent): PropagatedValuePrior | null {
   if (parent.wsjf_value === null) return null;
   return {
     value: parent.wsjf_value,
@@ -660,10 +633,7 @@ export interface RankDeps {
 
 type ScoredTask = Task & { tags?: string[] };
 
-const RANKED_DONE_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
-  'done',
-  'closed',
-]);
+const RANKED_DONE_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(['done', 'closed']);
 
 /** All four WSJF components present (a fully-scored task)? */
 function hasComponents(t: Task): t is Task & {
@@ -681,10 +651,7 @@ function hasComponents(t: Task): t is Task & {
 }
 
 /** Page through every task in the project (findByFilters clamps at 500). */
-function loadProjectTasks(
-  tasks: ITaskRepository,
-  projectId: number,
-): ScoredTask[] {
+function loadProjectTasks(tasks: ITaskRepository, projectId: number): ScoredTask[] {
   const expected = tasks.count({ project_id: projectId });
   const out: ScoredTask[] = [];
   let offset = 0;
@@ -750,10 +717,7 @@ export async function rankFrontier(
   const baseCoD = new Map<number, number>();
   for (const t of allTasks) {
     if (hasComponents(t)) {
-      baseCoD.set(
-        t.id,
-        t.wsjf_value + t.wsjf_time_criticality + t.wsjf_risk_opportunity,
-      );
+      baseCoD.set(t.id, t.wsjf_value + t.wsjf_time_criticality + t.wsjf_risk_opportunity);
     }
   }
 
@@ -761,10 +725,7 @@ export async function rankFrontier(
   //    SHORTEST hop distance to each dependent (diamond-safe dedupe: each
   //    descendant appears once, at its minimum distance). Then fold each
   //    dependent's base_CoD · γ^(dist−1) onto n, capped at base_CoD(n)·CAP.
-  const propagationOf = new Map<
-    number,
-    { dependentId: number; contribution: number }[]
-  >();
+  const propagationOf = new Map<number, { dependentId: number; contribution: number }[]>();
   const effectiveCoD = new Map<number, number>();
 
   for (const t of allTasks) {
@@ -790,9 +751,7 @@ export async function rankFrontier(
     const contributions: { dependentId: number; contribution: number }[] = [];
     let sum = 0;
     // Deterministic order: ascending dependent id.
-    const dependentIds = [...distance.keys()]
-      .filter((id) => id !== t.id)
-      .sort((a, b) => a - b);
+    const dependentIds = [...distance.keys()].filter((id) => id !== t.id).sort((a, b) => a - b);
     for (const depId of dependentIds) {
       const depBase = baseCoD.get(depId);
       if (depBase === undefined) continue; // unscored dependents contribute nothing
@@ -821,8 +780,7 @@ export async function rankFrontier(
     return true;
   };
 
-  const scopedTasks =
-    scope === 'frontier' ? allTasks.filter(isReady) : allTasks;
+  const scopedTasks = scope === 'frontier' ? allTasks.filter(isReady) : allTasks;
 
   // 6. Materialize RankedTask rows.
   const ranked: RankedTask[] = scopedTasks.map((t) => {
@@ -1089,9 +1047,7 @@ export async function redundantScore(
   // The verifier weighs in on every component we were unsure about (the
   // disagreeing set, plus all components when a contradiction fired since the
   // aggregate itself is internally inconsistent).
-  const underReview: WsjfComponentKey[] = contradiction
-    ? [...COMPONENT_KEYS]
-    : [...disagree];
+  const underReview: WsjfComponentKey[] = contradiction ? [...COMPONENT_KEYS] : [...disagree];
 
   const lowConfidence: WsjfComponentKey[] = [];
   for (const key of underReview) {

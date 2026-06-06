@@ -44,7 +44,7 @@ const wideDetector = new CycleDetector(wideEdges);
 // eslint-disable-next-line no-console
 console.log(
   `[bench seed] chain_len=${CHAIN_LENGTH} wide_edges=${wideEdges.length} ` +
-    `soft_ceiling_ms=${SOFT_CEILING_MS}`
+    `soft_ceiling_ms=${SOFT_CEILING_MS}`,
 );
 
 describe('CycleDetector.wouldCreateCycle (bench)', () => {
@@ -55,7 +55,7 @@ describe('CycleDetector.wouldCreateCycle (bench)', () => {
     () => {
       chainDetector.wouldCreateCycle(CHAIN_LENGTH, 1);
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 
   // Adding edge that does NOT create a cycle — exercises the no-cycle exit path.
@@ -64,7 +64,7 @@ describe('CycleDetector.wouldCreateCycle (bench)', () => {
     () => {
       chainDetector.wouldCreateCycle(CHAIN_LENGTH, CHAIN_LENGTH + 1);
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 
   bench(
@@ -72,6 +72,6 @@ describe('CycleDetector.wouldCreateCycle (bench)', () => {
     () => {
       wideDetector.wouldCreateCycle(1, WIDE_SOURCES * 4);
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 });

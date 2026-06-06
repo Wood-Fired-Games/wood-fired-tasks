@@ -66,7 +66,7 @@ describe('E2E Regression: Full Task Lifecycle', () => {
       app.projectService,
       app.dependencyService,
       app.commentService,
-      app.db
+      app.db,
     );
 
     // Create paired in-memory transports
@@ -76,10 +76,7 @@ describe('E2E Regression: Full Task Lifecycle', () => {
     await server.connect(serverTransport);
 
     // Create and connect client
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -97,9 +94,7 @@ describe('E2E Regression: Full Task Lifecycle', () => {
     })) as ToolResult;
 
     expect(createProjectResult.isError).toBeFalsy();
-    const projectId = (
-      createProjectResult.structuredContent as { id: number }
-    ).id;
+    const projectId = (createProjectResult.structuredContent as { id: number }).id;
     expect(projectId).toBeDefined();
 
     // 2. create_task: "Implement feature" (high priority)
@@ -287,9 +282,7 @@ describe('E2E Regression: Full Task Lifecycle', () => {
       arguments: { name: 'Error Test Project' },
     })) as ToolResult;
 
-    const projectId = (
-      createProjectResult.structuredContent as { id: number }
-    ).id;
+    const projectId = (createProjectResult.structuredContent as { id: number }).id;
 
     const createTaskResult = (await client.callTool({
       name: 'create_task',
@@ -346,9 +339,7 @@ describe('E2E Regression: Full Task Lifecycle', () => {
 
 describe('Skill File Validation', () => {
   it('all skill files have valid frontmatter', () => {
-    const skillFiles = fs
-      .readdirSync(SKILLS_DIR)
-      .filter((f) => f.endsWith('.md'));
+    const skillFiles = fs.readdirSync(SKILLS_DIR).filter((f) => f.endsWith('.md'));
 
     expect(skillFiles.length).toBeGreaterThan(0);
 
@@ -358,51 +349,37 @@ describe('Skill File Validation', () => {
 
       // Extract frontmatter between --- delimiters
       const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-      expect(
-        frontmatterMatch,
-        `${filename}: Should have valid frontmatter`
-      ).toBeTruthy();
+      expect(frontmatterMatch, `${filename}: Should have valid frontmatter`).toBeTruthy();
 
       if (frontmatterMatch) {
         const frontmatter = frontmatterMatch[1];
 
         // Check for required fields
         const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
-        expect(
-          nameMatch,
-          `${filename}: Should have 'name' field`
-        ).toBeTruthy();
+        expect(nameMatch, `${filename}: Should have 'name' field`).toBeTruthy();
         if (nameMatch) {
-          expect(
-            nameMatch[1].trim(),
-            `${filename}: 'name' should be non-empty`
-          ).toBeTruthy();
+          expect(nameMatch[1].trim(), `${filename}: 'name' should be non-empty`).toBeTruthy();
         }
 
         const descMatch = frontmatter.match(/^description:\s*(.+)$/m);
-        expect(
-          descMatch,
-          `${filename}: Should have 'description' field`
-        ).toBeTruthy();
+        expect(descMatch, `${filename}: Should have 'description' field`).toBeTruthy();
         if (descMatch) {
           expect(
             descMatch[1].trim(),
-            `${filename}: 'description' should be non-empty`
+            `${filename}: 'description' should be non-empty`,
           ).toBeTruthy();
         }
 
-        const disableMatch = frontmatter.match(
-          /^disable-model-invocation:\s*(.+)$/m
-        );
+        const disableMatch = frontmatter.match(/^disable-model-invocation:\s*(.+)$/m);
         expect(
           disableMatch,
-          `${filename}: Should have 'disable-model-invocation' field`
+          `${filename}: Should have 'disable-model-invocation' field`,
         ).toBeTruthy();
         if (disableMatch) {
           const value = disableMatch[1].trim();
           expect(
             ['true', 'false'].includes(value),
-            `${filename}: 'disable-model-invocation' should be a boolean (true/false)`
+            `${filename}: 'disable-model-invocation' should be a boolean (true/false)`,
           ).toBe(true);
         }
       }
@@ -410,24 +387,20 @@ describe('Skill File Validation', () => {
   });
 
   it('all skill files reference valid MCP tool names', () => {
-    const skillFiles = fs
-      .readdirSync(SKILLS_DIR)
-      .filter((f) => f.endsWith('.md'));
+    const skillFiles = fs.readdirSync(SKILLS_DIR).filter((f) => f.endsWith('.md'));
 
     for (const filename of skillFiles) {
       const filepath = path.join(SKILLS_DIR, filename);
       const content = fs.readFileSync(filepath, 'utf-8');
 
       // Extract all wood-fired-tasks:TOOL_NAME references
-      const toolReferences = content.matchAll(
-        /wood-fired-tasks:([a-z_]+)/g
-      );
+      const toolReferences = content.matchAll(/wood-fired-tasks:([a-z_]+)/g);
 
       for (const match of toolReferences) {
         const toolName = match[1];
         expect(
           KNOWN_MCP_TOOLS.has(toolName),
-          `${filename}: References unknown tool '${toolName}'. Known tools: ${Array.from(KNOWN_MCP_TOOLS).join(', ')}`
+          `${filename}: References unknown tool '${toolName}'. Known tools: ${Array.from(KNOWN_MCP_TOOLS).join(', ')}`,
         ).toBe(true);
       }
     }
@@ -505,17 +478,14 @@ describe('Skill File Validation', () => {
 
       // Check for H2 section headers
       const hasH2Heading = /^## /m.test(content);
-      expect(
-        hasH2Heading,
-        `${filename}: Should have at least one H2 heading (##)`
-      ).toBe(true);
+      expect(hasH2Heading, `${filename}: Should have at least one H2 heading (##)`).toBe(true);
 
       // Check for numbered steps (list items) OR numbered section headings (### 1. etc)
       const hasNumberedSteps = /^\d+\.\s/m.test(content);
       const hasNumberedHeadings = /^###\s+\d+\.\s/m.test(content);
       expect(
         hasNumberedSteps || hasNumberedHeadings,
-        `${filename}: Should contain numbered steps (e.g., "1. ") or numbered headings (e.g., "### 1. ")`
+        `${filename}: Should contain numbered steps (e.g., "1. ") or numbered headings (e.g., "### 1. ")`,
       ).toBe(true);
     }
   });

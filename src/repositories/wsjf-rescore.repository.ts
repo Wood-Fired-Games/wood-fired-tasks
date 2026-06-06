@@ -94,9 +94,7 @@ export class WsjfRescoreRepository implements IWsjfRescoreRepository {
              summary = @summary
        WHERE id = @id
     `);
-    this.findByIdStmt = db.prepare(
-      `SELECT * FROM ${RESCORE_RUN_TABLE} WHERE id = ?`,
-    );
+    this.findByIdStmt = db.prepare(`SELECT * FROM ${RESCORE_RUN_TABLE} WHERE id = ?`);
   }
 
   open(input: OpenRescoreRunInput): number {

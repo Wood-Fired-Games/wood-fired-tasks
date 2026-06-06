@@ -52,13 +52,13 @@ export const createCommand = new Command('create')
       if (!VALID_PRIORITIES.includes(options.priority)) {
         if (isJsonMode) {
           process.stderr.write(
-            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}\n`
+            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}\n`,
           );
         } else {
           console.error(
             colorError(
-              `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
-            )
+              `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`,
+            ),
           );
         }
         process.exitCode = 1;

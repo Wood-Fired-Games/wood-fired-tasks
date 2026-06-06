@@ -117,9 +117,7 @@ describe('rankFrontier (WSJF 1.9)', () => {
     expect(ra.effectiveWsjf).toBeGreaterThan(ra.baseWsjf as number);
 
     // Propagation breakdown lists B (contrib 6) and C (contrib 3).
-    const contribs = Object.fromEntries(
-      ra.propagation.map((p) => [p.dependentId, p.contribution]),
-    );
+    const contribs = Object.fromEntries(ra.propagation.map((p) => [p.dependentId, p.contribution]));
     expect(contribs[b]).toBeCloseTo(6, 10);
     expect(contribs[c]).toBeCloseTo(3, 10);
     expect(ra.propagation).toHaveLength(2);
@@ -179,9 +177,7 @@ describe('rankFrontier (WSJF 1.9)', () => {
     // Sanity: topology classifies it cyclic.
     expect(deps.topology.classify(projectId).topology).toBe('DAG_CYCLIC');
 
-    await expect(rankFrontier(projectId, 'all', deps)).rejects.toThrow(
-      /cyclic|DAG_CYCLIC/i,
-    );
+    await expect(rankFrontier(projectId, 'all', deps)).rejects.toThrow(/cyclic|DAG_CYCLIC/i);
   });
 
   // -------------------------------------------------------------------------
@@ -212,7 +208,10 @@ describe('rankFrontier (WSJF 1.9)', () => {
 
     const rs = byId(ranked, scored);
     expect(rs.scored).toBe(true);
-    expect(rs.baseWsjf).toBeCloseTo(computeWsjf({ value: 8, timeCriticality: 5, riskOpportunity: 8, jobSize: 5 }), 10);
+    expect(rs.baseWsjf).toBeCloseTo(
+      computeWsjf({ value: 8, timeCriticality: 5, riskOpportunity: 8, jobSize: 5 }),
+      10,
+    );
 
     // med1 before med2: same fallback score + same created_at, lower id wins.
     const idxMed1 = ranked.findIndex((r) => r.taskId === med1);

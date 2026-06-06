@@ -14,10 +14,7 @@ export type TaskEventType =
 /**
  * Event types for project lifecycle
  */
-export type ProjectEventType =
-  | 'project.created'
-  | 'project.updated'
-  | 'project.deleted';
+export type ProjectEventType = 'project.created' | 'project.updated' | 'project.deleted';
 
 /**
  * Runtime allowlist of every event type that the system actually emits.

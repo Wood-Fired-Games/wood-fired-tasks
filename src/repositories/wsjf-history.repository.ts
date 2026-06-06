@@ -41,7 +41,6 @@ import { AppendOnlyViolationError } from './errors.js';
  * history row.
  */
 
-
 /**
  * One append-only history write. Components + score are the server-computed
  * truth; `classifications` / `features` / `evidence` / `source` / `locked` are

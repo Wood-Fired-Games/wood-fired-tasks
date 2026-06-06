@@ -53,9 +53,7 @@ await runMigrations(db);
 const projectRepo = new ProjectRepository(db);
 const taskRepo = new TaskRepository(db);
 
-const projects = [1, 2, 3].map((i) =>
-  projectRepo.create({ name: `Bench Project ${i}` })
-);
+const projects = [1, 2, 3].map((i) => projectRepo.create({ name: `Bench Project ${i}` }));
 
 const statuses = ['open', 'in_progress', 'done', 'backlogged'] as const;
 const priorities = ['low', 'medium', 'high', 'urgent'] as const;
@@ -71,9 +69,7 @@ db.transaction(() => {
       project_id: projects[i % projects.length].id,
       created_by: `bench-user-${i % 10}`,
     };
-    const tagCount =
-      TAGS_PER_TASK_MIN +
-      (i % (TAGS_PER_TASK_MAX - TAGS_PER_TASK_MIN + 1));
+    const tagCount = TAGS_PER_TASK_MIN + (i % (TAGS_PER_TASK_MAX - TAGS_PER_TASK_MIN + 1));
     const tags: string[] = [];
     for (let t = 0; t < tagCount; t++) {
       tags.push(TAG_POOL[(i + t) % TAG_POOL.length]);
@@ -88,7 +84,7 @@ db.transaction(() => {
 // eslint-disable-next-line no-console
 console.log(
   `[bench seed] tasks=${TASK_COUNT} tags=${totalTagsInserted} ` +
-    `soft_ceiling_ms=${SOFT_CEILING_MS}`
+    `soft_ceiling_ms=${SOFT_CEILING_MS}`,
 );
 
 describe('TaskRepository.findByFilters (bench)', () => {
@@ -98,7 +94,7 @@ describe('TaskRepository.findByFilters (bench)', () => {
     () => {
       taskRepo.findByFilters({});
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 
   // status filter — common indexed path.
@@ -107,7 +103,7 @@ describe('TaskRepository.findByFilters (bench)', () => {
     () => {
       taskRepo.findByFilters({ status: 'open' });
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 
   // Tag filter — joins through task_tags via EXISTS clause; hottest path
@@ -117,7 +113,7 @@ describe('TaskRepository.findByFilters (bench)', () => {
     () => {
       taskRepo.findByFilters({ tags: ['bug', 'perf'] });
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 
   // Compound filter — project + status + tag (what most UI views send).
@@ -130,6 +126,6 @@ describe('TaskRepository.findByFilters (bench)', () => {
         tags: ['urgent'],
       });
     },
-    { time: 2000 }
+    { time: 2000 },
   );
 });

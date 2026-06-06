@@ -27,8 +27,7 @@ export const dbCheckCommand = new Command('db-check')
     try {
       // Run integrity check
       const integrityResults = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
-      const passed =
-        integrityResults.length === 1 && integrityResults[0].integrity_check === 'ok';
+      const passed = integrityResults.length === 1 && integrityResults[0].integrity_check === 'ok';
 
       // Get DB size info
       const pageCount = db.pragma('page_count', { simple: true }) as number;

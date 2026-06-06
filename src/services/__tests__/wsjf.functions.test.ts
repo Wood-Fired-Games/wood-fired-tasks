@@ -148,9 +148,9 @@ describe('wsjf deterministic functions (task #622)', () => {
 
   describe('computeWsjf', () => {
     it('{value:13, timeCriticality:5, riskOpportunity:8, jobSize:5} === 5.2', () => {
-      expect(
-        computeWsjf({ value: 13, timeCriticality: 5, riskOpportunity: 8, jobSize: 5 }),
-      ).toBe(5.2);
+      expect(computeWsjf({ value: 13, timeCriticality: 5, riskOpportunity: 8, jobSize: 5 })).toBe(
+        5.2,
+      );
     });
     it('jobSize 0 treated as 1', () => {
       expect(

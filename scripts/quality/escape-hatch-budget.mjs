@@ -53,13 +53,7 @@ const BASELINE_PATH = join(__dirname, 'escape-hatch-budget.json');
 const SCAN_DIRS = ['src', 'packages/wft-router/src'];
 
 // A file is "test" code if its path matches any of these fragments.
-const TEST_PATTERNS = [
-  '.test.ts',
-  '.spec.ts',
-  '.property.test.ts',
-  '.bench.ts',
-  '__tests__/',
-];
+const TEST_PATTERNS = ['.test.ts', '.spec.ts', '.property.test.ts', '.bench.ts', '__tests__/'];
 
 // Category id -> { label, regex (JS RegExp source as understood by grep -E) }.
 // We use grep -E (POSIX ERE) for the scan to stay dependency-free and fast.
@@ -161,10 +155,11 @@ function main() {
         'production.<category> is a CEILING: the gate fails if the live count ' +
         'exceeds it. Bump a ceiling DOWN as you remove escapes; bump it UP ' +
         'only with a reviewed justification. test.<category> is informational.',
-      generated_methodology: baseline.generated_methodology ||
+      generated_methodology:
+        baseline.generated_methodology ||
         'grep -rnE <pattern> src packages/wft-router/src --include=*.ts, ' +
-        'split by test-path fragments (.test.ts/.spec.ts/.property.test.ts/' +
-        '.bench.ts/__tests__/).',
+          'split by test-path fragments (.test.ts/.spec.ts/.property.test.ts/' +
+          '.bench.ts/__tests__/).',
       categories: CATEGORIES.reduce((acc, c) => {
         acc[c.id] = c.label;
         return acc;
@@ -217,7 +212,9 @@ function main() {
         `  ${cat.id.padEnd(24)} ${String(cur).padStart(5)}   ${String(base).padStart(6)}   ${status}`,
       );
     }
-    console.log(`  ${'TOTAL'.padEnd(24)} ${String(prodTotal).padStart(5)}   ${String(baseTotal).padStart(6)}`);
+    console.log(
+      `  ${'TOTAL'.padEnd(24)} ${String(prodTotal).padStart(5)}   ${String(baseTotal).padStart(6)}`,
+    );
     console.log('');
     console.log('Escape-hatch census — TEST code (informational, NOT gated):');
     for (const cat of CATEGORIES) {

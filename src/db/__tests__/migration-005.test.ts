@@ -102,19 +102,23 @@ describe('Migration 005: Backlogged Status', () => {
         .run('Pre-Migration Project');
       const projectId = projectResult.lastInsertRowid;
 
-      freshDb.prepare(`
+      freshDb
+        .prepare(`
         INSERT INTO tasks (title, description, project_id, created_by, status, priority)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run('Pre-migration task 1', 'Keep this', projectId, 'dev1', 'open', 'high');
+      `)
+        .run('Pre-migration task 1', 'Keep this', projectId, 'dev1', 'open', 'high');
 
-      freshDb.prepare(`
+      freshDb
+        .prepare(`
         INSERT INTO tasks (title, description, project_id, created_by, status)
         VALUES (?, ?, ?, ?, ?)
-      `).run('Pre-migration task 2', 'Also keep this', projectId, 'dev2', 'in_progress');
+      `)
+        .run('Pre-migration task 2', 'Also keep this', projectId, 'dev2', 'in_progress');
 
-      const beforeCount = (freshDb
-        .prepare('SELECT COUNT(*) as count FROM tasks')
-        .get() as { count: number }).count;
+      const beforeCount = (
+        freshDb.prepare('SELECT COUNT(*) as count FROM tasks').get() as { count: number }
+      ).count;
 
       expect(beforeCount).toBe(2);
 
@@ -123,16 +127,22 @@ describe('Migration 005: Backlogged Status', () => {
       await up005(freshDb);
 
       // Verify all tasks still exist
-      const afterCount = (freshDb
-        .prepare('SELECT COUNT(*) as count FROM tasks')
-        .get() as { count: number }).count;
+      const afterCount = (
+        freshDb.prepare('SELECT COUNT(*) as count FROM tasks').get() as { count: number }
+      ).count;
 
       expect(afterCount).toBe(2);
 
       // Verify task data is intact
       const tasks = freshDb
         .prepare('SELECT title, description, status, priority, created_by FROM tasks ORDER BY id')
-        .all() as Array<{ title: string; description: string; status: string; priority: string; created_by: string }>;
+        .all() as Array<{
+        title: string;
+        description: string;
+        status: string;
+        priority: string;
+        created_by: string;
+      }>;
 
       expect(tasks[0]).toMatchObject({
         title: 'Pre-migration task 1',
@@ -165,12 +175,14 @@ describe('Migration 005: Backlogged Status', () => {
         VALUES (?, ?, ?, ?)
       `).run('Searchable xylophone task', 'Contains xylophone keyword', projectId, 'tester');
 
-      const results = db.prepare(`
+      const results = db
+        .prepare(`
         SELECT tasks.id, tasks.title
         FROM tasks
         JOIN tasks_fts ON tasks.id = tasks_fts.rowid
         WHERE tasks_fts MATCH ?
-      `).all('xylophone') as Array<{ id: number; title: string }>;
+      `)
+        .all('xylophone') as Array<{ id: number; title: string }>;
 
       expect(results.length).toBeGreaterThan(0);
       expect(results[0].title).toBe('Searchable xylophone task');
@@ -182,32 +194,40 @@ describe('Migration 005: Backlogged Status', () => {
         .run('FTS Update Test Project');
       const projectId = projectResult.lastInsertRowid;
 
-      const taskResult = db.prepare(`
+      const taskResult = db
+        .prepare(`
         INSERT INTO tasks (title, description, project_id, created_by)
         VALUES (?, ?, ?, ?)
-      `).run('Original velociraptor title', null, projectId, 'tester');
+      `)
+        .run('Original velociraptor title', null, projectId, 'tester');
 
       const taskId = taskResult.lastInsertRowid;
 
       // Update the title
-      db.prepare('UPDATE tasks SET title = ? WHERE id = ?')
-        .run('Updated pterodactyl title', taskId);
+      db.prepare('UPDATE tasks SET title = ? WHERE id = ?').run(
+        'Updated pterodactyl title',
+        taskId,
+      );
 
       // Old title no longer matches
-      const oldResults = db.prepare(`
+      const oldResults = db
+        .prepare(`
         SELECT tasks.id FROM tasks
         JOIN tasks_fts ON tasks.id = tasks_fts.rowid
         WHERE tasks_fts MATCH ?
-      `).all('velociraptor') as Array<{ id: number }>;
+      `)
+        .all('velociraptor') as Array<{ id: number }>;
 
       expect(oldResults).toHaveLength(0);
 
       // New title matches
-      const newResults = db.prepare(`
+      const newResults = db
+        .prepare(`
         SELECT tasks.id FROM tasks
         JOIN tasks_fts ON tasks.id = tasks_fts.rowid
         WHERE tasks_fts MATCH ?
-      `).all('pterodactyl') as Array<{ id: number }>;
+      `)
+        .all('pterodactyl') as Array<{ id: number }>;
 
       expect(newResults).toHaveLength(1);
       expect(newResults[0].id).toBe(taskId);
@@ -219,26 +239,24 @@ describe('Migration 005: Backlogged Status', () => {
         .run('FTS Delete Test Project');
       const projectId = projectResult.lastInsertRowid;
 
-      const taskResult = db.prepare(`
+      const taskResult = db
+        .prepare(`
         INSERT INTO tasks (title, project_id, created_by)
         VALUES (?, ?, ?)
-      `).run('Ephemeral stegosaurus task', projectId, 'tester');
+      `)
+        .run('Ephemeral stegosaurus task', projectId, 'tester');
 
       const taskId = taskResult.lastInsertRowid;
 
       // Verify it is in FTS
-      let ftsRows = db
-        .prepare('SELECT rowid FROM tasks_fts WHERE rowid = ?')
-        .all(taskId);
+      let ftsRows = db.prepare('SELECT rowid FROM tasks_fts WHERE rowid = ?').all(taskId);
       expect(ftsRows).toHaveLength(1);
 
       // Delete the task
       db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
 
       // Verify it is gone from FTS
-      ftsRows = db
-        .prepare('SELECT rowid FROM tasks_fts WHERE rowid = ?')
-        .all(taskId);
+      ftsRows = db.prepare('SELECT rowid FROM tasks_fts WHERE rowid = ?').all(taskId);
       expect(ftsRows).toHaveLength(0);
     });
   });

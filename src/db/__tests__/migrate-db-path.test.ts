@@ -50,21 +50,17 @@ function assertMigrated(dbPath: string): void {
 describe('resolveMigrateDbPath (AC#1/AC#2 path logic)', () => {
   it('honors an explicit DATABASE_PATH (AC#1)', () => {
     const target = join(tmpRoot, 'nested', 'custom.db');
-    expect(resolveMigrateDbPath({ DATABASE_PATH: target }, tmpRoot)).toBe(
-      resolve(target),
-    );
+    expect(resolveMigrateDbPath({ DATABASE_PATH: target }, tmpRoot)).toBe(resolve(target));
   });
 
   it('resolves a relative DATABASE_PATH against cwd (AC#1)', () => {
-    expect(
-      resolveMigrateDbPath({ DATABASE_PATH: 'sub/dir/my.db' }, tmpRoot),
-    ).toBe(join(tmpRoot, 'sub', 'dir', 'my.db'));
+    expect(resolveMigrateDbPath({ DATABASE_PATH: 'sub/dir/my.db' }, tmpRoot)).toBe(
+      join(tmpRoot, 'sub', 'dir', 'my.db'),
+    );
   });
 
   it('falls back to ./data/tasks.db when DATABASE_PATH is unset (AC#2)', () => {
-    expect(resolveMigrateDbPath({}, tmpRoot)).toBe(
-      join(tmpRoot, 'data', 'tasks.db'),
-    );
+    expect(resolveMigrateDbPath({}, tmpRoot)).toBe(join(tmpRoot, 'data', 'tasks.db'));
   });
 
   it('falls back to ./data/tasks.db when DATABASE_PATH is empty (AC#2)', () => {

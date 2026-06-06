@@ -1,9 +1,5 @@
 import { Command } from 'commander';
-import {
-  spawn as nodeSpawn,
-  type ChildProcess,
-  type SpawnOptions,
-} from 'child_process';
+import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import { colorError, colorInfo, colorSuccess, colorWarn } from '../output/formatters.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -28,7 +24,7 @@ import { VERSION } from '../../utils/version.js';
 export type SpawnFn = (
   command: string,
   args: readonly string[],
-  options: SpawnOptions
+  options: SpawnOptions,
 ) => ChildProcess;
 
 // Injectable update-notifier seam. Kept thin + synchronous-to-call so the
@@ -50,10 +46,7 @@ const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
  * permission failure (root-owned npm prefix). Inspects both the structured
  * error `code` and any captured stderr text.
  */
-export function isEaccesFailure(
-  error: NodeJS.ErrnoException | null,
-  stderr: string
-): boolean {
+export function isEaccesFailure(error: NodeJS.ErrnoException | null, stderr: string): boolean {
   if (error && (error.code === 'EACCES' || error.code === 'EPERM')) {
     return true;
   }
@@ -93,8 +86,7 @@ const defaultNotify: NotifyFn = async (currentVersion: string) => {
     const mod = (await import(specifier)) as {
       default?: NotifierFactory;
     } & NotifierFactory;
-    const updateNotifier: NotifierFactory =
-      mod.default ?? (mod as unknown as NotifierFactory);
+    const updateNotifier: NotifierFactory = mod.default ?? (mod as unknown as NotifierFactory);
     const notifier = updateNotifier({
       pkg: { name: PACKAGE_NAME, version: currentVersion },
     });
@@ -109,7 +101,7 @@ const defaultNotify: NotifyFn = async (currentVersion: string) => {
  * Rejects only on a hard spawn error (the EACCES classifier inspects both).
  */
 function runNpmInstall(
-  spawn: SpawnFn
+  spawn: SpawnFn,
 ): Promise<{ code: number | null; error: NodeJS.ErrnoException | null; stderr: string }> {
   return new Promise((resolve) => {
     let stderr = '';
@@ -139,9 +131,7 @@ function runNpmInstall(
 }
 
 export const selfUpdateCommand = new Command('self-update')
-  .description(
-    `Update ${PACKAGE_NAME} to the latest published version via npm (no sudo)`
-  )
+  .description(`Update ${PACKAGE_NAME} to the latest published version via npm (no sudo)`)
   .action(async function selfUpdateAction(this: Command) {
     // Dependency-injection seam: tests attach mocks on the command via
     // `.deps`; production falls through to the real spawn + notifier.
@@ -178,9 +168,7 @@ export const selfUpdateCommand = new Command('self-update')
     }
 
     console.log(
-      colorSuccess(
-        `Updated ${PACKAGE_NAME}. The schema migrates automatically on next serve.`
-      )
+      colorSuccess(`Updated ${PACKAGE_NAME}. The schema migrates automatically on next serve.`),
     );
     process.exitCode = 0;
   });

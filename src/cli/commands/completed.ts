@@ -33,10 +33,7 @@ interface CommandOptions {
  */
 export const completedCommand = new Command('completed')
   .description('Dashboard: tasks completed within a time interval')
-  .option(
-    '-d, --days <n>',
-    'Trailing N days from now (default: 7 if no range supplied)'
-  )
+  .option('-d, --days <n>', 'Trailing N days from now (default: 7 if no range supplied)')
   .option('--since <date>', 'Range start (ISO8601, inclusive)')
   .option('--until <date>', 'Range end (ISO8601, inclusive)')
   .option('-p, --project <id>', 'Filter by project ID')
@@ -78,7 +75,7 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
 
   if (hasPartialRange) {
     throw new Error(
-      'Provide both --since and --until together, or use --days for a trailing window'
+      'Provide both --since and --until together, or use --days for a trailing window',
     );
   }
 
@@ -114,17 +111,13 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
 
 function renderReport(
   report: ReturnType<TaskService['getCompletionReport']>,
-  projectRepo: ProjectRepository
+  projectRepo: ProjectRepository,
 ): void {
   const useColor = shouldUseColor();
   const bold = (s: string) => (useColor ? chalk.bold(s) : s);
 
   console.log(colorBold('Completion Report'));
-  console.log(
-    colorInfo(
-      `  Range:  ${report.range.start}  ->  ${report.range.end}`
-    )
-  );
+  console.log(colorInfo(`  Range:  ${report.range.start}  ->  ${report.range.end}`));
   console.log(colorInfo(`  Total:  ${report.total} task(s) completed`));
   console.log('');
 

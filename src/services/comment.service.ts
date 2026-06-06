@@ -1,17 +1,14 @@
 import type { ICommentRepository } from '../repositories/interfaces.js';
 import type { ITaskRepository } from '../repositories/interfaces.js';
 import type { Comment, PaginatedResponse } from '../types/task.js';
-import {
-  DEFAULT_PAGE_LIMIT,
-  DEFAULT_PAGE_OFFSET,
-} from '../types/task.js';
+import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET } from '../types/task.js';
 import { CreateCommentSchema } from '../schemas/comment.schema.js';
 import { ValidationError, NotFoundError } from './errors.js';
 
 export class CommentService {
   constructor(
     private commentRepo: ICommentRepository,
-    private taskRepo: ITaskRepository
+    private taskRepo: ITaskRepository,
   ) {}
 
   /**
@@ -51,10 +48,7 @@ export class CommentService {
    * Internal callers use this; REST/MCP use {@link getCommentsPaginated}.
    * @throws NotFoundError if task does not exist
    */
-  getComments(
-    taskId: number,
-    pagination?: { limit?: number; offset?: number }
-  ): Comment[] {
+  getComments(taskId: number, pagination?: { limit?: number; offset?: number }): Comment[] {
     // Verify task exists
     const task = this.taskRepo.findById(taskId);
     if (!task) {
@@ -70,7 +64,7 @@ export class CommentService {
    */
   getCommentsPaginated(
     taskId: number,
-    pagination?: { limit?: number; offset?: number }
+    pagination?: { limit?: number; offset?: number },
   ): PaginatedResponse<Comment> {
     const task = this.taskRepo.findById(taskId);
     if (!task) {

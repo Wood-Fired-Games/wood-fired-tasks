@@ -48,14 +48,7 @@ import { ALLOWED_EVENT_TYPES } from './event-types.js';
 export const EX_CONFIG = 78;
 
 /** Status enum used by `status`, `status_in`, `from_status`, `to_status`. */
-const StatusEnum = z.enum([
-  'open',
-  'in_progress',
-  'done',
-  'closed',
-  'blocked',
-  'backlogged',
-]);
+const StatusEnum = z.enum(['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged']);
 
 /** Event-type enum derived from the shared allowlist. */
 const EventTypeEnum = z.enum(ALLOWED_EVENT_TYPES);
@@ -189,11 +182,7 @@ export function validateTemplating(config: TriggersConfig): TemplatingIssue[] {
 }
 
 /** Recursive walker for any value living inside a `with:` block. */
-function walkWithValue(
-  value: unknown,
-  path: string,
-  issues: TemplatingIssue[],
-): void {
+function walkWithValue(value: unknown, path: string, issues: TemplatingIssue[]): void {
   if (typeof value === 'string') {
     checkStringForTemplatingViolations(value, path, issues);
     return;
@@ -262,9 +251,7 @@ export type LoadAndValidateResult =
  * identically to `src/config/env.ts:199-216` — the caller is expected to
  * print them under a "validation failed:" header and exit 78.
  */
-export async function loadAndValidateTriggers(
-  filePath: string,
-): Promise<LoadAndValidateResult> {
+export async function loadAndValidateTriggers(filePath: string): Promise<LoadAndValidateResult> {
   let raw: string;
   try {
     raw = await readFile(filePath, 'utf8');

@@ -67,11 +67,7 @@ const MintTokenResponseSchema = z.object({
   // `token` carries the full `wft_pat_...` value EXACTLY ONCE — the only
   // surface that ever sees the plaintext after mint. Annotated so the
   // generated OpenAPI doc carries the warning to API consumers.
-  token: z
-    .string()
-    .describe(
-      'Returned exactly once at creation time; cannot be retrieved later.',
-    ),
+  token: z.string().describe('Returned exactly once at creation time; cannot be retrieved later.'),
   name: z.string(),
   prefix: z.string(),
   suffix: z.string(),
@@ -168,8 +164,7 @@ function prefersHtmlResponse(acceptHeader: string | undefined): boolean {
  */
 function isFormEncodedBody(contentType: string | undefined): boolean {
   return (
-    typeof contentType === 'string' &&
-    contentType.includes('application/x-www-form-urlencoded')
+    typeof contentType === 'string' && contentType.includes('application/x-www-form-urlencoded')
   );
 }
 
@@ -219,16 +214,10 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         // 400 covers both the manual JSON Zod-fail AND the HTML branch's
         // validation_failed envelope. The two shapes share `error: string`
         // so the union below is the simplest typing.
-        400: z.union([
-          BadRequestResponseSchema,
-          ValidationFailedResponseSchema,
-        ]),
+        400: z.union([BadRequestResponseSchema, ValidationFailedResponseSchema]),
         // 403 carries TWO shapes: the chain's session_required gate AND
         // the HTML branch's csrf_invalid. Zod type provider needs both.
-        403: z.union([
-          SessionRequiredResponseSchema,
-          CsrfInvalidResponseSchema,
-        ]),
+        403: z.union([SessionRequiredResponseSchema, CsrfInvalidResponseSchema]),
       },
     },
     handler: async (request, reply) => {
@@ -480,10 +469,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     async (request, reply) => {
       const user = requireUser(request);
-      const success = fastify.apiTokenRepository.revoke(
-        request.params.id,
-        user.id,
-      );
+      const success = fastify.apiTokenRepository.revoke(request.params.id, user.id);
       if (!success) {
         return reply.code(404).send({
           error: 'NOT_FOUND' as const,

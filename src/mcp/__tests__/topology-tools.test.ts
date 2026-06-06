@@ -77,10 +77,7 @@ describe('MCP topology_check tool', () => {
 
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'topology-test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'topology-test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -142,9 +139,7 @@ describe('MCP topology_check tool', () => {
       };
       expect(report.topology).toBe('DAG');
       expect(report.advisory).toBe('/tasks:loop-dag');
-      expect(report.edges).toEqual([
-        { from: dagTask1Id, to: dagTask2Id },
-      ]);
+      expect(report.edges).toEqual([{ from: dagTask1Id, to: dagTask2Id }]);
       expect(report.roots).toEqual([dagTask1Id]);
       expect(report.leaves).toEqual([dagTask2Id]);
     }

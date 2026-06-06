@@ -37,9 +37,7 @@ describe('self-update command', () => {
     process.env.NO_COLOR = '1';
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    stderrSpy = vi
-      .spyOn(process.stderr, 'write')
-      .mockImplementation(() => true);
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     process.exitCode = 0;
   });
 
@@ -101,9 +99,7 @@ describe('self-update command', () => {
     program.addCommand(selfUpdateCommand);
     await program.parseAsync(['node', 'tasks', 'self-update']);
 
-    const errOut = consoleErrorSpy.mock.calls
-      .map((c) => String(c[0]))
-      .join('\n');
+    const errOut = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
 
     // Remediation text present.
     expect(errOut).toMatch(/EACCES/);
@@ -120,10 +116,7 @@ describe('self-update command', () => {
       expect((args ?? []).join(' ')).not.toMatch(/sudo|runas|pkexec|doas/i);
     }
     // Output must not tell the user to use sudo/runas either.
-    const allOut = [
-      ...consoleLogSpy.mock.calls,
-      ...consoleErrorSpy.mock.calls,
-    ]
+    const allOut = [...consoleLogSpy.mock.calls, ...consoleErrorSpy.mock.calls]
       .map((c) => String(c[0]))
       .join('\n');
     expect(allOut).not.toMatch(/\bsudo \w/i); // e.g. "sudo npm"
@@ -149,9 +142,7 @@ describe('self-update command', () => {
     program.addCommand(selfUpdateCommand);
     await program.parseAsync(['node', 'tasks', 'self-update']);
 
-    const errOut = consoleErrorSpy.mock.calls
-      .map((c) => String(c[0]))
-      .join('\n');
+    const errOut = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(errOut).toMatch(/npm config set prefix/);
     expect(process.exitCode).toBe(1);
   });
@@ -161,9 +152,7 @@ describe('self-update command', () => {
 
     // The default notifier is exported and callable; it must never throw even
     // when the package is absent / offline (best-effort nudge).
-    await expect(
-      Promise.resolve(defaultNotify('0.0.0-test'))
-    ).resolves.not.toThrow();
+    await expect(Promise.resolve(defaultNotify('0.0.0-test'))).resolves.not.toThrow();
 
     // And the seam accepts a custom notify the command can call.
     const notify = vi.fn();
@@ -176,14 +165,14 @@ describe('self-update command', () => {
     expect(
       isEaccesFailure(
         Object.assign(new Error('x'), { code: 'EACCES' }) as NodeJS.ErrnoException,
-        ''
-      )
+        '',
+      ),
     ).toBe(true);
     expect(
       isEaccesFailure(
         Object.assign(new Error('x'), { code: 'EPERM' }) as NodeJS.ErrnoException,
-        ''
-      )
+        '',
+      ),
     ).toBe(true);
     expect(isEaccesFailure(null, 'EACCES: permission denied')).toBe(true);
     expect(isEaccesFailure(null, 'some other failure')).toBe(false);

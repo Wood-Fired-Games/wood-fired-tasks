@@ -51,14 +51,7 @@ const SELF_GRADING_SESSION_PATTERN = /^(orchestrator|self|main-loop)/i;
  * `evidence_url_or_text` is one of these (trimmed, case-insensitive) is a
  * fabricated/empty gate.
  */
-const PLACEHOLDER_EVIDENCE_DENYLIST = new Set([
-  'ok',
-  'pass',
-  'done',
-  'n/a',
-  'na',
-  'tbd',
-]);
+const PLACEHOLDER_EVIDENCE_DENYLIST = new Set(['ok', 'pass', 'done', 'n/a', 'na', 'tbd']);
 
 /**
  * Normalize an id-ish value to a trimmed string, or null when absent/blank.
@@ -91,9 +84,7 @@ export function validateVerificationEvidence(
 
   // --- Check 1: verifier_session_id (generator/critic separation) ---
   const sessionId =
-    typeof evidence.verifier_session_id === 'string'
-      ? evidence.verifier_session_id.trim()
-      : '';
+    typeof evidence.verifier_session_id === 'string' ? evidence.verifier_session_id.trim() : '';
 
   if (sessionId.length === 0) {
     violations.push(
@@ -120,10 +111,7 @@ export function validateVerificationEvidence(
           'generator cannot verify its own work (generator/critic separation).',
       );
     }
-    if (
-      taskAssigneeUserId !== null &&
-      sessionKey === taskAssigneeUserId.toLowerCase()
-    ) {
+    if (taskAssigneeUserId !== null && sessionKey === taskAssigneeUserId.toLowerCase()) {
       violations.push(
         `verifier_session_id "${sessionId}" equals the task assignee user id ` +
           '— the generator cannot verify its own work (generator/critic ' +
@@ -143,9 +131,7 @@ export function validateVerificationEvidence(
   if (Array.isArray(evidence.checks)) {
     evidence.checks.forEach((check, idx) => {
       const text =
-        typeof check.evidence_url_or_text === 'string'
-          ? check.evidence_url_or_text.trim()
-          : '';
+        typeof check.evidence_url_or_text === 'string' ? check.evidence_url_or_text.trim() : '';
       const label = check?.name ? `"${check.name}"` : `#${idx}`;
       if (text.length === 0) {
         violations.push(

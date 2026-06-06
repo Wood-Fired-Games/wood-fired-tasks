@@ -17,11 +17,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { extractSessionCookie } from '../../../../../tests/helpers/session-cookie.js';
-import {
-  mountAuthRoutes,
-  setupOidcHappyPath,
-  type AuthTestHarness,
-} from './oidc-test-setup.js';
+import { mountAuthRoutes, setupOidcHappyPath, type AuthTestHarness } from './oidc-test-setup.js';
 
 describe('session fixation prevention (AUTH-05)', () => {
   let harness: AuthTestHarness;

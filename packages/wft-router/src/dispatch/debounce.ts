@@ -96,9 +96,7 @@ export class Debouncer<TPayload> {
     this.now = options.now ?? Date.now;
     // Bind through arrow wrappers so callers that destructure
     // `setTimeout` off `globalThis` don't accidentally lose `this`.
-    this.setTimer =
-      options.setTimer ??
-      ((fn, ms) => globalThis.setTimeout(fn, ms));
+    this.setTimer = options.setTimer ?? ((fn, ms) => globalThis.setTimeout(fn, ms));
     this.clearTimer =
       options.clearTimer ??
       ((handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>));

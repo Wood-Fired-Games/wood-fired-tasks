@@ -56,11 +56,7 @@ export function unsafe(raw: string): UnsafeHtml {
 }
 
 function isUnsafe(v: unknown): v is UnsafeHtml {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    UNSAFE in (v as Record<symbol, unknown>)
-  );
+  return typeof v === 'object' && v !== null && UNSAFE in (v as Record<symbol, unknown>);
 }
 
 /**
@@ -70,10 +66,7 @@ function isUnsafe(v: unknown): v is UnsafeHtml {
  * explicitly, e.g. for table rows). Each array element is escaped
  * individually unless wrapped in `unsafe()`.
  */
-export function html(
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-): string {
+export function html(strings: TemplateStringsArray, ...values: unknown[]): string {
   let out = '';
   for (let i = 0; i < strings.length; i++) {
     out += strings[i];
@@ -82,9 +75,7 @@ export function html(
       if (isUnsafe(v)) {
         out += v[UNSAFE];
       } else if (Array.isArray(v)) {
-        out += v
-          .map((item) => (isUnsafe(item) ? item[UNSAFE] : escapeHtml(item)))
-          .join('');
+        out += v.map((item) => (isUnsafe(item) ? item[UNSAFE] : escapeHtml(item))).join('');
       } else {
         out += escapeHtml(v);
       }

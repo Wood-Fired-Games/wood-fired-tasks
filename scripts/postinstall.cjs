@@ -17,5 +17,5 @@
  */
 process.stdout.write(
   'wood-fired-tasks installed. Run `wood-fired-tasks setup` to register the ' +
-    'MCP server and copy skills into ~/.claude.\n'
+    'MCP server and copy skills into ~/.claude.\n',
 );

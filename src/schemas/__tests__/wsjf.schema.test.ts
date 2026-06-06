@@ -93,24 +93,15 @@ describe('wsjf.schema — WsjfEvidenceSchema', () => {
   });
 
   it('rejects an empty span on any component', () => {
-    for (const key of [
-      'value',
-      'timeCriticality',
-      'riskOpportunity',
-      'jobSize',
-    ] as const) {
-      expect(
-        WsjfEvidenceSchema.safeParse({ ...validEvidence, [key]: '' }).success,
-      ).toBe(false);
+    for (const key of ['value', 'timeCriticality', 'riskOpportunity', 'jobSize'] as const) {
+      expect(WsjfEvidenceSchema.safeParse({ ...validEvidence, [key]: '' }).success).toBe(false);
     }
   });
 });
 
 describe('wsjf.schema — WsjfClassificationSchema', () => {
   it('accepts a well-formed classification', () => {
-    expect(WsjfClassificationSchema.safeParse(validClassification).success).toBe(
-      true,
-    );
+    expect(WsjfClassificationSchema.safeParse(validClassification).success).toBe(true);
   });
 
   it('rejects a non-Fibonacci jobSizeTier (4)', () => {
