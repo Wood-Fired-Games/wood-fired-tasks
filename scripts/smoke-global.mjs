@@ -69,14 +69,22 @@ function assert(cond, msg) {
 
 const ELEVATION_RE = /^(sudo|runas|pkexec|doas)$/i;
 
-// npm is a bare name on POSIX but the `npm.cmd` shim on Windows. spawnSync
-// can't resolve a bare `npm` there (PATHEXT isn't applied to argv[0]) and Node
-// ≥20 refuses to spawn a `.cmd`/`.bat` directly without a shell (EINVAL, the
-// CVE-2024-27980 hardening). Routing through a shell on Windows resolves both:
-// cmd.exe finds `npm.cmd`, and Node auto-quotes args (default
-// windowsVerbatimArguments=false) so temp paths with spaces stay intact.
+// npm is a bare name on POSIX but the `npm.cmd` shim on Windows, and the
+// globally-installed `wood-fired-tasks` bin is likewise a `.cmd` wrapper on
+// Windows. Node ≥20 refuses to spawn a `.cmd`/`.bat` directly without a shell
+// (EINVAL, the CVE-2024-27980 hardening), and a bare `npm` can't be resolved by
+// spawnSync (PATHEXT isn't applied to argv[0]). Routing through a shell on
+// Windows resolves both: cmd.exe finds the .cmd shim, and Node auto-quotes args
+// (default windowsVerbatimArguments=false) so temp paths with spaces survive.
 const NPM = 'npm';
 const IS_WIN = process.platform === 'win32';
+
+// On Windows, a shell is required for the bare npm wrapper and for any command
+// that IS a .cmd/.bat batch file (the installed bin). POSIX never needs it.
+function needsWindowsShell(cmd) {
+  if (!IS_WIN) return false;
+  return cmd === NPM || /\.(cmd|bat)$/i.test(cmd);
+}
 
 /**
  * Run a command synchronously, capturing output. Hard-guards against ever
@@ -86,10 +94,7 @@ function run(cmd, args, opts = {}) {
   if (ELEVATION_RE.test(cmd)) {
     fail(`refusing to run elevated command: ${cmd}`);
   }
-  // Only npm needs the Windows shell shim; other invocations (node, the
-  // installed bin) resolve fine directly. Enable shell when the command is the
-  // npm wrapper on Windows.
-  const useShell = IS_WIN && cmd === NPM;
+  const useShell = needsWindowsShell(cmd);
   const res = spawnSync(cmd, args, {
     encoding: 'utf8',
     shell: useShell,
@@ -328,6 +333,9 @@ async function main() {
     cwd: outsideCwd,
     env: serveEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
+    // Same Windows .cmd-spawn constraint as run(): the installed bin is a
+    // batch shim, which Node ≥20 won't spawn without a shell.
+    shell: needsWindowsShell(binPath),
   });
   let serverLog = '';
   serverProc.stdout?.on('data', (d) => (serverLog += d));
