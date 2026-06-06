@@ -1559,3 +1559,187 @@ task API was called and no tasks were created — §777.E is a planning list onl
 after the regen. Source code was not modified (the 4 `!` sites, the
 vendor-neutrality marker, and the async-safety gap are documented follow-ups
 F1–F3, not fixed here per the task's "document, don't fix" scope).
+
+## §785 — Async-safety gate decision (F1 closed)
+
+**Status:** F1 (§777.E item 1) is **closed**. This resolves the last sub-3
+scorecard area (§777.B area 4, "Async safety", was **2/5**).
+
+### Decision: (A) Biome-only — no typescript-eslint overlay
+
+The #762 gate (`noFloatingPromises` + `noMisusedPromises` at `error`,
+commit `8a81d83`) was **re-verified empirically** for coverage gaps per the F1
+mandate, rather than assumed complete or assumed deficient. The audit confirms
+Biome's native, type-aware rules cover the practical floating/misused-promise
+surface for this codebase. Adding ESLint would mean a second lint stack
+(parallel resolver, config, plugin set, and a `tsconfig`-driven type program) to
+catch **zero** additional findings on the current tree — not justified. We keep
+the repo's "one lint engine" posture.
+
+### Coverage-gap evidence
+
+A 12-case probe was run under this repo's exact `biome.json` (Biome 2.4.16) in a
+deleted scratch dir. Full table in
+[`docs/ASYNC_PROMISE_LINTING.md`](ASYNC_PROMISE_LINTING.md) §"Coverage audit".
+Summary:
+
+- **Caught:** bare floating calls, floating async IIFEs, `.then()` without a
+  rejection handler, discarded arrays of promises (`.map(() => p)`),
+  promise-as-`if`-condition, and `async` callbacks passed to void-expecting
+  array iterators (`forEach`).
+- **Missed (2 real gaps):** (1) a promise used as a `&&`/`||` operand (the
+  direct `if (promise)` form *is* caught); (2) an `async` callback to
+  `setTimeout`/`setInterval`.
+- **Out of scope for both engines:** assigned-then-ignored
+  (`const x = makeP();`) is a `noUnusedVariables` concern, not a floating-promise
+  one.
+
+### Why the gaps are accepted (materiality)
+
+The production tree (`src/**` + `packages/wft-router/src/**`) was grepped for
+each gap pattern: **none occur.** Every `setTimeout`/`setInterval` callback in
+production is synchronous, and no promise is used as a logical operand. The gaps
+are latent, not active. The defect classes that actually appear in this
+async-heavy codebase all sit in the **caught** column.
+
+### Convention + warning-free state
+
+The fire-and-forget convention (`void` + one-line rationale) is documented in
+[`docs/ASYNC_PROMISE_LINTING.md`](ASYNC_PROMISE_LINTING.md) §"Fire-and-forget
+convention". The four production `void` sites
+(`packages/wft-router/src/daemon.ts:692`,
+`.../dispatch/graceful-shutdown.ts:239`, `.../bin/wft-router.ts:189`, plus the
+`track()` finally) already carry adjacent rationale. The gate is wired into CI
+via the existing `lint` job (`npm run lint` → `biome check .`) and the
+`quality` / `quality:fast` aggregates — no new CI step. `npm run lint` exits 0
+on the current tree.
+
+## §788 — Lint-posture decision above `recommended:false` (F5 closed)
+
+**Status:** F5 (§777.E item 5, was roadmap P4) is **closed**. This is a
+**calibration + decision** task — it mirrors how #771 calibrated complexity
+before deciding a gate, and how §785 re-verified async coverage empirically
+rather than assuming. It is **not** a blanket rule flip.
+
+### Decision: STAY MINIMAL — no rules adopted above the current hand-picked set
+
+The repo keeps `linter.rules.recommended: false` with its four deliberately
+hand-picked rules (`noConsole`, `noTsIgnore`, `noFloatingPromises`,
+`noMisusedPromises`). No new rule is added; `biome.json` is unchanged. The
+decision is grounded in the calibration below, not in the charter's
+minimal-by-design preference alone.
+
+### Calibration method
+
+Biome 2.4.16's `recommended: true` ruleset was measured on the **production
+tree only** (`src/**` + `packages/wft-router/src/**`, tests/scripts/docs
+excluded) **without touching the committed `biome.json`**. A throwaway copy of
+the config was made with `linter.rules.recommended` flipped to `true` (and
+`vcs.useIgnoreFile` disabled so it ran outside the repo's git-ignore plumbing),
+then:
+
+```bash
+npx biome check --config-path <tmpdir> src packages/wft-router/src --reporter=json
+```
+
+Diagnostics were tallied by `category`, with test files
+(`**/__tests__/**`, `*.test.ts`, `*.spec.ts`, `*.bench.ts`) filtered out of the
+JSON so the counts reflect the production surface only. The throwaway config was
+deleted afterward. The committed `biome.json` was never modified for the
+measurement.
+
+### Calibration data — counts by rule (production tree, `recommended:true`)
+
+**Total NEW findings (rules not already gated): 493** across 18 rules.
+
+| Count | Rule | Class |
+|------:|------|-------|
+| 277 | `lint/complexity/useLiteralKeys` | style |
+| 55 | `lint/style/useImportType` | style |
+| 40 | `lint/suspicious/noGlobalIsNan` | suspicious (low-value here) |
+| 32 | `lint/style/noNonNullAssertion` | style |
+| 29 | `lint/style/useTemplate` | style |
+| 23 | `lint/style/useNodejsImportProtocol` | style |
+| 6 | `lint/correctness/noUnusedPrivateClassMembers` | dead-code |
+| 6 | `lint/suspicious/noPrototypeBuiltins` | suspicious |
+| 5 | `lint/correctness/noUnusedImports` | dead-code |
+| 5 | `lint/suspicious/noExplicitAny` | suspicious |
+| 4 | `lint/complexity/useOptionalChain` | style |
+| 3 | `lint/suspicious/noImplicitAnyLet` | suspicious |
+| 2 | `lint/correctness/noUnusedVariables` | dead-code |
+| 2 | `lint/suspicious/useIterableCallbackReturn` | suspicious |
+| 1 | `lint/complexity/noUselessUndefinedInitialization` | style |
+| 1 | `lint/style/useExponentiationOperator` | style |
+| 1 | `lint/suspicious/noControlCharactersInRegex` | suspicious |
+| 1 | `lint/correctness/noUnsafeFinally` | correctness |
+
+> `lint/suspicious/noConsole` showed 117 hits in the raw JSON, but it is an
+> **already-gated** rule; the JSON reporter does not apply `biome.json`'s
+> path-based `noConsole` allowlist overrides (CLI/MCP allow `log`/`info`), so
+> that count is an artifact of the measurement harness, not a new finding. It is
+> excluded from the 493.
+
+**Sample violations (top rules, file:line):**
+
+- `useLiteralKeys` → `packages/wft-router/src/bin/wft-router.ts:239`,
+  `.../daemon.ts:707`
+- `useImportType` → `src/api/routes/comments/index.ts:1`,
+  `src/api/routes/events.ts:1`
+- `noNonNullAssertion` → `packages/wft-router/src/dispatch/template.ts:294`,
+  `src/cli/commands/completed.ts:85`
+- `noGlobalIsNan` → `src/cli/commands/claim.ts:15`,
+  `src/slack/commands/tasks-command.ts:293`
+
+### Why not even a curated low-churn subset
+
+The task permits adopting a *small* set of high-value, low-churn recommended
+rules at `error`. Each plausible candidate was inspected at its actual call
+sites and rejected:
+
+- **Stylistic bulk (≈462 of 493):** `useLiteralKeys` (277), `useImportType`
+  (55), `noNonNullAssertion` (32), `useTemplate` (29), `useNodejsImportProtocol`
+  (23), etc. — pure style churn, **zero defect-catch value**. The charter prizes
+  Contributor velocity (5) and minimal-by-design; flipping these trades a large
+  one-time + ongoing churn cost for cosmetic uniformity already covered by the
+  formatter and `tsc`.
+- **`useIterableCallbackReturn` (2):** both sites are legitimate `forEach`
+  callbacks (`value.forEach(...)` in `src/mcp/remote/rest-client.ts:281`,
+  `neighbors.forEach(...)` in `src/utils/cycle-detector.ts:55`) that correctly
+  return `void`. These are **false positives** for this rule's intent —
+  adoption would force a refactor or suppression for non-bugs.
+- **`noControlCharactersInRegex` (1):** the single hit
+  (`src/cli/output/formatters.ts:88`) is the **intentional** `\u001b`-based
+  ANSI-strip regex (already annotated with an `eslint-disable no-control-regex`
+  comment). Adoption would force a `biome-ignore` for correct code.
+- **`noUnsafeFinally` (1):** the hit (`src/events/event-bus.ts:118`) is an
+  **intentional invariant guard** (`throw` inside `finally` for a
+  "parent buffer missing" impossible-state), not a swallowed-control-flow bug.
+  Adoption would force a suppression.
+- **Genuinely-zero rules** (`noSelfAssign`, `noVoidTypeReturn`,
+  `noAssignInExpressions`, `noGlobalIsFinite`): flag **nothing** on the current
+  tree, so they are zero-churn — but also **zero current defect-catch value**;
+  they are pure regression insurance against a defect class that does not appear
+  in this codebase and is largely caught by `tsc strict` anyway.
+- **Dead-code rules** (`noUnusedImports` 5, `noUnusedVariables` 2,
+  `noUnusedPrivateClassMembers` 6): the **only** group with real latent value
+  (`tsconfig` sets `strict` + `noUncheckedIndexedAccess` but **not**
+  `noUnusedLocals`/`noUnusedParameters`, so dead code is currently ungated).
+  However at ≈13 production findings plus additional test-tree churn, and given
+  these are hygiene rather than defect prevention, the churn-to-value ratio does
+  not clear the bar for this calibration pass. Recorded here as the single most
+  defensible **future** candidate if a dead-code gate is ever wanted — it would
+  be adopted in isolation, not via `recommended:true`.
+
+**Net:** the recommended preset's value on this tree is ~95% cosmetic, and the
+handful of correctness/suspicious rules that *sound* high-value are dominated by
+false-positives and intentional code on this specific codebase, requiring
+suppressions rather than catching live defects. Staying minimal is the
+charter-aligned, evidence-backed call. The existing four gates are unchanged and
+remain at `error`.
+
+### Warning-free state
+
+No `biome.json` change was made, so the tree stays exactly as gated. Verified on
+the current tree: `npm run build` exits 0, `npm run lint` (`biome check .`)
+exits 0 warning-free, `npm run format:check` exits 0. The throwaway recommended
+config was deleted and never committed.

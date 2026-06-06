@@ -42,7 +42,8 @@ export function formatProjectList(projects: Project[]): KnownBlock[] {
   const blocks: KnownBlock[] = [header];
 
   for (let i = 0; i < projects.length; i++) {
-    const project = projects[i]!;
+    const project = projects[i];
+    if (project === undefined) continue;
     const descPreview = project.description
       ? truncate(project.description, 100)
       : '_no description_';
