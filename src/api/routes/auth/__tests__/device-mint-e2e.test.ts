@@ -41,7 +41,6 @@ import {
 import { initDatabase } from '../../../../db/database.js';
 import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
-import { parseApiKeyEntries } from '../../../../config/env.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
 import { hashToken } from '../../../../services/pat-hash.js';
@@ -58,16 +57,17 @@ interface Harness {
 }
 
 async function buildHarness(): Promise<Harness> {
-  process.env.API_KEYS = 'e2e-test-key:e2e-user';
-
   const db = initDatabase(':memory:');
   await runMigrations(db);
-  const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
-  seedIdentities(db, apiKeyEntries, { info: () => {}, warn: () => {} });
+  // v2.0: #801 removed legacy is_legacy seeding from API_KEYS, so seed a plain
+  // user directly to act as the device-flow approver. The device-flow logic is
+  // independent of the auth strategy — it only needs a valid users.id.
+  seedIdentities(db, [], { info: () => {}, warn: () => {} });
   const userRepo = new UserRepository(db);
   const apiTokenRepo = new ApiTokenRepository(db);
-  const legacyUser = userRepo.findLegacyByDisplayName('e2e-user');
-  if (!legacyUser) throw new Error('test setup: legacy user not seeded');
+  const approver = db
+    .prepare(`INSERT INTO users (display_name) VALUES (?) RETURNING id`)
+    .get('e2e-user') as { id: number };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app: any = Fastify({ logger: false });
@@ -112,7 +112,7 @@ async function buildHarness(): Promise<Harness> {
   await app.register(deviceHtmlRoute, { origin: ORIGIN });
   await app.ready();
 
-  return { app, db, apiTokenRepo, legacyUserId: legacyUser.id };
+  return { app, db, apiTokenRepo, legacyUserId: approver.id };
 }
 
 async function signIn(app: FastifyInstance, userId: number): Promise<string> {
@@ -274,7 +274,8 @@ describe('device-flow end-to-end (server side)', () => {
     expect(successBody.token_id).toBe(dbRow?.id);
     expect(successBody.user.id).toBe(h.legacyUserId);
     expect(successBody.user.displayName).toBe('e2e-user');
-    expect(successBody.user.isLegacy).toBe(true);
+    // v2.0 (#801): the approver is a plain seeded user, no longer is_legacy.
+    expect(successBody.user.isLegacy).toBe(false);
 
     // Token's hash matches the row's stored hash → DB lookup would succeed.
     expect(hashToken(successBody.token)).toBe(dbRow?.hash);

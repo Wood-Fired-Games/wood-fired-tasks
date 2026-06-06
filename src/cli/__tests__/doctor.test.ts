@@ -104,14 +104,13 @@ describe('doctor command', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('reports Config FAIL when API_KEYS missing', async () => {
+  it('config still PASSES when API_KEYS is absent (removed in v2.0 #800)', async () => {
     delete process.env.API_KEYS;
     const program = await buildProgram();
     await program.parseAsync(['node', 'tasks', 'doctor']);
     const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(logged).toMatch(/Config:\s+\[FAIL\]/);
-    expect(logged).toContain('API_KEYS');
-    expect(process.exitCode).toBe(1);
+    expect(logged).toMatch(/Config:\s+\[PASS\]/);
+    expect(logged).not.toContain('API_KEYS');
   });
 
   it('outputs JSON envelope when --json is set', async () => {
@@ -127,14 +126,13 @@ describe('doctor command', () => {
     expect(env.data.config.errors).toEqual([]);
   });
 
-  it('JSON output includes config error array when invalid', async () => {
+  it('JSON config status is PASS with an empty error array when API_KEYS is absent', async () => {
     delete process.env.API_KEYS;
     const program = await buildProgram();
     await program.parseAsync(['node', 'tasks', '--json', 'doctor']);
     const written = stdoutSpy.mock.calls[0][0] as string;
     const env = JSON.parse(written);
-    expect(env.data.config.status).toBe('FAIL');
-    expect(Array.isArray(env.data.config.errors)).toBe(true);
-    expect(env.data.config.errors.length).toBeGreaterThan(0);
+    expect(env.data.config.status).toBe('PASS');
+    expect(env.data.config.errors).toEqual([]);
   });
 });

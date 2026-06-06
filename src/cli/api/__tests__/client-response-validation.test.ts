@@ -16,11 +16,12 @@ vi.mock('../../output/spinner.js', () => ({
 }));
 
 // Stub env + auth so apiRequest authenticates without real credentials.
+// v2.0: the client is Bearer-PAT-only (#802 removed the 'legacy'/X-API-Key kind).
 vi.mock('../../config/env.js', () => ({
-  env: { API_BASE_URL: 'http://localhost:3000', API_KEY: 'test-key' },
+  env: { API_BASE_URL: 'http://localhost:3000' },
 }));
 vi.mock('../../auth/credentials.js', () => ({
-  resolveAuth: vi.fn(async () => ({ kind: 'legacy' as const, key: 'test-key' })),
+  resolveAuth: vi.fn(async () => ({ kind: 'bearer' as const, token: 'test-token' })),
 }));
 
 import { ApiResponseValidationError } from '../../../api/api-response.js';
