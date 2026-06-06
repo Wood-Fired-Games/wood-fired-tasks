@@ -27,7 +27,11 @@ export function jsonOutput<T>(data: T, metadata?: Record<string, unknown>): void
   const envelope: JsonEnvelope<T> = {
     success: true,
     data,
-    metadata,
+    // exactOptionalPropertyTypes audit (#778): omit the key entirely when
+    // undefined rather than assigning `undefined` into the exact-optional
+    // `metadata?` slot. Behaviour is identical because JSON.stringify already
+    // drops undefined-valued keys; this is a type-only safe-prep edit.
+    ...(metadata !== undefined && { metadata }),
   };
 
   // Write JSON to stdout (for machine consumption)

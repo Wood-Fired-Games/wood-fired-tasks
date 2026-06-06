@@ -884,3 +884,130 @@ No secret, token, password, API key, or absolute local path was introduced.
 Changes were limited to `src/repositories/user.repository.ts` (route two reads
 through `mapRow<User>`) and this appended section. `tsc --noEmit`, Biome lint,
 and `vitest run src/repositories` (154 tests) all pass.
+
+## exactOptionalPropertyTypes audit (#778)
+
+> AUDIT/INVENTORY ONLY. The flag is **NOT** enabled — it was added to
+> `tsconfig.json` temporarily to enumerate errors, then reverted. Enabling it
+> is the downstream task **#780**; services/repos remediation is **#779**.
+> `grep -n exactOptional tsconfig.json` returns nothing at this commit.
+
+### A. How this was measured
+
+Temporarily set `compilerOptions.exactOptionalPropertyTypes: true`, ran
+`npx tsc --noEmit`, captured the error list, then reverted the one-line change.
+
+```
+# error-code histogram (43 errors total)
+  32  TS2379   exact-optional argument mismatch (object literal → param)
+   3  TS2412   `T | undefined` assigned into an exact-optional property slot
+   3  TS2375   object-literal assignment with explicit-undefined prop
+   3  TS2345   argument-not-assignable (Fastify server-type variance, NOT eopt)
+   1  TS2769   no overload matches (Fastify http2 listen overload, NOT eopt)
+   1  TS2322   type-not-assignable (Fastify instance variance, NOT eopt)
+```
+
+**Net eopt-attributable errors: 38** (TS2379 + TS2412 + TS2375). The 5
+`src/api/server.ts` errors coded TS2345/TS2769/TS2322 are **pre-existing
+Fastify Http2-vs-default `FastifyInstance` generic-variance noise** that the
+flag surfaces incidentally — they are NOT exact-optional issues and must be
+triaged separately by #780 (do not let them mask the real eopt count).
+
+### B. Error CATEGORIES (root causes)
+
+1. **Pagination passthrough `{ limit, offset }` — the single biggest cluster
+   (9 of 38, ~24%).** Call sites build `{ limit: number | undefined, offset:
+   number | undefined }` and pass it to a `{ limit?: number; offset?: number }`
+   target (`PaginationOptions` / `PaginationParams`). The values come from
+   parsed query/args where "absent" is modelled as `undefined`. Fix shape:
+   conditional spread (`...(limit !== undefined && { limit })`) or a small
+   `omitUndefined()` helper at the param-assembly boundary. Zero runtime change.
+   - `src/repositories/task.repository.ts:531`
+   - `src/mcp/tools/task-tools.ts:599`, `:725`
+   - `src/mcp/tools/project-tools.ts:92`
+   - `src/mcp/tools/comment-tools.ts:85`
+   - `src/mcp/remote/register-tools.ts:391`, `:456`, `:617`, `:896`
+
+2. **Create/Update DTO assembly (services → repos).** Object literals built
+   from request input carry `prop?: T | undefined` and are passed into the
+   exact-optional DTO params. These DTOs (`src/types/task.ts:270-379`) encode a
+   **deliberate three-state convention**: key **absent** = "leave column
+   untouched", explicit **`null`** = "clear column", **value** = "set". eopt
+   makes that convention load-bearing at the type level: passing an explicit
+   `undefined` is no longer the same as omitting the key, so the call sites must
+   omit-when-undefined rather than widen the DTOs. **Do NOT widen the DTO props
+   to `| undefined`** — that would re-flatten the absent-vs-undefined distinction
+   the convention depends on. This is the #779 hotspot.
+   - `CreateTaskDTO` builds: `src/services/task.service.ts:269`, `:280`
+   - `UpdateTaskDTO` patches: `src/services/task.service.ts:526`, `:537`
+   - `CreateProjectDTO` / `Partial<CreateProjectDTO>`:
+     `src/services/project.service.ts:81`, `:192`
+   - `CreateCommentDTO`: `src/services/comment.service.ts:43`
+   - `VerificationEvidence`: `src/services/task.service.ts:445`
+   - `TaskFilters` (filter-object assembly):
+     `src/services/task.service.ts:340`, `:361`, `:365`, `:605`
+   - `CompletionReportInput` / `CompletionRangeFilters`:
+     `src/services/task.service.ts:690`, `:691`
+
+3. **MCP remote tool input mapping.** The remote surface re-maps DTOs into its
+   own `*Input` param types and hits the same explicit-undefined problem.
+   - `CreateProjectInput`: `src/mcp/remote/register-tools.ts:551`
+   - `UpdateProjectInput`: `src/mcp/remote/register-tools.ts:681`
+
+4. **Class-property init with `T | undefined` (TS2412).** A constructor assigns
+   a possibly-undefined value into a non-optional/exact-optional field.
+   - `src/services/project.service.ts:52` (`IProjectCharterHistoryRepository`)
+   - `src/services/project.service.ts:53` (`Database`)
+   - `src/cli/api/client.ts:89` (`string`)
+
+5. **Object-literal `metadata`/options with explicit-undefined prop (TS2375).**
+   - `src/cli/output/json-output.ts:27` — **FIXED in this audit** (safe
+     type-only conditional-spread; JSON.stringify already drops undefined keys).
+   - `src/cli/commands/setup.ts:423` (`RunSetupResult`)
+   - `src/services/task.service.ts:554` (`EventMetadata` — status `to` field)
+
+6. **CLI/REST surface option objects (subset of TS2379).** Same omit-when-
+   undefined fix; lowest-risk, leaf utilities.
+   - `src/cli/prompts/interactive.ts:41` (`TextOptions`)
+   - `src/cli/commands/serve.ts:101` (`ServeOptions`)
+   - `src/cli/commands/mcp.ts:76` (`McpSelectionEnv`)
+   - `src/cli/commands/setup.ts:420`, `:463` (`FixNpmPrefixOptions`,
+     `RunSetupOptions`)
+   - `src/api/routes/web/login.ts:32` (`RenderLoginOptions`)
+   - `src/api/server.ts:400` (env-subset object → `{ OIDC_REDIRECT_URI?; PORT }`)
+
+### C. Zod schema note
+
+Zod `.optional()` produces `T | undefined` (NOT an omitted key), so any place a
+parsed schema result is spread/forwarded into an exact-optional DTO inherits
+this mismatch. The schema files (`src/schemas/*.schema.ts`) themselves produce
+**no** eopt errors — the friction is entirely at the **consumption** boundary
+where a `z.infer` result feeds a DTO/param. Remediation belongs at those call
+sites (categories B/C above), not in the schemas. If a uniform fix is wanted,
+`z.preprocess`/`.transform` to strip undefined keys, or a shared
+`stripUndefined()` at the schema→service boundary, is the lever.
+
+### D. Recommended remediation order (for #779 / #780)
+
+1. **#779 (services/repos):** introduce a tiny `omitUndefined`/conditional-spread
+   helper and apply it at the DTO-assembly and pagination-passthrough sites
+   (categories 1, 2, 3, 4). Keep DTO interfaces as-is — the absent/null/value
+   three-state convention is intentional and must be preserved.
+2. **#780 (surfaces + enable):** fix the CLI/REST leaf option objects (category
+   6), the two remaining TS2375 literals (category 5), then **separately**
+   resolve the 5 Fastify Http2-variance errors in `src/api/server.ts` (these
+   are NOT eopt), and only then flip `exactOptionalPropertyTypes: true`.
+
+### E. Safe preparatory edit made by THIS task
+
+- `src/cli/output/json-output.ts:27` — replaced `metadata,` with
+  `...(metadata !== undefined && { metadata })`. Pure type-only / zero runtime
+  change (JSON.stringify already omits undefined-valued keys). This is the only
+  source edit; no behaviour-sensitive call site was touched.
+
+### F2. Self-attestation (#778)
+
+No secret, token, password, API key, or absolute local path was introduced. The
+flag is reverted (`grep exactOptional tsconfig.json` → empty). The only source
+change is the one safe `json-output.ts` edit above plus this audit section.
+`npm run build` passes (exit 0) with the flag OFF.
