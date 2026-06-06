@@ -48,8 +48,10 @@ So device-flow login and the MCP bridge are disconnected.
   lives in `~/.claude.json`.
 - Retire the deprecated X-API-Key legacy auth path, which simplifies the token
   model this design depends on.
-- Surface an "update available" hint in the Claude Code status line with an
-  in-session update path — on by default, wiring opt-in, easily disabled.
+- Ship one `tasks statusline` command (absorbing project 29) that shows the
+  linked project's open/done-closed counts **and** an "update available" hint
+  with an in-session update path — shared cache, one opt-in wiring, update
+  check on by default and easily disabled.
 
 ## Non-goals
 
@@ -301,69 +303,92 @@ blocking problem is found, so it can gate CI / pre-upgrade checks.
 
 ---
 
-## Phase 4 — Update-available notification (status line)
+## Phase 4 — Status line: linked-project counts + update-available hint
 
-Surface "a newer `wood-fired-tasks` is published" ambiently in the Claude Code
-status line, with an in-session path to update, modeled on GSD's pattern
-(`~/.cache/gsd/gsd-update-check.json` → statusline segment → `/gsd:update`).
-The update check is **on by default** (cheap, cached, fail-silent); the
-status-line wiring is **opt-in**; the whole thing is **easily disabled**.
+This phase **absorbs project 29 ("Claude Code Tasks Status Line", tasks
+591–601)** and the update-available hint into **one** `tasks statusline`
+command. The Claude Code status line is a single command, so wood-fired-tasks
+ships one cohesive line — never two competing status-line commands or caches.
 
-### Check engine (reuse `update-notifier`)
-`update-notifier` is already a dependency (`self-update.ts` `defaultNotify`). It
-performs an async, TTL-gated (daily) version check and persists its own state;
-`updateNotifier({ pkg }).update` is populated (`{ current, latest, type }`) when
-a newer version exists. Reuse it — no new network/version-compare code.
+### One command, two independent segments
+`tasks statusline` reads Claude Code's stdin JSON and prints a single composed
+line, modeled on GSD's cache→segment→slash-command pattern:
 
-A small `src/cli/util/update-check.ts` runs the check at a natural,
-non-blocking moment (MCP server boot and/or CLI invocation) and writes
-`~/.cache/wood-fired-tasks/update-check.json`:
-`{ update_available, current, latest, checked_at }`. The check is best-effort:
-offline / errors leave the prior cache untouched and never block. It is skipped
-entirely when disabled (below).
+```
+[ projectName  3 open / 12 done ]   ⬆ /tasks:update
+        └── linked-project counts ──┘   └── update hint ──┘
+```
 
-### Segment command: `tasks statusline-segment`
-Pure file-read of the cache — **no network**, runs on every status-line render:
-- update available **and** not disabled → print a colored segment, e.g.
-  `⬆ /tasks:update` (ANSI yellow), nothing else.
-- otherwise → print nothing, exit 0.
-- missing / stale / malformed cache → print nothing (fail-silent).
+Each segment degrades **independently** and the command always exits 0:
+- unlinked project → no counts segment;
+- up-to-date or disabled → no update segment;
+- offline / malformed cache → that segment is omitted, never an error.
 
-### Wiring into the status line (opt-in, non-clobbering)
-The Claude Code status line is a **single command**, so wood-fired-tasks must
-not overwrite an existing one (e.g. the user's `statusline-minimal.js` or
-GSD's):
-- `setup` (interactive) **offers** to enable the hint.
-- If `settings.json` has **no** `statusLine`, setup may write one that runs
-  `tasks statusline-segment`.
-- If a `statusLine` **already exists**, setup does **not** rewrite it; it prints
-  the one-line snippet to add (`tasks statusline-segment`) to the user's own
-  script and documents it. (Auto-injecting into an arbitrary script is unsafe.)
+### Shared cache infrastructure (project 29 §591–592, reused by both)
+- **Cache-path util (task 591):** `getCacheDir()` / `getCountCachePath(key)` and
+  a sibling `getUpdateCheckPath()`, precedence `$WFT_CACHE_PATH` >
+  `$XDG_CACHE_HOME/wood-fired-tasks` > `~/.cache/wood-fired-tasks`. Vendor-neutral.
+- **TTL cache module (task 592):** atomic `.tmp`+`renameSync` writes, fresh/
+  stale/missing reads, corrupt-file → missing (never throws). Backs **both** the
+  count cache and the update-check cache.
 
-### Action path: `/tasks:update`
-Ship a `/tasks:update` slash command (into `~/.claude/commands/tasks/` via the
-existing `copySkills`) that runs `tasks self-update` — the in-session update
-path the segment points at.
+### Linked-project counts segment (project 29 §593–596)
+- **Resolver (593):** cwd→project — `.planning/config.json`
+  `integrations.bugs_mirror.project_id` → `.wft/project` marker → API repo-name
+  fallback → `unlinked`.
+- **Count fetcher (594):** two `listTasksPaginated({project_id, status, limit:1})`
+  calls (open; done/closed), reading `total`; typed failure, never throws.
+- **`tasks link-project` (595):** writes the `.wft/project` marker (atomic,
+  idempotent, `--json`).
+- **Formatter (596):** the composed-segment renderer (counts **+** update hint),
+  honoring `NO_COLOR`/`--no-color` and `COLUMNS`.
 
-### Disable (easy, layered)
-All of these make both the check and the segment no-ops:
+### Update-available hint segment (new — the Phase 4 addition)
+- **Check engine (new `src/cli/util/update-check.ts`):** reuse `update-notifier`
+  (already a dep via `self-update.ts`); its `updateNotifier({pkg}).update` gives
+  `{current, latest, type}` from an async, daily-TTL'd, persisted check. The
+  writer runs at a non-blocking moment (MCP boot / CLI invocation) and writes
+  the update-check cache via the §592 module. Best-effort: offline/errors leave
+  the prior cache untouched; skipped entirely when disabled.
+- **Render:** the formatter appends `⬆ /tasks:update` (ANSI yellow) when an
+  update is available **and** the feature is not disabled; pure cache read, no
+  per-render network.
+- **Action path (new):** a `/tasks:update` slash command (shipped into
+  `~/.claude/commands/tasks/` via the existing `copySkills`) runs
+  `tasks self-update`.
+
+### Wiring + registration (project 29 §598, §600; new setup offer)
+- **Register (598):** add `statuslineCommand` + `linkProjectCommand` in
+  `bin/tasks.ts` (preserve the `isMain` auto-parse guard).
+- **`setup` opt-in wiring (new):** `setup` offers to wire `tasks statusline`
+  into `settings.json` `statusLine`. Non-clobbering: if a `statusLine` already
+  exists (e.g. the user's `statusline-minimal.js`, GSD's), setup prints the
+  one-line snippet to embed instead of overwriting; if none exists, it may write
+  one on consent. One wiring covers **both** segments.
+- **Docs (600) + agent-context (601):** document `tasks statusline`,
+  `tasks link-project`, the settings.json snippet + fallback script,
+  `/tasks:update`, and the disable controls; update the agent-context manifest.
+
+### Disable (easy, layered — applies to the update segment + its check)
 - config flag in the config dir (`update_check = false`),
 - env var `WFT_NO_UPDATE_CHECK=1` (CI / ad-hoc),
-- `setup` opt-out (and re-running setup can toggle it).
+- `setup` opt-out (re-running setup toggles it).
+
+The counts segment has no "disable" beyond simply not linking a project (or not
+wiring the status line at all).
 
 ### Phase 4 acceptance
-- With an update available and the feature enabled, `tasks statusline-segment`
-  prints the hint; `/tasks:update` runs `self-update`.
-- With `update_check=false` **or** `WFT_NO_UPDATE_CHECK=1`, the segment prints
-  nothing and no network check runs.
-- A missing/stale/malformed cache yields empty segment output, exit 0 (never an
-  error in the status line).
-- `setup` offers wiring; with an existing `statusLine` it prints the snippet
-  instead of clobbering; with none it can write one (on consent).
-- Tests: segment render (enabled+available / disabled-by-flag / disabled-by-env
-  / cache-absent / cache-malformed); check writer (writes on available via a
-  mocked notifier; skips when disabled); setup wiring (no existing statusLine →
-  write; existing → snippet, no clobber).
+- `tasks statusline` prints the linked-project counts segment when a project
+  resolves and the update hint when an update is available; each is omitted
+  independently; the command never errors and always exits 0.
+- No REST call on render when the count cache is fresh; no network for the
+  update segment on render (cache read only).
+- `tasks link-project` writes/updates the `.wft/project` marker idempotently.
+- `update_check=false` **or** `WFT_NO_UPDATE_CHECK=1` → no update segment and no
+  background update check.
+- `setup` offers wiring; with an existing `statusLine` it prints the snippet and
+  does not clobber; with none it may write one on consent.
+- `npm run agent-context:check` passes after the manifest/docs update.
 
 ---
 
@@ -426,10 +451,15 @@ lockout:
 | `setup --remote` health probe | **new (Phase 2)** | `GET /health/detailed` → branch on `oidc` state |
 | `src/cli/commands/doctor.ts` | **new (Phase 3)** | OIDC readiness + legacy-credential detector (read-only) |
 | `src/cli/commands/serve.ts` | **edit (Phase 3)** | Log resolved OIDC state on boot |
-| `src/cli/util/update-check.ts` | **new (Phase 4)** | Cached `update-notifier` check → cache JSON (fail-silent) |
-| `src/cli/commands/statusline-segment.ts` | **new (Phase 4)** | Render the status-line hint from cache (no network) |
+| cache-path util + TTL cache (proj 29 §591/§592) | **new (Phase 4)** | Shared cache infra for count cache **and** update-check cache |
+| resolver + count fetcher + `link-project` (proj 29 §593–595) | **new (Phase 4)** | cwd→project, open/done-closed counts, `.wft/project` marker |
+| `formatStatuslineSegment` (proj 29 §596) | **new (Phase 4)** | Composed segment: counts + update hint; color/COLUMNS-aware |
+| `src/cli/commands/statusline.ts` (proj 29 §597) | **new (Phase 4)** | One `tasks statusline`: stdin→resolve→counts+update hint; exit 0 |
+| `src/cli/util/update-check.ts` | **new (Phase 4)** | Cached `update-notifier` check → update-check cache (fail-silent) |
 | `skills/tasks/update.md` (`/tasks:update`) | **new (Phase 4)** | In-session update slash command → `self-update` |
-| `setup.ts` (update-hint wiring) | **edit (Phase 4)** | Opt-in offer to wire the segment; opt-out; non-clobbering |
+| `bin/tasks.ts` register (proj 29 §598) | **edit (Phase 4)** | Register `statusline` + `link-project` (isMain guard intact) |
+| `setup.ts` (statusline wiring) | **edit (Phase 4)** | Opt-in offer to wire `tasks statusline`; opt-out; non-clobbering |
+| `docs/CLI.md` + agent-context (proj 29 §600/§601) | **edit (Phase 4)** | statusline/link-project docs, snippet, `/tasks:update`, disable; manifest |
 | `src/cli/commands/service.ts` | **reuse** | User-scoped service install for Service mode |
 | `docs/SETUP.md`, `CHANGELOG.md` | **edit** | OIDC server recipe + v2.0 migration note + no-OIDC bootstrap + update-hint docs |
 
@@ -451,11 +481,16 @@ lockout:
   legacy-credential detector via env + `claude.json` fixtures (non-PAT
   `WFT_API_KEY`, `API_KEYS` present) asserts remediation text + non-zero exit;
   `serve` boot-log states OIDC state.
-- **Phase 4:** `statusline-segment` render matrix (enabled+available /
-  disabled-by-flag / disabled-by-env / cache-absent / cache-malformed); cached
-  update-check writer via a mocked `update-notifier` (writes on available; skips
-  when disabled); setup wiring (no `statusLine` → write; existing → snippet, no
-  clobber).
+- **Phase 4:** cache-path precedence (§591) + TTL fresh/stale/missing/corrupt
+  (§592); resolver per source + unlinked (§593); count fetcher status filters +
+  summed totals (§594); `link-project` marker write (§595); formatter composed
+  render — counts and update hint, colored/no-color/COLUMNS, each segment
+  independently omitted (§596); `tasks statusline` subprocess test (§599:
+  linked segment, blank-when-unlinked, fresh-cache no-API, server-down graceful,
+  all exit 0); update-check writer via mocked `update-notifier` (writes on
+  available; skips when disabled-by-flag/env); update segment shown/omitted on
+  flag+env; setup wiring (no `statusLine` → write on consent; existing →
+  snippet, no clobber); `agent-context:check` green.
 - All phases: `npm run build` + `npm run lint` + full `vitest` suite green.
 
 ## Open risks
