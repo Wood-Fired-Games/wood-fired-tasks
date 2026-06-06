@@ -2,28 +2,28 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type { App } from '../../index.js';
+import { authHeaders } from './helpers/auth.js';
 
 describe('Comment API Routes', () => {
   let server: FastifyInstance;
   let app: App;
-  const apiKey = 'test-api-key-12345';
+  let auth: { Authorization: string };
 
   beforeEach(async () => {
-    // Set API key
-    process.env.API_KEYS = apiKey;
-
     // Create server with in-memory database
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
 
     await server.ready();
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(app.db);
   });
 
   afterEach(async () => {
     await server.close();
     app.db.close();
-    delete process.env.API_KEYS;
   });
 
   it('should create a comment and return 201', async () => {
@@ -38,7 +38,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'POST',
       url: `/api/v1/tasks/${task.id}/comments`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
       payload: {
         author: 'John Doe',
         content: 'This is a test comment',
@@ -83,7 +83,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'GET',
       url: `/api/v1/tasks/${task.id}/comments`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(200);
@@ -117,7 +117,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'GET',
       url: `/api/v1/tasks/${task.id}/comments?limit=2&offset=2`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(200);
@@ -139,7 +139,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'GET',
       url: `/api/v1/tasks/${task.id}/comments?limit=501`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
     expect(response.statusCode).toBe(400);
   });
@@ -162,7 +162,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'DELETE',
       url: `/api/v1/tasks/${task.id}/comments/${comment.id}`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(204);
@@ -176,7 +176,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'POST',
       url: `/api/v1/tasks/99999/comments`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
       payload: {
         author: 'Test User',
         content: 'Comment on missing task',
@@ -198,7 +198,7 @@ describe('Comment API Routes', () => {
     const response = await server.inject({
       method: 'POST',
       url: `/api/v1/tasks/${task.id}/comments`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
       payload: {
         author: 'Test User',
         content: '',
@@ -247,7 +247,7 @@ describe('Comment API Routes', () => {
     const wrongTaskResponse = await server.inject({
       method: 'DELETE',
       url: `/api/v1/tasks/${taskB.id}/comments/${comment.id}`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
     expect(wrongTaskResponse.statusCode).toBe(404);
 
@@ -255,7 +255,7 @@ describe('Comment API Routes', () => {
     const missingTaskResponse = await server.inject({
       method: 'DELETE',
       url: `/api/v1/tasks/99999/comments/${comment.id}`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
     expect(missingTaskResponse.statusCode).toBe(404);
 
@@ -266,7 +266,7 @@ describe('Comment API Routes', () => {
     const correctResponse = await server.inject({
       method: 'DELETE',
       url: `/api/v1/tasks/${taskA.id}/comments/${comment.id}`,
-      headers: { 'X-API-Key': apiKey },
+      headers: auth,
     });
     expect(correctResponse.statusCode).toBe(204);
     expect(app.commentService.getComments(taskA.id)).toHaveLength(0);
