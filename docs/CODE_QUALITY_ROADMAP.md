@@ -644,6 +644,97 @@ Progress notes (task #270):
     blocking CI rule) is documented in
     [`BENCHMARK_POLICY.md`](BENCHMARK_POLICY.md).
 
+Progress notes (task #772) — mutation-result review:
+
+- **Report source + date.** Survivors were extracted from the local Stryker
+  HTML report at `reports/mutation/mutation.html` (dated **2026-02-17**;
+  `reports/` is gitignored, so the artifact is read-only and not committed).
+  The embedded data lives in the `app.report = {…}` object inside the page;
+  note it is a JS expression, not strict JSON (it splits the literal
+  `"k.length <"+"= 0"` to avoid emitting `</` in HTML), so it must be
+  `vm`-evaluated rather than `JSON.parse`d. Run summary: 3970 mutants —
+  1416 Killed, 526 Survived, 886 NoCoverage, 239 Timeout, 903 CompileError;
+  overall score 46.2%, covered-only score 64.9%.
+- **Staleness.** The report predates the `#732` driver-seam refactor and the
+  `#761` Biome reformat sweep, so its line numbers are shifted relative to
+  `HEAD`. The *behaviour* of the triaged code (the WorkflowEngine cascade-depth
+  guard) is unchanged, so the survivor inventory is still valid; only treat the
+  cited line numbers as approximate. Request a fresh run before relying on the
+  numeric score again (see "When to request a mutation run" below).
+- **Risk triage (Survived only — NoCoverage is a separate, lower-priority
+  class).** Highest survivor counts cluster in CLI formatters / command files
+  and `mcp/tools/task-tools.ts`; those are overwhelmingly `StringLiteral` /
+  `ObjectLiteral` cosmetic mutants (low defect risk). The high-*risk* survivors
+  are the logic mutants in the service/repository layer:
+  - `src/services/workflow-engine.ts` (27 survivors) — the cascade-depth
+    recursion guard. **Actioned (see below).**
+  - `src/repositories/task.repository.ts` (26) — mostly dynamic-SQL
+    `whereClauses`/`fields` length guards and `StringLiteral` glue; the
+    `ConditionalExpression`/`EqualityOperator` survivors there are
+    partial-update field-presence checks already exercised functionally.
+    Documented-rationale: lower blast radius than the recursion guard; revisit
+    if a fresh run still flags them.
+  - Service/route `StringLiteral` survivors (`task.service.ts`,
+    `project.service.ts`, `comment.service.ts`, `api/routes/events.ts`, …) are
+    log/error-message and event-name literals — killing them asserts on exact
+    strings, which is brittle and low-value. **Documented-rationale: not
+    worth a test.**
+- **Actioned survivors (WorkflowEngine cascade-depth guard).**
+  - The `UpdateOperator` survivors on `this.cascadeDepth--` (one in
+    `handleParentAutoComplete`, one in `handleDependencyAutoUnblock`) were the
+    highest-value killable mutants: a dropped decrement leaks the recursion
+    counter across *independent* top-level cascades, which would silently
+    disable all parent-completion / auto-unblock automation after the first
+    deep cascade. The existing depth-limit test ran only a single cascade and
+    so tolerated a leaked counter.
+  - Added two focused tests in
+    [`src/services/__tests__/workflow-engine.test.ts`](../src/services/__tests__/workflow-engine.test.ts)
+    under `describe('cascade depth decrement: …')`:
+    1. Two independent deep parent chains back-to-back — the second root only
+       completes if the counter reset to 0 (kills the parent-cascade
+       `cascadeDepth--` mutant).
+    2. An auto-unblock followed by a chain whose root sits at exactly
+       `MAX_CASCADE_DEPTH = 5` — a leaked `+1` from the unblock pushes the root
+       to depth 6 and trips the guard (kills the unblock `cascadeDepth--`
+       mutant).
+    Both were verified by hand-applying each mutant and confirming the matching
+    test fails, then passes once reverted.
+  - **Not chased (equivalent-mutant rationale):** the three
+    `>= → >` (`EqualityOperator`) survivors on the depth guards
+    (`processCascade`, `handleParentAutoComplete`,
+    `handleDependencyAutoUnblock`) survive *individually* because the guard is
+    deliberately redundant (defence-in-depth) — whichever check hits `>= 5`
+    first stops the cascade, so flipping any single one to `>` leaves the
+    observable boundary unchanged. Killing one in isolation would require
+    deleting the other two guards, which we will not do. They are effectively
+    equivalent mutants under the current redundant design and are documented
+    here rather than tested.
+- **Thresholds untouched.** `stryker.config.js` still enforces `break: 75`
+  (high 80 / low 60); no threshold was lowered to absorb these survivors.
+
+#### When to request a full mutation run
+
+`npm run test:mutation` is expensive (10–30+ min) and is intentionally **not**
+on the per-PR critical path — it runs nightly / on the `mutation` label (see
+`.github/workflows/mutation.yml`). Contributors should request or trigger a
+fresh run when:
+
+- A change touches **recursion/cascade guards, transaction boundaries, state
+  machines, or cycle detection** (WorkflowEngine, claim/release CAS,
+  dependency cycle detector, SSE/event-bus transaction buffering) — i.e. logic
+  where a survived `ConditionalExpression` / `EqualityOperator` /
+  `UpdateOperator` mutant maps to a real correctness regression.
+- A repository's **dynamic-SQL builder** (`whereClauses` / `fields` assembly)
+  gains or loses a branch.
+- The existing report is **stale relative to a structural refactor** (driver
+  seam, large reformat, file moves) such that its line numbers no longer map —
+  as is the case for the 2026-02-17 report above.
+
+Do **not** request a run just to chase cosmetic `StringLiteral` / `ObjectLiteral`
+survivors in CLI formatters or log messages; those are low defect risk and
+mutation runs are a targeted, expensive signal, not a coverage-maximisation
+gate.
+
 ### Phase 8: Adopt PR And Release Quality Checklist
 
 Goal: make review expectations repeatable.

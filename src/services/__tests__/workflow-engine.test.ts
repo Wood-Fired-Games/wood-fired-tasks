@@ -208,6 +208,84 @@ describe('WorkflowEngine', () => {
     });
   });
 
+  // Task #772: targeted mutation-killing tests for surviving high-risk mutants
+  // in the cascade-depth guard. Source: reports/mutation/mutation.html
+  // (Stryker, dated 2026-02-17). The `this.cascadeDepth--` decrement in
+  // handleParentAutoComplete / handleDependencyAutoUnblock survived because no
+  // existing test ran TWO independent top-level cascades back-to-back — a
+  // single cascade tolerates a leaked counter, but a second one does not.
+  describe('cascade depth decrement: counter resets between independent cascades', () => {
+    it('completes a SECOND deep cascade after a first deep cascade (depth must reset to 0)', () => {
+      // Build two independent 4-level parent chains. Each full cascade consumes
+      // up to 3 depth increments. If the matching decrement is dropped (Stryker
+      // UpdateOperator mutant: `this.cascadeDepth--` removed/flipped), the
+      // counter never returns to 0 after the first cascade, so the second chain
+      // trips the `cascadeDepth >= MAX_CASCADE_DEPTH` guard and its ancestors
+      // never auto-complete.
+      function buildChain(prefix: string, levels: number): Array<Task & { tags: string[] }> {
+        const chain: Array<Task & { tags: string[] }> = [];
+        chain[0] = createTask(`${prefix} L0`);
+        for (let i = 1; i < levels; i++) {
+          chain[i] = createTask(`${prefix} L${i}`, chain[i - 1].id);
+        }
+        return chain;
+      }
+
+      const chainA = buildChain('A', 4);
+      const chainB = buildChain('B', 4);
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
+      engine.start();
+
+      // First cascade: completing A's leaf must bubble all the way to A's root.
+      markDone(chainA[3].id);
+      expect(taskService.getTask(chainA[0].id).status).toBe('done');
+
+      // Second, fully independent cascade. With a leaked depth counter this
+      // root would NOT complete; with a correct decrement it must.
+      markDone(chainB[3].id);
+      expect(taskService.getTask(chainB[0].id).status).toBe('done');
+    });
+
+    it('auto-unblock then a max-depth parent cascade both succeed (decrement after unblock)', () => {
+      // handleDependencyAutoUnblock does cascadeDepth++/-- around its updateTask.
+      // A dropped decrement there (Stryker UpdateOperator survivor) leaks +1
+      // into the NEXT top-level cascade. We then run a parent chain whose root
+      // auto-completes at exactly depth 5 (MAX_CASCADE_DEPTH): a leaked +1 pushes
+      // the root to depth 6, tripping the guard so it never completes.
+      const blocker = createTask('Blocker');
+      const blocked = createTask('Blocked');
+      dependencyService.addDependency({
+        task_id: blocker.id,
+        blocks_task_id: blocked.id,
+      });
+      // Move the dependent into 'blocked' so completing the blocker unblocks it.
+      taskService.updateTask(blocked.id, { status: 'blocked' });
+
+      // 6-level chain: leaf + 5 ancestors. Clean run completes ancestors at
+      // depths 1..5; the topmost (root) sits exactly at MAX_CASCADE_DEPTH.
+      const chain: Array<Task & { tags: string[] }> = [];
+      chain[0] = createTask('MaxDepth Root');
+      for (let i = 1; i <= 5; i++) {
+        chain[i] = createTask(`MaxDepth L${i}`, chain[i - 1].id);
+      }
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
+      engine.start();
+
+      // Cascade 1: completing the blocker auto-unblocks `blocked` (blocked->open).
+      markDone(blocker.id);
+      expect(taskService.getTask(blocked.id).status).toBe('open');
+
+      // Cascade 2: completing the leaf must bubble all the way to the root.
+      // With a leaked +1 from the unblock, the root (depth 5) would trip the
+      // guard at depth 6 and stay incomplete.
+      markDone(chain[5].id);
+      expect(taskService.getTask(chain[1].id).status).toBe('done');
+      expect(taskService.getTask(chain[0].id).status).toBe('done');
+    });
+  });
+
   describe('task without parent: no crash, no action', () => {
     it('handles status change for parentless task without errors', () => {
       const task = createTask('Orphan Task');
