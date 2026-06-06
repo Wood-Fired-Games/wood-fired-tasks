@@ -69,10 +69,14 @@ function assert(cond, msg) {
 
 const ELEVATION_RE = /^(sudo|runas|pkexec|doas)$/i;
 
-// On Windows the npm shim is `npm.cmd`; spawnSync without a shell can't resolve
-// a bare `npm` (PATHEXT isn't applied to argv[0]), so it ENOENTs. Use the .cmd
-// name there so every `run('npm', …)` call works cross-platform.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// npm is a bare name on POSIX but the `npm.cmd` shim on Windows. spawnSync
+// can't resolve a bare `npm` there (PATHEXT isn't applied to argv[0]) and Node
+// ≥20 refuses to spawn a `.cmd`/`.bat` directly without a shell (EINVAL, the
+// CVE-2024-27980 hardening). Routing through a shell on Windows resolves both:
+// cmd.exe finds `npm.cmd`, and Node auto-quotes args (default
+// windowsVerbatimArguments=false) so temp paths with spaces stay intact.
+const NPM = 'npm';
+const IS_WIN = process.platform === 'win32';
 
 /**
  * Run a command synchronously, capturing output. Hard-guards against ever
@@ -82,8 +86,13 @@ function run(cmd, args, opts = {}) {
   if (ELEVATION_RE.test(cmd)) {
     fail(`refusing to run elevated command: ${cmd}`);
   }
+  // Only npm needs the Windows shell shim; other invocations (node, the
+  // installed bin) resolve fine directly. Enable shell when the command is the
+  // npm wrapper on Windows.
+  const useShell = IS_WIN && cmd === NPM;
   const res = spawnSync(cmd, args, {
     encoding: 'utf8',
+    shell: useShell,
     ...opts,
     env: { ...process.env, ...(opts.env ?? {}) },
   });
