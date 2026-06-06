@@ -113,6 +113,26 @@ jobs:
       - name: Audit production dependencies (fail on high/critical)
         run: npm audit --omit=dev --audit-level=high
 
+  # ADVISORY ONLY — this job reports the cognitive-complexity outliers for the
+  # production TypeScript surface but is NOT a merge gate. continue-on-error
+  # keeps it from ever blocking a PR; calibration + per-outlier disposition
+  # lives in docs/CODE_QUALITY_ROADMAP.md ("Complexity Calibration"). Promote
+  # to a real gate only after the report has been reviewed (task #771 deferred
+  # gating deliberately). Not in the required-checks set.
+  complexity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Cognitive-complexity report (advisory, never fails)
+        run: npm run quality:complexity
+
   agent-context:
     runs-on: ubuntu-latest
     timeout-minutes: 10

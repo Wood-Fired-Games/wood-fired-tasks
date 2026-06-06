@@ -411,12 +411,85 @@ Status:
   job `depcruise` in `.github/workflows/ci.yml`. Contributor workflow
   is documented under "Architecture and Boundary Checks" in
   `CONTRIBUTING.md`.
-- **Complexity reporting: deferred.** Needs an advisory-mode tool with
-  per-file thresholds calibrated against the current codebase before it
-  can be gated. Recommended follow-on: `eslint-plugin-sonarjs` (for
-  cognitive/cyclomatic complexity) or `complexity-report`. Track as a
-  separate task so the calibration pass does not block the boundary
-  gate.
+- **Complexity reporting: ADVISORY report landed in task #771.** Implemented
+  by reusing the existing Biome toolchain instead of adding a new dependency
+  (`eslint-plugin-sonarjs` / `complexity-report` were the originally-suggested
+  follow-ons but would have added an ESLint stack the repo does not otherwise
+  run). See the **"Complexity Calibration"** section immediately below for the
+  command, the calibrated outlier inventory, and the per-outlier
+  refactor/test/accept disposition. **No blocking gate was added** — the
+  calibration pass deliberately precedes any gate.
+
+#### Complexity Calibration (task #771)
+
+**Tooling.** Biome already ships `complexity/noExcessiveCognitiveComplexity`
+(the SonarSource Cognitive Complexity algorithm), so the report reuses it with
+**zero new dependencies**:
+
+- Config: [`biome.complexity.json`](../biome.complexity.json) — a dedicated
+  Biome config scoped to production TS only (`src/**/*.ts` and
+  `packages/wft-router/src/**/*.ts`, with `**/*.test.ts`, `**/*.spec.ts`,
+  `**/*.bench.ts`, `**/*.property.test.ts`, and `**/__tests__/**` excluded). It
+  sets `maxAllowedComplexity: 1` so Biome emits a diagnostic carrying the raw
+  score for **every** function (score ≥ 2); the script does the thresholding.
+- Report script:
+  [`scripts/quality/complexity-report.mjs`](../scripts/quality/complexity-report.mjs)
+  runs Biome with the JSON reporter, parses the per-function scores, and prints
+  a ranked outlier table + distribution histogram.
+- Command: **`npm run quality:complexity`**
+  (`--threshold N` changes the outlier cutoff, default 15 = Biome's own default
+  ceiling; `--top N` row count; `--json` machine output).
+
+**Advisory contract.** The report is advisory-only. `quality:complexity` exits
+`0` regardless of how complex the code is, and exits non-zero (`2`) **only** if
+Biome itself fails to execute. It is intentionally **not** part of the
+`npm run quality` / `quality:fast` / `quality:full` gate chain. CI runs it in a
+`complexity` job marked `continue-on-error: true` (report-only, not in the
+required-checks set).
+
+**Baseline (commit `ad0dc22`).** 551 functions score ≥ 2. Distribution:
+
+| Cognitive complexity | Function count |
+| -------------------- | -------------- |
+| ≥ 21                 | 28             |
+| 16–20                | 23             |
+| 11–15                | 51             |
+| 6–10                 | 133            |
+| 2–5                  | 316            |
+
+51 functions exceed Biome's default ceiling of 15. Top outliers and their
+disposition (refactor / add-test / accept):
+
+| Score | Location | Disposition |
+| ----- | -------- | ----------- |
+| 73 | `src/repositories/task.repository.ts:308` (claim transaction) | **accept (test-backed)** — one serialized CAS transaction; splitting it would fragment an intentionally-atomic claim. Already covered by claim/release concurrency + property tests. Revisit only if it grows. |
+| 51 | `src/mcp/identity-resolution.ts:154` (`resolveActorUserIdWithPath`) | **refactor (candidate)** — multi-branch identity precedence resolver; extracting each resolution source into a named helper would cut the score and improve readability. Highest-value refactor target. |
+| 45 | `src/mcp/remote/rest-client.ts:577` (SSE stream promise) | **accept** — streaming state machine with inherent branching; behavior is exercised by remote-client integration tests. |
+| 42 | `src/api/routes/auth/callback.ts:53` (OAuth callback) | **refactor (candidate)** — OAuth error/branch handling; extract token-exchange and error-mapping steps. Security-sensitive, so refactor only with added route tests. |
+| 41 | `packages/wft-router/src/sse/client.ts:368` (`runSSEClient`) | **accept** — async-generator reconnect loop; complexity is intrinsic to SSE reconnect/backoff. Covered by SSE client tests. |
+| 40 | `packages/wft-router/src/dispatch/predicate.ts:72` (`evaluateWhere`) | **add-test** — predicate evaluator with many operators; before any refactor, ensure each operator branch has a unit test, then consider a per-operator dispatch table. |
+| 38 | `src/cli/commands/doctor.ts:25` (doctor action) | **accept** — CLI diagnostic that linearly checks many conditions; low defect risk, output-only. |
+| 36 | `src/services/wsjf-health.service.ts:168` (`analyzeWsjfHealth`) | **refactor (candidate)** — health-signal aggregation; extract per-signal analyzers. Has service tests; refactor is maintainability, not correctness. |
+| 35 | `src/cli/commands/login.ts:51` (login action) | **accept** — interactive auth flow with many user-facing branches; CLI surface, low shared-logic risk. |
+| 33 | `src/services/wsjf.service.ts:395` (`validateScoreSubmission`) | **add-test** — validation branch coverage matters; keep validation paths under property/unit tests, then optionally split per-field validators. |
+
+The remaining 41 over-threshold functions (scores 16–32) are predominantly CLI
+`.action()` handlers, Fastify route handlers, and WSJF service methods. The
+general policy from this calibration:
+
+- **CLI `.action()` handlers and Fastify route handlers** — *accept by default*.
+  Their complexity is mostly linear option/branch handling at an I/O boundary
+  with low shared-logic reuse and existing integration coverage; refactor only
+  if a handler is actively churning.
+- **Service methods with validation/aggregation logic** (`wsjf.service.ts`,
+  `task.service.ts`, `topology.service.ts`, `evidence-validation.ts`) — *prefer
+  add-test, then refactor*. These carry real domain logic, so test coverage of
+  each branch is the priority; extraction into helpers is a follow-on.
+- **Repository transactions** (`task.repository.ts`) — *accept*; atomic
+  transactions should not be fragmented for a complexity number.
+
+**No blanket rewrite was performed.** This section is calibration only; any
+refactor above is a tracked follow-on, not part of task #771.
 
 ### Phase 5: Strengthen Database And Migration Safety
 
@@ -638,8 +711,10 @@ Status as of task #271 (Phase 8 close-out):
 - **Architecture / import boundaries checked automatically: DONE.**
   dependency-cruiser enforces layer rules and the no-cycles rule via
   `npm run depcruise` and the `depcruise` CI job (task #267). **Complexity
-  reporting: DEFERRED** — Phase 4 status calls out the recommended
-  follow-on (advisory-mode `eslint-plugin-sonarjs` or `complexity-report`).
+  reporting: DONE (advisory).** `npm run quality:complexity` reports
+  cognitive-complexity outliers over production TS via the existing Biome
+  toolchain (task #771); calibrated outlier inventory + dispositions are in
+  the Phase 4 "Complexity Calibration" section. No blocking gate was added.
 - **Build, tests, coverage, dependency hygiene, audit, lint, and format
   easy to run locally and visible in CI: MOSTLY DONE.** `npm run quality`
   chains build, test, lint, lint:deps, depcruise, and prod audit; CI runs
@@ -658,7 +733,9 @@ Remaining open items (tracked as follow-on tasks, not blockers for this
 roadmap closeout):
 
 - Formatter enable + one-time reformat sweep (Phase 6 follow-on).
-- Complexity reporting calibration pass (Phase 4 follow-on).
+- Complexity reporting calibration pass — **DONE (task #771)**; advisory
+  `npm run quality:complexity` + Phase 4 "Complexity Calibration" section.
+  Any per-outlier refactor remains a tracked follow-on.
 - Remaining strict-TS flag ratchet for `noPropertyAccessFromIndexSignature`,
   `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` (Phase 2
   deferred list).

@@ -103,6 +103,7 @@
     "format:check": "biome format .",
     "format": "biome format --write .",
     "lint:deps": "knip --dependencies",
+    "quality:complexity": "node scripts/quality/complexity-report.mjs",
     "depcruise": "depcruise src packages/wft-router/src --config .dependency-cruiser.cjs",
     "depcruise:graph": "depcruise src packages/wft-router/src --config .dependency-cruiser.cjs --output-type dot --output-to dependency-graph.dot",
     "test:mutation": "stryker run",
