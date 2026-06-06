@@ -1,7 +1,7 @@
 import Database from './driver.js';
 import { Umzug, type UmzugStorage } from 'umzug';
 import { mkdir } from 'fs/promises';
-import { join, dirname, resolve } from 'path';
+import { join, dirname, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './database.js';
 import { isMain } from '../utils/is-main.js';
@@ -78,12 +78,19 @@ class SQLiteStorage implements UmzugStorage {
  * Create an Umzug instance configured for this project.
  */
 function createUmzug(db: Database.Database): Umzug<Database.Database> {
-  // Support both .ts (dev/test via tsx) and .js (production compiled) migrations
-  const ext = __dirname.includes('/dist/') ? 'js' : 'ts';
+  // Support both .ts (dev/test via tsx) and .js (production compiled) migrations.
+  // Normalize separators first: on Windows __dirname uses backslashes, so a
+  // literal `/dist/` substring check silently fails and we'd glob for .ts
+  // migrations that don't ship in the compiled package (→ "no such table").
+  const dirPosix = __dirname.split(sep).join('/');
+  const ext = dirPosix.includes('/dist/') ? 'js' : 'ts';
 
   return new Umzug({
     migrations: {
-      glob: join(__dirname, 'migrations', `*.${ext}`),
+      // fast-glob (Umzug's matcher) requires forward slashes even on Windows;
+      // `join` would emit backslashes, matching nothing. Build the glob with
+      // the POSIX-normalized dir.
+      glob: `${dirPosix}/migrations/*.${ext}`,
       resolve: ({ name, path }) => ({
         // Use canonical (extensionless) name so .ts and .js are treated identically
         name: canonicalName(name),
