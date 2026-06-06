@@ -122,6 +122,54 @@ No `noMisusedPromises` violations existed in production code. The one
 the production scope (a docs helper) and is excluded by the override above, not
 silenced.
 
+## Coverage audit — what Biome catches vs misses (task #785, F1)
+
+Task #785 re-verified the #762 gate empirically rather than assuming full
+coverage. A 12-case probe file was run under this repo's exact `biome.json`
+(top-level rules, Biome 2.4.16) in a throwaway git-init'd scratch dir, then
+deleted. Results:
+
+**Caught (`error`, gate fires):**
+
+| Pattern | Rule |
+|---|---|
+| Bare floating call `makeP();` | `noFloatingPromises` |
+| Floating async IIFE `(async () => { … })();` | `noFloatingPromises` |
+| `.then(onF)` with no rejection handler | `noFloatingPromises` |
+| Array of promises discarded `arr.map(() => makeP());` | `noFloatingPromises` |
+| Promise as `if (makeP())` condition | `noMisusedPromises` (fixable) |
+| `async` callback passed to void-expecting `arr.forEach(async …)` | `noMisusedPromises` |
+
+**Correctly NOT flagged (intentional handling):** `void makeP();`,
+`await makeP();`, `return makeP();`.
+
+**Gaps — patterns Biome 2.4.16 does NOT flag here:**
+
+1. **Promise in a logical operand** — `const r = makeP() && true;`. A promise
+   used in `&&` / `||` (where `if (promise)` *is* caught) slips through. typescript-eslint's
+   `no-misused-promises` (with `checksConditionals`) would catch this; Biome's
+   `noMisusedPromises` only models the direct conditional position.
+2. **`async` callback to `setTimeout` / `setInterval`** —
+   `setTimeout(async () => { await makeP(); }, 100);`. The timer signatures
+   accept any return, so the async callback's promise floats unflagged. (This is
+   a known shape typescript-eslint also handles inconsistently.)
+3. **Assigned-then-ignored** — `const x = makeP();` with `x` never awaited. This
+   is out of scope for *floating*-promise rules in both engines (the value is
+   bound, not floating); `noUnusedVariables` is the relevant rule, not an
+   async-safety one.
+
+**Materiality on THIS codebase (why the gaps are accepted):** the production
+tree (`src/**` + `packages/wft-router/src/**`, tests/scripts/docs excluded) was
+grepped for each gap pattern. **None occur:** there are no `setTimeout(async …)`
+/ `setInterval(async …)` sites (every timer callback is synchronous), and no
+promise-valued expression is used as a `&&` / `||` operand. The gaps are
+therefore latent, not active. The defect classes that *do* occur in async-heavy
+code here (bare floats, missing `.catch`, async callbacks to array iterators,
+promise-as-condition) are all in the **caught** column. The cost of closing the
+two real gaps would be a full second lint stack (ESLint + typescript-eslint +
+its type program) for zero current findings — not justified. See the F1
+decision record in `docs/TYPESCRIPT_QUALITY_AUDIT_2026.md` §785.
+
 ## How it is enforced in CI
 
 No new CI step. The rules live in `biome.json`, so:

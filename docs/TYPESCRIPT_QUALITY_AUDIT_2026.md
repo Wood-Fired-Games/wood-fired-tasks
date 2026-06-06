@@ -1559,3 +1559,57 @@ task API was called and no tasks were created — §777.E is a planning list onl
 after the regen. Source code was not modified (the 4 `!` sites, the
 vendor-neutrality marker, and the async-safety gap are documented follow-ups
 F1–F3, not fixed here per the task's "document, don't fix" scope).
+
+## §785 — Async-safety gate decision (F1 closed)
+
+**Status:** F1 (§777.E item 1) is **closed**. This resolves the last sub-3
+scorecard area (§777.B area 4, "Async safety", was **2/5**).
+
+### Decision: (A) Biome-only — no typescript-eslint overlay
+
+The #762 gate (`noFloatingPromises` + `noMisusedPromises` at `error`,
+commit `8a81d83`) was **re-verified empirically** for coverage gaps per the F1
+mandate, rather than assumed complete or assumed deficient. The audit confirms
+Biome's native, type-aware rules cover the practical floating/misused-promise
+surface for this codebase. Adding ESLint would mean a second lint stack
+(parallel resolver, config, plugin set, and a `tsconfig`-driven type program) to
+catch **zero** additional findings on the current tree — not justified. We keep
+the repo's "one lint engine" posture.
+
+### Coverage-gap evidence
+
+A 12-case probe was run under this repo's exact `biome.json` (Biome 2.4.16) in a
+deleted scratch dir. Full table in
+[`docs/ASYNC_PROMISE_LINTING.md`](ASYNC_PROMISE_LINTING.md) §"Coverage audit".
+Summary:
+
+- **Caught:** bare floating calls, floating async IIFEs, `.then()` without a
+  rejection handler, discarded arrays of promises (`.map(() => p)`),
+  promise-as-`if`-condition, and `async` callbacks passed to void-expecting
+  array iterators (`forEach`).
+- **Missed (2 real gaps):** (1) a promise used as a `&&`/`||` operand (the
+  direct `if (promise)` form *is* caught); (2) an `async` callback to
+  `setTimeout`/`setInterval`.
+- **Out of scope for both engines:** assigned-then-ignored
+  (`const x = makeP();`) is a `noUnusedVariables` concern, not a floating-promise
+  one.
+
+### Why the gaps are accepted (materiality)
+
+The production tree (`src/**` + `packages/wft-router/src/**`) was grepped for
+each gap pattern: **none occur.** Every `setTimeout`/`setInterval` callback in
+production is synchronous, and no promise is used as a logical operand. The gaps
+are latent, not active. The defect classes that actually appear in this
+async-heavy codebase all sit in the **caught** column.
+
+### Convention + warning-free state
+
+The fire-and-forget convention (`void` + one-line rationale) is documented in
+[`docs/ASYNC_PROMISE_LINTING.md`](ASYNC_PROMISE_LINTING.md) §"Fire-and-forget
+convention". The four production `void` sites
+(`packages/wft-router/src/daemon.ts:692`,
+`.../dispatch/graceful-shutdown.ts:239`, `.../bin/wft-router.ts:189`, plus the
+`track()` finally) already carry adjacent rationale. The gate is wired into CI
+via the existing `lint` job (`npm run lint` → `biome check .`) and the
+`quality` / `quality:fast` aggregates — no new CI step. `npm run lint` exits 0
+on the current tree.
