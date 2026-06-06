@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import type { Database } from '../../db/driver.js';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
@@ -49,7 +50,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
               text: `Service Status: healthy\nVersion: ${version}\nDatabase: ok\nTimestamp: ${timestamp}\nDB Path: ${database.path}\nProjects: ${database.projects}, Max Task ID: ${database.maxTaskId ?? 'none'}, Latest Activity: ${database.latestActivity ?? 'none'}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             status: 'healthy',
             timestamp,
             version,
@@ -57,7 +58,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
             checks: {
               database: 'ok',
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         // Database check failed - log error but return unhealthy status
@@ -70,7 +71,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
               text: `Service Status: unhealthy\nVersion: ${version}\nDatabase: failed\nTimestamp: ${timestamp}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             status: 'unhealthy',
             timestamp,
             version,
@@ -83,7 +84,7 @@ export function registerHealthTools(server: McpServer, db: Database): void {
             checks: {
               database: 'failed',
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       }
     }

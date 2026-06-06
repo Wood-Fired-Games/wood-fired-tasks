@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { RestClient } from './rest-client.js';
@@ -78,7 +79,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task created: "${task.title}" (ID: ${task.id}, Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
@@ -125,7 +126,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
@@ -157,7 +158,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
@@ -190,12 +191,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               tasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
         const summary = [
@@ -214,12 +215,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             tasks: payloadTasks,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -280,7 +281,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.task_id} claimed by "${args.assignee}" (Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
@@ -317,13 +318,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: `Task ${args.task_id} has no subtasks.`,
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               parent_task_id: args.task_id,
               subtasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
         const summary = [
@@ -339,13 +340,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -382,13 +383,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -433,7 +434,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
 
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: report as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw new McpError(
@@ -466,7 +467,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Project created: ${project.name} (ID: ${project.id})`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw new McpError(
@@ -503,7 +504,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw new McpError(
@@ -539,12 +540,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: 'No projects found.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               projects: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
         const summary = [
@@ -560,12 +561,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             projects: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -599,7 +600,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Project ${args.id} updated: ${project.name}`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw new McpError(
@@ -664,14 +665,14 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Dependency created: Task ${dependency.task_id} blocks Task ${dependency.blocks_task_id}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             dependency: {
               id: dependency.id,
               task_id: dependency.task_id,
               blocks_task_id: dependency.blocks_task_id,
               created_at: dependency.created_at,
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -734,11 +735,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.task_id} blocks ${blocks.length} task(s) and is blocked by ${blockedBy.length} task(s)`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: args.task_id,
             blocks,
             blocked_by: blockedBy,
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -775,7 +776,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Comment added by ${comment.author} on task ${comment.task_id}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             comment: {
               id: comment.id,
               task_id: comment.task_id,
@@ -783,7 +784,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               content: comment.content,
               created_at: comment.created_at,
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -819,13 +820,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Found ${page.data.length} of ${page.total} comment(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: args.task_id,
             comments: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -898,7 +899,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Service Status: ${status}\nVersion: ${version}\nDatabase: ${dbStatus}\nTimestamp: ${timestamp}${fpLine}`,
             },
           ],
-          structuredContent: health as unknown as Record<string, unknown>,
+          structuredContent: toStructuredContent(health),
         };
       } catch (error) {
         const timestamp = new Date().toISOString();
@@ -910,12 +911,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Service Status: unhealthy\nVersion: ${version}\nDatabase: failed\nTimestamp: ${timestamp}\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             status: 'unhealthy',
             timestamp,
             version,
             checks: { database: 'failed' },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       }
     }
@@ -955,7 +956,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 `leaves=${report.leaves.length}`,
             },
           ],
-          structuredContent: report as unknown as Record<string, unknown>,
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw new McpError(
@@ -1014,11 +1015,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         });
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             project_id: args.project_id,
             scope,
             ranking,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -1080,10 +1081,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         });
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: args.task_id,
             timeline,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
@@ -1150,7 +1151,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         }
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: result as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(result),
         };
       } catch (error) {
         throw new McpError(
@@ -1194,7 +1195,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         }
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: report as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw new McpError(
@@ -1296,7 +1297,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.task_id} is not blocked (status: ${current.status}); returning immediately.`,
             },
           ],
-          structuredContent: payload as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(payload),
         };
       }
 
@@ -1328,7 +1329,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Timed out after ${appliedTimeoutSeconds}s waiting for task ${args.task_id} to unblock.`,
             },
           ],
-          structuredContent: payload as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(payload),
         };
       }
 
@@ -1356,7 +1357,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             text: `Task ${args.task_id} transitioned blocked -> open (status: ${fresh.status}).`,
           },
         ],
-        structuredContent: payload as unknown as { [x: string]: unknown },
+        structuredContent: toStructuredContent(payload),
       };
     }
   );

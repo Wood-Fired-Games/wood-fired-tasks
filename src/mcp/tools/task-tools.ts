@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { TaskService } from '../../services/task.service.js';
 import { ProjectService } from '../../services/project.service.js';
 import {
@@ -238,7 +239,7 @@ export function registerTaskTools(
               text: `Task created: "${task.title}" (ID: ${task.id}, Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'create_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
@@ -284,7 +285,7 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -372,7 +373,7 @@ export function registerTaskTools(
               text: `Task ${args.id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'update_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
@@ -408,12 +409,12 @@ export function registerTaskTools(
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               tasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
 
@@ -436,12 +437,12 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             tasks: payloadTasks,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'list_tasks', event: 'error', error: error instanceof Error ? error.message : String(error) }));
@@ -510,7 +511,7 @@ export function registerTaskTools(
               text: `Task ${args.task_id} claimed by "${args.assignee}" (Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'claim_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
@@ -546,13 +547,13 @@ export function registerTaskTools(
                 text: `Task ${args.task_id} has no subtasks.`,
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               parent_task_id: args.task_id,
               subtasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
 
@@ -570,13 +571,13 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -618,7 +619,7 @@ export function registerTaskTools(
         console.error(JSON.stringify({ level: 'info', traceId, tool: 'completion_report', event: 'success' }));
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: report as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', traceId, tool: 'completion_report', event: 'error', error: error instanceof Error ? error.message : String(error) }));
@@ -654,13 +655,13 @@ export function registerTaskTools(
               text: summary,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);

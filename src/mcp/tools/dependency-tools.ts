@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import type { DependencyService } from '../../services/dependency.service.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
@@ -32,14 +33,14 @@ export function registerDependencyTools(
               text: `Dependency created: Task ${dependency.task_id} blocks Task ${dependency.blocks_task_id}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             dependency: {
               id: dependency.id,
               task_id: dependency.task_id,
               blocks_task_id: dependency.blocks_task_id,
               created_at: dependency.created_at,
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -98,11 +99,11 @@ export function registerDependencyTools(
               text: `Task ${taskId} blocks ${blocks.length} task(s) and is blocked by ${blockedBy.length} task(s)`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: taskId,
             blocks: blocks,
             blocked_by: blockedBy,
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);

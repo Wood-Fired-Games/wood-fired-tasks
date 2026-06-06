@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { ProjectService } from '../../services/project.service.js';
 import {
   CreateProjectSchema,
@@ -41,7 +42,7 @@ export function registerProjectTools(
               text: `Project created: ${project.name} (ID: ${project.id})`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -76,7 +77,7 @@ export function registerProjectTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -110,12 +111,12 @@ export function registerProjectTools(
                 text: 'No projects found.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               projects: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
 
@@ -133,12 +134,12 @@ export function registerProjectTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             projects: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -173,7 +174,7 @@ export function registerProjectTools(
               text: `Project ${args.id} updated: ${project.name}`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw convertToMcpError(error);

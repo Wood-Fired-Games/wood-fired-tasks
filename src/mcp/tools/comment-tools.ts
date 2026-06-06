@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import type { CommentService } from '../../services/comment.service.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
@@ -49,7 +50,7 @@ export function registerCommentTools(
               text: `Comment added by ${comment.author} on task ${comment.task_id}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             comment: {
               id: comment.id,
               task_id: comment.task_id,
@@ -58,7 +59,7 @@ export function registerCommentTools(
               created_at: comment.created_at,
               updated_at: comment.updated_at,
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
@@ -93,13 +94,13 @@ export function registerCommentTools(
               text: `Found ${page.data.length} of ${page.total} comment(s) for task ${taskId} (limit=${page.limit}, offset=${page.offset})`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: taskId,
             comments: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);

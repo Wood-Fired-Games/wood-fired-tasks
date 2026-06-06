@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { z } from 'zod';
 import { TaskService } from '../../services/task.service.js';
 import { convertToMcpError } from '../errors.js';
@@ -124,7 +125,7 @@ export function registerWaitForUnblockTools(
                 text: `Task ${args.task_id} is not blocked (status: ${current.status}); returning immediately.`,
               },
             ],
-            structuredContent: payload as unknown as { [x: string]: unknown },
+            structuredContent: toStructuredContent(payload),
           };
         }
 
@@ -146,7 +147,7 @@ export function registerWaitForUnblockTools(
                 text: `Task ${args.task_id} transitioned blocked -> open (status: ${fresh.status}).`,
               },
             ],
-            structuredContent: payload as unknown as { [x: string]: unknown },
+            structuredContent: toStructuredContent(payload),
           };
         } catch (err) {
           if (err instanceof TimeoutError) {
@@ -166,7 +167,7 @@ export function registerWaitForUnblockTools(
                   text: `Timed out after ${appliedTimeoutSeconds}s waiting for task ${args.task_id} to unblock.`,
                 },
               ],
-              structuredContent: payload as unknown as { [x: string]: unknown },
+              structuredContent: toStructuredContent(payload),
             };
           }
           // Any other rejection (e.g. AbortError, predicate throw) is genuine
