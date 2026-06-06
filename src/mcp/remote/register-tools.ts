@@ -14,6 +14,57 @@ import {
 } from '../../schemas/task.schema.js';
 import { VERSION } from '../../utils/version.js';
 
+/**
+ * Task #768 — parse remote MCP tool arguments through their Zod schema BEFORE
+ * the API-client call, and surface a CLEAR MCP error on invalid input.
+ *
+ * Why this lives in the handler (not just the SDK boundary): the production
+ * `McpServer.registerTool` validates `args` against `inputSchema` before the
+ * handler runs, but that validation is invisible to any caller that drives the
+ * handler closure directly (our unit suite does exactly this). More important,
+ * the high-risk write/report handlers used to `args as unknown as <X>Input`
+ * straight into the REST client — a double-cast that bypasses BOTH the
+ * Zod-inferred shape AND the API-client input contract, so a malformed payload
+ * reached the wire untyped. Re-parsing here makes the narrowing explicit and
+ * type-safe (the cast is gone — `parseToolArgs` returns the inferred type) and
+ * turns a ZodError into an `InvalidParams` McpError with a readable message
+ * instead of a 4xx/5xx round-trip or a silent pass.
+ *
+ * The returned value is the schema's inferred type; callers pass it to the
+ * RestClient via a single, isolated SDK-boundary cast (documented at each call
+ * site) because the API-client input interfaces in `cli/api/types.ts` are a
+ * hand-written structural SUBSET of the richer service-layer Zod shapes.
+ */
+function parseToolArgs<S extends z.ZodTypeAny>(schema: S, args: unknown, what: string): z.infer<S> {
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('; ');
+    throw new McpError(ErrorCode.InvalidParams, `Invalid ${what} arguments: ${issues}`);
+  }
+  return parsed.data;
+}
+
+/**
+ * Task #768 — the per-submission shape accepted by `rescore_project`. Extracted
+ * to a named schema so the handler can re-parse the submissions array (clear
+ * InvalidParams error on a malformed entry) rather than trusting the inbound
+ * `args.submissions` and mapping it blind.
+ */
+const RescoreSubmissionSchema = z.object({
+  task_id: z.number().int().positive(),
+  classification: z.record(z.string(), z.unknown()),
+  features: z.record(z.string(), z.unknown()),
+});
+
+const RescoreProjectArgsSchema = z.object({
+  project_id: z.number().int().positive(),
+  submissions: z.array(RescoreSubmissionSchema).default([]),
+  actor_type: z.string().optional(),
+  actor_id: z.string().optional(),
+});
+
 /** Default long-poll deadline (seconds) when the caller omits `timeout_seconds`. */
 const WAIT_DEFAULT_TIMEOUT_SECONDS = 300;
 /** Hard ceiling (seconds); larger requests are clamped down to this. */
@@ -69,9 +120,16 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       inputSchema: CreateTaskSchema,
     },
     async (args) => {
+      // Task #768: parse against CreateTaskSchema before the API call; a bad
+      // payload (missing title/project_id/created_by, etc.) throws a clear
+      // InvalidParams McpError here instead of being cast straight to the wire.
+      const input = parseToolArgs(CreateTaskSchema, args, 'create_task');
       try {
         const task = await client.createTask(
-          args as unknown as import('../../cli/api/types.js').CreateTaskInput,
+          // Isolated SDK-boundary cast: `input` is fully validated above; the
+          // API-client `CreateTaskInput` is a structural subset of the inferred
+          // CreateTaskSchema type.
+          input as unknown as import('../../cli/api/types.js').CreateTaskInput,
         );
         return {
           content: [
@@ -150,13 +208,27 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       }),
     },
     async (args) => {
+      // Task #768: parse id + updates before the API call. An invalid id
+      // (<=0 / non-int) or a malformed update (bad status enum, oversized
+      // title, bad verification_evidence verdict, half-scored wsjf, etc.)
+      // returns a clear InvalidParams McpError rather than reaching the wire.
+      const { id, updates } = parseToolArgs(
+        z.object({ id: z.number().int().positive(), updates: UpdateTaskSchema }),
+        args,
+        'update_task',
+      );
       try {
-        const task = await client.updateTask(args.id, args.updates);
+        const task = await client.updateTask(
+          id,
+          // Isolated SDK-boundary cast: `updates` is validated above; the
+          // API-client UpdateTaskInput is a structural subset.
+          updates as import('../../cli/api/types.js').UpdateTaskInput,
+        );
         return {
           content: [
             {
               type: 'text',
-              text: `Task ${args.id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
+              text: `Task ${id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
             },
           ],
           structuredContent: toStructuredContent(task),
@@ -179,9 +251,20 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       inputSchema: ListTasksMcpSchema,
     },
     async (args) => {
+      // Task #768: parse against ListTasksMcpSchema before the API call so an
+      // invalid filter (e.g. bad status enum, non-ISO due_before, oversized
+      // search) returns a clear InvalidParams McpError rather than a cast to
+      // the wire. `tags` is an array on the MCP schema but the API-client
+      // TaskFilters expects a comma-joined string, so we normalize it here.
+      const { verbose, tags, ...rest } = parseToolArgs(ListTasksMcpSchema, args, 'list_tasks');
       try {
-        const { verbose, ...filters } = args;
+        const filters = {
+          ...rest,
+          ...(tags !== undefined && { tags: tags.join(',') }),
+        };
         const page = await client.listTasksPaginated(
+          // Isolated SDK-boundary cast: `filters` is validated above; the
+          // API-client TaskFilters is a structural subset.
           filters as unknown as import('../../cli/api/types.js').TaskFilters,
         );
         if (page.data.length === 0) {
@@ -411,9 +494,16 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       inputSchema: CompletionReportSchema,
     },
     async (args) => {
+      // Task #768: parse against CompletionReportSchema before the API call.
+      // Its refinements (must supply `days` OR both `start`+`end`; `end >=
+      // start`) now produce a clear InvalidParams McpError instead of a cast
+      // to the wire that the server would reject with an opaque 4xx.
+      const input = parseToolArgs(CompletionReportSchema, args, 'completion_report');
       try {
         const report = await client.getCompletionReport(
-          args as unknown as import('../../cli/api/types.js').CompletionReportInput,
+          // Isolated SDK-boundary cast: `input` is validated above; the
+          // API-client CompletionReportInput is a structural subset.
+          input as unknown as import('../../cli/api/types.js').CompletionReportInput,
         );
 
         const summary = [
@@ -1095,33 +1185,29 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         'the run id, and SKIPS per-component locked values. Returns a run ' +
         'summary with evaluated / changed / skipped-locked counts and any ' +
         'per-task validation errors.',
-      inputSchema: z.object({
-        project_id: z.number().int().positive(),
-        submissions: z
-          .array(
-            z.object({
-              task_id: z.number().int().positive(),
-              classification: z.record(z.string(), z.unknown()),
-              features: z.record(z.string(), z.unknown()),
-            }),
-          )
-          .default([]),
-        actor_type: z.string().optional(),
-        actor_id: z.string().optional(),
-      }),
+      inputSchema: RescoreProjectArgsSchema,
     },
     async (args) => {
+      // Task #768: parse the mutation args before the API call. A malformed
+      // submission entry (non-positive task_id, non-object classification /
+      // features) now returns a clear InvalidParams McpError rather than being
+      // mapped through and sent to the rescore endpoint untyped.
+      const { project_id, submissions, actor_type, actor_id } = parseToolArgs(
+        RescoreProjectArgsSchema,
+        args,
+        'rescore_project',
+      );
       try {
         const result = await client.rescoreProject(
-          args.project_id,
-          (args.submissions ?? []).map((s) => ({
+          project_id,
+          submissions.map((s) => ({
             task_id: s.task_id,
             classification: s.classification,
             features: s.features,
           })),
           {
-            ...(args.actor_type !== undefined && { actor_type: args.actor_type }),
-            ...(args.actor_id !== undefined && { actor_id: args.actor_id }),
+            ...(actor_type !== undefined && { actor_type }),
+            ...(actor_id !== undefined && { actor_id }),
           },
         );
         const summary = [

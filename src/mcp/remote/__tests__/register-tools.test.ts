@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { registerRemoteTools } from '../register-tools.js';
-import { McpError } from '@modelcontextprotocol/sdk/types.js';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 type Handler = (args: Record<string, unknown>) => Promise<{
   content: Array<{ type: string; text: string }>;
@@ -124,7 +124,10 @@ describe('registerRemoteTools', () => {
       status: 'open',
     });
     const handler = handlers.get('create_task')!;
-    const result = await handler({ title: 'hello' });
+    // Task #768: create_task now parses against CreateTaskSchema first, so the
+    // success path must supply the required fields (title, project_id,
+    // created_by).
+    const result = await handler({ title: 'hello', project_id: 1, created_by: 'tester' });
     expect(result.content[0].text).toContain('Task created');
     expect(result.content[0].text).toContain('ID: 7');
     expect(result.structuredContent).toMatchObject({ id: 7 });
@@ -133,7 +136,11 @@ describe('registerRemoteTools', () => {
   it('create_task wraps errors in McpError', async () => {
     client.createTask.mockRejectedValue(new Error('boom'));
     const handler = handlers.get('create_task')!;
-    await expect(handler({ title: 'x' })).rejects.toBeInstanceOf(McpError);
+    // Valid args so the request reaches the client; the rejection (not a
+    // validation failure) is what should surface as an McpError here.
+    await expect(
+      handler({ title: 'x', project_id: 1, created_by: 'tester' }),
+    ).rejects.toBeInstanceOf(McpError);
   });
 
   it('get_task renders summary with optional fields', async () => {
@@ -817,6 +824,88 @@ describe('registerRemoteTools', () => {
     await expect(
       handlers.get('rescore_project')!({ project_id: 1, submissions: [] }),
     ).rejects.toBeInstanceOf(McpError);
+  });
+
+  // ── Task #768: argument validation before the API-client call ──────────────
+  // Each high-risk write/report shape must REJECT a malformed payload with a
+  // clear InvalidParams McpError *before* the RestClient method is invoked.
+  // Asserting the client mock was never called proves the parse happens up
+  // front (not a downstream 4xx round-trip).
+  describe('#768 invalid-input validation', () => {
+    /** Pull `.code` off a thrown McpError so we can assert InvalidParams. */
+    async function expectInvalidParams(
+      fn: () => Promise<unknown>,
+      mock: ReturnType<typeof vi.fn>,
+    ): Promise<void> {
+      let thrown: unknown;
+      try {
+        await fn();
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(McpError);
+      expect((thrown as McpError).code).toBe(ErrorCode.InvalidParams);
+      // Validation happened before the API call: client never invoked.
+      expect(mock).not.toHaveBeenCalled();
+    }
+
+    it('create_task rejects a payload missing required fields (no project_id/created_by)', async () => {
+      // title present but project_id + created_by missing -> ZodError.
+      await expectInvalidParams(
+        () => handlers.get('create_task')!({ title: 'only-a-title' }),
+        client.createTask,
+      );
+    });
+
+    it('update_task rejects a malformed update (unknown status enum)', async () => {
+      await expectInvalidParams(
+        () => handlers.get('update_task')!({ id: 5, updates: { status: 'not-a-real-status' } }),
+        client.updateTask,
+      );
+    });
+
+    it('update_task rejects a non-positive id', async () => {
+      await expectInvalidParams(
+        () => handlers.get('update_task')!({ id: 0, updates: { title: 'x' } }),
+        client.updateTask,
+      );
+    });
+
+    it('list_tasks rejects a bad filter (non-ISO due_before)', async () => {
+      await expectInvalidParams(
+        () => handlers.get('list_tasks')!({ due_before: 'yesterday' }),
+        client.listTasksPaginated,
+      );
+    });
+
+    it('completion_report rejects when neither days nor start+end supplied', async () => {
+      await expectInvalidParams(
+        () => handlers.get('completion_report')!({ project_id: 3 }),
+        client.getCompletionReport,
+      );
+    });
+
+    it('completion_report rejects end < start', async () => {
+      await expectInvalidParams(
+        () =>
+          handlers.get('completion_report')!({
+            start: '2026-06-05T00:00:00.000Z',
+            end: '2026-06-01T00:00:00.000Z',
+          }),
+        client.getCompletionReport,
+      );
+    });
+
+    it('rescore_project rejects a submission with a non-positive task_id', async () => {
+      await expectInvalidParams(
+        () =>
+          handlers.get('rescore_project')!({
+            project_id: 4,
+            submissions: [{ task_id: 0, classification: {}, features: {} }],
+          }),
+        client.rescoreProject,
+      );
+    });
   });
 
   it('wsjf_health formats OK summary on a healthy project', async () => {
