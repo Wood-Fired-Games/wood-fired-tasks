@@ -8,6 +8,9 @@ import { resolveAssetPath } from '../../assets/resolve.js';
 import { configDir as defaultConfigDir } from '../../config/paths.js';
 import { resolvePathHint } from '../util/path-hint.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
+import { selectFromMenu, type PromptIO } from '../util/prompt.js';
+import { shouldPrompt } from '../prompts/interactive.js';
+import { getServiceBackend } from './service.js';
 
 /**
  * `tasks setup` (task #737).
@@ -460,6 +463,116 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
   };
 }
 
+/**
+ * The three top-level setup modes (task #805). `local` is the back-compat
+ * default; `service` installs the user-scoped background service; `remote`
+ * onboards against a remote REST API (full device-flow self-provisioning lands
+ * in #807/#808/#809 — this task only routes to a minimal entry).
+ */
+export type SetupMode = 'local' | 'service' | 'remote';
+
+export interface RunSetupInteractiveOptions extends RunSetupOptions {
+  /**
+   * Explicit mode selected via `--local` / `--service` / `--remote`. When set,
+   * the menu is SKIPPED and the chosen path runs non-interactively. When
+   * undefined, a TTY gets the menu and a non-TTY defaults to `local`.
+   */
+  mode?: SetupMode;
+  /**
+   * Injectable prompt IO forwarded to the menu (tests drive it without a real
+   * TTY). Defaults to process.stdin/stdout inside {@link selectFromMenu}.
+   */
+  promptIO?: PromptIO;
+  /**
+   * Injectable menu selector (defaults to {@link selectFromMenu}). Tests can
+   * stub this to assert routing without exercising stream plumbing.
+   */
+  selectMode?: (io?: PromptIO) => Promise<SetupMode>;
+  /**
+   * Injectable user-scoped service install (defaults to the real service
+   * backend's user-scoped install from service.ts). Tests assert it is invoked
+   * for the `service` path without touching systemctl/launchd/schtasks.
+   */
+  serviceInstall?: () => void;
+  /**
+   * Injectable TTY predicate (defaults to {@link shouldPrompt}). Lets tests
+   * simulate a TTY / non-TTY without mutating process.stdin.
+   */
+  isInteractive?: () => boolean;
+}
+
+/** Result returned by the service path (no claude.json/skills work was done). */
+export interface RunSetupServiceResult {
+  mode: 'service';
+}
+
+export type RunSetupInteractiveResult =
+  | (RunSetupResult & { mode: 'local' | 'remote' })
+  | RunSetupServiceResult;
+
+/** Present the Local / Service / Remote menu and resolve the chosen mode. */
+export function selectSetupMode(io?: PromptIO): Promise<SetupMode> {
+  return selectFromMenu<SetupMode>(
+    {
+      message: 'How would you like to set up Wood Fired Tasks?',
+      options: [
+        { label: 'Local — install the local MCP server into ~/.claude.json', value: 'local' },
+        { label: 'Service — install the background service (user-scoped)', value: 'service' },
+        { label: 'Remote — connect to a remote Wood Fired Tasks server', value: 'remote' },
+      ],
+      defaultValue: 'local',
+    },
+    io,
+  );
+}
+
+/**
+ * Mode-aware entry point for `tasks setup` (task #805).
+ *
+ *  1. No-args on a TTY → present a Local/Service/Remote menu and run the choice.
+ *  2. `--local` / `--service` / `--remote` (i.e. `mode` set) → run that path
+ *     non-interactively (no menu).
+ *  3. No-args + non-TTY → default to the Local path (back-compat: identical to
+ *     the original `runSetup` behavior).
+ *
+ * The `service` path delegates to the user-scoped install from service.ts; the
+ * `local` and `remote` paths delegate to {@link runSetup} (so all existing
+ * idempotency / 0600 / asset-resolver guarantees are preserved verbatim).
+ */
+export async function runSetupInteractive(
+  options: RunSetupInteractiveOptions = {},
+): Promise<RunSetupInteractiveResult> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  const isInteractive = options.isInteractive ?? shouldPrompt;
+  const selectMode = options.selectMode ?? selectSetupMode;
+
+  // Resolve the mode: explicit flag wins; otherwise prompt on a TTY, else local.
+  let mode: SetupMode;
+  if (options.mode !== undefined) {
+    mode = options.mode;
+  } else if (isInteractive()) {
+    mode = await selectMode(options.promptIO);
+  } else {
+    mode = 'local';
+  }
+
+  if (mode === 'service') {
+    log('Installing the user-scoped background service…');
+    const serviceInstall =
+      options.serviceInstall ?? (() => getServiceBackend().install({ system: false }));
+    serviceInstall();
+    return { mode: 'service' };
+  }
+
+  // local + remote both flow through the existing synchronous runSetup. The
+  // remote path is selected purely by the presence of `options.remote`; this
+  // task only needs `--remote` to be a dispatchable branch (full device-flow
+  // self-provisioning is #807/#808/#809), so we forward whatever remote/token
+  // were supplied and let runSetup validate them.
+  const result = runSetup(options);
+  return { ...result, mode };
+}
+
 export const setupCommand = new Command('setup')
   .description(
     'Install the local wood-fired-tasks MCP server into ~/.claude.json, copy skills into ~/.claude/commands/tasks/, and copy subagent definitions into ~/.claude/agents/',
@@ -468,6 +581,8 @@ export const setupCommand = new Command('setup')
     '--fix-npm-prefix',
     'Configure a user-writable npm global prefix (~/.npm-global) to avoid EACCES on `npm i -g` (never uses sudo)',
   )
+  .option('--local', 'Run the Local setup path non-interactively (skip the menu)')
+  .option('--service', 'Run the Service setup path non-interactively (user-scoped service install)')
   .option(
     '--remote <url>',
     'Install the remote MCP bridge (wood-fired-tasks-remote) pointed at the given REST API base URL; requires --token',
@@ -476,21 +591,44 @@ export const setupCommand = new Command('setup')
     '--token <pat>',
     'Personal access token for --remote; written to the remote MCP entry (WFT_API_KEY) and cached under the OS config dir',
   )
-  .action((opts: { fixNpmPrefix?: boolean; remote?: string; token?: string }) => {
-    // `--token` is ALSO a global option on the root program (src/cli/bin/tasks.ts),
-    // registered for Bearer-auth override. When a user runs
-    // `setup --remote <url> --token <pat>`, Commander binds `--token` to the
-    // global program, so `opts.token` here is undefined. Fall back to the
-    // global value via optsWithGlobals() so `--token` works regardless of which
-    // scope Commander attaches it to.
-    const globalOpts = setupCommand.parent?.optsWithGlobals() ?? {};
-    const token =
-      typeof opts.token === 'string' && opts.token.length > 0
-        ? opts.token
-        : (globalOpts['token'] as string | undefined);
-    runSetup({
-      fixNpmPrefix: Boolean(opts.fixNpmPrefix),
-      ...(opts.remote !== undefined && { remote: opts.remote }),
-      ...(token !== undefined && { token }),
-    });
-  });
+  .action(
+    (opts: {
+      fixNpmPrefix?: boolean;
+      local?: boolean;
+      service?: boolean;
+      remote?: string;
+      token?: string;
+    }) => {
+      // `--token` is ALSO a global option on the root program (src/cli/bin/tasks.ts),
+      // registered for Bearer-auth override. When a user runs
+      // `setup --remote <url> --token <pat>`, Commander binds `--token` to the
+      // global program, so `opts.token` here is undefined. Fall back to the
+      // global value via optsWithGlobals() so `--token` works regardless of which
+      // scope Commander attaches it to.
+      const globalOpts = setupCommand.parent?.optsWithGlobals() ?? {};
+      const token =
+        typeof opts.token === 'string' && opts.token.length > 0
+          ? opts.token
+          : (globalOpts['token'] as string | undefined);
+
+      // Resolve the explicit mode from the flags. `--remote <url>` implies the
+      // remote mode; `--service` and `--local` are bare flags. When none is
+      // present, `mode` stays undefined so runSetupInteractive shows the menu on
+      // a TTY (and defaults to local on a non-TTY) — preserving back-compat.
+      let mode: SetupMode | undefined;
+      if (opts.remote !== undefined) {
+        mode = 'remote';
+      } else if (opts.service === true) {
+        mode = 'service';
+      } else if (opts.local === true) {
+        mode = 'local';
+      }
+
+      void runSetupInteractive({
+        fixNpmPrefix: Boolean(opts.fixNpmPrefix),
+        ...(mode !== undefined && { mode }),
+        ...(opts.remote !== undefined && { remote: opts.remote }),
+        ...(token !== undefined && { token }),
+      });
+    },
+  );

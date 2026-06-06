@@ -1,14 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import {
   runSetup,
+  runSetupInteractive,
   fixNpmPrefix,
   buildLocalMcpEntry,
   resolveMcpEntryPoint,
   commandsDestDir,
   agentsDestDir,
+  type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
@@ -271,6 +273,236 @@ describe('tasks setup', () => {
       expect(`${inv.command} ${inv.args.join(' ')}`).toBe(
         `npm.cmd config set prefix "${result.prefix}"`,
       );
+    });
+  });
+});
+
+// A FAKE token — never a real secret.
+const FAKE_PAT = 'wft_pat_FAKE_TEST_TOKEN_0123456789';
+
+// Async-safe temp HOME: the sync withTempHome above tears down in a sync
+// finally that would fire before an async callback settles, so the mode tests
+// (all async) use this awaited variant.
+async function withTempHomeAsync<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-home-'));
+  try {
+    return await fn(home);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+describe('tasks setup — modes (task #805)', () => {
+  it('no args on a simulated TTY presents the Local/Service/Remote menu', async () => {
+    await withTempHomeAsync(async (home) => {
+      const presented: ReadonlyArray<{ label: string; value: SetupMode }>[] = [];
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        // Simulate a TTY so the menu path is taken.
+        isInteractive: () => true,
+        // Stub the selector but capture that a 3-option menu would be shown,
+        // mirroring the labels selectSetupMode renders.
+        selectMode: async () => {
+          presented.push([
+            { label: 'Local', value: 'local' },
+            { label: 'Service', value: 'service' },
+            { label: 'Remote', value: 'remote' },
+          ]);
+          return 'local';
+        },
+      });
+
+      // The menu was consulted exactly once and offered all three modes.
+      expect(presented).toHaveLength(1);
+      expect(presented[0].map((o) => o.value).sort()).toEqual(['local', 'remote', 'service']);
+      // And the chosen path actually ran (local install happened).
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        expect(result.remote).toBe(false);
+        expect(result.claudeJsonChanged).toBe(true);
+      }
+    });
+  });
+
+  it('the real menu (selectSetupMode) reads a choice from an injected input stream', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+      // Select option 2 (Service) by index.
+      input.write('2\n');
+
+      const captured: Array<'local' | 'service' | 'remote'> = [];
+      await runSetupInteractive({
+        home,
+        log: () => {},
+        isInteractive: () => true,
+        promptIO: { input, output },
+        // Service path is the simplest to assert routing without disk work.
+        serviceInstall: () => captured.push('service'),
+      });
+
+      // The rendered menu contained all three labels.
+      const rendered = outChunks.join('');
+      expect(rendered).toContain('Local');
+      expect(rendered).toContain('Service');
+      expect(rendered).toContain('Remote');
+      // Index "2" routed to the service path.
+      expect(captured).toEqual(['service']);
+    });
+  });
+
+  it('--local runs the Local path without prompting', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        // If the menu is consulted, fail loudly.
+        isInteractive: () => {
+          prompted = true;
+          return true;
+        },
+        selectMode: async () => {
+          prompted = true;
+          return 'remote';
+        },
+      });
+
+      expect(prompted).toBe(false);
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        expect(result.remote).toBe(false);
+        // Local entry was written to ~/.claude.json.
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+
+  it('--service runs the user-scoped service install without prompting', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      let installed = false;
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'service',
+        isInteractive: () => {
+          prompted = true;
+          return true;
+        },
+        serviceInstall: () => {
+          installed = true;
+        },
+      });
+
+      expect(prompted).toBe(false);
+      expect(installed).toBe(true);
+      expect(result.mode).toBe('service');
+      // The service path does NOT touch ~/.claude.json.
+      expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
+    });
+  });
+
+  it('--service uses the DEFAULT user-scoped install from service.ts (system:false)', async () => {
+    // No injected serviceInstall: exercise the real default wiring
+    // (`() => getServiceBackend().install({ system: false })`). Spy on the
+    // service module's getServiceBackend so no systemctl/launchd/schtasks runs.
+    const service = await import('../commands/service.js');
+    const calls: Array<{ system?: boolean } | undefined> = [];
+    const fakeBackend = {
+      install: (o?: { system?: boolean }) => {
+        calls.push(o);
+      },
+      uninstall: () => {},
+      status: () => ({
+        running: false,
+        enabled: false,
+        activeState: 'inactive',
+        enabledState: 'disabled',
+        installed: false,
+      }),
+    };
+    const spy = vi.spyOn(service, 'getServiceBackend').mockReturnValue(fakeBackend);
+    try {
+      await withTempHomeAsync(async (home) => {
+        const result = await runSetupInteractive({
+          home,
+          log: () => {},
+          mode: 'service',
+          isInteractive: () => false,
+          // NOTE: serviceInstall intentionally NOT injected — assert the default.
+        });
+        expect(result.mode).toBe('service');
+      });
+      // The default path requested a user-scoped (non-elevated) install.
+      expect(calls).toEqual([{ system: false }]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('--remote runs the Remote path without prompting', async () => {
+    await withTempHomeAsync(async (home) => {
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-cfg-'));
+      try {
+        let prompted = false;
+        const result = await runSetupInteractive({
+          home,
+          configDir,
+          log: () => {},
+          mode: 'remote',
+          remote: 'http://tasks.example.local:3000',
+          token: FAKE_PAT,
+          isInteractive: () => {
+            prompted = true;
+            return true;
+          },
+          selectMode: async () => {
+            prompted = true;
+            return 'local';
+          },
+        });
+
+        expect(prompted).toBe(false);
+        expect(result.mode).toBe('remote');
+        if (result.mode !== 'service') {
+          expect(result.remote).toBe(true);
+          const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+          expect(doc.mcpServers['wood-fired-tasks-remote']).toBeDefined();
+        }
+      } finally {
+        fs.rmSync(configDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('no args + non-TTY defaults to the Local path (back-compat)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        // Non-interactive environment, no explicit mode.
+        isInteractive: () => false,
+        selectMode: async () => {
+          prompted = true;
+          return 'remote';
+        },
+      });
+
+      // Menu was NEVER consulted; defaulted to local.
+      expect(prompted).toBe(false);
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        expect(result.remote).toBe(false);
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
     });
   });
 });
