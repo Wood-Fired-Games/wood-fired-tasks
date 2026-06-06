@@ -81,10 +81,7 @@ describe('WSJF rescore service (#641)', () => {
   });
 
   /** A scored task whose evidence spans are verbatim substrings of its text. */
-  function scoredTask(
-    title: string,
-    wsjf: WsjfWriteDTO,
-  ): number {
+  function scoredTask(title: string, wsjf: WsjfWriteDTO): number {
     const created = taskService.createTask({
       title,
       description: 'aligns with reliability theme; launch window closes Q3',
@@ -144,9 +141,7 @@ describe('WSJF rescore service (#641)', () => {
    * alignment to reliability (weight 13) → UBV drops from 13 (core) to 5
    * (two steps down: 13→8→5), so the value component changes on rescore.
    */
-  function submission(
-    overrides?: Partial<ScoreSubmission['classification']>,
-  ): ScoreSubmission {
+  function submission(overrides?: Partial<ScoreSubmission['classification']>): ScoreSubmission {
     return {
       classification: {
         themeName: 'reliability',
@@ -201,9 +196,7 @@ describe('WSJF rescore service (#641)', () => {
     const taskId = scoredTask('Fix checkout', autoWsjf({ locked }));
 
     // Submit a WEAK-alignment classification that WOULD recompute value to 5.
-    const result = rescore.rescore(projectId, [
-      { taskId, submission: submission() },
-    ]);
+    const result = rescore.rescore(projectId, [{ taskId, submission: submission() }]);
 
     expect(result.tasksEvaluated).toBe(1);
     expect(result.tasksSkippedLocked).toBe(1);
@@ -229,9 +222,7 @@ describe('WSJF rescore service (#641)', () => {
     const taskId = scoredTask('Fix checkout', autoWsjf({ locked }));
     const beforeRows = historyRepo.countByTaskId(taskId);
 
-    const result = rescore.rescore(projectId, [
-      { taskId, submission: submission() },
-    ]);
+    const result = rescore.rescore(projectId, [{ taskId, submission: submission() }]);
 
     const taskResult = result.results.find((r) => r.taskId === taskId)!;
     expect(taskResult.changed).toBe(false);

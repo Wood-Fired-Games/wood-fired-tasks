@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { RestClient } from './rest-client.js';
@@ -12,6 +13,58 @@ import {
   toCompactTask,
 } from '../../schemas/task.schema.js';
 import { VERSION } from '../../utils/version.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
+
+/**
+ * Task #768 — parse remote MCP tool arguments through their Zod schema BEFORE
+ * the API-client call, and surface a CLEAR MCP error on invalid input.
+ *
+ * Why this lives in the handler (not just the SDK boundary): the production
+ * `McpServer.registerTool` validates `args` against `inputSchema` before the
+ * handler runs, but that validation is invisible to any caller that drives the
+ * handler closure directly (our unit suite does exactly this). More important,
+ * the high-risk write/report handlers used to `args as unknown as <X>Input`
+ * straight into the REST client — a double-cast that bypasses BOTH the
+ * Zod-inferred shape AND the API-client input contract, so a malformed payload
+ * reached the wire untyped. Re-parsing here makes the narrowing explicit and
+ * type-safe (the cast is gone — `parseToolArgs` returns the inferred type) and
+ * turns a ZodError into an `InvalidParams` McpError with a readable message
+ * instead of a 4xx/5xx round-trip or a silent pass.
+ *
+ * The returned value is the schema's inferred type; callers pass it to the
+ * RestClient via a single, isolated SDK-boundary cast (documented at each call
+ * site) because the API-client input interfaces in `cli/api/types.ts` are a
+ * hand-written structural SUBSET of the richer service-layer Zod shapes.
+ */
+function parseToolArgs<S extends z.ZodTypeAny>(schema: S, args: unknown, what: string): z.infer<S> {
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('; ');
+    throw new McpError(ErrorCode.InvalidParams, `Invalid ${what} arguments: ${issues}`);
+  }
+  return parsed.data;
+}
+
+/**
+ * Task #768 — the per-submission shape accepted by `rescore_project`. Extracted
+ * to a named schema so the handler can re-parse the submissions array (clear
+ * InvalidParams error on a malformed entry) rather than trusting the inbound
+ * `args.submissions` and mapping it blind.
+ */
+const RescoreSubmissionSchema = z.object({
+  task_id: z.number().int().positive(),
+  classification: z.record(z.string(), z.unknown()),
+  features: z.record(z.string(), z.unknown()),
+});
+
+const RescoreProjectArgsSchema = z.object({
+  project_id: z.number().int().positive(),
+  submissions: z.array(RescoreSubmissionSchema).default([]),
+  actor_type: z.string().optional(),
+  actor_id: z.string().optional(),
+});
 
 /** Default long-poll deadline (seconds) when the caller omits `timeout_seconds`. */
 const WAIT_DEFAULT_TIMEOUT_SECONDS = 300;
@@ -58,7 +111,6 @@ const WAIT_MAX_TIMEOUT_SECONDS = 1800;
  * the timeout semantics (no throw) are byte-identical to the stdio tool.
  */
 export function registerRemoteTools(server: McpServer, client: RestClient): void {
-
   // ── Task tools (9) ──────────────────────────────────────────────────────
 
   // Tool: create_task
@@ -69,8 +121,17 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       inputSchema: CreateTaskSchema,
     },
     async (args) => {
+      // Task #768: parse against CreateTaskSchema before the API call; a bad
+      // payload (missing title/project_id/created_by, etc.) throws a clear
+      // InvalidParams McpError here instead of being cast straight to the wire.
+      const input = parseToolArgs(CreateTaskSchema, args, 'create_task');
       try {
-        const task = await client.createTask(args as unknown as import('../../cli/api/types.js').CreateTaskInput);
+        const task = await client.createTask(
+          // Isolated SDK-boundary cast: `input` is fully validated above; the
+          // API-client `CreateTaskInput` is a structural subset of the inferred
+          // CreateTaskSchema type.
+          input as unknown as import('../../cli/api/types.js').CreateTaskInput,
+        );
         return {
           content: [
             {
@@ -78,15 +139,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task created: "${task.title}" (ID: ${task.id}, Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to create task'
+          error instanceof Error ? error.message : 'Failed to create task',
         );
       }
-    }
+    },
   );
 
   // Tool: get_task
@@ -125,15 +186,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get task'
+          error instanceof Error ? error.message : 'Failed to get task',
         );
       }
-    }
+    },
   );
 
   // Tool: update_task
@@ -148,24 +209,38 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       }),
     },
     async (args) => {
+      // Task #768: parse id + updates before the API call. An invalid id
+      // (<=0 / non-int) or a malformed update (bad status enum, oversized
+      // title, bad verification_evidence verdict, half-scored wsjf, etc.)
+      // returns a clear InvalidParams McpError rather than reaching the wire.
+      const { id, updates } = parseToolArgs(
+        z.object({ id: z.number().int().positive(), updates: UpdateTaskSchema }),
+        args,
+        'update_task',
+      );
       try {
-        const task = await client.updateTask(args.id, args.updates);
+        const task = await client.updateTask(
+          id,
+          // Isolated SDK-boundary cast: `updates` is validated above; the
+          // API-client UpdateTaskInput is a structural subset.
+          updates as import('../../cli/api/types.js').UpdateTaskInput,
+        );
         return {
           content: [
             {
               type: 'text',
-              text: `Task ${args.id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
+              text: `Task ${id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to update task'
+          error instanceof Error ? error.message : 'Failed to update task',
         );
       }
-    }
+    },
   );
 
   // Tool: list_tasks (paginated)
@@ -177,10 +252,21 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       inputSchema: ListTasksMcpSchema,
     },
     async (args) => {
+      // Task #768: parse against ListTasksMcpSchema before the API call so an
+      // invalid filter (e.g. bad status enum, non-ISO due_before, oversized
+      // search) returns a clear InvalidParams McpError rather than a cast to
+      // the wire. `tags` is an array on the MCP schema but the API-client
+      // TaskFilters expects a comma-joined string, so we normalize it here.
+      const { verbose, tags, ...rest } = parseToolArgs(ListTasksMcpSchema, args, 'list_tasks');
       try {
-        const { verbose, ...filters } = args;
+        const filters = {
+          ...rest,
+          ...(tags !== undefined && { tags: tags.join(',') }),
+        };
         const page = await client.listTasksPaginated(
-          filters as unknown as import('../../cli/api/types.js').TaskFilters
+          // Isolated SDK-boundary cast: `filters` is validated above; the
+          // API-client TaskFilters is a structural subset.
+          filters as unknown as import('../../cli/api/types.js').TaskFilters,
         );
         if (page.data.length === 0) {
           return {
@@ -190,21 +276,19 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               tasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
         const summary = [
           `Found ${page.data.length} of ${page.total} task(s) (limit=${page.limit}, offset=${page.offset}):\n`,
         ];
         page.data.forEach((task) => {
-          summary.push(
-            `- [${task.id}] ${task.title} (${task.status}, ${task.priority})`
-          );
+          summary.push(`- [${task.id}] ${task.title} (${task.status}, ${task.priority})`);
         });
         const payloadTasks = verbose ? page.data : page.data.map(toCompactTask);
         return {
@@ -214,20 +298,20 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             tasks: payloadTasks,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list tasks'
+          error instanceof Error ? error.message : 'Failed to list tasks',
         );
       }
-    }
+    },
   );
 
   // Tool: delete_task
@@ -253,10 +337,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to delete task'
+          error instanceof Error ? error.message : 'Failed to delete task',
         );
       }
-    }
+    },
   );
 
   // Tool: claim_task
@@ -280,15 +364,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.task_id} claimed by "${args.assignee}" (Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to claim task'
+          error instanceof Error ? error.message : 'Failed to claim task',
         );
       }
-    }
+    },
   );
 
   // Tool: list_subtasks (paginated)
@@ -305,10 +389,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         if (page.data.length === 0) {
           return {
             content: [
@@ -317,13 +401,13 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: `Task ${args.task_id} has no subtasks.`,
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               parent_task_id: args.task_id,
               subtasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
         const summary = [
@@ -339,21 +423,21 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list subtasks'
+          error instanceof Error ? error.message : 'Failed to list subtasks',
         );
       }
-    }
+    },
   );
 
   // Tool: get_subtasks (paginated)
@@ -370,10 +454,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         const summary = `Found ${page.data.length} of ${page.total} subtask(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`;
         return {
           content: [
@@ -382,21 +466,21 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get subtasks'
+          error instanceof Error ? error.message : 'Failed to get subtasks',
         );
       }
-    }
+    },
   );
 
   // Tool: completion_report
@@ -411,9 +495,16 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       inputSchema: CompletionReportSchema,
     },
     async (args) => {
+      // Task #768: parse against CompletionReportSchema before the API call.
+      // Its refinements (must supply `days` OR both `start`+`end`; `end >=
+      // start`) now produce a clear InvalidParams McpError instead of a cast
+      // to the wire that the server would reject with an opaque 4xx.
+      const input = parseToolArgs(CompletionReportSchema, args, 'completion_report');
       try {
         const report = await client.getCompletionReport(
-          args as unknown as import('../../cli/api/types.js').CompletionReportInput
+          // Isolated SDK-boundary cast: `input` is validated above; the
+          // API-client CompletionReportInput is a structural subset.
+          input as unknown as import('../../cli/api/types.js').CompletionReportInput,
         );
 
         const summary = [
@@ -433,15 +524,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
 
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: report as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get completion report'
+          error instanceof Error ? error.message : 'Failed to get completion report',
         );
       }
-    }
+    },
   );
 
   // ── Project tools (5) ────────────────────────────────────────────────────
@@ -458,7 +549,14 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const project = await client.createProject(args);
+        // `name` is REQUIRED on CreateProjectInput, so omitUndefined (which maps
+        // every key to optional) would over-widen it. Strip only the optional
+        // keys when undefined; explicit `null` is preserved (three-state: clear).
+        const project = await client.createProject({
+          name: args.name,
+          ...(args.description !== undefined && { description: args.description }),
+          ...(args.value_charter !== undefined && { value_charter: args.value_charter }),
+        });
         return {
           content: [
             {
@@ -466,15 +564,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Project created: ${project.name} (ID: ${project.id})`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to create project'
+          error instanceof Error ? error.message : 'Failed to create project',
         );
       }
-    }
+    },
   );
 
   // Tool: get_project
@@ -489,10 +587,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     async (args) => {
       try {
         const project = await client.getProject(args.id);
-        const summary = [
-          `Project: ${project.name}`,
-          `Created: ${project.created_at}`,
-        ];
+        const summary = [`Project: ${project.name}`, `Created: ${project.created_at}`];
         if (project.description) {
           summary.push(`Description: ${project.description}`);
         }
@@ -503,15 +598,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get project'
+          error instanceof Error ? error.message : 'Failed to get project',
         );
       }
-    }
+    },
   );
 
   // Tool: list_projects (paginated)
@@ -527,10 +622,9 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.listProjectsPaginated({
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.listProjectsPaginated(
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         if (page.data.length === 0) {
           return {
             content: [
@@ -539,12 +633,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 text: 'No projects found.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               projects: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
         const summary = [
@@ -560,20 +654,20 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             projects: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list projects'
+          error instanceof Error ? error.message : 'Failed to list projects',
         );
       }
-    }
+    },
   );
 
   // Tool: update_project
@@ -591,7 +685,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const project = await client.updateProject(args.id, args.updates);
+        const project = await client.updateProject(args.id, omitUndefined(args.updates));
         return {
           content: [
             {
@@ -599,15 +693,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Project ${args.id} updated: ${project.name}`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to update project'
+          error instanceof Error ? error.message : 'Failed to update project',
         );
       }
-    }
+    },
   );
 
   // Tool: delete_project
@@ -633,10 +727,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to delete project'
+          error instanceof Error ? error.message : 'Failed to delete project',
         );
       }
-    }
+    },
   );
 
   // ── Dependency tools (3) ─────────────────────────────────────────────────
@@ -645,8 +739,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   server.registerTool(
     'add_dependency',
     {
-      description:
-        'Add a dependency relationship between tasks (task_id blocks blocks_task_id)',
+      description: 'Add a dependency relationship between tasks (task_id blocks blocks_task_id)',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
         blocks_task_id: z.number().int().positive(),
@@ -664,22 +757,22 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Dependency created: Task ${dependency.task_id} blocks Task ${dependency.blocks_task_id}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             dependency: {
               id: dependency.id,
               task_id: dependency.task_id,
               blocks_task_id: dependency.blocks_task_id,
               created_at: dependency.created_at,
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to add dependency'
+          error instanceof Error ? error.message : 'Failed to add dependency',
         );
       }
-    }
+    },
   );
 
   // Tool: remove_dependency
@@ -706,18 +799,17 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to remove dependency'
+          error instanceof Error ? error.message : 'Failed to remove dependency',
         );
       }
-    }
+    },
   );
 
   // Tool: get_dependencies
   server.registerTool(
     'get_dependencies',
     {
-      description:
-        'Get all dependencies for a task (tasks it blocks and tasks that block it)',
+      description: 'Get all dependencies for a task (tasks it blocks and tasks that block it)',
       inputSchema: z.object({
         task_id: z.number().int().positive(),
       }),
@@ -734,19 +826,19 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.task_id} blocks ${blocks.length} task(s) and is blocked by ${blockedBy.length} task(s)`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: args.task_id,
             blocks,
             blocked_by: blockedBy,
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get dependencies'
+          error instanceof Error ? error.message : 'Failed to get dependencies',
         );
       }
-    }
+    },
   );
 
   // ── Comment tools (3) ───────────────────────────────────────────────────
@@ -775,7 +867,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Comment added by ${comment.author} on task ${comment.task_id}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             comment: {
               id: comment.id,
               task_id: comment.task_id,
@@ -783,15 +875,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               content: comment.content,
               created_at: comment.created_at,
             },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to add comment'
+          error instanceof Error ? error.message : 'Failed to add comment',
         );
       }
-    }
+    },
   );
 
   // Tool: get_comments (paginated)
@@ -808,10 +900,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.getCommentsPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.getCommentsPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         return {
           content: [
             {
@@ -819,21 +911,21 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Found ${page.data.length} of ${page.total} comment(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: args.task_id,
             comments: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as Record<string, unknown>,
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get comments'
+          error instanceof Error ? error.message : 'Failed to get comments',
         );
       }
-    }
+    },
   );
 
   // Tool: delete_comment
@@ -865,10 +957,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to delete comment'
+          error instanceof Error ? error.message : 'Failed to delete comment',
         );
       }
-    }
+    },
   );
 
   // ── Health tool (1) ─────────────────────────────────────────────────────
@@ -898,7 +990,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Service Status: ${status}\nVersion: ${version}\nDatabase: ${dbStatus}\nTimestamp: ${timestamp}${fpLine}`,
             },
           ],
-          structuredContent: health as unknown as Record<string, unknown>,
+          structuredContent: toStructuredContent(health),
         };
       } catch (error) {
         const timestamp = new Date().toISOString();
@@ -910,15 +1002,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Service Status: unhealthy\nVersion: ${version}\nDatabase: failed\nTimestamp: ${timestamp}\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             status: 'unhealthy',
             timestamp,
             version,
             checks: { database: 'failed' },
-          } as unknown as Record<string, unknown>,
+          }),
         };
       }
-    }
+    },
   );
 
   // ── Topology tool (1) ────────────────────────────────────────────────────
@@ -955,15 +1047,15 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
                 `leaves=${report.leaves.length}`,
             },
           ],
-          structuredContent: report as unknown as Record<string, unknown>,
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to check topology'
+          error instanceof Error ? error.message : 'Failed to check topology',
         );
       }
-    }
+    },
   );
 
   // ── WSJF tools (4) ────────────────────────────────────────────────────────
@@ -1007,26 +1099,24 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         ranking.forEach((r, idx) => {
           summary.push(
             `${idx + 1}. [${r.taskId}] effectiveWsjf=${r.effectiveWsjf.toFixed(3)}` +
-              (r.scored
-                ? ` (scored, base=${r.baseWsjf?.toFixed(3)})`
-                : ' (unscored)')
+              (r.scored ? ` (scored, base=${r.baseWsjf?.toFixed(3)})` : ' (unscored)'),
           );
         });
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             project_id: args.project_id,
             scope,
             ranking,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to rank tasks'
+          error instanceof Error ? error.message : 'Failed to rank tasks',
         );
       }
-    }
+    },
   );
 
   // Tool: wsjf_history
@@ -1051,15 +1141,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         // the immediately-preceding row (oldest-first) — identical to stdio.
         const timeline = rows.map((row, i) => {
           const prev = i > 0 ? rows[i - 1] : null;
-          const deltas: Record<
-            string,
-            { from: number | null; to: number | null }
-          > = {};
+          const deltas: Record<string, { from: number | null; to: number | null }> = {};
           for (const key of WSJF_COMPONENT_KEYS) {
-            const to =
-              (row as unknown as Record<string, number | null>)[key] ?? null;
+            const to = (row as unknown as Record<string, number | null>)[key] ?? null;
             const from = prev
-              ? (prev as unknown as Record<string, number | null>)[key] ?? null
+              ? ((prev as unknown as Record<string, number | null>)[key] ?? null)
               : null;
             deltas[key] = { from, to };
           }
@@ -1071,27 +1157,31 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
           }:\n`,
         ];
         timeline.forEach((entry) => {
-          const s = entry.deltas.wsjf_score;
+          // `wsjf_score` is always written into `deltas` (it is in
+          // WSJF_COMPONENT_KEYS), but the Record lookup is `| undefined` under
+          // noUncheckedIndexedAccess; default to a null/null pair so the
+          // rendered output is unchanged in the (unreachable) missing case.
+          const s = entry.deltas['wsjf_score'] ?? { from: null, to: null };
           summary.push(
             `- ${entry.changed_at} [${entry.trigger}] wsjf ${
               s.from === null ? '∅' : s.from
-            }→${s.to === null ? '∅' : s.to}`
+            }→${s.to === null ? '∅' : s.to}`,
           );
         });
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             task_id: args.task_id,
             timeline,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to read WSJF history'
+          error instanceof Error ? error.message : 'Failed to read WSJF history',
         );
       }
-    }
+    },
   );
 
   // Tool: rescore_project (MUTATION)
@@ -1106,34 +1196,30 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         'the run id, and SKIPS per-component locked values. Returns a run ' +
         'summary with evaluated / changed / skipped-locked counts and any ' +
         'per-task validation errors.',
-      inputSchema: z.object({
-        project_id: z.number().int().positive(),
-        submissions: z
-          .array(
-            z.object({
-              task_id: z.number().int().positive(),
-              classification: z.record(z.string(), z.unknown()),
-              features: z.record(z.string(), z.unknown()),
-            })
-          )
-          .default([]),
-        actor_type: z.string().optional(),
-        actor_id: z.string().optional(),
-      }),
+      inputSchema: RescoreProjectArgsSchema,
     },
     async (args) => {
+      // Task #768: parse the mutation args before the API call. A malformed
+      // submission entry (non-positive task_id, non-object classification /
+      // features) now returns a clear InvalidParams McpError rather than being
+      // mapped through and sent to the rescore endpoint untyped.
+      const { project_id, submissions, actor_type, actor_id } = parseToolArgs(
+        RescoreProjectArgsSchema,
+        args,
+        'rescore_project',
+      );
       try {
         const result = await client.rescoreProject(
-          args.project_id,
-          (args.submissions ?? []).map((s) => ({
+          project_id,
+          submissions.map((s) => ({
             task_id: s.task_id,
             classification: s.classification,
             features: s.features,
           })),
           {
-            ...(args.actor_type !== undefined && { actor_type: args.actor_type }),
-            ...(args.actor_id !== undefined && { actor_id: args.actor_id }),
-          }
+            ...(actor_type !== undefined && { actor_type }),
+            ...(actor_id !== undefined && { actor_id }),
+          },
         );
         const summary = [
           `Rescore run ${result.run_id} for project ${result.project_id}: ` +
@@ -1141,24 +1227,22 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             `${result.tasks_skipped_locked} with locked components preserved.`,
         ];
         if (result.errors.length > 0) {
-          summary.push(
-            `\n${result.errors.length} task(s) had validation errors:`
-          );
+          summary.push(`\n${result.errors.length} task(s) had validation errors:`);
           for (const e of result.errors) {
             summary.push(`- [${e.taskId}] ${e.errors.join('; ')}`);
           }
         }
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: result as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(result),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to rescore project'
+          error instanceof Error ? error.message : 'Failed to rescore project',
         );
       }
-    }
+    },
   );
 
   // Tool: wsjf_health
@@ -1188,21 +1272,19 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               `finding(s) across ${report.scored_task_count} scored task(s):\n`,
         ];
         for (const f of report.findings) {
-          summary.push(
-            `- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`
-          );
+          summary.push(`- [${f.severity}] ${f.check}: ${f.message} Fix: ${f.suggestion}`);
         }
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: report as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to check WSJF health'
+          error instanceof Error ? error.message : 'Failed to check WSJF health',
         );
       }
-    }
+    },
   );
 
   // ── Wait tool (1) ────────────────────────────────────────────────────────
@@ -1238,10 +1320,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       // Clamp to [1, MAX]. Zod already rejects <=0 / non-int, so the lower
       // bound is defensive; the upper bound is the real clamp the caller sees
       // via applied_timeout_seconds. Identical to the stdio tool.
-      const appliedTimeoutSeconds = Math.min(
-        Math.max(1, requested),
-        WAIT_MAX_TIMEOUT_SECONDS
-      );
+      const appliedTimeoutSeconds = Math.min(Math.max(1, requested), WAIT_MAX_TIMEOUT_SECONDS);
 
       // Race handling (acceptance #3/#4): OPEN THE STREAM FIRST, then re-read
       // the current status. A blocked->open transition could land in the tiny
@@ -1255,7 +1334,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       const waitPromise = client.waitForUnblockViaSse(
         args.task_id,
         appliedTimeoutSeconds * 1000,
-        abortController.signal
+        abortController.signal,
       );
 
       // Now (after opening the stream) read the current projection. This both
@@ -1273,7 +1352,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         });
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to wait for unblock'
+          error instanceof Error ? error.message : 'Failed to wait for unblock',
         );
       }
 
@@ -1296,7 +1375,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Task ${args.task_id} is not blocked (status: ${current.status}); returning immediately.`,
             },
           ],
-          structuredContent: payload as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(payload),
         };
       }
 
@@ -1309,7 +1388,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         // same McpError shape the other remote tools produce.
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to wait for unblock'
+          error instanceof Error ? error.message : 'Failed to wait for unblock',
         );
       }
 
@@ -1328,7 +1407,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: `Timed out after ${appliedTimeoutSeconds}s waiting for task ${args.task_id} to unblock.`,
             },
           ],
-          structuredContent: payload as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(payload),
         };
       }
 
@@ -1341,7 +1420,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       } catch (error) {
         throw new McpError(
           ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to wait for unblock'
+          error instanceof Error ? error.message : 'Failed to wait for unblock',
         );
       }
       const payload = {
@@ -1356,8 +1435,8 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
             text: `Task ${args.task_id} transitioned blocked -> open (status: ${fresh.status}).`,
           },
         ],
-        structuredContent: payload as unknown as { [x: string]: unknown },
+        structuredContent: toStructuredContent(payload),
       };
-    }
+    },
   );
 }

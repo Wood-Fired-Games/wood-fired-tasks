@@ -15,10 +15,7 @@ vi.mock('../oidc-client.js', () => ({
 }));
 
 import { initOidc } from '../oidc-client.js';
-import {
-  discoverOidcWithRetry,
-  backoffDelayMs,
-} from '../oidc-boot.js';
+import { discoverOidcWithRetry, backoffDelayMs } from '../oidc-boot.js';
 
 const initOidcMock = vi.mocked(initOidc);
 
@@ -100,8 +97,14 @@ describe('discoverOidcWithRetry', () => {
     // Two backoff waits before the 3rd (winning) attempt: 500, then 1000.
     expect(calls).toEqual([500, 1000]);
     expect(onRetry).toHaveBeenCalledTimes(2);
-    expect(onRetry).toHaveBeenNthCalledWith(1, expect.objectContaining({ attempt: 1, delayMs: 500 }));
-    expect(onRetry).toHaveBeenNthCalledWith(2, expect.objectContaining({ attempt: 2, delayMs: 1000 }));
+    expect(onRetry).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ attempt: 1, delayMs: 500 }),
+    );
+    expect(onRetry).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ attempt: 2, delayMs: 1000 }),
+    );
   });
 
   it('gives up after maxAttempts and returns the last error', async () => {

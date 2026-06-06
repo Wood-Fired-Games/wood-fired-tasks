@@ -95,9 +95,7 @@ describe('API Authentication', () => {
   // legacy strategy will look up via `findLegacyByDisplayName`.
   it('seeds the legacy principal so the chain plugin can resolve request.user', async () => {
     const userRow = db
-      .prepare(
-        'SELECT id FROM users WHERE display_name = ? AND is_legacy = 1',
-      )
+      .prepare('SELECT id FROM users WHERE display_name = ? AND is_legacy = 1')
       .get('key_test-key') as { id: number } | undefined;
     expect(userRow).toBeDefined();
     expect(typeof userRow!.id).toBe('number');

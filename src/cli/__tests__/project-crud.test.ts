@@ -100,7 +100,15 @@ describe('project-create command', () => {
     const { createProject } = await import('../api/client.js');
     vi.mocked(createProject).mockResolvedValue(mockProject);
 
-    await program.parseAsync(['node', 'test', 'project-create', '-n', 'Test Project', '-d', 'A test project']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'project-create',
+      '-n',
+      'Test Project',
+      '-d',
+      'A test project',
+    ]);
 
     expect(createProject).toHaveBeenCalledWith({
       name: 'Test Project',
@@ -113,8 +121,8 @@ describe('project-create command', () => {
     const { createProject } = await import('../api/client.js');
     const { promptForMissing } = await import('../prompts/interactive.js');
 
-    vi.mocked(promptForMissing).mockImplementation(
-      (field, value) => Promise.resolve(value || 'Prompted Name')
+    vi.mocked(promptForMissing).mockImplementation((field, value) =>
+      Promise.resolve(value || 'Prompted Name'),
     );
 
     vi.mocked(createProject).mockResolvedValue({
@@ -263,7 +271,7 @@ describe('project-show command', () => {
       new ApiClientError('Project not found', 404, {
         error: 'NOT_FOUND',
         message: 'Project not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'project-show', '99999']);
@@ -336,9 +344,7 @@ describe('project-update command', () => {
 
     await program.parseAsync(['node', 'test', 'project-update', '1']);
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('No updates specified')
-    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('No updates specified'));
     expect(process.exitCode).toBe(1);
     expect(updateProject).not.toHaveBeenCalled();
   });
@@ -350,7 +356,15 @@ describe('project-update command', () => {
     const updatedProject = { ...mockProject, name: 'JSON Updated' };
     vi.mocked(updateProject).mockResolvedValue(updatedProject);
 
-    await program.parseAsync(['node', 'test', '--json', 'project-update', '1', '-n', 'JSON Updated']);
+    await program.parseAsync([
+      'node',
+      'test',
+      '--json',
+      'project-update',
+      '1',
+      '-n',
+      'JSON Updated',
+    ]);
 
     expect(jsonOutput).toHaveBeenCalledWith({ project: updatedProject }, { id: updatedProject.id });
     expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('updated successfully'));
@@ -462,7 +476,7 @@ describe('project-delete command', () => {
       new ApiClientError('Project not found', 404, {
         error: 'NOT_FOUND',
         message: 'Project not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'project-delete', '99999']);

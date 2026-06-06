@@ -49,7 +49,7 @@ describe('GET /api/v1/tasks/completion-report', () => {
   function completeTask(
     projectId: number,
     title: string,
-    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {}
+    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {},
   ): { id: number } {
     const task = app.taskService.createTask({
       title,

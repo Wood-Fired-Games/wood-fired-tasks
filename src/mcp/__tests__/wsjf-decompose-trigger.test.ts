@@ -68,9 +68,7 @@ describe('WSJF decompose batch scoring trigger (#633)', () => {
 
   const charter: ValueCharter = {
     mission: 'keep checkout reliable',
-    value_themes: [
-      { name: 'Reliability', weight: 13, description: 'do not break prod' },
-    ],
+    value_themes: [{ name: 'Reliability', weight: 13, description: 'do not break prod' }],
     time_context: 'no hard deadline',
     risk_posture: 'must not break production data',
     out_of_scope: [],
@@ -91,10 +89,7 @@ describe('WSJF decompose batch scoring trigger (#633)', () => {
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -105,16 +100,13 @@ describe('WSJF decompose batch scoring trigger (#633)', () => {
   });
 
   /** Read back a task's history timeline via the wsjf_history MCP tool. */
-  async function historyTimeline(
-    taskId: number,
-  ): Promise<Array<{ trigger: string }>> {
+  async function historyTimeline(taskId: number): Promise<Array<{ trigger: string }>> {
     const history = (await client.callTool({
       name: 'wsjf_history',
       arguments: { task_id: taskId },
     })) as ToolResult;
     expect(history.isError).toBeFalsy();
-    return (history.structuredContent as { timeline: Array<{ trigger: string }> })
-      .timeline;
+    return (history.structuredContent as { timeline: Array<{ trigger: string }> }).timeline;
   }
 
   it('wsjf_trigger=decompose stamps history trigger=decompose with components + evidence', async () => {

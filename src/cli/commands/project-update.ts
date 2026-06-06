@@ -43,7 +43,7 @@ export const projectUpdateCommand = new Command('project-update')
       // Check if JSON mode (global flag from program)
       const program = projectUpdateCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display success
       if (isJsonMode) {

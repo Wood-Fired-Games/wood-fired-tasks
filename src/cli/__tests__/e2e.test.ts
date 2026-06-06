@@ -71,32 +71,28 @@ function runCli(
   apiKey: string,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [tsxCli, cliEntry, ...args],
-      {
-        env: {
-          ...process.env,
-          ...env,
-          API_BASE_URL: baseUrl,
-          API_KEY: apiKey,
-          // Force resolveAuth to the legacy API_KEY branch by pointing
-          // WFT_CREDENTIALS_PATH at a path that does not exist. Without
-          // this, the child inherits any real ~/.config/wood-fired-tasks/
-          // credentials file from the developer's home and the CLI sends
-          // its bearer token to the ephemeral test server, which rejects
-          // it (401).
-          WFT_CREDENTIALS_PATH: '/nonexistent/wft-credentials-for-e2e-test',
-          // Force non-TTY so the spinner/prompt code paths stay quiet and
-          // the JSON envelope is the only thing on stdout.
-          FORCE_COLOR: '0',
-          NO_COLOR: '1',
-          CI: '1',
-        },
-        cwd: repoRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
+    const child = spawn(process.execPath, [tsxCli, cliEntry, ...args], {
+      env: {
+        ...process.env,
+        ...env,
+        API_BASE_URL: baseUrl,
+        API_KEY: apiKey,
+        // Force resolveAuth to the legacy API_KEY branch by pointing
+        // WFT_CREDENTIALS_PATH at a path that does not exist. Without
+        // this, the child inherits any real ~/.config/wood-fired-tasks/
+        // credentials file from the developer's home and the CLI sends
+        // its bearer token to the ephemeral test server, which rejects
+        // it (401).
+        WFT_CREDENTIALS_PATH: '/nonexistent/wft-credentials-for-e2e-test',
+        // Force non-TTY so the spinner/prompt code paths stay quiet and
+        // the JSON envelope is the only thing on stdout.
+        FORCE_COLOR: '0',
+        NO_COLOR: '1',
+        CI: '1',
       },
-    );
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -253,12 +249,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   it('list --search filters by query (search/my-work surrogate)', async () => {
-    const res = await runCli(
-      ['--json', 'list', '--search', 'e2e task'],
-      {},
-      baseUrl,
-      TEST_API_KEY,
-    );
+    const res = await runCli(['--json', 'list', '--search', 'e2e task'], {}, baseUrl, TEST_API_KEY);
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
     expect(env.success).toBe(true);
@@ -269,12 +260,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   it('show returns full task detail by id', async () => {
-    const res = await runCli(
-      ['--json', 'show', String(createdTaskId)],
-      {},
-      baseUrl,
-      TEST_API_KEY,
-    );
+    const res = await runCli(['--json', 'show', String(createdTaskId)], {}, baseUrl, TEST_API_KEY);
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
     expect(env.success).toBe(true);
@@ -285,13 +271,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
 
   it('claim atomically assigns the task and flips status', async () => {
     const res = await runCli(
-      [
-        '--json',
-        'claim',
-        String(createdTaskId),
-        '--assignee',
-        'e2e-bot',
-      ],
+      ['--json', 'claim', String(createdTaskId), '--assignee', 'e2e-bot'],
       {},
       baseUrl,
       TEST_API_KEY,
@@ -307,13 +287,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
 
   it('update transitions a task to done (done surrogate)', async () => {
     const res = await runCli(
-      [
-        '--json',
-        'update',
-        String(createdTaskId),
-        '--status',
-        'done',
-      ],
+      ['--json', 'update', String(createdTaskId), '--status', 'done'],
       {},
       baseUrl,
       TEST_API_KEY,
@@ -384,8 +358,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       TEST_API_KEY,
     );
     expect(addRes.exitCode).toBe(0);
-    const blockerId = ((parseJsonEnvelope(addRes.stdout).data as { task: { id: number } }).task)
-      .id;
+    const blockerId = (parseJsonEnvelope(addRes.stdout).data as { task: { id: number } }).task.id;
 
     const depAdd = await runCli(
       ['--json', 'dep-add', String(blockerId), String(createdTaskId)],

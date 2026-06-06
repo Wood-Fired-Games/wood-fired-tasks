@@ -49,11 +49,7 @@ describe('POST /api/v1/tasks/:id/claim — assignee_user_id injection', () => {
     assignee: string | null;
     assignee_user_id: number | null;
   } {
-    return db
-      .prepare(
-        'SELECT id, assignee, assignee_user_id FROM tasks WHERE id = ?',
-      )
-      .get(id) as {
+    return db.prepare('SELECT id, assignee, assignee_user_id FROM tasks WHERE id = ?').get(id) as {
       id: number;
       assignee: string | null;
       assignee_user_id: number | null;

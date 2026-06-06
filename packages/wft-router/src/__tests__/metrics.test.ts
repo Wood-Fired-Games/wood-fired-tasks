@@ -65,12 +65,8 @@ describe('MetricsRegistry.render — Prometheus text exposition', () => {
     expect(out).toContain(
       `${METRIC_NAMES.dispatched}{handler="webhook_post",status="succeeded"} 2`,
     );
-    expect(out).toContain(
-      `${METRIC_NAMES.dispatched}{handler="webhook_post",status="failed"} 1`,
-    );
-    expect(out).toContain(
-      `${METRIC_NAMES.dispatched}{handler="shell_exec",status="suppressed"} 1`,
-    );
+    expect(out).toContain(`${METRIC_NAMES.dispatched}{handler="webhook_post",status="failed"} 1`);
+    expect(out).toContain(`${METRIC_NAMES.dispatched}{handler="shell_exec",status="suppressed"} 1`);
   });
 
   it('labels handler_errors/permanently_failed/rate_limit_dropped', () => {
@@ -89,23 +85,17 @@ describe('MetricsRegistry.render — Prometheus text exposition', () => {
     const reg = new MetricsRegistry();
     reg.incPermanentlyFailed('a\\b"c\nd');
     const out = reg.render();
-    expect(out).toContain(
-      `${METRIC_NAMES.permanentlyFailed}{rule="a\\\\b\\"c\\nd"} 1`,
-    );
+    expect(out).toContain(`${METRIC_NAMES.permanentlyFailed}{rule="a\\\\b\\"c\\nd"} 1`);
   });
 
   it('matches a full Prometheus sample-line grammar for a labelled series', () => {
     const reg = new MetricsRegistry();
     reg.incDispatched('webhook_post', 'succeeded');
     const out = reg.render();
-    const line = out
-      .split('\n')
-      .find((l) => l.startsWith(`${METRIC_NAMES.dispatched}{`));
+    const line = out.split('\n').find((l) => l.startsWith(`${METRIC_NAMES.dispatched}{`));
     expect(line).toBeDefined();
     // name{label="v",label2="v2"} <number>
-    expect(line).toMatch(
-      /^wft_router_dispatched_total\{handler="[^"]*",status="[^"]*"\} \d+$/,
-    );
+    expect(line).toMatch(/^wft_router_dispatched_total\{handler="[^"]*",status="[^"]*"\} \d+$/);
   });
 });
 
@@ -130,9 +120,7 @@ describe('startMetricsServer — bind defaulting + serving', () => {
     expect(handle.address.address).toBe('127.0.0.1');
     expect(handle.address.port).toBeGreaterThan(0);
 
-    const res = await fetch(
-      `http://127.0.0.1:${handle.address.port}/metrics`,
-    );
+    const res = await fetch(`http://127.0.0.1:${handle.address.port}/metrics`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/plain');
     expect(res.headers.get('content-type')).toContain('version=0.0.4');
@@ -151,9 +139,7 @@ describe('startMetricsServer — bind defaulting + serving', () => {
     });
     expect(handle.address.address).toBe('0.0.0.0');
     const addr = handle.server.address();
-    expect(addr !== null && typeof addr === 'object' ? addr.address : '').toBe(
-      '0.0.0.0',
-    );
+    expect(addr !== null && typeof addr === 'object' ? addr.address : '').toBe('0.0.0.0');
     // Still reachable on loopback even when bound to 0.0.0.0.
     const res = await fetch(`http://127.0.0.1:${handle.address.port}/metrics`);
     expect(res.status).toBe(200);

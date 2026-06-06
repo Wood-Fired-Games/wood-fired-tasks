@@ -126,7 +126,9 @@ function makeMockServices(): Services {
       createTask: vi.fn().mockReturnValue(makeMockTask()),
       updateTask: vi.fn().mockReturnValue(makeMockTask()),
       deleteTask: vi.fn().mockReturnValue(undefined),
-      claimTask: vi.fn().mockReturnValue(makeMockTask({ assignee: 'Alice', claimed_at: '2026-02-18T00:00:00Z' })),
+      claimTask: vi
+        .fn()
+        .mockReturnValue(makeMockTask({ assignee: 'Alice', claimed_at: '2026-02-18T00:00:00Z' })),
       getSubtasks: vi.fn().mockReturnValue([]),
       countTasks: vi.fn().mockReturnValue(42),
       searchTasks: vi.fn().mockReturnValue([]),
@@ -146,7 +148,14 @@ function makeMockServices(): Services {
     } as unknown as Services['dependencyService'],
     commentService: {
       getComments: vi.fn().mockResolvedValue([]),
-      addComment: vi.fn().mockReturnValue({ id: 7, task_id: 42, author: 'Alice', content: 'Test', created_at: '2026-02-18T00:00:00Z', updated_at: null }),
+      addComment: vi.fn().mockReturnValue({
+        id: 7,
+        task_id: 42,
+        author: 'Alice',
+        content: 'Test',
+        created_at: '2026-02-18T00:00:00Z',
+        updated_at: null,
+      }),
       deleteComment: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['commentService'],
     userRepository: makeMockUserRepo() as unknown as Services['userRepository'],
@@ -258,7 +267,10 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(args.respond).toHaveBeenCalledOnce();
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: unknown[]; response_type: string };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: unknown[];
+        response_type: string;
+      };
       expect(respondArg.response_type).toBe('ephemeral');
       expect(Array.isArray(respondArg.blocks)).toBe(true);
       // First block should be a header with 'Tasks' in its text
@@ -280,7 +292,10 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(args.respond).toHaveBeenCalledOnce();
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: unknown[]; response_type: string };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: unknown[];
+        response_type: string;
+      };
       expect(respondArg.response_type).toBe('ephemeral');
       expect(Array.isArray(respondArg.blocks)).toBe(true);
       const firstBlock = respondArg.blocks[0] as { type: string; text: { text: string } };
@@ -336,7 +351,10 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.taskService.listTasks).toHaveBeenCalledWith({});
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: unknown[];
+      };
       expect(respondArg.response_type).toBe('ephemeral');
       expect(Array.isArray(respondArg.blocks)).toBe(true);
     });
@@ -358,10 +376,12 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('list');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       // formatTaskList returns a single section with "_No tasks found._" for empty arrays
-      const hasNoTasksText = respondArg.blocks.some(
-        (b) => b.text?.text?.includes('No tasks found')
+      const hasNoTasksText = respondArg.blocks.some((b) =>
+        b.text?.text?.includes('No tasks found'),
       );
       expect(hasNoTasksText).toBe(true);
     });
@@ -392,7 +412,10 @@ describe('registerTasksCommand', () => {
       expect(services.dependencyService.getBlockedBy).toHaveBeenCalledWith(42);
       expect(services.dependencyService.getBlockers).toHaveBeenCalledWith(42);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: unknown[];
+      };
       expect(respondArg.response_type).toBe('ephemeral');
       expect(respondArg.blocks.length).toBeGreaterThan(0);
     });
@@ -435,16 +458,20 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('show 42');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       const hasCommentHeader = respondArg.blocks.some((b) => b.text?.text === '*Comments*');
       expect(hasCommentHeader).toBe(true);
-      const hasCommentContent = respondArg.blocks.some((b) => b.text?.text?.includes('First comment'));
+      const hasCommentContent = respondArg.blocks.some((b) =>
+        b.text?.text?.includes('First comment'),
+      );
       expect(hasCommentContent).toBe(true);
     });
 
     it('adds "X more comments" footer when more than 5 comments', async () => {
       const comments = Array.from({ length: 7 }, (_, i) =>
-        makeMockComment({ id: i + 1, content: `Comment ${i + 1}` })
+        makeMockComment({ id: i + 1, content: `Comment ${i + 1}` }),
       );
       vi.mocked(services.commentService.getComments).mockResolvedValue(comments);
 
@@ -452,9 +479,11 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('show 42');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ elements?: Array<{ text: string }> }> };
-      const contextBlock = respondArg.blocks.find(
-        (b) => b.elements?.[0]?.text?.includes('more comments')
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ elements?: Array<{ text: string }> }>;
+      };
+      const contextBlock = respondArg.blocks.find((b) =>
+        b.elements?.[0]?.text?.includes('more comments'),
       );
       expect(contextBlock).toBeDefined();
     });
@@ -468,7 +497,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('show 42');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       const hasDepsText = respondArg.blocks.some((b) => b.text?.text?.includes('Blocks:'));
       expect(hasDepsText).toBe(true);
     });
@@ -500,7 +531,7 @@ describe('registerTasksCommand', () => {
           title: 'Fix login bug',
           project_id: 3,
           created_by: 'Alice',
-        })
+        }),
       );
       expect(args.respond).toHaveBeenCalledOnce();
     });
@@ -539,7 +570,7 @@ describe('registerTasksCommand', () => {
       expect(services.taskService.createTask).toHaveBeenCalledWith(
         expect.objectContaining({
           priority: 'medium',
-        })
+        }),
       );
     });
   });
@@ -629,7 +660,9 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.taskService.deleteTask).toHaveBeenCalledWith(42);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       const blockText = respondArg.blocks[0]?.text?.text ?? '';
       expect(blockText).toContain(':white_check_mark:');
       expect(blockText).toContain('42');
@@ -673,20 +706,28 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.projectService.listProjects).toHaveBeenCalledOnce();
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: unknown[];
+      };
       expect(respondArg.response_type).toBe('ephemeral');
       expect(Array.isArray(respondArg.blocks)).toBe(true);
     });
 
     it('responds with header block when projects exist', async () => {
-      const projects = [makeMockProject({ id: 1, name: 'Alpha' }), makeMockProject({ id: 2, name: 'Beta' })];
+      const projects = [
+        makeMockProject({ id: 1, name: 'Alpha' }),
+        makeMockProject({ id: 2, name: 'Beta' }),
+      ];
       vi.mocked(services.projectService.listProjects).mockReturnValue(projects);
       const handler = getHandler(app);
       const handlerArgs = makeHandlerArgs('project-list');
       await handler(handlerArgs);
 
       // formatProjectList returns a header block for non-empty list
-      const respondArg = handlerArgs.respond.mock.calls[0]![0] as { blocks: Array<{ type: string }> };
+      const respondArg = handlerArgs.respond.mock.calls[0]![0] as {
+        blocks: Array<{ type: string }>;
+      };
       expect(respondArg.blocks[0]?.type).toBe('header');
     });
   });
@@ -711,7 +752,10 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.projectService.getProject).toHaveBeenCalledWith(5);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: unknown[];
+      };
       expect(respondArg.response_type).toBe('ephemeral');
     });
 
@@ -720,7 +764,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('project-show');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
       expect(respondArg.blocks[0]?.text?.text).toContain('required');
     });
@@ -747,7 +793,7 @@ describe('registerTasksCommand', () => {
 
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.projectService.createProject).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'My Project' })
+        expect.objectContaining({ name: 'My Project' }),
       );
       expect(args.respond).toHaveBeenCalledOnce();
     });
@@ -757,7 +803,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('project-create');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
       expect(respondArg.blocks[0]?.text?.text).toContain('name required');
     });
@@ -792,7 +840,9 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(services.projectService.updateProject).not.toHaveBeenCalled();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
     });
   });
@@ -817,7 +867,9 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.projectService.deleteProject).toHaveBeenCalledWith(5);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
       expect(respondArg.blocks[0]?.text?.text).toContain('5');
       expect(respondArg.blocks[0]?.text?.text).toContain('deleted');
@@ -844,9 +896,14 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(args.ack).toHaveBeenCalledOnce();
-      expect(services.dependencyService.addDependency).toHaveBeenCalledWith({ task_id: 10, blocks_task_id: 20 });
+      expect(services.dependencyService.addDependency).toHaveBeenCalledWith({
+        task_id: 10,
+        blocks_task_id: 20,
+      });
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
       expect(respondArg.blocks[0]?.text?.text).toContain('10');
       expect(respondArg.blocks[0]?.text?.text).toContain('20');
@@ -858,7 +915,9 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(services.dependencyService.addDependency).not.toHaveBeenCalled();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
     });
   });
@@ -884,7 +943,9 @@ describe('registerTasksCommand', () => {
       expect(services.dependencyService.getBlockedBy).toHaveBeenCalledWith(10);
       expect(services.dependencyService.getBlockers).toHaveBeenCalledWith(10);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('Task #10');
     });
   });
@@ -909,7 +970,9 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.dependencyService.removeDependency).toHaveBeenCalledWith(10, 20);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
       expect(respondArg.blocks[0]?.text?.text).toContain('no longer blocks');
     });
@@ -937,10 +1000,16 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
       expect(services.commentService.addComment).toHaveBeenCalledWith(
-        expect.objectContaining({ task_id: 42, content: 'This is a great comment', author: 'Alice' })
+        expect.objectContaining({
+          task_id: 42,
+          content: 'This is a great comment',
+          author: 'Alice',
+        }),
       );
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
     });
 
@@ -950,7 +1019,9 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(services.commentService.addComment).not.toHaveBeenCalled();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
       expect(respondArg.blocks[0]?.text?.text).toContain('required');
     });
@@ -979,9 +1050,13 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.commentService.getComments).toHaveBeenCalledWith(42);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ type: string; text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ type: string; text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.type).toBe('header');
-      const hasCommentContent = respondArg.blocks.some((b) => b.text?.text?.includes('Great work!'));
+      const hasCommentContent = respondArg.blocks.some((b) =>
+        b.text?.text?.includes('Great work!'),
+      );
       expect(hasCommentContent).toBe(true);
     });
 
@@ -992,7 +1067,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('comment-list 42');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('No comments');
     });
   });
@@ -1017,7 +1094,9 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.commentService.deleteComment).toHaveBeenCalledWith(7);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
       expect(respondArg.blocks[0]?.text?.text).toContain('7');
     });
@@ -1045,7 +1124,7 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
       expect(services.taskService.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ parent_task_id: 10, title: 'Fix sub issue', project_id: 3 })
+        expect.objectContaining({ parent_task_id: 10, title: 'Fix sub issue', project_id: 3 }),
       );
       expect(args.respond).toHaveBeenCalledOnce();
     });
@@ -1056,7 +1135,9 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(services.taskService.createTask).not.toHaveBeenCalled();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
       expect(respondArg.blocks[0]?.text?.text).toContain('Project ID required');
     });
@@ -1082,7 +1163,10 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.taskService.getSubtasks).toHaveBeenCalledWith(10);
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { response_type: string; blocks: unknown[] };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        response_type: string;
+        blocks: unknown[];
+      };
       expect(respondArg.response_type).toBe('ephemeral');
     });
   });
@@ -1109,20 +1193,26 @@ describe('registerTasksCommand', () => {
       expect(args.ack).toHaveBeenCalledOnce();
       expect(services.taskService.countTasks).toHaveBeenCalledOnce();
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
       expect(respondArg.blocks[0]?.text?.text).toContain('healthy');
       expect(respondArg.blocks[0]?.text?.text).toContain('42');
     });
 
     it('responds with failure message when countTasks throws', async () => {
-      vi.mocked(services.taskService.countTasks).mockImplementation(() => { throw new Error('DB offline'); });
+      vi.mocked(services.taskService.countTasks).mockImplementation(() => {
+        throw new Error('DB offline');
+      });
 
       const handler = getHandler(app);
       const args = makeHandlerArgs('health');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':x:');
       expect(respondArg.blocks[0]?.text?.text).toContain('failed');
     });
@@ -1148,7 +1238,9 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(args.respond).toHaveBeenCalledOnce();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
       expect(respondArg.blocks[0]?.text?.text).toContain('backup');
     });
@@ -1158,7 +1250,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('doctor');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
       expect(respondArg.blocks[0]?.text?.text).toContain('doctor');
     });
@@ -1168,7 +1262,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('completions');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
       expect(respondArg.blocks[0]?.text?.text).toContain('completions');
     });
@@ -1178,7 +1274,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('stats');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
     });
 
@@ -1187,7 +1285,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('db-check');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('only available via the CLI');
     });
   });
@@ -1217,8 +1317,13 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(args.ack).toHaveBeenCalledOnce();
-      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, ['task.created', 'task.status_changed']);
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, [
+        'task.created',
+        'task.status_changed',
+      ]);
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':bell:');
     });
 
@@ -1233,14 +1338,18 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('subscribe');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('Missing required flag');
     });
 
     it('subscribe --project 999 with project not found responds with error', async () => {
       const app = makeMockApp();
       const services = makeMockServices();
-      vi.mocked(services.projectService.getProject).mockImplementation(() => { throw new Error('Not found'); });
+      vi.mocked(services.projectService.getProject).mockImplementation(() => {
+        throw new Error('Not found');
+      });
       const identityCache = makeMockIdentityCache();
       const subRepo = makeMockSubscriptionRepo();
       registerTasksCommand(app as unknown as App, services, identityCache, subRepo as any);
@@ -1249,7 +1358,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('subscribe --project 999');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('not found');
     });
 
@@ -1264,7 +1375,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('subscribe --project abc');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('Invalid project ID');
     });
 
@@ -1293,7 +1406,10 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('subscribe --project 3 --events task.created,project.created');
       await handler(args);
 
-      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, ['task.created', 'project.created']);
+      expect(subRepo.subscribe).toHaveBeenCalledWith('C123', 3, [
+        'task.created',
+        'project.created',
+      ]);
     });
 
     it('subscribe with invalid event type rejects ephemerally and does NOT persist', async () => {
@@ -1357,7 +1473,9 @@ describe('registerTasksCommand', () => {
       await handler(args);
 
       expect(subRepo.subscribe).not.toHaveBeenCalled();
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('No event types specified');
     });
 
@@ -1371,7 +1489,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('subscribe --project 3');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('not configured');
     });
 
@@ -1388,7 +1508,9 @@ describe('registerTasksCommand', () => {
 
       expect(args.ack).toHaveBeenCalledOnce();
       expect(subRepo.unsubscribe).toHaveBeenCalledWith('C123', 3);
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain(':no_bell:');
     });
 
@@ -1418,7 +1540,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('unsubscribe');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('No subscriptions found');
     });
 
@@ -1432,7 +1556,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('unsubscribe');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       expect(respondArg.blocks[0]?.text?.text).toContain('not configured');
     });
 
@@ -1446,7 +1572,9 @@ describe('registerTasksCommand', () => {
       const args = makeHandlerArgs('help');
       await handler(args);
 
-      const respondArg = args.respond.mock.calls[0]![0] as { blocks: Array<{ text?: { text: string } }> };
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
       const allText = respondArg.blocks.map((b) => b.text?.text ?? '').join('\n');
       expect(allText).toContain('subscribe');
       expect(allText).toContain('unsubscribe');
@@ -1563,7 +1691,7 @@ describe('registerTasksCommand', () => {
         userRepo.findServiceAccountByName.mockReturnValue(null);
 
         expect(() =>
-          registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger)
+          registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger),
         ).toThrow(/slack-bot/i);
       });
     });
@@ -1577,7 +1705,7 @@ describe('registerTasksCommand', () => {
 
         const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
         userRepo.findBySlackUserId.mockImplementation((sid: string) =>
-          sid === 'U0123ABC' ? mappedUser() : null
+          sid === 'U0123ABC' ? mappedUser() : null,
         );
 
         registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
@@ -1591,7 +1719,7 @@ describe('registerTasksCommand', () => {
             project_id: 3,
             created_by: 'Alice',
             created_by_user_id: 17,
-          })
+          }),
         );
         expect(logger.warn).not.toHaveBeenCalled();
       });
@@ -1610,14 +1738,14 @@ describe('registerTasksCommand', () => {
         expect(services.taskService.createTask).toHaveBeenCalledWith(
           expect.objectContaining({
             created_by_user_id: 999, // slack-bot id from makeMockUserRepo
-          })
+          }),
         );
         expect(logger.warn).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'slack_user_unmapped',
             slack_user_id: 'U0123ABC',
           }),
-          'slack_user_unmapped'
+          'slack_user_unmapped',
         );
       });
     });
@@ -1657,7 +1785,7 @@ describe('registerTasksCommand', () => {
             event: 'slack_user_unmapped',
             slack_user_id: 'U0123ABC',
           }),
-          'slack_user_unmapped'
+          'slack_user_unmapped',
         );
       });
     });
@@ -1682,7 +1810,7 @@ describe('registerTasksCommand', () => {
             author: 'Alice',
             content: 'Looks good',
             author_user_id: 17,
-          })
+          }),
         );
         expect(logger.warn).not.toHaveBeenCalled();
       });
@@ -1700,14 +1828,14 @@ describe('registerTasksCommand', () => {
         expect(services.commentService.addComment).toHaveBeenCalledWith(
           expect.objectContaining({
             author_user_id: 999,
-          })
+          }),
         );
         expect(logger.warn).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'slack_user_unmapped',
             slack_user_id: 'U0123ABC',
           }),
-          'slack_user_unmapped'
+          'slack_user_unmapped',
         );
       });
     });
@@ -1733,7 +1861,7 @@ describe('registerTasksCommand', () => {
             project_id: 3,
             created_by: 'Alice',
             created_by_user_id: 17,
-          })
+          }),
         );
         expect(logger.warn).not.toHaveBeenCalled();
       });
@@ -1751,14 +1879,14 @@ describe('registerTasksCommand', () => {
         expect(services.taskService.createTask).toHaveBeenCalledWith(
           expect.objectContaining({
             created_by_user_id: 999,
-          })
+          }),
         );
         expect(logger.warn).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'slack_user_unmapped',
             slack_user_id: 'U0123ABC',
           }),
-          'slack_user_unmapped'
+          'slack_user_unmapped',
         );
       });
     });
@@ -1772,7 +1900,7 @@ describe('registerTasksCommand', () => {
 
         const userRepo = services.userRepository as unknown as ReturnType<typeof makeMockUserRepo>;
         userRepo.findByEmail.mockImplementation((email: string) =>
-          email === 'alice@example.com' ? mappedUser() : null
+          email === 'alice@example.com' ? mappedUser() : null,
         );
 
         registerTasksCommand(app as unknown as App, services, identityCache, undefined, logger);
@@ -1854,7 +1982,10 @@ describe('formatServiceError', () => {
   });
 
   it('formats ValidationError with fieldErrors', () => {
-    const err = new ValidationError({ title: ['Title is required', 'Must be at least 3 chars'], priority: ['Invalid priority'] });
+    const err = new ValidationError({
+      title: ['Title is required', 'Must be at least 3 chars'],
+      priority: ['Invalid priority'],
+    });
     const result = formatServiceError(err);
     expect(result).toMatch(/Validation failed/);
     expect(result).toContain('title');
@@ -1962,7 +2093,11 @@ describe('respondError', () => {
   it('appends hint to the error block text when provided', async () => {
     const respond = vi.fn().mockResolvedValue(undefined) as unknown as RespondFn;
 
-    await respondError(respond, 'Unknown subcommand: `foo`', 'Run `/tasks help` to see available subcommands.');
+    await respondError(
+      respond,
+      'Unknown subcommand: `foo`',
+      'Run `/tasks help` to see available subcommands.',
+    );
 
     const arg = (respond as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       blocks: Array<{ type: string; text: { text: string } }>;

@@ -413,17 +413,12 @@ describe('Task CRUD Routes', () => {
 
       expect(response.statusCode).toBe(200);
       const task = JSON.parse(response.body);
-      expect(task.updated_at).toMatch(
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
-      );
+      expect(task.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
     });
 
     it('normalizes SQLite-format updated_at to ISO-8601 on response', async () => {
       // Simulate a row written by SQLite's datetime('now') (no T, no Z).
-      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(
-        '2026-06-15 12:30:00',
-        midId
-      );
+      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run('2026-06-15 12:30:00', midId);
 
       const response = await server.inject({
         method: 'GET',
@@ -438,7 +433,7 @@ describe('Task CRUD Routes', () => {
       // Restore canonical value for subsequent range-filter tests.
       db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(
         '2026-06-15T12:30:00.000Z',
-        midId
+        midId,
       );
     });
 
@@ -505,7 +500,7 @@ describe('Task CRUD Routes', () => {
       // updated_at moved to "now" by the PUT; re-stamp deterministically.
       db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(
         '2026-06-15T12:30:00.000Z',
-        midId
+        midId,
       );
 
       const response = await server.inject({
@@ -607,16 +602,20 @@ describe('Task CRUD Routes', () => {
     });
 
     it('does not duplicate rows across pages', async () => {
-      const page1 = (await server.inject({
-        method: 'GET',
-        url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=0`,
-        headers,
-      })).json() as { data: Array<{ id: number }> };
-      const page2 = (await server.inject({
-        method: 'GET',
-        url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=5`,
-        headers,
-      })).json() as { data: Array<{ id: number }> };
+      const page1 = (
+        await server.inject({
+          method: 'GET',
+          url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=0`,
+          headers,
+        })
+      ).json() as { data: Array<{ id: number }> };
+      const page2 = (
+        await server.inject({
+          method: 'GET',
+          url: `/api/v1/tasks?project_id=${paginationProjectId}&limit=5&offset=5`,
+          headers,
+        })
+      ).json() as { data: Array<{ id: number }> };
 
       const ids1 = new Set(page1.data.map((t) => t.id));
       const ids2 = new Set(page2.data.map((t) => t.id));

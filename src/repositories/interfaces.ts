@@ -51,10 +51,7 @@ export interface ITaskRepository {
    * the TaskFilters object so callers (CLI, MCP, REST) all share one shape.
    */
   findByFilters(filters: TaskFilters): Array<Task & { tags: string[] }>;
-  findChildren(
-    parentId: number,
-    pagination?: PaginationOptions
-  ): Array<Task & { tags: string[] }>;
+  findChildren(parentId: number, pagination?: PaginationOptions): Array<Task & { tags: string[] }>;
   /**
    * Total match count for the same filter set, ignoring pagination.
    * Powers the `total` field in the {data,total,limit,offset} envelope.
@@ -74,9 +71,7 @@ export interface ITaskRepository {
     assignee: string,
     assigneeUserId?: number | null,
   ): (Task & { tags: string[] }) | null;
-  findCompletedInRange(
-    filters: CompletionRangeFilters
-  ): Array<Task & { tags: string[] }>;
+  findCompletedInRange(filters: CompletionRangeFilters): Array<Task & { tags: string[] }>;
 }
 
 export interface IDependencyRepository {
@@ -154,10 +149,7 @@ export interface IUserRepository {
    *
    * @throws TypeError when `id` is non-positive.
    */
-  updateProfile(
-    id: number,
-    patch: { email?: string | null; displayName?: string },
-  ): User | null;
+  updateProfile(id: number, patch: { email?: string | null; displayName?: string }): User | null;
 }
 
 /**

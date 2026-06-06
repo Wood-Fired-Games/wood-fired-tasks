@@ -6,10 +6,7 @@ import { ProjectRepository } from '../../repositories/project.repository.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
 import { TaskService } from '../task.service.js';
-import {
-  validateManualScore,
-  checkComponentContradictions,
-} from '../wsjf.service.js';
+import { validateManualScore, checkComponentContradictions } from '../wsjf.service.js';
 import { ValidationError } from '../errors.js';
 import type { WsjfWriteDTO } from '../../types/task.js';
 import type { WsjfLocks, WsjfSource } from '../../types/wsjf.js';
@@ -103,9 +100,7 @@ describe('WSJF manual override + locks + provenance (#643)', () => {
     expect(row.wsjf_time_criticality).toBe(5);
     expect(row.wsjf_risk_opportunity).toBe(3);
     expect(row.wsjf_job_size).toBe(2);
-    expect(row.wsjf_locked).toEqual(
-      allLocks({ value: true, jobSize: true }),
-    );
+    expect(row.wsjf_locked).toEqual(allLocks({ value: true, jobSize: true }));
     expect(row.wsjf_source).toEqual(allManualSource());
 
     // History: exactly one row, trigger='manual', carries lock + source.
@@ -113,9 +108,7 @@ describe('WSJF manual override + locks + provenance (#643)', () => {
     expect(history).toHaveLength(1);
     expect(history[0].trigger).toBe('manual');
     expect(history[0].source).toEqual(allManualSource());
-    expect(history[0].locked).toEqual(
-      allLocks({ value: true, jobSize: true }),
-    );
+    expect(history[0].locked).toEqual(allLocks({ value: true, jobSize: true }));
     // No classification/evidence was supplied on the manual path.
     expect(history[0].classifications).toBeNull();
     expect(history[0].evidence).toBeNull();
@@ -190,15 +183,20 @@ describe('WSJF manual override + locks + provenance (#643)', () => {
     });
     expect(direct.ok).toBe(false);
     expect(direct.errors.join('\n')).toMatch(/contradiction/);
-    expect(checkComponentContradictions({ value: 13, timeCriticality: 5, riskOpportunity: 3, jobSize: 1 })).toHaveLength(1);
+    expect(
+      checkComponentContradictions({
+        value: 13,
+        timeCriticality: 5,
+        riskOpportunity: 3,
+        jobSize: 1,
+      }),
+    ).toHaveLength(1);
   });
 
   it('AC3a: manual path is exempt from the classification/evidence requirement', () => {
     const created = service.createTask(baseInput());
     // No classification, no evidence, no features supplied — accepted on manual.
-    expect(() =>
-      service.updateTask(created.id, { wsjf: manualWsjf() }),
-    ).not.toThrow();
+    expect(() => service.updateTask(created.id, { wsjf: manualWsjf() })).not.toThrow();
     expect(taskRepo.findById(created.id)!.wsjf_value).toBe(8);
 
     // validateManualScore accepts a bare component set (no classification ctx).

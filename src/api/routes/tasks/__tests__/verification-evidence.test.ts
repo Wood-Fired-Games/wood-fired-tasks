@@ -70,9 +70,7 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
     const id = await createTaskHere('round-trip');
     const evidence = {
       verdict: 'PASS' as const,
-      checks: [
-        { name: 'build', status: 'PASS' as const, evidence_url_or_text: 'green' },
-      ],
+      checks: [{ name: 'build', status: 'PASS' as const, evidence_url_or_text: 'green' }],
       verifier_session_id: 'sess-abc',
       verifier_request_id: 'req-123',
       verified_at: '2026-05-23T12:00:00.000Z',
@@ -113,7 +111,9 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
       headers,
     });
     expect(listResp.statusCode).toBe(200);
-    const body = JSON.parse(listResp.body) as { data: Array<{ id: number; verification_evidence: unknown }> };
+    const body = JSON.parse(listResp.body) as {
+      data: Array<{ id: number; verification_evidence: unknown }>;
+    };
     const row = body.data.find((r) => r.id === id);
     expect(row).toBeDefined();
     expect(row?.verification_evidence).toBeNull();
@@ -135,7 +135,9 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
       headers,
     });
     expect(listResp.statusCode).toBe(200);
-    const body = JSON.parse(listResp.body) as { data: Array<{ id: number; verification_evidence: unknown }> };
+    const body = JSON.parse(listResp.body) as {
+      data: Array<{ id: number; verification_evidence: unknown }>;
+    };
     const row = body.data.find((r) => r.id === id);
     expect(row?.verification_evidence).toEqual(evidence);
   });

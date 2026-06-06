@@ -21,7 +21,7 @@ export const idempotencyKeyHeaderSchema = z
   .max(128, 'X-Idempotency-Key must be at most 128 characters')
   .regex(
     /^[A-Za-z0-9_-]+$/,
-    'X-Idempotency-Key may only contain letters, digits, hyphens, and underscores'
+    'X-Idempotency-Key may only contain letters, digits, hyphens, and underscores',
   );
 
 export type IdempotencyKeyHeader = z.infer<typeof idempotencyKeyHeaderSchema>;

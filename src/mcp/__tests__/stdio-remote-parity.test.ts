@@ -36,18 +36,14 @@ export function parityViolations(
   allowlist: { name: string; reason: string }[],
 ): string[] {
   const allowed = new Set(allowlist.map((entry) => entry.name));
-  return stdioNames.filter(
-    (name) => !remoteNames.has(name) && !allowed.has(name),
-  );
+  return stdioNames.filter((name) => !remoteNames.has(name) && !allowed.has(name));
 }
 
 /**
  * Throws if any allowlist entry carries an empty / whitespace-only reason.
  * Local-only tools are allowed, but every exception MUST be justified in code.
  */
-export function validateAllowlist(
-  allowlist: { name: string; reason: string }[],
-): void {
+export function validateAllowlist(allowlist: { name: string; reason: string }[]): void {
   for (const entry of allowlist) {
     if (typeof entry.reason !== 'string' || entry.reason.trim() === '') {
       throw new Error(
@@ -73,20 +69,16 @@ export const LOCAL_ONLY_ALLOWLIST: { name: string; reason: string }[] = [];
 
 async function harvestStdioToolNames(): Promise<string[]> {
   const names: string[] = [];
-  const spy = vi
-    .spyOn(McpServer.prototype, 'registerTool')
-    .mockImplementation(function (
-      this: McpServer,
-      name: string,
-      ..._rest: unknown[]
-    ) {
-      names.push(name);
-      // Return a minimal stub; handlers are never invoked here — we only need
-      // registerTool to be CALLED so its first arg (the tool name) is captured.
-      return { name } as unknown as ReturnType<
-        typeof McpServer.prototype.registerTool
-      >;
-    } as typeof McpServer.prototype.registerTool);
+  const spy = vi.spyOn(McpServer.prototype, 'registerTool').mockImplementation(function (
+    this: McpServer,
+    name: string,
+    ..._rest: unknown[]
+  ) {
+    names.push(name);
+    // Return a minimal stub; handlers are never invoked here — we only need
+    // registerTool to be CALLED so its first arg (the tool name) is captured.
+    return { name } as unknown as ReturnType<typeof McpServer.prototype.registerTool>;
+  } as typeof McpServer.prototype.registerTool);
 
   // A fully-wired app over a migrated in-memory db. createTestApp() builds the
   // same service/repository graph production uses, INCLUDING topologyService, so
@@ -126,10 +118,7 @@ function harvestRemoteToolNames(): string[] {
   };
   // The handlers are never invoked, so a fully-mocked client suffices. Methods
   // are accessed lazily inside the closures, not at registration time.
-  const mockRestClient = new Proxy(
-    {},
-    { get: () => vi.fn() },
-  );
+  const mockRestClient = new Proxy({}, { get: () => vi.fn() });
   registerRemoteTools(
     stub as unknown as Parameters<typeof registerRemoteTools>[0],
     mockRestClient as unknown as Parameters<typeof registerRemoteTools>[1],
@@ -142,11 +131,7 @@ describe('stdio ⊆ remote MCP tool parity (#648)', () => {
     const stdioNames = await harvestStdioToolNames();
     const remoteNames = new Set(harvestRemoteToolNames());
 
-    const violations = parityViolations(
-      stdioNames,
-      remoteNames,
-      LOCAL_ONLY_ALLOWLIST,
-    );
+    const violations = parityViolations(stdioNames, remoteNames, LOCAL_ONLY_ALLOWLIST);
     expect(
       violations,
       `These stdio tools have NO remote-proxy registration and are unreachable ` +
@@ -168,9 +153,7 @@ describe('stdio ⊆ remote MCP tool parity (#648)', () => {
   // ── Pure-helper negative cases (deterministic) ────────────────────────────
 
   it('parityViolations detects a stdio tool missing from remote', () => {
-    expect(parityViolations(['only_stdio_tool'], new Set(), [])).toEqual([
-      'only_stdio_tool',
-    ]);
+    expect(parityViolations(['only_stdio_tool'], new Set(), [])).toEqual(['only_stdio_tool']);
     expect(
       parityViolations(['only_stdio_tool'], new Set(), [
         { name: 'only_stdio_tool', reason: 'direct-DB only' },
@@ -181,9 +164,7 @@ describe('stdio ⊆ remote MCP tool parity (#648)', () => {
   it('validateAllowlist rejects an empty reason', () => {
     expect(() => validateAllowlist([{ name: 'x', reason: '  ' }])).toThrow();
     expect(() => validateAllowlist([{ name: 'x', reason: '' }])).toThrow();
-    expect(() =>
-      validateAllowlist([{ name: 'x', reason: 'good reason' }]),
-    ).not.toThrow();
+    expect(() => validateAllowlist([{ name: 'x', reason: 'good reason' }])).not.toThrow();
   });
 
   it('the shipped allowlist has only reason-annotated entries', () => {

@@ -22,7 +22,7 @@ function insertUser(
     is_service_account?: number;
     created_at?: string;
     disabled_at?: string | null;
-  }
+  },
 ): number {
   const stmt = db.prepare(`
     INSERT INTO users (
@@ -663,18 +663,10 @@ describe('UserRepository', () => {
       });
 
       it('throws TypeError when id is non-positive (0, negative, NaN, non-integer)', () => {
-        expect(() => repo.updateProfile(0, { email: 'x@example.com' })).toThrow(
-          TypeError,
-        );
-        expect(() =>
-          repo.updateProfile(-1, { email: 'x@example.com' }),
-        ).toThrow(TypeError);
-        expect(() =>
-          repo.updateProfile(NaN, { email: 'x@example.com' }),
-        ).toThrow(TypeError);
-        expect(() =>
-          repo.updateProfile(1.5, { email: 'x@example.com' }),
-        ).toThrow(TypeError);
+        expect(() => repo.updateProfile(0, { email: 'x@example.com' })).toThrow(TypeError);
+        expect(() => repo.updateProfile(-1, { email: 'x@example.com' })).toThrow(TypeError);
+        expect(() => repo.updateProfile(NaN, { email: 'x@example.com' })).toThrow(TypeError);
+        expect(() => repo.updateProfile(1.5, { email: 'x@example.com' })).toThrow(TypeError);
       });
 
       it('throws TypeError when displayName is supplied as empty/null', () => {
@@ -687,12 +679,10 @@ describe('UserRepository', () => {
         const repoAsAny = repo as unknown as {
           updateProfile: (id: number, patch: unknown) => unknown;
         };
-        expect(() =>
-          repoAsAny.updateProfile(inserted.id, { displayName: '' }),
-        ).toThrow(TypeError);
-        expect(() =>
-          repoAsAny.updateProfile(inserted.id, { displayName: null }),
-        ).toThrow(TypeError);
+        expect(() => repoAsAny.updateProfile(inserted.id, { displayName: '' })).toThrow(TypeError);
+        expect(() => repoAsAny.updateProfile(inserted.id, { displayName: null })).toThrow(
+          TypeError,
+        );
       });
 
       it('does NOT mutate identity columns even when patch attempts smuggled keys', () => {

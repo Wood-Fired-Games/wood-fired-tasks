@@ -46,10 +46,7 @@ export async function initOidc(env: Config): Promise<OidcConfig | null> {
     );
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `OIDC discovery failed for ${env.OIDC_ISSUER_URL}: ${cause}`,
-      { cause: err },
-    );
+    throw new Error(`OIDC discovery failed for ${env.OIDC_ISSUER_URL}: ${cause}`, { cause: err });
   }
 }
 
@@ -79,10 +76,7 @@ export interface AuthorizationUrlParams {
  * non-S256 challenges at the IdP and the Phase 29 fixture only advertises
  * S256 anyway.
  */
-export function buildAuthorizationUrl(
-  config: OidcConfig,
-  params: AuthorizationUrlParams,
-): URL {
+export function buildAuthorizationUrl(config: OidcConfig, params: AuthorizationUrlParams): URL {
   const oidcParams: Record<string, string> = {
     redirect_uri: params.redirectUri,
     scope: params.scopes,
@@ -90,7 +84,7 @@ export function buildAuthorizationUrl(
     code_challenge_method: 'S256',
     state: params.state,
   };
-  if (params.nonce) oidcParams.nonce = params.nonce;
+  if (params.nonce) oidcParams['nonce'] = params.nonce;
   return client.buildAuthorizationUrl(config, oidcParams);
 }
 
@@ -122,9 +116,7 @@ export async function handleCallback(
   return client.authorizationCodeGrant(config, currentUrl, {
     pkceCodeVerifier: checks.pkceVerifier,
     expectedState: checks.expectedState,
-    ...(checks.expectedNonce !== undefined
-      ? { expectedNonce: checks.expectedNonce }
-      : {}),
+    ...(checks.expectedNonce !== undefined ? { expectedNonce: checks.expectedNonce } : {}),
   });
 }
 
@@ -144,10 +136,7 @@ export interface EndSessionUrlParams {
  * we catch that here and convert to a null return so callers don't have to
  * mirror the try/catch.
  */
-export function buildEndSessionUrl(
-  config: OidcConfig,
-  params: EndSessionUrlParams,
-): URL | null {
+export function buildEndSessionUrl(config: OidcConfig, params: EndSessionUrlParams): URL | null {
   try {
     return client.buildEndSessionUrl(config, {
       id_token_hint: params.idTokenHint,

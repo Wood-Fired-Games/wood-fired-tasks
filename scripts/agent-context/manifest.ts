@@ -74,12 +74,7 @@ const OWNER_LINE_EXEMPT = new Set<string>([
 
 export type Authority = 'authoritative' | 'generated' | 'adapter';
 export type FileStatus = 'present' | 'reserved';
-export type WhenToRead =
-  | 'first'
-  | 'second'
-  | 'on-demand'
-  | 'generated-index'
-  | 'reference';
+export type WhenToRead = 'first' | 'second' | 'on-demand' | 'generated-index' | 'reference';
 
 export interface ManifestSourceEntry {
   path: string;
@@ -177,8 +172,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
   {
     path: 'docs/WORKFLOWS.md',
     role: 'workflows',
-    purpose:
-      'Canonical build, test, lint, migrate, run, and smoke command recipes.',
+    purpose: 'Canonical build, test, lint, migrate, run, and smoke command recipes.',
     when_to_read: 'second',
     line_budget: 250,
     authority: 'authoritative',
@@ -201,8 +195,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
   {
     path: 'docs/NAVIGATION.md',
     role: 'navigation-index',
-    purpose:
-      'Task-oriented index: "if you want to do X, read these files in this order."',
+    purpose: 'Task-oriented index: "if you want to do X, read these files in this order."',
     when_to_read: 'on-demand',
     line_budget: 300,
     authority: 'authoritative',
@@ -218,8 +211,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     authority: 'authoritative',
     owner_role: 'API maintainers',
     status: 'present',
-    notes:
-      'Advisory budget — currently exceeds the contract target; tighten in a follow-up.',
+    notes: 'Advisory budget — currently exceeds the contract target; tighten in a follow-up.',
   },
   {
     path: 'docs/MCP.md',
@@ -458,40 +450,15 @@ export const MANIFEST_GROUPS: Record<string, readonly string[]> = {
     'docs/REPO_MAP.md',
     'docs/INTERFACES.md',
   ],
-  'mcp-tool-change': [
-    'AGENTS.md',
-    'docs/MCP.md',
-    'docs/REPO_MAP.md',
-    'docs/INTERFACES.md',
-  ],
-  'cli-change': [
-    'AGENTS.md',
-    'docs/CLI.md',
-    'docs/REPO_MAP.md',
-    'docs/INTERFACES.md',
-  ],
-  'db-migration': [
-    'AGENTS.md',
-    'docs/REPO_MAP.md',
-    'docs/SETUP.md',
-    'docs/ARCHITECTURE.md',
-  ],
-  'schema-change': [
-    'AGENTS.md',
-    'docs/REPO_MAP.md',
-    'docs/API.md',
-    'docs/INTERFACES.md',
-  ],
+  'mcp-tool-change': ['AGENTS.md', 'docs/MCP.md', 'docs/REPO_MAP.md', 'docs/INTERFACES.md'],
+  'cli-change': ['AGENTS.md', 'docs/CLI.md', 'docs/REPO_MAP.md', 'docs/INTERFACES.md'],
+  'db-migration': ['AGENTS.md', 'docs/REPO_MAP.md', 'docs/SETUP.md', 'docs/ARCHITECTURE.md'],
+  'schema-change': ['AGENTS.md', 'docs/REPO_MAP.md', 'docs/API.md', 'docs/INTERFACES.md'],
   'slack-change': ['AGENTS.md', 'docs/SLACK.md', 'docs/REPO_MAP.md'],
   'docs-only': ['AGENTS.md', 'docs/AGENT_CONTEXT.md', 'CONTRIBUTING.md'],
   release: ['AGENTS.md', 'docs/RELEASE.md', 'CONTRIBUTING.md'],
   'test-fix': ['AGENTS.md', 'docs/REPO_MAP.md', 'CONTRIBUTING.md'],
-  'security-sensitive': [
-    'AGENTS.md',
-    'SECURITY.md',
-    'docs/SETUP.md',
-    'docs/REPO_MAP.md',
-  ],
+  'security-sensitive': ['AGENTS.md', 'SECURITY.md', 'docs/SETUP.md', 'docs/REPO_MAP.md'],
 };
 
 // ---------------------------------------------------------------------------
@@ -509,9 +476,7 @@ export function findRepoRoot(): string {
     if (parent === cur) break;
     cur = parent;
   }
-  throw new Error(
-    `findRepoRoot: could not locate package.json starting from ${here}`,
-  );
+  throw new Error(`findRepoRoot: could not locate package.json starting from ${here}`);
 }
 
 interface ReadFileFacts {
@@ -759,7 +724,5 @@ function stripFragment(target: string): string {
 function stripInlineCode(line: string): string {
   // Replace matched double-backtick spans first, then single-backtick.
   // Non-greedy match keeps adjacent spans on the same line independent.
-  return line
-    .replace(/``[^`\n]*``/g, '')
-    .replace(/`[^`\n]*`/g, '');
+  return line.replace(/``[^`\n]*``/g, '').replace(/`[^`\n]*`/g, '');
 }

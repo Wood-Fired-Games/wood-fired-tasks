@@ -42,7 +42,9 @@ vi.mock('../output/formatters.js', () => ({
   formatCommentList: vi.fn((comments) =>
     comments.length === 0
       ? 'No comments'
-      : comments.map((c: { author: string; content: string }) => `${c.author}: ${c.content}`).join('\n')
+      : comments
+          .map((c: { author: string; content: string }) => `${c.author}: ${c.content}`)
+          .join('\n'),
   ),
   colorSuccess: vi.fn((text: string) => text),
   colorError: vi.fn((text: string) => text),
@@ -106,7 +108,16 @@ describe('comment-add command', () => {
       .mockResolvedValueOnce('Test comment');
     vi.mocked(addComment).mockResolvedValue(mockComment);
 
-    await program.parseAsync(['node', 'test', 'comment-add', '1', '-a', 'alice', '-c', 'Test comment']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'comment-add',
+      '1',
+      '-a',
+      'alice',
+      '-c',
+      'Test comment',
+    ]);
 
     expect(promptForMissing).toHaveBeenCalledWith('author', 'alice');
     expect(promptForMissing).toHaveBeenCalledWith('content', 'Test comment');
@@ -128,7 +139,10 @@ describe('comment-add command', () => {
     // Author should be prompted with undefined (not provided)
     expect(promptForMissing).toHaveBeenCalledWith('author', undefined);
     expect(promptForMissing).toHaveBeenCalledWith('content', 'Test content');
-    expect(addComment).toHaveBeenCalledWith(1, { author: 'prompted-author', content: 'Test content' });
+    expect(addComment).toHaveBeenCalledWith(1, {
+      author: 'prompted-author',
+      content: 'Test content',
+    });
   });
 
   it('prompts for missing content when not provided', async () => {
@@ -158,7 +172,17 @@ describe('comment-add command', () => {
       .mockResolvedValueOnce('Test comment');
     vi.mocked(addComment).mockResolvedValue(mockComment);
 
-    await program.parseAsync(['node', 'test', '--json', 'comment-add', '1', '-a', 'alice', '-c', 'Test comment']);
+    await program.parseAsync([
+      'node',
+      'test',
+      '--json',
+      'comment-add',
+      '1',
+      '-a',
+      'alice',
+      '-c',
+      'Test comment',
+    ]);
 
     expect(jsonOutput).toHaveBeenCalledWith({ comment: mockComment });
     expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('Comment added'));
@@ -175,7 +199,7 @@ describe('comment-add command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'comment-add', '99999', '-a', 'alice', '-c', 'Test']);
@@ -187,7 +211,16 @@ describe('comment-add command', () => {
   it('validates task ID is a number', async () => {
     const { addComment } = await import('../api/client.js');
 
-    await program.parseAsync(['node', 'test', 'comment-add', 'invalid', '-a', 'alice', '-c', 'Test']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'comment-add',
+      'invalid',
+      '-a',
+      'alice',
+      '-c',
+      'Test',
+    ]);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('must be a number'));
     expect(addComment).not.toHaveBeenCalled();
@@ -272,7 +305,7 @@ describe('comment-list command', () => {
       expect.arrayContaining([
         expect.objectContaining({ author: 'alice', created_at: '2024-01-15T10:30:00Z' }),
         expect.objectContaining({ author: 'bob', created_at: '2024-01-15T11:45:00Z' }),
-      ])
+      ]),
     );
   });
 
@@ -283,7 +316,7 @@ describe('comment-list command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'comment-list', '99999']);
@@ -339,7 +372,9 @@ describe('comment-delete command', () => {
 
     expect(confirmAction).toHaveBeenCalledWith('Delete comment 5?', false);
     expect(deleteComment).toHaveBeenCalledWith(1, 5);
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Comment 5 deleted successfully'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Comment 5 deleted successfully'),
+    );
   });
 
   it('skips deletion when not confirmed', async () => {
@@ -365,7 +400,9 @@ describe('comment-delete command', () => {
     await program.parseAsync(['node', 'test', '--force', 'comment-delete', '1', '5']);
 
     expect(deleteComment).toHaveBeenCalledWith(1, 5);
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Comment 5 deleted successfully'));
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Comment 5 deleted successfully'),
+    );
   });
 
   it('outputs JSON when --json flag set', async () => {
@@ -424,7 +461,7 @@ describe('comment-delete command', () => {
       new ApiClientError('Comment not found', 404, {
         error: 'NOT_FOUND',
         message: 'Comment not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'comment-delete', '1', '99999']);

@@ -15,11 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  findRepoRoot,
-  validateInternalLinks,
-  MANIFEST_SOURCE,
-} from '../manifest.js';
+import { findRepoRoot, validateInternalLinks, MANIFEST_SOURCE } from '../manifest.js';
 
 describe('validateInternalLinks (committed tree)', () => {
   it('reports zero broken links against the repository as committed', () => {
@@ -50,19 +46,14 @@ describe('validateInternalLinks (synthetic fixtures)', () => {
     (e) => e.status === 'present' && e.path.endsWith('.md'),
   );
   if (!presentMdEntry) {
-    throw new Error(
-      'Expected at least one present .md entry in MANIFEST_SOURCE.',
-    );
+    throw new Error('Expected at least one present .md entry in MANIFEST_SOURCE.');
   }
   const relPath = presentMdEntry.path;
 
   it('flags a broken relative link with the file path, line number, and target', () => {
-    const md = [
-      '# Test',
-      '',
-      'This [points nowhere](does-not-exist.md) on purpose.',
-      '',
-    ].join('\n');
+    const md = ['# Test', '', 'This [points nowhere](does-not-exist.md) on purpose.', ''].join(
+      '\n',
+    );
     const root = makeTempRepoWithMd(relPath, md);
 
     const errors = validateInternalLinks(root);
@@ -90,9 +81,7 @@ describe('validateInternalLinks (synthetic fixtures)', () => {
 
     const errors = validateInternalLinks(root);
     // No error for the fragment link — the bare file exists.
-    expect(errors.filter((e) => e.target.includes('#some-section'))).toEqual(
-      [],
-    );
+    expect(errors.filter((e) => e.target.includes('#some-section'))).toEqual([]);
   });
 
   it('skips http://, https://, and mailto: links (never resolves them as files)', () => {
@@ -114,12 +103,7 @@ describe('validateInternalLinks (synthetic fixtures)', () => {
   });
 
   it('skips bare #anchor links pointing inside the same file', () => {
-    const md = [
-      '# Test',
-      '',
-      'Jump to [section](#a-section) here.',
-      '',
-    ].join('\n');
+    const md = ['# Test', '', 'Jump to [section](#a-section) here.', ''].join('\n');
     const root = makeTempRepoWithMd(relPath, md);
 
     const errors = validateInternalLinks(root);
@@ -144,19 +128,12 @@ describe('validateInternalLinks (synthetic fixtures)', () => {
   });
 
   it('does not flag links inside fenced code blocks', () => {
-    const md = [
-      '# Test',
-      '',
-      '```markdown',
-      '[example](definitely-missing.md)',
-      '```',
-      '',
-    ].join('\n');
+    const md = ['# Test', '', '```markdown', '[example](definitely-missing.md)', '```', ''].join(
+      '\n',
+    );
     const root = makeTempRepoWithMd(relPath, md);
 
     const errors = validateInternalLinks(root);
-    expect(
-      errors.filter((e) => e.target === 'definitely-missing.md'),
-    ).toEqual([]);
+    expect(errors.filter((e) => e.target === 'definitely-missing.md')).toEqual([]);
   });
 });

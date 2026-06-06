@@ -111,9 +111,7 @@ describe('device-flow-store', () => {
     it('device_code uniqueness: 1000 sessions produce 1000 distinct codes', () => {
       const codes = new Set<string>();
       for (let i = 0; i < 1000; i++) {
-        codes.add(
-          createSession({ clientId: 'cid', hostname: null }).deviceCode,
-        );
+        codes.add(createSession({ clientId: 'cid', hostname: null }).deviceCode);
       }
       expect(codes.size).toBe(1000);
     });
@@ -268,7 +266,7 @@ describe('device-flow-store', () => {
         expect(sanitizeHostname('')).toBe('unknown');
       });
 
-      it("apostrophes collapse to '-' (\"Stuart's Laptop\" → \"stuart-s-laptop\")", () => {
+      it('apostrophes collapse to \'-\' ("Stuart\'s Laptop" → "stuart-s-laptop")', () => {
         expect(sanitizeHostname("Stuart's Laptop")).toBe('stuart-s-laptop');
       });
 
@@ -332,9 +330,7 @@ describe('device-flow-store', () => {
       it('happy path: approve then record → session populated', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         expect(approve(s.userCode, 7)).toBe(true);
-        expect(
-          recordMintedToken(s.userCode, { tokenId: 42, token: 'wft_pat_XYZ' }),
-        ).toBe(true);
+        expect(recordMintedToken(s.userCode, { tokenId: 42, token: 'wft_pat_XYZ' })).toBe(true);
         const after = findByDeviceCode(s.deviceCode);
         expect(after?.mintedTokenId).toBe(42);
         expect(after?.mintedToken).toBe('wft_pat_XYZ');
@@ -342,9 +338,7 @@ describe('device-flow-store', () => {
 
       it('returns false when session is still pending (approve not called)', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
-        expect(
-          recordMintedToken(s.userCode, { tokenId: 1, token: 'wft_pat_X' }),
-        ).toBe(false);
+        expect(recordMintedToken(s.userCode, { tokenId: 1, token: 'wft_pat_X' })).toBe(false);
         // Session must remain untouched.
         const after = findByDeviceCode(s.deviceCode);
         expect(after?.mintedTokenId).toBeNull();
@@ -363,20 +357,14 @@ describe('device-flow-store', () => {
       it('returns false when session is denied', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         expect(deny(s.userCode)).toBe(true);
-        expect(
-          recordMintedToken(s.userCode, { tokenId: 1, token: 'wft_pat_X' }),
-        ).toBe(false);
+        expect(recordMintedToken(s.userCode, { tokenId: 1, token: 'wft_pat_X' })).toBe(false);
       });
 
       it('is idempotent: second call with same args still returns true', () => {
         const s = createSession({ clientId: 'cid', hostname: 'laptop' });
         approve(s.userCode, 7);
-        expect(
-          recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' }),
-        ).toBe(true);
-        expect(
-          recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' }),
-        ).toBe(true);
+        expect(recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' })).toBe(true);
+        expect(recordMintedToken(s.userCode, { tokenId: 9, token: 'wft_pat_A' })).toBe(true);
         const after = findByDeviceCode(s.deviceCode);
         expect(after?.mintedTokenId).toBe(9);
         expect(after?.mintedToken).toBe('wft_pat_A');

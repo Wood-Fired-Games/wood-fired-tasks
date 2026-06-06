@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync, existsSync, chmodSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  existsSync,
+  chmodSync,
+  readFileSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import os from 'node:os';
@@ -108,7 +118,7 @@ describe('writeCredentials', () => {
     writeCredentials(sampleCreds, target);
     const body = readFileSync(target, 'utf8');
     expect(body).toMatch(/^# Wood Fired Tasks CLI credentials/);
-    expect(body).toContain("# Do NOT commit this file to version control.");
+    expect(body).toContain('# Do NOT commit this file to version control.');
     expect(body).toContain('[active]');
   });
 
@@ -148,9 +158,7 @@ describe('writeCredentials', () => {
     expect(statSync(target).isDirectory()).toBe(true);
     // The tmp file SHOULD have been written to disk before the rename — that's
     // the contract: write-then-rename never leaves the final path corrupt.
-    const tmps = readdirSync(dirname(target)).filter((n) =>
-      n.startsWith('target-as-dir.tmp.')
-    );
+    const tmps = readdirSync(dirname(target)).filter((n) => n.startsWith('target-as-dir.tmp.'));
     expect(tmps.length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -178,15 +186,9 @@ describe('readCredentials', () => {
   describe('shape validation (WR-05)', () => {
     it('throws actionable error when [active] table is absent', () => {
       const target = join(tmpDir, 'no-active');
-      writeFileSync(
-        target,
-        '# Hand-edited - removed the active block\n',
-        { mode: 0o600 },
-      );
+      writeFileSync(target, '# Hand-edited - removed the active block\n', { mode: 0o600 });
       if (POSIX) chmodSync(target, 0o600);
-      expect(() => readCredentials(target)).toThrow(
-        /invalid shape at `active`/,
-      );
+      expect(() => readCredentials(target)).toThrow(/invalid shape at `active`/);
       expect(() => readCredentials(target)).toThrow(/tasks login/);
     });
 
@@ -207,9 +209,7 @@ describe('readCredentials', () => {
         { mode: 0o600 },
       );
       if (POSIX) chmodSync(target, 0o600);
-      expect(() => readCredentials(target)).toThrow(
-        /invalid shape at `active\.token`/,
-      );
+      expect(() => readCredentials(target)).toThrow(/invalid shape at `active\.token`/);
     });
 
     it('throws when token_id is not a positive integer', () => {
@@ -229,9 +229,7 @@ describe('readCredentials', () => {
         { mode: 0o600 },
       );
       if (POSIX) chmodSync(target, 0o600);
-      expect(() => readCredentials(target)).toThrow(
-        /invalid shape at `active\.token_id`/,
-      );
+      expect(() => readCredentials(target)).toThrow(/invalid shape at `active\.token_id`/);
     });
 
     it('throws when user_id is missing entirely', () => {
@@ -251,9 +249,7 @@ describe('readCredentials', () => {
         { mode: 0o600 },
       );
       if (POSIX) chmodSync(target, 0o600);
-      expect(() => readCredentials(target)).toThrow(
-        /invalid shape at `active\.user_id`/,
-      );
+      expect(() => readCredentials(target)).toThrow(/invalid shape at `active\.user_id`/);
     });
 
     it('accepts email = null (service-account / legacy user case)', () => {
@@ -343,7 +339,9 @@ describe('resolveAuth precedence', () => {
 
   it('propagates readCredentials errors (does not fall through to env)', async () => {
     process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'broken');
-    writeFileSync(process.env.WFT_CREDENTIALS_PATH, 'this is = not valid toml [[[', { mode: 0o600 });
+    writeFileSync(process.env.WFT_CREDENTIALS_PATH, 'this is = not valid toml [[[', {
+      mode: 0o600,
+    });
     if (POSIX) chmodSync(process.env.WFT_CREDENTIALS_PATH, 0o600);
     process.env.API_KEY = 'should-not-be-used';
     await expect(resolveAuth()).rejects.toThrow(/malformed TOML/);

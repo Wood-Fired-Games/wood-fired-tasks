@@ -71,7 +71,10 @@ describe('convertToMcpError', () => {
     expect(result).toBeInstanceOf(McpError);
     expect(result.code).toBe(ErrorCode.InternalError);
     expect(result.message).toContain('An internal error occurred');
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Unexpected error in MCP handler:', 'string error');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Unexpected error in MCP handler:',
+      'string error',
+    );
 
     consoleErrorSpy.mockRestore();
   });

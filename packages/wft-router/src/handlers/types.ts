@@ -40,10 +40,7 @@
 
 import type { spawn as nodeSpawn } from 'node:child_process';
 
-import type {
-  EventPayloadShape,
-  IdempotencyStore,
-} from '../dispatch/index.js';
+import type { EventPayloadShape, IdempotencyStore } from '../dispatch/index.js';
 
 /**
  * Injectable shape of `child_process.spawn`. The `shell_exec` handler (#430)

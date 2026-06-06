@@ -9,11 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  SENSITIVE_KEY_RE,
-  isSensitiveKey,
-  redactForLogging,
-} from '../redaction.js';
+import { SENSITIVE_KEY_RE, isSensitiveKey, redactForLogging } from '../redaction.js';
 
 describe('SENSITIVE_KEY_RE', () => {
   it('matches the canonical key names (lower-case)', () => {

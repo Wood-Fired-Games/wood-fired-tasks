@@ -1,6 +1,6 @@
 import type Database from '../db/driver.js';
 import type { ValueCharter } from '../types/task.js';
-import { mapRows } from './row-mapper.js';
+import { mapRow, mapRows } from './row-mapper.js';
 import { AppendOnlyViolationError } from './errors.js';
 
 /**
@@ -75,9 +75,7 @@ function parseCharter(raw: unknown): ValueCharter | null {
   }
 }
 
-export class ProjectCharterHistoryRepository
-  implements IProjectCharterHistoryRepository
-{
+export class ProjectCharterHistoryRepository implements IProjectCharterHistoryRepository {
   private readonly insertStmt: Database.Statement;
   private readonly findByProjectIdStmt: Database.Statement;
   private readonly countByProjectIdStmt: Database.Statement;
@@ -116,26 +114,21 @@ export class ProjectCharterHistoryRepository
   }
 
   findByProjectId(projectId: number): ProjectCharterHistoryRow[] {
-    const rows = mapRows<Record<string, unknown>>(
-      this.findByProjectIdStmt,
-      projectId,
-    );
+    const rows = mapRows<Record<string, unknown>>(this.findByProjectIdStmt, projectId);
     return rows.map((row) => ({
-      id: row.id as number,
-      project_id: row.project_id as number,
-      interview_version: row.interview_version as number,
-      charter: parseCharter(row.charter),
-      change_kind: (row.change_kind as string | null) ?? null,
-      actor_type: (row.actor_type as string | null) ?? null,
-      actor_id: (row.actor_id as string | null) ?? null,
-      changed_at: row.changed_at as string,
+      id: row['id'] as number,
+      project_id: row['project_id'] as number,
+      interview_version: row['interview_version'] as number,
+      charter: parseCharter(row['charter']),
+      change_kind: (row['change_kind'] as string | null) ?? null,
+      actor_type: (row['actor_type'] as string | null) ?? null,
+      actor_id: (row['actor_id'] as string | null) ?? null,
+      changed_at: row['changed_at'] as string,
     }));
   }
 
   countByProjectId(projectId: number): number {
-    const result = this.countByProjectIdStmt.get(projectId) as
-      | { count: number }
-      | undefined;
+    const result = mapRow<{ count: number }>(this.countByProjectIdStmt, projectId);
     return result?.count ?? 0;
   }
 
@@ -147,4 +140,3 @@ export class ProjectCharterHistoryRepository
     throw new AppendOnlyViolationError(CHARTER_HISTORY_TABLE, 'DELETE');
   }
 }
-

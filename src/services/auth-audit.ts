@@ -55,10 +55,7 @@ export interface MinimalWarnLogger {
  * `requestId`, `peerIp` — nothing else. Aggregators filter on `tag` and
  * group by `strategy` + `reasonCode`.
  */
-export function logAuthFailure(
-  logger: MinimalWarnLogger,
-  ctx: AuthFailureContext,
-): void {
+export function logAuthFailure(logger: MinimalWarnLogger, ctx: AuthFailureContext): void {
   logger.warn(
     {
       tag: 'auth.failure',

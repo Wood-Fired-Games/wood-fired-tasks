@@ -21,16 +21,13 @@ export const deleteCommand = new Command('delete')
       // Check if JSON mode (global flag from program)
       const program = deleteCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Fetch task details to show what's being deleted
       const task = await getTask(id);
 
       // Confirm deletion (unless --force)
-      const confirmed = await confirmAction(
-        `Delete task '${task.title}'?`,
-        false
-      );
+      const confirmed = await confirmAction(`Delete task '${task.title}'?`, false);
 
       if (!confirmed) {
         if (isJsonMode) {

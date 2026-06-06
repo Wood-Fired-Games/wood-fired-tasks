@@ -29,7 +29,7 @@ export const createCommand = new Command('create')
       // Check if JSON mode (global flag from program)
       const program = createCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Prompt for missing required fields (interactive mode only)
       const title = await promptForMissing('title', options.title);
@@ -52,13 +52,13 @@ export const createCommand = new Command('create')
       if (!VALID_PRIORITIES.includes(options.priority)) {
         if (isJsonMode) {
           process.stderr.write(
-            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}\n`
+            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}\n`,
           );
         } else {
           console.error(
             colorError(
-              `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
-            )
+              `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`,
+            ),
           );
         }
         process.exitCode = 1;

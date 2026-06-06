@@ -36,10 +36,7 @@ describe('MCP wait_for_unblock Tool (task #455)', () => {
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
 
-    client = new Client(
-      { name: 'wait-for-unblock-test', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'wait-for-unblock-test', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 

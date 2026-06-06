@@ -3,10 +3,7 @@ import { z } from 'zod';
 import { ValueCharterNullableSchema } from '../../../schemas/project.schema.js';
 import { ProjectCharterHistoryRepository } from '../../../repositories/project-charter-history.repository.js';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
-import {
-  WsjfComponentsSchema,
-  WsjfEvidenceSchema,
-} from '../../../schemas/wsjf.schema.js';
+import { WsjfComponentsSchema, WsjfEvidenceSchema } from '../../../schemas/wsjf.schema.js';
 import { rankFrontier } from '../../../services/wsjf.service.js';
 import type { RankDeps } from '../../../services/wsjf.service.js';
 import { WsjfHistoryRepository } from '../../../repositories/wsjf-history.repository.js';
@@ -177,9 +174,7 @@ const RescoreResponseSchema = z.object({
   tasks_changed: z.number().int().nonnegative(),
   tasks_skipped_locked: z.number().int().nonnegative(),
   results: z.array(RescoreTaskResultSchema),
-  errors: z.array(
-    z.object({ taskId: z.number(), errors: z.array(z.string()) }),
-  ),
+  errors: z.array(z.object({ taskId: z.number(), errors: z.array(z.string()) })),
 });
 
 interface RescoreRunDbRow {
@@ -401,20 +396,15 @@ const projectWsjfRoutes: FastifyPluginAsyncZod = async (fastify) => {
         runs: new WsjfRescoreRepository(fastify.db),
         topology:
           fastify.topologyService ??
-          new TopologyService(
-            new TaskRepository(fastify.db),
-            new DependencyRepository(fastify.db),
-          ),
+          new TopologyService(new TaskRepository(fastify.db), new DependencyRepository(fastify.db)),
       });
-      const submissions: RescoreSubmission[] = request.body.submissions.map(
-        (s) => ({
-          taskId: s.task_id,
-          submission: {
-            classification: s.classification,
-            features: s.features,
-          } as unknown as ScoreSubmission,
-        }),
-      );
+      const submissions: RescoreSubmission[] = request.body.submissions.map((s) => ({
+        taskId: s.task_id,
+        submission: {
+          classification: s.classification,
+          features: s.features,
+        } as unknown as ScoreSubmission,
+      }));
       const result = rescoreService.rescore(request.params.id, submissions, {
         // Default attribution to the authenticated user when the caller does
         // not pin an explicit actor (mirrors the manual-override write path).

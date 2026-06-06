@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  isEvenLtsMajor,
-  parseNodeMajor,
-  warnIfNotEvenLts,
-} from '../node-version.js';
+import { isEvenLtsMajor, parseNodeMajor, warnIfNotEvenLts } from '../node-version.js';
 
 describe('isEvenLtsMajor', () => {
   it('treats even majors as LTS lines', () => {

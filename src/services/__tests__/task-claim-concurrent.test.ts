@@ -90,83 +90,80 @@ describe('TaskService - real-concurrency claim race (disk-backed SQLite)', () =>
       n: fc.integer({ min: 20, max: 32 }),
       taskCount: fc.integer({ min: 1, max: 3 }),
     },
-    { numRuns: 5 }
-  )(
-    'exactly one of N parallel claimants wins per task (property)',
-    async ({ n, taskCount }) => {
-      const dbPath = join(tmpDir, `race-${n}-${taskCount}-${Date.now()}.db`);
+    { numRuns: 5 },
+  )('exactly one of N parallel claimants wins per task (property)', async ({ n, taskCount }) => {
+    const dbPath = join(tmpDir, `race-${n}-${taskCount}-${Date.now()}.db`);
 
-      // ---- setup: seed a project + `taskCount` open tasks via a setup conn ----
-      const setupDb = initDatabase(dbPath);
-      try {
-        await runMigrations(setupDb);
-        const projectRepo = new ProjectRepository(setupDb);
-        const taskRepo = new TaskRepository(setupDb);
-        const projectService = new ProjectService(projectRepo);
-        const taskService = new TaskService(taskRepo, projectRepo);
+    // ---- setup: seed a project + `taskCount` open tasks via a setup conn ----
+    const setupDb = initDatabase(dbPath);
+    try {
+      await runMigrations(setupDb);
+      const projectRepo = new ProjectRepository(setupDb);
+      const taskRepo = new TaskRepository(setupDb);
+      const projectService = new ProjectService(projectRepo);
+      const taskService = new TaskService(taskRepo, projectRepo);
 
-        const project = projectService.createProject({
-          name: `race-${n}-${taskCount}`,
-          description: 'parallel claim race',
+      const project = projectService.createProject({
+        name: `race-${n}-${taskCount}`,
+        description: 'parallel claim race',
+      });
+
+      const taskIds: number[] = [];
+      for (let i = 0; i < taskCount; i++) {
+        const t = taskService.createTask({
+          title: `race-task-${i}`,
+          project_id: project.id,
+          created_by: 'race-test',
         });
+        taskIds.push(t.id);
+      }
 
-        const taskIds: number[] = [];
-        for (let i = 0; i < taskCount; i++) {
-          const t = taskService.createTask({
-            title: `race-task-${i}`,
-            project_id: project.id,
-            created_by: 'race-test',
-          });
-          taskIds.push(t.id);
-        }
+      // ---- race: N claimants per task ----
+      const claimants = buildClaimants(dbPath, n);
+      try {
+        for (const taskId of taskIds) {
+          // Each claimant: own connection, own service, attempts the SAME task.
+          // Wrapped in async so Promise.all dispatches them onto the
+          // microtask queue together. With N separate connections to the
+          // SAME on-disk file, the BEGIN IMMEDIATE write-lock and version
+          // CAS path arbitrates the winner — NOT JS-level mutex.
+          const attempts = claimants.map((c, idx) =>
+            (async () => {
+              // yield once so every claimant is scheduled before any runs
+              await Promise.resolve();
+              return c.taskService.claimTask(taskId, `agent-${idx}`);
+            })(),
+          );
 
-        // ---- race: N claimants per task ----
-        const claimants = buildClaimants(dbPath, n);
-        try {
-          for (const taskId of taskIds) {
-            // Each claimant: own connection, own service, attempts the SAME task.
-            // Wrapped in async so Promise.all dispatches them onto the
-            // microtask queue together. With N separate connections to the
-            // SAME on-disk file, the BEGIN IMMEDIATE write-lock and version
-            // CAS path arbitrates the winner — NOT JS-level mutex.
-            const attempts = claimants.map((c, idx) =>
-              (async () => {
-                // yield once so every claimant is scheduled before any runs
-                await Promise.resolve();
-                return c.taskService.claimTask(taskId, `agent-${idx}`);
-              })()
-            );
+          const results = await Promise.allSettled(attempts);
 
-            const results = await Promise.allSettled(attempts);
+          const successes = results.filter((r) => r.status === 'fulfilled');
+          const failures = results.filter((r) => r.status === 'rejected');
 
-            const successes = results.filter((r) => r.status === 'fulfilled');
-            const failures = results.filter((r) => r.status === 'rejected');
+          // Core invariant: EXACTLY ONE winner.
+          expect(successes).toHaveLength(1);
+          expect(failures).toHaveLength(n - 1);
 
-            // Core invariant: EXACTLY ONE winner.
-            expect(successes).toHaveLength(1);
-            expect(failures).toHaveLength(n - 1);
-
-            // Every failure must be a BusinessError — anything else (SQLITE_BUSY,
-            // TypeError, etc.) indicates the lock/CAS contract leaked.
-            for (const f of failures) {
-              const reason = (f as PromiseRejectedResult).reason;
-              expect(reason).toBeInstanceOf(BusinessError);
-            }
-
-            // Winner's row matches the post-condition: in_progress + assignee set.
-            const winner = (successes[0] as PromiseFulfilledResult<any>).value;
-            expect(winner.status).toBe('in_progress');
-            expect(winner.assignee).toMatch(/^agent-\d+$/);
-            expect(winner.version).toBe(2); // started at 1, CAS bumped to 2
+          // Every failure must be a BusinessError — anything else (SQLITE_BUSY,
+          // TypeError, etc.) indicates the lock/CAS contract leaked.
+          for (const f of failures) {
+            const reason = (f as PromiseRejectedResult).reason;
+            expect(reason).toBeInstanceOf(BusinessError);
           }
-        } finally {
-          closeClaimants(claimants);
+
+          // Winner's row matches the post-condition: in_progress + assignee set.
+          const winner = (successes[0] as PromiseFulfilledResult<any>).value;
+          expect(winner.status).toBe('in_progress');
+          expect(winner.assignee).toMatch(/^agent-\d+$/);
+          expect(winner.version).toBe(2); // started at 1, CAS bumped to 2
         }
       } finally {
-        setupDb.close();
+        closeClaimants(claimants);
       }
+    } finally {
+      setupDb.close();
     }
-  );
+  });
 
   /**
    * Deterministic spot-check at a fixed high fan-out, so the file always
@@ -200,7 +197,7 @@ describe('TaskService - real-concurrency claim race (disk-backed SQLite)', () =>
           (async () => {
             await Promise.resolve();
             return c.taskService.claimTask(task.id, `agent-${idx}`);
-          })()
+          })(),
         );
 
         const results = await Promise.allSettled(attempts);
@@ -210,9 +207,7 @@ describe('TaskService - real-concurrency claim race (disk-backed SQLite)', () =>
         expect(successes).toHaveLength(1);
         expect(failures).toHaveLength(N - 1);
         for (const f of failures) {
-          expect((f as PromiseRejectedResult).reason).toBeInstanceOf(
-            BusinessError
-          );
+          expect((f as PromiseRejectedResult).reason).toBeInstanceOf(BusinessError);
         }
       } finally {
         closeClaimants(claimants);

@@ -161,7 +161,7 @@ function pathToInstalledBetterSqlite(prefixDir) {
       'node_modules',
       'better-sqlite3',
       'lib',
-      'index.js'
+      'index.js',
     ),
     // Windows layout (no lib/ segment).
     path.join(
@@ -171,7 +171,7 @@ function pathToInstalledBetterSqlite(prefixDir) {
       'node_modules',
       'better-sqlite3',
       'lib',
-      'index.js'
+      'index.js',
     ),
     path.join(REPO_ROOT, 'node_modules', 'better-sqlite3', 'lib', 'index.js'),
   ];
@@ -191,11 +191,9 @@ async function main() {
 
   console.log('-- pack --');
   const packDir = mkTemp('wft-smoke-pack-');
-  const packRes = runOrFail(
-    NPM,
-    ['pack', '--pack-destination', packDir],
-    { cwd: REPO_ROOT }
-  );
+  const packRes = runOrFail(NPM, ['pack', '--pack-destination', packDir], {
+    cwd: REPO_ROOT,
+  });
   // `npm pack` prints the tarball filename on the last non-empty stdout line.
   const tarballName = packRes.stdout
     .split('\n')
@@ -203,22 +201,16 @@ async function main() {
     .filter(Boolean)
     .pop();
   const tarball = path.join(packDir, tarballName ?? '');
-  assert(
-    tarballName != null && existsSync(tarball),
-    `npm pack produced a tarball: ${tarballName}`
-  );
+  assert(tarballName != null && existsSync(tarball), `npm pack produced a tarball: ${tarballName}`);
 
   // -- 2. install -g into a TEMP prefix (no sudo: user-writable temp dir) -----
   console.log('-- install -g (temp prefix, no sudo) --');
   const prefixDir = mkTemp('wft-smoke-prefix-');
-  runOrFail(
-    NPM,
-    ['install', '-g', tarball, '--prefix', prefixDir],
-    { cwd: packDir }
-  );
+  runOrFail(NPM, ['install', '-g', tarball, '--prefix', prefixDir], {
+    cwd: packDir,
+  });
   // On POSIX the bin lands under <prefix>/bin; on Windows directly under prefix.
-  const binName =
-    process.platform === 'win32' ? 'wood-fired-tasks.cmd' : 'wood-fired-tasks';
+  const binName = process.platform === 'win32' ? 'wood-fired-tasks.cmd' : 'wood-fired-tasks';
   const binPath =
     process.platform === 'win32'
       ? path.join(prefixDir, binName)
@@ -249,17 +241,14 @@ async function main() {
   const entry = mcp['wood-fired-tasks'];
   assert(
     entry != null && entry.type === 'stdio' && Array.isArray(entry.args),
-    'setup merged the wood-fired-tasks stdio MCP server entry into ~/.claude.json'
+    'setup merged the wood-fired-tasks stdio MCP server entry into ~/.claude.json',
   );
 
   const skillsDir = path.join(homeDir, '.claude', 'commands', 'tasks');
   const skillFiles = existsSync(skillsDir)
     ? readdirSync(skillsDir).filter((f) => f.endsWith('.md'))
     : [];
-  assert(
-    skillFiles.length > 0,
-    `setup copied ${skillFiles.length} skill(s) into ${skillsDir}`
-  );
+  assert(skillFiles.length > 0, `setup copied ${skillFiles.length} skill(s) into ${skillsDir}`);
 
   // -- 3b. idempotency: re-run, assert claude.json bytes unchanged -----------
   console.log('-- setup re-run (idempotency) --');
@@ -271,11 +260,11 @@ async function main() {
   const claudeJson2 = readFileSync(claudeJsonPath, 'utf8');
   assert(
     claudeJson2 === claudeJson1,
-    'setup is idempotent: ~/.claude.json bytes identical across re-run'
+    'setup is idempotent: ~/.claude.json bytes identical across re-run',
   );
   assert(
     /already present/i.test(setup2.stdout ?? ''),
-    'setup re-run reports the MCP server "already present" (no spurious change)'
+    'setup re-run reports the MCP server "already present" (no spurious change)',
   );
 
   // -- 3c. docs command works from OUTSIDE the repo (task #750) --------------
@@ -292,7 +281,7 @@ async function main() {
     /(^|\s)usage-patterns(\s|$)/m.test(docsListOut) &&
       /(^|\s)setup(\s|$)/m.test(docsListOut) &&
       /(^|\s)cli(\s|$)/m.test(docsListOut),
-    'docs list enumerates the curated guides (usage-patterns, setup, cli)'
+    'docs list enumerates the curated guides (usage-patterns, setup, cli)',
   );
 
   const docsShow = runOrFail(binPath, ['docs', 'show', 'usage-patterns'], {
@@ -302,7 +291,7 @@ async function main() {
   const docsShowOut = docsShow.stdout ?? '';
   assert(
     docsShowOut.trim().length > 0 && /^#/m.test(docsShowOut),
-    'docs show usage-patterns prints real guide content (non-empty, has a heading)'
+    'docs show usage-patterns prints real guide content (non-empty, has a heading)',
   );
 
   // -- 4. boot serve against a temp app-data DB, poll /health ----------------
@@ -364,7 +353,7 @@ async function main() {
   }
   assert(
     healthStatus === 200 && healthBody != null && healthBody.status === 'healthy',
-    `GET /health returned 200 healthy (status=${healthStatus})`
+    `GET /health returned 200 healthy (status=${healthStatus})`,
   );
 
   // -- 4b. DB created + migrations applied (_migrations table non-empty) -----
@@ -377,17 +366,12 @@ async function main() {
   let migrationCount = 0;
   try {
     const row = db
-      .prepare(
-        "SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name='_migrations'"
-      )
+      .prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name='_migrations'")
       .get();
     assert(row.n === 1, 'migrations bookkeeping table (_migrations) exists');
     const cnt = db.prepare('SELECT count(*) AS n FROM _migrations').get();
     migrationCount = cnt.n;
-    assert(
-      migrationCount > 0,
-      `migrations applied: ${migrationCount} row(s) in _migrations`
-    );
+    assert(migrationCount > 0, `migrations applied: ${migrationCount} row(s) in _migrations`);
   } finally {
     db.close();
   }
@@ -434,33 +418,29 @@ async function main() {
       APPDATA: path.join(remoteHome, 'AppData', 'Roaming'),
     };
 
-    const remoteSetup = runOrFail(
-      binPath,
-      ['setup', '--remote', remoteUrl, '--token', remotePat],
-      { cwd: remoteCwd, env: remoteEnv }
-    );
+    const remoteSetup = runOrFail(binPath, ['setup', '--remote', remoteUrl, '--token', remotePat], {
+      cwd: remoteCwd,
+      env: remoteEnv,
+    });
     if (remoteSetup.stdout) console.log(remoteSetup.stdout.trimEnd());
 
     const remoteClaudeJsonPath = path.join(remoteHome, '.claude.json');
-    assert(
-      existsSync(remoteClaudeJsonPath),
-      `${remoteClaudeJsonPath} created by setup --remote`
-    );
+    assert(existsSync(remoteClaudeJsonPath), `${remoteClaudeJsonPath} created by setup --remote`);
     const remoteParsed = JSON.parse(readFileSync(remoteClaudeJsonPath, 'utf8'));
     const remoteMcp = remoteParsed.mcpServers ?? {};
     const remoteEntry = remoteMcp['wood-fired-tasks-remote'];
     assert(
       remoteEntry != null && remoteEntry.type === 'stdio',
-      "setup --remote wrote the 'wood-fired-tasks-remote' stdio MCP entry"
+      "setup --remote wrote the 'wood-fired-tasks-remote' stdio MCP entry",
     );
     const remoteEntryEnv = remoteEntry?.env ?? {};
     assert(
       remoteEntryEnv.WFT_API_URL === remoteUrl,
-      `remote entry carries WFT_API_URL=${remoteUrl}`
+      `remote entry carries WFT_API_URL=${remoteUrl}`,
     );
     assert(
       remoteEntryEnv.WFT_API_KEY === remotePat,
-      'remote entry carries WFT_API_KEY (the supplied PAT)'
+      'remote entry carries WFT_API_KEY (the supplied PAT)',
     );
   } else {
     console.log('-- setup --remote: SKIPPED (set SMOKE_REMOTE=1 to enable) --');

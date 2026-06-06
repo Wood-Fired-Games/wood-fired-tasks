@@ -123,9 +123,7 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
       { from: bId, to: cId },
     ]);
     // Nodes carry only the compact projection {id, title, status, priority}.
-    expect(Object.keys(body.nodes[0]).sort()).toEqual(
-      ['id', 'priority', 'status', 'title'].sort(),
-    );
+    expect(Object.keys(body.nodes[0]).sort()).toEqual(['id', 'priority', 'status', 'title'].sort());
   });
 
   it('returns text shape with pre-rendered box-drawing lines', async () => {
@@ -253,17 +251,17 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
       // Seed the cycle directly via the raw repo (DependencyService refuses).
       app.db
         .prepare(
-          'INSERT INTO task_dependencies (task_id, blocks_task_id, created_at) VALUES (?, ?, datetime(\'now\'))',
+          "INSERT INTO task_dependencies (task_id, blocks_task_id, created_at) VALUES (?, ?, datetime('now'))",
         )
         .run(t1.id, t2.id);
       app.db
         .prepare(
-          'INSERT INTO task_dependencies (task_id, blocks_task_id, created_at) VALUES (?, ?, datetime(\'now\'))',
+          "INSERT INTO task_dependencies (task_id, blocks_task_id, created_at) VALUES (?, ?, datetime('now'))",
         )
         .run(t2.id, t3.id);
       app.db
         .prepare(
-          'INSERT INTO task_dependencies (task_id, blocks_task_id, created_at) VALUES (?, ?, datetime(\'now\'))',
+          "INSERT INTO task_dependencies (task_id, blocks_task_id, created_at) VALUES (?, ?, datetime('now'))",
         )
         .run(t3.id, t1.id);
     });

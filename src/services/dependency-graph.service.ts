@@ -102,10 +102,7 @@ export class DependencyGraphService {
    * @param format    — one of `tree` (default), `graph`, `text`.
    * @throws NotFoundError when the project does not exist.
    */
-  buildDependencyGraph(
-    projectId: number,
-    format: DependencyGraphFormat,
-  ): DependencyGraphResult {
+  buildDependencyGraph(projectId: number, format: DependencyGraphFormat): DependencyGraphResult {
     const project = this.projectRepo.findById(projectId);
     if (!project) {
       throw new NotFoundError('Project', projectId);
@@ -149,19 +146,14 @@ export class DependencyGraphService {
       const allDeps = this.dependencyRepo.findAll();
       const edges: Array<{ from: number; to: number }> = [];
       for (const dep of allDeps) {
-        if (
-          tasksByIdLocal.has(dep.task_id) &&
-          tasksByIdLocal.has(dep.blocks_task_id)
-        ) {
+        if (tasksByIdLocal.has(dep.task_id) && tasksByIdLocal.has(dep.blocks_task_id)) {
           edges.push({ from: dep.task_id, to: dep.blocks_task_id });
         }
       }
       return { tasks: tasksLocal, projectEdges: edges };
     };
 
-    const { tasks, projectEdges } = this.db
-      ? this.db.transaction(readSnapshot)()
-      : readSnapshot();
+    const { tasks, projectEdges } = this.db ? this.db.transaction(readSnapshot)() : readSnapshot();
 
     const tasksById = new Map<number, Task & { tags: string[] }>();
     for (const t of tasks) tasksById.set(t.id, t);
@@ -178,9 +170,7 @@ export class DependencyGraphService {
           status: t.status,
           priority: t.priority,
         }));
-      const edges = [...projectEdges].sort(
-        (a, b) => a.from - b.from || a.to - b.to,
-      );
+      const edges = [...projectEdges].sort((a, b) => a.from - b.from || a.to - b.to);
       // Topology for the graph shape (N3): inline classifier — no second
       // bulk read. graph payload never needs tree-walking, so no truncation.
       const topologyGraph = classifyTopologyInline(tasks, projectEdges);
@@ -210,10 +200,7 @@ export class DependencyGraphService {
     }
 
     // Sort children deterministically (priority desc → created_at desc).
-    const compareTasks = (
-      aId: number,
-      bId: number,
-    ): number => {
+    const compareTasks = (aId: number, bId: number): number => {
       const a = tasksById.get(aId);
       const b = tasksById.get(bId);
       if (!a || !b) return aId - bId;
@@ -242,7 +229,11 @@ export class DependencyGraphService {
     // cycle. `topology` still reports `DAG_CYCLIC`.
     if (rootIds.length === 0 && tasks.length > 0) {
       const allIdsSorted = tasks.map((t) => t.id).sort(compareTasks);
-      rootIds = [allIdsSorted[0]];
+      const [syntheticRoot] = allIdsSorted;
+      // tasks.length > 0 guarantees a first element after the sort.
+      if (syntheticRoot !== undefined) {
+        rootIds = [syntheticRoot];
+      }
     }
 
     // Topology label (N3): inline classifier. Reuses the inDegree map we
@@ -463,10 +454,7 @@ interface TextRenderContext {
  * Truncation (N2): shares the same MAX_TREE_NODES cap via the `counter`
  * argument — each emitted line counts as one node.
  */
-function renderTextLines(
-  ctx: TextRenderContext,
-  counter: TreeCounter,
-): string[] {
+function renderTextLines(ctx: TextRenderContext, counter: TreeCounter): string[] {
   const out: string[] = [];
 
   /**
@@ -507,15 +495,14 @@ function renderTextLines(
     // Child prefix:
     //  - root: starts blank, child prefix is "" (children sit just under the root).
     //  - non-root: previous prefix + ("    " if last sibling else "│   ").
-    const childPrefix = isRoot
-      ? ''
-      : prefix + (isLastSibling ? '    ' : '│   '); // "│   "
+    const childPrefix = isRoot ? '' : prefix + (isLastSibling ? '    ' : '│   '); // "│   "
     for (let i = 0; i < childIds.length; i++) {
       if (counter.count >= MAX_TREE_NODES) {
         counter.truncated = true;
         break;
       }
       const childId = childIds[i];
+      if (childId === undefined) continue;
       const last = i === childIds.length - 1;
       walk(childId, childPrefix, last, false, nextVisited);
     }

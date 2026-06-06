@@ -1,11 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { ProjectService } from '../../services/project.service.js';
-import {
-  CreateProjectSchema,
-  ValueCharterNullableSchema,
-} from '../../schemas/project.schema.js';
+import { CreateProjectSchema, ValueCharterNullableSchema } from '../../schemas/project.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
 
 /**
  * Register all project-related MCP tools
@@ -17,10 +16,7 @@ import { convertToMcpError } from '../errors.js';
  * - update_project: Update existing project
  * - delete_project: Delete project by ID
  */
-export function registerProjectTools(
-  server: McpServer,
-  projectService: ProjectService
-): void {
+export function registerProjectTools(server: McpServer, projectService: ProjectService): void {
   // Tool: create_project
   server.registerTool(
     'create_project',
@@ -41,12 +37,12 @@ export function registerProjectTools(
               text: `Project created: ${project.name} (ID: ${project.id})`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: get_project
@@ -61,10 +57,7 @@ export function registerProjectTools(
     async (args) => {
       try {
         const project = projectService.getProject(args.id);
-        const summary = [
-          `Project: ${project.name}`,
-          `Created: ${project.created_at}`,
-        ];
+        const summary = [`Project: ${project.name}`, `Created: ${project.created_at}`];
         if (project.description) {
           summary.push(`Description: ${project.description}`);
         }
@@ -76,12 +69,12 @@ export function registerProjectTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: list_projects (paginated)
@@ -97,10 +90,9 @@ export function registerProjectTools(
     },
     async (args) => {
       try {
-        const page = projectService.listProjectsPaginated({
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = projectService.listProjectsPaginated(
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
 
         if (page.data.length === 0) {
           return {
@@ -110,12 +102,12 @@ export function registerProjectTools(
                 text: 'No projects found.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               projects: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
 
@@ -133,17 +125,17 @@ export function registerProjectTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             projects: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: update_project
@@ -173,12 +165,12 @@ export function registerProjectTools(
               text: `Project ${args.id} updated: ${project.name}`,
             },
           ],
-          structuredContent: project as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(project),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: delete_project
@@ -204,6 +196,6 @@ export function registerProjectTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 }

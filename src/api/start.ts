@@ -93,10 +93,14 @@ async function main() {
       nodeEnv: config.NODE_ENV,
     },
     `Server listening on http://${host}:${port}` +
-      (host === '127.0.0.1'
-        ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)'
-        : '')
+      (host === '127.0.0.1' ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)' : ''),
   );
 }
 
-main();
+// Top-level entry: handle startup failures explicitly so a rejected boot
+// promise produces a deterministic fatal log + non-zero exit instead of
+// relying on the generic unhandledRejection handler (noFloatingPromises).
+main().catch((error) => {
+  console.error('Fatal error during startup', error);
+  process.exit(ExitCodes.EX_SOFTWARE);
+});

@@ -47,7 +47,7 @@ describe('RestClient.getCompletionReport (remote MCP parity for #245)', () => {
   function completeTask(
     projectId: number,
     title: string,
-    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {}
+    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {},
   ): void {
     const task = app.taskService.createTask({
       title,
@@ -107,9 +107,7 @@ describe('RestClient.getCompletionReport (remote MCP parity for #245)', () => {
   });
 
   it('surfaces server-side validation errors when neither form is supplied', async () => {
-    await expect(
-      client.getCompletionReport({})
-    ).rejects.toThrow(/API request failed/);
+    await expect(client.getCompletionReport({})).rejects.toThrow(/API request failed/);
   });
 
   it('surfaces server-side validation errors when end precedes start', async () => {
@@ -117,7 +115,7 @@ describe('RestClient.getCompletionReport (remote MCP parity for #245)', () => {
       client.getCompletionReport({
         start: '2026-02-01T00:00:00Z',
         end: '2026-01-01T00:00:00Z',
-      })
+      }),
     ).rejects.toThrow(/API request failed/);
   });
 });

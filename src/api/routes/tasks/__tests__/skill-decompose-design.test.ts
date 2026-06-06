@@ -27,17 +27,10 @@ import { describe, expect, it } from 'vitest';
  */
 
 const REPO_ROOT = resolve(__dirname, '../../../../..');
-const DESIGN_DOC_PATH = resolve(
-  REPO_ROOT,
-  'docs/tasks-decompose-design.md',
-);
+const DESIGN_DOC_PATH = resolve(REPO_ROOT, 'docs/tasks-decompose-design.md');
 const SKILL_PATH = resolve(REPO_ROOT, 'skills/tasks/decompose.md');
-const PLAN_TEMPLATE_PATH = resolve(
-  REPO_ROOT,
-  'docs/superpowers/PLAN-TEMPLATE.md',
-);
-const PARITY_RETRO_FILENAME =
-  '2026-06-01-wsjf-remote-parity-planning-gap.md';
+const PLAN_TEMPLATE_PATH = resolve(REPO_ROOT, 'docs/superpowers/PLAN-TEMPLATE.md');
+const PARITY_RETRO_FILENAME = '2026-06-01-wsjf-remote-parity-planning-gap.md';
 
 /**
  * The 8 canonical deployment surfaces every decompose plan must check
@@ -94,9 +87,7 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
 
   for (const header of REQUIRED_DESIGN_HEADERS) {
     it(`design doc contains required header: "${header}"`, () => {
-      const headerOnOwnLine = design
-        .split('\n')
-        .some((line) => line === header);
+      const headerOnOwnLine = design.split('\n').some((line) => line === header);
       expect(headerOnOwnLine).toBe(true);
     });
   }
@@ -140,9 +131,7 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
   // -------------------------------------------------------------------------
 
   it('guardrail 1 documented verbatim: MUST NOT execute the decomposed tasks', () => {
-    expect(design.includes('MUST NOT execute the decomposed tasks')).toBe(
-      true,
-    );
+    expect(design.includes('MUST NOT execute the decomposed tasks')).toBe(true);
   });
 
   it('guardrail 2 documented verbatim: MUST NOT modify itself', () => {
@@ -171,9 +160,7 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
   });
 
   it('design doc states DECOMPOSITION.md is NOT committed (gitignored)', () => {
-    const hasGitignoredRationale = /gitignored|not committed|NOT committed/i.test(
-      design,
-    );
+    const hasGitignoredRationale = /gitignored|not committed|NOT committed/i.test(design);
     expect(hasGitignoredRationale).toBe(true);
   });
 
@@ -239,9 +226,7 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
     expect(skill.includes('DESIGN-ONLY STUB')).toBe(false);
     expect(skill.includes('design-only as of #320')).toBe(false);
     expect(
-      /No subagent dispatched\. No tasks materialized\. No artifacts written\./.test(
-        skill,
-      ),
+      /No subagent dispatched\. No tasks materialized\. No artifacts written\./.test(skill),
     ).toBe(false);
   });
 
@@ -350,9 +335,7 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
     expect(skill.includes('MUST NOT execute the decomposed tasks')).toBe(true);
     expect(skill.includes('claim_task')).toBe(true);
     // claim_task / update_task must be named in the FORBIDDEN set.
-    expect(
-      /NOT permitted|NOT call|does NOT call|never calls/i.test(skill),
-    ).toBe(true);
+    expect(/NOT permitted|NOT call|does NOT call|never calls/i.test(skill)).toBe(true);
   });
 
   it('Guardrail 2 (no self-rewrite): refuses Edit/Write against decompose.md / design doc / src/lib/decompose', () => {
@@ -374,12 +357,8 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
     expect(skill.includes('migrate production')).toBe(true);
     expect(skill.includes('delete data')).toBe(true);
     // whole-word case-insensitive regex documented + must precede dispatch.
-    expect(
-      skill.includes('\\b(deploy|migrate production|delete data)\\b'),
-    ).toBe(true);
-    expect(/before any subagent dispatch|BEFORE any.*dispatch/i.test(skill)).toBe(
-      true,
-    );
+    expect(skill.includes('\\b(deploy|migrate production|delete data)\\b')).toBe(true);
+    expect(/before any subagent dispatch|BEFORE any.*dispatch/i.test(skill)).toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -442,9 +421,7 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
       expect(planTemplate.includes(surface)).toBe(true);
     }
     // Every non-N/A cell must map to a task — the load-bearing rule.
-    expect(/every non-N\/A cell MUST map to a task/i.test(planTemplate)).toBe(
-      true,
-    );
+    expect(/every non-N\/A cell MUST map to a task/i.test(planTemplate)).toBe(true);
   });
 
   it('plan template points at the decompose invariant-rider and the retro', () => {

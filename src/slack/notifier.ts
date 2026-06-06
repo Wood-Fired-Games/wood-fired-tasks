@@ -33,7 +33,7 @@ export class SlackNotifier {
     private readonly client: WebClient,
     private readonly subscriptionRepo: SlackChannelSubscriptionRepository,
     private readonly projectService: ProjectService,
-    private readonly logger: NotifierLogger
+    private readonly logger: NotifierLogger,
   ) {}
 
   /**
@@ -48,7 +48,7 @@ export class SlackNotifier {
     for (const eventType of TASK_EVENT_TYPES) {
       const unsub = eventBus.subscribe(eventType, (event: TaskEvent) => {
         this.handleTaskEvent(eventType, event).catch((err) =>
-          this.logger.error({ err, eventType }, 'SlackNotifier: unhandled error')
+          this.logger.error({ err, eventType }, 'SlackNotifier: unhandled error'),
         );
       });
       this.unsubscribes.push(unsub);
@@ -92,7 +92,7 @@ export class SlackNotifier {
     const fallbackText = `${eventType}: ${event.data.title}`;
 
     const results = await Promise.allSettled(
-      channels.map((channelId) => this.postWithRetry(channelId, blocks, fallbackText))
+      channels.map((channelId) => this.postWithRetry(channelId, blocks, fallbackText)),
     );
 
     for (let i = 0; i < results.length; i++) {
@@ -100,7 +100,7 @@ export class SlackNotifier {
       if (result.status === 'rejected') {
         this.logger.error(
           { err: result.reason, channelId: channels[i], eventType },
-          'SlackNotifier: failed to post notification'
+          'SlackNotifier: failed to post notification',
         );
       }
     }
@@ -115,7 +115,7 @@ export class SlackNotifier {
     channelId: string,
     blocks: KnownBlock[],
     text: string,
-    maxRetries = 2
+    maxRetries = 2,
   ): Promise<void> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {

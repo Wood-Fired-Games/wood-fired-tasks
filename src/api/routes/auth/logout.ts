@@ -28,55 +28,41 @@ import { buildEndSessionUrl } from '../../../services/oidc-client.js';
 import { verifyCsrfToken } from './csrf.js';
 import type { AuthRoutesOptions } from './index.js';
 
-const logoutRoute: FastifyPluginAsync<AuthRoutesOptions> = async (
-  fastify,
-  opts,
-) => {
-  fastify.post(
-    '/logout',
-    { config: { skipAuth: true } },
-    async (request, reply) => {
-      const body = (request.body ?? {}) as { _csrf?: unknown };
-      if (!verifyCsrfToken(request, body._csrf)) {
-        return reply
-          .header('Cache-Control', 'no-store')
-          .code(403)
-          .send({ error: 'csrf_invalid' });
+const logoutRoute: FastifyPluginAsync<AuthRoutesOptions> = async (fastify, opts) => {
+  fastify.post('/logout', { config: { skipAuth: true } }, async (request, reply) => {
+    const body = (request.body ?? {}) as { _csrf?: unknown };
+    if (!verifyCsrfToken(request, body._csrf)) {
+      return reply.header('Cache-Control', 'no-store').code(403).send({ error: 'csrf_invalid' });
+    }
+
+    // Snapshot idToken BEFORE delete() — RP-initiated logout needs it.
+    const idToken = request.session.get('idToken');
+
+    // Clear the local session unconditionally; the IdP roundtrip is
+    // best-effort. If buildEndSessionUrl returns null OR the IdP is
+    // unreachable, the user is still logged out locally.
+    request.session.delete();
+
+    if (typeof idToken === 'string' && idToken.length > 0) {
+      // WR-03 fix: source the post-logout redirect URI from
+      // configuration (opts.postLogoutRedirectUri), NOT from
+      // request.protocol/hostname. The Host header is caller-
+      // controllable when behind a permissive reverse proxy, and
+      // request.protocol is whatever Fastify sees on the socket
+      // (often `http` behind an HTTPS-terminating proxy without
+      // trustProxy). Hardcoding the value at config time eliminates
+      // both attack and misconfiguration vectors.
+      const url = buildEndSessionUrl(opts.oidcConfig, {
+        idTokenHint: idToken,
+        postLogoutRedirectUri: opts.postLogoutRedirectUri,
+      });
+      if (url) {
+        return reply.header('Cache-Control', 'no-store').redirect(url.toString(), 302);
       }
+    }
 
-      // Snapshot idToken BEFORE delete() — RP-initiated logout needs it.
-      const idToken = request.session.get('idToken');
-
-      // Clear the local session unconditionally; the IdP roundtrip is
-      // best-effort. If buildEndSessionUrl returns null OR the IdP is
-      // unreachable, the user is still logged out locally.
-      request.session.delete();
-
-      if (typeof idToken === 'string' && idToken.length > 0) {
-        // WR-03 fix: source the post-logout redirect URI from
-        // configuration (opts.postLogoutRedirectUri), NOT from
-        // request.protocol/hostname. The Host header is caller-
-        // controllable when behind a permissive reverse proxy, and
-        // request.protocol is whatever Fastify sees on the socket
-        // (often `http` behind an HTTPS-terminating proxy without
-        // trustProxy). Hardcoding the value at config time eliminates
-        // both attack and misconfiguration vectors.
-        const url = buildEndSessionUrl(opts.oidcConfig, {
-          idTokenHint: idToken,
-          postLogoutRedirectUri: opts.postLogoutRedirectUri,
-        });
-        if (url) {
-          return reply
-            .header('Cache-Control', 'no-store')
-            .redirect(url.toString(), 302);
-        }
-      }
-
-      return reply
-        .header('Cache-Control', 'no-store')
-        .redirect('/auth/login', 302);
-    },
-  );
+    return reply.header('Cache-Control', 'no-store').redirect('/auth/login', 302);
+  });
 };
 
 export default logoutRoute;

@@ -2,11 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { KnownBlock, SectionBlock, HeaderBlock, ContextBlock } from '@slack/types';
 import type { Task } from '../../../types/task.js';
 import type { TaskEvent } from '../../../events/types.js';
-import {
-  formatTaskList,
-  formatTaskDetail,
-  formatTaskNotification,
-} from '../../task-formatter.js';
+import { formatTaskList, formatTaskDetail, formatTaskNotification } from '../../task-formatter.js';
 
 // ---------------------------------------------------------------------------
 // Test data factories
@@ -110,7 +106,7 @@ describe('formatTaskList', () => {
 
   it('truncates to 20 tasks and adds context footer when tasks.length > 20', () => {
     const tasks = Array.from({ length: 25 }, (_, i) =>
-      makeTask({ id: i + 1, title: `Task ${i + 1}` })
+      makeTask({ id: i + 1, title: `Task ${i + 1}` }),
     );
     const blocks = formatTaskList(tasks);
     // header + 20 sections + 1 context footer
@@ -125,7 +121,7 @@ describe('formatTaskList', () => {
 
   it('does not add context footer when tasks.length === 20', () => {
     const tasks = Array.from({ length: 20 }, (_, i) =>
-      makeTask({ id: i + 1, title: `Task ${i + 1}` })
+      makeTask({ id: i + 1, title: `Task ${i + 1}` }),
     );
     const blocks = formatTaskList(tasks);
     // header + 20 sections, no footer

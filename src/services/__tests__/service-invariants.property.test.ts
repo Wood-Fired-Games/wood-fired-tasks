@@ -100,9 +100,9 @@ describe('TaskService.updateTask status transition invariants', () => {
           const updated = app.taskService.updateTask(created.id, { status: to });
           expect(updated.status).toBe(to);
         } else {
-          expect(() =>
-            app.taskService.updateTask(created.id, { status: to })
-          ).toThrow(BusinessError);
+          expect(() => app.taskService.updateTask(created.id, { status: to })).toThrow(
+            BusinessError,
+          );
 
           const after = app.taskService.getTask(created.id);
           // DB state must be unchanged on rejection.
@@ -118,7 +118,7 @@ describe('TaskService.updateTask status transition invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 });
 
@@ -160,7 +160,7 @@ describe('CompletionReport range resolution invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 
   test.prop([isoDateArb, isoDateArb], { numRuns: 10 })(
@@ -196,7 +196,7 @@ describe('CompletionReport range resolution invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 });
 
@@ -275,7 +275,7 @@ describe('TaskRepository.findByFilters subset/count invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 });
 
@@ -289,7 +289,9 @@ describe('CycleDetector add+remove invariants', () => {
   // and a utility module that has no service imports.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
 
-  test.prop([fc.array(edgeArb, { maxLength: 8 }), nodeArb, nodeArb, nodeArb, nodeArb], { numRuns: 15 })(
+  test.prop([fc.array(edgeArb, { maxLength: 8 }), nodeArb, nodeArb, nodeArb, nodeArb], {
+    numRuns: 15,
+  })(
     'adding then removing an edge restores the cycle answer for any (from,to)',
     async (edges, addFrom, addTo, queryFrom, queryTo) => {
       // Dynamic import keeps this test parallel to the existing
@@ -318,6 +320,6 @@ describe('CycleDetector add+remove invariants', () => {
 
       expect(after).toBe(before);
       return true;
-    }
+    },
   );
 });

@@ -39,9 +39,7 @@ describe('isMain', () => {
 
   it('returns false when realpathSync throws (argv[1] does not exist)', () => {
     process.argv[1] = join(tmpDir, 'does-not-exist.js');
-    expect(isMain(pathToFileURL(join(tmpDir, 'whatever.js')).href)).toBe(
-      false,
-    );
+    expect(isMain(pathToFileURL(join(tmpDir, 'whatever.js')).href)).toBe(false);
   });
 
   it('returns false for an ordinary string mismatch', () => {

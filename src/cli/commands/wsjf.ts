@@ -46,9 +46,7 @@ function parseFib(raw: string | undefined, label: string): Fib | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isInteger(n) || !(FIB as readonly number[]).includes(n)) {
-    throw new Error(
-      `Invalid --${label}: must be a Fibonacci tier (${FIB.join(', ')})`,
-    );
+    throw new Error(`Invalid --${label}: must be a Fibonacci tier (${FIB.join(', ')})`);
   }
   return n as Fib;
 }
@@ -63,7 +61,7 @@ export const wsjfHistoryCommand = new Command('wsjf-history')
       process.exitCode = 1;
       return;
     }
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = new Database(dbPath, { readonly: true });
     try {
       const history = new WsjfHistoryRepository(db).findByTaskId(id);
@@ -86,14 +84,8 @@ export const wsjfSetCommand = new Command('wsjf-set')
   )
   .argument('<id>', 'Task ID (positive integer)')
   .requiredOption('--value <fib>', 'Business value tier (1,2,3,5,8,13)')
-  .requiredOption(
-    '--time-criticality <fib>',
-    'Time-criticality tier (1,2,3,5,8,13)',
-  )
-  .requiredOption(
-    '--risk-opportunity <fib>',
-    'Risk/opportunity tier (1,2,3,5,8,13)',
-  )
+  .requiredOption('--time-criticality <fib>', 'Time-criticality tier (1,2,3,5,8,13)')
+  .requiredOption('--risk-opportunity <fib>', 'Risk/opportunity tier (1,2,3,5,8,13)')
   .requiredOption('--job-size <fib>', 'Job-size tier (1,2,3,5,8,13)')
   .option(
     '--lock <keys>',
@@ -132,9 +124,7 @@ export const wsjfSetCommand = new Command('wsjf-set')
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean);
-          const unknown = requested.filter(
-            (k) => !COMPONENT_KEYS.includes(k as WsjfComponentKey),
-          );
+          const unknown = requested.filter((k) => !COMPONENT_KEYS.includes(k as WsjfComponentKey));
           if (unknown.length > 0) {
             throw new Error(
               `Invalid --lock key(s): ${unknown.join(', ')}. ` +
@@ -155,7 +145,7 @@ export const wsjfSetCommand = new Command('wsjf-set')
         return;
       }
 
-      const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+      const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
       const db = new Database(dbPath);
       try {
         const taskRepo = new TaskRepository(db);
@@ -210,22 +200,16 @@ export const charterHistoryCommand = new Command('charter-history')
   .action((idStr: string) => {
     const id = parseInt(idStr, 10);
     if (!Number.isInteger(id) || id <= 0) {
-      console.error(
-        colorError('Invalid project id: must be a positive integer'),
-      );
+      console.error(colorError('Invalid project id: must be a positive integer'));
       process.exitCode = 1;
       return;
     }
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = new Database(dbPath, { readonly: true });
     try {
       const history = new ProjectCharterHistoryRepository(db).findByProjectId(id);
       process.stdout.write(
-        `${JSON.stringify(
-          { project_id: id, total: history.length, history },
-          null,
-          2,
-        )}\n`,
+        `${JSON.stringify({ project_id: id, total: history.length, history }, null, 2)}\n`,
       );
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

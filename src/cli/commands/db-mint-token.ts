@@ -47,20 +47,15 @@ import '../config/env.js';
  * shorthand like `2027` that Date.parse would silently accept. Strict
  * matching prevents `--expires-at 2099` from becoming midnight UTC.
  */
-const ISO8601_STRICT =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO8601_STRICT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 function validateIso(s: string): void {
   if (!ISO8601_STRICT.test(s)) {
-    throw new Error(
-      `invalid ISO-8601 timestamp '${s}' (expected e.g. 2027-05-22T00:00:00Z)`,
-    );
+    throw new Error(`invalid ISO-8601 timestamp '${s}' (expected e.g. 2027-05-22T00:00:00Z)`);
   }
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) {
-    throw new Error(
-      `invalid ISO-8601 timestamp '${s}' (Date.parse rejected it)`,
-    );
+    throw new Error(`invalid ISO-8601 timestamp '${s}' (Date.parse rejected it)`);
   }
 }
 
@@ -112,18 +107,10 @@ export const dbMintTokenCommand = new Command('mint-token')
     'User identifier — numeric id, email (case-insensitive), or legacy display_name',
   )
   .requiredOption('--name <name>', 'Human-readable token label')
-  .option(
-    '--scopes <list>',
-    'Comma-separated scope list (advisory in v1.6; not enforced)',
-  )
+  .option('--scopes <list>', 'Comma-separated scope list (advisory in v1.6; not enforced)')
   .option('--expires-at <iso>', 'ISO-8601 expiry timestamp (e.g. 2027-05-22T00:00:00Z)')
-  .action(async (opts: {
-    user: string;
-    name: string;
-    scopes?: string;
-    expiresAt?: string;
-  }) => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+  .action(async (opts: { user: string; name: string; scopes?: string; expiresAt?: string }) => {
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = initDatabase(dbPath);
     try {
       // Idempotent on a current DB; surfaces a clear error against a

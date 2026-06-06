@@ -8,14 +8,16 @@ const MAX_LIMIT = 500;
 
 export const projectListCommand = new Command('project-list')
   .description('List all projects')
-  .option('--limit <n>', `Max rows to return (default 50, max ${MAX_LIMIT})`, (v) => parseInt(v, 10))
+  .option('--limit <n>', `Max rows to return (default 50, max ${MAX_LIMIT})`, (v) =>
+    parseInt(v, 10),
+  )
   .option('--offset <n>', 'Zero-based offset for pagination (default 0)', (v) => parseInt(v, 10))
   .action(async (options) => {
     try {
       if (options.limit !== undefined) {
         if (!Number.isInteger(options.limit) || options.limit <= 0 || options.limit > MAX_LIMIT) {
           console.error(
-            colorError(`Invalid --limit: must be an integer between 1 and ${MAX_LIMIT}`)
+            colorError(`Invalid --limit: must be an integer between 1 and ${MAX_LIMIT}`),
           );
           process.exitCode = 1;
           return;
@@ -38,7 +40,7 @@ export const projectListCommand = new Command('project-list')
       // Check if JSON mode (global flag from program)
       const program = projectListCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display results
       if (isJsonMode) {

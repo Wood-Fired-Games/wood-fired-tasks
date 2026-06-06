@@ -67,15 +67,12 @@ describe('db-mint-token command', () => {
 
     // Use a silent logger so seeder noise doesn't pollute test output.
     const silentLogger = { info: () => {}, warn: () => {} };
-    seedIdentities(
-      db,
-      parseApiKeyEntries('test-key:legacy-key'),
-      silentLogger,
-    );
+    seedIdentities(db, parseApiKeyEntries('test-key:legacy-key'), silentLogger);
 
-    db.prepare(
-      `INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`,
-    ).run('alice', 'alice@example.com');
+    db.prepare(`INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`).run(
+      'alice',
+      'alice@example.com',
+    );
 
     db.close();
 
@@ -104,9 +101,7 @@ describe('db-mint-token command', () => {
   function readTokens(): ApiTokenRow[] {
     const db = new Database(dbPath, { readonly: true });
     try {
-      return db
-        .prepare('SELECT * FROM api_tokens ORDER BY id ASC')
-        .all() as ApiTokenRow[];
+      return db.prepare('SELECT * FROM api_tokens ORDER BY id ASC').all() as ApiTokenRow[];
     } finally {
       db.close();
     }
@@ -116,9 +111,9 @@ describe('db-mint-token command', () => {
     const db = new Database(dbPath, { readonly: true });
     try {
       return (
-        (db
-          .prepare(`SELECT id, display_name, email FROM users WHERE ${predicate}`)
-          .get(...args) as UserRow | undefined) ?? null
+        (db.prepare(`SELECT id, display_name, email FROM users WHERE ${predicate}`).get(...args) as
+          | UserRow
+          | undefined) ?? null
       );
     } finally {
       db.close();
@@ -140,10 +135,9 @@ describe('db-mint-token command', () => {
     const legacy = readUser("display_name = 'legacy-key'");
     expect(legacy).not.toBeNull();
 
-    await dbMintTokenCommand.parseAsync(
-      ['--user', String(legacy!.id), '--name', 'laptop'],
-      { from: 'user' },
-    );
+    await dbMintTokenCommand.parseAsync(['--user', String(legacy!.id), '--name', 'laptop'], {
+      from: 'user',
+    });
 
     const stdout = loggedStdout();
     expect(process.exitCode).toBe(0);
@@ -161,9 +155,7 @@ describe('db-mint-token command', () => {
     const match = stdout.match(/Token: (wft_pat_[A-Z2-7]{32})/);
     expect(match).not.toBeNull();
     const printedToken = match![1];
-    const expectedHash = createHash('sha256')
-      .update(printedToken)
-      .digest('hex');
+    const expectedHash = createHash('sha256').update(printedToken).digest('hex');
     expect(rows[0].hash).toBe(expectedHash);
     expect(printedToken.endsWith(rows[0].suffix)).toBe(true);
   });
@@ -175,10 +167,9 @@ describe('db-mint-token command', () => {
     const alice = readUser("email = 'alice@example.com'");
     expect(alice).not.toBeNull();
 
-    await dbMintTokenCommand.parseAsync(
-      ['--user', 'ALICE@example.com', '--name', 'api-bot'],
-      { from: 'user' },
-    );
+    await dbMintTokenCommand.parseAsync(['--user', 'ALICE@example.com', '--name', 'api-bot'], {
+      from: 'user',
+    });
 
     const stdout = loggedStdout();
     expect(process.exitCode).toBe(0);
@@ -197,38 +188,31 @@ describe('db-mint-token command', () => {
     const legacy = readUser("display_name = 'legacy-key'");
     expect(legacy).not.toBeNull();
 
-    await dbMintTokenCommand.parseAsync(
-      ['--user', 'legacy-key', '--name', 'foo'],
-      { from: 'user' },
-    );
+    await dbMintTokenCommand.parseAsync(['--user', 'legacy-key', '--name', 'foo'], {
+      from: 'user',
+    });
 
     expect(process.exitCode).toBe(0);
     expect(loggedStdout()).toContain(`User: ${legacy!.id} (legacy-key)`);
     expect(readTokens()).toHaveLength(1);
   });
 
-  it("Case 4: unknown numeric --user prints \"User '99999' not found.\" and exits 1", async () => {
+  it('Case 4: unknown numeric --user prints "User \'99999\' not found." and exits 1', async () => {
     const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
     dbMintTokenCommand.exitOverride();
 
-    await dbMintTokenCommand.parseAsync(
-      ['--user', '99999', '--name', 'foo'],
-      { from: 'user' },
-    );
+    await dbMintTokenCommand.parseAsync(['--user', '99999', '--name', 'foo'], { from: 'user' });
 
     expect(process.exitCode).toBe(1);
     expect(loggedStderr()).toContain("User '99999' not found.");
     expect(readTokens()).toHaveLength(0);
   });
 
-  it("Case 5: unknown string --user prints \"User 'nobody' not found.\" and exits 1", async () => {
+  it('Case 5: unknown string --user prints "User \'nobody\' not found." and exits 1', async () => {
     const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
     dbMintTokenCommand.exitOverride();
 
-    await dbMintTokenCommand.parseAsync(
-      ['--user', 'nobody', '--name', 'foo'],
-      { from: 'user' },
-    );
+    await dbMintTokenCommand.parseAsync(['--user', 'nobody', '--name', 'foo'], { from: 'user' });
 
     expect(process.exitCode).toBe(1);
     expect(loggedStderr()).toContain("User 'nobody' not found.");
@@ -241,14 +225,7 @@ describe('db-mint-token command', () => {
 
     const legacy = readUser("display_name = 'legacy-key'");
     await dbMintTokenCommand.parseAsync(
-      [
-        '--user',
-        String(legacy!.id),
-        '--name',
-        'foo',
-        '--scopes',
-        'admin,reader',
-      ],
+      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'admin,reader'],
       { from: 'user' },
     );
 
@@ -266,14 +243,7 @@ describe('db-mint-token command', () => {
 
     const legacy = readUser("display_name = 'legacy-key'");
     await dbMintTokenCommand.parseAsync(
-      [
-        '--user',
-        String(legacy!.id),
-        '--name',
-        'foo',
-        '--expires-at',
-        '2027-05-22T00:00:00Z',
-      ],
+      ['--user', String(legacy!.id), '--name', 'foo', '--expires-at', '2027-05-22T00:00:00Z'],
       { from: 'user' },
     );
 
@@ -291,14 +261,7 @@ describe('db-mint-token command', () => {
 
     const legacy = readUser("display_name = 'legacy-key'");
     await dbMintTokenCommand.parseAsync(
-      [
-        '--user',
-        String(legacy!.id),
-        '--name',
-        'foo',
-        '--expires-at',
-        'not-a-date',
-      ],
+      ['--user', String(legacy!.id), '--name', 'foo', '--expires-at', 'not-a-date'],
       { from: 'user' },
     );
 

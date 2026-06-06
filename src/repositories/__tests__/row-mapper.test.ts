@@ -31,10 +31,7 @@ describe('row-mapper', () => {
         'one-row',
       );
       const stmt = db.prepare('SELECT * FROM projects WHERE name = ?');
-      const result = mapRow<{ id: number; name: string }>(
-        stmt,
-        'row-mapper-test',
-      );
+      const result = mapRow<{ id: number; name: string }>(stmt, 'row-mapper-test');
       expect(result).toBeDefined();
       expect(result?.name).toBe('row-mapper-test');
     });
@@ -67,9 +64,7 @@ describe('row-mapper', () => {
 
     it('supports named-parameter binding', () => {
       db.prepare('INSERT INTO projects (name) VALUES (?)').run('gamma');
-      const stmt = db.prepare(
-        'SELECT name FROM projects WHERE name = @name',
-      );
+      const stmt = db.prepare('SELECT name FROM projects WHERE name = @name');
       const result = mapRows<{ name: string }>(stmt, { name: 'gamma' });
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('gamma');

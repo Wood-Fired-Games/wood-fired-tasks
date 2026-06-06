@@ -99,7 +99,7 @@ function snapshotDb(db: Database.Database): DbSnapshot {
       `SELECT name, type, tbl_name, sql
        FROM sqlite_master
        WHERE name NOT LIKE 'sqlite_%'
-       ORDER BY type, name`
+       ORDER BY type, name`,
     )
     .all() as Array<{ name: string; type: string; tbl_name: string; sql: string | null }>;
 
@@ -114,7 +114,7 @@ function snapshotDb(db: Database.Database): DbSnapshot {
          AND name NOT LIKE 'sqlite_%'
          AND name != '_migrations'
          AND sql NOT LIKE 'CREATE VIRTUAL TABLE%'
-       ORDER BY name`
+       ORDER BY name`,
     )
     .all() as Array<{ name: string }>;
 
@@ -135,7 +135,7 @@ function snapshotDb(db: Database.Database): DbSnapshot {
 async function applyMigrationsUpTo(
   db: Database.Database,
   files: string[],
-  targetIndex: number
+  targetIndex: number,
 ): Promise<void> {
   for (let i = 0; i <= targetIndex; i++) {
     const mod = await loadMigration(files[i]);
@@ -158,7 +158,7 @@ function assertFtsTriggersHealthy(db: Database.Database): void {
   const taskRes = db
     .prepare(
       `INSERT INTO tasks (title, description, project_id, created_by)
-       VALUES (?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?)`,
     )
     .run('FTS healthcheck pangolin', 'unique pangolin keyword', projectId, 'tester');
   const taskId = taskRes.lastInsertRowid as number;
@@ -167,7 +167,7 @@ function assertFtsTriggersHealthy(db: Database.Database): void {
     .prepare(
       `SELECT tasks.id FROM tasks
        JOIN tasks_fts ON tasks.id = tasks_fts.rowid
-       WHERE tasks_fts MATCH ?`
+       WHERE tasks_fts MATCH ?`,
     )
     .all('pangolin') as Array<{ id: number }>;
   expect(hits, 'FTS insert trigger must be present after round-trip').toHaveLength(1);
@@ -178,7 +178,7 @@ function assertFtsTriggersHealthy(db: Database.Database): void {
     .prepare(
       `SELECT tasks.id FROM tasks
        JOIN tasks_fts ON tasks.id = tasks_fts.rowid
-       WHERE tasks_fts MATCH ?`
+       WHERE tasks_fts MATCH ?`,
     )
     .all('pangolin') as Array<{ id: number }>;
   expect(afterDelete, 'FTS delete trigger must be present after round-trip').toHaveLength(0);
@@ -194,7 +194,7 @@ function ftsTriggerNames(db: Database.Database): string[] {
     .prepare(
       `SELECT name FROM sqlite_master
        WHERE type='trigger' AND name LIKE 'tasks_fts_%'
-       ORDER BY name`
+       ORDER BY name`,
     )
     .all() as Array<{ name: string }>;
   return rows.map((r) => r.name);
@@ -261,11 +261,7 @@ describe('Migration round-trip (up -> down -> up) with schema snapshot', () => {
       try {
         await applyMigrationsUpTo(db, MIGRATION_FILES, idx005);
 
-        const expectedTriggers = [
-          'tasks_fts_delete',
-          'tasks_fts_insert',
-          'tasks_fts_update',
-        ];
+        const expectedTriggers = ['tasks_fts_delete', 'tasks_fts_insert', 'tasks_fts_update'];
 
         expect(ftsTriggerNames(db)).toEqual(expectedTriggers);
 
@@ -275,15 +271,11 @@ describe('Migration round-trip (up -> down -> up) with schema snapshot', () => {
         // After down(): migration 005 reverts to the pre-005 schema, which
         // (per migration 001) still includes all 3 FTS triggers. A leak that
         // dropped them without restoration would fail here.
-        expect(ftsTriggerNames(db), 'down() must restore FTS triggers').toEqual(
-          expectedTriggers
-        );
+        expect(ftsTriggerNames(db), 'down() must restore FTS triggers').toEqual(expectedTriggers);
 
         await m005.up(db);
 
-        expect(ftsTriggerNames(db), 'up() must restore FTS triggers').toEqual(
-          expectedTriggers
-        );
+        expect(ftsTriggerNames(db), 'up() must restore FTS triggers').toEqual(expectedTriggers);
 
         // Functional smoke test — make sure the triggers actually fire and
         // aren't just orphaned definitions referencing a stale tasks table.

@@ -6,11 +6,7 @@
  * network, no real time elapses — the loop runs deterministically in <50ms.
  */
 import { describe, it, expect, vi } from 'vitest';
-import {
-  requestDeviceCode,
-  pollForToken,
-  type PollOptions,
-} from '../device-flow.js';
+import { requestDeviceCode, pollForToken, type PollOptions } from '../device-flow.js';
 
 /** Build a fake `Response` Body with json() resolving to the given object. */
 function jsonResponse(status: number, body: unknown): Response {
@@ -75,9 +71,7 @@ describe('requestDeviceCode', () => {
   });
 
   it('throws with status + snippet on non-200', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(400, { error: 'invalid_client' }));
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(400, { error: 'invalid_client' }));
     await expect(
       requestDeviceCode({
         baseUrl: 'https://example.test',
@@ -186,9 +180,7 @@ describe('pollForToken', () => {
   });
 
   it('returns kind=terminal_error error=expired_token with the documented message', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(400, { error: 'expired_token' }));
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(400, { error: 'expired_token' }));
     const res = await pollForToken(
       basePollOpts({ fetchImpl: fetchImpl as unknown as typeof fetch }),
     );
@@ -200,9 +192,7 @@ describe('pollForToken', () => {
   });
 
   it('returns kind=terminal_error error=access_denied with the documented message', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(400, { error: 'access_denied' }));
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(400, { error: 'access_denied' }));
     const res = await pollForToken(
       basePollOpts({ fetchImpl: fetchImpl as unknown as typeof fetch }),
     );
@@ -214,9 +204,7 @@ describe('pollForToken', () => {
   });
 
   it('returns kind=terminal_error error=invalid_client with the documented message', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(400, { error: 'invalid_client' }));
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(400, { error: 'invalid_client' }));
     const res = await pollForToken(
       basePollOpts({ fetchImpl: fetchImpl as unknown as typeof fetch }),
     );
@@ -256,9 +244,7 @@ describe('pollForToken', () => {
   });
 
   it('returns kind=terminal_error error=network when fetch throws', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockRejectedValueOnce(new TypeError('fetch failed: ECONNREFUSED'));
+    const fetchImpl = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed: ECONNREFUSED'));
     const res = await pollForToken(
       basePollOpts({ fetchImpl: fetchImpl as unknown as typeof fetch }),
     );
@@ -311,17 +297,14 @@ describe('pollForToken', () => {
 
   it('sends form-encoded body with the RFC 8628 grant_type to /auth/device/token', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, successEnvelope));
-    await pollForToken(
-      basePollOpts({ fetchImpl: fetchImpl as unknown as typeof fetch }),
-    );
+    await pollForToken(basePollOpts({ fetchImpl: fetchImpl as unknown as typeof fetch }));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe('https://example.test/auth/device/token');
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
     // Body is a URLSearchParams (or a string). Either way, decode → assert.
-    const bodyStr =
-      init.body instanceof URLSearchParams ? init.body.toString() : String(init.body);
+    const bodyStr = init.body instanceof URLSearchParams ? init.body.toString() : String(init.body);
     const parsed = new URLSearchParams(bodyStr);
     expect(parsed.get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code');
     expect(parsed.get('device_code')).toBe('dc-12345');

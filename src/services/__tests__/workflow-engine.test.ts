@@ -11,7 +11,7 @@ import { eventBus } from '../../events/event-bus.js';
 import type Database from '../../db/driver.js';
 import type { App } from '../../index.js';
 import type { Task } from '../../types/task.js';
-import type { TaskEvent } from '../../events/types.js';
+import { getStatusTransition, type TaskEvent } from '../../events/types.js';
 
 describe('WorkflowEngine', () => {
   let app: App;
@@ -142,7 +142,7 @@ describe('WorkflowEngine', () => {
 
       // Find the status_changed event for the parent task
       const parentEvent = receivedEvents.find(
-        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === parent.id && getStatusTransition(e)?.to === 'done',
       );
 
       expect(parentEvent).toBeDefined();
@@ -205,6 +205,84 @@ describe('WorkflowEngine', () => {
 
       // Level 0 (root) should NOT auto-complete (depth would be 6, exceeds limit)
       expect(taskService.getTask(levels[0].id).status).not.toBe('done');
+    });
+  });
+
+  // Task #772: targeted mutation-killing tests for surviving high-risk mutants
+  // in the cascade-depth guard. Source: reports/mutation/mutation.html
+  // (Stryker, dated 2026-02-17). The `this.cascadeDepth--` decrement in
+  // handleParentAutoComplete / handleDependencyAutoUnblock survived because no
+  // existing test ran TWO independent top-level cascades back-to-back — a
+  // single cascade tolerates a leaked counter, but a second one does not.
+  describe('cascade depth decrement: counter resets between independent cascades', () => {
+    it('completes a SECOND deep cascade after a first deep cascade (depth must reset to 0)', () => {
+      // Build two independent 4-level parent chains. Each full cascade consumes
+      // up to 3 depth increments. If the matching decrement is dropped (Stryker
+      // UpdateOperator mutant: `this.cascadeDepth--` removed/flipped), the
+      // counter never returns to 0 after the first cascade, so the second chain
+      // trips the `cascadeDepth >= MAX_CASCADE_DEPTH` guard and its ancestors
+      // never auto-complete.
+      function buildChain(prefix: string, levels: number): Array<Task & { tags: string[] }> {
+        const chain: Array<Task & { tags: string[] }> = [];
+        chain[0] = createTask(`${prefix} L0`);
+        for (let i = 1; i < levels; i++) {
+          chain[i] = createTask(`${prefix} L${i}`, chain[i - 1].id);
+        }
+        return chain;
+      }
+
+      const chainA = buildChain('A', 4);
+      const chainB = buildChain('B', 4);
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
+      engine.start();
+
+      // First cascade: completing A's leaf must bubble all the way to A's root.
+      markDone(chainA[3].id);
+      expect(taskService.getTask(chainA[0].id).status).toBe('done');
+
+      // Second, fully independent cascade. With a leaked depth counter this
+      // root would NOT complete; with a correct decrement it must.
+      markDone(chainB[3].id);
+      expect(taskService.getTask(chainB[0].id).status).toBe('done');
+    });
+
+    it('auto-unblock then a max-depth parent cascade both succeed (decrement after unblock)', () => {
+      // handleDependencyAutoUnblock does cascadeDepth++/-- around its updateTask.
+      // A dropped decrement there (Stryker UpdateOperator survivor) leaks +1
+      // into the NEXT top-level cascade. We then run a parent chain whose root
+      // auto-completes at exactly depth 5 (MAX_CASCADE_DEPTH): a leaked +1 pushes
+      // the root to depth 6, tripping the guard so it never completes.
+      const blocker = createTask('Blocker');
+      const blocked = createTask('Blocked');
+      dependencyService.addDependency({
+        task_id: blocker.id,
+        blocks_task_id: blocked.id,
+      });
+      // Move the dependent into 'blocked' so completing the blocker unblocks it.
+      taskService.updateTask(blocked.id, { status: 'blocked' });
+
+      // 6-level chain: leaf + 5 ancestors. Clean run completes ancestors at
+      // depths 1..5; the topmost (root) sits exactly at MAX_CASCADE_DEPTH.
+      const chain: Array<Task & { tags: string[] }> = [];
+      chain[0] = createTask('MaxDepth Root');
+      for (let i = 1; i <= 5; i++) {
+        chain[i] = createTask(`MaxDepth L${i}`, chain[i - 1].id);
+      }
+
+      engine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
+      engine.start();
+
+      // Cascade 1: completing the blocker auto-unblocks `blocked` (blocked->open).
+      markDone(blocker.id);
+      expect(taskService.getTask(blocked.id).status).toBe('open');
+
+      // Cascade 2: completing the leaf must bubble all the way to the root.
+      // With a leaked +1 from the unblock, the root (depth 5) would trip the
+      // guard at depth 6 and stay incomplete.
+      markDone(chain[5].id);
+      expect(taskService.getTask(chain[1].id).status).toBe('done');
+      expect(taskService.getTask(chain[0].id).status).toBe('done');
     });
   });
 
@@ -312,7 +390,7 @@ describe('WorkflowEngine', () => {
 
       // Find the status_changed event for B transitioning to 'open'
       const unblockEvent = receivedEvents.find(
-        (e) => e.data.id === taskB.id && (e.metadata as any).to === 'open'
+        (e) => e.data.id === taskB.id && getStatusTransition(e)?.to === 'open',
       );
 
       expect(unblockEvent).toBeDefined();
@@ -390,20 +468,20 @@ describe('WorkflowEngine', () => {
 
       // Find events for the parent task (auto-completed by workflow)
       const parentDoneEvent = receivedEvents.find(
-        (e) => e.data.id === parent.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === parent.id && getStatusTransition(e)?.to === 'done',
       );
       expect(parentDoneEvent).toBeDefined();
       expect(parentDoneEvent!.metadata.source).toBe('workflow');
 
       // Find events for child tasks (done by user)
       const child1DoneEvent = receivedEvents.find(
-        (e) => e.data.id === child1.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === child1.id && getStatusTransition(e)?.to === 'done',
       );
       expect(child1DoneEvent).toBeDefined();
       expect(child1DoneEvent!.metadata.source).toBe('user');
 
       const child2DoneEvent = receivedEvents.find(
-        (e) => e.data.id === child2.id && (e.metadata as any).to === 'done'
+        (e) => e.data.id === child2.id && getStatusTransition(e)?.to === 'done',
       );
       expect(child2DoneEvent).toBeDefined();
       expect(child2DoneEvent!.metadata.source).toBe('user');
@@ -466,8 +544,9 @@ describe('WorkflowEngine', () => {
       // for the parent's done transition (the workflow cascade step)
       const originalUpdate = taskService.updateTask.bind(taskService);
       let callCount = 0;
-      const spy = vi.spyOn(taskService, 'updateTask').mockImplementation(
-        (id: number, input: unknown, source?: 'user' | 'workflow') => {
+      const spy = vi
+        .spyOn(taskService, 'updateTask')
+        .mockImplementation((id: number, input: unknown, source?: 'user' | 'workflow') => {
           callCount++;
           // The cascade triggers:
           //   1. open -> in_progress for parent (workflow)
@@ -480,8 +559,7 @@ describe('WorkflowEngine', () => {
             }
           }
           return originalUpdate(id, input, source);
-        }
-      );
+        });
 
       // Mark child 2 done -- should trigger cascade that fails
       markDone(child2.id);

@@ -129,7 +129,9 @@ function generateUserCode(): string {
     for (const byte of buf) {
       if (out.length === 8) break;
       if (byte < 248) {
-        out.push(USER_CODE_ALPHABET[byte % 31]);
+        // byte % 31 ∈ [0, 30] is always an in-range index of the 31-char alphabet.
+        const ch = USER_CODE_ALPHABET[byte % 31];
+        if (ch !== undefined) out.push(ch);
       }
     }
   }
@@ -332,10 +334,7 @@ export function sanitizeHostname(raw: string | null): string {
  * @param now                Defaults to the current wall-clock. Tests pass
  *                           an explicit `Date.UTC(...)` for determinism.
  */
-export function tokenName(
-  sanitizedHostname: string,
-  now: Date = new Date(),
-): string {
+export function tokenName(sanitizedHostname: string, now: Date = new Date()): string {
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(now.getUTCDate()).padStart(2, '0');

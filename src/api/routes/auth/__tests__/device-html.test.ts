@@ -56,16 +56,12 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(fastifyFormbody);
 
   // Probe route — seeds session.user the way the OIDC callback would.
-  app.post(
-    '/__test/sign-in',
-    { config: { skipAuth: true } },
-    async (request, reply) => {
-      const { userId } = request.body as { userId: number };
-      request.session.set('user', { id: userId });
-      request.session.set('authenticatedAt', Date.now());
-      return reply.code(204).send();
-    },
-  );
+  app.post('/__test/sign-in', { config: { skipAuth: true } }, async (request, reply) => {
+    const { userId } = request.body as { userId: number };
+    request.session.set('user', { id: userId });
+    request.session.set('authenticatedAt', Date.now());
+    return reply.code(204).send();
+  });
 
   await app.register(deviceHtmlRoute, { origin: ORIGIN });
   await app.ready();

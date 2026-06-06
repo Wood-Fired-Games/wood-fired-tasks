@@ -67,9 +67,12 @@ describe('migration 012: tasks.verification_evidence', () => {
   });
 
   it('adds tasks.verification_evidence as nullable TEXT', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number; dflt_value: unknown }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: unknown;
+    }>;
     const col = cols.find((c) => c.name === 'verification_evidence');
     expect(col).toBeDefined();
     expect(col?.type).toBe('TEXT');
@@ -79,32 +82,26 @@ describe('migration 012: tasks.verification_evidence', () => {
   });
 
   it('existing rows (inserted without verification_evidence) load with NULL value', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('legacy task', projectId, 'tester').lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT verification_evidence FROM tasks WHERE id = ?')
-      .get(taskId) as { verification_evidence: string | null };
+    const row = db.prepare('SELECT verification_evidence FROM tasks WHERE id = ?').get(taskId) as {
+      verification_evidence: string | null;
+    };
     expect(row.verification_evidence).toBeNull();
   });
 
   it('round-trips a populated JSON string verbatim', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     const evidence = JSON.stringify({
       verdict: 'PASS',
-      checks: [
-        { name: 'build', status: 'PASS', evidence_url_or_text: 'green' },
-      ],
+      checks: [{ name: 'build', status: 'PASS', evidence_url_or_text: 'green' }],
       verifier_session_id: 'sess-abc',
       verifier_request_id: 'req-123',
       verified_at: '2026-05-23T12:00:00.000Z',
@@ -113,27 +110,26 @@ describe('migration 012: tasks.verification_evidence', () => {
     const taskId = db
       .prepare(
         `INSERT INTO tasks (title, project_id, created_by, verification_evidence)
-         VALUES (?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?)`,
       )
       .run('t', projectId, 'tester', evidence).lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT verification_evidence FROM tasks WHERE id = ?')
-      .get(taskId) as { verification_evidence: string | null };
+    const row = db.prepare('SELECT verification_evidence FROM tasks WHERE id = ?').get(taskId) as {
+      verification_evidence: string | null;
+    };
     expect(row.verification_evidence).toBe(evidence);
   });
 
   it('json_extract reads the persisted verdict (filter contract)', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     const ids: number[] = [];
     for (const verdict of ['PASS', 'FAIL', 'PARTIAL', 'NOT_VERIFIED']) {
       const id = db
         .prepare(
           `INSERT INTO tasks (title, project_id, created_by, verification_evidence)
-           VALUES (?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?)`,
         )
         .run(`t-${verdict}`, projectId, 'tester', JSON.stringify({ verdict }))
         .lastInsertRowid as number;
@@ -145,7 +141,7 @@ describe('migration 012: tasks.verification_evidence', () => {
         `SELECT id, json_extract(verification_evidence, '$.verdict') AS v
          FROM tasks
          WHERE id IN (${ids.map(() => '?').join(',')})
-         ORDER BY id`
+         ORDER BY id`,
       )
       .all(...ids) as Array<{ id: number; v: string }>;
 
@@ -153,37 +149,29 @@ describe('migration 012: tasks.verification_evidence', () => {
   });
 
   it('updating verification_evidence from NULL -> value -> NULL works', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('t', projectId, 'tester').lastInsertRowid as number;
 
     const evidence = JSON.stringify({ verdict: 'NOT_VERIFIED' });
-    db.prepare('UPDATE tasks SET verification_evidence = ? WHERE id = ?').run(
-      evidence,
-      taskId
-    );
+    db.prepare('UPDATE tasks SET verification_evidence = ? WHERE id = ?').run(evidence, taskId);
     expect(
       (
-        db
-          .prepare('SELECT verification_evidence FROM tasks WHERE id = ?')
-          .get(taskId) as { verification_evidence: string | null }
-      ).verification_evidence
+        db.prepare('SELECT verification_evidence FROM tasks WHERE id = ?').get(taskId) as {
+          verification_evidence: string | null;
+        }
+      ).verification_evidence,
     ).toBe(evidence);
 
-    db.prepare('UPDATE tasks SET verification_evidence = NULL WHERE id = ?').run(
-      taskId
-    );
+    db.prepare('UPDATE tasks SET verification_evidence = NULL WHERE id = ?').run(taskId);
     expect(
       (
-        db
-          .prepare('SELECT verification_evidence FROM tasks WHERE id = ?')
-          .get(taskId) as { verification_evidence: string | null }
-      ).verification_evidence
+        db.prepare('SELECT verification_evidence FROM tasks WHERE id = ?').get(taskId) as {
+          verification_evidence: string | null;
+        }
+      ).verification_evidence,
     ).toBeNull();
   });
 
@@ -191,9 +179,7 @@ describe('migration 012: tasks.verification_evidence', () => {
     const { down } = await import('../migrations/012-verification-evidence.js');
     await down(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).not.toContain('verification_evidence');
     // Sanity: unrelated columns survive (including the sibling 011 column).
@@ -213,20 +199,18 @@ describe('migration 012: tasks.verification_evidence', () => {
       const before = roundTripDb
         .prepare(
           `SELECT name, type, sql FROM sqlite_master
-           WHERE type='table' AND name='tasks'`
+           WHERE type='table' AND name='tasks'`,
         )
         .all();
 
-      const { up, down } = await import(
-        '../migrations/012-verification-evidence.js'
-      );
+      const { up, down } = await import('../migrations/012-verification-evidence.js');
       await down(roundTripDb);
       await up(roundTripDb);
 
       const after = roundTripDb
         .prepare(
           `SELECT name, type, sql FROM sqlite_master
-           WHERE type='table' AND name='tasks'`
+           WHERE type='table' AND name='tasks'`,
         )
         .all();
 

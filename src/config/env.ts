@@ -51,154 +51,151 @@ export const CliExitCodes = {
 /**
  * Configuration schema with Zod validation
  */
-export const configSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.string().min(1).default('3000').transform(Number),
-  // task #188: default to loopback so a quick-start `npm run dev` on a public
-  // network does not expose the task tracker on every interface. Operators
-  // who want LAN access must opt in explicitly with HOST=0.0.0.0 (or a
-  // specific LAN IP). The bound interface is logged at startup so the
-  // default is visible.
-  HOST: z.string().min(1).default('127.0.0.1'),
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  API_KEYS: z.string().min(1, 'API_KEYS is required and cannot be empty'),
-  // task #731: default the DB to the OS app-data dir (env-paths) so a
-  // quick-start `npx`/global install does not write a cwd-relative
-  // `./data/tasks.db` (which moves with the process and is easy to lose).
-  // An explicit `DATABASE_PATH` env var still wins.
-  DATABASE_PATH: z.string().min(1).default(defaultDbPath),
-  CONNECTION_TIMEOUT: z.string().min(1).default('120000').transform(Number),
-  REQUEST_TIMEOUT: z.string().min(1).default('60000').transform(Number),
-  KEEP_ALIVE_TIMEOUT: z.string().min(1).default('10000').transform(Number),
-  WAL_CHECKPOINT_INTERVAL_MS: z.string().min(1).default('900000').transform(Number),
-  SLACK_BOT_TOKEN: z.string().optional(),
-  SLACK_APP_TOKEN: z.string().optional(),
-  // task #185: gate Swagger UI / JSON spec in production. Disabled by default;
-  // operators opt-in with ENABLE_SWAGGER_IN_PRODUCTION=true. When enabled in
-  // production, the canonical auth plugin gates /docs and /docs/json.
-  ENABLE_SWAGGER_IN_PRODUCTION: z
-    .string()
-    .optional()
-    .transform((v) => v === 'true'),
-  // task #608 (PIECE A): server-side anti-fabrication validation of
-  // verification_evidence. DEFAULT OFF — operators opt in with
-  // WFT_STRICT_EVIDENCE=true. When enabled, an update that supplies a
-  // non-null verification_evidence is run through the generator/critic
-  // separation + placeholder-evidence checks in
-  // src/services/evidence-validation.ts and rejected (ValidationError) on
-  // any violation.
-  WFT_STRICT_EVIDENCE: z
-    .string()
-    .optional()
-    .transform((v) => v === 'true'),
-  // task #185: SSE connection caps. New per-key/per-IP/global limits bound
-  // long-lived connection exhaustion. When any cap is hit the route returns
-  // 429 with Retry-After.
-  SSE_MAX_CONNECTIONS_PER_KEY: z.string().min(1).default('4').transform(Number),
-  SSE_MAX_CONNECTIONS_PER_IP: z.string().min(1).default('8').transform(Number),
-  SSE_MAX_CONNECTIONS: z.string().min(1).default('200').transform(Number),
-  // Phase 29: OIDC browser flow + session cookie configuration.
-  // All four OIDC_* vars are all-or-nothing (see refine below). When unset,
-  // OIDC routes return 501 and the session strategy returns null — PAT +
-  // legacy auth continue to work (disabled mode).
-  OIDC_ISSUER_URL: z.string().url().optional(),
-  OIDC_CLIENT_ID: z.string().min(1).optional(),
-  OIDC_CLIENT_SECRET: z.string().min(1).optional(),
-  OIDC_REDIRECT_URI: z.string().url().optional(),
-  // WR-03 fix — `post_logout_redirect_uri` for RP-initiated logout.
-  // Optional: when absent, the wiring at src/api/server.ts derives a
-  // default from OIDC_REDIRECT_URI's origin (+ `/auth/login`). Sourcing
-  // from configuration (rather than request.protocol/hostname headers)
-  // makes the value immune to a malicious upstream proxy spoofing the
-  // Host header.
-  OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
-  OIDC_SCOPES: z.string().min(1).default('openid email profile'),
-  // Task #357: boot-time OIDC discovery retry policy. A transient network
-  // blip (or a network stack not yet up at systemd boot) no longer hard-exits
-  // the process — discovery retries with bounded exponential backoff and, on
-  // persistent failure, the server boots in a DEGRADED mode (OIDC login down,
-  // PAT/legacy auth still up) that `/health/detailed` reports loudly.
-  //   Worst-case boot wait with defaults (5 attempts, base 500ms, cap 10s):
-  //   500 + 1000 + 2000 + 4000 = 7.5s before declaring degraded.
-  OIDC_DISCOVERY_MAX_ATTEMPTS: z.string().min(1).default('5').transform(Number),
-  OIDC_DISCOVERY_BASE_DELAY_MS: z.string().min(1).default('500').transform(Number),
-  OIDC_DISCOVERY_MAX_DELAY_MS: z.string().min(1).default('10000').transform(Number),
-  SESSION_COOKIE_NAME: z.string().min(1).default('wft_session'),
-  // SESSION_COOKIE_SECRET is the sealed-box key for @fastify/secure-session.
-  // sodium requires exactly 32 bytes; the refine enforces that strictly so
-  // misconfiguration cannot silently produce a weaker key.
-  // Generate with: openssl rand -base64 32
-  SESSION_COOKIE_SECRET: z
-    .string()
-    .min(1)
-    .refine(
-      (s) => {
-        try {
-          return Buffer.from(s, 'base64').length === 32;
-        } catch {
-          return false;
-        }
-      },
-      {
-        message:
-          'SESSION_COOKIE_SECRET must be base64-encoded 32 bytes (openssl rand -base64 32)',
-      },
-    )
-    .optional(),
-  // Phase 31 (Plan 31-05): RFC 8594 `Sunset:` header value stamped on every
-  // legacy-X-API-Key-authed response. Operator-controlled by design
-  // (T-31-14) — operators may pick the date that fits their rollout.
-  // Validation is two-step:
-  //   1. Regex enforces the wire shape (YYYY-MM-DD).
-  //   2. refine() round-trips through Date so calendar-invalid values
-  //      (e.g. `2026-13-99`, `2026-02-30`) fail loudly. The round-trip
-  //      anchors on `T00:00:00Z` so we compare apples-to-apples against
-  //      the ISO substring, dodging the JS quirk where `new Date('2026-02-30')`
-  //      silently rolls over to March.
-  LEGACY_AUTH_SUNSET_DATE: z
-    .string()
-    .regex(
-      /^\d{4}-\d{2}-\d{2}$/,
-      'LEGACY_AUTH_SUNSET_DATE must be YYYY-MM-DD',
-    )
-    .refine(
-      (s) => {
+export const configSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z.string().min(1).default('3000').transform(Number),
+    // task #188: default to loopback so a quick-start `npm run dev` on a public
+    // network does not expose the task tracker on every interface. Operators
+    // who want LAN access must opt in explicitly with HOST=0.0.0.0 (or a
+    // specific LAN IP). The bound interface is logged at startup so the
+    // default is visible.
+    HOST: z.string().min(1).default('127.0.0.1'),
+    LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+    API_KEYS: z.string().min(1, 'API_KEYS is required and cannot be empty'),
+    // task #731: default the DB to the OS app-data dir (env-paths) so a
+    // quick-start `npx`/global install does not write a cwd-relative
+    // `./data/tasks.db` (which moves with the process and is easy to lose).
+    // An explicit `DATABASE_PATH` env var still wins.
+    DATABASE_PATH: z.string().min(1).default(defaultDbPath),
+    CONNECTION_TIMEOUT: z.string().min(1).default('120000').transform(Number),
+    REQUEST_TIMEOUT: z.string().min(1).default('60000').transform(Number),
+    KEEP_ALIVE_TIMEOUT: z.string().min(1).default('10000').transform(Number),
+    WAL_CHECKPOINT_INTERVAL_MS: z.string().min(1).default('900000').transform(Number),
+    SLACK_BOT_TOKEN: z.string().optional(),
+    SLACK_APP_TOKEN: z.string().optional(),
+    // task #185: gate Swagger UI / JSON spec in production. Disabled by default;
+    // operators opt-in with ENABLE_SWAGGER_IN_PRODUCTION=true. When enabled in
+    // production, the canonical auth plugin gates /docs and /docs/json.
+    ENABLE_SWAGGER_IN_PRODUCTION: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    // task #608 (PIECE A): server-side anti-fabrication validation of
+    // verification_evidence. DEFAULT OFF — operators opt in with
+    // WFT_STRICT_EVIDENCE=true. When enabled, an update that supplies a
+    // non-null verification_evidence is run through the generator/critic
+    // separation + placeholder-evidence checks in
+    // src/services/evidence-validation.ts and rejected (ValidationError) on
+    // any violation.
+    WFT_STRICT_EVIDENCE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    // task #185: SSE connection caps. New per-key/per-IP/global limits bound
+    // long-lived connection exhaustion. When any cap is hit the route returns
+    // 429 with Retry-After.
+    SSE_MAX_CONNECTIONS_PER_KEY: z.string().min(1).default('4').transform(Number),
+    SSE_MAX_CONNECTIONS_PER_IP: z.string().min(1).default('8').transform(Number),
+    SSE_MAX_CONNECTIONS: z.string().min(1).default('200').transform(Number),
+    // Phase 29: OIDC browser flow + session cookie configuration.
+    // All four OIDC_* vars are all-or-nothing (see refine below). When unset,
+    // OIDC routes return 501 and the session strategy returns null — PAT +
+    // legacy auth continue to work (disabled mode).
+    OIDC_ISSUER_URL: z.string().url().optional(),
+    OIDC_CLIENT_ID: z.string().min(1).optional(),
+    OIDC_CLIENT_SECRET: z.string().min(1).optional(),
+    OIDC_REDIRECT_URI: z.string().url().optional(),
+    // WR-03 fix — `post_logout_redirect_uri` for RP-initiated logout.
+    // Optional: when absent, the wiring at src/api/server.ts derives a
+    // default from OIDC_REDIRECT_URI's origin (+ `/auth/login`). Sourcing
+    // from configuration (rather than request.protocol/hostname headers)
+    // makes the value immune to a malicious upstream proxy spoofing the
+    // Host header.
+    OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
+    OIDC_SCOPES: z.string().min(1).default('openid email profile'),
+    // Task #357: boot-time OIDC discovery retry policy. A transient network
+    // blip (or a network stack not yet up at systemd boot) no longer hard-exits
+    // the process — discovery retries with bounded exponential backoff and, on
+    // persistent failure, the server boots in a DEGRADED mode (OIDC login down,
+    // PAT/legacy auth still up) that `/health/detailed` reports loudly.
+    //   Worst-case boot wait with defaults (5 attempts, base 500ms, cap 10s):
+    //   500 + 1000 + 2000 + 4000 = 7.5s before declaring degraded.
+    OIDC_DISCOVERY_MAX_ATTEMPTS: z.string().min(1).default('5').transform(Number),
+    OIDC_DISCOVERY_BASE_DELAY_MS: z.string().min(1).default('500').transform(Number),
+    OIDC_DISCOVERY_MAX_DELAY_MS: z.string().min(1).default('10000').transform(Number),
+    SESSION_COOKIE_NAME: z.string().min(1).default('wft_session'),
+    // SESSION_COOKIE_SECRET is the sealed-box key for @fastify/secure-session.
+    // sodium requires exactly 32 bytes; the refine enforces that strictly so
+    // misconfiguration cannot silently produce a weaker key.
+    // Generate with: openssl rand -base64 32
+    SESSION_COOKIE_SECRET: z
+      .string()
+      .min(1)
+      .refine(
+        (s) => {
+          try {
+            return Buffer.from(s, 'base64').length === 32;
+          } catch {
+            return false;
+          }
+        },
+        {
+          message:
+            'SESSION_COOKIE_SECRET must be base64-encoded 32 bytes (openssl rand -base64 32)',
+        },
+      )
+      .optional(),
+    // Phase 31 (Plan 31-05): RFC 8594 `Sunset:` header value stamped on every
+    // legacy-X-API-Key-authed response. Operator-controlled by design
+    // (T-31-14) — operators may pick the date that fits their rollout.
+    // Validation is two-step:
+    //   1. Regex enforces the wire shape (YYYY-MM-DD).
+    //   2. refine() round-trips through Date so calendar-invalid values
+    //      (e.g. `2026-13-99`, `2026-02-30`) fail loudly. The round-trip
+    //      anchors on `T00:00:00Z` so we compare apples-to-apples against
+    //      the ISO substring, dodging the JS quirk where `new Date('2026-02-30')`
+    //      silently rolls over to March.
+    LEGACY_AUTH_SUNSET_DATE: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'LEGACY_AUTH_SUNSET_DATE must be YYYY-MM-DD')
+      .refine((s) => {
         const d = new Date(s + 'T00:00:00Z');
         if (Number.isNaN(d.getTime())) return false;
         return d.toISOString().slice(0, 10) === s;
-      },
-      'LEGACY_AUTH_SUNSET_DATE must be a valid calendar date',
-    )
-    .default('2026-12-31'),
-}).refine(
-  (d) => (!d.SLACK_BOT_TOKEN && !d.SLACK_APP_TOKEN) || (!!d.SLACK_BOT_TOKEN && !!d.SLACK_APP_TOKEN),
-  {
-    message: 'Both SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together, or neither should be set',
-    path: ['SLACK_APP_TOKEN'],
-  }
-).refine(
-  (d) => {
-    // All-or-nothing: either zero or all four OIDC_* vars are defined.
-    const oidcVars = [
-      d.OIDC_ISSUER_URL,
-      d.OIDC_CLIENT_ID,
-      d.OIDC_CLIENT_SECRET,
-      d.OIDC_REDIRECT_URI,
-    ];
-    const setCount = oidcVars.filter((v) => v !== undefined && v !== '').length;
-    return setCount === 0 || setCount === 4;
-  },
-  {
-    message: 'OIDC_* must all be set together, or none at all',
-    path: ['OIDC_ISSUER_URL'],
-  },
-).refine(
-  (d) => !d.OIDC_ISSUER_URL || !!d.SESSION_COOKIE_SECRET,
-  {
+      }, 'LEGACY_AUTH_SUNSET_DATE must be a valid calendar date')
+      .default('2026-12-31'),
+  })
+  .refine(
+    (d) =>
+      (!d.SLACK_BOT_TOKEN && !d.SLACK_APP_TOKEN) || (!!d.SLACK_BOT_TOKEN && !!d.SLACK_APP_TOKEN),
+    {
+      message:
+        'Both SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be provided together, or neither should be set',
+      path: ['SLACK_APP_TOKEN'],
+    },
+  )
+  .refine(
+    (d) => {
+      // All-or-nothing: either zero or all four OIDC_* vars are defined.
+      const oidcVars = [
+        d.OIDC_ISSUER_URL,
+        d.OIDC_CLIENT_ID,
+        d.OIDC_CLIENT_SECRET,
+        d.OIDC_REDIRECT_URI,
+      ];
+      const setCount = oidcVars.filter((v) => v !== undefined && v !== '').length;
+      return setCount === 0 || setCount === 4;
+    },
+    {
+      message: 'OIDC_* must all be set together, or none at all',
+      path: ['OIDC_ISSUER_URL'],
+    },
+  )
+  .refine((d) => !d.OIDC_ISSUER_URL || !!d.SESSION_COOKIE_SECRET, {
     message: 'SESSION_COOKIE_SECRET is required when OIDC is enabled',
     path: ['SESSION_COOKIE_SECRET'],
-  },
-);
+  });
 
 /**
  * Inferred configuration type from schema
@@ -223,7 +220,7 @@ export function loadConfig(): Config {
 
     // Only log and exit if we're not in a test environment
     // In tests, throw an error so it can be caught
-    if (process.env.NODE_ENV === 'test') {
+    if (process.env['NODE_ENV'] === 'test') {
       throw new Error(`Configuration validation failed:\n${errors.join('\n')}`);
     }
 
@@ -280,7 +277,7 @@ export function resetConfig(): void {
  * partial env object.
  */
 export function effectiveOrigin(env: {
-  OIDC_REDIRECT_URI?: string;
+  OIDC_REDIRECT_URI?: string | undefined;
   PORT: number;
 }): string {
   if (env.OIDC_REDIRECT_URI && env.OIDC_REDIRECT_URI.length > 0) {
@@ -349,7 +346,9 @@ export function parseApiKeyEntries(raw: string | undefined): ApiKeyEntry[] {
   const rawParts = raw.split(',');
 
   for (let i = 0; i < rawParts.length; i++) {
-    const part = rawParts[i].trim();
+    const rawPart = rawParts[i];
+    if (rawPart === undefined) continue;
+    const part = rawPart.trim();
     if (part.length === 0) {
       // Empty segment from trailing/double comma — silently skip.
       continue;

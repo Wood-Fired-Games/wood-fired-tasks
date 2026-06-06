@@ -209,7 +209,7 @@ describe('delete command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'delete', '99999']);

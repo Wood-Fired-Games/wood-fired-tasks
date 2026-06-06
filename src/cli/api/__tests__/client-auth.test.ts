@@ -79,16 +79,14 @@ afterEach(() => {
 /** Helper: spy on globalThis.fetch and return a captured request object. */
 function captureFetch(responseBody: unknown = { status: 'healthy' }, status = 200) {
   const captured: { url?: string; init?: RequestInit } = {};
-  const fetchSpy = vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation(async (url, init) => {
-      captured.url = String(url);
-      captured.init = init as RequestInit;
-      return new Response(JSON.stringify(responseBody), {
-        status,
-        headers: { 'content-type': 'application/json' },
-      });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    captured.url = String(url);
+    captured.init = init as RequestInit;
+    return new Response(JSON.stringify(responseBody), {
+      status,
+      headers: { 'content-type': 'application/json' },
     });
+  });
   return { captured, fetchSpy };
 }
 
@@ -177,7 +175,30 @@ describe('apiRequest auth precedence', () => {
 
   it('preserves Content-Type: application/json on POST regardless of auth method', async () => {
     process.env.API_KEY = 'legacykey';
-    const { captured } = captureFetch({ id: 1, name: 'x' }, 201);
+    // Task #774: createTask now schema-validates the response body, so the stub
+    // must be a complete valid TaskResponse, not a `{ id, name }` placeholder.
+    const validTask = {
+      id: 1,
+      title: 'x',
+      description: null,
+      status: 'open',
+      priority: 'medium',
+      project_id: 1,
+      project_name: 'p',
+      parent_task_id: null,
+      estimated_minutes: null,
+      assignee: null,
+      created_by: 'tester',
+      due_date: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      version: 1,
+      claimed_at: null,
+      tags: [],
+      acceptance_criteria: null,
+      verification_evidence: null,
+    };
+    const { captured } = captureFetch(validTask, 201);
     const { createTask } = await import('../client.js');
     await createTask({
       title: 'x',

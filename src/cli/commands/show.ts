@@ -23,7 +23,7 @@ export const showCommand = new Command('show')
       // Check if JSON mode (global flag from program)
       const program = showCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display task
       if (isJsonMode) {

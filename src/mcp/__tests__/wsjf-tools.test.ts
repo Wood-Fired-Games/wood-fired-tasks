@@ -57,7 +57,12 @@ describe('MCP WSJF Tools (#630)', () => {
   /** Create a task carrying a raw (manual-equivalent) WSJF write so it ranks. */
   async function createScoredTask(
     title: string,
-    components: { value: number; timeCriticality: number; riskOpportunity: number; jobSize: number },
+    components: {
+      value: number;
+      timeCriticality: number;
+      riskOpportunity: number;
+      jobSize: number;
+    },
   ): Promise<number> {
     const result = (await client.callTool({
       name: 'create_task',

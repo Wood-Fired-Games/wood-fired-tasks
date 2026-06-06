@@ -47,8 +47,7 @@ const REQUIRED_PIPELINE_STEP_NAMES = [
   'Emit AUDIT.md',
 ] as const;
 
-const ARTIFACT_PATH_TEMPLATE =
-  '.planning/loops/<UTC>-<project_id>-AUDIT.md';
+const ARTIFACT_PATH_TEMPLATE = '.planning/loops/<UTC>-<project_id>-AUDIT.md';
 
 describe('/tasks:audit DESIGN gate (#323)', () => {
   const design = readFileSync(DESIGN_DOC_PATH, 'utf8');
@@ -61,9 +60,7 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
 
   for (const header of REQUIRED_DESIGN_HEADERS) {
     it(`design doc contains required header: "${header}"`, () => {
-      const headerOnOwnLine = design
-        .split('\n')
-        .some((line) => line === header);
+      const headerOnOwnLine = design.split('\n').some((line) => line === header);
       expect(headerOnOwnLine).toBe(true);
     });
   }
@@ -134,18 +131,13 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
 
   it('guardrail 2 documented verbatim: MUST NOT call wood-fired-tasks update_task or add_comment', () => {
     expect(
-      design.includes(
-        'MUST NOT call wood-fired-tasks `update_task` or\n`add_comment`',
-      ) ||
-        design.includes(
-          'MUST NOT call wood-fired-tasks `update_task` or `add_comment`',
-        ),
+      design.includes('MUST NOT call wood-fired-tasks `update_task` or\n`add_comment`') ||
+        design.includes('MUST NOT call wood-fired-tasks `update_task` or `add_comment`'),
     ).toBe(true);
   });
 
   it('guardrail 3 documented (refuse if estimated cost > $5)', () => {
-    const hasRefusal =
-      /MUST refuse to start if the estimated cost exceeds \$5/.test(design);
+    const hasRefusal = /MUST refuse to start if the estimated cost exceeds \$5/.test(design);
     expect(hasRefusal).toBe(true);
   });
 
@@ -170,8 +162,7 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
   });
 
   it('design doc states AUDIT.md is NOT committed (gitignored)', () => {
-    const hasGitignoredRationale =
-      /gitignored|not committed|NOT committed/i.test(design);
+    const hasGitignoredRationale = /gitignored|not committed|NOT committed/i.test(design);
     expect(hasGitignoredRationale).toBe(true);
   });
 
@@ -201,9 +192,7 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
   });
 
   it('skill file frontmatter declares the argument-hint', () => {
-    expect(skill).toMatch(
-      /argument-hint:\s*--loop-run <path> \| --project <id>/,
-    );
+    expect(skill).toMatch(/argument-hint:\s*--loop-run <path> \| --project <id>/);
   });
 
   it('skill file is now operational (not a design-only stub)', () => {
@@ -220,9 +209,7 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
     // closed task (no longer refuses to dispatch).
     expect(skill.includes('tasks-verifier')).toBe(true);
     const hasDispatch =
-      /Dispatch one `tasks-verifier` per task|dispatch one\s+`tasks-verifier`|Agent\(/.test(
-        skill,
-      );
+      /Dispatch one `tasks-verifier` per task|dispatch one\s+`tasks-verifier`|Agent\(/.test(skill);
     expect(hasDispatch).toBe(true);
   });
 

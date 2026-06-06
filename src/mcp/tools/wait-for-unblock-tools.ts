@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { z } from 'zod';
 import { TaskService } from '../../services/task.service.js';
 import { convertToMcpError } from '../errors.js';
@@ -42,10 +43,7 @@ const MAX_TIMEOUT_SECONDS = 1800;
  * `get_task`; the service read IS the authorization boundary, so an
  * unauthorized caller gets the exact same error envelope `get_task` produces.
  */
-export function registerWaitForUnblockTools(
-  server: McpServer,
-  taskService: TaskService,
-): void {
+export function registerWaitForUnblockTools(server: McpServer, taskService: TaskService): void {
   server.registerTool(
     'wait_for_unblock',
     {
@@ -69,10 +67,7 @@ export function registerWaitForUnblockTools(
         // Clamp to [1, MAX]. Zod already rejects <=0 / non-int, so the lower
         // bound is defensive; the upper bound is the real clamp the caller
         // sees via applied_timeout_seconds.
-        const appliedTimeoutSeconds = Math.min(
-          Math.max(1, requested),
-          MAX_TIMEOUT_SECONDS,
-        );
+        const appliedTimeoutSeconds = Math.min(Math.max(1, requested), MAX_TIMEOUT_SECONDS);
 
         // Race handling (acceptance #3): SUBSCRIBE FIRST, then re-check the
         // current status. A blocked->open transition could land in the tiny
@@ -90,11 +85,7 @@ export function registerWaitForUnblockTools(
             // attached via an `as any` cast at the emit site,
             // task.service.ts:283-292), so narrow with a local cast.
             const m = event.metadata as { from?: string; to?: string };
-            return (
-              event.data.id === args.task_id &&
-              m.from === 'blocked' &&
-              m.to === 'open'
-            );
+            return event.data.id === args.task_id && m.from === 'blocked' && m.to === 'open';
           },
           { timeoutMs: appliedTimeoutSeconds * 1000, signal: abortController.signal },
         );
@@ -124,7 +115,7 @@ export function registerWaitForUnblockTools(
                 text: `Task ${args.task_id} is not blocked (status: ${current.status}); returning immediately.`,
               },
             ],
-            structuredContent: payload as unknown as { [x: string]: unknown },
+            structuredContent: toStructuredContent(payload),
           };
         }
 
@@ -146,7 +137,7 @@ export function registerWaitForUnblockTools(
                 text: `Task ${args.task_id} transitioned blocked -> open (status: ${fresh.status}).`,
               },
             ],
-            structuredContent: payload as unknown as { [x: string]: unknown },
+            structuredContent: toStructuredContent(payload),
           };
         } catch (err) {
           if (err instanceof TimeoutError) {
@@ -166,7 +157,7 @@ export function registerWaitForUnblockTools(
                   text: `Timed out after ${appliedTimeoutSeconds}s waiting for task ${args.task_id} to unblock.`,
                 },
               ],
-              structuredContent: payload as unknown as { [x: string]: unknown },
+              structuredContent: toStructuredContent(payload),
             };
           }
           // Any other rejection (e.g. AbortError, predicate throw) is genuine

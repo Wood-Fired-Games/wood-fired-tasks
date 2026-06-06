@@ -72,20 +72,13 @@ describe('tasks service — Linux systemd --user backend', () => {
       backend.install();
 
       // Unit file written under <base>/systemd/user/.
-      const unitPath = path.join(
-        configBase,
-        'systemd',
-        'user',
-        SERVICE_UNIT_NAME
-      );
+      const unitPath = path.join(configBase, 'systemd', 'user', SERVICE_UNIT_NAME);
       expect(fs.existsSync(unitPath)).toBe(true);
       const unit = fs.readFileSync(unitPath, 'utf8');
       expect(unit).toContain('[Service]');
       expect(unit).toContain('[Install]');
       // ExecStart runs the installed CLI `serve` subcommand.
-      expect(unit).toContain(
-        'ExecStart=/usr/bin/node /opt/wft/dist/cli/bin/tasks.js serve'
-      );
+      expect(unit).toContain('ExecStart=/usr/bin/node /opt/wft/dist/cli/bin/tasks.js serve');
 
       // Runner driven with exact `systemctl --user` argv.
       expect(calls).toEqual([
@@ -192,14 +185,12 @@ describe('getServiceBackend dispatch seam', () => {
   });
 
   it("returns the Windows scheduled-task backend for 'win32'", () => {
-    expect(getServiceBackend('win32')).toBeInstanceOf(
-      WindowsScheduledTaskBackend
-    );
+    expect(getServiceBackend('win32')).toBeInstanceOf(WindowsScheduledTaskBackend);
   });
 
   it('still throws for an unsupported platform', () => {
     expect(() => getServiceBackend('aix' as NodeJS.Platform)).toThrowError(
-      /not yet implemented on 'aix'/
+      /not yet implemented on 'aix'/,
     );
   });
 });
@@ -226,17 +217,13 @@ describe('tasks service — macOS launchd LaunchAgent backend', () => {
       expect(plist).toContain('<key>ProgramArguments</key>');
       // ProgramArguments runs the CLI `serve` subcommand.
       expect(plist).toContain('<string>/usr/bin/node</string>');
-      expect(plist).toContain(
-        '<string>/opt/wft/dist/cli/bin/tasks.js</string>'
-      );
+      expect(plist).toContain('<string>/opt/wft/dist/cli/bin/tasks.js</string>');
       expect(plist).toContain('<string>serve</string>');
       expect(plist).toContain('<key>RunAtLoad</key>');
       expect(plist).toContain('<key>KeepAlive</key>');
 
       // Driven via launchctl in the user (GUI) domain — load -w, no sudo.
-      expect(calls).toEqual([
-        { cmd: 'launchctl', args: ['load', '-w', plistPath] },
-      ]);
+      expect(calls).toEqual([{ cmd: 'launchctl', args: ['load', '-w', plistPath] }]);
 
       // Hard assertion: no elevated command anywhere.
       for (const { cmd } of calls) {
@@ -265,9 +252,7 @@ describe('tasks service — macOS launchd LaunchAgent backend', () => {
       backend.uninstall();
 
       expect(fs.existsSync(backend.plistPath)).toBe(false);
-      expect(calls).toEqual([
-        { cmd: 'launchctl', args: ['unload', '-w', backend.plistPath] },
-      ]);
+      expect(calls).toEqual([{ cmd: 'launchctl', args: ['unload', '-w', backend.plistPath] }]);
       for (const { cmd } of calls) {
         expect(ELEVATION).not.toContain(cmd.toLowerCase());
       }
@@ -294,9 +279,7 @@ describe('tasks service — macOS launchd LaunchAgent backend', () => {
       expect(status.activeState).toBe('running');
       expect(status.enabledState).toBe('enabled');
       expect(status.installed).toBe(true);
-      expect(calls).toEqual([
-        { cmd: 'launchctl', args: ['list', LAUNCHD_LABEL] },
-      ]);
+      expect(calls).toEqual([{ cmd: 'launchctl', args: ['list', LAUNCHD_LABEL] }]);
       expect(plistPath).toBe(backend.plistPath);
     });
   });
@@ -336,16 +319,7 @@ describe('tasks service — Windows per-user Scheduled Task backend', () => {
     expect(calls).toEqual([
       {
         cmd: 'schtasks',
-        args: [
-          '/Create',
-          '/SC',
-          'ONLOGON',
-          '/TN',
-          WINDOWS_TASK_NAME,
-          '/TR',
-          expectedTr,
-          '/F',
-        ],
+        args: ['/Create', '/SC', 'ONLOGON', '/TN', WINDOWS_TASK_NAME, '/TR', expectedTr, '/F'],
       },
     ]);
 
@@ -415,9 +389,7 @@ describe('tasks service — Windows per-user Scheduled Task backend', () => {
 
 describe('defaultRunner elevation guard', () => {
   it.each(ELEVATION)('refuses to run %s', (cmd) => {
-    expect(() => defaultRunner(cmd, ['anything'])).toThrowError(
-      /refusing to run elevated command/
-    );
+    expect(() => defaultRunner(cmd, ['anything'])).toThrowError(/refusing to run elevated command/);
   });
 });
 
@@ -436,8 +408,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
     it('uses the user runner only and NEVER touches the elevation helper', () => {
       withTempConfigBase((configBase) => {
         const { runner, calls } = recordingRunner();
-        const { runner: elevated, calls: elevatedCalls } =
-          recordingElevatedRunner();
+        const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
         const backend = new LinuxSystemdBackend({
           configBase,
           systemUnitDir: path.join(configBase, 'etc-systemd-system'),
@@ -472,8 +443,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
       withTempConfigBase((configBase) => {
         const systemUnitDir = path.join(configBase, 'etc-systemd-system');
         const { runner, calls } = recordingRunner();
-        const { runner: elevated, calls: elevatedCalls } =
-          recordingElevatedRunner();
+        const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
         const backend = new LinuxSystemdBackend({
           configBase,
           systemUnitDir,
@@ -508,8 +478,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
       withTempBase('wft-service-mac-', (launchAgentsBase) => {
         withTempBase('wft-service-macsys-', (launchDaemonsBase) => {
           const { runner, calls } = recordingRunner();
-          const { runner: elevated, calls: elevatedCalls } =
-            recordingElevatedRunner();
+          const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
           const backend = new MacLaunchdBackend({
             launchAgentsBase,
             launchDaemonsBase,
@@ -523,9 +492,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
           expect(elevatedCalls).toEqual([]);
           expect(fs.existsSync(backend.plistPath)).toBe(true);
           expect(fs.existsSync(backend.daemonPlistPath)).toBe(false);
-          expect(calls).toEqual([
-            { cmd: 'launchctl', args: ['load', '-w', backend.plistPath] },
-          ]);
+          expect(calls).toEqual([{ cmd: 'launchctl', args: ['load', '-w', backend.plistPath] }]);
           const haystack = JSON.stringify({
             calls,
             elevatedCalls,
@@ -543,8 +510,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
       withTempBase('wft-service-mac-', (launchAgentsBase) => {
         withTempBase('wft-service-macsys-', (launchDaemonsBase) => {
           const { runner, calls } = recordingRunner();
-          const { runner: elevated, calls: elevatedCalls } =
-            recordingElevatedRunner();
+          const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
           const backend = new MacLaunchdBackend({
             launchAgentsBase,
             launchDaemonsBase,
@@ -555,10 +521,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
 
           backend.install({ system: true });
 
-          const daemonPlistPath = path.join(
-            launchDaemonsBase,
-            LAUNCHD_PLIST_NAME
-          );
+          const daemonPlistPath = path.join(launchDaemonsBase, LAUNCHD_PLIST_NAME);
           expect(fs.existsSync(daemonPlistPath)).toBe(true);
           expect(daemonPlistPath).toBe(backend.daemonPlistPath);
           // User LaunchAgent NOT written by the system path.
@@ -579,8 +542,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
   describe('Windows: default (no flag) install is provably admin-free', () => {
     it('uses the user runner only and NEVER touches the elevation helper', () => {
       const { runner, calls } = recordingRunner();
-      const { runner: elevated, calls: elevatedCalls } =
-        recordingElevatedRunner();
+      const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
       const backend = new WindowsScheduledTaskBackend({
         runner,
         elevatedRunner: elevated,
@@ -597,16 +559,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
       expect(calls).toEqual([
         {
           cmd: 'schtasks',
-          args: [
-            '/Create',
-            '/SC',
-            'ONLOGON',
-            '/TN',
-            WINDOWS_TASK_NAME,
-            '/TR',
-            expectedTr,
-            '/F',
-          ],
+          args: ['/Create', '/SC', 'ONLOGON', '/TN', WINDOWS_TASK_NAME, '/TR', expectedTr, '/F'],
         },
       ]);
       // No /RU SYSTEM and no elevation token in the default path.
@@ -622,8 +575,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
   describe('Windows: --system is the SOLE elevating path', () => {
     it('creates a /RU SYSTEM /SC ONSTART task via the elevation helper', () => {
       const { runner, calls } = recordingRunner();
-      const { runner: elevated, calls: elevatedCalls } =
-        recordingElevatedRunner();
+      const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
       const backend = new WindowsScheduledTaskBackend({
         runner,
         elevatedRunner: elevated,
@@ -666,8 +618,7 @@ describe('tasks service --system opt-in elevation (task #742)', () => {
     it('getServiceBackend(linux).install({system}) uses the elevation helper', () => {
       withTempConfigBase((configBase) => {
         const { runner, calls } = recordingRunner();
-        const { runner: elevated, calls: elevatedCalls } =
-          recordingElevatedRunner();
+        const { runner: elevated, calls: elevatedCalls } = recordingElevatedRunner();
         const backend = getServiceBackend('linux', {
           configBase,
           systemUnitDir: path.join(configBase, 'etc-systemd-system'),

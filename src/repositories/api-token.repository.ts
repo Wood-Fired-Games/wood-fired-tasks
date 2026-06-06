@@ -27,16 +27,14 @@ export class ApiTokenRepository implements IApiTokenRepository {
   constructor(private db: Database.Database) {
     this.findByIdStmt = db.prepare('SELECT * FROM api_tokens WHERE id = ?');
 
-    this.findByHashStmt = db.prepare(
-      'SELECT * FROM api_tokens WHERE hash = ?'
-    );
+    this.findByHashStmt = db.prepare('SELECT * FROM api_tokens WHERE hash = ?');
 
     this.listByUserStmt = db.prepare(
-      'SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC'
+      'SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC',
     );
 
     this.insertStmt = db.prepare(
-      'INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     );
 
     // Cross-user revoke isolation enforced at SQL: id AND user_id must
@@ -44,7 +42,7 @@ export class ApiTokenRepository implements IApiTokenRepository {
     // ⇒ true; .changes === 0 ⇒ false (caller maps to 404 without leaking
     // whether the id exists for another user).
     this.revokeStmt = db.prepare(
-      "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ? AND user_id = ? AND revoked_at IS NULL"
+      "UPDATE api_tokens SET revoked_at = datetime('now') WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
     );
 
     // Best-effort observational write. Auth chain has already verified the
@@ -52,7 +50,7 @@ export class ApiTokenRepository implements IApiTokenRepository {
     // guard needed. A row that has been deleted between auth and this call
     // simply produces info.changes === 0 (no throw).
     this.touchLastUsedStmt = db.prepare(
-      "UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?"
+      "UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?",
     );
   }
 
@@ -84,7 +82,7 @@ export class ApiTokenRepository implements IApiTokenRepository {
       input.suffix,
       input.hash,
       input.scopes ?? '[]',
-      input.expiresAt ?? null
+      input.expiresAt ?? null,
     );
     // The row is guaranteed to exist (we just inserted it). The non-null
     // assertion is the canonical pattern for "just-inserted row lookup" in

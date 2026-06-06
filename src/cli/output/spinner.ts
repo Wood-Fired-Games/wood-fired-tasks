@@ -22,7 +22,7 @@ export function shouldShowSpinner(): boolean {
 export async function withSpinner<T>(
   message: string,
   fn: () => Promise<T>,
-  delay = 500
+  delay = 500,
 ): Promise<T> {
   if (!shouldShowSpinner()) {
     return fn();

@@ -17,15 +17,7 @@
  * This is the safety-net test for MIGR-01: OIDC enablement (or the lack
  * thereof) must NOT break the existing PAT / legacy auth surface.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import nock from 'nock';
@@ -71,9 +63,7 @@ describe('OIDC disabled mode (no OIDC_ISSUER_URL)', () => {
     // Resolve the seeded legacy user so we can mint PATs for the
     // session_required assertion.
     const row = db
-      .prepare(
-        `SELECT id FROM users WHERE display_name = ? AND is_legacy = 1`,
-      )
+      .prepare(`SELECT id FROM users WHERE display_name = ? AND is_legacy = 1`)
       .get('key_test-key') as { id: number } | undefined;
     if (row === undefined) {
       throw new Error('seeded legacy user not found');

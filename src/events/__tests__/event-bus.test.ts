@@ -42,12 +42,12 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: ['test']
+          tags: ['test'],
         },
         metadata: {
           source: 'user',
-          actor: 'user1'
-        }
+          actor: 'user1',
+        },
       };
 
       eventBus.subscribe('task.created', (p) => receivedPayloads.push(p));
@@ -80,11 +80,11 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: []
+          tags: [],
         },
         metadata: {
-          source: 'user'
-        }
+          source: 'user',
+        },
       };
 
       eventBus.subscribe('task.updated', (p) => {
@@ -123,11 +123,11 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: []
+          tags: [],
         },
         metadata: {
-          source: 'user'
-        }
+          source: 'user',
+        },
       };
 
       eventBus.subscribe('task.deleted', (p) => subscriber1Calls.push(p));
@@ -165,11 +165,11 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: []
+          tags: [],
         },
         metadata: {
-          source: 'workflow'
-        }
+          source: 'workflow',
+        },
       };
 
       expect(() => {
@@ -201,11 +201,11 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: []
+          tags: [],
         },
         metadata: {
-          source: 'user'
-        }
+          source: 'user',
+        },
       };
 
       const unsubscribe = eventBus.subscribe('task.created', (p) => receivedPayloads.push(p));
@@ -243,11 +243,11 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: []
+          tags: [],
         },
         metadata: {
-          source: 'user'
-        }
+          source: 'user',
+        },
       };
 
       const unsubscribe1 = eventBus.subscribe('task.updated', (p) => subscriber1Calls.push(p));
@@ -290,11 +290,11 @@ describe('EventBus', () => {
           version: 1,
           claimed_at: null,
           completed_at: null,
-          tags: []
+          tags: [],
         },
         metadata: {
-          source: 'user'
-        }
+          source: 'user',
+        },
       };
 
       eventBus.subscribe('task.created', (p) => subscriber1Calls.push(p));
@@ -323,12 +323,12 @@ describe('EventBus', () => {
           name: 'Test Project',
           description: 'Project description',
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         },
         metadata: {
           source: 'user',
-          actor: 'admin'
-        }
+          actor: 'admin',
+        },
       };
 
       eventBus.subscribe('project.created', (p) => receivedPayloads.push(p));

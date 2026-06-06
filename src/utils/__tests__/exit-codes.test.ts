@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  ExitCodes,
-  CliExitCodes,
-} from '../../utils/exit-codes.js';
+import { ExitCodes, CliExitCodes } from '../../utils/exit-codes.js';
 
 describe('ExitCodes', () => {
   it('should define EX_OK as 0', () => {

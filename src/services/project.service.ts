@@ -4,16 +4,15 @@ import {
   PaginatedResponse,
   DEFAULT_PAGE_LIMIT,
   DEFAULT_PAGE_OFFSET,
+  CreateProjectDTO,
 } from '../types/task.js';
+import { omitUndefined } from '../utils/omit-undefined.js';
 // WSJF (Phase 3.2): validate against the charter-aware project schemas
 // (added by task 637) so an optional `value_charter` survives the service
 // boundary and reaches the repository instead of being stripped by the
 // charter-less schema in task.schema.ts. `ValueCharterSchema` rejects
 // non-Fibonacci theme weights here as a structured ValidationError.
-import {
-  CreateProjectSchema,
-  UpdateProjectSchema,
-} from '../schemas/project.schema.js';
+import { CreateProjectSchema, UpdateProjectSchema } from '../schemas/project.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { eventBus } from '../events/event-bus.js';
 import type { Database } from '../db/driver.js';
@@ -45,8 +44,12 @@ export interface ProjectUpdateActor {
  * ProjectService - handles project business logic and validation
  */
 export class ProjectService {
-  private readonly charterHistory?: IProjectCharterHistoryRepository;
-  private readonly db?: Database;
+  // Declared `| undefined` (not `?:`) because the constructor assigns the
+  // possibly-undefined `deps.*` unconditionally; under exactOptionalPropertyTypes
+  // an exact-optional field cannot receive an explicit `undefined`. These are
+  // internal collaborators, not part of any absent/null/value DTO convention.
+  private readonly charterHistory: IProjectCharterHistoryRepository | undefined;
+  private readonly db: Database | undefined;
 
   constructor(
     private readonly projectRepo: IProjectRepository,
@@ -80,15 +83,24 @@ export class ProjectService {
       throw new BusinessError('Project with this name already exists');
     }
 
-    // Create project
-    const project = this.projectRepo.create(result.data);
+    // Create project. `description` / `value_charter` are omitted when absent so
+    // the optional columns stay untouched; explicit `null` is preserved (the
+    // absent / null / value three-state convention). `name` stays required.
+    const createDto: CreateProjectDTO = {
+      name: result.data.name,
+      ...(result.data.description !== undefined && { description: result.data.description }),
+      ...(result.data.value_charter !== undefined && {
+        value_charter: result.data.value_charter,
+      }),
+    };
+    const project = this.projectRepo.create(createDto);
 
     // Emit project.created event after successful database operation
     eventBus.emit('project.created', {
       eventType: 'project.created',
       timestamp: new Date().toISOString(),
       data: project,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     return project;
@@ -142,11 +154,7 @@ export class ProjectService {
    * a project that had none takes NO snapshot — there is no prior charter to
    * preserve.
    */
-  updateProject(
-    id: number,
-    input: unknown,
-    actor: ProjectUpdateActor = {},
-  ): Project {
+  updateProject(id: number, input: unknown, actor: ProjectUpdateActor = {}): Project {
     // Validate input with partial schema
     const result = UpdateProjectSchema.safeParse(input);
     if (!result.success) {
@@ -181,9 +189,7 @@ export class ProjectService {
     const newCharter = result.data.value_charter;
     const priorCharter = existing.value_charter;
     const isCharterOverwrite =
-      this.charterHistory != null &&
-      newCharter != null &&
-      priorCharter != null;
+      this.charterHistory != null && newCharter != null && priorCharter != null;
 
     // Update project (snapshotting the prior charter first, atomically when a
     // db handle is available).
@@ -198,20 +204,22 @@ export class ProjectService {
           actorId: actor.actorId ?? null,
         });
       }
-      return this.projectRepo.update(id, result.data);
+      // Strip undefined-valued keys so omitted props leave their columns
+      // untouched while explicit `null` (clear) and values survive — the
+      // absent / null / value three-state convention the repo update builder
+      // relies on.
+      return this.projectRepo.update(id, omitUndefined(result.data));
     };
 
     const updatedProject =
-      isCharterOverwrite && this.db
-        ? this.db.transaction(doUpdate)()
-        : doUpdate();
+      isCharterOverwrite && this.db ? this.db.transaction(doUpdate)() : doUpdate();
 
     // Emit project.updated event after successful database operation
     eventBus.emit('project.updated', {
       eventType: 'project.updated',
       timestamp: new Date().toISOString(),
       data: updatedProject,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     return updatedProject;
@@ -232,7 +240,7 @@ export class ProjectService {
       eventType: 'project.deleted',
       timestamp: new Date().toISOString(),
       data: existing,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     this.projectRepo.delete(id);

@@ -75,7 +75,7 @@ function scrubOutput(text: string): string {
       // Locale date+time: "5/20/2026, 1:23:45 PM" or "5/20/2026, 13:23:45"
       .replace(
         /\b\d{1,2}\/\d{1,2}\/\d{4},\s+\d{1,2}:\d{2}:\d{2}(?:\s*[AP]M)?\b/g,
-        '<LOCALE_DATETIME>'
+        '<LOCALE_DATETIME>',
       )
       // Locale date only: "5/20/2026"
       .replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, '<LOCALE_DATE>')
@@ -229,9 +229,7 @@ describe('CLI output snapshots', () => {
       const { listCommand } = await import('../commands/list.js');
       const program = await buildProgramWith([listCommand]);
 
-      const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'list'])
-      );
+      const out = await captureOutput(() => program.parseAsync(['node', 'tasks', 'list']));
       expect(out).toMatchSnapshot();
     });
 
@@ -242,7 +240,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', '--json', 'list'])
+        program.parseAsync(['node', 'tasks', '--json', 'list']),
       );
       expect(out).toMatchSnapshot();
       // Also sanity-check parseability.
@@ -258,9 +256,7 @@ describe('CLI output snapshots', () => {
       const { showCommand } = await import('../commands/show.js');
       const program = await buildProgramWith([showCommand]);
 
-      const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'show', '2'])
-      );
+      const out = await captureOutput(() => program.parseAsync(['node', 'tasks', 'show', '2']));
       expect(out).toMatchSnapshot();
     });
 
@@ -271,7 +267,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([showCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', '--json', 'show', '2'])
+        program.parseAsync(['node', 'tasks', '--json', 'show', '2']),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -286,9 +282,7 @@ describe('CLI output snapshots', () => {
       const { projectListCommand } = await import('../commands/project-list.js');
       const program = await buildProgramWith([projectListCommand]);
 
-      const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'project-list'])
-      );
+      const out = await captureOutput(() => program.parseAsync(['node', 'tasks', 'project-list']));
       expect(out).toMatchSnapshot();
     });
 
@@ -299,7 +293,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([projectListCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', '--json', 'project-list'])
+        program.parseAsync(['node', 'tasks', '--json', 'project-list']),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -315,7 +309,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'list', '-a', 'alice'])
+        program.parseAsync(['node', 'tasks', 'list', '-a', 'alice']),
       );
       expect(out).toMatchSnapshot();
     });
@@ -327,7 +321,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', '--json', 'list', '-a', 'alice'])
+        program.parseAsync(['node', 'tasks', '--json', 'list', '-a', 'alice']),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -343,7 +337,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'list', '--search', 'dark mode'])
+        program.parseAsync(['node', 'tasks', 'list', '--search', 'dark mode']),
       );
       expect(out).toMatchSnapshot();
     });
@@ -355,14 +349,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync([
-          'node',
-          'tasks',
-          '--json',
-          'list',
-          '--search',
-          'dark mode',
-        ])
+        program.parseAsync(['node', 'tasks', '--json', 'list', '--search', 'dark mode']),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -375,7 +362,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([listCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync(['node', 'tasks', 'list', '--search', 'xyzzy'])
+        program.parseAsync(['node', 'tasks', 'list', '--search', 'xyzzy']),
       );
       expect(out).toMatchSnapshot();
     });
@@ -409,7 +396,7 @@ describe('CLI output snapshots', () => {
           FIXED_DUE,
           '--tags',
           'bug,mobile',
-        ])
+        ]),
       );
       expect(out).toMatchSnapshot();
     });
@@ -441,7 +428,7 @@ describe('CLI output snapshots', () => {
           FIXED_DUE,
           '--tags',
           'bug,mobile',
-        ])
+        ]),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -467,7 +454,7 @@ describe('CLI output snapshots', () => {
           'alice',
           '-c',
           'Reproduced on iOS 17.4 — investigating.',
-        ])
+        ]),
       );
       expect(out).toMatchSnapshot();
     });
@@ -490,7 +477,7 @@ describe('CLI output snapshots', () => {
           'alice',
           '-c',
           'Reproduced on iOS 17.4 — investigating.',
-        ])
+        ]),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();
@@ -506,14 +493,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([updateCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync([
-          'node',
-          'tasks',
-          'update',
-          '3',
-          '-s',
-          'done',
-        ])
+        program.parseAsync(['node', 'tasks', 'update', '3', '-s', 'done']),
       );
       expect(out).toMatchSnapshot();
     });
@@ -525,15 +505,7 @@ describe('CLI output snapshots', () => {
       const program = await buildProgramWith([updateCommand]);
 
       const out = await captureOutput(() =>
-        program.parseAsync([
-          'node',
-          'tasks',
-          '--json',
-          'update',
-          '3',
-          '-s',
-          'done',
-        ])
+        program.parseAsync(['node', 'tasks', '--json', 'update', '3', '-s', 'done']),
       );
       expect(out).toMatchSnapshot();
       expect(() => JSON.parse(out)).not.toThrow();

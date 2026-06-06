@@ -28,6 +28,49 @@ function err(status: number, body: unknown): Response {
   });
 }
 
+/**
+ * Task #774: the task/project response paths now schema-validate the body
+ * against the shared Zod response schemas, so transport tests must return a
+ * COMPLETE valid shape (not the old `{ id, title, status }` stub). These
+ * fixtures produce a fully-populated row; pass overrides to vary a field.
+ */
+function taskFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 1,
+    title: 't',
+    description: null,
+    status: 'open',
+    priority: 'medium',
+    project_id: 1,
+    project_name: 'proj',
+    parent_task_id: null,
+    estimated_minutes: null,
+    assignee: null,
+    created_by: 'tester',
+    due_date: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    version: 1,
+    claimed_at: null,
+    tags: [],
+    acceptance_criteria: null,
+    verification_evidence: null,
+    ...overrides,
+  };
+}
+
+function projectFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 1,
+    name: 'p',
+    description: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    value_charter: null,
+    ...overrides,
+  };
+}
+
 describe('RestClient', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let client: RestClient;
@@ -44,13 +87,11 @@ describe('RestClient', () => {
   });
 
   it('strips trailing slash from baseUrl', () => {
-    expect((client as unknown as { baseUrl: string }).baseUrl).toBe(
-      'http://localhost:3000'
-    );
+    expect((client as unknown as { baseUrl: string }).baseUrl).toBe('http://localhost:3000');
   });
 
   it('sends X-API-Key header on every request', async () => {
-    fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
+    fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 50, offset: 0 }));
     await client.listTasks();
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
@@ -71,13 +112,11 @@ describe('RestClient', () => {
         'http://localhost:3000',
         'wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
       );
-      fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
+      fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 50, offset: 0 }));
       await patClient.listTasks();
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
-      expect(headers['Authorization']).toBe(
-        'Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
-      );
+      expect(headers['Authorization']).toBe('Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567');
       // The PAT path MUST NOT also stamp X-API-Key — the server's auth
       // chain treats X-API-Key as the legacy strategy and could log a
       // deprecation warning for what should be a modern PAT request.
@@ -85,11 +124,8 @@ describe('RestClient', () => {
     });
 
     it('uses X-API-Key when apiKey does NOT start with wft_pat_ (legacy path)', async () => {
-      const legacyClient = new RestClient(
-        'http://localhost:3000',
-        'legacy-style-no-prefix',
-      );
-      fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
+      const legacyClient = new RestClient('http://localhost:3000', 'legacy-style-no-prefix');
+      fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 50, offset: 0 }));
       await legacyClient.listTasks();
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
@@ -107,7 +143,7 @@ describe('RestClient', () => {
       // server expects the full `wft_pat_<body>` string for hash lookup.
       const fullToken = 'wft_pat_2222222222222222222222AAAAAAAAAA';
       const patClient = new RestClient('http://localhost:3000', fullToken);
-      fetchMock.mockResolvedValue(ok({ id: 1 }));
+      fetchMock.mockResolvedValue(ok(taskFixture()));
       await patClient.getTask(1);
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
@@ -116,7 +152,7 @@ describe('RestClient', () => {
   });
 
   it('adds Content-Type header when sending a body', async () => {
-    fetchMock.mockResolvedValue(ok({ id: 1, title: 't', status: 'open' }));
+    fetchMock.mockResolvedValue(ok(taskFixture()));
     await client.createTask({
       title: 't',
       project_id: 1,
@@ -128,7 +164,7 @@ describe('RestClient', () => {
   });
 
   it('returns parsed JSON on success', async () => {
-    const payload = { id: 99, title: 'thing', status: 'open' };
+    const payload = taskFixture({ id: 99, title: 'thing' });
     fetchMock.mockResolvedValue(ok(payload));
     const result = await client.getTask(99);
     expect(result).toEqual(payload);
@@ -149,7 +185,7 @@ describe('RestClient', () => {
 
   it('falls back to status text when body is not JSON', async () => {
     fetchMock.mockResolvedValue(
-      new Response('not json', { status: 500, statusText: 'Internal Server Error' })
+      new Response('not json', { status: 500, statusText: 'Internal Server Error' }),
     );
     await expect(client.getTask(1)).rejects.toThrow(/HTTP 500/);
   });
@@ -166,30 +202,30 @@ describe('RestClient', () => {
 
   // ── List endpoints with paginated/array unification ───────────────────
 
-  it('listTasks unwraps an array payload via asPage', async () => {
-    fetchMock.mockResolvedValue(ok([{ id: 1 }, { id: 2 }]));
+  it('listTasks unwraps a bare-array payload (legacy server)', async () => {
+    fetchMock.mockResolvedValue(ok([taskFixture({ id: 1 }), taskFixture({ id: 2 })]));
     const list = await client.listTasks();
     expect(list).toHaveLength(2);
   });
 
   it('listTasksPaginated returns the envelope shape', async () => {
     fetchMock.mockResolvedValue(
-      ok({ data: [{ id: 1 }], total: 1, limit: 50, offset: 0 })
+      ok({ data: [taskFixture({ id: 1 })], total: 1, limit: 50, offset: 0 }),
     );
     const page = await client.listTasksPaginated();
     expect(page.total).toBe(1);
     expect(page.data).toHaveLength(1);
   });
 
-  it('listTasksPaginated normalizes malformed payloads to empty envelope', async () => {
+  it('listTasksPaginated REJECTS a malformed (non-list) payload (task #774)', async () => {
+    // Previously asPage silently returned an empty envelope, hiding the fault.
+    // Now an unexpected shape throws a clear validation error.
     fetchMock.mockResolvedValue(ok({ unexpected: 'shape' }));
-    const page = await client.listTasksPaginated();
-    expect(page.data).toEqual([]);
-    expect(page.total).toBe(0);
+    await expect(client.listTasksPaginated()).rejects.toThrow(/unexpected shape/);
   });
 
   it('listTasks serializes filters into the query string', async () => {
-    fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 0, offset: 0 }));
+    fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 50, offset: 0 }));
     await client.listTasks({
       status: 'open',
       project_id: 5,
@@ -206,7 +242,7 @@ describe('RestClient', () => {
   });
 
   it('claimTask POSTs the assignee', async () => {
-    fetchMock.mockResolvedValue(ok({ id: 1 }));
+    fetchMock.mockResolvedValue(ok(taskFixture()));
     await client.claimTask(1, 'agent-a');
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe('POST');
@@ -214,7 +250,7 @@ describe('RestClient', () => {
   });
 
   it('updateTask sends PUT with body', async () => {
-    fetchMock.mockResolvedValue(ok({ id: 1 }));
+    fetchMock.mockResolvedValue(ok(taskFixture()));
     await client.updateTask(1, { title: 'new' });
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe('PUT');
@@ -232,7 +268,7 @@ describe('RestClient', () => {
   });
 
   it('getSubtasks returns just the data slice', async () => {
-    fetchMock.mockResolvedValue(ok([{ id: 1 }]));
+    fetchMock.mockResolvedValue(ok([taskFixture({ id: 1 })]));
     const list = await client.getSubtasks(7);
     expect(list).toHaveLength(1);
   });
@@ -246,21 +282,21 @@ describe('RestClient', () => {
 
   it('listProjects unwraps a paginated envelope', async () => {
     fetchMock.mockResolvedValue(
-      ok({ data: [{ id: 1, name: 'p' }], total: 1, limit: 50, offset: 0 })
+      ok({ data: [projectFixture({ id: 1 })], total: 1, limit: 50, offset: 0 }),
     );
     const projects = await client.listProjects();
     expect(projects).toHaveLength(1);
   });
 
   it('createProject sends POST with body', async () => {
-    fetchMock.mockResolvedValue(ok({ id: 1, name: 'p' }));
+    fetchMock.mockResolvedValue(ok(projectFixture()));
     await client.createProject({ name: 'p' });
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe('POST');
   });
 
   it('updateProject sends PUT with body', async () => {
-    fetchMock.mockResolvedValue(ok({ id: 1, name: 'q' }));
+    fetchMock.mockResolvedValue(ok(projectFixture({ name: 'q' })));
     await client.updateProject(1, { name: 'q' });
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe('PUT');
@@ -333,7 +369,7 @@ describe('RestClient', () => {
         by_assignee: [],
         by_priority: [],
         daily_throughput: [],
-      })
+      }),
     );
     await client.getCompletionReport({ days: 14 });
     const url = fetchMock.mock.calls[0][0] as string;
@@ -351,7 +387,7 @@ describe('RestClient', () => {
         by_assignee: [],
         by_priority: [],
         daily_throughput: [],
-      })
+      }),
     );
     await client.getCompletionReport({
       start: '2026-01-01T00:00:00Z',
@@ -376,7 +412,7 @@ describe('RestClient', () => {
         by_assignee: [],
         by_priority: [],
         daily_throughput: [],
-      })
+      }),
     );
     await client.getCompletionReport({});
     const url = fetchMock.mock.calls[0][0] as string;
@@ -389,9 +425,14 @@ describe('RestClient', () => {
         status: 'healthy',
         timestamp: 't',
         version: '1.12.0',
-        database: { path: '/tmp/tasks.db', projects: 2, maxTaskId: 9, latestActivity: '2026-05-25T00:00:00.000Z' },
+        database: {
+          path: '/tmp/tasks.db',
+          projects: 2,
+          maxTaskId: 9,
+          latestActivity: '2026-05-25T00:00:00.000Z',
+        },
         checks: { database: 'ok' },
-      })
+      }),
     );
     const health = await client.checkHealth();
     expect(health.status).toBe('healthy');

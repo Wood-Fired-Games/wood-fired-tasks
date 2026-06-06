@@ -74,10 +74,7 @@ const APP_DIR = 'wft-router';
  * paths like `D:\x` count as absolute even when this code runs under
  * Linux) and `path.posix.isAbsolute` for everything else.
  */
-function isAbsoluteForPlatform(
-  value: string,
-  platform: NodeJS.Platform,
-): boolean {
+function isAbsoluteForPlatform(value: string, platform: NodeJS.Platform): boolean {
   if (platform === 'win32') {
     return win32.isAbsolute(value);
   }
@@ -97,11 +94,7 @@ function applyOverride(
   fallback: string,
   platform: NodeJS.Platform,
 ): string {
-  if (
-    envValue !== undefined &&
-    envValue.length > 0 &&
-    isAbsoluteForPlatform(envValue, platform)
-  ) {
+  if (envValue !== undefined && envValue.length > 0 && isAbsoluteForPlatform(envValue, platform)) {
     return envValue;
   }
   return fallback;
@@ -152,12 +145,12 @@ export function resolvePaths(input: ResolvePathsInput): RouterPaths {
     const roamingDefault = join(home, 'AppData', 'Roaming', APP_DIR);
     const localDefault = join(home, 'AppData', 'Local', APP_DIR);
     const roaming =
-      env.APPDATA !== undefined && env.APPDATA.length > 0
-        ? join(env.APPDATA, APP_DIR)
+      env['APPDATA'] !== undefined && env['APPDATA'].length > 0
+        ? join(env['APPDATA'], APP_DIR)
         : roamingDefault;
     const local =
-      env.LOCALAPPDATA !== undefined && env.LOCALAPPDATA.length > 0
-        ? join(env.LOCALAPPDATA, APP_DIR)
+      env['LOCALAPPDATA'] !== undefined && env['LOCALAPPDATA'].length > 0
+        ? join(env['LOCALAPPDATA'], APP_DIR)
         : localDefault;
     defaults = {
       config: roaming,
@@ -170,24 +163,24 @@ export function resolvePaths(input: ResolvePathsInput): RouterPaths {
     // freebsd/openbsd/netbsd/sunos/aix as XDG-shaped is the correct
     // default. See https://specifications.freedesktop.org/basedir-spec/.
     const xdgConfig =
-      env.XDG_CONFIG_HOME !== undefined && env.XDG_CONFIG_HOME.length > 0
-        ? join(env.XDG_CONFIG_HOME, APP_DIR)
+      env['XDG_CONFIG_HOME'] !== undefined && env['XDG_CONFIG_HOME'].length > 0
+        ? join(env['XDG_CONFIG_HOME'], APP_DIR)
         : join(home, '.config', APP_DIR);
     const xdgData =
-      env.XDG_DATA_HOME !== undefined && env.XDG_DATA_HOME.length > 0
-        ? join(env.XDG_DATA_HOME, APP_DIR)
+      env['XDG_DATA_HOME'] !== undefined && env['XDG_DATA_HOME'].length > 0
+        ? join(env['XDG_DATA_HOME'], APP_DIR)
         : join(home, '.local', 'share', APP_DIR);
     const xdgState =
-      env.XDG_STATE_HOME !== undefined && env.XDG_STATE_HOME.length > 0
-        ? join(env.XDG_STATE_HOME, APP_DIR)
+      env['XDG_STATE_HOME'] !== undefined && env['XDG_STATE_HOME'].length > 0
+        ? join(env['XDG_STATE_HOME'], APP_DIR)
         : join(home, '.local', 'state', APP_DIR);
     defaults = { config: xdgConfig, data: xdgData, state: xdgState };
   }
 
   return {
-    config: applyOverride(env.WFT_ROUTER_CONFIG, defaults.config, platform),
-    data: applyOverride(env.WFT_ROUTER_DATA_DIR, defaults.data, platform),
-    state: applyOverride(env.WFT_ROUTER_STATE_DIR, defaults.state, platform),
+    config: applyOverride(env['WFT_ROUTER_CONFIG'], defaults.config, platform),
+    data: applyOverride(env['WFT_ROUTER_DATA_DIR'], defaults.data, platform),
+    state: applyOverride(env['WFT_ROUTER_STATE_DIR'], defaults.state, platform),
   };
 }
 

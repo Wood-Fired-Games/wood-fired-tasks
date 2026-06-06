@@ -47,14 +47,10 @@ export async function up(db: Database.Database): Promise<void> {
       ADD COLUMN author_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT
     `);
 
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_created_by_user_id ON tasks(created_by_user_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_assignee_user_id ON tasks(assignee_user_id)`);
     db.exec(
-      `CREATE INDEX IF NOT EXISTS idx_tasks_created_by_user_id ON tasks(created_by_user_id)`
-    );
-    db.exec(
-      `CREATE INDEX IF NOT EXISTS idx_tasks_assignee_user_id ON tasks(assignee_user_id)`
-    );
-    db.exec(
-      `CREATE INDEX IF NOT EXISTS idx_task_comments_author_user_id ON task_comments(author_user_id)`
+      `CREATE INDEX IF NOT EXISTS idx_task_comments_author_user_id ON task_comments(author_user_id)`,
     );
   })();
 }

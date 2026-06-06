@@ -20,21 +20,17 @@ import '../config/env.js';
  * (no HTTP round-trip needed for a pure read-side classifier).
  */
 export const topologyCommand = new Command('topology')
-  .description(
-    'Classify a project as FLAT/DAG/DAG_CYCLIC and emit an execution advisory',
-  )
+  .description('Classify a project as FLAT/DAG/DAG_CYCLIC and emit an execution advisory')
   .requiredOption('--project <id>', 'Project ID (positive integer)')
   .action((opts: { project: string }) => {
     const projectId = parseInt(opts.project, 10);
     if (!Number.isInteger(projectId) || projectId <= 0) {
-      console.error(
-        colorError('Invalid --project: must be a positive integer'),
-      );
+      console.error(colorError('Invalid --project: must be a positive integer'));
       process.exitCode = 1;
       return;
     }
 
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = new Database(dbPath, { readonly: true });
     try {
       const taskRepo = new TaskRepository(db);

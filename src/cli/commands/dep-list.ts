@@ -20,7 +20,7 @@ export const depListCommand = new Command('dep-list')
       // Check if JSON mode (global flag from program)
       const program = depListCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Get dependencies via API
       const deps = await getDependencies(id);

@@ -157,9 +157,9 @@ describe('CommentRepository', () => {
     };
 
     const readFk = (id: number): number | null => {
-      const row = db
-        .prepare('SELECT author_user_id FROM task_comments WHERE id = ?')
-        .get(id) as { author_user_id: number | null };
+      const row = db.prepare('SELECT author_user_id FROM task_comments WHERE id = ?').get(id) as {
+        author_user_id: number | null;
+      };
       return row.author_user_id;
     };
 

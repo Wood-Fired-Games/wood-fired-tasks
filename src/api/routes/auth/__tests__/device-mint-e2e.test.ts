@@ -208,11 +208,7 @@ describe('device-flow end-to-end (server side)', () => {
 
     // 3. Sign in + GET /auth/device → extract CSRF
     const sessionCookie = await signIn(h.app, h.legacyUserId);
-    const { csrf, cookie: c2 } = await fetchCsrf(
-      h.app,
-      sessionCookie,
-      codeBody.user_code,
-    );
+    const { csrf, cookie: c2 } = await fetchCsrf(h.app, sessionCookie, codeBody.user_code);
 
     // 4. POST /auth/device/verify
     const verifyParams = new URLSearchParams({
@@ -324,11 +320,7 @@ describe('device-flow end-to-end (server side)', () => {
 
     // 2. Approve via browser leg.
     const sessionCookie = await signIn(h.app, h.legacyUserId);
-    const { csrf, cookie: c2 } = await fetchCsrf(
-      h.app,
-      sessionCookie,
-      user_code,
-    );
+    const { csrf, cookie: c2 } = await fetchCsrf(h.app, sessionCookie, user_code);
     const verifyRes = await h.app.inject({
       method: 'POST',
       url: '/auth/device/verify',
@@ -342,9 +334,7 @@ describe('device-flow end-to-end (server side)', () => {
 
     // 3. The minted row's name reflects the sanitization rule.
     const row = h.db
-      .prepare(
-        'SELECT name FROM api_tokens WHERE user_id = ? ORDER BY id DESC LIMIT 1',
-      )
+      .prepare('SELECT name FROM api_tokens WHERE user_id = ? ORDER BY id DESC LIMIT 1')
       .get(h.legacyUserId) as { name: string } | undefined;
     expect(row?.name).toBe(`cli-stuart-s-laptop-${todayUtc()}`);
   });

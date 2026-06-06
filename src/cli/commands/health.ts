@@ -11,7 +11,7 @@ export const healthCommand = new Command('health')
       // Check if JSON mode (global flag from program)
       const program = healthCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Check health via API
       const health = await withApiSpinner('Checking health...', () => checkHealth());

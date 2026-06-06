@@ -60,12 +60,7 @@ export type WsjfWriteInput = z.infer<typeof WsjfWriteSchema>;
  *                  was supplied). Explicitly distinct from "evidence absent
  *                  because the column is NULL" — see service updateTask.
  */
-export const VERIFICATION_VERDICTS = [
-  'PASS',
-  'FAIL',
-  'PARTIAL',
-  'NOT_VERIFIED',
-] as const;
+export const VERIFICATION_VERDICTS = ['PASS', 'FAIL', 'PARTIAL', 'NOT_VERIFIED'] as const;
 export type VerificationVerdict = (typeof VERIFICATION_VERDICTS)[number];
 
 /**
@@ -75,8 +70,7 @@ export type VerificationVerdict = (typeof VERIFICATION_VERDICTS)[number];
  * verifier subagents to pick one of the three values.
  */
 export const VERIFICATION_CHECK_STATUSES = ['PASS', 'FAIL', 'SKIP'] as const;
-export type VerificationCheckStatus =
-  (typeof VERIFICATION_CHECK_STATUSES)[number];
+export type VerificationCheckStatus = (typeof VERIFICATION_CHECK_STATUSES)[number];
 
 /**
  * Structured verification evidence stored in `tasks.verification_evidence`
@@ -94,22 +88,24 @@ export type VerificationCheckStatus =
  *  - `evidence_url_or_text` capped at 2000 chars per entry.
  *  - identifier strings capped at 200 chars.
  */
-export const VerificationEvidenceSchema = z.object({
-  verdict: z.enum(VERIFICATION_VERDICTS),
-  checks: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(200),
-        status: z.enum(VERIFICATION_CHECK_STATUSES),
-        evidence_url_or_text: z.string().max(2000),
-      })
-    )
-    .max(50)
-    .optional(),
-  verifier_session_id: z.string().min(1).max(200).optional(),
-  verifier_request_id: z.string().min(1).max(200).optional(),
-  verified_at: z.string().datetime().optional(),
-}).strict();
+export const VerificationEvidenceSchema = z
+  .object({
+    verdict: z.enum(VERIFICATION_VERDICTS),
+    checks: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          status: z.enum(VERIFICATION_CHECK_STATUSES),
+          evidence_url_or_text: z.string().max(2000),
+        }),
+      )
+      .max(50)
+      .optional(),
+    verifier_session_id: z.string().min(1).max(200).optional(),
+    verifier_request_id: z.string().min(1).max(200).optional(),
+    verified_at: z.string().datetime().optional(),
+  })
+  .strict();
 
 export type VerificationEvidence = z.infer<typeof VerificationEvidenceSchema>;
 
@@ -126,7 +122,11 @@ export const CreateTaskSchema = z.object({
   estimated_minutes: z.number().int().min(0).max(10080).optional().nullable(),
   assignee: z.string().max(100).optional().nullable(),
   created_by: z.string().min(1, 'Created by is required').max(100),
-  due_date: z.string().datetime({ message: 'Due date must be ISO8601 format' }).optional().nullable(),
+  due_date: z
+    .string()
+    .datetime({ message: 'Due date must be ISO8601 format' })
+    .optional()
+    .nullable(),
   tags: z.array(z.string().min(1).max(50)).max(20).optional().default([]),
   // Wave 1.3 (task #311): free-form plain-text acceptance criteria. Clients
   // supply this on create to make "what would prove this is done?" structured
@@ -171,31 +171,33 @@ export type CreateTaskClientInput = z.infer<typeof CreateTaskClientSchema>;
  * UpdateTaskSchema - validation for updating tasks
  * All fields are optional (partial updates)
  */
-export const UpdateTaskSchema = z.object({
-  title: z.string().min(1).max(255),
-  description: z.string().max(5000).nullable(),
-  status: z.enum(TASK_STATUSES),
-  priority: z.enum(TASK_PRIORITIES),
-  parent_task_id: z.number().int().positive().nullable(),
-  estimated_minutes: z.number().int().min(0).max(10080).nullable(),
-  assignee: z.string().max(100).nullable(),
-  due_date: z.string().datetime().nullable(),
-  tags: z.array(z.string().min(1).max(50)).max(20),
-  // Phase 31 (Plan 31-01): optional FK field. Server-derived at the route
-  // boundary (T-31-02) — downstream plans STRIP body-supplied values.
-  assignee_user_id: z.number().int().positive().nullable(),
-  // Wave 1.3 (task #311): patch acceptance_criteria on existing tasks.
-  // Pass null to clear, a string to set. Same 5000-char cap as create.
-  acceptance_criteria: z.string().max(5000).nullable(),
-  // Wave 1.4 (task #312): structured verification evidence. The Zod enum on
-  // `verdict` rejects unknown values at the boundary (the "unknown verdict =
-  // 400" contract). Pass null to clear, an object to set. Stored as a JSON
-  // string by the repository.
-  verification_evidence: VerificationEvidenceSchema.nullable(),
-  // WSJF (task #627): patch the WSJF score. `null` clears all four components;
-  // an object sets them (all-four-or-none enforced by WsjfWriteSchema).
-  wsjf: WsjfWriteSchema.nullable(),
-}).partial();
+export const UpdateTaskSchema = z
+  .object({
+    title: z.string().min(1).max(255),
+    description: z.string().max(5000).nullable(),
+    status: z.enum(TASK_STATUSES),
+    priority: z.enum(TASK_PRIORITIES),
+    parent_task_id: z.number().int().positive().nullable(),
+    estimated_minutes: z.number().int().min(0).max(10080).nullable(),
+    assignee: z.string().max(100).nullable(),
+    due_date: z.string().datetime().nullable(),
+    tags: z.array(z.string().min(1).max(50)).max(20),
+    // Phase 31 (Plan 31-01): optional FK field. Server-derived at the route
+    // boundary (T-31-02) — downstream plans STRIP body-supplied values.
+    assignee_user_id: z.number().int().positive().nullable(),
+    // Wave 1.3 (task #311): patch acceptance_criteria on existing tasks.
+    // Pass null to clear, a string to set. Same 5000-char cap as create.
+    acceptance_criteria: z.string().max(5000).nullable(),
+    // Wave 1.4 (task #312): structured verification evidence. The Zod enum on
+    // `verdict` rejects unknown values at the boundary (the "unknown verdict =
+    // 400" contract). Pass null to clear, an object to set. Stored as a JSON
+    // string by the repository.
+    verification_evidence: VerificationEvidenceSchema.nullable(),
+    // WSJF (task #627): patch the WSJF score. `null` clears all four components;
+    // an object sets them (all-four-or-none enforced by WsjfWriteSchema).
+    wsjf: WsjfWriteSchema.nullable(),
+  })
+  .partial();
 
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
 
@@ -206,27 +208,30 @@ export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
  * or display name), which the MCP handler resolves server-side via
  * `resolveAssigneeUserId`.
  */
-export const UpdateTaskClientSchema = z.object({
-  title: z.string().min(1).max(255),
-  description: z.string().max(5000).nullable(),
-  status: z.enum(TASK_STATUSES),
-  priority: z.enum(TASK_PRIORITIES),
-  parent_task_id: z.number().int().positive().nullable(),
-  estimated_minutes: z.number().int().min(0).max(10080).nullable(),
-  assignee: z.string().max(100).nullable(),
-  due_date: z.string().datetime().nullable(),
-  tags: z.array(z.string().min(1).max(50)).max(20),
-  // Wave 1.3 (task #311): clients can patch acceptance_criteria — it is
-  // NOT server-derived, so it stays on the client-facing schema.
-  acceptance_criteria: z.string().max(5000).nullable(),
-  // Wave 1.4 (task #312): verifier subagents call update_task with this
-  // envelope. It is NOT server-derived, so it stays on the client-facing
-  // schema. Unknown verdicts get rejected at the Zod boundary.
-  verification_evidence: VerificationEvidenceSchema.nullable(),
-  // WSJF (task #627): clients may patch the WSJF score directly. `null` clears
-  // it; an object sets all four components (all-four-or-none enforced).
-  wsjf: WsjfWriteSchema.nullable(),
-}).partial().strict();
+export const UpdateTaskClientSchema = z
+  .object({
+    title: z.string().min(1).max(255),
+    description: z.string().max(5000).nullable(),
+    status: z.enum(TASK_STATUSES),
+    priority: z.enum(TASK_PRIORITIES),
+    parent_task_id: z.number().int().positive().nullable(),
+    estimated_minutes: z.number().int().min(0).max(10080).nullable(),
+    assignee: z.string().max(100).nullable(),
+    due_date: z.string().datetime().nullable(),
+    tags: z.array(z.string().min(1).max(50)).max(20),
+    // Wave 1.3 (task #311): clients can patch acceptance_criteria — it is
+    // NOT server-derived, so it stays on the client-facing schema.
+    acceptance_criteria: z.string().max(5000).nullable(),
+    // Wave 1.4 (task #312): verifier subagents call update_task with this
+    // envelope. It is NOT server-derived, so it stays on the client-facing
+    // schema. Unknown verdicts get rejected at the Zod boundary.
+    verification_evidence: VerificationEvidenceSchema.nullable(),
+    // WSJF (task #627): clients may patch the WSJF score directly. `null` clears
+    // it; an object sets all four components (all-four-or-none enforced).
+    wsjf: WsjfWriteSchema.nullable(),
+  })
+  .partial()
+  .strict();
 
 export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
 
@@ -301,30 +306,31 @@ export function paginatedSchema<T extends z.ZodTypeAny>(itemSchema: T) {
  * TaskFiltersSchema - validation for task filtering
  * All fields are optional. Includes pagination knobs (limit/offset).
  */
-export const TaskFiltersSchema = z.object({
-  project_id: z.number().int().positive(),
-  status: z.enum(TASK_STATUSES),
-  assignee: z.string(),
-  tags: z.array(z.string()),
-  due_before: z.string().datetime(),
-  due_after: z.string().datetime(),
-  updated_before: z.string().datetime(),
-  updated_after: z.string().datetime(),
-  search: z
-    .string()
-    .min(1)
-    .max(200)
-    .refine(
-      (s) => s.trim().split(/\s+/).filter(Boolean).length <= 32,
-      { message: 'Search query must contain at most 32 terms.' }
-    ),
-  // Wave 1.4 (#312): verified-state filter. See TaskFilters.verified in
-  // src/types/task.ts for semantics. The repository builds the
-  // json_extract(verification_evidence, '$.verdict') predicate.
-  verified: z.boolean(),
-  limit: z.coerce.number().int().positive().max(500),
-  offset: z.coerce.number().int().nonnegative(),
-}).partial();
+export const TaskFiltersSchema = z
+  .object({
+    project_id: z.number().int().positive(),
+    status: z.enum(TASK_STATUSES),
+    assignee: z.string(),
+    tags: z.array(z.string()),
+    due_before: z.string().datetime(),
+    due_after: z.string().datetime(),
+    updated_before: z.string().datetime(),
+    updated_after: z.string().datetime(),
+    search: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((s) => s.trim().split(/\s+/).filter(Boolean).length <= 32, {
+        message: 'Search query must contain at most 32 terms.',
+      }),
+    // Wave 1.4 (#312): verified-state filter. See TaskFilters.verified in
+    // src/types/task.ts for semantics. The repository builds the
+    // json_extract(verification_evidence, '$.verdict') predicate.
+    verified: z.boolean(),
+    limit: z.coerce.number().int().positive().max(500),
+    offset: z.coerce.number().int().nonnegative(),
+  })
+  .partial();
 
 export type TaskFiltersInput = z.infer<typeof TaskFiltersSchema>;
 
@@ -349,17 +355,19 @@ export type ListTasksMcpInput = z.infer<typeof ListTasksMcpSchema>;
  * surface it; in-process Task does. The compact projection includes it when
  * present so callers can still see hierarchy.
  */
-export function toCompactTask<T extends {
-  id: number;
-  title: string;
-  status: string;
-  priority: string;
-  project_id: number;
-  assignee: string | null;
-  due_date: string | null;
-  tags: string[];
-  parent_task_id?: number | null;
-}>(task: T) {
+export function toCompactTask<
+  T extends {
+    id: number;
+    title: string;
+    status: string;
+    priority: string;
+    project_id: number;
+    assignee: string | null;
+    due_date: string | null;
+    tags: string[];
+    parent_task_id?: number | null;
+  },
+>(task: T) {
   return {
     id: task.id,
     title: task.title,
@@ -397,15 +405,13 @@ export const CompletionReportSchema = z
     project_id: z.number().int().positive().optional(),
     assignee: z.string().min(1).max(100).optional(),
   })
-  .refine(
-    (v) => v.days !== undefined || (v.start !== undefined && v.end !== undefined),
-    { message: 'Provide either `days` or both `start` and `end`' }
-  )
+  .refine((v) => v.days !== undefined || (v.start !== undefined && v.end !== undefined), {
+    message: 'Provide either `days` or both `start` and `end`',
+  })
   .refine(
     (v) =>
-      v.days !== undefined ||
-      (v.start !== undefined && v.end !== undefined && v.end >= v.start),
-    { message: '`end` must be greater than or equal to `start`' }
+      v.days !== undefined || (v.start !== undefined && v.end !== undefined && v.end >= v.start),
+    { message: '`end` must be greater than or equal to `start`' },
   );
 
 export type CompletionReportInput = z.infer<typeof CompletionReportSchema>;

@@ -102,7 +102,7 @@ describe('backup command', () => {
     expect(mockDbBackup).toHaveBeenCalled();
     expect(process.exitCode).toBe(0);
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Backup created successfully')
+      expect.stringContaining('Backup created successfully'),
     );
   });
 
@@ -111,7 +111,7 @@ describe('backup command', () => {
 
     expect(mockDbBackup).toHaveBeenCalledWith('/tmp/my-backup.db');
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Backup created successfully')
+      expect.stringContaining('Backup created successfully'),
     );
   });
 
@@ -156,11 +156,11 @@ describe('backup command', () => {
         path: destPath,
         size: expect.any(Number),
         source: expect.any(String),
-      })
+      }),
     );
     // Should not log terminal success message
     expect(consoleLogSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('Backup created successfully')
+      expect.stringContaining('Backup created successfully'),
     );
   });
 
@@ -171,9 +171,7 @@ describe('backup command', () => {
 
     await program.parseAsync(['node', 'test', 'backup']);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Database not found at')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Database not found at'));
     expect(process.exitCode).toBe(1);
     // Should NOT attempt to open the DB
     const Database = (await import('../../db/driver.js')).default;
@@ -189,8 +187,6 @@ describe('backup command', () => {
     // db.close() must have been called in the finally block
     expect(mockDbClose).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('disk full')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('disk full'));
   });
 });

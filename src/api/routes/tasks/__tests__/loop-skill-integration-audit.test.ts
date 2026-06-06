@@ -24,9 +24,7 @@ const LOOP_SKILL_PATH = resolve(REPO_ROOT, 'skills/tasks/loop.md');
 
 function step10Section(skill: string): string {
   const lines = skill.split('\n');
-  const startIdx = lines.findIndex((line) =>
-    line.startsWith('### Step 10 — Integration audit'),
-  );
+  const startIdx = lines.findIndex((line) => line.startsWith('### Step 10 — Integration audit'));
   if (startIdx < 0) return '';
   // Step 10 is the terminal step; the section ends at the next `### Step `
   // heading (none currently) or the next top-level `## ` heading (e.g.
@@ -100,9 +98,7 @@ describe('/tasks:loop skill — INTEGRATION-AUDIT.md emission wiring (#317)', ()
     // when overlaps are empty". Falsifiable: a future edit that silently
     // emits an empty INTEGRATION-AUDIT.md would have to remove the rule.
     const hasSuppressionRule =
-      /empty-overlap suppression|no overlaps.*not emit|do NOT emit INTEGRATION-AUDIT/i.test(
-        step10,
-      );
+      /empty-overlap suppression|no overlaps.*not emit|do NOT emit INTEGRATION-AUDIT/i.test(step10);
     expect(hasSuppressionRule).toBe(true);
   });
 
@@ -125,9 +121,7 @@ describe('/tasks:loop skill — INTEGRATION-AUDIT.md emission wiring (#317)', ()
     // Load-bearing UX: each (file, task-pair) overlap gets its own auditor
     // invocation. A regression that batches multiple overlaps into one
     // auditor call would lose the per-overlap evidence trail.
-    const hasPerOverlapRule = /one per overlap|per overlap|one auditor per overlap/i.test(
-      step10,
-    );
+    const hasPerOverlapRule = /one per overlap|per overlap|one auditor per overlap/i.test(step10);
     expect(hasPerOverlapRule).toBe(true);
   });
 
@@ -142,8 +136,9 @@ describe('/tasks:loop skill — INTEGRATION-AUDIT.md emission wiring (#317)', ()
     // Anchor on the explicit "ONCE" / "not per iteration" rule. A regression
     // that fires Step 10 every iteration would consume the auditor's budget
     // and produce dozens of redundant audits per run.
-    const hasTerminationRule =
-      /runs ONCE|run termination|not per iteration|terminal step/i.test(step10);
+    const hasTerminationRule = /runs ONCE|run termination|not per iteration|terminal step/i.test(
+      step10,
+    );
     expect(hasTerminationRule).toBe(true);
   });
 
@@ -177,9 +172,7 @@ describe('/tasks:loop skill — INTEGRATION-AUDIT.md emission wiring (#317)', ()
   it('Step 8 (close the task) is preserved — regression catch for #315 wiring', () => {
     // Cross-check that the Wave 3.2 edit did not silently weaken the
     // verifier-gated close from Wave 2.2.
-    const hasStep8 = skill
-      .split('\n')
-      .some((line) => /^### Step 8 — Close the task/.test(line));
+    const hasStep8 = skill.split('\n').some((line) => /^### Step 8 — Close the task/.test(line));
     expect(hasStep8).toBe(true);
   });
 

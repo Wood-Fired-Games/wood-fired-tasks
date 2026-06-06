@@ -112,9 +112,7 @@ describe('Legacy strategy tryAuth', () => {
       },
       label: 'agent-b',
     });
-    expect(deps.userRepository.findLegacyByDisplayName).toHaveBeenCalledWith(
-      'agent-b',
-    );
+    expect(deps.userRepository.findLegacyByDisplayName).toHaveBeenCalledWith('agent-b');
   });
 
   it('fails with user_disabled when the legacy user row is missing (defensive, theoretically impossible post-seeder)', async () => {

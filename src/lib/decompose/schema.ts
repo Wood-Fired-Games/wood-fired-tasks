@@ -41,13 +41,7 @@ import { z } from 'zod';
  * `src/web/**` first; an `infra` one walks `deploy/**` first; etc.
  * `mixed` is the default and disables the directory-first heuristic.
  */
-export const DomainSchema = z.enum([
-  'frontend',
-  'backend',
-  'docs',
-  'infra',
-  'mixed',
-]);
+export const DomainSchema = z.enum(['frontend', 'backend', 'docs', 'infra', 'mixed']);
 export type Domain = z.infer<typeof DomainSchema>;
 
 /**
@@ -65,11 +59,7 @@ export type Topology = z.infer<typeof TopologySchema>;
  *   DAG_CYCLIC → 'BLOCKED'
  * See `docs/tasks-decompose-design.md` §8.
  */
-export const AdvisorySchema = z.enum([
-  '/tasks:loop',
-  '/tasks:loop-dag',
-  'BLOCKED',
-]);
+export const AdvisorySchema = z.enum(['/tasks:loop', '/tasks:loop-dag', 'BLOCKED']);
 export type Advisory = z.infer<typeof AdvisorySchema>;
 
 /**
@@ -118,9 +108,7 @@ export const DecompositionFrontmatterSchema = z.object({
    */
   aborted_reason: AbortedReasonSchema.optional(),
 });
-export type DecompositionFrontmatter = z.infer<
-  typeof DecompositionFrontmatterSchema
->;
+export type DecompositionFrontmatter = z.infer<typeof DecompositionFrontmatterSchema>;
 
 /**
  * A suspected dependency edge between two candidate drafts. The planner

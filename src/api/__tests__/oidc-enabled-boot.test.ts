@@ -16,15 +16,7 @@
  *      discovery failed" — proxy for the exit-78 branch (NODE_ENV=test
  *      rethrows so the test process is not killed).
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { randomBytes } from 'crypto';
 import nock from 'nock';
 import type { FastifyInstance } from 'fastify';
@@ -84,9 +76,7 @@ describe('OIDC enabled boot — happy path', () => {
 
     // Discovery interceptor must be installed BEFORE createServer runs
     // initOidc; the discovery doc only needs to be served once at boot.
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const { createServer } = await import('../server.js');
     const result = await createServer({ dbPath: ':memory:' });
@@ -151,12 +141,8 @@ describe('OIDC enabled boot — transient discovery failure recovers (Task #357)
     // First discovery attempt 500s (transient blip), second succeeds. With
     // retry/backoff the boot must recover rather than exit. nock consumes
     // interceptors in declaration order, so attempt 1 → 500, attempt 2 → 200.
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(500, 'transient IdP blip');
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(500, 'transient IdP blip');
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const { createServer } = await import('../server.js');
     const result = await createServer({ dbPath: ':memory:' });
@@ -196,10 +182,7 @@ describe('OIDC enabled boot — persistent discovery failure boots DEGRADED (Tas
 
     // Every attempt 500s — a persistent IdP outage. The old behavior was
     // process.exit(78) / a thrown Error; the new behavior is a degraded boot.
-    nock(ISSUER)
-      .persist()
-      .get('/.well-known/openid-configuration')
-      .reply(500, 'IdP unavailable');
+    nock(ISSUER).persist().get('/.well-known/openid-configuration').reply(500, 'IdP unavailable');
 
     const { createServer } = await import('../server.js');
     // MUST resolve — no throw, no exit.

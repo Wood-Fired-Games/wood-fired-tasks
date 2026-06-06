@@ -170,7 +170,7 @@ describe('SSEManager heartbeat keep-alive (task #206)', () => {
       100, // maxBufferSize
       5 * 60 * 1000, // bufferTtlMs
       HEARTBEAT_MS, // heartbeatIntervalMs <-- under test
-      10 * 60 * 1000 // maxConnectionAgeMs
+      10 * 60 * 1000, // maxConnectionAgeMs
     );
 
     const reply = createMockReply();
@@ -292,7 +292,7 @@ describe('SSEManager buffer-bound property invariants (task #206)', () => {
       .map((r) => ({ kind: 'connect' as const, id: r.id })),
     fc
       .record({ id: fc.integer({ min: 0, max: 9 }) })
-      .map((r) => ({ kind: 'disconnect' as const, id: r.id }))
+      .map((r) => ({ kind: 'disconnect' as const, id: r.id })),
   );
 
   itProp.prop([fc.array(opArb, { minLength: 1, maxLength: 80 })])(
@@ -312,7 +312,7 @@ describe('SSEManager buffer-bound property invariants (task #206)', () => {
         10 * 60 * 1000,
         MAX_PER_KEY,
         MAX_PER_IP,
-        MAX_CONN
+        MAX_CONN,
       );
 
       try {
@@ -341,7 +341,7 @@ describe('SSEManager buffer-bound property invariants (task #206)', () => {
       } finally {
         m.shutdown();
       }
-    }
+    },
   );
 
   itProp.prop([fc.array(fc.integer({ min: 1, max: 5 }), { minLength: 1, maxLength: 200 })])(
@@ -359,7 +359,7 @@ describe('SSEManager buffer-bound property invariants (task #206)', () => {
       } finally {
         m.shutdown();
       }
-    }
+    },
   );
 
   itProp.prop([fc.array(fc.integer({ min: 0, max: 50 }), { minLength: 1, maxLength: 60 })])(
@@ -373,7 +373,7 @@ describe('SSEManager buffer-bound property invariants (task #206)', () => {
         10 * 60 * 1000,
         MAX_CONN, // per-key cap
         MAX_CONN, // per-ip cap
-        MAX_CONN // global cap
+        MAX_CONN, // global cap
       );
 
       try {
@@ -398,6 +398,6 @@ describe('SSEManager buffer-bound property invariants (task #206)', () => {
       } finally {
         m.shutdown();
       }
-    }
+    },
   );
 });

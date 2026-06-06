@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 const scriptPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
-  'postinstall.cjs'
+  'postinstall.cjs',
 );
 
 describe('postinstall script (task #752)', () => {

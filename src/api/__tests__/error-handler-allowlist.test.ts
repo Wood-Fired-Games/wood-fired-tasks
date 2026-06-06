@@ -71,11 +71,14 @@ describe('errorHandler allowlist (audit C7)', () => {
   it('does NOT leak the raw message of a non-allowlisted statusCode-bearing third-party error', () => {
     const { request, reply, captured, loggedErrors } = makeHarness();
 
-    const upstreamError = Object.assign(new Error('secret upstream detail: db at 10.0.0.5 timed out'), {
-      statusCode: 502,
-      // No `validation` array and no allowlisted `code` -> NOT trusted.
-      code: 'SOME_THIRDPARTY_CODE',
-    }) as unknown as FastifyError;
+    const upstreamError = Object.assign(
+      new Error('secret upstream detail: db at 10.0.0.5 timed out'),
+      {
+        statusCode: 502,
+        // No `validation` array and no allowlisted `code` -> NOT trusted.
+        code: 'SOME_THIRDPARTY_CODE',
+      },
+    ) as unknown as FastifyError;
 
     errorHandler(upstreamError, request, reply);
 
@@ -94,10 +97,13 @@ describe('errorHandler allowlist (audit C7)', () => {
   it('substitutes a generic status-appropriate message for a non-allowlisted 409', () => {
     const { request, reply, captured } = makeHarness();
 
-    const conflict = Object.assign(new Error('row id=42 in table secrets violates unique constraint'), {
-      statusCode: 409,
-      code: 'SQLITE_CONSTRAINT',
-    }) as unknown as FastifyError;
+    const conflict = Object.assign(
+      new Error('row id=42 in table secrets violates unique constraint'),
+      {
+        statusCode: 409,
+        code: 'SQLITE_CONSTRAINT',
+      },
+    ) as unknown as FastifyError;
 
     errorHandler(conflict, request, reply);
 

@@ -21,12 +21,7 @@ import { fileURLToPath } from 'node:url';
  * CI: a vitest test, so it runs under `npm test` (`vitest run`) on every PR.
  */
 
-const README_PATH = resolve(
-  fileURLToPath(new URL('.', import.meta.url)),
-  '..',
-  '..',
-  'README.md',
-);
+const README_PATH = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'README.md');
 
 /**
  * Extract the body of the `## Quick Start` section: everything between that
@@ -99,16 +94,10 @@ export function analyzeQuickStart(section: string): QuickStartFindings {
     ),
     // The global bin (`wood-fired-tasks <subcmd>` or its `tasks`/`wft` aliases)
     // is now the SUPPORTED invocation — npm i -g ships it on PATH.
-    usesGlobalBin: commandLines.some((l) =>
-      /\bwood-fired-tasks\s+\S/.test(l),
-    ),
+    usesGlobalBin: commandLines.some((l) => /\bwood-fired-tasks\s+\S/.test(l)),
     hasGitCloneInstall: commandLines.some((l) => /\bgit\s+clone\b/.test(l)),
-    hasElevation: commandLines.some((l) =>
-      /(^|[;&|]\s*)(?:sudo|runas|pkexec|doas)\s+\S/.test(l),
-    ),
-    createsProject: commandLines.some((l) =>
-      /\bwood-fired-tasks\b.*\bproject-create\b/.test(l),
-    ),
+    hasElevation: commandLines.some((l) => /(^|[;&|]\s*)(?:sudo|runas|pkexec|doas)\s+\S/.test(l)),
+    createsProject: commandLines.some((l) => /\bwood-fired-tasks\b.*\bproject-create\b/.test(l)),
     createsTask: commandLines.some(
       (l) => /\bwood-fired-tasks\b/.test(l) && /(?<!-)\bcreate\b/.test(l),
     ),
@@ -158,10 +147,7 @@ describe('README Quick Start drift guard', () => {
       findings.createsProject,
       'Quick Start should create a project (`wood-fired-tasks … project-create`) before tasks.',
     ).toBe(true);
-    expect(
-      findings.createsTask,
-      'Quick Start should create a task after the project.',
-    ).toBe(true);
+    expect(findings.createsTask, 'Quick Start should create a task after the project.').toBe(true);
   });
 });
 

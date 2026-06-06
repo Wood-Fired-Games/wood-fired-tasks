@@ -25,9 +25,12 @@ describe('migration 011: tasks.acceptance_criteria', () => {
   });
 
   it('adds tasks.acceptance_criteria as nullable TEXT', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number; dflt_value: unknown }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: unknown;
+    }>;
     const col = cols.find((c) => c.name === 'acceptance_criteria');
     expect(col).toBeDefined();
     expect(col?.type).toBe('TEXT');
@@ -37,46 +40,40 @@ describe('migration 011: tasks.acceptance_criteria', () => {
   });
 
   it('existing rows (inserted without acceptance_criteria) load with NULL value', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     // Insert a task without specifying acceptance_criteria — back-compat path.
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('legacy task', projectId, 'tester').lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?')
-      .get(taskId) as { acceptance_criteria: string | null };
+    const row = db.prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?').get(taskId) as {
+      acceptance_criteria: string | null;
+    };
     expect(row.acceptance_criteria).toBeNull();
   });
 
   it('round-trips a populated value (single line)', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     const taskId = db
       .prepare(
         `INSERT INTO tasks (title, project_id, created_by, acceptance_criteria)
-         VALUES (?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?)`,
       )
-      .run('t', projectId, 'tester', 'Build green; tests pass.')
-      .lastInsertRowid as number;
+      .run('t', projectId, 'tester', 'Build green; tests pass.').lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?')
-      .get(taskId) as { acceptance_criteria: string | null };
+    const row = db.prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?').get(taskId) as {
+      acceptance_criteria: string | null;
+    };
     expect(row.acceptance_criteria).toBe('Build green; tests pass.');
   });
 
   it('round-trips multi-line markdown', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     const md = [
       '## Acceptance',
@@ -92,47 +89,42 @@ describe('migration 011: tasks.acceptance_criteria', () => {
     const taskId = db
       .prepare(
         `INSERT INTO tasks (title, project_id, created_by, acceptance_criteria)
-         VALUES (?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?)`,
       )
       .run('t', projectId, 'tester', md).lastInsertRowid as number;
 
-    const row = db
-      .prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?')
-      .get(taskId) as { acceptance_criteria: string | null };
+    const row = db.prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?').get(taskId) as {
+      acceptance_criteria: string | null;
+    };
     expect(row.acceptance_criteria).toBe(md);
   });
 
   it('updating acceptance_criteria from NULL -> value -> NULL works', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('t', projectId, 'tester').lastInsertRowid as number;
 
     db.prepare('UPDATE tasks SET acceptance_criteria = ? WHERE id = ?').run(
       'first revision',
-      taskId
+      taskId,
     );
     expect(
       (
-        db
-          .prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?')
-          .get(taskId) as { acceptance_criteria: string | null }
-      ).acceptance_criteria
+        db.prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?').get(taskId) as {
+          acceptance_criteria: string | null;
+        }
+      ).acceptance_criteria,
     ).toBe('first revision');
 
-    db.prepare('UPDATE tasks SET acceptance_criteria = NULL WHERE id = ?').run(
-      taskId
-    );
+    db.prepare('UPDATE tasks SET acceptance_criteria = NULL WHERE id = ?').run(taskId);
     expect(
       (
-        db
-          .prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?')
-          .get(taskId) as { acceptance_criteria: string | null }
-      ).acceptance_criteria
+        db.prepare('SELECT acceptance_criteria FROM tasks WHERE id = ?').get(taskId) as {
+          acceptance_criteria: string | null;
+        }
+      ).acceptance_criteria,
     ).toBeNull();
   });
 
@@ -140,9 +132,7 @@ describe('migration 011: tasks.acceptance_criteria', () => {
     const { down } = await import('../migrations/011-acceptance-criteria.js');
     await down(db);
 
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).not.toContain('acceptance_criteria');
     // Sanity: unrelated columns survive.
@@ -170,9 +160,7 @@ describe('migration 011: tasks.acceptance_criteria', () => {
       const { fileURLToPath, pathToFileURL } = await import('url');
       const here = dirname(fileURLToPath(import.meta.url));
       const migrationsDir = join(here, '..', 'migrations');
-      const match = readdirSync(migrationsDir).find((f) =>
-        f.startsWith(filename.slice(0, 4))
-      );
+      const match = readdirSync(migrationsDir).find((f) => f.startsWith(filename.slice(0, 4)));
       if (!match) throw new Error(`migration ${i} not found`);
       const mod = (await import(
         /* @vite-ignore */ pathToFileURL(join(migrationsDir, match)).href
@@ -183,20 +171,18 @@ describe('migration 011: tasks.acceptance_criteria', () => {
     const before = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='tasks'`
+         WHERE type='table' AND name='tasks'`,
       )
       .all();
 
-    const { up, down } = await import(
-      '../migrations/011-acceptance-criteria.js'
-    );
+    const { up, down } = await import('../migrations/011-acceptance-criteria.js');
     await down(db);
     await up(db);
 
     const after = db
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='tasks'`
+         WHERE type='table' AND name='tasks'`,
       )
       .all();
 

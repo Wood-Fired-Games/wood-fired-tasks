@@ -36,7 +36,10 @@ const QueryTaskFiltersSchema = z.object({
   project_id: z.coerce.number().int().positive().optional(),
   status: z.enum(TASK_STATUSES).optional(),
   assignee: z.string().optional(),
-  tags: z.string().transform((s) => s.split(',')).optional(),
+  tags: z
+    .string()
+    .transform((s) => s.split(','))
+    .optional(),
   due_before: z.string().datetime().optional(),
   due_after: z.string().datetime().optional(),
   updated_before: z.string().datetime().optional(),
@@ -45,10 +48,9 @@ const QueryTaskFiltersSchema = z.object({
     .string()
     .min(1)
     .max(200)
-    .refine(
-      (s) => s.trim().split(/\s+/).filter(Boolean).length <= 32,
-      { message: 'Search query must contain at most 32 terms.' }
-    )
+    .refine((s) => s.trim().split(/\s+/).filter(Boolean).length <= 32, {
+      message: 'Search query must contain at most 32 terms.',
+    })
     .optional(),
   // Wave 1.4 (#312): verified-state filter. Accepts the literal strings
   // 'true' and 'false' (URL query semantics — Fastify gives us strings) and
@@ -78,7 +80,7 @@ function parseIncludeSet(raw: string | undefined): Set<string> {
     raw
       .split(',')
       .map((s) => s.trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
 }
 
@@ -123,7 +125,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
         created_by_user_id: requireUser(request).id,
       });
       return reply.code(201).send(task);
-    }
+    },
   );
 
   // GET / - List/filter tasks (paginated)
@@ -149,7 +151,10 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       // the service — the service-layer TaskFiltersSchema would reject the
       // extra key in strict mode (and otherwise ignore it). The verified
       // boolean is a real filter, keep it.
-      const { include, ...filters } = request.query as { include?: string } & Record<string, unknown>;
+      const { include, ...filters } = request.query as { include?: string } & Record<
+        string,
+        unknown
+      >;
       const includeSet = parseIncludeSet(include);
       const result = fastify.taskService.listTasksPaginated(filters);
       // Wave 1.4 (#312): default-strip verification_evidence from each row
@@ -164,7 +169,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
             verification_evidence: null,
           }));
       return reply.send({ ...result, data });
-    }
+    },
   );
 
   // GET /completion-report - Completion report (must be declared before
@@ -193,7 +198,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const report = fastify.taskService.getCompletionReport(request.query);
       return reply.send(report);
-    }
+    },
   );
 
   // GET /:id - Get task by ID
@@ -212,7 +217,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const task = fastify.taskService.getTask(request.params.id);
       return reply.send(task);
-    }
+    },
   );
 
   // PUT /:id - Update task
@@ -264,7 +269,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const bodyRec = sanitizedBody as Record<string, unknown>;
       let resolvedAssigneeUserId: number | null | undefined = undefined;
       if (Object.prototype.hasOwnProperty.call(bodyRec, 'assignee')) {
-        const assigneeVal = bodyRec.assignee as string | null | undefined;
+        const assigneeVal = bodyRec['assignee'] as string | null | undefined;
         if (assigneeVal === null || assigneeVal === '') {
           resolvedAssigneeUserId = null;
         } else if (typeof assigneeVal === 'string' && assigneeVal.includes('@')) {
@@ -296,7 +301,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
         requireUser(request).id,
       );
       return reply.send(task);
-    }
+    },
   );
 
   // DELETE /:id - Delete task
@@ -315,7 +320,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       fastify.taskService.deleteTask(request.params.id);
       return reply.code(204).send(null);
-    }
+    },
   );
 
   // POST /:id/claim - Claim task atomically
@@ -390,7 +395,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
         throw error; // Let error handler deal with NotFoundError, etc.
       }
-    }
+    },
   );
 
   // GET /:id/subtasks - Get subtasks of a task (paginated)
@@ -410,12 +415,9 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const result = fastify.taskService.getSubtasksPaginated(
-        request.params.id,
-        request.query
-      );
+      const result = fastify.taskService.getSubtasksPaginated(request.params.id, request.query);
       return reply.send(result);
-    }
+    },
   );
 
   // WSJF 4.5 (#645): GET/PUT /:id/wsjf + GET /:id/score-history. Registered as

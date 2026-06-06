@@ -65,8 +65,14 @@ describe('seedIdentities', () => {
         logger,
       );
 
-      const legacyCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }).c;
-      const serviceCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as { c: number }).c;
+      const legacyCount = (
+        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }
+      ).c;
+      const serviceCount = (
+        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as {
+          c: number;
+        }
+      ).c;
       expect(legacyCount).toBe(2);
       // Phase 31: BOTH slack-bot AND mcp-bot are seeded unconditionally.
       expect(serviceCount).toBe(2);
@@ -93,7 +99,11 @@ describe('seedIdentities', () => {
       // Each seeded-row call's first arg is the structured payload with event + kind.
       const seededCalls = logger.info.mock.calls.filter((call) => {
         const obj = call[0];
-        return typeof obj === 'object' && obj !== null && (obj as { event?: string }).event === 'identity-seeded';
+        return (
+          typeof obj === 'object' &&
+          obj !== null &&
+          (obj as { event?: string }).event === 'identity-seeded'
+        );
       });
       expect(seededCalls).toHaveLength(4);
 
@@ -103,7 +113,11 @@ describe('seedIdentities', () => {
       // No noop summary on first run.
       const noopCalls = logger.info.mock.calls.filter((call) => {
         const obj = call[0];
-        return typeof obj === 'object' && obj !== null && (obj as { event?: string }).event === 'identity-seed-noop';
+        return (
+          typeof obj === 'object' &&
+          obj !== null &&
+          (obj as { event?: string }).event === 'identity-seed-noop'
+        );
       });
       expect(noopCalls).toHaveLength(0);
     });
@@ -111,8 +125,14 @@ describe('seedIdentities', () => {
     it('empty API_KEYS array still seeds both service-account rows (slack-bot, mcp-bot)', () => {
       const result = seedIdentities(db, [], logger);
 
-      const legacyCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }).c;
-      const serviceCount = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as { c: number }).c;
+      const legacyCount = (
+        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }
+      ).c;
+      const serviceCount = (
+        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as {
+          c: number;
+        }
+      ).c;
       expect(legacyCount).toBe(0);
       expect(serviceCount).toBe(2);
       expect(result.seeded.service).toBe(2);
@@ -142,9 +162,9 @@ describe('seedIdentities', () => {
 
     it('legacy row display_name equals entry.label verbatim', () => {
       seedIdentities(db, [{ key: 'secret', label: 'custom-label' }], logger);
-      const row = db
-        .prepare('SELECT display_name FROM users WHERE is_legacy = 1')
-        .get() as { display_name: string };
+      const row = db.prepare('SELECT display_name FROM users WHERE is_legacy = 1').get() as {
+        display_name: string;
+      };
       expect(row.display_name).toBe('custom-label');
     });
   });
@@ -253,9 +273,7 @@ describe('seedIdentities', () => {
       const infoSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      expect(() =>
-        seedIdentities(db, [{ key: 'k1', label: 'alice' }]),
-      ).not.toThrow();
+      expect(() => seedIdentities(db, [{ key: 'k1', label: 'alice' }])).not.toThrow();
 
       infoSpy.mockRestore();
       warnSpy.mockRestore();
@@ -311,9 +329,11 @@ describe('seedIdentities', () => {
       expect(r1.changes).toBe(1);
       expect(r2.changes).toBe(0);
 
-      const count = (db
-        .prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1 AND display_name = ?')
-        .get('alice') as { c: number }).c;
+      const count = (
+        db
+          .prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1 AND display_name = ?')
+          .get('alice') as { c: number }
+      ).c;
       expect(count).toBe(1);
     });
 
@@ -330,9 +350,13 @@ describe('seedIdentities', () => {
       expect(r1.changes).toBe(1);
       expect(r2.changes).toBe(0);
 
-      const count = (db
-        .prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1 AND display_name = ?')
-        .get('slack-bot') as { c: number }).c;
+      const count = (
+        db
+          .prepare(
+            'SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1 AND display_name = ?',
+          )
+          .get('slack-bot') as { c: number }
+      ).c;
       expect(count).toBe(1);
     });
 
@@ -353,9 +377,11 @@ describe('seedIdentities', () => {
       expect(r2.seeded).toEqual({ legacy: 0, service: 0 });
       expect(r2.alreadyPresent).toEqual({ legacy: 2, service: 2 });
 
-      const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as {
-        c: number;
-      }).c;
+      const total = (
+        db.prepare('SELECT COUNT(*) AS c FROM users').get() as {
+          c: number;
+        }
+      ).c;
       expect(total).toBe(4);
     });
 
@@ -394,9 +420,7 @@ describe('seedIdentities', () => {
         expect(rB.seeded).toEqual({ legacy: 0, service: 0 });
         expect(rB.alreadyPresent).toEqual({ legacy: 2, service: 2 });
 
-        const total = (dbB
-          .prepare('SELECT COUNT(*) AS c FROM users')
-          .get() as { c: number }).c;
+        const total = (dbB.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
         expect(total).toBe(4);
       } finally {
         if (dbA?.open) dbA.close();
@@ -434,9 +458,9 @@ describe('createTestApp boot integration (Task 6.4 smoke)', () => {
 
     const app = await createTestApp();
     try {
-      const rows = app.db
-        .prepare('SELECT display_name FROM users ORDER BY display_name')
-        .all() as { display_name: string }[];
+      const rows = app.db.prepare('SELECT display_name FROM users ORDER BY display_name').all() as {
+        display_name: string;
+      }[];
       const names = rows.map((r) => r.display_name);
       // Phase 31: both service accounts seeded; sorted alphabetically:
       // alice, bob, mcp-bot, slack-bot.

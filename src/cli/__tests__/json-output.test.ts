@@ -2,19 +2,13 @@
  * Unit tests for src/cli/output/json-output.ts (task #249).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  jsonOutput,
-  jsonError,
-  messageOutput,
-} from '../output/json-output.js';
+import { jsonOutput, jsonError, messageOutput } from '../output/json-output.js';
 
 describe('jsonOutput', () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -58,9 +52,7 @@ describe('jsonError', () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -93,9 +85,7 @@ describe('messageOutput', () => {
   let originalIsTty: boolean | undefined;
 
   beforeEach(() => {
-    stderrSpy = vi
-      .spyOn(process.stderr, 'write')
-      .mockImplementation(() => true);
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     originalIsTty = process.stderr.isTTY;
   });
 

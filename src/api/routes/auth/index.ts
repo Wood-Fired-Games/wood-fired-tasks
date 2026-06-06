@@ -67,10 +67,7 @@ export interface AuthRoutesOptions {
   origin?: string;
 }
 
-const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (
-  fastify,
-  opts,
-) => {
+const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (fastify, opts) => {
   // Strip Fastify-reserved `prefix` from the options forwarded to child
   // plugins — the parent prefix (e.g. `/auth`) has already been applied
   // to *this* scope by Fastify, so re-passing it would mount each child

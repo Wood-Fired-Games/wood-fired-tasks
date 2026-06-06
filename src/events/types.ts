@@ -1,4 +1,4 @@
-import { Task, Project } from '../types/task.js';
+import { Task, Project, TaskStatus } from '../types/task.js';
 
 /**
  * Event types for task lifecycle
@@ -14,10 +14,7 @@ export type TaskEventType =
 /**
  * Event types for project lifecycle
  */
-export type ProjectEventType =
-  | 'project.created'
-  | 'project.updated'
-  | 'project.deleted';
+export type ProjectEventType = 'project.created' | 'project.updated' | 'project.deleted';
 
 /**
  * Runtime allowlist of every event type that the system actually emits.
@@ -45,16 +42,36 @@ export function isAllowedEventType(value: string): value is AllowedEventType {
 }
 
 /**
+ * Origin of an emitted event — `user`-initiated or driven by the
+ * {@link ../services/workflow-engine WorkflowEngine} cascade.
+ */
+export type EventSource = 'user' | 'workflow';
+
+/**
+ * Event metadata. `source` and `actor` apply to every event; `from`/`to`
+ * are populated ONLY for `task.status_changed` events to record the status
+ * transition (e.g. `blocked` → `open`). They are typed as optional here so a
+ * single `EventPayload.metadata` shape covers all event types without an
+ * unsafe cast at the emit site or at consumers (SSE filter, wait-for-unblock
+ * predicate, workflow-engine tests).
+ */
+export interface EventMetadata {
+  source: EventSource;
+  actor?: string;
+  /** Previous status — present on `task.status_changed` events. */
+  from?: TaskStatus;
+  /** New status — present on `task.status_changed` events. */
+  to?: TaskStatus;
+}
+
+/**
  * Generic event payload structure
  */
 export interface EventPayload<T> {
   eventType: string;
   timestamp: string; // ISO 8601
   data: T;
-  metadata: {
-    source: 'user' | 'workflow';
-    actor?: string;
-  };
+  metadata: EventMetadata;
 }
 
 /**
@@ -66,3 +83,44 @@ export type TaskEvent = EventPayload<Task & { tags: string[] }>;
  * Project event
  */
 export type ProjectEvent = EventPayload<Project>;
+
+/**
+ * The typed status transition carried by a `task.status_changed` event.
+ * Both ends are guaranteed present once {@link getStatusTransition} confirms
+ * the event is a status change.
+ */
+export interface StatusTransition {
+  from: TaskStatus;
+  to: TaskStatus;
+}
+
+/**
+ * Typed accessor for the `from`/`to` status transition on an event payload.
+ *
+ * Returns the transition when the event is a `task.status_changed` whose
+ * metadata carries both ends, otherwise `undefined`. Lets consumers and tests
+ * read the transition without an unsafe `event.metadata` cast.
+ */
+export function getStatusTransition(event: EventPayload<unknown>): StatusTransition | undefined {
+  const { from, to } = event.metadata;
+  if (from !== undefined && to !== undefined) {
+    return { from, to };
+  }
+  return undefined;
+}
+
+/**
+ * Narrow event payload `data` to the subset SSE filtering cares about: a
+ * `project_id` for project-scoped filtering. Task and project event payloads
+ * both expose `project_id`, but `EventPayload<unknown>` hides it — this typed
+ * guard reads it without the unsafe `event.data` cast that previously lived
+ * in {@link ../events/sse-manager SSEManager.matchesFilters}.
+ */
+export function getEventProjectId(event: EventPayload<unknown>): number | undefined {
+  const data = event.data;
+  if (typeof data === 'object' && data !== null && 'project_id' in data) {
+    const projectId = (data as { project_id?: unknown }).project_id;
+    return typeof projectId === 'number' ? projectId : undefined;
+  }
+  return undefined;
+}

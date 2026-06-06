@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { TaskService } from '../../services/task.service.js';
 import { ProjectService } from '../../services/project.service.js';
 import {
@@ -19,12 +20,10 @@ import { convertToMcpError } from '../errors.js';
 import type { McpServerContext } from '../server.js';
 import type { UserRepository } from '../../repositories/user.repository.js';
 import { ScoreSubmissionSchema } from '../../schemas/wsjf.schema.js';
-import {
-  validateScoreSubmission,
-  type ScoreSubmission,
-} from '../../services/wsjf.service.js';
+import { validateScoreSubmission, type ScoreSubmission } from '../../services/wsjf.service.js';
 import { WSJF_HISTORY_TRIGGERS } from '../../repositories/wsjf-history.repository.js';
 import { ValidationError } from '../../services/errors.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
 import type { WsjfWriteDTO } from '../../types/task.js';
 import type { WsjfSource } from '../../types/wsjf.js';
 
@@ -176,7 +175,15 @@ export function registerTaskTools(
     },
     async (args) => {
       const traceId = randomUUID();
-      console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'start', timestamp: new Date().toISOString() }));
+      console.error(
+        JSON.stringify({
+          level: 'info',
+          traceId,
+          tool: 'create_task',
+          event: 'start',
+          timestamp: new Date().toISOString(),
+        }),
+      );
       try {
         // Phase 31 Plan 03 (T-31-07): strip any client-supplied identity
         // FKs from the JSON-RPC args BEFORE forwarding to the service.
@@ -200,13 +207,11 @@ export function registerTaskTools(
         // span (or any gate violation) throws a structured ValidationError.
         let wsjfWrite: WsjfWriteDTO | undefined;
         if (wsjfSubmission !== undefined) {
-          const project = projectService.getProject(
-            sanitizedArgs.project_id as number,
-          );
+          const project = projectService.getProject(sanitizedArgs['project_id'] as number);
           const sourceText = [
-            sanitizedArgs.title,
-            sanitizedArgs.description,
-            sanitizedArgs.acceptance_criteria,
+            sanitizedArgs['title'],
+            sanitizedArgs['description'],
+            sanitizedArgs['acceptance_criteria'],
           ]
             .filter((s): s is string => typeof s === 'string')
             .join('\n');
@@ -230,7 +235,9 @@ export function registerTaskTools(
           ...(wsjfWrite ? { wsjf: wsjfWrite } : {}),
           created_by_user_id: ctx.actorUserId,
         });
-        console.error(JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'success' }));
+        console.error(
+          JSON.stringify({ level: 'info', traceId, tool: 'create_task', event: 'success' }),
+        );
         return {
           content: [
             {
@@ -238,13 +245,21 @@ export function registerTaskTools(
               text: `Task created: "${task.title}" (ID: ${task.id}, Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
-        console.error(JSON.stringify({ level: 'error', traceId, tool: 'create_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            traceId,
+            tool: 'create_task',
+            event: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: get_task
@@ -284,12 +299,12 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: update_task
@@ -315,7 +330,15 @@ export function registerTaskTools(
     },
     async (args) => {
       const traceId = randomUUID();
-      console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'start', timestamp: new Date().toISOString() }));
+      console.error(
+        JSON.stringify({
+          level: 'info',
+          traceId,
+          tool: 'update_task',
+          event: 'start',
+          timestamp: new Date().toISOString(),
+        }),
+      );
       try {
         // Phase 31 Plan 03 (T-31-07): strip any client-supplied
         // assignee_user_id spoof, then derive it server-side from the
@@ -336,21 +359,21 @@ export function registerTaskTools(
           const existing = taskService.getTask(args.id);
           const project = projectService.getProject(existing.project_id);
           const sourceText = [
-            updates.title ?? existing.title,
-            updates.description ?? existing.description,
-            updates.acceptance_criteria ?? existing.acceptance_criteria,
+            updates['title'] ?? existing.title,
+            updates['description'] ?? existing.description,
+            updates['acceptance_criteria'] ?? existing.acceptance_criteria,
           ]
             .filter((s): s is string => typeof s === 'string')
             .join('\n');
-          updates.wsjf = submissionToWsjfWrite(
+          updates['wsjf'] = submissionToWsjfWrite(
             wsjfSubmission as ScoreSubmission,
             project.value_charter,
             sourceText,
           );
         }
         if (Object.prototype.hasOwnProperty.call(rawUpdates, 'assignee')) {
-          updates.assignee_user_id = resolveAssigneeUserId(
-            rawUpdates.assignee as string | null | undefined,
+          updates['assignee_user_id'] = resolveAssigneeUserId(
+            rawUpdates['assignee'] as string | null | undefined,
             ctx.userRepository,
           );
         }
@@ -358,13 +381,10 @@ export function registerTaskTools(
         // strict-evidence validator (flag-gated, default OFF) can enforce
         // generator/critic separation (verifier != caller). 'user' keeps the
         // existing default source; ctx.actorUserId may be null.
-        const task = taskService.updateTask(
-          args.id,
-          updates,
-          'user',
-          ctx.actorUserId,
+        const task = taskService.updateTask(args.id, updates, 'user', ctx.actorUserId);
+        console.error(
+          JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'success' }),
         );
-        console.error(JSON.stringify({ level: 'info', traceId, tool: 'update_task', event: 'success' }));
         return {
           content: [
             {
@@ -372,13 +392,21 @@ export function registerTaskTools(
               text: `Task ${args.id} updated: "${task.title}" (Status: ${task.status}, Priority: ${task.priority})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
-        console.error(JSON.stringify({ level: 'error', traceId, tool: 'update_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            traceId,
+            tool: 'update_task',
+            event: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: list_tasks (paginated)
@@ -394,13 +422,23 @@ export function registerTaskTools(
     },
     async (args) => {
       const traceId = randomUUID();
-      console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'start', timestamp: new Date().toISOString() }));
+      console.error(
+        JSON.stringify({
+          level: 'info',
+          traceId,
+          tool: 'list_tasks',
+          event: 'start',
+          timestamp: new Date().toISOString(),
+        }),
+      );
       try {
         const { verbose, ...filters } = args;
         const page = taskService.listTasksPaginated(filters);
 
         if (page.data.length === 0) {
-          console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
+          console.error(
+            JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }),
+          );
           return {
             content: [
               {
@@ -408,12 +446,12 @@ export function registerTaskTools(
                 text: 'No tasks found matching filters.',
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               tasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
 
@@ -421,14 +459,14 @@ export function registerTaskTools(
           `Found ${page.data.length} of ${page.total} task(s) (limit=${page.limit}, offset=${page.offset}):\n`,
         ];
         page.data.forEach((task) => {
-          summary.push(
-            `- [${task.id}] ${task.title} (${task.status}, ${task.priority})`
-          );
+          summary.push(`- [${task.id}] ${task.title} (${task.status}, ${task.priority})`);
         });
 
         const payloadTasks = verbose ? page.data : page.data.map(toCompactTask);
 
-        console.error(JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }));
+        console.error(
+          JSON.stringify({ level: 'info', traceId, tool: 'list_tasks', event: 'success' }),
+        );
         return {
           content: [
             {
@@ -436,18 +474,26 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             tasks: payloadTasks,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
-        console.error(JSON.stringify({ level: 'error', traceId, tool: 'list_tasks', event: 'error', error: error instanceof Error ? error.message : String(error) }));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            traceId,
+            tool: 'list_tasks',
+            event: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: delete_task
@@ -473,7 +519,7 @@ export function registerTaskTools(
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: claim_task
@@ -489,7 +535,15 @@ export function registerTaskTools(
     },
     async (args) => {
       const traceId = randomUUID();
-      console.error(JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'start', timestamp: new Date().toISOString() }));
+      console.error(
+        JSON.stringify({
+          level: 'info',
+          traceId,
+          tool: 'claim_task',
+          event: 'start',
+          timestamp: new Date().toISOString(),
+        }),
+      );
       try {
         // Phase 31 Plan 03: pass the boot-resolved actor as the trailing
         // optional positional (Plan 01 service signature). 'workflow' is
@@ -502,7 +556,9 @@ export function registerTaskTools(
           'workflow',
           ctx.actorUserId,
         );
-        console.error(JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'success' }));
+        console.error(
+          JSON.stringify({ level: 'info', traceId, tool: 'claim_task', event: 'success' }),
+        );
         return {
           content: [
             {
@@ -510,13 +566,21 @@ export function registerTaskTools(
               text: `Task ${args.task_id} claimed by "${args.assignee}" (Status: ${task.status})`,
             },
           ],
-          structuredContent: task as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(task),
         };
       } catch (error) {
-        console.error(JSON.stringify({ level: 'error', traceId, tool: 'claim_task', event: 'error', error: error instanceof Error ? error.message : String(error) }));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            traceId,
+            tool: 'claim_task',
+            event: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: list_subtasks (paginated)
@@ -533,10 +597,10 @@ export function registerTaskTools(
     },
     async (args) => {
       try {
-        const page = taskService.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = taskService.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
 
         if (page.data.length === 0) {
           return {
@@ -546,13 +610,13 @@ export function registerTaskTools(
                 text: `Task ${args.task_id} has no subtasks.`,
               },
             ],
-            structuredContent: {
+            structuredContent: toStructuredContent({
               parent_task_id: args.task_id,
               subtasks: [],
               total: page.total,
               limit: page.limit,
               offset: page.offset,
-            } as unknown as { [x: string]: unknown },
+            }),
           };
         }
 
@@ -570,18 +634,18 @@ export function registerTaskTools(
               text: summary.join('\n'),
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: completion_report
@@ -596,7 +660,15 @@ export function registerTaskTools(
     },
     async (args) => {
       const traceId = randomUUID();
-      console.error(JSON.stringify({ level: 'info', traceId, tool: 'completion_report', event: 'start', timestamp: new Date().toISOString() }));
+      console.error(
+        JSON.stringify({
+          level: 'info',
+          traceId,
+          tool: 'completion_report',
+          event: 'start',
+          timestamp: new Date().toISOString(),
+        }),
+      );
       try {
         const report = taskService.getCompletionReport(args);
 
@@ -615,16 +687,26 @@ export function registerTaskTools(
           }
         }
 
-        console.error(JSON.stringify({ level: 'info', traceId, tool: 'completion_report', event: 'success' }));
+        console.error(
+          JSON.stringify({ level: 'info', traceId, tool: 'completion_report', event: 'success' }),
+        );
         return {
           content: [{ type: 'text', text: summary.join('\n') }],
-          structuredContent: report as unknown as { [x: string]: unknown },
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
-        console.error(JSON.stringify({ level: 'error', traceId, tool: 'completion_report', event: 'error', error: error instanceof Error ? error.message : String(error) }));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            traceId,
+            tool: 'completion_report',
+            event: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 
   // Tool: get_subtasks (paginated)
@@ -641,10 +723,10 @@ export function registerTaskTools(
     },
     async (args) => {
       try {
-        const page = taskService.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = taskService.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         const summary = `Found ${page.data.length} of ${page.total} subtask(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`;
 
         return {
@@ -654,17 +736,17 @@ export function registerTaskTools(
               text: summary,
             },
           ],
-          structuredContent: {
+          structuredContent: toStructuredContent({
             parent_task_id: args.task_id,
             subtasks: page.data,
             total: page.total,
             limit: page.limit,
             offset: page.offset,
-          } as unknown as { [x: string]: unknown },
+          }),
         };
       } catch (error) {
         throw convertToMcpError(error);
       }
-    }
+    },
   );
 }

@@ -53,32 +53,27 @@ describe('WSJF 5.2 (#647) — skills invoke wsjf_health and surface its findings
     'new-project.md',
   ] as const;
 
-  it.each([...SURFACING_SKILLS])(
-    '%s invokes the wsjf_health MCP tool by name',
-    (file) => {
-      const skill = readSkill(file);
-      expect(skill).toMatch(/wsjf_health/);
-      expect(skill).toMatch(/mcp__wood-fired-tasks__wsjf_health/);
-    },
-  );
+  it.each([...SURFACING_SKILLS])('%s invokes the wsjf_health MCP tool by name', (file) => {
+    const skill = readSkill(file);
+    expect(skill).toMatch(/wsjf_health/);
+    expect(skill).toMatch(/mcp__wood-fired-tasks__wsjf_health/);
+  });
 
-  it.each([...SURFACING_SKILLS])(
-    '%s documents the findings list it prints (severity + message + suggestion)',
-    (file) => {
-      const skill = readSkill(file);
-      expect(skill).toMatch(/findings/);
-      expect(skill).toMatch(/severity/);
-      expect(skill).toMatch(/suggestion/i);
-    },
-  );
+  it.each([
+    ...SURFACING_SKILLS,
+  ])('%s documents the findings list it prints (severity + message + suggestion)', (file) => {
+    const skill = readSkill(file);
+    expect(skill).toMatch(/findings/);
+    expect(skill).toMatch(/severity/);
+    expect(skill).toMatch(/suggestion/i);
+  });
 
-  it.each([...SURFACING_SKILLS])(
-    '%s states the linter is non-blocking / advisory (never blocks the run)',
-    (file) => {
-      const skill = readSkill(file);
-      expect(skill).toMatch(/non-blocking|advisory|never block/i);
-    },
-  );
+  it.each([
+    ...SURFACING_SKILLS,
+  ])('%s states the linter is non-blocking / advisory (never blocks the run)', (file) => {
+    const skill = readSkill(file);
+    expect(skill).toMatch(/non-blocking|advisory|never block/i);
+  });
 
   it('loop.md surfaces health at loop start (§2g), before Step 1 selection', () => {
     const skill = readSkill('loop.md');
@@ -203,8 +198,18 @@ describe('WSJF 5.2 (#647) — smoke: wsjf_health fixtures the surfaces consume',
   });
 
   it('healthy fixture is silent (surfaces render nothing)', async () => {
-    await createScoredTask('anchor', { value: 1, timeCriticality: 1, riskOpportunity: 1, jobSize: 8 });
-    await createScoredTask('big', { value: 13, timeCriticality: 8, riskOpportunity: 5, jobSize: 1 });
+    await createScoredTask('anchor', {
+      value: 1,
+      timeCriticality: 1,
+      riskOpportunity: 1,
+      jobSize: 8,
+    });
+    await createScoredTask('big', {
+      value: 13,
+      timeCriticality: 8,
+      riskOpportunity: 5,
+      jobSize: 1,
+    });
     await createScoredTask('mid', { value: 5, timeCriticality: 3, riskOpportunity: 8, jobSize: 3 });
     await createScoredTask('low', { value: 8, timeCriticality: 5, riskOpportunity: 2, jobSize: 5 });
 

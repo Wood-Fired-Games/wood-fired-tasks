@@ -75,12 +75,7 @@
 
 import { spawn } from 'node:child_process';
 
-import type {
-  Handler,
-  HandlerContext,
-  HandlerOutcome,
-  SpawnImpl,
-} from './types.js';
+import type { Handler, HandlerContext, HandlerOutcome, SpawnImpl } from './types.js';
 
 /**
  * Default per-attempt timeout (ms) before the child is killed, if the context
@@ -183,9 +178,7 @@ function resolveArgv(rendered: Record<string, unknown>): string[] {
  * The `shell_exec` handler. See module header for the full lifecycle +
  * security contract. One attempt, one {@link HandlerOutcome}.
  */
-export const shellExec: Handler = async (
-  ctx: HandlerContext,
-): Promise<HandlerOutcome> => {
+export const shellExec: Handler = async (ctx: HandlerContext): Promise<HandlerOutcome> => {
   const { store, logger, identity } = ctx;
 
   // --- 1. Resolve the rule block (literal — NOT templated for shell_exec). --
@@ -306,10 +299,7 @@ export const shellExec: Handler = async (
       settled = true;
       clearTimers();
       store.complete(identity.rule_name, identity.event_id, status);
-      logger.warn(
-        { rule_name: identity.rule_name, event_id: identity.event_id, ...extra },
-        event,
-      );
+      logger.warn({ rule_name: identity.rule_name, event_id: identity.event_id, ...extra }, event);
       resolve({ kind: 'failed', retryable, detail });
     };
 

@@ -94,9 +94,7 @@ export class WsjfRescoreRepository implements IWsjfRescoreRepository {
              summary = @summary
        WHERE id = @id
     `);
-    this.findByIdStmt = db.prepare(
-      `SELECT * FROM ${RESCORE_RUN_TABLE} WHERE id = ?`,
-    );
+    this.findByIdStmt = db.prepare(`SELECT * FROM ${RESCORE_RUN_TABLE} WHERE id = ?`);
   }
 
   open(input: OpenRescoreRunInput): number {
@@ -123,16 +121,16 @@ export class WsjfRescoreRepository implements IWsjfRescoreRepository {
     const row = mapRow<Record<string, unknown>>(this.findByIdStmt, runId);
     if (!row) return null;
     return {
-      id: row.id as number,
-      project_id: row.project_id as number,
-      triggered_at: row.triggered_at as string,
-      charter_version: (row.charter_version as number | null) ?? null,
-      actor_type: (row.actor_type as string | null) ?? null,
-      actor_id: (row.actor_id as string | null) ?? null,
-      tasks_evaluated: (row.tasks_evaluated as number | null) ?? null,
-      tasks_changed: (row.tasks_changed as number | null) ?? null,
-      tasks_skipped_locked: (row.tasks_skipped_locked as number | null) ?? null,
-      summary: (row.summary as string | null) ?? null,
+      id: row['id'] as number,
+      project_id: row['project_id'] as number,
+      triggered_at: row['triggered_at'] as string,
+      charter_version: (row['charter_version'] as number | null) ?? null,
+      actor_type: (row['actor_type'] as string | null) ?? null,
+      actor_id: (row['actor_id'] as string | null) ?? null,
+      tasks_evaluated: (row['tasks_evaluated'] as number | null) ?? null,
+      tasks_changed: (row['tasks_changed'] as number | null) ?? null,
+      tasks_skipped_locked: (row['tasks_skipped_locked'] as number | null) ?? null,
+      summary: (row['summary'] as string | null) ?? null,
     };
   }
 }

@@ -115,7 +115,7 @@ let cachedLogger: Logger | undefined;
  * config fails loudly rather than silently dropping log output.
  */
 function resolveLevel(): string {
-  const raw = process.env.LOG_LEVEL;
+  const raw = process.env['LOG_LEVEL'];
   return raw && raw.length > 0 ? raw : 'info';
 }
 

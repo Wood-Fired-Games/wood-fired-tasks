@@ -348,7 +348,7 @@ describe('SSEManager', () => {
       expect(reply.sse.send).not.toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'task.created',
-        })
+        }),
       );
     });
   });

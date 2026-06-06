@@ -30,12 +30,7 @@
  *   npm run build:skills        # tsx scripts/build-skills.ts
  */
 
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,8 +71,7 @@ const PASSES: SkillPass[] = [
  * only accepts targets starting with `./`, `../`, `src/`, `docs/`, or a bare
  * filename ending in `.md` (optionally followed by `#anchor` / `/...`).
  */
-const DEV_LINK =
-  /\[([^\]]+)\]\((?:\.\.?\/|src\/|docs\/|[A-Za-z0-9._-]+\.md)[^)]*\)/g;
+const DEV_LINK = /\[([^\]]+)\]\((?:\.\.?\/|src\/|docs\/|[A-Za-z0-9._-]+\.md)[^)]*\)/g;
 
 /** Strip repo-relative dev links from a skill body, keeping the link text. */
 export function stripDevLinks(markdown: string): string {
@@ -90,18 +84,14 @@ function buildPass(pass: SkillPass): number {
   mkdirSync(outDir, { recursive: true });
 
   const excluded = new Set(pass.exclude);
-  const files = readdirSync(srcDir).filter(
-    (f) => f.endsWith('.md') && !excluded.has(f),
-  );
+  const files = readdirSync(srcDir).filter((f) => f.endsWith('.md') && !excluded.has(f));
   for (const name of files) {
     const raw = readFileSync(join(srcDir, name), 'utf8');
     const processed = stripDevLinks(raw);
     writeFileSync(join(outDir, name), processed, 'utf8');
   }
 
-  console.log(
-    `Built ${files.length} skill file(s): ${srcDir} -> ${outDir} (dev links stripped).`,
-  );
+  console.log(`Built ${files.length} skill file(s): ${srcDir} -> ${outDir} (dev links stripped).`);
   return files.length;
 }
 

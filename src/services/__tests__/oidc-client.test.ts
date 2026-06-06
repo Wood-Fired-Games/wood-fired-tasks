@@ -85,9 +85,7 @@ describe('initOidc', () => {
   });
 
   it('returns a Configuration when discovery succeeds', async () => {
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const env = makeEnv();
     const config = await initOidc(env);
@@ -100,9 +98,7 @@ describe('initOidc', () => {
   });
 
   it('throws with the issuer URL in the message when discovery returns 500', async () => {
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(500, 'boom');
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(500, 'boom');
 
     const env = makeEnv();
     await expect(initOidc(env)).rejects.toThrow(/OIDC discovery failed/);
@@ -119,9 +115,7 @@ describe('initOidc', () => {
 
 describe('buildAuthorizationUrl', () => {
   it('returns a URL with state, PKCE code_challenge, redirect_uri, and scope', async () => {
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const config = await initOidc(makeEnv());
     expect(config).not.toBeNull();
@@ -147,9 +141,7 @@ describe('buildAuthorizationUrl', () => {
   });
 
   it('emits nonce when supplied', async () => {
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const config = await initOidc(makeEnv());
     const codeVerifier = randomPKCECodeVerifier();
@@ -238,9 +230,7 @@ describe('handleCallback', () => {
 
 describe('buildEndSessionUrl', () => {
   it('returns a URL with id_token_hint when discovery advertises end_session_endpoint', async () => {
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, getDiscoveryFixture());
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, getDiscoveryFixture());
 
     const config = await initOidc(makeEnv());
     expect(config).not.toBeNull();
@@ -263,9 +253,7 @@ describe('buildEndSessionUrl', () => {
     const trimmed: Record<string, unknown> = { ...getDiscoveryFixture() };
     delete trimmed.end_session_endpoint;
 
-    nock(ISSUER)
-      .get('/.well-known/openid-configuration')
-      .reply(200, trimmed);
+    nock(ISSUER).get('/.well-known/openid-configuration').reply(200, trimmed);
 
     const config = await initOidc(makeEnv());
     expect(config).not.toBeNull();

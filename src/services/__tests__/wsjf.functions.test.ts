@@ -12,6 +12,7 @@ import {
   PROPAGATION_GAMMA,
   PROPAGATION_CAP,
 } from '../wsjf.service.js';
+import { FIB } from '../../types/wsjf.js';
 import type { Fib, AlignmentClass, SeverityClass, DecayClass } from '../../types/wsjf.js';
 
 describe('wsjf deterministic functions (task #622)', () => {
@@ -104,6 +105,25 @@ describe('wsjf deterministic functions (task #622)', () => {
     });
   });
 
+  // Task #782 (noUncheckedIndexedAccess remediation): `FIB` was retyped from
+  // `readonly Fib[]` to a fixed-shape `as const` tuple, and the computed-index
+  // lookups in `oneStepDown` / `fibMedianBucket` gained explicit guards. These
+  // pin the FIB table shape and the `ubvFromThemeAlignment` saturation floor
+  // (which routes through `oneStepDown`'s `idx <= 0 → 1` fallback branch).
+  describe('FIB tuple integrity + oneStepDown saturation (task #782)', () => {
+    it('FIB is the canonical 6-tier tuple in ascending order', () => {
+      expect(FIB).toEqual([1, 2, 3, 5, 8, 13]);
+      expect(FIB).toHaveLength(6);
+    });
+
+    it('ubvFromThemeAlignment saturates at 1 (oneStepDown idx<=0 fallback)', () => {
+      // weight 1 is FIB[0]; one step down clamps at 1 rather than indexing FIB[-1].
+      expect(ubvFromThemeAlignment(1, 'direct')).toBe(1);
+      expect(ubvFromThemeAlignment(1, 'weak')).toBe(1);
+      expect(ubvFromThemeAlignment(2, 'weak')).toBe(1); // 2→1→1 (saturates)
+    });
+  });
+
   // Task #640 (WSJF 3.4): the charter-driven UBV wiring the scoring skills
   // describe. A charter-backed task sources its theme weight from the live
   // charter `value_themes` and UBV = theme weight × alignment; an absent-charter
@@ -148,9 +168,9 @@ describe('wsjf deterministic functions (task #622)', () => {
 
   describe('computeWsjf', () => {
     it('{value:13, timeCriticality:5, riskOpportunity:8, jobSize:5} === 5.2', () => {
-      expect(
-        computeWsjf({ value: 13, timeCriticality: 5, riskOpportunity: 8, jobSize: 5 }),
-      ).toBe(5.2);
+      expect(computeWsjf({ value: 13, timeCriticality: 5, riskOpportunity: 8, jobSize: 5 })).toBe(
+        5.2,
+      );
     });
     it('jobSize 0 treated as 1', () => {
       expect(

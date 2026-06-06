@@ -47,24 +47,17 @@ const ALLOWED_REASONS = new Set([
 ]);
 
 const authErrorRoute: FastifyPluginAsync = async (fastify) => {
-  fastify.get(
-    '/error',
-    { config: { skipAuth: true } },
-    async (request, reply) => {
-      const rawReason = (request.query as { reason?: unknown }).reason;
-      const reason =
-        typeof rawReason === 'string' && ALLOWED_REASONS.has(rawReason)
-          ? rawReason
-          : null;
+  fastify.get('/error', { config: { skipAuth: true } }, async (request, reply) => {
+    const rawReason = (request.query as { reason?: unknown }).reason;
+    const reason =
+      typeof rawReason === 'string' && ALLOWED_REASONS.has(rawReason) ? rawReason : null;
 
-      // `reason` is guaranteed to be one of the allowlisted strings when
-      // present, so direct interpolation is safe (no escaping needed —
-      // the allowlist's character class is [a-z_] only).
-      const footer = reason
-        ? `<p class="error-code">Error code: ${reason}</p>`
-        : '';
+    // `reason` is guaranteed to be one of the allowlisted strings when
+    // present, so direct interpolation is safe (no escaping needed —
+    // the allowlist's character class is [a-z_] only).
+    const footer = reason ? `<p class="error-code">Error code: ${reason}</p>` : '';
 
-      const body = `<!doctype html>
+    const body = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -81,19 +74,18 @@ ${footer}
 </body>
 </html>`;
 
-      // WR-04 fix: stamp X-Frame-Options / CSP / Referrer-Policy on the
-      // error page. The web-routes onSend hook does not run here (the
-      // error page lives under /auth, not /, and the hook is scoped to
-      // the web plugin), so we apply the constants explicitly.
-      const replyWithHeaders = reply
-        .header('Content-Type', 'text/html; charset=utf-8')
-        .header('Cache-Control', 'no-store');
-      for (const [name, value] of Object.entries(HTML_SECURITY_HEADERS)) {
-        replyWithHeaders.header(name, value);
-      }
-      return replyWithHeaders.code(200).send(body);
-    },
-  );
+    // WR-04 fix: stamp X-Frame-Options / CSP / Referrer-Policy on the
+    // error page. The web-routes onSend hook does not run here (the
+    // error page lives under /auth, not /, and the hook is scoped to
+    // the web plugin), so we apply the constants explicitly.
+    const replyWithHeaders = reply
+      .header('Content-Type', 'text/html; charset=utf-8')
+      .header('Cache-Control', 'no-store');
+    for (const [name, value] of Object.entries(HTML_SECURITY_HEADERS)) {
+      replyWithHeaders.header(name, value);
+    }
+    return replyWithHeaders.code(200).send(body);
+  });
 };
 
 export default authErrorRoute;

@@ -15,19 +15,9 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  existsSync,
-  writeFileSync,
-  chmodSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import {
-  startLogoutWhoamiServer,
-  type LogoutWhoamiServer,
-} from './helpers/logout-server.js';
+import { startLogoutWhoamiServer, type LogoutWhoamiServer } from './helpers/logout-server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,21 +39,17 @@ function runLogout(
   timeoutMs = 15_000,
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [tsxCli, cliEntry, 'logout', ...args],
-      {
-        env: {
-          ...process.env,
-          ...env,
-          FORCE_COLOR: '0',
-          NO_COLOR: '1',
-          CI: '1',
-        },
-        cwd: repoRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
+    const child = spawn(process.execPath, [tsxCli, cliEntry, 'logout', ...args], {
+      env: {
+        ...process.env,
+        ...env,
+        FORCE_COLOR: '0',
+        NO_COLOR: '1',
+        CI: '1',
       },
-    );
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -168,10 +154,7 @@ describe('tasks logout (subprocess)', () => {
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
     expect(lines.length).toBeGreaterThanOrEqual(1);
-    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<
-      string,
-      unknown
-    >;
+    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
     expect(envelope.event).toBe('logged_out');
     expect(envelope.revoked).toBe(false);
     expect(envelope.alreadyLoggedOut).toBe(true);
@@ -214,10 +197,7 @@ describe('tasks logout (subprocess)', () => {
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
-    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<
-      string,
-      unknown
-    >;
+    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
     expect(envelope.event).toBe('logged_out');
     expect(envelope.revoked).toBe(true);
     expect(envelope.tokenId).toBe(17);
@@ -238,9 +218,7 @@ describe('tasks logout (subprocess)', () => {
 
     const res = await runLogout([], { XDG_CONFIG_HOME: tmpDir });
     expect(res.exitCode).toBe(0);
-    expect(res.stderr).toContain(
-      'server-side token was already invalid',
-    );
+    expect(res.stderr).toContain('server-side token was already invalid');
     expect(existsSync(credPath)).toBe(false);
   });
 
@@ -283,10 +261,7 @@ describe('tasks logout (subprocess)', () => {
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
-    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<
-      string,
-      unknown
-    >;
+    const envelope = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
     expect(envelope.event).toBe('logged_out');
     expect(envelope.revoked).toBe(false);
     expect(envelope.tokenId).toBe(17);

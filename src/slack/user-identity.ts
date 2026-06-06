@@ -30,7 +30,7 @@ export class UserIdentityCache {
 
   constructor(
     private readonly client: WebClient,
-    private readonly ttlMs: number = 5 * 60 * 1000 // 5 minutes
+    private readonly ttlMs: number = 5 * 60 * 1000, // 5 minutes
   ) {}
 
   /**
@@ -60,7 +60,7 @@ export class UserIdentityCache {
           ? profile.display_name.trim()
           : profile?.real_name && profile.real_name.trim()
             ? profile.real_name.trim()
-            : name ?? userId;
+            : (name ?? userId);
 
       this.cache.set(userId, { displayName, expiresAt: now + this.ttlMs });
       return displayName;

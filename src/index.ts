@@ -131,7 +131,7 @@ export async function createApp(dbPath?: string): Promise<App> {
   // Phase 27 (Plan 6): seed legacy + service-account identities. Idempotent --
   // re-runs are zero-cost no-ops. parseApiKeyEntries accepts undefined and
   // returns []; the slack-bot row is seeded unconditionally regardless.
-  seedIdentities(db, parseApiKeyEntries(process.env.API_KEYS));
+  seedIdentities(db, parseApiKeyEntries(process.env['API_KEYS']));
 
   // Phase 29 Plan 08 / Task #357 — OIDC discovery (bounded-retry, non-fatal).
   //   - Disabled (no OIDC_ISSUER_URL): logs `oidc.disabled`, status `disabled`;
@@ -159,7 +159,7 @@ export async function createApp(dbPath?: string): Promise<App> {
   // pattern earlier in this function).
   let oidcConfig: OidcConfig | null = null;
   let oidcStatus: OidcStatus = { state: 'disabled' };
-  const issuerEnv = process.env.OIDC_ISSUER_URL;
+  const issuerEnv = process.env['OIDC_ISSUER_URL'];
   if (issuerEnv && issuerEnv.length > 0) {
     // OIDC is requested — NOW load the validated config (this triggers the
     // env schema's all-or-nothing OIDC refine AND validates API_KEYS etc.).
@@ -262,13 +262,7 @@ export async function createApp(dbPath?: string): Promise<App> {
   );
 
   // Create and start WorkflowEngine (with db for transaction atomicity)
-  const workflowEngine = new WorkflowEngine(
-    taskService,
-    taskRepo,
-    dependencyRepo,
-    eventBus,
-    db
-  );
+  const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
   workflowEngine.start();
 
   // Phase 30 Plan 08 — start the device-flow store's periodic cleanup

@@ -104,15 +104,13 @@ export const CompletionReportQuerySchema = z
     project_id: z.coerce.number().int().positive().optional(),
     assignee: z.string().min(1).max(100).optional(),
   })
-  .refine(
-    (v) => v.days !== undefined || (v.start !== undefined && v.end !== undefined),
-    { message: 'Provide either `days` or both `start` and `end`' }
-  )
+  .refine((v) => v.days !== undefined || (v.start !== undefined && v.end !== undefined), {
+    message: 'Provide either `days` or both `start` and `end`',
+  })
   .refine(
     (v) =>
-      v.days !== undefined ||
-      (v.start !== undefined && v.end !== undefined && v.end >= v.start),
-    { message: '`end` must be greater than or equal to `start`' }
+      v.days !== undefined || (v.start !== undefined && v.end !== undefined && v.end >= v.start),
+    { message: '`end` must be greater than or equal to `start`' },
   );
 
 /**
@@ -137,18 +135,12 @@ export const CompletionReportResponseSchema = z.object({
       created_at: z.string(),
       completed_at: z.string(),
       time_to_complete_seconds: z.number(),
-    })
+    }),
   ),
-  by_project: z.array(
-    z.object({ project_id: z.number(), count: z.number().int().nonnegative() })
-  ),
-  by_assignee: z.array(
-    z.object({ assignee: z.string(), count: z.number().int().nonnegative() })
-  ),
+  by_project: z.array(z.object({ project_id: z.number(), count: z.number().int().nonnegative() })),
+  by_assignee: z.array(z.object({ assignee: z.string(), count: z.number().int().nonnegative() })),
   by_priority: z.array(
-    z.object({ priority: z.enum(TASK_PRIORITIES), count: z.number().int().nonnegative() })
+    z.object({ priority: z.enum(TASK_PRIORITIES), count: z.number().int().nonnegative() }),
   ),
-  daily_throughput: z.array(
-    z.object({ date: z.string(), count: z.number().int().nonnegative() })
-  ),
+  daily_throughput: z.array(z.object({ date: z.string(), count: z.number().int().nonnegative() })),
 });

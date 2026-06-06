@@ -3,10 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import {
-  mergeClaudeJson,
-  type ClaudeMcpServerEntry,
-} from '../../setup/claude-json.js';
+import { mergeClaudeJson, type ClaudeMcpServerEntry } from '../../setup/claude-json.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { configDir as defaultConfigDir } from '../../config/paths.js';
 
@@ -69,10 +66,7 @@ export function resolveRemoteMcpEntryPoint(): string {
  * only two env keys we set. Kept free of timestamps / random fields so the
  * merge stays idempotent across re-runs.
  */
-export function buildRemoteMcpEntry(
-  apiUrl: string,
-  apiKey: string
-): ClaudeMcpServerEntry {
+export function buildRemoteMcpEntry(apiUrl: string, apiKey: string): ClaudeMcpServerEntry {
   return {
     type: 'stdio',
     command: process.execPath,
@@ -114,16 +108,11 @@ export interface CachePatResult {
  * is not world-readable; on Windows the mode arg is a best-effort no-op (NTFS
  * ACLs already restrict the per-user config dir).
  */
-export function cachePat(
-  token: string,
-  configDir: string = defaultConfigDir
-): CachePatResult {
+export function cachePat(token: string, configDir: string = defaultConfigDir): CachePatResult {
   const filePath = patCachePath(configDir);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-  const existing = fs.existsSync(filePath)
-    ? fs.readFileSync(filePath, 'utf8')
-    : null;
+  const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
   const changed = existing !== token;
 
   if (changed) {
@@ -157,7 +146,7 @@ export interface CopySkillsResult {
  */
 export function copySkills(
   destDir: string = commandsDestDir(),
-  sourceDir: string = resolveAssetPath('dist', 'skills', 'tasks')
+  sourceDir: string = resolveAssetPath('dist', 'skills', 'tasks'),
 ): CopySkillsResult {
   const written: string[] = [];
   const files: string[] = [];
@@ -217,15 +206,13 @@ const AGENTS_EXCLUDE = new Set(['README.md']);
  */
 export function copyAgents(
   destDir: string = agentsDestDir(),
-  sourceDir: string = resolveAssetPath('dist', 'skills', 'agents')
+  sourceDir: string = resolveAssetPath('dist', 'skills', 'agents'),
 ): CopyAgentsResult {
   const written: string[] = [];
   const files: string[] = [];
 
   const entries = fs.existsSync(sourceDir)
-    ? fs
-        .readdirSync(sourceDir)
-        .filter((f) => f.endsWith('.md') && !AGENTS_EXCLUDE.has(f))
+    ? fs.readdirSync(sourceDir).filter((f) => f.endsWith('.md') && !AGENTS_EXCLUDE.has(f))
     : [];
 
   fs.mkdirSync(destDir, { recursive: true });
@@ -273,9 +260,7 @@ export interface FixNpmPrefixResult {
  * unit test can assert behavior without mutating real npm config. This function
  * MUST NOT invoke sudo / runas / pkexec / doas under any circumstances.
  */
-export function fixNpmPrefix(
-  options: FixNpmPrefixOptions = {}
-): FixNpmPrefixResult {
+export function fixNpmPrefix(options: FixNpmPrefixOptions = {}): FixNpmPrefixResult {
   const home = options.home ?? os.homedir();
   const log = options.log ?? ((line: string) => console.log(line));
   const runner =
@@ -366,8 +351,7 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     const token = options.token;
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error(
-        '--remote requires --token <pat> so WFT_API_KEY can be set on the ' +
-          'remote MCP entry.'
+        '--remote requires --token <pat> so WFT_API_KEY can be set on the ' + 'remote MCP entry.',
       );
     }
     serverName = REMOTE_SERVER_NAME;
@@ -379,7 +363,7 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     log(
       !merge.unchanged
         ? `Installed remote MCP server '${REMOTE_SERVER_NAME}' into ${claudeJsonPath}`
-        : `Remote MCP server '${REMOTE_SERVER_NAME}' already present in ${claudeJsonPath}`
+        : `Remote MCP server '${REMOTE_SERVER_NAME}' already present in ${claudeJsonPath}`,
     );
 
     // Cache the PAT under the CONFIG dir (NOT the data dir).
@@ -387,7 +371,7 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     log(
       patCache.changed
         ? `Cached remote PAT at ${patCache.path}`
-        : `Remote PAT already cached at ${patCache.path}`
+        : `Remote PAT already cached at ${patCache.path}`,
     );
   } else {
     serverName = SERVER_NAME;
@@ -399,7 +383,7 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     log(
       !merge.unchanged
         ? `Installed local MCP server '${SERVER_NAME}' into ${claudeJsonPath}`
-        : `Local MCP server '${SERVER_NAME}' already present in ${claudeJsonPath}`
+        : `Local MCP server '${SERVER_NAME}' already present in ${claudeJsonPath}`,
     );
   }
 
@@ -421,19 +405,23 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
   log(
     skills.written.length > 0
       ? `Copied ${skills.written.length} skill(s) into ${skills.destDir}`
-      : `Skills already up to date in ${skills.destDir}`
+      : `Skills already up to date in ${skills.destDir}`,
   );
 
   const agents = copyAgents(agentsDestDir(home));
   log(
     agents.written.length > 0
       ? `Copied ${agents.written.length} agent(s) into ${agents.destDir}`
-      : `Agents already up to date in ${agents.destDir}`
+      : `Agents already up to date in ${agents.destDir}`,
   );
 
   let npmPrefix: FixNpmPrefixResult | undefined;
   if (options.fixNpmPrefix) {
-    npmPrefix = fixNpmPrefix({ home, runner: options.npmRunner, log });
+    npmPrefix = fixNpmPrefix({
+      home,
+      ...(options.npmRunner !== undefined && { runner: options.npmRunner }),
+      log,
+    });
   }
 
   return {
@@ -443,26 +431,26 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     remote: isRemote,
     skills,
     agents,
-    npmPrefix,
-    patCache,
+    ...(npmPrefix !== undefined && { npmPrefix }),
+    ...(patCache !== undefined && { patCache }),
   };
 }
 
 export const setupCommand = new Command('setup')
   .description(
-    'Install the local wood-fired-tasks MCP server into ~/.claude.json, copy skills into ~/.claude/commands/tasks/, and copy subagent definitions into ~/.claude/agents/'
+    'Install the local wood-fired-tasks MCP server into ~/.claude.json, copy skills into ~/.claude/commands/tasks/, and copy subagent definitions into ~/.claude/agents/',
   )
   .option(
     '--fix-npm-prefix',
-    'Configure a user-writable npm global prefix (~/.npm-global) to avoid EACCES on `npm i -g` (never uses sudo)'
+    'Configure a user-writable npm global prefix (~/.npm-global) to avoid EACCES on `npm i -g` (never uses sudo)',
   )
   .option(
     '--remote <url>',
-    'Install the remote MCP bridge (wood-fired-tasks-remote) pointed at the given REST API base URL; requires --token'
+    'Install the remote MCP bridge (wood-fired-tasks-remote) pointed at the given REST API base URL; requires --token',
   )
   .option(
     '--token <pat>',
-    'Personal access token for --remote; written to the remote MCP entry (WFT_API_KEY) and cached under the OS config dir'
+    'Personal access token for --remote; written to the remote MCP entry (WFT_API_KEY) and cached under the OS config dir',
   )
   .action((opts: { fixNpmPrefix?: boolean; remote?: string; token?: string }) => {
     // `--token` is ALSO a global option on the root program (src/cli/bin/tasks.ts),
@@ -475,10 +463,10 @@ export const setupCommand = new Command('setup')
     const token =
       typeof opts.token === 'string' && opts.token.length > 0
         ? opts.token
-        : (globalOpts.token as string | undefined);
+        : (globalOpts['token'] as string | undefined);
     runSetup({
       fixNpmPrefix: Boolean(opts.fixNpmPrefix),
-      remote: opts.remote,
-      token,
+      ...(opts.remote !== undefined && { remote: opts.remote }),
+      ...(token !== undefined && { token }),
     });
   });

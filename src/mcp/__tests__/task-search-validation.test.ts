@@ -45,16 +45,13 @@ describe('MCP list_tasks search validation', () => {
       app.projectService,
       app.dependencyService,
       app.commentService,
-      app.db
+      app.db,
     );
 
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
 
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -81,8 +78,7 @@ describe('MCP list_tasks search validation', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].type).toBe('text');
-      const errText =
-        result.content[0].type === 'text' ? result.content[0].text ?? '' : '';
+      const errText = result.content[0].type === 'text' ? (result.content[0].text ?? '') : '';
 
       // Surfaced as the MCP validation envelope, not an InternalError.
       expect(errText).toContain('MCP error');
@@ -109,8 +105,7 @@ describe('MCP list_tasks search validation', () => {
     })) as ToolResult;
 
     expect(result.isError).toBe(true);
-    const errText =
-      result.content[0].type === 'text' ? result.content[0].text ?? '' : '';
+    const errText = result.content[0].type === 'text' ? (result.content[0].text ?? '') : '';
     expect(errText.toLowerCase()).toContain('validation');
     expect(errText).not.toContain('fts5:');
     expect(errText).not.toContain('SQLITE');
@@ -123,8 +118,7 @@ describe('MCP list_tasks search validation', () => {
     })) as ToolResult;
 
     expect(result.isError).toBeFalsy();
-    const text =
-      result.content[0].type === 'text' ? result.content[0].text ?? '' : '';
+    const text = result.content[0].type === 'text' ? (result.content[0].text ?? '') : '';
     expect(text).toContain('Fix login bug');
   });
 
@@ -135,8 +129,7 @@ describe('MCP list_tasks search validation', () => {
     })) as ToolResult;
 
     expect(result.isError).toBeFalsy();
-    const text =
-      result.content[0].type === 'text' ? result.content[0].text ?? '' : '';
+    const text = result.content[0].type === 'text' ? (result.content[0].text ?? '') : '';
     expect(text).toContain('migration');
   });
 });

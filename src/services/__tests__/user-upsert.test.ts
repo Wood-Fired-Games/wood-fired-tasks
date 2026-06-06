@@ -31,8 +31,7 @@ interface MockRepo extends IUserRepository {
 
 function makeMockRepo(seed: User[] = []): MockRepo {
   const rows: User[] = [...seed];
-  let nextId =
-    rows.reduce((max, r) => (r.id > max ? r.id : max), 0) + 1;
+  let nextId = rows.reduce((max, r) => (r.id > max ? r.id : max), 0) + 1;
   const updateCalls: Array<{
     id: number;
     patch: { email?: string | null; displayName?: string };
@@ -43,21 +42,14 @@ function makeMockRepo(seed: User[] = []): MockRepo {
     _updateCalls: updateCalls,
     findById: (id: number) => rows.find((r) => r.id === id) ?? null,
     findByOidcSub: (provider: string, sub: string) =>
-      rows.find(
-        (r) => r.oidc_provider === provider && r.oidc_sub === sub,
-      ) ?? null,
+      rows.find((r) => r.oidc_provider === provider && r.oidc_sub === sub) ?? null,
     findBySlackUserId: () => null,
     findLegacyByDisplayName: () => null,
     findByEmail: () => null,
     listAll: () => [...rows],
     insert: (input: UserUpsertInput): User => {
       repo._insertCalls += 1;
-      if (
-        rows.some(
-          (r) =>
-            r.oidc_provider === input.provider && r.oidc_sub === input.sub,
-        )
-      ) {
+      if (rows.some((r) => r.oidc_provider === input.provider && r.oidc_sub === input.sub)) {
         const err = new Error(
           'UNIQUE constraint failed: users.oidc_provider, users.oidc_sub',
         ) as Error & { code: string };
@@ -65,9 +57,7 @@ function makeMockRepo(seed: User[] = []): MockRepo {
         throw err;
       }
       if (input.displayName == null || input.displayName === '') {
-        throw new TypeError(
-          'UserRepository.insert: displayName must be a non-empty string',
-        );
+        throw new TypeError('UserRepository.insert: displayName must be a non-empty string');
       }
       const row: User = {
         id: nextId++,
@@ -94,10 +84,7 @@ function makeMockRepo(seed: User[] = []): MockRepo {
       if (Object.prototype.hasOwnProperty.call(patch, 'email')) {
         row.email = patch.email ?? null;
       }
-      if (
-        Object.prototype.hasOwnProperty.call(patch, 'displayName') &&
-        patch.displayName
-      ) {
+      if (Object.prototype.hasOwnProperty.call(patch, 'displayName') && patch.displayName) {
         row.display_name = patch.displayName;
       }
       return { ...row };
@@ -111,19 +98,14 @@ function makeUser(overrides: Partial<User> & { id: number }): User {
   // `email: null` from a caller must produce `email: null`, not the default.
   return {
     id: overrides.id,
-    oidc_provider:
-      'oidc_provider' in overrides ? overrides.oidc_provider : 'google',
+    oidc_provider: 'oidc_provider' in overrides ? overrides.oidc_provider : 'google',
     oidc_sub: 'oidc_sub' in overrides ? overrides.oidc_sub : 'sub-default',
     email: 'email' in overrides ? overrides.email : 'user@example.com',
-    display_name:
-      'display_name' in overrides ? overrides.display_name : 'Display Name',
-    slack_user_id:
-      'slack_user_id' in overrides ? overrides.slack_user_id : null,
+    display_name: 'display_name' in overrides ? overrides.display_name : 'Display Name',
+    slack_user_id: 'slack_user_id' in overrides ? overrides.slack_user_id : null,
     is_legacy: 'is_legacy' in overrides ? overrides.is_legacy : 0,
-    is_service_account:
-      'is_service_account' in overrides ? overrides.is_service_account : 0,
-    created_at:
-      'created_at' in overrides ? overrides.created_at : '2026-05-23T00:00:00Z',
+    is_service_account: 'is_service_account' in overrides ? overrides.is_service_account : 0,
+    created_at: 'created_at' in overrides ? overrides.created_at : '2026-05-23T00:00:00Z',
     disabled_at: 'disabled_at' in overrides ? overrides.disabled_at : null,
   } as User;
 }
@@ -198,9 +180,7 @@ describe('upsertFromOidc', () => {
     expect(result.id).toBe(7);
     expect(result.email).toBe('new@example.com');
     expect(repo._insertCalls).toBe(0);
-    expect(repo._updateCalls).toEqual([
-      { id: 7, patch: { email: 'new@example.com' } },
-    ]);
+    expect(repo._updateCalls).toEqual([{ id: 7, patch: { email: 'new@example.com' } }]);
   });
 
   it('applies displayName drift via updateProfile when displayName differs', () => {
@@ -226,9 +206,7 @@ describe('upsertFromOidc', () => {
     expect(result.id).toBe(9);
     expect(result.display_name).toBe('New Name');
     expect(repo._insertCalls).toBe(0);
-    expect(repo._updateCalls).toEqual([
-      { id: 9, patch: { displayName: 'New Name' } },
-    ]);
+    expect(repo._updateCalls).toEqual([{ id: 9, patch: { displayName: 'New Name' } }]);
   });
 
   it('applies both drifts in a single updateProfile call', () => {

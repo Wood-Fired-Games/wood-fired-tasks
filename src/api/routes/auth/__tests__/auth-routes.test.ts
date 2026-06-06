@@ -232,10 +232,7 @@ describe('GET /auth/login', () => {
   });
 
   it('30-02 malformed user_code guard: ?next=/auth/device?user_code=BAD → /me', async () => {
-    const stored = await inspectStoredRedirectAfterLogin(
-      harness,
-      '/auth/device?user_code=BAD',
-    );
+    const stored = await inspectStoredRedirectAfterLogin(harness, '/auth/device?user_code=BAD');
     expect(stored).toBe('/me');
   });
 
@@ -300,9 +297,7 @@ describe('GET /auth/callback', () => {
     expect(r.headers.location).toBe('/auth/error?reason=state_mismatch');
 
     // W2 — must log at error level, NOT warn.
-    const stateMismatchLogs = logs.filter((l) =>
-      l.msg.includes('state_mismatch'),
-    );
+    const stateMismatchLogs = logs.filter((l) => l.msg.includes('state_mismatch'));
     expect(stateMismatchLogs.length).toBeGreaterThanOrEqual(1);
     for (const entry of stateMismatchLogs) {
       expect(entry.level).toBe('error');
@@ -368,7 +363,9 @@ describe('GET /auth/callback', () => {
     const { cookie, state } = await driveLogin(harness);
 
     // Install discovery + JWKS but force the token endpoint to 500.
-    const discovery = (await import('../../../../../tests/helpers/oidc-fixtures.js')).getDiscoveryFixture();
+    const discovery = (
+      await import('../../../../../tests/helpers/oidc-fixtures.js')
+    ).getDiscoveryFixture();
     const { getTestKeys } = await import('../../../../../tests/helpers/oidc-fixtures.js');
     const jwksUri = discovery.jwks_uri as string;
     const tokenUri = discovery.token_endpoint as string;

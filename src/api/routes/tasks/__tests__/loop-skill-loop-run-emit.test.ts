@@ -41,9 +41,7 @@ describe('/tasks:loop skill — LOOP-RUN.md emission wiring (#316)', () => {
   const step9 = step9Section(skill);
 
   it('has a Step 9 heading dedicated to emitting LOOP-RUN.md', () => {
-    const hasHeading = skill
-      .split('\n')
-      .some((line) => line === '### Step 9 — Emit LOOP-RUN.md');
+    const hasHeading = skill.split('\n').some((line) => line === '### Step 9 — Emit LOOP-RUN.md');
     expect(hasHeading).toBe(true);
   });
 

@@ -74,12 +74,7 @@ export type IntegrationVerdict = z.infer<typeof IntegrationVerdictSchema>;
  * both the raw verifier verdict AND the audit score derived from it
  * (useful when reviewing why a `NOT_VERIFIED` rolled up to `PARTIAL`).
  */
-export const VerifierVerdictSchema = z.enum([
-  'PASS',
-  'FAIL',
-  'PARTIAL',
-  'NOT_VERIFIED',
-]);
+export const VerifierVerdictSchema = z.enum(['PASS', 'FAIL', 'PARTIAL', 'NOT_VERIFIED']);
 export type VerifierVerdict = z.infer<typeof VerifierVerdictSchema>;
 
 /**

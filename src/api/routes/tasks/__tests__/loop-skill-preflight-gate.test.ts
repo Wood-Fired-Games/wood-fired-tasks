@@ -146,9 +146,7 @@ describe('/tasks:loop skill — topology pre-flight gate wiring (#319)', () => {
     // Cross-wave regression guard — if §2f's insertion accidentally
     // displaced Step 9, every LOOP-RUN.md emission breaks. Mirrors the
     // analogous check in loop-skill-loop-run-emit.test.ts.
-    const hasStep9 = skill
-      .split('\n')
-      .some((line) => line === '### Step 9 — Emit LOOP-RUN.md');
+    const hasStep9 = skill.split('\n').some((line) => line === '### Step 9 — Emit LOOP-RUN.md');
     expect(hasStep9).toBe(true);
   });
 });

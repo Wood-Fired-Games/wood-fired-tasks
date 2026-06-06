@@ -64,9 +64,7 @@ describe('MCP tool handlers inject ctx.actorUserId into service writes', () => {
     // Seed an additional non-service-account user so the actor injection
     // test can prove the handler used ctx.actorUserId (not mcp-bot).
     const insertUser = app.db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('mcp-actor-test', 'mcp-actor@example.com') as { id: number };
     testActorUserId = insertUser.id;
 
@@ -90,10 +88,7 @@ describe('MCP tool handlers inject ctx.actorUserId into service writes', () => {
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
 
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -202,9 +197,7 @@ describe('MCP tool handlers inject ctx.actorUserId into service writes', () => {
 
       // Insert a user with a known email so the email-resolution branch hits.
       const target = app.db
-        .prepare(
-          `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-        )
+        .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
         .get('Bob', 'bob@example.com') as { id: number };
 
       const result = (await client.callTool({
@@ -343,10 +336,7 @@ describe('MCP tool handlers with default ctx (no actor)', () => {
 
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -369,9 +359,7 @@ describe('MCP tool handlers with default ctx (no actor)', () => {
     expect(result.isError).toBeFalsy();
     const created = result.structuredContent as { id: number };
     const row = app.db
-      .prepare(
-        `SELECT created_by_user_id FROM tasks WHERE id = ?`,
-      )
+      .prepare(`SELECT created_by_user_id FROM tasks WHERE id = ?`)
       .get(created.id) as { created_by_user_id: number | null };
     expect(row.created_by_user_id).toBeNull();
   });

@@ -19,14 +19,7 @@
  *  10. Per-table transactions — constraint error in one table doesn't roll back
  *      committed mappings from earlier tables.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from '../../db/driver.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -93,14 +86,11 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     const db = new Database(dbPath);
     await runMigrations(db);
     const silent = { info: () => {}, warn: () => {} };
-    seedIdentities(
-      db,
-      parseApiKeyEntries('k1:laptop,k2:agent-bot'),
-      silent,
+    seedIdentities(db, parseApiKeyEntries('k1:laptop,k2:agent-bot'), silent);
+    db.prepare(`INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`).run(
+      'alice',
+      'alice@example.com',
     );
-    db.prepare(
-      `INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`,
-    ).run('alice', 'alice@example.com');
     db.close();
 
     process.env.DATABASE_PATH = dbPath;
@@ -131,9 +121,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     try {
       return (
         (db
-          .prepare(
-            `SELECT id, display_name, email, is_legacy FROM users WHERE ${predicate}`,
-          )
+          .prepare(`SELECT id, display_name, email, is_legacy FROM users WHERE ${predicate}`)
           .get(...args) as UserRow | undefined) ?? null
       );
     } finally {
@@ -148,9 +136,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
       // collisions. The migration sets `name UNIQUE`.
       const suffix = Math.random().toString(36).slice(2, 8);
       const info = db
-        .prepare(
-          `INSERT INTO projects (name) VALUES ('test-project-' || ?)`,
-        )
+        .prepare(`INSERT INTO projects (name) VALUES ('test-project-' || ?)`)
         .run(suffix);
       return Number(info.lastInsertRowid);
     } finally {
@@ -190,9 +176,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     const db = new Database(dbPath);
     try {
       const info = db
-        .prepare(
-          `INSERT INTO task_comments (task_id, author, content) VALUES (?, ?, 'hi')`,
-        )
+        .prepare(`INSERT INTO task_comments (task_id, author, content) VALUES (?, ?, 'hi')`)
         .run(opts.taskId, opts.author);
       return Number(info.lastInsertRowid);
     } finally {
@@ -220,9 +204,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     try {
       return (
         (db
-          .prepare(
-            `SELECT id, task_id, author, author_user_id FROM task_comments WHERE id = ?`,
-          )
+          .prepare(`SELECT id, task_id, author, author_user_id FROM task_comments WHERE id = ?`)
           .get(id) as CommentRow | undefined) ?? null
       );
     } finally {
@@ -239,9 +221,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   }
 
   it('Case 1: dry-run by default — exit 0, no DB writes', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const projectId = insertProject();
@@ -256,9 +236,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 2: --commit applies — matching legacy display_name populates FK', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const laptop = readUser("display_name = 'laptop'");
@@ -282,9 +260,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 3: idempotent — second --commit reports 0 rows updated', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const projectId = insertProject();
@@ -310,9 +286,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 4a: --alias-map overrides resolution', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const alice = readUser("display_name = 'alice'");
@@ -324,19 +298,16 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     const aliasFile = join(tmpDir, 'alias.json');
     writeFileSync(aliasFile, JSON.stringify({ 'weird-old-author': alice!.id }));
 
-    await dbMigrateIdentitiesCommand.parseAsync(
-      ['--commit', '--alias-map', aliasFile],
-      { from: 'user' },
-    );
+    await dbMigrateIdentitiesCommand.parseAsync(['--commit', '--alias-map', aliasFile], {
+      from: 'user',
+    });
 
     expect(process.exitCode).toBe(0);
     expect(readTask(t1)!.created_by_user_id).toBe(alice!.id);
   });
 
   it('Case 4b: --alias-map missing file exits 1', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     await dbMigrateIdentitiesCommand.parseAsync(
@@ -349,27 +320,20 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 4c: --alias-map with non-integer value exits 1', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const aliasFile = join(tmpDir, 'bad-alias.json');
     writeFileSync(aliasFile, JSON.stringify({ foo: 'not-a-number' }));
 
-    await dbMigrateIdentitiesCommand.parseAsync(
-      ['--alias-map', aliasFile],
-      { from: 'user' },
-    );
+    await dbMigrateIdentitiesCommand.parseAsync(['--alias-map', aliasFile], { from: 'user' });
 
     expect(process.exitCode).toBe(1);
     expect(loggedStderr()).toMatch(/integer|invalid|number/i);
   });
 
   it('Case 4d: --alias-map with non-existent user_id exits 1 (pre-flight check)', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const aliasFile = join(tmpDir, 'ghost-user.json');
@@ -378,37 +342,31 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     const projectId = insertProject();
     insertTask({ projectId, createdBy: 'ghost' });
 
-    await dbMigrateIdentitiesCommand.parseAsync(
-      ['--commit', '--alias-map', aliasFile],
-      { from: 'user' },
-    );
+    await dbMigrateIdentitiesCommand.parseAsync(['--commit', '--alias-map', aliasFile], {
+      from: 'user',
+    });
 
     expect(process.exitCode).toBe(1);
     expect(loggedStderr()).toMatch(/99999|user.*not found|FK|foreign/i);
   });
 
   it('Case 5a: --user-fallback skip leaves unmatched rows NULL', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const projectId = insertProject();
     const t1 = insertTask({ projectId, createdBy: 'unmatchable' });
 
-    await dbMigrateIdentitiesCommand.parseAsync(
-      ['--commit', '--user-fallback', 'skip'],
-      { from: 'user' },
-    );
+    await dbMigrateIdentitiesCommand.parseAsync(['--commit', '--user-fallback', 'skip'], {
+      from: 'user',
+    });
 
     expect(process.exitCode).toBe(0);
     expect(readTask(t1)!.created_by_user_id).toBeNull();
   });
 
   it('Case 5b: --user-fallback legacy pins unmatched rows to first-seeded legacy user', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const laptop = readUser("display_name = 'laptop'");
@@ -427,9 +385,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 6a: empty API_KEYS + default fallback exits 1 with clear error', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     // Wipe the seeded legacy users — simulate a PAT-only deployment.
@@ -450,9 +406,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 6b: empty API_KEYS + --user-fallback skip succeeds (FK stays NULL)', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const db = new Database(dbPath);
@@ -462,19 +416,16 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     const projectId = insertProject();
     const t1 = insertTask({ projectId, createdBy: 'whatever' });
 
-    await dbMigrateIdentitiesCommand.parseAsync(
-      ['--commit', '--user-fallback', 'skip'],
-      { from: 'user' },
-    );
+    await dbMigrateIdentitiesCommand.parseAsync(['--commit', '--user-fallback', 'skip'], {
+      from: 'user',
+    });
 
     expect(process.exitCode).toBe(0);
     expect(readTask(t1)!.created_by_user_id).toBeNull();
   });
 
   it('Case 7: --limit caps rows updated', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const laptop = readUser("display_name = 'laptop'");
@@ -484,10 +435,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
       ids.push(insertTask({ projectId, createdBy: 'laptop' }));
     }
 
-    await dbMigrateIdentitiesCommand.parseAsync(
-      ['--commit', '--limit', '3'],
-      { from: 'user' },
-    );
+    await dbMigrateIdentitiesCommand.parseAsync(['--commit', '--limit', '3'], { from: 'user' });
 
     expect(process.exitCode).toBe(0);
     const updated = ids
@@ -500,9 +448,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 8a: email-shaped value resolves via findByEmail', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const alice = readUser("email = 'alice@example.com'");
@@ -520,9 +466,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 8b: empty-string and "@@@" do NOT crash (Pitfall 6)', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const laptop = readUser("display_name = 'laptop'");
@@ -544,16 +488,13 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 9: plan output sorts mappings by row count descending', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const projectId = insertProject();
     // 'laptop' → 5 rows, 'agent-bot' → 2 rows, 'unmatchable' → 1 row.
     for (let i = 0; i < 5; i++) insertTask({ projectId, createdBy: 'laptop' });
-    for (let i = 0; i < 2; i++)
-      insertTask({ projectId, createdBy: 'agent-bot' });
+    for (let i = 0; i < 2; i++) insertTask({ projectId, createdBy: 'agent-bot' });
     insertTask({ projectId, createdBy: 'unmatchable' });
 
     await dbMigrateIdentitiesCommand.parseAsync([], { from: 'user' });
@@ -573,9 +514,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
   });
 
   it('Case 10: per-table mappings — task_comments backfill works alongside tasks', async () => {
-    const { dbMigrateIdentitiesCommand } = await import(
-      '../commands/db-migrate-identities.js'
-    );
+    const { dbMigrateIdentitiesCommand } = await import('../commands/db-migrate-identities.js');
     dbMigrateIdentitiesCommand.exitOverride();
 
     const laptop = readUser("display_name = 'laptop'");
@@ -608,9 +547,7 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     // Verifies that the parent `db` command exposes `migrate-identities` so
     // operators invoke it as `tasks db migrate-identities`.
     const { dbCommand } = await import('../commands/db.js');
-    const sub = dbCommand.commands.find(
-      (c) => c.name() === 'migrate-identities',
-    );
+    const sub = dbCommand.commands.find((c) => c.name() === 'migrate-identities');
     expect(sub).toBeDefined();
   });
 });

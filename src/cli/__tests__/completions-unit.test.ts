@@ -21,11 +21,9 @@ describe('createCompletionsCommand', () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     // Process.exit must not actually terminate the test runner.
-    exitSpy = vi
-      .spyOn(process, 'exit')
-      .mockImplementation(((code?: number) => {
-        throw new Error(`process.exit(${code})`);
-      }) as never);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
 
     program = new Command();
     // Register a handful of dummy subcommands so the script reflects a real
@@ -103,13 +101,13 @@ describe('createCompletionsCommand', () => {
     expect(out).toContain('--priority[Filter by priority]');
     expect(out).toContain('--title[Task title]');
     expect(out).toContain('--title[New title]');
-    expect(out).toContain("1:shell:(bash zsh)");
+    expect(out).toContain('1:shell:(bash zsh)');
   });
 
   it('exits with error message for unsupported shell', async () => {
-    await expect(
-      program.parseAsync(['node', 'tasks', 'completions', 'fish'])
-    ).rejects.toThrow(/process\.exit\(1\)/);
+    await expect(program.parseAsync(['node', 'tasks', 'completions', 'fish'])).rejects.toThrow(
+      /process\.exit\(1\)/,
+    );
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Unsupported shell: fish'),
     );

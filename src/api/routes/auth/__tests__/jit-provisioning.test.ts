@@ -9,11 +9,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { extractSessionCookie } from '../../../../../tests/helpers/session-cookie.js';
-import {
-  mountAuthRoutes,
-  setupOidcHappyPath,
-  type AuthTestHarness,
-} from './oidc-test-setup.js';
+import { mountAuthRoutes, setupOidcHappyPath, type AuthTestHarness } from './oidc-test-setup.js';
 
 async function loginAndCallback(
   harness: AuthTestHarness,
@@ -125,9 +121,7 @@ describe('JIT provisioning (AUTH-02)', () => {
     // Force upsertFromOidc -> userRepository.findByOidcSub to throw on
     // this single request. Restored in the finally so subsequent tests
     // see a clean repository.
-    const orig = harness.userRepository.findByOidcSub.bind(
-      harness.userRepository,
-    );
+    const orig = harness.userRepository.findByOidcSub.bind(harness.userRepository);
     harness.userRepository.findByOidcSub = () => {
       throw new Error('simulated DB outage');
     };
@@ -139,9 +133,7 @@ describe('JIT provisioning (AUTH-02)', () => {
         headers: { cookie: cookie as string },
       });
       expect(cbResp.statusCode).toBe(302);
-      expect(cbResp.headers.location).toBe(
-        '/auth/error?reason=provisioning_failed',
-      );
+      expect(cbResp.headers.location).toBe('/auth/error?reason=provisioning_failed');
 
       // Handshake state must be cleared so a retry from /auth/login
       // starts from a clean slate.

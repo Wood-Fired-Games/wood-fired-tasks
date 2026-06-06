@@ -9,9 +9,17 @@ import { createRecordingLogger } from './harness.js';
 // loop owns the drop accounting + WARN, which this fixture exercises directly.
 
 /** Deterministic injectable clock — no real wall-clock sleep is used. */
-function fakeClock(start = 1_700_000_000_000): { now: () => number; advance: (ms: number) => void } {
+function fakeClock(start = 1_700_000_000_000): {
+  now: () => number;
+  advance: (ms: number) => void;
+} {
   let t = start;
-  return { now: () => t, advance: (ms) => { t += ms; } };
+  return {
+    now: () => t,
+    advance: (ms) => {
+      t += ms;
+    },
+  };
 }
 
 describe('fix-8 / rate-limit', () => {
@@ -34,10 +42,7 @@ describe('fix-8 / rate-limit', () => {
         dispatched++;
       } else {
         dropped++;
-        recorder.warn(
-          { rule_id: 'rule-1', dropped },
-          'rate_limit_dropped',
-        );
+        recorder.warn({ rule_id: 'rule-1', dropped }, 'rate_limit_dropped');
       }
       clock.advance(5);
     }

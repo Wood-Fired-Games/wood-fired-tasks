@@ -26,16 +26,13 @@ describe('MCP Health Tools', () => {
       app.projectService,
       app.dependencyService,
       app.commentService,
-      app.db
+      app.db,
     );
 
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
 
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 

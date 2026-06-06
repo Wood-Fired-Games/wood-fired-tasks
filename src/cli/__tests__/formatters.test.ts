@@ -142,14 +142,7 @@ describe('formatters: formatStatus', () => {
 
   it('wraps known statuses in colored output', async () => {
     const { formatStatus } = await loadModule();
-    for (const s of [
-      'open',
-      'in_progress',
-      'done',
-      'closed',
-      'blocked',
-      'backlogged',
-    ]) {
+    for (const s of ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged']) {
       const out = formatStatus(s);
       expect(out).toContain(s);
       expect(out).not.toBe(s); // chalk wrapped it

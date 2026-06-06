@@ -34,10 +34,7 @@ const RISKY_OVERLAP: IntegrationOverlap = {
   task_ids: [201, 202],
   verdict: 'RISKY',
   rationale: 'Both edits land in the same function body; combined semantics unclear.',
-  evidence: [
-    'diff_a hunk: + return value * 2;',
-    'diff_b hunk: + return value + offset;',
-  ],
+  evidence: ['diff_a hunk: + return value * 2;', 'diff_b hunk: + return value + offset;'],
 };
 
 const BROKEN_OVERLAP: IntegrationOverlap = {

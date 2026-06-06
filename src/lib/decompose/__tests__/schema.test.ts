@@ -91,15 +91,11 @@ describe('DecompositionFrontmatterSchema', () => {
       advisory: 'BLOCKED',
       aborted_reason: 'cycle',
     };
-    expect(DecompositionFrontmatterSchema.safeParse(aborted).success).toBe(
-      true,
-    );
+    expect(DecompositionFrontmatterSchema.safeParse(aborted).success).toBe(true);
   });
 
   it('exposes every required frontmatter field in the schema shape', () => {
-    const shapeKeys = new Set(
-      Object.keys(DecompositionFrontmatterSchema.shape),
-    );
+    const shapeKeys = new Set(Object.keys(DecompositionFrontmatterSchema.shape));
     for (const required of REQUIRED_FRONTMATTER_FIELDS) {
       expect(shapeKeys.has(required)).toBe(true);
     }
@@ -109,9 +105,7 @@ describe('DecompositionFrontmatterSchema', () => {
     it(`rejects frontmatter missing required field "${field}"`, () => {
       const incomplete: Record<string, unknown> = { ...VALID_FRONTMATTER };
       delete incomplete[field];
-      expect(
-        DecompositionFrontmatterSchema.safeParse(incomplete).success,
-      ).toBe(false);
+      expect(DecompositionFrontmatterSchema.safeParse(incomplete).success).toBe(false);
     });
   }
 
@@ -143,7 +137,10 @@ describe('DecompositionFrontmatterSchema', () => {
   });
 
   it('accepts the boundary cases success_criteria length 3 and 5', () => {
-    for (const arr of [['a', 'b', 'c'], ['a', 'b', 'c', 'd', 'e']]) {
+    for (const arr of [
+      ['a', 'b', 'c'],
+      ['a', 'b', 'c', 'd', 'e'],
+    ]) {
       expect(
         DecompositionFrontmatterSchema.safeParse({
           ...VALID_FRONTMATTER,

@@ -25,9 +25,7 @@ describe('db-check command', () => {
   beforeEach(async () => {
     process.exitCode = 0;
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     tmpDir = mkdtempSync(join(tmpdir(), 'wft-dbcheck-'));
     dbPath = join(tmpDir, 'tasks.db');

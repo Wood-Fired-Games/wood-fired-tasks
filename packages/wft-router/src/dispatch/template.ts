@@ -256,7 +256,7 @@ function applyStringRules(value: string, ctx: RenderContext, path: string): stri
 function resolvePath(event: EventPayloadShape, dottedPath: string): unknown {
   const segments = dottedPath.split('.');
   // Tokens are spelled `task.<path>`; root the walk at event.task.
-  let current: unknown = (event as unknown as Record<string, unknown>).task;
+  let current: unknown = (event as unknown as Record<string, unknown>)['task'];
   for (const segment of segments) {
     if (current === null || current === undefined) {
       return undefined;

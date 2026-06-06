@@ -32,9 +32,11 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('adds tasks.created_by_user_id as nullable INTEGER', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
     const col = cols.find((c) => c.name === 'created_by_user_id');
     expect(col).toBeDefined();
     expect(col?.type).toBe('INTEGER');
@@ -42,9 +44,11 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('adds tasks.assignee_user_id as nullable INTEGER', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
     const col = cols.find((c) => c.name === 'assignee_user_id');
     expect(col).toBeDefined();
     expect(col?.type).toBe('INTEGER');
@@ -52,9 +56,11 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('adds task_comments.author_user_id as nullable INTEGER', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('task_comments')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const cols = db.prepare("PRAGMA table_info('task_comments')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
     const col = cols.find((c) => c.name === 'author_user_id');
     expect(col).toBeDefined();
     expect(col?.type).toBe('INTEGER');
@@ -62,21 +68,20 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('does NOT add tasks.claimer_user_id (Option A per RESEARCH section 1)', () => {
-    const cols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string }>;
+    const cols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).not.toContain('claimer_user_id');
   });
 
   it('FK constraints on tasks reference users(id) with ON DELETE RESTRICT for created_by_user_id and assignee_user_id', () => {
-    const fks = db
-      .prepare("PRAGMA foreign_key_list('tasks')")
-      .all() as Array<{ table: string; from: string; to: string; on_delete: string }>;
+    const fks = db.prepare("PRAGMA foreign_key_list('tasks')").all() as Array<{
+      table: string;
+      from: string;
+      to: string;
+      on_delete: string;
+    }>;
 
-    const createdByFk = fks.find(
-      (fk) => fk.from === 'created_by_user_id'
-    );
+    const createdByFk = fks.find((fk) => fk.from === 'created_by_user_id');
     expect(createdByFk).toBeDefined();
     expect(createdByFk?.table).toBe('users');
     expect(createdByFk?.to).toBe('id');
@@ -90,9 +95,12 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('FK constraint on task_comments references users(id) with ON DELETE RESTRICT for author_user_id', () => {
-    const fks = db
-      .prepare("PRAGMA foreign_key_list('task_comments')")
-      .all() as Array<{ table: string; from: string; to: string; on_delete: string }>;
+    const fks = db.prepare("PRAGMA foreign_key_list('task_comments')").all() as Array<{
+      table: string;
+      from: string;
+      to: string;
+      on_delete: string;
+    }>;
 
     const authorFk = fks.find((fk) => fk.from === 'author_user_id');
     expect(authorFk).toBeDefined();
@@ -108,24 +116,21 @@ describe('migration 009: parallel FK columns', () => {
       .prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`)
       .run('restrict-target').lastInsertRowid as number;
 
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     db.prepare(
       `INSERT INTO tasks (title, project_id, created_by, assignee_user_id)
-       VALUES (?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?)`,
     ).run('t', projectId, 'tester', userId);
 
-    expect(() =>
-      db.prepare('DELETE FROM users WHERE id = ?').run(userId)
-    ).toThrow(/FOREIGN KEY/i);
+    expect(() => db.prepare('DELETE FROM users WHERE id = ?').run(userId)).toThrow(/FOREIGN KEY/i);
   });
 
   it('creates idx_tasks_created_by_user_id', () => {
     const row = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_created_by_user_id'"
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_created_by_user_id'",
       )
       .get() as { name: string } | undefined;
     expect(row).toBeDefined();
@@ -134,7 +139,7 @@ describe('migration 009: parallel FK columns', () => {
   it('creates idx_tasks_assignee_user_id', () => {
     const row = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_assignee_user_id'"
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_assignee_user_id'",
       )
       .get() as { name: string } | undefined;
     expect(row).toBeDefined();
@@ -143,16 +148,18 @@ describe('migration 009: parallel FK columns', () => {
   it('creates idx_task_comments_author_user_id', () => {
     const row = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_task_comments_author_user_id'"
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_task_comments_author_user_id'",
       )
       .get() as { name: string } | undefined;
     expect(row).toBeDefined();
   });
 
   it('existing TEXT columns are untouched', () => {
-    const taskCols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const taskCols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
 
     const createdBy = taskCols.find((c) => c.name === 'created_by');
     expect(createdBy).toBeDefined();
@@ -164,9 +171,11 @@ describe('migration 009: parallel FK columns', () => {
     expect(assignee?.type).toBe('TEXT');
     expect(assignee?.notnull).toBe(0); // nullable per migration 005
 
-    const commentCols = db
-      .prepare("PRAGMA table_info('task_comments')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
+    const commentCols = db.prepare("PRAGMA table_info('task_comments')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
     const author = commentCols.find((c) => c.name === 'author');
     expect(author).toBeDefined();
     expect(author?.type).toBe('TEXT');
@@ -174,21 +183,16 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('inserting a row with NULL user_id columns succeeds (Phase 27 contract: columns stay NULL)', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     // Insert task with both *_user_id columns omitted (NULL).
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('t', projectId, 'tester').lastInsertRowid as number;
 
     const row = db
-      .prepare(
-        'SELECT created_by_user_id, assignee_user_id FROM tasks WHERE id = ?'
-      )
+      .prepare('SELECT created_by_user_id, assignee_user_id FROM tasks WHERE id = ?')
       .get(taskId) as {
       created_by_user_id: number | null;
       assignee_user_id: number | null;
@@ -198,9 +202,7 @@ describe('migration 009: parallel FK columns', () => {
 
     // Same for task_comments.author_user_id.
     const commentRes = db
-      .prepare(
-        `INSERT INTO task_comments (task_id, author, content) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO task_comments (task_id, author, content) VALUES (?, ?, ?)`)
       .run(taskId, 'tester', 'hi');
     const commentRow = db
       .prepare('SELECT author_user_id FROM task_comments WHERE id = ?')
@@ -209,37 +211,33 @@ describe('migration 009: parallel FK columns', () => {
   });
 
   it('inserting a tasks row referencing a non-existent users.id fails FK check', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
 
     expect(() =>
       db
         .prepare(
           `INSERT INTO tasks (title, project_id, created_by, assignee_user_id)
-           VALUES (?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?)`,
         )
-        .run('t', projectId, 'tester', 999)
+        .run('t', projectId, 'tester', 999),
     ).toThrow(/FOREIGN KEY/i);
   });
 
   it('inserting a task_comments row referencing a non-existent users.id fails FK check', () => {
-    const projectId = db
-      .prepare('INSERT INTO projects (name) VALUES (?)')
-      .run('p').lastInsertRowid as number;
+    const projectId = db.prepare('INSERT INTO projects (name) VALUES (?)').run('p')
+      .lastInsertRowid as number;
     const taskId = db
-      .prepare(
-        `INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`
-      )
+      .prepare(`INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)`)
       .run('t', projectId, 'tester').lastInsertRowid as number;
 
     expect(() =>
       db
         .prepare(
           `INSERT INTO task_comments (task_id, author, content, author_user_id)
-           VALUES (?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?)`,
         )
-        .run(taskId, 'tester', 'hi', 999)
+        .run(taskId, 'tester', 'hi', 999),
     ).toThrow(/FOREIGN KEY/i);
   });
 
@@ -248,22 +246,20 @@ describe('migration 009: parallel FK columns', () => {
     await down(db);
 
     // Columns removed.
-    const taskCols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string }>;
+    const taskCols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{ name: string }>;
     const taskColNames = taskCols.map((c) => c.name);
     expect(taskColNames).not.toContain('created_by_user_id');
     expect(taskColNames).not.toContain('assignee_user_id');
 
-    const commentCols = db
-      .prepare("PRAGMA table_info('task_comments')")
-      .all() as Array<{ name: string }>;
+    const commentCols = db.prepare("PRAGMA table_info('task_comments')").all() as Array<{
+      name: string;
+    }>;
     expect(commentCols.map((c) => c.name)).not.toContain('author_user_id');
 
     // Indexes removed.
     const indexes = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_tasks_created_by_user_id', 'idx_tasks_assignee_user_id', 'idx_task_comments_author_user_id')"
+        "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_tasks_created_by_user_id', 'idx_tasks_assignee_user_id', 'idx_task_comments_author_user_id')",
       )
       .all() as Array<{ name: string }>;
     expect(indexes).toHaveLength(0);
@@ -294,25 +290,23 @@ describe('migration 009: parallel FK columns', () => {
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
          WHERE name IN ('idx_tasks_created_by_user_id','idx_tasks_assignee_user_id','idx_task_comments_author_user_id')
-         ORDER BY name`
+         ORDER BY name`,
       )
       .all();
-    const beforeTaskCols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
-    const beforeCommentCols = db
-      .prepare("PRAGMA table_info('task_comments')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
-    const beforeTaskFks = db
-      .prepare("PRAGMA foreign_key_list('tasks')")
-      .all();
-    const beforeCommentFks = db
-      .prepare("PRAGMA foreign_key_list('task_comments')")
-      .all();
+    const beforeTaskCols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    const beforeCommentCols = db.prepare("PRAGMA table_info('task_comments')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    const beforeTaskFks = db.prepare("PRAGMA foreign_key_list('tasks')").all();
+    const beforeCommentFks = db.prepare("PRAGMA foreign_key_list('task_comments')").all();
 
-    const { up, down } = await import(
-      '../migrations/009-parallel-fk-columns.js'
-    );
+    const { up, down } = await import('../migrations/009-parallel-fk-columns.js');
     await down(db);
     await up(db);
 
@@ -320,21 +314,21 @@ describe('migration 009: parallel FK columns', () => {
       .prepare(
         `SELECT name, type, sql FROM sqlite_master
          WHERE name IN ('idx_tasks_created_by_user_id','idx_tasks_assignee_user_id','idx_task_comments_author_user_id')
-         ORDER BY name`
+         ORDER BY name`,
       )
       .all();
-    const afterTaskCols = db
-      .prepare("PRAGMA table_info('tasks')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
-    const afterCommentCols = db
-      .prepare("PRAGMA table_info('task_comments')")
-      .all() as Array<{ name: string; type: string; notnull: number }>;
-    const afterTaskFks = db
-      .prepare("PRAGMA foreign_key_list('tasks')")
-      .all();
-    const afterCommentFks = db
-      .prepare("PRAGMA foreign_key_list('task_comments')")
-      .all();
+    const afterTaskCols = db.prepare("PRAGMA table_info('tasks')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    const afterCommentCols = db.prepare("PRAGMA table_info('task_comments')").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    const afterTaskFks = db.prepare("PRAGMA foreign_key_list('tasks')").all();
+    const afterCommentFks = db.prepare("PRAGMA foreign_key_list('task_comments')").all();
 
     // Indexes survive verbatim (same DDL, same target columns).
     expect(afterIndexes).toEqual(beforeIndexes);
@@ -343,27 +337,19 @@ describe('migration 009: parallel FK columns', () => {
     // because cid (column index) shifts when SQLite rebuilds the table.
     const colKey = (c: { name: string; type: string; notnull: number }) =>
       `${c.name}:${c.type}:${c.notnull}`;
-    expect(afterTaskCols.map(colKey).sort()).toEqual(
-      beforeTaskCols.map(colKey).sort()
-    );
-    expect(afterCommentCols.map(colKey).sort()).toEqual(
-      beforeCommentCols.map(colKey).sort()
-    );
+    expect(afterTaskCols.map(colKey).sort()).toEqual(beforeTaskCols.map(colKey).sort());
+    expect(afterCommentCols.map(colKey).sort()).toEqual(beforeCommentCols.map(colKey).sort());
 
     // FK targets and ON DELETE actions are preserved.
-    const fkKey = (fk: {
-      table: string;
-      from: string;
-      to: string;
-      on_delete: string;
-    }) => `${fk.from}->${fk.table}.${fk.to}:${fk.on_delete}`;
+    const fkKey = (fk: { table: string; from: string; to: string; on_delete: string }) =>
+      `${fk.from}->${fk.table}.${fk.to}:${fk.on_delete}`;
     const fkKeysSorted = (
       rows: Array<{
         table: string;
         from: string;
         to: string;
         on_delete: string;
-      }>
+      }>,
     ) => rows.map(fkKey).sort();
     expect(
       fkKeysSorted(
@@ -372,8 +358,8 @@ describe('migration 009: parallel FK columns', () => {
           from: string;
           to: string;
           on_delete: string;
-        }>
-      )
+        }>,
+      ),
     ).toEqual(
       fkKeysSorted(
         beforeTaskFks as Array<{
@@ -381,8 +367,8 @@ describe('migration 009: parallel FK columns', () => {
           from: string;
           to: string;
           on_delete: string;
-        }>
-      )
+        }>,
+      ),
     );
     expect(
       fkKeysSorted(
@@ -391,8 +377,8 @@ describe('migration 009: parallel FK columns', () => {
           from: string;
           to: string;
           on_delete: string;
-        }>
-      )
+        }>,
+      ),
     ).toEqual(
       fkKeysSorted(
         beforeCommentFks as Array<{
@@ -400,8 +386,8 @@ describe('migration 009: parallel FK columns', () => {
           from: string;
           to: string;
           on_delete: string;
-        }>
-      )
+        }>,
+      ),
     );
   });
 });

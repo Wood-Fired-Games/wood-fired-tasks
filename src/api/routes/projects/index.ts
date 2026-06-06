@@ -1,13 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import {
-  CreateProjectSchema,
-  UpdateProjectSchema,
-} from '../../../schemas/task.schema.js';
-import {
-  ProjectResponseSchema,
-  ProjectListPaginatedResponseSchema,
-} from './schemas.js';
+import { CreateProjectSchema, UpdateProjectSchema } from '../../../schemas/task.schema.js';
+import { ProjectResponseSchema, ProjectListPaginatedResponseSchema } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
 import projectWsjfRoutes from './wsjf.js';
@@ -35,7 +29,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const project = fastify.projectService.createProject(request.body);
       return reply.code(201).send(project);
-    }
+    },
   );
 
   // GET / - List projects (paginated)
@@ -47,8 +41,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       schema: {
         tags: ['projects'],
-        description:
-          'List projects (paginated). Returns `{ data, total, limit, offset }`.',
+        description: 'List projects (paginated). Returns `{ data, total, limit, offset }`.',
         querystring: QueryProjectListSchema,
         response: {
           200: ProjectListPaginatedResponseSchema,
@@ -58,7 +51,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const result = fastify.projectService.listProjectsPaginated(request.query);
       return reply.send(result);
-    }
+    },
   );
 
   // GET /:id - Get project by ID
@@ -77,7 +70,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const project = fastify.projectService.getProject(request.params.id);
       return reply.send(project);
-    }
+    },
   );
 
   // PUT /:id - Update project
@@ -97,7 +90,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const project = fastify.projectService.updateProject(request.params.id, request.body);
       return reply.send(project);
-    }
+    },
   );
 
   // GET /:id/dependency-graph — task #342, dashboard tree-view backend.
@@ -131,7 +124,7 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       fastify.projectService.deleteProject(request.params.id);
       return reply.code(204).send(null);
-    }
+    },
   );
 };
 

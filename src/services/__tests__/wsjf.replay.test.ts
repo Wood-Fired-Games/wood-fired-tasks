@@ -28,17 +28,10 @@ import {
   type ScoreSubmission,
   type ValidateContext,
 } from '../wsjf.service.js';
-import type {
-  Fib,
-  WsjfClassification,
-  WsjfComponents,
-  WsjfFeatures,
-} from '../../types/wsjf.js';
+import type { Fib, WsjfClassification, WsjfComponents, WsjfFeatures } from '../../types/wsjf.js';
 import type { ValueCharter } from '../../types/task.js';
 
-const FIXTURE_DIR = fileURLToPath(
-  new URL('../../../tests/fixtures/wsjf-golden/', import.meta.url),
-);
+const FIXTURE_DIR = fileURLToPath(new URL('../../../tests/fixtures/wsjf-golden/', import.meta.url));
 const readFixture = <T>(name: string): T =>
   JSON.parse(readFileSync(`${FIXTURE_DIR}${name}`, 'utf8')) as T;
 
@@ -68,9 +61,7 @@ function recomputeComponents(
 ): WsjfComponents {
   let weight: Fib = 1;
   if (useCharter && classification.themeName !== null) {
-    const theme = charter.value_themes.find(
-      (t) => t.name === classification.themeName,
-    );
+    const theme = charter.value_themes.find((t) => t.name === classification.themeName);
     if (theme) weight = theme.weight as Fib;
   }
   const value = ubvFromThemeAlignment(weight, classification.alignment);
@@ -112,18 +103,13 @@ describe('wsjf replay (task #636)', () => {
     });
 
     it('function-recomputed score equals the stored wsjf_score exactly', () => {
-      const components = recomputeComponents(
-        c.classification,
-        c.features,
-        c.useCharter,
-      );
+      const components = recomputeComponents(c.classification, c.features, c.useCharter);
       const replayed = computeWsjf(components);
       expect(replayed).toBe(c.wsjfScore);
     });
 
     it('both recompute paths agree and match the stored buckets', () => {
-      const gate = validateScoreSubmission(submission, ctx)
-        .components as WsjfComponents;
+      const gate = validateScoreSubmission(submission, ctx).components as WsjfComponents;
       const fns = recomputeComponents(c.classification, c.features, c.useCharter);
       expect(gate).toEqual(fns);
       expect(gate).toEqual(c.expectedComponents);

@@ -54,8 +54,7 @@ function recordingFetch(
 ): { fetchImpl: typeof fetch; calls: FetchCall[] } {
   const calls: FetchCall[] = [];
   const fetchImpl = ((url: string | URL | Request, init?: RequestInit) => {
-    const urlStr =
-      typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
     const headers: Record<string, string> = {};
     const h = init?.headers;
     if (h instanceof Headers) {

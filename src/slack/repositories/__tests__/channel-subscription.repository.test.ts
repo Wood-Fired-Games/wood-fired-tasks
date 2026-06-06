@@ -39,7 +39,7 @@ describe('SlackChannelSubscriptionRepository', () => {
     const rows = repo.findByChannel('C001');
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.event_type)).toEqual(
-      expect.arrayContaining(['task.created', 'task.status_changed'])
+      expect.arrayContaining(['task.created', 'task.status_changed']),
     );
   });
 

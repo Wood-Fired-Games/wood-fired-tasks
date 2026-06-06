@@ -2,6 +2,12 @@ import { env } from '../config/env.js';
 import { withSpinner } from '../output/spinner.js';
 import { resolveAuth } from '../auth/credentials.js';
 import { NotAuthenticatedError } from './errors.js';
+import {
+  parseTaskResponse,
+  parseProjectResponse,
+  parseTaskListResponse,
+  parseProjectListResponse,
+} from '../../api/api-response.js';
 import type {
   TaskResponse,
   CreateTaskInput,
@@ -26,10 +32,21 @@ import type {
  * or a bare array (older servers that pre-date pagination), and normalize
  * to a plain `T[]`. CLI list commands operate on arrays for terminal
  * rendering — `total` is consulted separately for the JSON envelope.
+ *
+ * NOTE (task #774): task / project / subtask lists no longer use this loose
+ * normalizer — they go through `parseTaskListResponse` /
+ * `parseProjectListResponse`, which schema-validate every row. This helper now
+ * serves ONLY the deliberately-deferred comment list paths (see the comment
+ * section below). Its silent "unexpected shape → []" fallback is retained for
+ * those paths' backward compatibility.
  */
 function unwrapPage<T>(payload: PaginatedResponse<T> | T[]): T[] {
   if (Array.isArray(payload)) return payload;
-  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    Array.isArray((payload as PaginatedResponse<T>).data)
+  ) {
     return (payload as PaginatedResponse<T>).data;
   }
   // Unexpected shape: behave as empty rather than crashing the CLI.
@@ -45,7 +62,11 @@ function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
   if (Array.isArray(payload)) {
     return { data: payload, total: payload.length, limit: payload.length, offset: 0 };
   }
-  if (payload && typeof payload === 'object' && Array.isArray((payload as PaginatedResponse<T>).data)) {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    Array.isArray((payload as PaginatedResponse<T>).data)
+  ) {
     return payload as PaginatedResponse<T>;
   }
   return { data: [], total: 0, limit: 0, offset: 0 };
@@ -61,11 +82,13 @@ export class ApiClientError extends Error {
     message: string,
     public statusCode: number,
     public apiError: ApiErrorResponse,
-    requestId?: string
+    requestId?: string,
   ) {
     super(message);
     this.name = 'ApiClientError';
-    this.requestId = requestId;
+    if (requestId !== undefined) {
+      this.requestId = requestId;
+    }
   }
 }
 
@@ -134,7 +157,7 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
         errorBody.message || `Request failed with status ${response.status}`,
         response.status,
         errorBody,
-        requestId
+        requestId,
       );
     }
 
@@ -160,10 +183,14 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
  * Create a new task.
  */
 export async function createTask(data: CreateTaskInput): Promise<TaskResponse> {
-  return apiRequest<TaskResponse>('/api/v1/tasks', {
+  const endpoint = '/api/v1/tasks';
+  const payload = await apiRequest<unknown>(endpoint, {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  // Trust boundary: validate the server's task body against the shared Zod
+  // schema (task #774) rather than blindly casting `response.json() as T`.
+  return parseTaskResponse(payload, `POST ${endpoint}`);
 }
 
 /**
@@ -178,19 +205,21 @@ export async function createTask(data: CreateTaskInput): Promise<TaskResponse> {
  */
 export async function listTasks(filters?: TaskFilters): Promise<TaskResponse[]> {
   const endpoint = buildTaskListEndpoint(filters);
-  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
-  return unwrapPage(payload);
+  const payload = await apiRequest<unknown>(endpoint);
+  // Trust boundary (task #774): validate every row + envelope shape.
+  return parseTaskListResponse(payload, `GET ${endpoint}`).data;
 }
 
 /**
  * List tasks and return the full pagination envelope.
  */
 export async function listTasksPaginated(
-  filters?: TaskFilters
+  filters?: TaskFilters,
 ): Promise<PaginatedResponse<TaskResponse>> {
   const endpoint = buildTaskListEndpoint(filters);
-  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
-  return asPage(payload);
+  const payload = await apiRequest<unknown>(endpoint);
+  // Trust boundary (task #774): validate every row + envelope shape.
+  return parseTaskListResponse(payload, `GET ${endpoint}`);
 }
 
 function buildTaskListEndpoint(filters?: TaskFilters): string {
@@ -214,17 +243,21 @@ function buildTaskListEndpoint(filters?: TaskFilters): string {
  * Get a single task by ID.
  */
 export async function getTask(id: number): Promise<TaskResponse> {
-  return apiRequest<TaskResponse>(`/api/v1/tasks/${id}`);
+  const endpoint = `/api/v1/tasks/${id}`;
+  const payload = await apiRequest<unknown>(endpoint);
+  return parseTaskResponse(payload, `GET ${endpoint}`);
 }
 
 /**
  * Update a task by ID.
  */
 export async function updateTask(id: number, data: UpdateTaskInput): Promise<TaskResponse> {
-  return apiRequest<TaskResponse>(`/api/v1/tasks/${id}`, {
+  const endpoint = `/api/v1/tasks/${id}`;
+  const payload = await apiRequest<unknown>(endpoint, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return parseTaskResponse(payload, `PUT ${endpoint}`);
 }
 
 /**
@@ -242,32 +275,34 @@ export async function deleteTask(id: number): Promise<void> {
  * Create a new project.
  */
 export async function createProject(data: CreateProjectInput): Promise<ProjectResponse> {
-  return apiRequest<ProjectResponse>('/api/v1/projects', {
+  const endpoint = '/api/v1/projects';
+  const payload = await apiRequest<unknown>(endpoint, {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return parseProjectResponse(payload, `POST ${endpoint}`);
 }
 
 /**
  * List projects (paginated). Returns the rows only.
  */
-export async function listProjects(
-  pagination?: PaginationParams
-): Promise<ProjectResponse[]> {
+export async function listProjects(pagination?: PaginationParams): Promise<ProjectResponse[]> {
   const endpoint = buildProjectListEndpoint(pagination);
-  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
-  return unwrapPage(payload);
+  const payload = await apiRequest<unknown>(endpoint);
+  // Trust boundary (task #774): validate every row + envelope shape.
+  return parseProjectListResponse(payload, `GET ${endpoint}`).data;
 }
 
 /**
  * List projects and return the full pagination envelope.
  */
 export async function listProjectsPaginated(
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<PaginatedResponse<ProjectResponse>> {
   const endpoint = buildProjectListEndpoint(pagination);
-  const payload = await apiRequest<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(endpoint);
-  return asPage(payload);
+  const payload = await apiRequest<unknown>(endpoint);
+  // Trust boundary (task #774): validate every row + envelope shape.
+  return parseProjectListResponse(payload, `GET ${endpoint}`);
 }
 
 function buildProjectListEndpoint(pagination?: PaginationParams): string {
@@ -286,17 +321,24 @@ function buildProjectListEndpoint(pagination?: PaginationParams): string {
  * Get a single project by ID.
  */
 export async function getProject(id: number): Promise<ProjectResponse> {
-  return apiRequest<ProjectResponse>(`/api/v1/projects/${id}`);
+  const endpoint = `/api/v1/projects/${id}`;
+  const payload = await apiRequest<unknown>(endpoint);
+  return parseProjectResponse(payload, `GET ${endpoint}`);
 }
 
 /**
  * Update a project by ID.
  */
-export async function updateProject(id: number, data: UpdateProjectInput): Promise<ProjectResponse> {
-  return apiRequest<ProjectResponse>(`/api/v1/projects/${id}`, {
+export async function updateProject(
+  id: number,
+  data: UpdateProjectInput,
+): Promise<ProjectResponse> {
+  const endpoint = `/api/v1/projects/${id}`;
+  const payload = await apiRequest<unknown>(endpoint, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return parseProjectResponse(payload, `PUT ${endpoint}`);
 }
 
 /**
@@ -315,7 +357,7 @@ export async function deleteProject(id: number): Promise<void> {
  */
 export async function addDependency(
   taskId: number,
-  data: CreateDependencyInput
+  data: CreateDependencyInput,
 ): Promise<DependencyResponse> {
   return apiRequest<DependencyResponse>(`/api/v1/tasks/${taskId}/dependencies`, {
     method: 'POST',
@@ -326,10 +368,7 @@ export async function addDependency(
 /**
  * Remove a dependency relationship.
  */
-export async function removeDependency(
-  taskId: number,
-  blocksTaskId: number
-): Promise<void> {
+export async function removeDependency(taskId: number, blocksTaskId: number): Promise<void> {
   await apiRequest<void>(`/api/v1/tasks/${taskId}/dependencies/${blocksTaskId}`, {
     method: 'DELETE',
   });
@@ -343,13 +382,21 @@ export async function getDependencies(taskId: number): Promise<DependencyListRes
 }
 
 // ── Comment management functions ────────────────────────────
+//
+// DEFERRED (task #774): comment responses are NOT yet schema-validated at the
+// client boundary — they still cast `response.json() as CommentResponse` and
+// route lists through the loose `unwrapPage`/`asPage` helpers below. Comments
+// are a lower-risk, lower-traffic shape (5 flat fields, no enums) than
+// task/project responses, so runtime validation was scoped out per the task's
+// "highest-risk adapters only" directive. When tightened, mirror the
+// `parseTaskResponse` pattern with a `CommentResponseSchema`.
 
 /**
  * Add a comment to a task.
  */
 export async function addComment(
   taskId: number,
-  data: CreateCommentInput
+  data: CreateCommentInput,
 ): Promise<CommentResponse> {
   return apiRequest<CommentResponse>(`/api/v1/tasks/${taskId}/comments`, {
     method: 'POST',
@@ -362,10 +409,12 @@ export async function addComment(
  */
 export async function getComments(
   taskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<CommentResponse[]> {
   const endpoint = buildCommentsEndpoint(taskId, pagination);
-  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(
+    endpoint,
+  );
   return unwrapPage(payload);
 }
 
@@ -374,10 +423,12 @@ export async function getComments(
  */
 export async function getCommentsPaginated(
   taskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<PaginatedResponse<CommentResponse>> {
   const endpoint = buildCommentsEndpoint(taskId, pagination);
-  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(endpoint);
+  const payload = await apiRequest<PaginatedResponse<CommentResponse> | CommentResponse[]>(
+    endpoint,
+  );
   return asPage(payload);
 }
 
@@ -412,12 +463,14 @@ export async function deleteComment(taskId: number, commentId: number): Promise<
  */
 export async function createSubtask(
   parentTaskId: number,
-  data: CreateTaskInput
+  data: CreateTaskInput,
 ): Promise<TaskResponse> {
-  return apiRequest<TaskResponse>('/api/v1/tasks', {
+  const endpoint = '/api/v1/tasks';
+  const payload = await apiRequest<unknown>(endpoint, {
     method: 'POST',
     body: JSON.stringify({ ...data, parent_task_id: parentTaskId }),
   });
+  return parseTaskResponse(payload, `POST ${endpoint} (subtask)`);
 }
 
 /**
@@ -425,11 +478,12 @@ export async function createSubtask(
  */
 export async function getSubtasks(
   parentTaskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<TaskResponse[]> {
   const endpoint = buildSubtasksEndpoint(parentTaskId, pagination);
-  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
-  return unwrapPage(payload);
+  const payload = await apiRequest<unknown>(endpoint);
+  // Trust boundary (task #774): validate every row + envelope shape.
+  return parseTaskListResponse(payload, `GET ${endpoint}`).data;
 }
 
 /**
@@ -437,11 +491,12 @@ export async function getSubtasks(
  */
 export async function getSubtasksPaginated(
   parentTaskId: number,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
 ): Promise<PaginatedResponse<TaskResponse>> {
   const endpoint = buildSubtasksEndpoint(parentTaskId, pagination);
-  const payload = await apiRequest<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
-  return asPage(payload);
+  const payload = await apiRequest<unknown>(endpoint);
+  // Trust boundary (task #774): validate every row + envelope shape.
+  return parseTaskListResponse(payload, `GET ${endpoint}`);
 }
 
 function buildSubtasksEndpoint(parentTaskId: number, pagination?: PaginationParams): string {
@@ -465,17 +520,19 @@ function buildSubtasksEndpoint(parentTaskId: number, pagination?: PaginationPara
 export async function claimTask(
   taskId: number,
   assignee: string,
-  idempotencyKey?: string
+  idempotencyKey?: string,
 ): Promise<TaskResponse> {
   const headers: Record<string, string> = {};
   if (idempotencyKey) {
     headers['X-Idempotency-Key'] = idempotencyKey;
   }
-  return apiRequest<TaskResponse>(`/api/v1/tasks/${taskId}/claim`, {
+  const endpoint = `/api/v1/tasks/${taskId}/claim`;
+  const payload = await apiRequest<unknown>(endpoint, {
     method: 'POST',
     body: JSON.stringify({ assignee }),
     headers,
   });
+  return parseTaskResponse(payload, `POST ${endpoint}`);
 }
 
 // ── Health check functions ──────────────────────────────────
@@ -494,9 +551,6 @@ export async function checkHealth(): Promise<HealthResponse> {
  * Wrap an API call with a spinner.
  * The spinner description should match the operation (e.g., "Fetching tasks...").
  */
-export async function withApiSpinner<T>(
-  message: string,
-  fn: () => Promise<T>
-): Promise<T> {
+export async function withApiSpinner<T>(message: string, fn: () => Promise<T>): Promise<T> {
   return withSpinner(message, fn);
 }

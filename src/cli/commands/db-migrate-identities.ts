@@ -78,23 +78,15 @@ function loadAliasMap(path: string): Record<string, number> {
   try {
     raw = readFileSync(path, 'utf8');
   } catch (err) {
-    throw new Error(
-      `--alias-map: cannot read file '${path}': ${(err as Error).message}`,
-    );
+    throw new Error(`--alias-map: cannot read file '${path}': ${(err as Error).message}`);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    throw new Error(
-      `--alias-map: file '${path}' is not valid JSON: ${(err as Error).message}`,
-    );
+    throw new Error(`--alias-map: file '${path}' is not valid JSON: ${(err as Error).message}`);
   }
-  if (
-    parsed === null ||
-    typeof parsed !== 'object' ||
-    Array.isArray(parsed)
-  ) {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(
       `--alias-map: file '${path}' must contain a flat JSON object mapping legacy values to user IDs`,
     );
@@ -136,9 +128,7 @@ function validateAliasMapUserIdsExist(
 /** Look up the lowest-id `is_legacy=1` user, or null if none seeded. */
 function findFirstLegacyUserId(db: Database.Database): number | null {
   const row = db
-    .prepare(
-      `SELECT id FROM users WHERE is_legacy = 1 ORDER BY id ASC LIMIT 1`,
-    )
+    .prepare(`SELECT id FROM users WHERE is_legacy = 1 ORDER BY id ASC LIMIT 1`)
     .get() as { id: number } | undefined;
   return row?.id ?? null;
 }
@@ -156,7 +146,10 @@ function resolveValue(
 ): { userId: number | null; source: ResolvedMapping['source'] } {
   // 1. alias-map (highest priority).
   if (aliasMap && Object.prototype.hasOwnProperty.call(aliasMap, value)) {
-    return { userId: aliasMap[value], source: 'alias-map' };
+    const aliasId = aliasMap[value];
+    if (aliasId !== undefined) {
+      return { userId: aliasId, source: 'alias-map' };
+    }
   }
 
   // 2. Email match — guarded so findByEmail's null/empty throw is never hit.
@@ -173,9 +166,9 @@ function resolveValue(
 
   // 3. display_name exact match.
   if (value.length > 0) {
-    const row = db
-      .prepare(`SELECT id FROM users WHERE display_name = ? LIMIT 1`)
-      .get(value) as { id: number } | undefined;
+    const row = db.prepare(`SELECT id FROM users WHERE display_name = ? LIMIT 1`).get(value) as
+      | { id: number }
+      | undefined;
     if (row) return { userId: row.id, source: 'display_name' };
   }
 
@@ -216,14 +209,7 @@ function buildPlanForTable(
     .all() as Array<{ value: string; row_count: number }>;
 
   const mappings: ResolvedMapping[] = rows.map((r) => {
-    const resolution = resolveValue(
-      db,
-      userRepo,
-      r.value,
-      aliasMap,
-      fallbackUserId,
-      strategy,
-    );
+    const resolution = resolveValue(db, userRepo, r.value, aliasMap, fallbackUserId, strategy);
     return {
       value: r.value,
       userId: resolution.userId,
@@ -237,25 +223,22 @@ function buildPlanForTable(
 }
 
 /** Render a single mapping into a human-readable plan line. */
-function renderMappingLine(
-  m: ResolvedMapping,
-  userLabelMap: Map<number, string>,
-): string {
+function renderMappingLine(m: ResolvedMapping, userLabelMap: Map<number, string>): string {
   const value = JSON.stringify(m.value);
   if (m.userId === null) {
     return `    ${value.padEnd(25)} → SKIPPED (no match)               ${m.rowCount} rows`;
   }
   const label = userLabelMap.get(m.userId) ?? `user-${m.userId}`;
-  const sourceTag =
-    m.source === 'fallback-legacy' ? ` [legacy fallback]` : '';
+  const sourceTag = m.source === 'fallback-legacy' ? ` [legacy fallback]` : '';
   return `    ${value.padEnd(25)} → user ${m.userId} (${label})${sourceTag}    ${m.rowCount} rows`;
 }
 
 /** Build a `users.id → display_name` lookup for plan rendering. */
 function buildUserLabelMap(db: Database.Database): Map<number, string> {
-  const rows = db
-    .prepare(`SELECT id, display_name FROM users`)
-    .all() as Array<{ id: number; display_name: string }>;
+  const rows = db.prepare(`SELECT id, display_name FROM users`).all() as Array<{
+    id: number;
+    display_name: string;
+  }>;
   return new Map(rows.map((r) => [r.id, r.display_name]));
 }
 
@@ -325,10 +308,7 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
   .description(
     'Backfill identity FK columns from legacy TEXT columns. Dry-run by default; --commit applies. Unmatched values default to the first-seeded legacy user (--user-fallback legacy). Override via --alias-map or --user-fallback skip.',
   )
-  .option(
-    '--alias-map <path>',
-    'JSON file mapping legacy TEXT values to user IDs',
-  )
+  .option('--alias-map <path>', 'JSON file mapping legacy TEXT values to user IDs')
   .option('--commit', 'Apply changes; default is dry-run')
   .option(
     '--user-fallback <strategy>',
@@ -352,7 +332,7 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
       userFallback?: string;
       limit?: number;
     }) => {
-      const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+      const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
       const db = initDatabase(dbPath);
       try {
         // WR-05: dry-run is supposed to be side-effect-free. Previously
@@ -369,8 +349,7 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
         }
 
         // Validate --user-fallback enum.
-        const strategy: FallbackStrategy =
-          opts.userFallback === 'skip' ? 'skip' : 'legacy';
+        const strategy: FallbackStrategy = opts.userFallback === 'skip' ? 'skip' : 'legacy';
         if (
           opts.userFallback !== undefined &&
           opts.userFallback !== 'skip' &&
@@ -454,12 +433,7 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
         // --commit: per-table transactions.
         let appliedTotal = 0;
         for (const { spec, mappings } of tablePlans) {
-          const { rowsUpdated } = applyMappings(
-            db,
-            spec,
-            mappings,
-            opts.limit,
-          );
+          const { rowsUpdated } = applyMappings(db, spec, mappings, opts.limit);
           if (rowsUpdated > 0) {
             console.log(
               `  Updated ${rowsUpdated} rows in ${spec.table} (${spec.textCol} → ${spec.fkCol})`,

@@ -32,7 +32,7 @@ export const subtaskCreateCommand = new Command('subtask-create')
       // Check if JSON mode (global flag from program)
       const program = subtaskCreateCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Fetch parent task to inherit project_id
       const parentTask = await getTask(parentId);
@@ -45,13 +45,13 @@ export const subtaskCreateCommand = new Command('subtask-create')
       if (!VALID_PRIORITIES.includes(options.priority)) {
         if (isJsonMode) {
           process.stderr.write(
-            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}\n`
+            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}\n`,
           );
         } else {
           console.error(
             colorError(
-              `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
-            )
+              `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`,
+            ),
           );
         }
         process.exitCode = 1;

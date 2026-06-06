@@ -61,9 +61,7 @@ const TEXT_COLUMNS = [
 export async function up(db: Database.Database): Promise<void> {
   db.transaction(() => {
     for (const { name, check } of INTEGER_COLUMNS) {
-      db.exec(
-        `ALTER TABLE tasks ADD COLUMN ${name} INTEGER CHECK (${check})`
-      );
+      db.exec(`ALTER TABLE tasks ADD COLUMN ${name} INTEGER CHECK (${check})`);
     }
     for (const name of TEXT_COLUMNS) {
       db.exec(`ALTER TABLE tasks ADD COLUMN ${name} TEXT`);

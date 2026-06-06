@@ -138,22 +138,16 @@ describe('/tasks:decompose §9 verification fixtures (#321)', () => {
     }
 
     it('skill documents the whole-word case-insensitive regex covering all three', () => {
-      expect(
-        skill.includes('\\b(deploy|migrate production|delete data)\\b'),
-      ).toBe(true);
+      expect(skill.includes('\\b(deploy|migrate production|delete data)\\b')).toBe(true);
     });
 
     it('refusal fires in Step 1 BEFORE any subagent dispatch (no Explore/planner/critic)', () => {
       // The load-bearing property: the refusal returns before dispatch — the
       // skill must say so, and Guardrail 4 must be a Step-1-input rule.
-      expect(/before any subagent dispatch|BEFORE any.*dispatch/i.test(skill)).toBe(
-        true,
-      );
+      expect(/before any subagent dispatch|BEFORE any.*dispatch/i.test(skill)).toBe(true);
       // The refusal explicitly forbids dispatching the recon/planner/critic.
       expect(
-        /do \*\*not\*\* dispatch|Do \*\*not\*\* dispatch|not dispatch the Explore/i.test(
-          skill,
-        ),
+        /do \*\*not\*\* dispatch|Do \*\*not\*\* dispatch|not dispatch the Explore/i.test(skill),
       ).toBe(true);
     });
 

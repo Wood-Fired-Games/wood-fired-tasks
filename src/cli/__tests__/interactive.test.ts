@@ -85,7 +85,7 @@ describe('promptForMissing', () => {
     process.argv = ['node', 'tasks', '--no-input', 'create'];
     const { promptForMissing } = await import('../prompts/interactive.js');
     await expect(promptForMissing('title', undefined)).rejects.toThrow(
-      /Missing required field: title/
+      /Missing required field: title/,
     );
   });
 
@@ -93,7 +93,7 @@ describe('promptForMissing', () => {
     setTTY(false);
     const { promptForMissing } = await import('../prompts/interactive.js');
     await expect(promptForMissing('description', undefined)).rejects.toThrow(
-      /Missing required field: description/
+      /Missing required field: description/,
     );
   });
 
@@ -117,9 +117,7 @@ describe('promptForMissing', () => {
 
   it('forwards a validator that flags invalid values', async () => {
     setTTY(true);
-    mockText.mockImplementation(async (opts: {
-      validate?: (v: string) => string | undefined;
-    }) => {
+    mockText.mockImplementation(async (opts: { validate?: (v: string) => string | undefined }) => {
       // Simulate clack invoking the validator with a bad string then a good one.
       const badResult = opts.validate?.('');
       expect(badResult).toMatch(/Invalid value for/);
@@ -138,9 +136,7 @@ describe('promptForMissing', () => {
     setTTY(true);
     mockText.mockResolvedValue(Symbol('clack.cancel'));
     const { promptForMissing } = await import('../prompts/interactive.js');
-    await expect(promptForMissing('x', undefined)).rejects.toThrow(
-      /Operation cancelled by user/
-    );
+    await expect(promptForMissing('x', undefined)).rejects.toThrow(/Operation cancelled by user/);
   });
 });
 
@@ -169,9 +165,7 @@ describe('confirmAction', () => {
   it('throws when no TTY and no --force', async () => {
     setTTY(false);
     const { confirmAction } = await import('../prompts/interactive.js');
-    await expect(confirmAction('Sure?')).rejects.toThrow(
-      /Confirmation required/
-    );
+    await expect(confirmAction('Sure?')).rejects.toThrow(/Confirmation required/);
   });
 
   it('prompts the user and returns the result when interactive', async () => {
@@ -187,9 +181,7 @@ describe('confirmAction', () => {
     setTTY(true);
     mockConfirm.mockResolvedValue(Symbol('clack.cancel'));
     const { confirmAction } = await import('../prompts/interactive.js');
-    await expect(confirmAction('?')).rejects.toThrow(
-      /Operation cancelled by user/
-    );
+    await expect(confirmAction('?')).rejects.toThrow(/Operation cancelled by user/);
   });
 
   it('forwards default value to clack', async () => {

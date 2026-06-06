@@ -43,7 +43,7 @@ export const loginCommand = new Command('login')
     '--token-name <name>',
     'Name for the minted PAT (currently advisory; reserved for v1.7 explicit naming)',
   )
-  .option('--no-browser', "Skip auto-opening the verification URL in a browser")
+  .option('--no-browser', 'Skip auto-opening the verification URL in a browser')
   .option(
     '--server <url>',
     'Override API_BASE_URL for this invocation (stored in credentials file)',
@@ -53,7 +53,7 @@ export const loginCommand = new Command('login')
     // the root program in src/cli/bin/{tasks,tasks-client}.ts).
     const program = loginCommand.parent;
     const globalOpts = program?.optsWithGlobals() ?? {};
-    const isJson: boolean = globalOpts.json === true;
+    const isJson: boolean = globalOpts['json'] === true;
 
     // 1. Validate base URL.
     const baseUrl: string = opts.server ?? env.API_BASE_URL;
@@ -71,7 +71,7 @@ export const loginCommand = new Command('login')
       return;
     }
 
-    const clientId: string = process.env.OIDC_CLIENT_ID ?? 'wft-cli';
+    const clientId: string = process.env['OIDC_CLIENT_ID'] ?? 'wft-cli';
     const hostname: string = os.hostname();
 
     // 2. Request a device_code from the server.
@@ -139,9 +139,7 @@ export const loginCommand = new Command('login')
         if (opened) {
           process.stderr.write('(Opening browser...)\n');
         } else {
-          process.stderr.write(
-            '(Could not auto-open browser. Open the URL above manually.)\n',
-          );
+          process.stderr.write('(Could not auto-open browser. Open the URL above manually.)\n');
         }
       }
     }

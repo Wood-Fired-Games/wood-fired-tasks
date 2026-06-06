@@ -77,7 +77,7 @@ describe('TaskService', () => {
         taskService.createTask({
           project_id: testProjectId,
           created_by: 'user',
-        })
+        }),
       ).toThrow(ValidationError);
 
       try {
@@ -97,7 +97,7 @@ describe('TaskService', () => {
         taskService.createTask({
           title: 'Test',
           project_id: testProjectId,
-        })
+        }),
       ).toThrow(ValidationError);
 
       try {
@@ -118,7 +118,7 @@ describe('TaskService', () => {
           title: 'Test',
           project_id: 999,
           created_by: 'user',
-        })
+        }),
       ).toThrow(BusinessError);
 
       try {
@@ -153,7 +153,7 @@ describe('TaskService', () => {
           project_id: testProjectId,
           created_by: 'user',
           due_date: '2024-12-31', // Not ISO8601 datetime
-        })
+        }),
       ).toThrow(ValidationError);
     });
   });
@@ -387,7 +387,7 @@ describe('TaskService', () => {
       taskService.updateTask(task.id, { status: 'done' });
 
       expect(() => taskService.updateTask(task.id, { status: 'in_progress' })).toThrow(
-        BusinessError
+        BusinessError,
       );
     });
 
@@ -414,7 +414,7 @@ describe('TaskService', () => {
       taskService.updateTask(task.id, { status: 'closed' });
 
       expect(() => taskService.updateTask(task.id, { status: 'in_progress' })).toThrow(
-        BusinessError
+        BusinessError,
       );
     });
 
@@ -535,13 +535,13 @@ describe('TaskService', () => {
     it('listTasks with assignee filter', () => {
       const tasks = taskService.listTasks({ assignee: 'alice' });
       expect(tasks.length).toBe(2);
-      expect(tasks.every(t => t.assignee === 'alice')).toBe(true);
+      expect(tasks.every((t) => t.assignee === 'alice')).toBe(true);
     });
 
     it('listTasks with tags filter', () => {
       const tasks = taskService.listTasks({ tags: ['bug'] });
       expect(tasks.length).toBe(2);
-      expect(tasks.every(t => t.tags.includes('bug'))).toBe(true);
+      expect(tasks.every((t) => t.tags.includes('bug'))).toBe(true);
     });
 
     it('listTasks with date range filter', () => {
@@ -624,9 +624,7 @@ describe('TaskService', () => {
 
       for (const { name, input } of MALFORMED_INPUTS) {
         it(`listTasks throws ValidationError on ${name}`, () => {
-          expect(() => taskService.listTasks({ search: input })).toThrow(
-            ValidationError
-          );
+          expect(() => taskService.listTasks({ search: input })).toThrow(ValidationError);
 
           try {
             taskService.listTasks({ search: input });
@@ -646,9 +644,7 @@ describe('TaskService', () => {
         });
 
         it(`countTasks throws ValidationError on ${name}`, () => {
-          expect(() => taskService.countTasks({ search: input })).toThrow(
-            ValidationError
-          );
+          expect(() => taskService.countTasks({ search: input })).toThrow(ValidationError);
         });
 
         it(`searchTasks throws ValidationError on ${name}`, () => {
@@ -675,8 +671,9 @@ describe('TaskService', () => {
       it('accepts search with exactly 32 terms', () => {
         // Use single-letter terms so the joined string also fits inside the
         // 200-char cap that runs alongside the 32-term cap.
-        const exactly32 = Array.from({ length: 32 }, (_, i) =>
-          String.fromCharCode(97 + (i % 26)) + i
+        const exactly32 = Array.from(
+          { length: 32 },
+          (_, i) => String.fromCharCode(97 + (i % 26)) + i,
         ).join(' ');
         // Should NOT throw — even though no rows match, the query must parse.
         expect(() => taskService.listTasks({ search: exactly32 })).not.toThrow();
@@ -715,7 +712,7 @@ describe('TaskService', () => {
           project_id: testProjectId,
           parent_task_id: 9999,
           created_by: 'user',
-        })
+        }),
       ).toThrow(BusinessError);
 
       try {
@@ -750,7 +747,7 @@ describe('TaskService', () => {
           project_id: testProjectId,
           parent_task_id: taskInProject2.id,
           created_by: 'user',
-        })
+        }),
       ).toThrow(BusinessError);
 
       try {
@@ -848,7 +845,7 @@ describe('TaskService', () => {
         eventType: 'task.created',
         timestamp: expect.any(String),
         data: task,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       emitSpy.mockRestore();
@@ -861,7 +858,7 @@ describe('TaskService', () => {
         taskService.createTask({
           project_id: testProjectId,
           // missing required title
-        })
+        }),
       ).toThrow(ValidationError);
 
       expect(emitSpy).not.toHaveBeenCalled();
@@ -877,7 +874,7 @@ describe('TaskService', () => {
           title: 'Test',
           project_id: 999,
           created_by: 'user',
-        })
+        }),
       ).toThrow(BusinessError);
 
       expect(emitSpy).not.toHaveBeenCalled();
@@ -900,7 +897,7 @@ describe('TaskService', () => {
         eventType: 'task.updated',
         timestamp: expect.any(String),
         data: updated,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       emitSpy.mockRestore();
@@ -921,7 +918,7 @@ describe('TaskService', () => {
         eventType: 'task.updated',
         timestamp: expect.any(String),
         data: updated,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       expect(emitSpy).toHaveBeenCalledWith('task.status_changed', {
@@ -931,8 +928,8 @@ describe('TaskService', () => {
         metadata: {
           source: 'user',
           from: 'open',
-          to: 'in_progress'
-        }
+          to: 'in_progress',
+        },
       });
 
       expect(emitSpy).toHaveBeenCalledTimes(2);
@@ -961,9 +958,7 @@ describe('TaskService', () => {
     it('updateTask does NOT emit events when task not found', () => {
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        taskService.updateTask(999, { title: 'Updated' })
-      ).toThrow(NotFoundError);
+      expect(() => taskService.updateTask(999, { title: 'Updated' })).toThrow(NotFoundError);
 
       expect(emitSpy).not.toHaveBeenCalled();
 
@@ -979,9 +974,7 @@ describe('TaskService', () => {
 
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        taskService.updateTask(task.id, { status: 'done' })
-      ).toThrow(BusinessError);
+      expect(() => taskService.updateTask(task.id, { status: 'done' })).toThrow(BusinessError);
 
       expect(emitSpy).not.toHaveBeenCalled();
 
@@ -1004,7 +997,7 @@ describe('TaskService', () => {
         eventType: 'task.deleted',
         timestamp: expect.any(String),
         data: task,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       // Verify task is actually deleted
@@ -1016,9 +1009,7 @@ describe('TaskService', () => {
     it('deleteTask does NOT emit event when task not found', () => {
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        taskService.deleteTask(999)
-      ).toThrow(NotFoundError);
+      expect(() => taskService.deleteTask(999)).toThrow(NotFoundError);
 
       expect(emitSpy).not.toHaveBeenCalled();
 

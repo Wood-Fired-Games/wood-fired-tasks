@@ -73,9 +73,7 @@ describe('resolveActorUserId', () => {
        VALUES (?, 'test', ?, ?, ?, '[]', ?)`,
     ).run(opts.userId, prefix, suffix, hash, opts.expiresAt ?? null);
     if (opts.revokedAt) {
-      db.prepare(
-        `UPDATE api_tokens SET revoked_at = ? WHERE hash = ?`,
-      ).run(opts.revokedAt, hash);
+      db.prepare(`UPDATE api_tokens SET revoked_at = ? WHERE hash = ?`).run(opts.revokedAt, hash);
     }
     return { token };
   }
@@ -83,9 +81,7 @@ describe('resolveActorUserId', () => {
   it('PAT path: returns token.user_id when WFT_API_KEY is a valid non-revoked PAT', () => {
     // Insert a real users row that the PAT will resolve to.
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('alice', 'alice@example.com') as { id: number };
     const { token } = insertPat({ userId: insertUser.id });
 
@@ -105,9 +101,7 @@ describe('resolveActorUserId', () => {
   // distinct path tag.
   it('PAT path: THROWS when the PAT row exists but is revoked (fail-closed default — WR-02)', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('alice', 'alice@example.com') as { id: number };
     const { token } = insertPat({
       userId: insertUser.id,
@@ -126,9 +120,7 @@ describe('resolveActorUserId', () => {
 
   it('PAT path: falls back to mcp-bot when revoked + allowBadPat=true (WR-02 opt-in)', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('alice', 'alice@example.com') as { id: number };
     const { token } = insertPat({
       userId: insertUser.id,
@@ -180,9 +172,7 @@ describe('resolveActorUserId', () => {
   // these; MCP previously accepted them, breaking the cross-surface contract).
   it('PAT path: THROWS when the PAT is past its expires_at (CR-01)', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('alice', 'alice@example.com') as { id: number };
     const { token } = insertPat({
       userId: insertUser.id,
@@ -201,9 +191,7 @@ describe('resolveActorUserId', () => {
 
   it('PAT path: expired + allowBadPat=true falls back to mcp-bot (NOT silently used) — CR-01 contract', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('alice', 'alice@example.com') as { id: number };
     const { token } = insertPat({
       userId: insertUser.id,
@@ -228,9 +216,7 @@ describe('resolveActorUserId', () => {
   // REST PAT strategy's NaN-guard (src/api/plugins/auth/strategies/pat.ts).
   it('PAT path: THROWS when expires_at is unparseable (NaN-guard from REST pat strategy)', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email) VALUES (?, ?) RETURNING id`)
       .get('alice', 'alice@example.com') as { id: number };
     const { token } = insertPat({
       userId: insertUser.id,
@@ -250,12 +236,10 @@ describe('resolveActorUserId', () => {
   // CR-02: disabled user MUST be rejected on the PAT path.
   it('PAT path: THROWS when the PAT owner is disabled (CR-02)', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email, disabled_at) VALUES (?, ?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email, disabled_at) VALUES (?, ?, ?) RETURNING id`)
       .get('alice', 'alice@example.com', '2026-01-01T00:00:00Z') as {
-        id: number;
-      };
+      id: number;
+    };
     const { token } = insertPat({ userId: insertUser.id });
 
     expect(() =>
@@ -270,12 +254,10 @@ describe('resolveActorUserId', () => {
 
   it('PAT path: disabled user + allowBadPat=true falls back to mcp-bot (CR-02)', () => {
     const insertUser = db
-      .prepare(
-        `INSERT INTO users (display_name, email, disabled_at) VALUES (?, ?, ?) RETURNING id`,
-      )
+      .prepare(`INSERT INTO users (display_name, email, disabled_at) VALUES (?, ?, ?) RETURNING id`)
       .get('alice', 'alice@example.com', '2026-01-01T00:00:00Z') as {
-        id: number;
-      };
+      id: number;
+    };
     const { token } = insertPat({ userId: insertUser.id });
 
     const actor = resolveActorUserId({
@@ -358,9 +340,7 @@ describe('resolveActorUserId', () => {
     // resolve. This should never happen in production (the seeder runs in
     // createApp before resolveActorUserId is called) but it's the documented
     // failure surface called out in Plan 31-03's <action> step.
-    db.prepare(
-      `DELETE FROM users WHERE is_service_account = 1 AND display_name = 'mcp-bot'`,
-    ).run();
+    db.prepare(`DELETE FROM users WHERE is_service_account = 1 AND display_name = 'mcp-bot'`).run();
 
     expect(() =>
       resolveActorUserId({
@@ -423,4 +403,3 @@ describe('createMcpServer ctx arg', () => {
     }
   });
 });
-

@@ -33,16 +33,8 @@ import { describe, expect, it } from 'vitest';
 
 import { IdempotencyStore, type DispatchStatus } from '../../dispatch/index.js';
 import type { EventPayloadShape } from '../../dispatch/index.js';
-import {
-  buildChildEnv,
-  DEFAULT_ENV_ALLOWLIST,
-  shellExec,
-} from '../shell-exec.js';
-import type {
-  HandlerContext,
-  HandlerLogger,
-  SpawnImpl,
-} from '../types.js';
+import { buildChildEnv, DEFAULT_ENV_ALLOWLIST, shellExec } from '../shell-exec.js';
+import type { HandlerContext, HandlerLogger, SpawnImpl } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -74,11 +66,16 @@ interface SpawnCall {
  *                            kill() resolves the close with the killing signal.
  *   - { error: errno }    → emit 'error' with the given errno code (e.g. ENOENT).
  */
-function recordingSpawn(
-  behavior: { exit?: number; hang?: boolean; error?: string },
-): { spawnImpl: SpawnImpl; calls: SpawnCall[] } {
+function recordingSpawn(behavior: { exit?: number; hang?: boolean; error?: string }): {
+  spawnImpl: SpawnImpl;
+  calls: SpawnCall[];
+} {
   const calls: SpawnCall[] = [];
-  const spawnImpl = ((command: string, argv: readonly string[], options: Record<string, unknown>) => {
+  const spawnImpl = ((
+    command: string,
+    argv: readonly string[],
+    options: Record<string, unknown>,
+  ) => {
     let stdinBuf = '';
     const stdin = new Writable({
       write(chunk, _enc, cb) {
@@ -149,10 +146,7 @@ function baseContext(over: Partial<HandlerContext> = {}): HandlerContext {
       to_status: 'open',
       emitted_at_ms: 1_700_000_000_000,
     },
-    withBlock:
-      'withBlock' in over
-        ? over.withBlock
-        : { command: '/bin/true', argv: ['--flag'] },
+    withBlock: 'withBlock' in over ? over.withBlock : { command: '/bin/true', argv: ['--flag'] },
     renderedWith: over.renderedWith,
     apiBaseUrl: over.apiBaseUrl ?? 'https://tasks.example.com',
     authToken: over.authToken ?? 'wft_pat_abc123',

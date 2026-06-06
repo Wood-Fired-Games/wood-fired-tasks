@@ -105,14 +105,11 @@ export function setTokenOverride(token: string | null): void {
 }
 
 export function getCredentialsPath(): string {
-  const override = process.env.WFT_CREDENTIALS_PATH;
+  const override = process.env['WFT_CREDENTIALS_PATH'];
   if (override && override.length > 0) return override;
 
-  const xdg = process.env.XDG_CONFIG_HOME;
-  const configHome =
-    xdg && path.isAbsolute(xdg)
-      ? xdg
-      : path.join(os.homedir(), '.config');
+  const xdg = process.env['XDG_CONFIG_HOME'];
+  const configHome = xdg && path.isAbsolute(xdg) ? xdg : path.join(os.homedir(), '.config');
   return path.join(configHome, 'wood-fired-tasks', 'credentials');
 }
 
@@ -128,7 +125,7 @@ export function readCredentials(filePath: string = getCredentialsPath()): Creden
       const octal = mode.toString(8).padStart(3, '0');
       throw new Error(
         `Credentials file ${filePath} has insecure permissions (mode ${octal}). ` +
-          `Run: chmod 600 ${filePath}`
+          `Run: chmod 600 ${filePath}`,
       );
     }
   }
@@ -173,7 +170,7 @@ export function readCredentials(filePath: string = getCredentialsPath()): Creden
 
 export function writeCredentials(
   creds: Credentials,
-  filePath: string = getCredentialsPath()
+  filePath: string = getCredentialsPath(),
 ): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
 
@@ -216,7 +213,7 @@ export async function resolveAuth(): Promise<AuthSource> {
 
   // 3. Legacy API_KEY env (MIGR-01 — every pre-Phase-30 CLI workflow keeps
   //    working unchanged).
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env['API_KEY'];
   if (apiKey && apiKey.length > 0) {
     return { kind: 'legacy', key: apiKey };
   }

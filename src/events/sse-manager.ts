@@ -1,5 +1,5 @@
 import type { FastifyReply } from 'fastify';
-import { EventPayload } from './types.js';
+import { EventPayload, getEventProjectId } from './types.js';
 
 interface SSEConnection {
   id: string;
@@ -64,7 +64,7 @@ export class SSEManager {
     // stored read-only and consulted on every `canAccept` call.
     private readonly maxConnectionsPerKey = 4,
     private readonly maxConnectionsPerIp = 8,
-    private readonly maxConnections = 200
+    private readonly maxConnections = 200,
   ) {
     this.startHeartbeat();
   }
@@ -104,7 +104,7 @@ export class SSEManager {
     reply: FastifyReply,
     filters: { project_id?: number; event_types?: string[] },
     lastEventId?: number,
-    meta: { apiKeyFingerprint: string; ip: string } = { apiKeyFingerprint: '', ip: '' }
+    meta: { apiKeyFingerprint: string; ip: string } = { apiKeyFingerprint: '', ip: '' },
   ): void {
     // Store connection. task #194: only the fingerprint is retained — the
     // caller (events route) computes it via hashKey(rawKey).slice(0,16) so
@@ -150,16 +150,21 @@ export class SSEManager {
 
   private matchesFilters(
     event: EventPayload<unknown>,
-    filters: { project_id?: number; event_types?: string[] }
+    filters: { project_id?: number; event_types?: string[] },
   ): boolean {
     // Filter by event type
     if (filters.event_types && !filters.event_types.includes(event.eventType)) {
       return false;
     }
 
-    // Filter by project_id (only applies to task/project events)
-    if (filters.project_id && 'project_id' in (event.data as any)) {
-      return (event.data as any).project_id === filters.project_id;
+    // Filter by project_id (only applies to task/project events). The typed
+    // accessor narrows event.data without an unsafe cast: it returns the
+    // numeric project_id when present, else undefined (e.g. control events).
+    if (filters.project_id) {
+      const eventProjectId = getEventProjectId(event);
+      if (eventProjectId !== undefined) {
+        return eventProjectId === filters.project_id;
+      }
     }
 
     return true;
@@ -232,7 +237,7 @@ export class SSEManager {
     // Remove events older than TTL
     const cutoff = Date.now() - this.bufferTtlMs;
     this.eventBuffer = this.eventBuffer.filter(
-      (e) => new Date(e.event.timestamp).getTime() > cutoff
+      (e) => new Date(e.event.timestamp).getTime() > cutoff,
     );
   }
 

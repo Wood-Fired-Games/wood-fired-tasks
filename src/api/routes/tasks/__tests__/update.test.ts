@@ -64,18 +64,17 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
     assignee: string | null;
     assignee_user_id: number | null;
   } {
-    return db
-      .prepare(
-        'SELECT id, assignee, assignee_user_id FROM tasks WHERE id = ?',
-      )
-      .get(id) as {
+    return db.prepare('SELECT id, assignee, assignee_user_id FROM tasks WHERE id = ?').get(id) as {
       id: number;
       assignee: string | null;
       assignee_user_id: number | null;
     };
   }
 
-  function createTaskRow(title: string, opts: { assignee?: string | null; assignee_user_id?: number | null } = {}) {
+  function createTaskRow(
+    title: string,
+    opts: { assignee?: string | null; assignee_user_id?: number | null } = {},
+  ) {
     const task = app.taskService.createTask({
       title,
       project_id: testProjectId,
@@ -233,9 +232,10 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
     // Seed an existing FK so we can verify the spoof attempt didn't survive.
     const task = createTaskRow('spoof created_by_user_id');
     const ORIGINAL_CREATOR = aliceUserId;
-    db.prepare(
-      'UPDATE tasks SET created_by_user_id = ? WHERE id = ?',
-    ).run(ORIGINAL_CREATOR, task.id);
+    db.prepare('UPDATE tasks SET created_by_user_id = ? WHERE id = ?').run(
+      ORIGINAL_CREATOR,
+      task.id,
+    );
 
     const SPOOFED = 99997;
     const response = await server.inject({
@@ -249,11 +249,9 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
     });
 
     expect(response.statusCode).toBe(400);
-    const row = db
-      .prepare(
-        'SELECT created_by_user_id FROM tasks WHERE id = ?',
-      )
-      .get(task.id) as { created_by_user_id: number | null };
+    const row = db.prepare('SELECT created_by_user_id FROM tasks WHERE id = ?').get(task.id) as {
+      created_by_user_id: number | null;
+    };
     // The original creator FK is preserved; the spoof MUST NOT have
     // overwritten it.
     expect(row.created_by_user_id).toBe(ORIGINAL_CREATOR);

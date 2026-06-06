@@ -47,9 +47,7 @@ export interface NodeVersionWarningOptions {
  * LTS, or an unparseable version where we stay silent rather than risk a
  * false positive).
  */
-export function warnIfNotEvenLts(
-  options: NodeVersionWarningOptions = {}
-): boolean {
+export function warnIfNotEvenLts(options: NodeVersionWarningOptions = {}): boolean {
   const version = options.version ?? process.version;
   const warn = options.warn ?? ((line: string) => console.warn(line));
 
@@ -62,7 +60,7 @@ export function warnIfNotEvenLts(
   warn(
     `warning: wood-fired-tasks is running on Node ${version}, an odd-numbered ` +
       `"Current" (non-LTS) release. This is supported (engines: >=22) but ` +
-      `even-numbered LTS majors (22, 24, …) are recommended for stability.`
+      `even-numbered LTS majors (22, 24, …) are recommended for stability.`,
   );
   return true;
 }

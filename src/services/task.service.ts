@@ -1,15 +1,24 @@
 import { ITaskRepository, IProjectRepository } from '../repositories/interfaces.js';
-import type { IWsjfHistoryRepository, WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
+import type {
+  IWsjfHistoryRepository,
+  WsjfHistoryTrigger,
+} from '../repositories/wsjf-history.repository.js';
 import {
   Task,
   VALID_STATUS_TRANSITIONS,
   TaskPriority,
+  TaskStatus,
   PaginatedResponse,
   DEFAULT_PAGE_LIMIT,
   DEFAULT_PAGE_OFFSET,
   Fib,
   WsjfWriteDTO,
+  CreateTaskDTO,
+  UpdateTaskDTO,
+  TaskFilters,
+  VerificationEvidence,
 } from '../types/task.js';
+import { omitUndefined } from '../utils/omit-undefined.js';
 import type { WsjfComponents } from '../types/wsjf.js';
 import {
   computeWsjf,
@@ -17,7 +26,14 @@ import {
   derivePropagatedValuePrior,
   type PropagatedValuePrior,
 } from './wsjf.service.js';
-import { CreateTaskSchema, UpdateTaskSchema, TaskFiltersSchema, CompletionReportSchema } from '../schemas/task.schema.js';
+import {
+  CreateTaskSchema,
+  UpdateTaskSchema,
+  TaskFiltersSchema,
+  CompletionReportSchema,
+  type WsjfWriteInput,
+  type VerificationEvidence as VerificationEvidenceInput,
+} from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
@@ -34,6 +50,60 @@ const FTS_SYNTAX_ERROR_MESSAGE =
 
 function ftsValidationError(): ValidationError {
   return new ValidationError({ search: [FTS_SYNTAX_ERROR_MESSAGE] });
+}
+
+/**
+ * Normalize a parsed `wsjf` field for spreading into a Create/Update task DTO,
+ * preserving the absent / null / value three-state convention under
+ * exactOptionalPropertyTypes.
+ *
+ * Zod `.optional().nullable()` yields `WsjfWriteInput | null | undefined`, and
+ * the object's own nested props (`evidence`, `locked`, …) are `T | undefined`.
+ * The {@link WsjfWriteDTO} target slots are exact-optional, so an explicit
+ * `undefined` nested key is rejected.
+ *
+ *   - parsed `undefined` (key absent)  → `{}`            → leave wsjf_* untouched
+ *   - parsed `null` (clear)            → `{ wsjf: null }` → clear all wsjf_*
+ *   - parsed object (set)              → `{ wsjf: <undefined-stripped> }`
+ *
+ * The four required components stay required; only undefined-valued optional
+ * keys are dropped, so behaviour is unchanged.
+ */
+function normalizeWsjfWrite(wsjf: WsjfWriteInput | null | undefined): {
+  wsjf?: WsjfWriteDTO | null;
+} {
+  if (wsjf === undefined) return {};
+  if (wsjf === null) return { wsjf: null };
+  return {
+    wsjf: {
+      ...omitUndefined(wsjf),
+      value: wsjf.value,
+      timeCriticality: wsjf.timeCriticality,
+      riskOpportunity: wsjf.riskOpportunity,
+      jobSize: wsjf.jobSize,
+    },
+  };
+}
+
+/**
+ * Normalize a parsed `verification_evidence` field for spreading into an
+ * UpdateTaskDTO. Like {@link normalizeWsjfWrite}, the Zod-parsed envelope's own
+ * optional props (`checks`, `verifier_session_id`, …) are `T | undefined`,
+ * which the exact-optional {@link VerificationEvidence} slots reject. The
+ * absent / null / value three-state is preserved: absent → `{}` (column
+ * untouched), `null` → clear, object → undefined-stripped (verdict required).
+ */
+function normalizeVerificationEvidence(evidence: VerificationEvidenceInput | null | undefined): {
+  verification_evidence?: VerificationEvidence | null;
+} {
+  if (evidence === undefined) return {};
+  if (evidence === null) return { verification_evidence: null };
+  return {
+    verification_evidence: {
+      ...omitUndefined(evidence),
+      verdict: evidence.verdict,
+    },
+  };
 }
 
 /**
@@ -154,8 +224,7 @@ export class TaskService {
       locked: args.wsjf.locked ?? null,
       actorType: args.actorType ?? null,
       actorId: args.actorId ?? null,
-      charterVersion:
-        args.charterVersion ?? args.wsjf.features?.charterVersion ?? null,
+      charterVersion: args.charterVersion ?? args.wsjf.features?.charterVersion ?? null,
       rescoreRunId: args.rescoreRunId ?? null,
     });
   }
@@ -168,10 +237,7 @@ export class TaskService {
   private currentWsjfScore(
     task: Pick<
       Task,
-      | 'wsjf_value'
-      | 'wsjf_time_criticality'
-      | 'wsjf_risk_opportunity'
-      | 'wsjf_job_size'
+      'wsjf_value' | 'wsjf_time_criticality' | 'wsjf_risk_opportunity' | 'wsjf_job_size'
     >,
   ): number | null {
     if (
@@ -219,9 +285,7 @@ export class TaskService {
     if (result.data.parent_task_id) {
       const parentTask = this.taskRepo.findById(result.data.parent_task_id);
       if (!parentTask) {
-        throw new BusinessError(
-          `Parent task with id ${result.data.parent_task_id} does not exist`
-        );
+        throw new BusinessError(`Parent task with id ${result.data.parent_task_id} does not exist`);
       }
 
       // Ensure parent task is in the same project
@@ -239,7 +303,25 @@ export class TaskService {
     // A brand-new task has no prior score, so `prev_wsjf_score` is null and the
     // trigger is `create`. The unscored / audit-disabled paths take the plain
     // single write — behaviour identical to before #628.
-    const createDto = { ...result.data, status: 'open' as const };
+    // Assemble the CreateTaskDTO. `omitUndefined` drops optional props whose
+    // parsed value is `undefined` (key absent) so their columns stay untouched,
+    // while explicit `null` (clear) and real values survive — the
+    // absent / null / value three-state convention CreateTaskDTO encodes. The
+    // required fields are re-stated explicitly so they keep their non-optional
+    // type after the all-optional `omitUndefined` spread. `wsjf` is pulled out
+    // before the spread and re-added via `normalizeWsjfWrite` because its OWN
+    // nested optional props are `T | undefined` (Zod) and the shallow
+    // `omitUndefined` would not strip them.
+    const { wsjf: parsedWsjf, ...createRest } = result.data;
+    const createDto: CreateTaskDTO = {
+      ...omitUndefined(createRest),
+      title: result.data.title,
+      status: 'open' as const,
+      priority: result.data.priority,
+      project_id: result.data.project_id,
+      created_by: result.data.created_by,
+      ...normalizeWsjfWrite(parsedWsjf),
+    };
     const wsjf = (createDto.wsjf ?? null) as WsjfWriteDTO | null;
     // WSJF (#643): a manual override on create runs the same manual gate as
     // update_task (enum + shared contradiction rule, no classification needed)
@@ -283,7 +365,7 @@ export class TaskService {
       eventType: 'task.created',
       timestamp: new Date().toISOString(),
       data: task,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     return task;
@@ -335,7 +417,7 @@ export class TaskService {
   listTasks(filters?: unknown): Array<Task & { tags: string[] }> {
     const parsed = this.parseFilters(filters);
     try {
-      return this.taskRepo.findByFilters(parsed);
+      return this.taskRepo.findByFilters(omitUndefined(parsed));
     } catch (err) {
       if (err instanceof FtsSyntaxError) {
         throw ftsValidationError();
@@ -351,18 +433,16 @@ export class TaskService {
    * can render "page X of Y" navigation without re-issuing the query without
    * filters. Used by the REST list endpoint and the MCP list_tasks tool.
    */
-  listTasksPaginated(
-    filters?: unknown
-  ): PaginatedResponse<Task & { tags: string[] }> {
+  listTasksPaginated(filters?: unknown): PaginatedResponse<Task & { tags: string[] }> {
     const parsed = this.parseFilters(filters);
     const limit = parsed.limit ?? DEFAULT_PAGE_LIMIT;
     const offset = parsed.offset ?? DEFAULT_PAGE_OFFSET;
     try {
-      const data = this.taskRepo.findByFilters({ ...parsed, limit, offset });
+      const data = this.taskRepo.findByFilters({ ...omitUndefined(parsed), limit, offset });
       // `count` deliberately runs WITHOUT limit/offset so `total` reflects
       // the full match set.
       const { limit: _l, offset: _o, ...filtersForCount } = parsed;
-      const total = this.taskRepo.count(filtersForCount);
+      const total = this.taskRepo.count(omitUndefined(filtersForCount));
       return { data, total, limit, offset };
     } catch (err) {
       if (err instanceof FtsSyntaxError) {
@@ -434,35 +514,42 @@ export class TaskService {
     // would break the existing suite. A direct env read keeps the default-OFF
     // path zero-cost and side-effect-free.
     if (
-      process.env.WFT_STRICT_EVIDENCE === 'true' &&
+      process.env['WFT_STRICT_EVIDENCE'] === 'true' &&
       result.data.verification_evidence !== undefined &&
       result.data.verification_evidence !== null
     ) {
       // `assignee_user_id` is selected by `findById` (SELECT t.*) but is not
       // declared on the base Task type, so read it through a narrow cast.
-      const existingAssigneeUserId = (
-        existing as { assignee_user_id?: number | null }
-      ).assignee_user_id;
-      const violations = validateVerificationEvidence(
-        result.data.verification_evidence,
-        {
-          taskAssignee: existing.assignee,
-          taskAssigneeUserId: existingAssigneeUserId ?? null,
-          callerId: callerId ?? null,
-        },
-      );
+      const existingAssigneeUserId = (existing as { assignee_user_id?: number | null })
+        .assignee_user_id;
+      const evidence: VerificationEvidence = {
+        ...omitUndefined(result.data.verification_evidence),
+        verdict: result.data.verification_evidence.verdict,
+      };
+      const violations = validateVerificationEvidence(evidence, {
+        taskAssignee: existing.assignee,
+        taskAssigneeUserId: existingAssigneeUserId ?? null,
+        callerId: callerId ?? null,
+      });
       if (violations.length > 0) {
         throw new ValidationError({ verification_evidence: violations });
       }
     }
 
-    // Validate status transition if status is being changed
-    const statusChanged = result.data.status && result.data.status !== existing.status;
+    // Validate status transition if status is being changed.
+    //
+    // `nextStatus` captures the narrowed new status (a defined `TaskStatus`)
+    // so the `task.status_changed` emit below can populate the exact-optional
+    // `EventMetadata.to` field without TS widening it back to
+    // `TaskStatus | undefined` (which exactOptionalPropertyTypes rejects).
+    const nextStatus: TaskStatus | undefined =
+      result.data.status && result.data.status !== existing.status ? result.data.status : undefined;
+    const statusChanged = nextStatus !== undefined;
     if (statusChanged) {
       const validTargets = VALID_STATUS_TRANSITIONS[existing.status];
       if (!validTargets.includes(result.data.status!)) {
         throw new BusinessError(
-          `Invalid status transition from '${existing.status}' to '${result.data.status}'. Valid transitions: ${validTargets.join(', ')}`
+          `Invalid status transition from '${existing.status}' to '${result.data.status}'. Valid transitions: ${validTargets.join(', ')}`,
         );
       }
     }
@@ -484,10 +571,24 @@ export class TaskService {
     // We deliberately set ONLY the verdict — no verified_at timestamp, no
     // verifier_session_id — so the row reflects truthfully that nothing
     // was checked.
-    const updatesForRepo = { ...result.data };
+    // Build the repo patch. `omitUndefined` drops top-level keys whose parsed
+    // value is `undefined` (key absent → column untouched), preserving the
+    // absent / null / value three-state convention. The nested `wsjf` field is
+    // normalized separately because its OWN optional props are `T | undefined`
+    // (Zod) and the exact-optional `WsjfWriteDTO` slots reject explicit
+    // `undefined`.
+    const {
+      wsjf: parsedWsjfUpdate,
+      verification_evidence: parsedEvidenceUpdate,
+      ...updateRest
+    } = result.data;
+    const updatesForRepo: UpdateTaskDTO = {
+      ...omitUndefined(updateRest),
+      ...normalizeWsjfWrite(parsedWsjfUpdate),
+      ...normalizeVerificationEvidence(parsedEvidenceUpdate),
+    };
     const isClosingTransition =
-      statusChanged &&
-      (result.data.status === 'done' || result.data.status === 'closed');
+      statusChanged && (result.data.status === 'done' || result.data.status === 'closed');
     if (
       isClosingTransition &&
       result.data.verification_evidence === undefined &&
@@ -523,14 +624,9 @@ export class TaskService {
         throw new ValidationError({ wsjf: manualCheck.errors });
       }
     }
-    const wsjfTrigger: WsjfHistoryTrigger =
-      wsjfUpdate?.manual === true ? 'manual' : 'update';
+    const wsjfTrigger: WsjfHistoryTrigger = wsjfUpdate?.manual === true ? 'manual' : 'update';
     let updatedTask: Task & { tags: string[] };
-    if (
-      wsjfUpdate !== undefined &&
-      wsjfUpdate !== null &&
-      this.wsjfAuditEnabled()
-    ) {
+    if (wsjfUpdate !== undefined && wsjfUpdate !== null && this.wsjfAuditEnabled()) {
       const prevWsjfScore = this.currentWsjfScore(existing);
       updatedTask = this.db!.transaction(() => {
         const updated = this.taskRepo.update(id, updatesForRepo);
@@ -552,11 +648,14 @@ export class TaskService {
       eventType: 'task.updated',
       timestamp: new Date().toISOString(),
       data: updatedTask,
-      metadata: { source }
+      metadata: { source },
     });
 
-    // If status changed, also emit task.status_changed event
-    if (statusChanged) {
+    // If status changed, also emit task.status_changed event. Gating on
+    // `nextStatus !== undefined` (rather than the boolean `statusChanged`)
+    // narrows `nextStatus` to a defined `TaskStatus` so the exact-optional
+    // `EventMetadata.to` is satisfied without a cast.
+    if (nextStatus !== undefined) {
       eventBus.emit('task.status_changed', {
         eventType: 'task.status_changed',
         timestamp: new Date().toISOString(),
@@ -564,8 +663,8 @@ export class TaskService {
         metadata: {
           source,
           from: existing.status,
-          to: result.data.status!
-        } as any // Metadata can include additional fields beyond the base type
+          to: nextStatus,
+        },
       });
     }
 
@@ -587,7 +686,7 @@ export class TaskService {
       eventType: 'task.deleted',
       timestamp: new Date().toISOString(),
       data: existing,
-      metadata: { source: 'user' }
+      metadata: { source: 'user' },
     });
 
     this.taskRepo.delete(id);
@@ -612,7 +711,7 @@ export class TaskService {
         throw new ValidationError(fieldErrors);
       }
       try {
-        return this.taskRepo.count(result.data);
+        return this.taskRepo.count(omitUndefined(result.data));
       } catch (err) {
         if (err instanceof FtsSyntaxError) {
           throw ftsValidationError();
@@ -652,7 +751,9 @@ export class TaskService {
 
     // Validate task is in claimable state
     if (existing.status !== 'open') {
-      throw new BusinessError(`Task ${taskId} cannot be claimed: status is '${existing.status}', must be 'open'`);
+      throw new BusinessError(
+        `Task ${taskId} cannot be claimed: status is '${existing.status}', must be 'open'`,
+      );
     }
 
     if (existing.assignee) {
@@ -671,7 +772,7 @@ export class TaskService {
       eventType: 'task.claimed',
       timestamp: new Date().toISOString(),
       data: claimed,
-      metadata: { source }
+      metadata: { source },
     });
 
     return claimed;
@@ -695,21 +796,26 @@ export class TaskService {
       throw new ValidationError(fieldErrors);
     }
 
-    const { start, end } = resolveRange(parsed.data);
+    const { start, end } = resolveRange(omitUndefined(parsed.data));
+    // start/end stay required; project_id/assignee are omitted when absent so
+    // the range filter only narrows on the dimensions the caller supplied.
     const tasks = this.taskRepo.findCompletedInRange({
       start,
       end,
-      project_id: parsed.data.project_id,
-      assignee: parsed.data.assignee,
+      ...omitUndefined({
+        project_id: parsed.data.project_id,
+        assignee: parsed.data.assignee,
+      }),
     });
 
     const rows: CompletionReportRow[] = tasks.map((t) => {
       const completedAt = t.completed_at ?? t.updated_at;
       const startMs = Date.parse(t.created_at);
       const endMs = Date.parse(completedAt);
-      const seconds = Number.isFinite(startMs) && Number.isFinite(endMs)
-        ? Math.max(0, Math.round((endMs - startMs) / 1000))
-        : 0;
+      const seconds =
+        Number.isFinite(startMs) && Number.isFinite(endMs)
+          ? Math.max(0, Math.round((endMs - startMs) / 1000))
+          : 0;
       return {
         id: t.id,
         title: t.title,
@@ -731,16 +837,18 @@ export class TaskService {
         project_id: k as number,
         count: v,
       })),
-      by_assignee: aggregate(rows, (r) => r.assignee ?? '(unassigned)').map(
-        ([k, v]) => ({ assignee: k as string, count: v })
-      ),
+      by_assignee: aggregate(rows, (r) => r.assignee ?? '(unassigned)').map(([k, v]) => ({
+        assignee: k as string,
+        count: v,
+      })),
       by_priority: aggregate(rows, (r) => r.priority).map(([k, v]) => ({
         priority: k as TaskPriority,
         count: v,
       })),
-      daily_throughput: aggregate(rows, (r) =>
-        r.completed_at.slice(0, 10)
-      ).map(([k, v]) => ({ date: k as string, count: v })),
+      daily_throughput: aggregate(rows, (r) => r.completed_at.slice(0, 10)).map(([k, v]) => ({
+        date: k as string,
+        count: v,
+      })),
     };
   }
 
@@ -753,7 +861,7 @@ export class TaskService {
    */
   getSubtasks(
     taskId: number,
-    pagination?: { limit?: number; offset?: number }
+    pagination?: { limit?: number; offset?: number },
   ): Array<Task & { tags: string[] }> {
     // Verify parent task exists
     const parentTask = this.taskRepo.findById(taskId);
@@ -770,7 +878,7 @@ export class TaskService {
    */
   getSubtasksPaginated(
     taskId: number,
-    pagination?: { limit?: number; offset?: number }
+    pagination?: { limit?: number; offset?: number },
   ): PaginatedResponse<Task & { tags: string[] }> {
     const parentTask = this.taskRepo.findById(taskId);
     if (!parentTask) {
@@ -801,7 +909,7 @@ function resolveRange(input: CompletionReportInput): { start: string; end: strin
 
 function aggregate<T, K extends string | number>(
   rows: T[],
-  key: (row: T) => K
+  key: (row: T) => K,
 ): Array<[K, number]> {
   const counts = new Map<K, number>();
   for (const row of rows) {
@@ -809,6 +917,6 @@ function aggregate<T, K extends string | number>(
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) =>
-    b[1] !== a[1] ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0]))
+    b[1] !== a[1] ? b[1] - a[1] : String(a[0]).localeCompare(String(b[0])),
   );
 }

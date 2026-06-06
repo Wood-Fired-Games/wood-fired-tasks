@@ -1,0 +1,28 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "files": {
+    "includes": [
+      "src/**/*.ts",
+      "packages/wft-router/src/**/*.ts",
+      "!**/*.test.ts",
+      "!**/*.spec.ts",
+      "!**/*.bench.ts",
+      "!**/*.property.test.ts",
+      "!**/__tests__/**"
+    ]
+  },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": false,
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 1 }
+        }
+      }
+    }
+  }
+}

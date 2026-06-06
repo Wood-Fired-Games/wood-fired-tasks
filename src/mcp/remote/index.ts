@@ -33,21 +33,21 @@ export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
   apiUrl: string;
   apiKey: string;
 } {
-  const apiUrl = env.WFT_API_URL;
-  const apiKey = env.WFT_API_KEY;
+  const apiUrl = env['WFT_API_URL'];
+  const apiKey = env['WFT_API_KEY'];
 
   if (!apiUrl || apiUrl.trim() === '') {
     throw new Error(
       'WFT_API_URL must be set when running the remote MCP server ' +
         '(e.g., http://localhost:3000 or http://your-server.local:3000). ' +
-        'No default is provided to avoid silently connecting to the wrong host.'
+        'No default is provided to avoid silently connecting to the wrong host.',
     );
   }
 
   if (!apiKey || apiKey.trim() === '') {
     throw new Error(
       'WFT_API_KEY must be set when running the remote MCP server. ' +
-        'Example: WFT_API_KEY=your-api-key-here'
+        'Example: WFT_API_KEY=your-api-key-here',
     );
   }
 
@@ -91,7 +91,7 @@ async function main() {
     },
     async () => {
       return getEventsResourceContent(eventsApiUrl);
-    }
+    },
   );
 
   // Connect via stdio transport

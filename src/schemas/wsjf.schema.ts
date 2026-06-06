@@ -38,13 +38,7 @@ export const FibSchema = z.union([
 ]);
 
 const AlignmentClassSchema = z.enum(['none', 'weak', 'direct', 'core']);
-const SeverityClassSchema = z.enum([
-  'none',
-  'tech_debt',
-  'security',
-  'data_loss',
-  'compliance',
-]);
+const SeverityClassSchema = z.enum(['none', 'tech_debt', 'security', 'data_loss', 'compliance']);
 const DecayClassSchema = z.enum(['flat', 'slow', 'fast']);
 
 /**
@@ -55,12 +49,8 @@ const DecayClassSchema = z.enum(['flat', 'slow', 'fast']);
 export const WsjfEvidenceSchema = z
   .object({
     value: z.string().min(1, 'evidence.value must be a non-empty span'),
-    timeCriticality: z
-      .string()
-      .min(1, 'evidence.timeCriticality must be a non-empty span'),
-    riskOpportunity: z
-      .string()
-      .min(1, 'evidence.riskOpportunity must be a non-empty span'),
+    timeCriticality: z.string().min(1, 'evidence.timeCriticality must be a non-empty span'),
+    riskOpportunity: z.string().min(1, 'evidence.riskOpportunity must be a non-empty span'),
     jobSize: z.string().min(1, 'evidence.jobSize must be a non-empty span'),
   })
   .strict() satisfies z.ZodType<WsjfEvidence>;

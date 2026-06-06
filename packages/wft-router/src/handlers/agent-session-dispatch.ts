@@ -119,12 +119,7 @@ import * as path from 'node:path';
 import { renderWith } from '../dispatch/index.js';
 import { redactForLogging } from '../util/redaction.js';
 import { buildChildEnv } from './shell-exec.js';
-import type {
-  Handler,
-  HandlerContext,
-  HandlerOutcome,
-  SpawnImpl,
-} from './types.js';
+import type { Handler, HandlerContext, HandlerOutcome, SpawnImpl } from './types.js';
 
 /** Default per-attempt timeout (ms) before the adapter child is killed. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -172,10 +167,7 @@ export function resolveAdaptersPath(
  * best-effort dir-mode hardening). Returns `null` when no entry yields a valid
  * adapter (adapter-not-found / not-opted-in / escapes its dir).
  */
-export function resolveAdapter(
-  adapter: string,
-  entries: readonly string[],
-): string | null {
+export function resolveAdapter(adapter: string, entries: readonly string[]): string | null {
   for (const entry of entries) {
     let entryReal: string;
     try {
@@ -300,12 +292,13 @@ export const agentSessionDispatch: Handler = async (
     return { kind: 'suppressed', reason };
   }
 
-  const failConfig = (detail: string, event: string, extra: Record<string, unknown> = {}): HandlerOutcome => {
+  const failConfig = (
+    detail: string,
+    event: string,
+    extra: Record<string, unknown> = {},
+  ): HandlerOutcome => {
     store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
-    logger.error(
-      { rule_name: identity.rule_name, event_id: identity.event_id, ...extra },
-      event,
-    );
+    logger.error({ rule_name: identity.rule_name, event_id: identity.event_id, ...extra }, event);
     return { kind: 'failed', retryable: false, detail };
   };
 
@@ -390,10 +383,7 @@ export const agentSessionDispatch: Handler = async (
       settled = true;
       clearTimers();
       store.complete(identity.rule_name, identity.event_id, status);
-      logger.warn(
-        { rule_name: identity.rule_name, event_id: identity.event_id, ...extra },
-        event,
-      );
+      logger.warn({ rule_name: identity.rule_name, event_id: identity.event_id, ...extra }, event);
       resolve({ kind: 'failed', retryable, detail });
     };
 

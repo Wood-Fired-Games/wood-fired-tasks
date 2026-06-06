@@ -79,6 +79,7 @@ import {
 } from './handlers/index.js';
 import type { MetricsRegistry } from './metrics.js';
 import { ExitCode, type SSEEvent } from './sse/index.js';
+import { omitUndefined } from './util/omit-undefined.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -98,9 +99,7 @@ export type HandlerRegistry = Record<TriggersRule['do'], Handler>;
  * {@link ExitCode}. The daemon never imports `runSSEClient` directly through
  * this seam so tests can hand it a fake generator they fully control.
  */
-export type SSESourceFactory = (
-  signal: AbortSignal,
-) => AsyncGenerator<SSEEvent, ExitCode>;
+export type SSESourceFactory = (signal: AbortSignal) => AsyncGenerator<SSEEvent, ExitCode>;
 
 /** Minimal structured-logger surface the daemon needs (pino-compatible). */
 export interface DaemonLogger extends HandlerLogger {
@@ -244,7 +243,11 @@ export function mapSSEEvent(ev: SSEEvent): MappedEvent | null {
 
   const payload: EventPayloadShape = { type };
   if (parsed.data !== undefined && parsed.data !== null) {
-    payload.task = {
+    // omitUndefined: the EventPayloadShape sub-props are exact-optional, and the
+    // `where:` predicates branch on presence — so an undefined-valued key must
+    // be ABSENT, not present-with-undefined. Explicit `null`
+    // (parent_task_id / assignee "cleared") is preserved.
+    payload.task = omitUndefined({
       id: parsed.data.id,
       project_id: parsed.data.project_id,
       project_slug: parsed.data.project_slug,
@@ -252,14 +255,14 @@ export function mapSSEEvent(ev: SSEEvent): MappedEvent | null {
       tags: parsed.data.tags,
       parent_task_id: parsed.data.parent_task_id,
       assignee: parsed.data.assignee,
-    };
+    });
   }
   if (parsed.metadata !== undefined && parsed.metadata !== null) {
-    payload.metadata = {
+    payload.metadata = omitUndefined({
       from: parsed.metadata.from,
       to: parsed.metadata.to,
       source: parsed.metadata.source,
-    };
+    });
   }
 
   let emittedAtMs: number | null = null;
@@ -324,11 +327,21 @@ export class WftRouterDaemon {
     this.logger = deps.logger;
     this.apiBaseUrl = deps.apiBaseUrl;
     this.apiKey = deps.apiKey;
-    this.fetchImpl = deps.fetchImpl;
-    this.spawnImpl = deps.spawnImpl;
-    this.adaptersPath = deps.adaptersPath;
+    // exactOptionalPropertyTypes: these fields are exact-optional, so assigning
+    // a possibly-undefined dep would widen them; only assign when present.
+    if (deps.fetchImpl !== undefined) {
+      this.fetchImpl = deps.fetchImpl;
+    }
+    if (deps.spawnImpl !== undefined) {
+      this.spawnImpl = deps.spawnImpl;
+    }
+    if (deps.adaptersPath !== undefined) {
+      this.adaptersPath = deps.adaptersPath;
+    }
     this.env = deps.env ?? process.env;
-    this.metrics = deps.metrics;
+    if (deps.metrics !== undefined) {
+      this.metrics = deps.metrics;
+    }
 
     const now = deps.now ?? Date.now;
     this.rateLimiter =
@@ -342,8 +355,7 @@ export class WftRouterDaemon {
     this.debouncer =
       deps.debouncer ??
       new Debouncer<DispatchPayload>({
-        windowMs:
-          this.config.defaults?.debounce_ms ?? WFT_ROUTER_DEFAULTS.debounce_ms,
+        windowMs: this.config.defaults?.debounce_ms ?? WFT_ROUTER_DEFAULTS.debounce_ms,
         now,
       });
     this.shutdown = deps.shutdown ?? new GracefulShutdown();
@@ -478,10 +490,7 @@ export class WftRouterDaemon {
 
     const mapped = mapSSEEvent(ev);
     if (mapped === null) {
-      this.logger.warn(
-        { event_id: ev.id, event_name: ev.event },
-        'wft_router_event_unmappable',
-      );
+      this.logger.warn({ event_id: ev.id, event_name: ev.event }, 'wft_router_event_unmappable');
       return;
     }
 
@@ -563,10 +572,7 @@ export class WftRouterDaemon {
     // Stage 5: build context + dispatch the matching handler.
     const handler = this.handlers[rule.do];
     if (handler === undefined) {
-      this.logger.error(
-        { rule_name: rule.name, do: rule.do },
-        'wft_router_no_handler_for_rule',
-      );
+      this.logger.error({ rule_name: rule.name, do: rule.do }, 'wft_router_no_handler_for_rule');
       return;
     }
 
@@ -608,12 +614,9 @@ export class WftRouterDaemon {
     identity: DispatchIdentity,
   ): HandlerContext {
     const tokenEnvName = readTokenEnv(rule.with);
-    const resolvedFromEnv =
-      tokenEnvName !== undefined ? this.env[tokenEnvName] : undefined;
+    const resolvedFromEnv = tokenEnvName !== undefined ? this.env[tokenEnvName] : undefined;
     const authToken =
-      resolvedFromEnv !== undefined && resolvedFromEnv.length > 0
-        ? resolvedFromEnv
-        : this.apiKey;
+      resolvedFromEnv !== undefined && resolvedFromEnv.length > 0 ? resolvedFromEnv : this.apiKey;
 
     const ctx: HandlerContext = {
       store: this.store,
@@ -659,10 +662,7 @@ export class WftRouterDaemon {
         );
         return;
       case 'suppressed':
-        this.logger.info(
-          { ...base, reason: outcome.reason },
-          'wft_router_dispatch_suppressed',
-        );
+        this.logger.info({ ...base, reason: outcome.reason }, 'wft_router_dispatch_suppressed');
         return;
       case 'failed':
         if (outcome.retryable) {

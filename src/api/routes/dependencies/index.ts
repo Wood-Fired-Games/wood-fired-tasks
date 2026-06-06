@@ -31,7 +31,7 @@ const dependencyRoutes: FastifyPluginAsyncZod = async (fastify) => {
       });
 
       return reply.code(201).send(dependency);
-    }
+    },
   );
 
   // GET /tasks/:id/dependencies - Get dependencies for a task
@@ -54,7 +54,7 @@ const dependencyRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const blocked_by = fastify.dependencyService.getBlockers(id);
 
       return reply.send({ blocks, blocked_by });
-    }
+    },
   );
 
   // DELETE /tasks/:id/dependencies/:blocksTaskId - Remove dependency
@@ -79,7 +79,7 @@ const dependencyRoutes: FastifyPluginAsyncZod = async (fastify) => {
       fastify.dependencyService.removeDependency(id, blocksTaskId);
 
       return reply.code(204).send();
-    }
+    },
   );
 };
 

@@ -63,8 +63,7 @@ function recordingFetch(
 ): { fetchImpl: typeof fetch; calls: FetchCall[] } {
   const calls: FetchCall[] = [];
   const fetchImpl = ((url: string | URL | Request, init?: RequestInit) => {
-    const urlStr =
-      typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
     const headers: Record<string, string> = {};
     const h = init?.headers;
     if (h instanceof Headers) {
@@ -114,7 +113,11 @@ function baseContext(over: Partial<HandlerContext> = {}): HandlerContext {
 }
 
 /** Read the terminal status of a (rule, event) row directly from the store db. */
-function statusOf(store: IdempotencyStore, ruleName: string, eventId: string): DispatchStatus | undefined {
+function statusOf(
+  store: IdempotencyStore,
+  ruleName: string,
+  eventId: string,
+): DispatchStatus | undefined {
   // Re-claim would mutate; instead use the public secondary path is N/A here,
   // so we observe via a second claim attempt: ALREADY_DONE carries the status.
   const res = store.claim({

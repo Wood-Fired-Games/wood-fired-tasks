@@ -49,9 +49,7 @@ function runHook(
 function git(args: string[], cwd: string): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
   if (r.status !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed (${r.status}): ${r.stderr}`,
-    );
+    throw new Error(`git ${args.join(' ')} failed (${r.status}): ${r.stderr}`);
   }
   return r.stdout.trim();
 }
@@ -107,9 +105,7 @@ describe('validate-sha.mjs PreToolUse hook', () => {
     const decision = JSON.parse(stdout);
     expect(decision.hookSpecificOutput.hookEventName).toBe('PreToolUse');
     expect(decision.hookSpecificOutput.permissionDecision).toBe('deny');
-    expect(decision.hookSpecificOutput.permissionDecisionReason).toContain(
-      'deadbeefdeadbeef',
-    );
+    expect(decision.hookSpecificOutput.permissionDecisionReason).toContain('deadbeefdeadbeef');
   });
 
   it('denies add_comment whose content references a fabricated short sha', () => {
@@ -126,9 +122,7 @@ describe('validate-sha.mjs PreToolUse hook', () => {
     expect(status).toBe(0);
     const decision = JSON.parse(stdout);
     expect(decision.hookSpecificOutput.permissionDecision).toBe('deny');
-    expect(decision.hookSpecificOutput.permissionDecisionReason).toContain(
-      '2f9c1a4e',
-    );
+    expect(decision.hookSpecificOutput.permissionDecisionReason).toContain('2f9c1a4e');
   });
 
   it('allows add_comment with no sha-looking tokens', () => {

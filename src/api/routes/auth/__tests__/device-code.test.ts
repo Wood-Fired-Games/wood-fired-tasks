@@ -18,10 +18,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import deviceCodeRoute from '../device-code.js';
-import {
-  findByDeviceCode,
-  _resetForTests,
-} from '../../../../services/device-flow-store.js';
+import { findByDeviceCode, _resetForTests } from '../../../../services/device-flow-store.js';
 
 const EXPECTED_CLIENT_ID = 'cli-test-client.example.com';
 const ORIGIN = 'http://localhost:3000';

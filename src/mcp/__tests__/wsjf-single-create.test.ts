@@ -46,10 +46,7 @@ describe('WSJF single-create scoring trigger (#634)', () => {
    * so `jobSizeTier: 1` does NOT trip the `value=13 ∧ jobSize=1` contradiction
    * rule the gate enforces; the charter-less task uses `none` (UBV floor 1).
    */
-  function classification(
-    span: string,
-    themeName: string | null,
-  ): WsjfClassification {
+  function classification(span: string, themeName: string | null): WsjfClassification {
     return {
       themeName,
       alignment: themeName ? 'weak' : 'none',
@@ -67,9 +64,7 @@ describe('WSJF single-create scoring trigger (#634)', () => {
 
   const charter: ValueCharter = {
     mission: 'keep checkout reliable',
-    value_themes: [
-      { name: 'Reliability', weight: 13, description: 'do not break prod' },
-    ],
+    value_themes: [{ name: 'Reliability', weight: 13, description: 'do not break prod' }],
     time_context: 'no hard deadline',
     risk_posture: 'must not break production data',
     out_of_scope: [],
@@ -90,10 +85,7 @@ describe('WSJF single-create scoring trigger (#634)', () => {
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -104,16 +96,13 @@ describe('WSJF single-create scoring trigger (#634)', () => {
   });
 
   /** Read back a task's history timeline via the wsjf_history MCP tool. */
-  async function historyTimeline(taskId: number): Promise<
-    Array<{ trigger: string }>
-  > {
+  async function historyTimeline(taskId: number): Promise<Array<{ trigger: string }>> {
     const history = (await client.callTool({
       name: 'wsjf_history',
       arguments: { task_id: taskId },
     })) as ToolResult;
     expect(history.isError).toBeFalsy();
-    return (history.structuredContent as { timeline: Array<{ trigger: string }> })
-      .timeline;
+    return (history.structuredContent as { timeline: Array<{ trigger: string }> }).timeline;
   }
 
   it('charter path: a classified single-create stamps trigger=single_create', async () => {

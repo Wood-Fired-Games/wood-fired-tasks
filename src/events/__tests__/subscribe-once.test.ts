@@ -49,12 +49,9 @@ describe('subscribeOnce', () => {
 
   it('resolves with the first event matching the predicate', async () => {
     const before = bus.getStats().listenerCount;
-    const promise = subscribeOnce(
-      bus,
-      'task.created',
-      (e) => e.data.id === 42,
-      { timeoutMs: 1000 }
-    );
+    const promise = subscribeOnce(bus, 'task.created', (e) => e.data.id === 42, {
+      timeoutMs: 1000,
+    });
 
     // Non-matching event should be ignored.
     bus.emit('task.created', makeEvent(1));

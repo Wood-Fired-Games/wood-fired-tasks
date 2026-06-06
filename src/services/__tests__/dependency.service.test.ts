@@ -86,7 +86,7 @@ describe('DependencyService', () => {
         dependencyService.addDependency({
           task_id: 9999,
           blocks_task_id: taskId2,
-        })
+        }),
       ).toThrow(NotFoundError);
     });
 
@@ -95,7 +95,7 @@ describe('DependencyService', () => {
         dependencyService.addDependency({
           task_id: taskId1,
           blocks_task_id: 9999,
-        })
+        }),
       ).toThrow(NotFoundError);
     });
 
@@ -104,7 +104,7 @@ describe('DependencyService', () => {
         dependencyService.addDependency({
           task_id: taskId1,
           blocks_task_id: taskId1,
-        })
+        }),
       ).toThrow(ValidationError);
     });
 
@@ -120,7 +120,7 @@ describe('DependencyService', () => {
         dependencyService.addDependency({
           task_id: taskId2,
           blocks_task_id: taskId1,
-        })
+        }),
       ).toThrow(BusinessError);
 
       try {
@@ -151,7 +151,7 @@ describe('DependencyService', () => {
         dependencyService.addDependency({
           task_id: taskId3,
           blocks_task_id: taskId1,
-        })
+        }),
       ).toThrow(BusinessError);
     });
 
@@ -237,9 +237,7 @@ describe('DependencyService', () => {
     });
 
     it('should throw NotFoundError when removing non-existent dependency', () => {
-      expect(() =>
-        dependencyService.removeDependency(taskId1, taskId2)
-      ).toThrow(NotFoundError);
+      expect(() => dependencyService.removeDependency(taskId1, taskId2)).toThrow(NotFoundError);
     });
   });
 });

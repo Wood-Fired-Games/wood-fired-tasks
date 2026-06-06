@@ -1,17 +1,14 @@
 import type { ICommentRepository } from '../repositories/interfaces.js';
 import type { ITaskRepository } from '../repositories/interfaces.js';
-import type { Comment, PaginatedResponse } from '../types/task.js';
-import {
-  DEFAULT_PAGE_LIMIT,
-  DEFAULT_PAGE_OFFSET,
-} from '../types/task.js';
+import type { Comment, CreateCommentDTO, PaginatedResponse } from '../types/task.js';
+import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET } from '../types/task.js';
 import { CreateCommentSchema } from '../schemas/comment.schema.js';
 import { ValidationError, NotFoundError } from './errors.js';
 
 export class CommentService {
   constructor(
     private commentRepo: ICommentRepository,
-    private taskRepo: ITaskRepository
+    private taskRepo: ITaskRepository,
   ) {}
 
   /**
@@ -34,15 +31,23 @@ export class CommentService {
       throw new ValidationError(fieldErrors);
     }
 
-    const dto = result.data;
+    const parsed = result.data;
 
     // Verify task exists
-    const task = this.taskRepo.findById(dto.task_id);
+    const task = this.taskRepo.findById(parsed.task_id);
     if (!task) {
-      throw new NotFoundError('Task', dto.task_id);
+      throw new NotFoundError('Task', parsed.task_id);
     }
 
-    // Create comment
+    // Create comment. `author_user_id` is omitted when absent so the optional
+    // FK column stays untouched (three-state: absent / null / value). Explicit
+    // `null` is preserved by the conditional spread below.
+    const dto: CreateCommentDTO = {
+      task_id: parsed.task_id,
+      author: parsed.author,
+      content: parsed.content,
+      ...(parsed.author_user_id !== undefined && { author_user_id: parsed.author_user_id }),
+    };
     return this.commentRepo.create(dto);
   }
 
@@ -51,10 +56,7 @@ export class CommentService {
    * Internal callers use this; REST/MCP use {@link getCommentsPaginated}.
    * @throws NotFoundError if task does not exist
    */
-  getComments(
-    taskId: number,
-    pagination?: { limit?: number; offset?: number }
-  ): Comment[] {
+  getComments(taskId: number, pagination?: { limit?: number; offset?: number }): Comment[] {
     // Verify task exists
     const task = this.taskRepo.findById(taskId);
     if (!task) {
@@ -70,7 +72,7 @@ export class CommentService {
    */
   getCommentsPaginated(
     taskId: number,
-    pagination?: { limit?: number; offset?: number }
+    pagination?: { limit?: number; offset?: number },
   ): PaginatedResponse<Comment> {
     const task = this.taskRepo.findById(taskId);
     if (!task) {

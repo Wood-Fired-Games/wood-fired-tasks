@@ -42,10 +42,7 @@ export interface UpsertFromOidcDeps {
  * @throws Error (rethrown) when insert fails for a reason OTHER than a
  *         UNIQUE race (e.g. SQLITE_FULL).
  */
-export function upsertFromOidc(
-  deps: UpsertFromOidcDeps,
-  input: UserUpsertInput,
-): User {
+export function upsertFromOidc(deps: UpsertFromOidcDeps, input: UserUpsertInput): User {
   const { userRepository } = deps;
 
   const existing = userRepository.findByOidcSub(input.provider, input.sub);
@@ -63,9 +60,7 @@ export function upsertFromOidc(
     // updateProfile returning null mid-flight means the row was deleted
     // between findByOidcSub and updateProfile — extremely unlikely (no
     // delete path in v1.6), but fail loud rather than silently re-insert.
-    throw new Error(
-      `upsertFromOidc: user ${existing.id} disappeared mid-update`,
-    );
+    throw new Error(`upsertFromOidc: user ${existing.id} disappeared mid-update`);
   }
 
   try {

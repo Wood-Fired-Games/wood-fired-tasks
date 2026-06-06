@@ -34,10 +34,7 @@ describe('Shell completions', () => {
     it('command list stays in sync with Commander registry (task #247)', () => {
       // Completions must derive from the same Commander program that
       // bin/tasks.ts registers — no parallel hardcoded list.
-      const completionOutput = execSync(
-        'npx tsx src/cli/bin/tasks.ts completions bash',
-        execOpts,
-      );
+      const completionOutput = execSync('npx tsx src/cli/bin/tasks.ts completions bash', execOpts);
       const helpOutput = execSync('npx tsx src/cli/bin/tasks.ts --help', execOpts);
 
       const match = completionOutput.match(/commands="([^"]+)"/);

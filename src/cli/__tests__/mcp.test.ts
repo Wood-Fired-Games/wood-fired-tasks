@@ -21,18 +21,14 @@ describe('selectMcpEntrypoint', () => {
   });
 
   it('dispatches to the remote bridge when WFT_API_URL is set', () => {
-    expect(
-      selectMcpEntrypoint({ WFT_API_URL: 'http://host:3000' })
-    ).toBe('src/mcp/remote/index.ts');
-    expect(
-      selectMcpEntrypoint({ WFT_API_URL: 'http://host:3000' })
-    ).toBe(REMOTE_MCP_ENTRYPOINT);
+    expect(selectMcpEntrypoint({ WFT_API_URL: 'http://host:3000' })).toBe(
+      'src/mcp/remote/index.ts',
+    );
+    expect(selectMcpEntrypoint({ WFT_API_URL: 'http://host:3000' })).toBe(REMOTE_MCP_ENTRYPOINT);
   });
 
   it('dispatches to the remote bridge when --remote is provided', () => {
-    expect(selectMcpEntrypoint({ remote: 'http://host:3000' })).toBe(
-      REMOTE_MCP_ENTRYPOINT
-    );
+    expect(selectMcpEntrypoint({ remote: 'http://host:3000' })).toBe(REMOTE_MCP_ENTRYPOINT);
   });
 
   it('treats an empty WFT_API_URL as local (not remote)', () => {
@@ -40,9 +36,9 @@ describe('selectMcpEntrypoint', () => {
   });
 
   it('--remote takes precedence and selects remote even with empty env URL', () => {
-    expect(
-      selectMcpEntrypoint({ WFT_API_URL: '', remote: 'http://host:3000' })
-    ).toBe(REMOTE_MCP_ENTRYPOINT);
+    expect(selectMcpEntrypoint({ WFT_API_URL: '', remote: 'http://host:3000' })).toBe(
+      REMOTE_MCP_ENTRYPOINT,
+    );
   });
 });
 

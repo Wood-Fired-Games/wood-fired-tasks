@@ -38,7 +38,9 @@ vi.mock('../output/spinner.js', () => ({
 
 // Mock the formatters module
 vi.mock('../output/formatters.js', () => ({
-  formatDependencyList: vi.fn((deps) => `Blocks: ${deps.blocks.length}, Blocked by: ${deps.blocked_by.length}`),
+  formatDependencyList: vi.fn(
+    (deps) => `Blocks: ${deps.blocks.length}, Blocked by: ${deps.blocked_by.length}`,
+  ),
   colorSuccess: vi.fn((text: string) => text),
   colorError: vi.fn((text: string) => text),
   colorWarn: vi.fn((text: string) => text),
@@ -94,7 +96,7 @@ describe('dep-add command', () => {
 
     expect(addDependency).toHaveBeenCalledWith(1, { blocks_task_id: 2 });
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Dependency added: Task 1 blocks Task 2')
+      expect.stringContaining('Dependency added: Task 1 blocks Task 2'),
     );
   });
 
@@ -108,9 +110,7 @@ describe('dep-add command', () => {
 
     expect(addDependency).toHaveBeenCalledWith(1, { blocks_task_id: 2 });
     expect(jsonOutput).toHaveBeenCalledWith({ dependency: mockDependency });
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('Dependency added')
-    );
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('Dependency added'));
   });
 
   it('shows cycle detection error from API', async () => {
@@ -120,14 +120,12 @@ describe('dep-add command', () => {
       new ApiClientError('Would create a cycle', 422, {
         error: 'VALIDATION_ERROR',
         message: 'Would create a cycle',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'dep-add', '2', '1']);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Would create a cycle')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Would create a cycle'));
     expect(process.exitCode).toBe(1);
   });
 
@@ -136,9 +134,7 @@ describe('dep-add command', () => {
 
     await program.parseAsync(['node', 'test', 'dep-add', 'invalid', '2']);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('must be a number')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('must be a number'));
     expect(addDependency).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
@@ -148,9 +144,7 @@ describe('dep-add command', () => {
 
     await program.parseAsync(['node', 'test', 'dep-add', '1', 'invalid']);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('must be a number')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('must be a number'));
     expect(addDependency).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
@@ -190,14 +184,9 @@ describe('dep-remove command', () => {
 
     await program.parseAsync(['node', 'test', 'dep-remove', '1', '2']);
 
-    expect(confirmAction).toHaveBeenCalledWith(
-      'Remove dependency: Task 1 blocks Task 2?',
-      false
-    );
+    expect(confirmAction).toHaveBeenCalledWith('Remove dependency: Task 1 blocks Task 2?', false);
     expect(removeDependency).toHaveBeenCalledWith(1, 2);
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('no longer blocks')
-    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('no longer blocks'));
   });
 
   it('skips removal when not confirmed', async () => {
@@ -210,9 +199,7 @@ describe('dep-remove command', () => {
 
     expect(confirmAction).toHaveBeenCalled();
     expect(removeDependency).not.toHaveBeenCalled();
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('cancelled')
-    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('cancelled'));
   });
 
   it('removes dependency with --force flag', async () => {
@@ -225,9 +212,7 @@ describe('dep-remove command', () => {
     await program.parseAsync(['node', 'test', '--force', 'dep-remove', '1', '2']);
 
     expect(removeDependency).toHaveBeenCalledWith(1, 2);
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining('no longer blocks')
-    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('no longer blocks'));
   });
 
   it('outputs JSON when --json flag set', async () => {
@@ -242,11 +227,9 @@ describe('dep-remove command', () => {
 
     expect(jsonOutput).toHaveBeenCalledWith(
       {},
-      { message: 'Dependency removed: Task 1 no longer blocks Task 2' }
+      { message: 'Dependency removed: Task 1 no longer blocks Task 2' },
     );
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('no longer blocks')
-    );
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('no longer blocks'));
   });
 
   it('shows cancellation in JSON mode', async () => {
@@ -335,7 +318,7 @@ describe('dep-list command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'dep-list', '99999']);
@@ -350,9 +333,7 @@ describe('dep-list command', () => {
 
     await program.parseAsync(['node', 'test', 'dep-list', 'invalid']);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('must be a number')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('must be a number'));
     expect(getDependencies).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });

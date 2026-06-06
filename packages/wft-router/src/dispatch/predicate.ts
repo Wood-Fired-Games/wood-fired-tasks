@@ -138,10 +138,7 @@ export function evaluateWhere(where: Where, event: EventPayloadShape): boolean {
  * different event fields (`project_slug` vs `project_id`). Missing field
  * on the event fails the operator.
  */
-function matchProject(
-  projectFilter: string | number,
-  event: EventPayloadShape,
-): boolean {
+function matchProject(projectFilter: string | number, event: EventPayloadShape): boolean {
   if (typeof projectFilter === 'string') {
     return event.task?.project_slug === projectFilter;
   }

@@ -21,7 +21,7 @@ describe('Database Initialization', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as { name: string }[];
 
-    const tableNames = tables.map(t => t.name);
+    const tableNames = tables.map((t) => t.name);
 
     // Should include our core tables
     expect(tableNames).toContain('projects');
@@ -36,7 +36,7 @@ describe('Database Initialization', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")
       .all() as { name: string }[];
 
-    const indexNames = indexes.map(i => i.name);
+    const indexNames = indexes.map((i) => i.name);
 
     expect(indexNames).toContain('idx_tasks_project_id');
     expect(indexNames).toContain('idx_tasks_project_status_assignee');
@@ -62,15 +62,19 @@ describe('Database Initialization', () => {
     const projectId = projectResult.lastInsertRowid;
 
     // Insert a task
-    const taskResult = db.prepare(`
+    const taskResult = db
+      .prepare(`
       INSERT INTO tasks (title, description, project_id, created_by)
       VALUES (?, ?, ?, ?)
-    `).run('Test Task', 'Test Description', projectId, 'tester');
+    `)
+      .run('Test Task', 'Test Description', projectId, 'tester');
 
     const taskId = taskResult.lastInsertRowid;
 
     // Verify FTS5 table has the data
-    const ftsRows = db.prepare('SELECT rowid, title, description FROM tasks_fts WHERE rowid = ?').all(taskId);
+    const ftsRows = db
+      .prepare('SELECT rowid, title, description FROM tasks_fts WHERE rowid = ?')
+      .all(taskId);
     expect(ftsRows).toHaveLength(1);
     expect(ftsRows[0]).toMatchObject({
       rowid: taskId,
@@ -84,19 +88,26 @@ describe('Database Initialization', () => {
     const projectResult = db.prepare('INSERT INTO projects (name) VALUES (?)').run('Test Project');
     const projectId = projectResult.lastInsertRowid;
 
-    const taskResult = db.prepare(`
+    const taskResult = db
+      .prepare(`
       INSERT INTO tasks (title, description, project_id, created_by)
       VALUES (?, ?, ?, ?)
-    `).run('Original Title', 'Original Description', projectId, 'tester');
+    `)
+      .run('Original Title', 'Original Description', projectId, 'tester');
 
     const taskId = taskResult.lastInsertRowid;
 
     // Update the task
-    db.prepare('UPDATE tasks SET title = ?, description = ? WHERE id = ?')
-      .run('Updated Title', 'Updated Description', taskId);
+    db.prepare('UPDATE tasks SET title = ?, description = ? WHERE id = ?').run(
+      'Updated Title',
+      'Updated Description',
+      taskId,
+    );
 
     // Verify FTS5 table has the updated data
-    const ftsRows = db.prepare('SELECT rowid, title, description FROM tasks_fts WHERE rowid = ?').all(taskId);
+    const ftsRows = db
+      .prepare('SELECT rowid, title, description FROM tasks_fts WHERE rowid = ?')
+      .all(taskId);
     expect(ftsRows).toHaveLength(1);
     expect(ftsRows[0]).toMatchObject({
       rowid: taskId,
@@ -110,10 +121,12 @@ describe('Database Initialization', () => {
     const projectResult = db.prepare('INSERT INTO projects (name) VALUES (?)').run('Test Project');
     const projectId = projectResult.lastInsertRowid;
 
-    const taskResult = db.prepare(`
+    const taskResult = db
+      .prepare(`
       INSERT INTO tasks (title, description, project_id, created_by)
       VALUES (?, ?, ?, ?)
-    `).run('Test Task', 'Test Description', projectId, 'tester');
+    `)
+      .run('Test Task', 'Test Description', projectId, 'tester');
 
     const taskId = taskResult.lastInsertRowid;
 
@@ -150,15 +163,17 @@ describe('Database Initialization', () => {
     `).run('Update database schema', 'Add new fields', projectId, 'dev3');
 
     // Search for tasks containing "authentication" or "auth"
-    const searchResults = db.prepare(`
+    const searchResults = db
+      .prepare(`
       SELECT tasks.id, tasks.title
       FROM tasks
       JOIN tasks_fts ON tasks.id = tasks_fts.rowid
       WHERE tasks_fts MATCH ?
-    `).all('auth*') as { id: number; title: string }[];
+    `)
+      .all('auth*') as { id: number; title: string }[];
 
     expect(searchResults.length).toBeGreaterThan(0);
-    expect(searchResults.some(r => r.title.includes('authentication'))).toBe(true);
+    expect(searchResults.some((r) => r.title.includes('authentication'))).toBe(true);
   });
 
   it('should cascade delete tasks when project is deleted', () => {
@@ -172,14 +187,18 @@ describe('Database Initialization', () => {
     `).run('Test Task', projectId, 'tester');
 
     // Verify task exists
-    let tasks = db.prepare('SELECT COUNT(*) as count FROM tasks WHERE project_id = ?').get(projectId) as { count: number };
+    let tasks = db
+      .prepare('SELECT COUNT(*) as count FROM tasks WHERE project_id = ?')
+      .get(projectId) as { count: number };
     expect(tasks.count).toBe(1);
 
     // Delete the project
     db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 
     // Verify task was cascade deleted
-    tasks = db.prepare('SELECT COUNT(*) as count FROM tasks WHERE project_id = ?').get(projectId) as { count: number };
+    tasks = db
+      .prepare('SELECT COUNT(*) as count FROM tasks WHERE project_id = ?')
+      .get(projectId) as { count: number };
     expect(tasks.count).toBe(0);
   });
 });

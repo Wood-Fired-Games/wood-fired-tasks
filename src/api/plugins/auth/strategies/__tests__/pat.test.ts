@@ -67,10 +67,7 @@ function makeRequest(
   } as unknown as FastifyRequest;
 }
 
-function makeDeps(opts: {
-  findByHash?: ApiToken | null;
-  findById?: User | null;
-} = {}) {
+function makeDeps(opts: { findByHash?: ApiToken | null; findById?: User | null } = {}) {
   return {
     apiTokenRepository: {
       findByHash: vi.fn(() => opts.findByHash ?? null),
@@ -259,7 +256,8 @@ describe('PAT strategy tryAuth', () => {
         findById: makeUser(),
       });
       await tryAuth(req, deps);
-      const callArg = (deps.apiTokenRepository.findByHash as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const callArg = (deps.apiTokenRepository.findByHash as ReturnType<typeof vi.fn>).mock
+        .calls[0][0];
       expect(callArg).toBe(hashToken(token));
       // Critical: the raw token must NEVER be the lookup argument.
       expect(callArg).not.toBe(token);

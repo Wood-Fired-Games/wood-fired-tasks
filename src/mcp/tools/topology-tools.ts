@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toStructuredContent } from '../lib/structured-content.js';
 import { z } from 'zod';
 import type { TopologyService } from '../../services/topology.service.js';
 import { convertToMcpError } from '../errors.js';
@@ -14,10 +15,7 @@ import { convertToMcpError } from '../errors.js';
  * Input schema rejects non-positive / non-integer project IDs at the SDK
  * layer — those never reach the service.
  */
-export function registerTopologyTools(
-  server: McpServer,
-  topologyService: TopologyService,
-): void {
+export function registerTopologyTools(server: McpServer, topologyService: TopologyService): void {
   server.registerTool(
     'topology_check',
     {
@@ -47,7 +45,7 @@ export function registerTopologyTools(
                 `leaves=${report.leaves.length}`,
             },
           ],
-          structuredContent: report as unknown as Record<string, unknown>,
+          structuredContent: toStructuredContent(report),
         };
       } catch (error) {
         throw convertToMcpError(error);

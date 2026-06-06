@@ -75,7 +75,7 @@ function resolveActorUserId(
   command: SlashCommand,
   slackBotUserId: number,
   logger: SlackHandlerLogger,
-  action: string
+  action: string,
 ): number {
   const slackUser = services.userRepository.findBySlackUserId(command.user_id);
   if (slackUser) {
@@ -87,7 +87,7 @@ function resolveActorUserId(
       slack_user_id: command.user_id,
       action,
     },
-    'slack_user_unmapped'
+    'slack_user_unmapped',
   );
   return slackBotUserId;
 }
@@ -98,7 +98,10 @@ function resolveActorUserId(
  * Iterates the args array: tokens starting with '--' consume the next token as
  * their value and are recorded in `flags`. All other tokens go into `positionals`.
  */
-export function parseArgs(args: string[]): { positionals: string[]; flags: Record<string, string> } {
+export function parseArgs(args: string[]): {
+  positionals: string[];
+  flags: Record<string, string>;
+} {
   const positionals: string[] = [];
   const flags: Record<string, string> = {};
 
@@ -127,7 +130,7 @@ export function parseArgs(args: string[]): { positionals: string[]; flags: Recor
 export async function respondBlocks(
   respond: RespondFn,
   blocks: KnownBlock[],
-  fallbackText: string
+  fallbackText: string,
 ): Promise<void> {
   await respond({
     response_type: 'ephemeral',
@@ -145,7 +148,7 @@ export async function respondBlocks(
 export async function respondError(
   respond: RespondFn,
   message: string,
-  hint?: string
+  hint?: string,
 ): Promise<void> {
   const text = hint ? `${message}\n${hint}` : message;
   await respond({
@@ -266,11 +269,7 @@ const HELP_BLOCKS: KnownBlock[] = [
 /**
  * handleList — /tasks list [--status <s>] [--project <id>] [--assignee <a>] [--search <q>] [--tags <t>]
  */
-async function handleList(
-  respond: RespondFn,
-  services: Services,
-  args: string[]
-): Promise<void> {
+async function handleList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
   const { flags } = parseArgs(args);
 
   const filters: Record<string, unknown> = {};
@@ -288,11 +287,7 @@ async function handleList(
 /**
  * handleShow — /tasks show <id>
  */
-async function handleShow(
-  respond: RespondFn,
-  services: Services,
-  args: string[]
-): Promise<void> {
+async function handleShow(respond: RespondFn, services: Services, args: string[]): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
     await respondError(respond, 'Task ID required.', 'Usage: `/tasks show <id>`');
@@ -366,7 +361,7 @@ async function handleCreate(
   command: SlashCommand,
   args: string[],
   slackBotUserId: number,
-  logger: SlackHandlerLogger
+  logger: SlackHandlerLogger,
 ): Promise<void> {
   const { positionals, flags } = parseArgs(args);
 
@@ -376,7 +371,11 @@ async function handleCreate(
   }
 
   if (!flags['project']) {
-    await respondError(respond, 'Project ID required.', 'Usage: `/tasks create <title> --project <id>`');
+    await respondError(
+      respond,
+      'Project ID required.',
+      'Usage: `/tasks create <title> --project <id>`',
+    );
     return;
   }
 
@@ -414,14 +413,14 @@ async function handleCreate(
  * No actor resolution here — the `tasks` table has no `updated_by_user_id`
  * column in migration 009 per the plan threat-model / RESEARCH §1.
  */
-async function handleUpdate(
-  respond: RespondFn,
-  services: Services,
-  args: string[]
-): Promise<void> {
+async function handleUpdate(respond: RespondFn, services: Services, args: string[]): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
-    await respondError(respond, 'Task ID required.', 'Usage: `/tasks update <id> --status <status>`');
+    await respondError(
+      respond,
+      'Task ID required.',
+      'Usage: `/tasks update <id> --status <status>`',
+    );
     return;
   }
 
@@ -467,11 +466,7 @@ async function handleUpdate(
 /**
  * handleDelete — /tasks delete <id>
  */
-async function handleDelete(
-  respond: RespondFn,
-  services: Services,
-  args: string[]
-): Promise<void> {
+async function handleDelete(respond: RespondFn, services: Services, args: string[]): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
     await respondError(respond, 'Task ID required.', 'Usage: `/tasks delete <id>`');
@@ -482,8 +477,13 @@ async function handleDelete(
 
   await respondBlocks(
     respond,
-    [{ type: 'section', text: { type: 'mrkdwn', text: `:white_check_mark: Task #${id} deleted.` } } as KnownBlock],
-    `Task #${id} deleted.`
+    [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:white_check_mark: Task #${id} deleted.` },
+      } as KnownBlock,
+    ],
+    `Task #${id} deleted.`,
   );
 }
 
@@ -501,7 +501,7 @@ async function handleClaim(
   command: SlashCommand,
   args: string[],
   slackBotUserId: number,
-  logger: SlackHandlerLogger
+  logger: SlackHandlerLogger,
 ): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
@@ -532,7 +532,11 @@ async function handleProjectList(respond: RespondFn, services: Services): Promis
 /**
  * handleProjectShow — /tasks project-show <id>
  */
-async function handleProjectShow(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleProjectShow(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
     await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-show <id>`');
@@ -546,7 +550,11 @@ async function handleProjectShow(respond: RespondFn, services: Services, args: s
 /**
  * handleProjectCreate — /tasks project-create <name> [--description <desc>]
  */
-async function handleProjectCreate(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleProjectCreate(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const { positionals, flags } = parseArgs(args);
   const name = positionals.join(' ');
   if (!name) {
@@ -564,10 +572,18 @@ async function handleProjectCreate(respond: RespondFn, services: Services, args:
 /**
  * handleProjectUpdate — /tasks project-update <id> [--name <name>] [--description <desc>]
  */
-async function handleProjectUpdate(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleProjectUpdate(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
-    await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-update <id> --name <name>`');
+    await respondError(
+      respond,
+      'Project ID required.',
+      'Usage: `/tasks project-update <id> --name <name>`',
+    );
     return;
   }
   const { flags } = parseArgs(args.slice(1));
@@ -586,7 +602,11 @@ async function handleProjectUpdate(respond: RespondFn, services: Services, args:
 /**
  * handleProjectDelete — /tasks project-delete <id>
  */
-async function handleProjectDelete(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleProjectDelete(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
     await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-delete <id>`');
@@ -595,8 +615,13 @@ async function handleProjectDelete(respond: RespondFn, services: Services, args:
   services.projectService.deleteProject(id);
   await respondBlocks(
     respond,
-    [{ type: 'section', text: { type: 'mrkdwn', text: `:white_check_mark: Project #${id} deleted.` } } as KnownBlock],
-    `Project #${id} deleted.`
+    [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:white_check_mark: Project #${id} deleted.` },
+      } as KnownBlock,
+    ],
+    `Project #${id} deleted.`,
   );
 }
 
@@ -614,25 +639,34 @@ async function handleDepAdd(respond: RespondFn, services: Services, args: string
     await respondError(
       respond,
       'Two task IDs required.',
-      'Usage: `/tasks dep-add <task-id> <blocks-task-id>`'
+      'Usage: `/tasks dep-add <task-id> <blocks-task-id>`',
     );
     return;
   }
   services.dependencyService.addDependency({ task_id: taskId, blocks_task_id: blocksTaskId });
   await respondBlocks(
     respond,
-    [{
-      type: 'section',
-      text: { type: 'mrkdwn', text: `:white_check_mark: Dependency added: Task #${taskId} blocks Task #${blocksTaskId}` },
-    } as KnownBlock],
-    `Dependency added: Task #${taskId} blocks Task #${blocksTaskId}`
+    [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `:white_check_mark: Dependency added: Task #${taskId} blocks Task #${blocksTaskId}`,
+        },
+      } as KnownBlock,
+    ],
+    `Dependency added: Task #${taskId} blocks Task #${blocksTaskId}`,
   );
 }
 
 /**
  * handleDepList — /tasks dep-list <task_id>
  */
-async function handleDepList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleDepList(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
     await respondError(respond, 'Task ID required.', 'Usage: `/tasks dep-list <id>`');
@@ -641,48 +675,57 @@ async function handleDepList(respond: RespondFn, services: Services, args: strin
   const blockedBy = services.dependencyService.getBlockedBy(id);
   const blockers = services.dependencyService.getBlockers(id);
 
-  const blocksText = blockedBy.length > 0
-    ? blockedBy.map((d) => `#${d.blocks_task_id}`).join(', ')
-    : '_none_';
-  const blockersText = blockers.length > 0
-    ? blockers.map((d) => `#${d.task_id}`).join(', ')
-    : '_none_';
+  const blocksText =
+    blockedBy.length > 0 ? blockedBy.map((d) => `#${d.blocks_task_id}`).join(', ') : '_none_';
+  const blockersText =
+    blockers.length > 0 ? blockers.map((d) => `#${d.task_id}`).join(', ') : '_none_';
 
   await respondBlocks(
     respond,
-    [{
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Dependencies for Task #${id}*\n*Blocks:* ${blocksText}\n*Blocked by:* ${blockersText}`,
-      },
-    } as KnownBlock],
-    `Dependencies for Task #${id}`
+    [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Dependencies for Task #${id}*\n*Blocks:* ${blocksText}\n*Blocked by:* ${blockersText}`,
+        },
+      } as KnownBlock,
+    ],
+    `Dependencies for Task #${id}`,
   );
 }
 
 /**
  * handleDepRemove — /tasks dep-remove <task_id> <blocks_task_id>
  */
-async function handleDepRemove(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleDepRemove(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const taskId = parseInt(args[0] ?? '', 10);
   const blocksTaskId = parseInt(args[1] ?? '', 10);
   if (isNaN(taskId) || isNaN(blocksTaskId)) {
     await respondError(
       respond,
       'Two task IDs required.',
-      'Usage: `/tasks dep-remove <task-id> <blocks-task-id>`'
+      'Usage: `/tasks dep-remove <task-id> <blocks-task-id>`',
     );
     return;
   }
   services.dependencyService.removeDependency(taskId, blocksTaskId);
   await respondBlocks(
     respond,
-    [{
-      type: 'section',
-      text: { type: 'mrkdwn', text: `:white_check_mark: Dependency removed: Task #${taskId} no longer blocks Task #${blocksTaskId}` },
-    } as KnownBlock],
-    `Dependency removed: Task #${taskId} no longer blocks Task #${blocksTaskId}`
+    [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `:white_check_mark: Dependency removed: Task #${taskId} no longer blocks Task #${blocksTaskId}`,
+        },
+      } as KnownBlock,
+    ],
+    `Dependency removed: Task #${taskId} no longer blocks Task #${blocksTaskId}`,
   );
 }
 
@@ -702,35 +745,54 @@ async function handleCommentAdd(
   command: SlashCommand,
   args: string[],
   slackBotUserId: number,
-  logger: SlackHandlerLogger
+  logger: SlackHandlerLogger,
 ): Promise<void> {
   const taskId = parseInt(args[0] ?? '', 10);
   if (isNaN(taskId)) {
-    await respondError(respond, 'Task ID required.', 'Usage: `/tasks comment-add <task-id> <content>`');
+    await respondError(
+      respond,
+      'Task ID required.',
+      'Usage: `/tasks comment-add <task-id> <content>`',
+    );
     return;
   }
   const content = args.slice(1).join(' ');
   if (!content) {
-    await respondError(respond, 'Comment content required.', 'Usage: `/tasks comment-add <task-id> <content>`');
+    await respondError(
+      respond,
+      'Comment content required.',
+      'Usage: `/tasks comment-add <task-id> <content>`',
+    );
     return;
   }
   const author = await identityCache.resolve(command.user_id);
   const actorUserId = resolveActorUserId(services, command, slackBotUserId, logger, 'comment-add');
-  services.commentService.addComment({ task_id: taskId, author, content, author_user_id: actorUserId });
+  services.commentService.addComment({
+    task_id: taskId,
+    author,
+    content,
+    author_user_id: actorUserId,
+  });
   await respondBlocks(
     respond,
-    [{
-      type: 'section',
-      text: { type: 'mrkdwn', text: `:white_check_mark: Comment added to Task #${taskId}` },
-    } as KnownBlock],
-    `Comment added to Task #${taskId}`
+    [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:white_check_mark: Comment added to Task #${taskId}` },
+      } as KnownBlock,
+    ],
+    `Comment added to Task #${taskId}`,
   );
 }
 
 /**
  * handleCommentList — /tasks comment-list <task_id>
  */
-async function handleCommentList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleCommentList(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const id = parseInt(args[0] ?? '', 10);
   if (isNaN(id)) {
     await respondError(respond, 'Task ID required.', 'Usage: `/tasks comment-list <id>`');
@@ -741,17 +803,23 @@ async function handleCommentList(respond: RespondFn, services: Services, args: s
     await respondBlocks(
       respond,
       [{ type: 'section', text: { type: 'mrkdwn', text: '_No comments._' } } as KnownBlock],
-      `No comments for Task #${id}`
+      `No comments for Task #${id}`,
     );
     return;
   }
   const blocks: KnownBlock[] = [
-    { type: 'header', text: { type: 'plain_text', text: `Comments for Task #${id}`, emoji: true } } as KnownBlock,
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: `Comments for Task #${id}`, emoji: true },
+    } as KnownBlock,
   ];
   for (const comment of comments) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `*${comment.author}* (${comment.created_at})\n${comment.content}` },
+      text: {
+        type: 'mrkdwn',
+        text: `*${comment.author}* (${comment.created_at})\n${comment.content}`,
+      },
     } as KnownBlock);
   }
   await respondBlocks(respond, blocks, `Comments for Task #${id}`);
@@ -760,25 +828,31 @@ async function handleCommentList(respond: RespondFn, services: Services, args: s
 /**
  * handleCommentDelete — /tasks comment-delete <task_id> <comment_id>
  */
-async function handleCommentDelete(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleCommentDelete(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const taskId = parseInt(args[0] ?? '', 10);
   const commentId = parseInt(args[1] ?? '', 10);
   if (isNaN(taskId) || isNaN(commentId)) {
     await respondError(
       respond,
       'Task ID and Comment ID required.',
-      'Usage: `/tasks comment-delete <task-id> <comment-id>`'
+      'Usage: `/tasks comment-delete <task-id> <comment-id>`',
     );
     return;
   }
   services.commentService.deleteComment(commentId);
   await respondBlocks(
     respond,
-    [{
-      type: 'section',
-      text: { type: 'mrkdwn', text: `:white_check_mark: Comment #${commentId} deleted.` },
-    } as KnownBlock],
-    `Comment #${commentId} deleted.`
+    [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:white_check_mark: Comment #${commentId} deleted.` },
+      } as KnownBlock,
+    ],
+    `Comment #${commentId} deleted.`,
   );
 }
 
@@ -800,25 +874,43 @@ async function handleSubtaskCreate(
   command: SlashCommand,
   args: string[],
   slackBotUserId: number,
-  logger: SlackHandlerLogger
+  logger: SlackHandlerLogger,
 ): Promise<void> {
   const parentId = parseInt(args[0] ?? '', 10);
   if (isNaN(parentId)) {
-    await respondError(respond, 'Parent task ID required.', 'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`');
+    await respondError(
+      respond,
+      'Parent task ID required.',
+      'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`',
+    );
     return;
   }
   const { positionals, flags } = parseArgs(args.slice(1));
   const title = positionals.join(' ');
   if (!title) {
-    await respondError(respond, 'Subtask title required.', 'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`');
+    await respondError(
+      respond,
+      'Subtask title required.',
+      'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`',
+    );
     return;
   }
   if (!flags['project']) {
-    await respondError(respond, 'Project ID required.', 'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`');
+    await respondError(
+      respond,
+      'Project ID required.',
+      'Usage: `/tasks subtask-create <parent-id> <title> --project <id>`',
+    );
     return;
   }
   const createdBy = await identityCache.resolve(command.user_id);
-  const actorUserId = resolveActorUserId(services, command, slackBotUserId, logger, 'subtask-create');
+  const actorUserId = resolveActorUserId(
+    services,
+    command,
+    slackBotUserId,
+    logger,
+    'subtask-create',
+  );
   const task = services.taskService.createTask({
     title,
     project_id: parseInt(flags['project'], 10),
@@ -834,10 +926,18 @@ async function handleSubtaskCreate(
 /**
  * handleSubtaskList — /tasks subtask-list <parent_id>
  */
-async function handleSubtaskList(respond: RespondFn, services: Services, args: string[]): Promise<void> {
+async function handleSubtaskList(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
   const parentId = parseInt(args[0] ?? '', 10);
   if (isNaN(parentId)) {
-    await respondError(respond, 'Parent task ID required.', 'Usage: `/tasks subtask-list <parent-id>`');
+    await respondError(
+      respond,
+      'Parent task ID required.',
+      'Usage: `/tasks subtask-list <parent-id>`',
+    );
     return;
   }
   const subtasks = services.taskService.getSubtasks(parentId);
@@ -857,17 +957,27 @@ async function handleHealth(respond: RespondFn, services: Services): Promise<voi
     const count = services.taskService.countTasks();
     await respondBlocks(
       respond,
-      [{
-        type: 'section',
-        text: { type: 'mrkdwn', text: `:white_check_mark: Service is healthy. ${count} tasks in database.` },
-      } as KnownBlock],
-      `Service is healthy. ${count} tasks in database.`
+      [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `:white_check_mark: Service is healthy. ${count} tasks in database.`,
+          },
+        } as KnownBlock,
+      ],
+      `Service is healthy. ${count} tasks in database.`,
     );
   } catch {
     await respondBlocks(
       respond,
-      [{ type: 'section', text: { type: 'mrkdwn', text: ':x: Service health check failed.' } } as KnownBlock],
-      'Service health check failed.'
+      [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: ':x: Service health check failed.' },
+        } as KnownBlock,
+      ],
+      'Service health check failed.',
     );
   }
 }
@@ -882,14 +992,16 @@ async function handleHealth(respond: RespondFn, services: Services): Promise<voi
 async function handleCliOnly(respond: RespondFn, subcommand: string): Promise<void> {
   await respondBlocks(
     respond,
-    [{
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `:information_source: \`${subcommand}\` is only available via the CLI.\nRun: \`tasks ${subcommand}\``,
-      },
-    } as KnownBlock],
-    `${subcommand} is only available via the CLI.`
+    [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `:information_source: \`${subcommand}\` is only available via the CLI.\nRun: \`tasks ${subcommand}\``,
+        },
+      } as KnownBlock,
+    ],
+    `${subcommand} is only available via the CLI.`,
   );
 }
 
@@ -905,7 +1017,7 @@ async function handleSubscribe(
   services: Services,
   subscriptionRepo: SlackChannelSubscriptionRepository | undefined,
   command: SlashCommand,
-  args: string[]
+  args: string[],
 ): Promise<void> {
   if (!subscriptionRepo) {
     await respondError(respond, 'Slack notifications not configured.');
@@ -918,7 +1030,7 @@ async function handleSubscribe(
     await respondError(
       respond,
       'Missing required flag: `--project <id>`',
-      'Usage: `/tasks subscribe --project 3 [--events task.created,task.status_changed]`'
+      'Usage: `/tasks subscribe --project 3 [--events task.created,task.status_changed]`',
     );
     return;
   }
@@ -941,14 +1053,17 @@ async function handleSubscribe(
   const DEFAULT_EVENTS: string[] = ['task.created', 'task.status_changed'];
   const eventsStr = flags['events'];
   const eventTypes = eventsStr
-    ? eventsStr.split(',').map(e => e.trim()).filter(e => e.length > 0)
+    ? eventsStr
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0)
     : DEFAULT_EVENTS;
 
   if (eventTypes.length === 0) {
     await respondError(
       respond,
       'No event types specified.',
-      `Allowed values: ${ALLOWED_EVENT_TYPES.map(e => '`' + e + '`').join(', ')}`
+      `Allowed values: ${ALLOWED_EVENT_TYPES.map((e) => '`' + e + '`').join(', ')}`,
     );
     return;
   }
@@ -960,7 +1075,7 @@ async function handleSubscribe(
       await respondError(
         respond,
         `Invalid event type: \`${eventType}\``,
-        `Allowed values: ${ALLOWED_EVENT_TYPES.map(e => '`' + e + '`').join(', ')}`
+        `Allowed values: ${ALLOWED_EVENT_TYPES.map((e) => '`' + e + '`').join(', ')}`,
       );
       return;
     }
@@ -972,7 +1087,7 @@ async function handleSubscribe(
     await respondError(
       respond,
       `Subscription cap reached for this channel (${currentCount}/${MAX_SUBSCRIPTIONS_PER_CHANNEL}).`,
-      'Run `/tasks unsubscribe` to remove existing subscriptions before adding more.'
+      'Run `/tasks unsubscribe` to remove existing subscriptions before adding more.',
     );
     return;
   }
@@ -981,15 +1096,19 @@ async function handleSubscribe(
 
   // Show confirmation
   const project = services.projectService.getProject(projectId);
-  await respondBlocks(respond, [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `:bell: Subscribed this channel to *${project.name}* events: ${eventTypes.map(e => '`' + e + '`').join(', ')}`,
-      },
-    } as KnownBlock,
-  ], `Subscribed to ${project.name} events`);
+  await respondBlocks(
+    respond,
+    [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `:bell: Subscribed this channel to *${project.name}* events: ${eventTypes.map((e) => '`' + e + '`').join(', ')}`,
+        },
+      } as KnownBlock,
+    ],
+    `Subscribed to ${project.name} events`,
+  );
 }
 
 /**
@@ -999,7 +1118,7 @@ async function handleUnsubscribe(
   respond: RespondFn,
   subscriptionRepo: SlackChannelSubscriptionRepository | undefined,
   command: SlashCommand,
-  args: string[]
+  args: string[],
 ): Promise<void> {
   if (!subscriptionRepo) {
     await respondError(respond, 'Slack notifications not configured.');
@@ -1023,15 +1142,19 @@ async function handleUnsubscribe(
   }
 
   const scope = projectId ? `project \`${projectId}\`` : 'all projects';
-  await respondBlocks(respond, [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `:no_bell: Unsubscribed this channel from ${scope} (${removed} subscription${removed !== 1 ? 's' : ''} removed).`,
-      },
-    } as KnownBlock,
-  ], `Unsubscribed from ${scope}`);
+  await respondBlocks(
+    respond,
+    [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `:no_bell: Unsubscribed this channel from ${scope} (${removed} subscription${removed !== 1 ? 's' : ''} removed).`,
+        },
+      } as KnownBlock,
+    ],
+    `Unsubscribed from ${scope}`,
+  );
 }
 
 /**
@@ -1053,7 +1176,7 @@ export function registerTasksCommand(
   services: Services,
   identityCache: UserIdentityCache,
   subscriptionRepo?: SlackChannelSubscriptionRepository,
-  logger: SlackHandlerLogger = noopLogger
+  logger: SlackHandlerLogger = noopLogger,
 ): void {
   // Phase 31 (Plan 31-04): Resolve the slack-bot service-account user ONCE at
   // registration. This id is the fallback when an incoming command's user_id
@@ -1063,131 +1186,174 @@ export function registerTasksCommand(
   const slackBot = services.userRepository.findServiceAccountByName('slack-bot');
   if (!slackBot) {
     throw new Error(
-      'slack-bot service account not seeded — createApp must run identity-seeder first'
+      'slack-bot service account not seeded — createApp must run identity-seeder first',
     );
   }
   const slackBotUserId: number = slackBot.id;
 
-  app.command('/tasks', async ({ ack, respond, command }: { ack: () => Promise<void>; respond: RespondFn; command: SlashCommand }) => {
-    // FIRST: ack() — must complete within 3 seconds of Slack delivering the event.
-    // Everything after this point has no time constraint (respond_url valid 30 min).
-    await ack();
+  app.command(
+    '/tasks',
+    async ({
+      ack,
+      respond,
+      command,
+    }: {
+      ack: () => Promise<void>;
+      respond: RespondFn;
+      command: SlashCommand;
+    }) => {
+      // FIRST: ack() — must complete within 3 seconds of Slack delivering the event.
+      // Everything after this point has no time constraint (respond_url valid 30 min).
+      await ack();
 
-    const text = command.text.trim();
-    const [subcommand, ...args] = text ? text.split(/\s+/) : [''];
+      const text = command.text.trim();
+      const [subcommand, ...args] = text ? text.split(/\s+/) : [''];
 
-    try {
-      switch (subcommand) {
-        // ── Task commands ──────────────────────────────────────────────────────
-        case 'list':
-          await handleList(respond, services, args);
-          break;
-        case 'show':
-          await handleShow(respond, services, args);
-          break;
-        case 'create':
-          await handleCreate(respond, services, identityCache, command, args, slackBotUserId, logger);
-          break;
-        case 'update':
-          await handleUpdate(respond, services, args);
-          break;
-        case 'delete':
-          await handleDelete(respond, services, args);
-          break;
-        case 'claim':
-          await handleClaim(respond, services, identityCache, command, args, slackBotUserId, logger);
-          break;
+      try {
+        switch (subcommand) {
+          // ── Task commands ──────────────────────────────────────────────────────
+          case 'list':
+            await handleList(respond, services, args);
+            break;
+          case 'show':
+            await handleShow(respond, services, args);
+            break;
+          case 'create':
+            await handleCreate(
+              respond,
+              services,
+              identityCache,
+              command,
+              args,
+              slackBotUserId,
+              logger,
+            );
+            break;
+          case 'update':
+            await handleUpdate(respond, services, args);
+            break;
+          case 'delete':
+            await handleDelete(respond, services, args);
+            break;
+          case 'claim':
+            await handleClaim(
+              respond,
+              services,
+              identityCache,
+              command,
+              args,
+              slackBotUserId,
+              logger,
+            );
+            break;
 
-        // ── Project commands ───────────────────────────────────────────────────
-        case 'project-list':
-          await handleProjectList(respond, services);
-          break;
-        case 'project-show':
-          await handleProjectShow(respond, services, args);
-          break;
-        case 'project-create':
-          await handleProjectCreate(respond, services, args);
-          break;
-        case 'project-update':
-          await handleProjectUpdate(respond, services, args);
-          break;
-        case 'project-delete':
-          await handleProjectDelete(respond, services, args);
-          break;
+          // ── Project commands ───────────────────────────────────────────────────
+          case 'project-list':
+            await handleProjectList(respond, services);
+            break;
+          case 'project-show':
+            await handleProjectShow(respond, services, args);
+            break;
+          case 'project-create':
+            await handleProjectCreate(respond, services, args);
+            break;
+          case 'project-update':
+            await handleProjectUpdate(respond, services, args);
+            break;
+          case 'project-delete':
+            await handleProjectDelete(respond, services, args);
+            break;
 
-        // ── Dependency commands ────────────────────────────────────────────────
-        case 'dep-add':
-          await handleDepAdd(respond, services, args);
-          break;
-        case 'dep-list':
-          await handleDepList(respond, services, args);
-          break;
-        case 'dep-remove':
-          await handleDepRemove(respond, services, args);
-          break;
+          // ── Dependency commands ────────────────────────────────────────────────
+          case 'dep-add':
+            await handleDepAdd(respond, services, args);
+            break;
+          case 'dep-list':
+            await handleDepList(respond, services, args);
+            break;
+          case 'dep-remove':
+            await handleDepRemove(respond, services, args);
+            break;
 
-        // ── Comment commands ───────────────────────────────────────────────────
-        case 'comment-add':
-          await handleCommentAdd(respond, services, identityCache, command, args, slackBotUserId, logger);
-          break;
-        case 'comment-list':
-          await handleCommentList(respond, services, args);
-          break;
-        case 'comment-delete':
-          await handleCommentDelete(respond, services, args);
-          break;
+          // ── Comment commands ───────────────────────────────────────────────────
+          case 'comment-add':
+            await handleCommentAdd(
+              respond,
+              services,
+              identityCache,
+              command,
+              args,
+              slackBotUserId,
+              logger,
+            );
+            break;
+          case 'comment-list':
+            await handleCommentList(respond, services, args);
+            break;
+          case 'comment-delete':
+            await handleCommentDelete(respond, services, args);
+            break;
 
-        // ── Subtask commands ───────────────────────────────────────────────────
-        case 'subtask-create':
-          await handleSubtaskCreate(respond, services, identityCache, command, args, slackBotUserId, logger);
-          break;
-        case 'subtask-list':
-          await handleSubtaskList(respond, services, args);
-          break;
+          // ── Subtask commands ───────────────────────────────────────────────────
+          case 'subtask-create':
+            await handleSubtaskCreate(
+              respond,
+              services,
+              identityCache,
+              command,
+              args,
+              slackBotUserId,
+              logger,
+            );
+            break;
+          case 'subtask-list':
+            await handleSubtaskList(respond, services, args);
+            break;
 
-        // ── Health ─────────────────────────────────────────────────────────────
-        case 'health':
-          await handleHealth(respond, services);
-          break;
+          // ── Health ─────────────────────────────────────────────────────────────
+          case 'health':
+            await handleHealth(respond, services);
+            break;
 
-        // ── Operational commands (CLI-only stubs) ──────────────────────────────
-        case 'backup':
-        case 'doctor':
-        case 'stats':
-        case 'db-check':
-        case 'completions':
-          await handleCliOnly(respond, subcommand);
-          break;
+          // ── Operational commands (CLI-only stubs) ──────────────────────────────
+          case 'backup':
+          case 'doctor':
+          case 'stats':
+          case 'db-check':
+          case 'completions':
+            await handleCliOnly(respond, subcommand);
+            break;
 
-        // ── Notification subscription commands ────────────────────────────────
-        case 'subscribe':
-          await handleSubscribe(respond, services, subscriptionRepo, command, args);
-          break;
-        case 'unsubscribe':
-          await handleUnsubscribe(respond, subscriptionRepo, command, args);
-          break;
+          // ── Notification subscription commands ────────────────────────────────
+          case 'subscribe':
+            await handleSubscribe(respond, services, subscriptionRepo, command, args);
+            break;
+          case 'unsubscribe':
+            await handleUnsubscribe(respond, subscriptionRepo, command, args);
+            break;
 
-        // ── Help ───────────────────────────────────────────────────────────────
-        case 'help':
-          await respondBlocks(respond, HELP_BLOCKS, 'Tasks \u2014 Available Commands');
-          break;
+          // ── Help ───────────────────────────────────────────────────────────────
+          case 'help':
+            await respondBlocks(respond, HELP_BLOCKS, 'Tasks \u2014 Available Commands');
+            break;
 
-        // ── Empty / bare /tasks → help ─────────────────────────────────────────
-        case '':
-        case undefined:
-          await respondBlocks(respond, HELP_BLOCKS, 'Tasks \u2014 Available Commands');
-          break;
+          // ── Empty / bare /tasks → help ─────────────────────────────────────────
+          case '':
+          case undefined:
+            await respondBlocks(respond, HELP_BLOCKS, 'Tasks \u2014 Available Commands');
+            break;
 
-        // ── Unknown subcommand ─────────────────────────────────────────────────
-        default:
-          await respondError(
-            respond,
-            `Unknown subcommand: \`${subcommand}\``,
-            'Run `/tasks help` to see available subcommands.'
-          );
+          // ── Unknown subcommand ─────────────────────────────────────────────────
+          default:
+            await respondError(
+              respond,
+              `Unknown subcommand: \`${subcommand}\``,
+              'Run `/tasks help` to see available subcommands.',
+            );
+        }
+      } catch (error) {
+        await respondError(respond, formatServiceError(error));
       }
-    } catch (error) {
-      await respondError(respond, formatServiceError(error));
-    }
-  });
+    },
+  );
 }

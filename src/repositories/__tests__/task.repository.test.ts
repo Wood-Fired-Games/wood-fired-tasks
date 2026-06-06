@@ -30,9 +30,7 @@ describe('TaskRepository', () => {
   });
 
   // Helper function to create test task with defaults
-  const createTestTask = (
-    overrides?: Partial<CreateTaskDTO>
-  ): CreateTaskDTO => ({
+  const createTestTask = (overrides?: Partial<CreateTaskDTO>): CreateTaskDTO => ({
     title: 'Test Task',
     description: 'Task description',
     status: 'open',
@@ -61,9 +59,7 @@ describe('TaskRepository', () => {
     id: number,
   ): { created_by_user_id: number | null; assignee_user_id: number | null } => {
     const row = db
-      .prepare(
-        'SELECT created_by_user_id, assignee_user_id FROM tasks WHERE id = ?',
-      )
+      .prepare('SELECT created_by_user_id, assignee_user_id FROM tasks WHERE id = ?')
       .get(id) as {
       created_by_user_id: number | null;
       assignee_user_id: number | null;
@@ -132,9 +128,7 @@ describe('TaskRepository', () => {
 
       it('leaves assignee_user_id untouched when only TEXT assignee is updated', () => {
         const danId = insertUser({ display_name: 'dan' });
-        const task = taskRepo.create(
-          createTestTask({ assignee: 'dan', assignee_user_id: danId }),
-        );
+        const task = taskRepo.create(createTestTask({ assignee: 'dan', assignee_user_id: danId }));
         // Update only the TEXT assignee; FK must NOT be cleared.
         taskRepo.update(task.id, { assignee: 'dan-renamed' });
         const fks = readFkColumns(task.id);
@@ -204,10 +198,7 @@ describe('TaskRepository', () => {
 
   describe('findById', () => {
     it('should return task with tags', () => {
-      const created = taskRepo.create(
-        createTestTask({ title: 'Find Me' }),
-        ['tag1', 'tag2']
-      );
+      const created = taskRepo.create(createTestTask({ title: 'Find Me' }), ['tag1', 'tag2']);
 
       const found = taskRepo.findById(created.id);
 
@@ -246,10 +237,7 @@ describe('TaskRepository', () => {
     });
 
     it('should update task tags by replacing all tags', () => {
-      const task = taskRepo.create(
-        createTestTask(),
-        ['old-tag1', 'old-tag2']
-      );
+      const task = taskRepo.create(createTestTask(), ['old-tag1', 'old-tag2']);
 
       const updated = taskRepo.update(task.id, {
         tags: ['new-tag1', 'new-tag2', 'new-tag3'],
@@ -286,9 +274,7 @@ describe('TaskRepository', () => {
       expect(afterDelete).toBeNull();
 
       // Verify tags are cascade-deleted
-      const tags = db
-        .prepare('SELECT * FROM task_tags WHERE task_id = ?')
-        .all(task.id);
+      const tags = db.prepare('SELECT * FROM task_tags WHERE task_id = ?').all(task.id);
       expect(tags).toHaveLength(0);
     });
   });
@@ -303,7 +289,7 @@ describe('TaskRepository', () => {
           assignee: 'alice',
           due_date: '2026-03-15',
         }),
-        ['frontend', 'bug']
+        ['frontend', 'bug'],
       );
 
       taskRepo.create(
@@ -313,7 +299,7 @@ describe('TaskRepository', () => {
           assignee: 'bob',
           due_date: '2026-03-20',
         }),
-        ['backend', 'feature']
+        ['backend', 'feature'],
       );
 
       taskRepo.create(
@@ -323,7 +309,7 @@ describe('TaskRepository', () => {
           assignee: 'alice',
           due_date: '2026-03-10',
         }),
-        ['backend', 'bug']
+        ['backend', 'bug'],
       );
 
       taskRepo.create(
@@ -334,7 +320,7 @@ describe('TaskRepository', () => {
           assignee: 'charlie',
           due_date: '2026-03-25',
         }),
-        ['database']
+        ['database'],
       );
 
       taskRepo.create(
@@ -343,7 +329,7 @@ describe('TaskRepository', () => {
           status: 'open',
           assignee: 'alice',
           due_date: '2026-04-01',
-        })
+        }),
         // No tags
       );
     });
@@ -433,14 +419,8 @@ describe('TaskRepository', () => {
 
   describe('findAll', () => {
     it('should return all tasks with tags ordered by created_at DESC', () => {
-      const task1 = taskRepo.create(
-        createTestTask({ title: 'First' }),
-        ['tag1']
-      );
-      const task2 = taskRepo.create(
-        createTestTask({ title: 'Second' }),
-        ['tag2']
-      );
+      const task1 = taskRepo.create(createTestTask({ title: 'First' }), ['tag1']);
+      const task2 = taskRepo.create(createTestTask({ title: 'Second' }), ['tag2']);
       const task3 = taskRepo.create(createTestTask({ title: 'Third' }));
 
       const all = taskRepo.findAll();
@@ -483,14 +463,12 @@ describe('TaskRepository', () => {
       // Seed a few tasks so the FTS index has rows; the malformed-search
       // assertions rely on MATCH actually being evaluated, which requires a
       // populated FTS table.
-      taskRepo.create(
-        createTestTask({ title: 'Fix login bug', description: 'auth' })
-      );
+      taskRepo.create(createTestTask({ title: 'Fix login bug', description: 'auth' }));
       taskRepo.create(
         createTestTask({
           title: 'Database migration bug',
           description: 'migrate users to new schema',
-        })
+        }),
       );
     });
 
@@ -504,15 +482,11 @@ describe('TaskRepository', () => {
 
     for (const { name, input } of MALFORMED_INPUTS) {
       it(`findByFilters throws FtsSyntaxError on ${name}`, () => {
-        expect(() => taskRepo.findByFilters({ search: input })).toThrow(
-          FtsSyntaxError
-        );
+        expect(() => taskRepo.findByFilters({ search: input })).toThrow(FtsSyntaxError);
       });
 
       it(`count throws FtsSyntaxError on ${name}`, () => {
-        expect(() => taskRepo.count({ search: input })).toThrow(
-          FtsSyntaxError
-        );
+        expect(() => taskRepo.count({ search: input })).toThrow(FtsSyntaxError);
       });
     }
 

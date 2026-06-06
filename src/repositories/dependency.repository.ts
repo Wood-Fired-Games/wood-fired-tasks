@@ -20,21 +20,17 @@ export class DependencyRepository implements IDependencyRepository {
 
     this.findAllStmt = db.prepare('SELECT * FROM task_dependencies');
 
-    this.findByTaskIdStmt = db.prepare(
-      'SELECT * FROM task_dependencies WHERE task_id = ?'
-    );
+    this.findByTaskIdStmt = db.prepare('SELECT * FROM task_dependencies WHERE task_id = ?');
 
     this.findBlockingTaskStmt = db.prepare(
-      'SELECT * FROM task_dependencies WHERE blocks_task_id = ?'
+      'SELECT * FROM task_dependencies WHERE blocks_task_id = ?',
     );
 
     this.deleteStmt = db.prepare(
-      'DELETE FROM task_dependencies WHERE task_id = ? AND blocks_task_id = ?'
+      'DELETE FROM task_dependencies WHERE task_id = ? AND blocks_task_id = ?',
     );
 
-    this.deleteByTaskIdStmt = db.prepare(
-      'DELETE FROM task_dependencies WHERE task_id = ?'
-    );
+    this.deleteByTaskIdStmt = db.prepare('DELETE FROM task_dependencies WHERE task_id = ?');
   }
 
   create(dto: CreateDependencyDTO): Dependency {

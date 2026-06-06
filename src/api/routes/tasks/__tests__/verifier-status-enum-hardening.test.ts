@@ -101,8 +101,7 @@ describe('verifier status-enum hardening (post-Wave-2 session)', () => {
       // this twice; this rule pin prevents the rule itself from being
       // softened or removed.
       const upgradeForbidden =
-        /MUST NOT upgrade/i.test(loopSkill) ||
-        /never upgrade/i.test(loopSkill);
+        /MUST NOT upgrade/i.test(loopSkill) || /never upgrade/i.test(loopSkill);
       expect(upgradeForbidden).toBe(true);
     });
 

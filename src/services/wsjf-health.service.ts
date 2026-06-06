@@ -147,11 +147,7 @@ export const DEFAULT_HEALTH_THRESHOLDS: WsjfHealthThresholds = {
 };
 
 /** The three Cost-of-Delay component columns (Job Size is the denominator). */
-const COD_KEYS: readonly WsjfComponentKey[] = [
-  'value',
-  'timeCriticality',
-  'riskOpportunity',
-];
+const COD_KEYS: readonly WsjfComponentKey[] = ['value', 'timeCriticality', 'riskOpportunity'];
 
 /** Human-readable column labels for messages. */
 const COL_LABEL: Record<WsjfComponentKey, string> = {
@@ -177,8 +173,7 @@ export function analyzeWsjfHealth(
 ): WsjfHealthReport {
   const findings: HealthFinding[] = [];
   const scored = snapshots.filter(
-    (s): s is HealthTaskSnapshot & { components: WsjfComponents } =>
-      s.components !== null,
+    (s): s is HealthTaskSnapshot & { components: WsjfComponents } => s.components !== null,
   );
 
   // --- Check 1: degenerate spread ------------------------------------------
@@ -300,7 +295,10 @@ export function analyzeWsjfHealth(
     let reversals = 0;
     let prevDir = 0;
     for (let i = 1; i < series.length; i++) {
-      const delta = series[i] - series[i - 1];
+      const cur = series[i];
+      const prev = series[i - 1];
+      if (cur === undefined || prev === undefined) continue;
+      const delta = cur - prev;
       if (delta === 0) continue;
       const dir = delta > 0 ? 1 : -1;
       if (prevDir !== 0 && dir !== prevDir) reversals++;
@@ -349,10 +347,7 @@ function componentsOf(task: Task): WsjfComponents | null {
 }
 
 /** Statuses that take a task OUT of the ready frontier (already terminal). */
-const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
-  'done',
-  'closed',
-]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(['done', 'closed']);
 
 /**
  * Collaborators the DB-backed linter needs. Injected (not constructed) so the
@@ -406,12 +401,7 @@ export class WsjfHealthService {
       );
     }
 
-    return analyzeWsjfHealth(
-      projectId,
-      snapshots,
-      historyByTask,
-      options.thresholds,
-    );
+    return analyzeWsjfHealth(projectId, snapshots, historyByTask, options.thresholds);
   }
 
   /** Page through every task in the project (findByFilters clamps at 500). */

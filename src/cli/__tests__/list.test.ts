@@ -110,17 +110,7 @@ describe('list command', () => {
     const { listTasks } = await import('../api/client.js');
     vi.mocked(listTasks).mockResolvedValue([]);
 
-    await program.parseAsync([
-      'node',
-      'test',
-      'list',
-      '-p',
-      '1',
-      '-s',
-      'open',
-      '-a',
-      'alice',
-    ]);
+    await program.parseAsync(['node', 'test', 'list', '-p', '1', '-s', 'open', '-a', 'alice']);
 
     expect(listTasks).toHaveBeenCalledWith({
       project_id: 1,
@@ -242,15 +232,7 @@ describe('list command', () => {
     const { listTasks } = await import('../api/client.js');
     vi.mocked(listTasks).mockResolvedValue([]);
 
-    await program.parseAsync([
-      'node',
-      'test',
-      'list',
-      '--limit',
-      '25',
-      '--offset',
-      '50',
-    ]);
+    await program.parseAsync(['node', 'test', 'list', '--limit', '25', '--offset', '50']);
 
     expect(listTasks).toHaveBeenCalledWith({ limit: 25, offset: 50 });
   });
@@ -365,6 +347,8 @@ describe('list command', () => {
     expect(callArgs[1]).toEqual({ count: 1 });
 
     // Verify it would be parseable as JSON
-    expect(() => JSON.stringify({ success: true, data: callArgs[0], metadata: callArgs[1] })).not.toThrow();
+    expect(() =>
+      JSON.stringify({ success: true, data: callArgs[0], metadata: callArgs[1] }),
+    ).not.toThrow();
   });
 });

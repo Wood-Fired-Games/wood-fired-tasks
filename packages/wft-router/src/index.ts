@@ -18,7 +18,7 @@ export {
   DEFAULT_HANDLER_REGISTRY,
   WftRouterDaemon,
   mapSSEEvent,
-} from "./daemon.js";
+} from './daemon.js';
 export type {
   DaemonDeps,
   DaemonLogger,
@@ -26,7 +26,7 @@ export type {
   HandlerRegistry,
   MappedEvent,
   SSESourceFactory,
-} from "./daemon.js";
+} from './daemon.js';
 
 // Prometheus metrics surface.
 export {
@@ -34,12 +34,12 @@ export {
   METRIC_NAMES,
   MetricsRegistry,
   startMetricsServer,
-} from "./metrics.js";
+} from './metrics.js';
 export type {
   DispatchStatus,
   MetricsServerHandle,
   StartMetricsServerOptions,
-} from "./metrics.js";
+} from './metrics.js';
 
 // triggers.yaml config schema + loader.
 export {
@@ -47,19 +47,19 @@ export {
   TriggersConfigSchema,
   loadAndValidateTriggers,
   validateTemplating,
-} from "./config/triggers-schema.js";
-export type { TriggersConfig, TriggersRule } from "./config/triggers-schema.js";
+} from './config/triggers-schema.js';
+export type { TriggersConfig, TriggersRule } from './config/triggers-schema.js';
 
 // Allowed SSE event types.
-export { ALLOWED_EVENT_TYPES } from "./config/event-types.js";
-export type { AllowedEventType } from "./config/event-types.js";
+export { ALLOWED_EVENT_TYPES } from './config/event-types.js';
+export type { AllowedEventType } from './config/event-types.js';
 
 // Cross-platform default path resolver.
-export { getPaths, resolvePaths } from "./paths/index.js";
-export type { ResolvePathsInput, RouterPaths } from "./paths/index.js";
+export { getPaths, resolvePaths } from './paths/index.js';
+export type { ResolvePathsInput, RouterPaths } from './paths/index.js';
 
 // Slice barrels (logging / SSE client / dispatch / handlers).
-export * from "./logging/index.js";
-export * from "./sse/index.js";
-export * from "./dispatch/index.js";
-export * from "./handlers/index.js";
+export * from './logging/index.js';
+export * from './sse/index.js';
+export * from './dispatch/index.js';
+export * from './handlers/index.js';

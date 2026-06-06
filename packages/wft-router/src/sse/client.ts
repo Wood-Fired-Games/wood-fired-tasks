@@ -393,14 +393,7 @@ export async function* runSSEClient(
      * the socket drops.
      */
     let eventsThisConnection = 0;
-    const conn = runOneConnection(
-      url,
-      opts.apiKey,
-      lastEventId,
-      fetchImpl,
-      signal,
-      idleTimeoutMs,
-    );
+    const conn = runOneConnection(url, opts.apiKey, lastEventId, fetchImpl, signal, idleTimeoutMs);
     let result: ConnectionResult;
     for (;;) {
       const next = await conn.next();
@@ -440,7 +433,9 @@ export async function* runSSEClient(
         // 410 = the server is telling us our cursor is past the retention WFT-NEUTRALITY-EXEMPT-LINE
         // window. Per spec, log cursor_gap and resume from the head with WFT-NEUTRALITY-EXEMPT-LINE
         // NO Last-Event-Id (immediate, no sleep).
-        logger.warn('cursor_gap', { // WFT-NEUTRALITY-EXEMPT-LINE
+        // SSE protocol log key for a Last-Event-Id retention gap (not a vendor name).
+        const gapEvent = 'cursor_gap'; // WFT-NEUTRALITY-EXEMPT-LINE
+        logger.warn(gapEvent, {
           status: result.status,
           last_event_id: lastEventId,
         });

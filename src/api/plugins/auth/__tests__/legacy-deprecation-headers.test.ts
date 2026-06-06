@@ -1,12 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { Writable } from 'stream';
 import Fastify from 'fastify';
 import pino from 'pino';
@@ -47,10 +39,7 @@ interface TestHarness {
   drain(): void;
 }
 
-async function buildHarness(opts: {
-  apiKeys?: string;
-  sunsetDate?: string;
-}): Promise<TestHarness> {
+async function buildHarness(opts: { apiKeys?: string; sunsetDate?: string }): Promise<TestHarness> {
   process.env.API_KEYS = opts.apiKeys ?? 'test-key';
   if (opts.sunsetDate !== undefined) {
     process.env.LEGACY_AUTH_SUNSET_DATE = opts.sunsetDate;
@@ -130,10 +119,7 @@ async function buildHarness(opts: {
   };
 }
 
-function mintPatRow(
-  db: Database.Database,
-  userId: number,
-): { token: string; tokenId: number } {
+function mintPatRow(db: Database.Database, userId: number): { token: string; tokenId: number } {
   const { token, prefix, suffix, hash } = generateToken();
   const info = db
     .prepare(

@@ -49,8 +49,7 @@ const DEFAULT_CODE_RESPONSE = {
   user_code: 'ABCD-EFGH',
   // Filled in by startDeviceFlowServer with the real bound port.
   verification_uri: 'http://__placeholder__/auth/device',
-  verification_uri_complete:
-    'http://__placeholder__/auth/device?user_code=ABCD-EFGH',
+  verification_uri_complete: 'http://__placeholder__/auth/device?user_code=ABCD-EFGH',
   expires_in: 600,
   interval: 1,
 };
@@ -83,11 +82,10 @@ export async function startDeviceFlowServer(
   fastify.post('/auth/device/token', async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
     requests.token.push(body);
-    const fixture =
-      opts.tokenResponses[pollIdx] ?? {
-        status: 400,
-        body: { error: 'authorization_pending' },
-      };
+    const fixture = opts.tokenResponses[pollIdx] ?? {
+      status: 400,
+      body: { error: 'authorization_pending' },
+    };
     pollIdx += 1;
     return reply.code(fixture.status).send(fixture.body);
   });

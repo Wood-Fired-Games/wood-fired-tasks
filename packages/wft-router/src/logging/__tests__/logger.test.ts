@@ -17,11 +17,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  LOGGER_REDACT_CONFIG,
-  createRuleLogger,
-  getLogger,
-} from '../logger.js';
+import { LOGGER_REDACT_CONFIG, createRuleLogger, getLogger } from '../logger.js';
 import { pino, type DestinationStream, type Logger } from 'pino';
 
 /**

@@ -2,12 +2,7 @@ import { describe, it, expect } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import {
-  runSetup,
-  buildRemoteMcpEntry,
-  commandsDestDir,
-  patCachePath,
-} from '../commands/setup.js';
+import { runSetup, buildRemoteMcpEntry, commandsDestDir, patCachePath } from '../commands/setup.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { dataDir } from '../../config/paths.js';
 
@@ -19,9 +14,7 @@ const REMOTE_URL = 'http://tasks.example.local:3000';
 
 function withSandbox<T>(fn: (home: string, configDir: string) => T): T {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-home-'));
-  const configDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'wft-setup-remote-cfg-')
-  );
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-cfg-'));
   try {
     return fn(home, configDir);
   } finally {
@@ -37,12 +30,9 @@ describe('tasks setup --remote', () => {
       const claudeJson = path.join(home, '.claude.json');
       fs.writeFileSync(
         claudeJson,
-        JSON.stringify(
-          { mcpServers: { 'some-other': { type: 'stdio', command: 'x' } } },
-          null,
-          2
-        ) + '\n',
-        'utf8'
+        JSON.stringify({ mcpServers: { 'some-other': { type: 'stdio', command: 'x' } } }, null, 2) +
+          '\n',
+        'utf8',
       );
 
       const result = runSetup({
@@ -138,9 +128,9 @@ describe('tasks setup --remote', () => {
 
   it('--remote without --token throws (cannot author a usable WFT_API_KEY)', () => {
     withSandbox((home, configDir) => {
-      expect(() =>
-        runSetup({ home, configDir, remote: REMOTE_URL, log: () => {} })
-      ).toThrow(/--token/);
+      expect(() => runSetup({ home, configDir, remote: REMOTE_URL, log: () => {} })).toThrow(
+        /--token/,
+      );
     });
   });
 });

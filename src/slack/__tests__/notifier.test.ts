@@ -195,10 +195,10 @@ describe('SlackNotifier', () => {
 
       expect(client.chat.postMessage).toHaveBeenCalledTimes(2);
       expect(client.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'C001' })
+        expect.objectContaining({ channel: 'C001' }),
       );
       expect(client.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'C002' })
+        expect.objectContaining({ channel: 'C002' }),
       );
     });
 
@@ -226,10 +226,7 @@ describe('SlackNotifier', () => {
       triggerEvent('task.created', makeTaskEvent());
       await vi.runAllTimersAsync();
 
-      expect(formatTaskNotification).toHaveBeenCalledWith(
-        expect.anything(),
-        'My Project'
-      );
+      expect(formatTaskNotification).toHaveBeenCalledWith(expect.anything(), 'My Project');
     });
 
     it('uses fallback project name when ProjectService throws', async () => {
@@ -242,10 +239,7 @@ describe('SlackNotifier', () => {
       triggerEvent('task.created', makeTaskEvent({ project_id: 7 }));
       await vi.runAllTimersAsync();
 
-      expect(formatTaskNotification).toHaveBeenCalledWith(
-        expect.anything(),
-        'Project #7'
-      );
+      expect(formatTaskNotification).toHaveBeenCalledWith(expect.anything(), 'Project #7');
     });
 
     it('includes task title in fallback text', async () => {
@@ -256,7 +250,7 @@ describe('SlackNotifier', () => {
       await vi.runAllTimersAsync();
 
       expect(client.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ text: expect.stringContaining('Deploy feature') })
+        expect.objectContaining({ text: expect.stringContaining('Deploy feature') }),
       );
     });
   });
@@ -267,15 +261,13 @@ describe('SlackNotifier', () => {
     it('one channel failure does not prevent other channels from receiving notification', async () => {
       vi.mocked(subscriptionRepo.findSubscribedChannels).mockReturnValue(['C001', 'C002']);
 
-      vi.mocked(client.chat.postMessage).mockImplementation(
-        (args: unknown) => {
-          const { channel } = args as { channel: string };
-          if (channel === 'C001') {
-            return Promise.reject(new Error('network error'));
-          }
-          return Promise.resolve({ ok: true } as never);
+      vi.mocked(client.chat.postMessage).mockImplementation((args: unknown) => {
+        const { channel } = args as { channel: string };
+        if (channel === 'C001') {
+          return Promise.reject(new Error('network error'));
         }
-      );
+        return Promise.resolve({ ok: true } as never);
+      });
       notifier.start();
 
       triggerEvent('task.created', makeTaskEvent());
@@ -283,15 +275,13 @@ describe('SlackNotifier', () => {
 
       // C002 should still have received its message
       const calls = vi.mocked(client.chat.postMessage).mock.calls;
-      const c002Calls = calls.filter(
-        (c) => (c[0] as { channel: string }).channel === 'C002'
-      );
+      const c002Calls = calls.filter((c) => (c[0] as { channel: string }).channel === 'C002');
       expect(c002Calls).toHaveLength(1);
 
       // Logger should have been called for C001 failure
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ channelId: 'C001' }),
-        expect.stringContaining('failed to post notification')
+        expect.stringContaining('failed to post notification'),
       );
     });
 
@@ -305,7 +295,7 @@ describe('SlackNotifier', () => {
 
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ channelId: 'C001', eventType: 'task.created' }),
-        expect.stringContaining('failed to post notification')
+        expect.stringContaining('failed to post notification'),
       );
     });
   });

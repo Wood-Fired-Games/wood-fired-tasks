@@ -14,7 +14,7 @@ export class ClaimReleaseService {
 
   constructor(
     private db: Database.Database,
-    private timeoutMinutes: number = 30
+    private timeoutMinutes: number = 30,
   ) {}
 
   /**
@@ -24,14 +24,16 @@ export class ClaimReleaseService {
    */
   findStaleClaims(): Array<{ id: number; assignee: string; claimed_at: string }> {
     const cutoff = `-${this.timeoutMinutes} minutes`;
-    return this.db.prepare(
-      `SELECT id, assignee, claimed_at FROM tasks
+    return this.db
+      .prepare(
+        `SELECT id, assignee, claimed_at FROM tasks
        WHERE assignee IS NOT NULL
          AND claimed_at IS NOT NULL
          AND status = 'in_progress'
          AND claimed_at <= datetime('now', ?)
-         AND updated_at <= datetime('now', ?)`
-    ).all(cutoff, cutoff) as Array<{ id: number; assignee: string; claimed_at: string }>;
+         AND updated_at <= datetime('now', ?)`,
+      )
+      .all(cutoff, cutoff) as Array<{ id: number; assignee: string; claimed_at: string }>;
   }
 
   /**
@@ -39,12 +41,14 @@ export class ClaimReleaseService {
    * clear claimed_at, increment version.
    */
   releaseClaim(taskId: number): boolean {
-    const info = this.db.prepare(
-      `UPDATE tasks
+    const info = this.db
+      .prepare(
+        `UPDATE tasks
        SET assignee = NULL, status = 'open', claimed_at = NULL,
            version = version + 1, updated_at = datetime('now')
-       WHERE id = ? AND assignee IS NOT NULL AND status = 'in_progress'`
-    ).run(taskId);
+       WHERE id = ? AND assignee IS NOT NULL AND status = 'in_progress'`,
+      )
+      .run(taskId);
     return info.changes > 0;
   }
 
@@ -58,13 +62,15 @@ export class ClaimReleaseService {
     for (const claim of stale) {
       if (this.releaseClaim(claim.id)) {
         // Reload task for event payload
-        const task = this.db.prepare(
-          `SELECT t.*, GROUP_CONCAT(tt.tag, ',') as tags_csv
+        const task = this.db
+          .prepare(
+            `SELECT t.*, GROUP_CONCAT(tt.tag, ',') as tags_csv
            FROM tasks t
            LEFT JOIN task_tags tt ON tt.task_id = t.id
            WHERE t.id = ?
-           GROUP BY t.id`
-        ).get(claim.id) as (Task & { tags_csv: string | null }) | undefined;
+           GROUP BY t.id`,
+          )
+          .get(claim.id) as (Task & { tags_csv: string | null }) | undefined;
         if (task) {
           const { tags_csv, ...taskData } = task;
           const tags = tags_csv ? tags_csv.split(',').sort() : [];
@@ -72,7 +78,7 @@ export class ClaimReleaseService {
             eventType: 'task.updated',
             timestamp: new Date().toISOString(),
             data: { ...taskData, tags },
-            metadata: { source: 'workflow' }
+            metadata: { source: 'workflow' },
           });
         }
         released++;

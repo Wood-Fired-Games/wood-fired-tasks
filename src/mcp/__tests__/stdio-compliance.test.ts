@@ -8,10 +8,10 @@ describe('MCP Server stdio compliance', () => {
   describe('static analysis guards', () => {
     it('src/mcp/ contains no console.log calls', () => {
       try {
-        const result = execSync(
-          'grep -rn "console\\.log" src/mcp/ --include="*.ts" || true',
-          { encoding: 'utf-8', cwd: process.cwd() }
-        ).trim();
+        const result = execSync('grep -rn "console\\.log" src/mcp/ --include="*.ts" || true', {
+          encoding: 'utf-8',
+          cwd: process.cwd(),
+        }).trim();
         expect(result).toBe('');
       } catch {
         // grep returns exit 1 when no matches — that's the success case
@@ -20,10 +20,10 @@ describe('MCP Server stdio compliance', () => {
     });
 
     it('Umzug logger does not use raw console (stdout pollution)', () => {
-      const result = execSync(
-        'grep -n "logger: console" src/db/migrate.ts || true',
-        { encoding: 'utf-8', cwd: process.cwd() }
-      ).trim();
+      const result = execSync('grep -n "logger: console" src/db/migrate.ts || true', {
+        encoding: 'utf-8',
+        cwd: process.cwd(),
+      }).trim();
       expect(result).toBe('');
     });
   });
@@ -41,7 +41,7 @@ describe('MCP Server stdio compliance', () => {
       // Spawn MCP server with in-memory database
       const child = spawn('node', [serverPath], {
         env: { ...process.env, DATABASE_PATH: ':memory:' },
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
       const stdoutChunks: string[] = [];
@@ -56,19 +56,20 @@ describe('MCP Server stdio compliance', () => {
       });
 
       // Send initialize request
-      const initRequest = JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {
-            roots: {
-              listChanged: false
-            }
-          }
-        },
-        id: 1
-      }) + '\n';
+      const initRequest =
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {
+              roots: {
+                listChanged: false,
+              },
+            },
+          },
+          id: 1,
+        }) + '\n';
 
       child.stdin.write(initRequest);
 
@@ -93,7 +94,7 @@ describe('MCP Server stdio compliance', () => {
 
       // Parse stdout and verify each line is valid JSON-RPC
       const stdout = stdoutChunks.join('');
-      const lines = stdout.split('\n').filter(line => line.trim().length > 0);
+      const lines = stdout.split('\n').filter((line) => line.trim().length > 0);
 
       expect(lines.length).toBeGreaterThan(0);
 
@@ -122,7 +123,7 @@ describe('MCP Server stdio compliance', () => {
       // Spawn MCP server with in-memory database
       const child = spawn('node', [serverPath], {
         env: { ...process.env, DATABASE_PATH: ':memory:' },
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
       const stderrChunks: string[] = [];
@@ -132,19 +133,20 @@ describe('MCP Server stdio compliance', () => {
       });
 
       // Send initialize request to get the server running
-      const initRequest = JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {
-            roots: {
-              listChanged: false
-            }
-          }
-        },
-        id: 1
-      }) + '\n';
+      const initRequest =
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {
+              roots: {
+                listChanged: false,
+              },
+            },
+          },
+          id: 1,
+        }) + '\n';
 
       child.stdin.write(initRequest);
 

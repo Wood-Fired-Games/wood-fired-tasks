@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import {
-  mergeClaudeJson,
-  type ClaudeMcpServerEntry,
-} from '../claude-json.js';
+import { mergeClaudeJson, type ClaudeMcpServerEntry } from '../claude-json.js';
 
 const ENTRY: ClaudeMcpServerEntry = {
   type: 'stdio',

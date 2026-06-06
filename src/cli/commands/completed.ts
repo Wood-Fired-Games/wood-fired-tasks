@@ -33,19 +33,16 @@ interface CommandOptions {
  */
 export const completedCommand = new Command('completed')
   .description('Dashboard: tasks completed within a time interval')
-  .option(
-    '-d, --days <n>',
-    'Trailing N days from now (default: 7 if no range supplied)'
-  )
+  .option('-d, --days <n>', 'Trailing N days from now (default: 7 if no range supplied)')
   .option('--since <date>', 'Range start (ISO8601, inclusive)')
   .option('--until <date>', 'Range end (ISO8601, inclusive)')
   .option('-p, --project <id>', 'Filter by project ID')
   .option('-a, --assignee <name>', 'Filter by assignee')
   .action((options: CommandOptions) => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
 
     const program = completedCommand.parent;
-    const isJsonMode = program?.optsWithGlobals()?.json || false;
+    const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
     const db = new Database(dbPath, { readonly: true });
     try {
@@ -78,23 +75,23 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
 
   if (hasPartialRange) {
     throw new Error(
-      'Provide both --since and --until together, or use --days for a trailing window'
+      'Provide both --since and --until together, or use --days for a trailing window',
     );
   }
 
   const input: Record<string, unknown> = {};
 
   if (hasExplicitRange) {
-    input.start = options.since!;
-    input.end = options.until!;
+    input['start'] = options.since!;
+    input['end'] = options.until!;
   } else if (options.days !== undefined) {
     const days = Number(options.days);
     if (!Number.isFinite(days) || days < 1) {
       throw new Error('--days must be a positive integer');
     }
-    input.days = days;
+    input['days'] = days;
   } else {
-    input.days = 7;
+    input['days'] = 7;
   }
 
   if (options.project !== undefined) {
@@ -102,11 +99,11 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
     if (!Number.isInteger(projectId) || projectId <= 0) {
       throw new Error('--project must be a positive integer');
     }
-    input.project_id = projectId;
+    input['project_id'] = projectId;
   }
 
   if (options.assignee !== undefined) {
-    input.assignee = options.assignee;
+    input['assignee'] = options.assignee;
   }
 
   return input;
@@ -114,17 +111,13 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
 
 function renderReport(
   report: ReturnType<TaskService['getCompletionReport']>,
-  projectRepo: ProjectRepository
+  projectRepo: ProjectRepository,
 ): void {
   const useColor = shouldUseColor();
   const bold = (s: string) => (useColor ? chalk.bold(s) : s);
 
   console.log(colorBold('Completion Report'));
-  console.log(
-    colorInfo(
-      `  Range:  ${report.range.start}  ->  ${report.range.end}`
-    )
-  );
+  console.log(colorInfo(`  Range:  ${report.range.start}  ->  ${report.range.end}`));
   console.log(colorInfo(`  Total:  ${report.total} task(s) completed`));
   console.log('');
 

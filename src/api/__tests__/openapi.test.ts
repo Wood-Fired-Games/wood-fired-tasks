@@ -157,13 +157,9 @@ describe('OpenAPI Documentation', () => {
     expect(spec.components.securitySchemes.bearerAuth.type).toBe('http');
     expect(spec.components.securitySchemes.bearerAuth.scheme).toBe('bearer');
     // bearerFormat names the prefix so client tooling can validate
-    expect(spec.components.securitySchemes.bearerAuth.bearerFormat).toContain(
-      'wft_pat_',
-    );
+    expect(spec.components.securitySchemes.bearerAuth.bearerFormat).toContain('wft_pat_');
     // Description points at the public prefix and the mint endpoint
-    expect(spec.components.securitySchemes.bearerAuth.description).toContain(
-      'wft_pat_',
-    );
+    expect(spec.components.securitySchemes.bearerAuth.description).toContain('wft_pat_');
   });
 
   it('The top-level security array contains BOTH apiKey and bearerAuth', async () => {
@@ -174,11 +170,11 @@ describe('OpenAPI Documentation', () => {
 
     const spec = JSON.parse(response.payload);
     expect(Array.isArray(spec.security)).toBe(true);
-    const hasApiKey = (spec.security as Array<Record<string, unknown>>).some(
-      (entry) => Object.prototype.hasOwnProperty.call(entry, 'apiKey'),
+    const hasApiKey = (spec.security as Array<Record<string, unknown>>).some((entry) =>
+      Object.prototype.hasOwnProperty.call(entry, 'apiKey'),
     );
-    const hasBearer = (spec.security as Array<Record<string, unknown>>).some(
-      (entry) => Object.prototype.hasOwnProperty.call(entry, 'bearerAuth'),
+    const hasBearer = (spec.security as Array<Record<string, unknown>>).some((entry) =>
+      Object.prototype.hasOwnProperty.call(entry, 'bearerAuth'),
     );
     expect(hasApiKey).toBe(true);
     expect(hasBearer).toBe(true);

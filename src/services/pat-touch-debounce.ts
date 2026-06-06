@@ -50,10 +50,7 @@ const cache = new Map<number, number>();
  * @param tokenId  `api_tokens.id` of the matched PAT row
  * @param now      Injectable clock; defaults to `Date.now()` for production
  */
-export function shouldTouchLastUsed(
-  tokenId: number,
-  now: number = Date.now(),
-): boolean {
+export function shouldTouchLastUsed(tokenId: number, now: number = Date.now()): boolean {
   const last = cache.get(tokenId);
   if (last !== undefined && now - last < TTL_MS) {
     return false;

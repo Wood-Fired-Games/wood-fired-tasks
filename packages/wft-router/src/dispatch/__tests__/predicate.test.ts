@@ -217,14 +217,10 @@ describe('evaluateWhere — in operator (status_in)', () => {
 
 describe('evaluateWhere — exists operator (tags_contains_all)', () => {
   it('passes when every required tag is present', () => {
-    expect(
-      evaluateWhere({ tags_contains_all: ['urgent', 'backend'] }, makeEvent()),
-    ).toBe(true);
+    expect(evaluateWhere({ tags_contains_all: ['urgent', 'backend'] }, makeEvent())).toBe(true);
   });
   it('fails when one required tag is missing', () => {
-    expect(
-      evaluateWhere({ tags_contains_all: ['urgent', 'missing'] }, makeEvent()),
-    ).toBe(false);
+    expect(evaluateWhere({ tags_contains_all: ['urgent', 'missing'] }, makeEvent())).toBe(false);
   });
   it('fails when the event has no tags field', () => {
     const e = makeEvent({ task: { id: 1 } });
@@ -238,20 +234,12 @@ describe('evaluateWhere — exists operator (tags_contains_all)', () => {
 
 describe('evaluateWhere — matches operator (tags_contains_any)', () => {
   it('passes when at least one tag is present', () => {
-    expect(
-      evaluateWhere(
-        { tags_contains_any: ['nope', 'urgent', 'also-nope'] },
-        makeEvent(),
-      ),
-    ).toBe(true);
+    expect(evaluateWhere({ tags_contains_any: ['nope', 'urgent', 'also-nope'] }, makeEvent())).toBe(
+      true,
+    );
   });
   it('fails when none of the tags are present', () => {
-    expect(
-      evaluateWhere(
-        { tags_contains_any: ['nope', 'also-nope'] },
-        makeEvent(),
-      ),
-    ).toBe(false);
+    expect(evaluateWhere({ tags_contains_any: ['nope', 'also-nope'] }, makeEvent())).toBe(false);
   });
   it('fails when the event has no tags field', () => {
     const e = makeEvent({ task: { id: 1 } });

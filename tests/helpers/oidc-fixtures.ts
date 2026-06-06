@@ -119,17 +119,13 @@ export async function installOidcInterceptors(
 
   const { publicJwk } = await getTestKeys();
 
-  nock(issuerOrigin)
-    .get('/.well-known/openid-configuration')
-    .reply(200, discoveryDoc);
+  nock(issuerOrigin).get('/.well-known/openid-configuration').reply(200, discoveryDoc);
 
   nock(jwksOrigin)
     .get(new URL(jwksUri).pathname)
     .reply(200, { keys: [publicJwk] });
 
-  nock(tokenOrigin)
-    .post(new URL(tokenUri).pathname)
-    .reply(200, opts.tokenResponse);
+  nock(tokenOrigin).post(new URL(tokenUri).pathname).reply(200, opts.tokenResponse);
 
   return { issuer };
 }

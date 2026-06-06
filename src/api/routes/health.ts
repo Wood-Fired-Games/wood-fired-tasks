@@ -64,7 +64,7 @@ const healthRoutes: FastifyPluginAsyncZod = async (fastify) => {
         timestamp,
         version,
       };
-    }
+    },
   );
 };
 
@@ -180,9 +180,15 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       };
       try {
         fastify.db.prepare('SELECT 1').get();
-        const projectRow = fastify.db.prepare('SELECT COUNT(*) AS n FROM projects').get() as { n: number };
-        const maxIdRow = fastify.db.prepare('SELECT MAX(id) AS m FROM tasks').get() as { m: number | null };
-        const latestRow = fastify.db.prepare('SELECT MAX(updated_at) AS t FROM tasks').get() as { t: string | null };
+        const projectRow = fastify.db.prepare('SELECT COUNT(*) AS n FROM projects').get() as {
+          n: number;
+        };
+        const maxIdRow = fastify.db.prepare('SELECT MAX(id) AS m FROM tasks').get() as {
+          m: number | null;
+        };
+        const latestRow = fastify.db.prepare('SELECT MAX(updated_at) AS t FROM tasks').get() as {
+          t: string | null;
+        };
         database = {
           path: fastify.db.name,
           projects: projectRow.n,
@@ -199,7 +205,9 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const eventBusStats = eventBus.getStats();
 
       // Check SSE manager status
-      const sseManagerStatus: 'ok' | 'degraded' | 'unknown' = fastify.sseManager.isHealthy() ? 'ok' : 'degraded';
+      const sseManagerStatus: 'ok' | 'degraded' | 'unknown' = fastify.sseManager.isHealthy()
+        ? 'ok'
+        : 'degraded';
       const sseManagerStats = fastify.sseManager.getStats();
 
       // Task #357: OIDC boot state. `state` is the same discriminated union
@@ -247,7 +255,7 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
           sseManager: sseManagerStats,
         },
       };
-    }
+    },
   );
 };
 

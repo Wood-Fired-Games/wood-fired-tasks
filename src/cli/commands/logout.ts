@@ -45,10 +45,7 @@ type RevokeResult =
   | { kind: 'http_error'; status: number; snippet: string }
   | { kind: 'network_error'; message: string };
 
-async function revokeServerSide(
-  server: string,
-  token: string,
-): Promise<RevokeResult> {
+async function revokeServerSide(server: string, token: string): Promise<RevokeResult> {
   const url = `${server}/api/v1/me/tokens/active`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
@@ -83,7 +80,7 @@ export const logoutCommand = new Command('logout')
   .action(async () => {
     const program = logoutCommand.parent;
     const globalOpts = program?.optsWithGlobals() ?? {};
-    const isJson: boolean = globalOpts.json === true;
+    const isJson: boolean = globalOpts['json'] === true;
 
     // 1. Read credentials. If absent, this is idempotent — exit 0 with a
     //    friendly note. We use readCredentials() directly (not resolveAuth)
@@ -135,9 +132,7 @@ export const logoutCommand = new Command('logout')
           warning: 'token was already invalid',
         });
       } else {
-        process.stderr.write(
-          'Logged out (server-side token was already invalid)\n',
-        );
+        process.stderr.write('Logged out (server-side token was already invalid)\n');
       }
       return;
     }

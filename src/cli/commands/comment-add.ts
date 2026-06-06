@@ -23,7 +23,7 @@ export const commentAddCommand = new Command('comment-add')
       // Check if JSON mode (global flag from program)
       const program = commentAddCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Prompt for missing required fields
       const author = await promptForMissing('author', options.author);

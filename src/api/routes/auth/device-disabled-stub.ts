@@ -36,14 +36,8 @@ const STUB_BODY = {
     'OIDC is not configured. Set OIDC_REDIRECT_URI and related env vars to enable CLI authentication.',
 } as const;
 
-const handler = async (
-  _request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<FastifyReply> =>
-  reply
-    .header('Content-Type', 'application/json; charset=utf-8')
-    .code(501)
-    .send(STUB_BODY);
+const handler = async (_request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> =>
+  reply.header('Content-Type', 'application/json; charset=utf-8').code(501).send(STUB_BODY);
 
 const deviceDisabledStub: FastifyPluginAsync = async (fastify) => {
   fastify.post('/device/code', { config: { skipAuth: true } }, handler);

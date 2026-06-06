@@ -113,7 +113,7 @@ describe('ProjectService', () => {
       const projects = projectService.listProjects();
 
       expect(projects).toHaveLength(3);
-      expect(projects.map(p => p.name).sort()).toEqual(['Project A', 'Project B', 'Project C']);
+      expect(projects.map((p) => p.name).sort()).toEqual(['Project A', 'Project B', 'Project C']);
     });
   });
 
@@ -141,9 +141,9 @@ describe('ProjectService', () => {
       projectService.createProject({ name: 'Existing Project' });
       const created = projectService.createProject({ name: 'Another Project' });
 
-      expect(() =>
-        projectService.updateProject(created.id, { name: 'Existing Project' })
-      ).toThrow(BusinessError);
+      expect(() => projectService.updateProject(created.id, { name: 'Existing Project' })).toThrow(
+        BusinessError,
+      );
     });
   });
 
@@ -265,7 +265,7 @@ describe('ProjectService', () => {
         eventType: 'project.created',
         timestamp: expect.any(String),
         data: project,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       emitSpy.mockRestore();
@@ -277,7 +277,7 @@ describe('ProjectService', () => {
       expect(() =>
         projectService.createProject({
           name: '', // empty name fails validation
-        })
+        }),
       ).toThrow(ValidationError);
 
       expect(emitSpy).not.toHaveBeenCalled();
@@ -290,9 +290,7 @@ describe('ProjectService', () => {
 
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        projectService.createProject({ name: 'Duplicate' })
-      ).toThrow(BusinessError);
+      expect(() => projectService.createProject({ name: 'Duplicate' })).toThrow(BusinessError);
 
       expect(emitSpy).not.toHaveBeenCalled();
 
@@ -315,7 +313,7 @@ describe('ProjectService', () => {
         eventType: 'project.updated',
         timestamp: expect.any(String),
         data: updated,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       emitSpy.mockRestore();
@@ -324,9 +322,7 @@ describe('ProjectService', () => {
     it('updateProject does NOT emit event when project not found', () => {
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        projectService.updateProject(999, { name: 'Updated' })
-      ).toThrow(NotFoundError);
+      expect(() => projectService.updateProject(999, { name: 'Updated' })).toThrow(NotFoundError);
 
       expect(emitSpy).not.toHaveBeenCalled();
 
@@ -339,9 +335,9 @@ describe('ProjectService', () => {
 
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        projectService.updateProject(project.id, { name: 'Existing' })
-      ).toThrow(BusinessError);
+      expect(() => projectService.updateProject(project.id, { name: 'Existing' })).toThrow(
+        BusinessError,
+      );
 
       expect(emitSpy).not.toHaveBeenCalled();
 
@@ -362,7 +358,7 @@ describe('ProjectService', () => {
         eventType: 'project.deleted',
         timestamp: expect.any(String),
         data: project,
-        metadata: { source: 'user' }
+        metadata: { source: 'user' },
       });
 
       // Verify project is actually deleted
@@ -374,9 +370,7 @@ describe('ProjectService', () => {
     it('deleteProject does NOT emit event when project not found', () => {
       const emitSpy = vi.spyOn(eventBus, 'emit');
 
-      expect(() =>
-        projectService.deleteProject(999)
-      ).toThrow(NotFoundError);
+      expect(() => projectService.deleteProject(999)).toThrow(NotFoundError);
 
       expect(emitSpy).not.toHaveBeenCalled();
 

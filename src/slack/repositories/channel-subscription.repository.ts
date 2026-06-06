@@ -10,27 +10,27 @@ export class SlackChannelSubscriptionRepository {
 
   constructor(private db: Database.Database) {
     this.insertStmt = db.prepare(
-      'INSERT OR IGNORE INTO slack_channel_subscriptions (channel_id, project_id, event_type) VALUES (?, ?, ?)'
+      'INSERT OR IGNORE INTO slack_channel_subscriptions (channel_id, project_id, event_type) VALUES (?, ?, ?)',
     );
 
     this.deleteByChannelAndProjectStmt = db.prepare(
-      'DELETE FROM slack_channel_subscriptions WHERE channel_id = ? AND project_id = ?'
+      'DELETE FROM slack_channel_subscriptions WHERE channel_id = ? AND project_id = ?',
     );
 
     this.deleteByChannelStmt = db.prepare(
-      'DELETE FROM slack_channel_subscriptions WHERE channel_id = ?'
+      'DELETE FROM slack_channel_subscriptions WHERE channel_id = ?',
     );
 
     this.findChannelsStmt = db.prepare(
-      'SELECT DISTINCT channel_id FROM slack_channel_subscriptions WHERE project_id = ? AND event_type = ?'
+      'SELECT DISTINCT channel_id FROM slack_channel_subscriptions WHERE project_id = ? AND event_type = ?',
     );
 
     this.findByChannelStmt = db.prepare(
-      'SELECT project_id, event_type, created_at FROM slack_channel_subscriptions WHERE channel_id = ? ORDER BY project_id, event_type'
+      'SELECT project_id, event_type, created_at FROM slack_channel_subscriptions WHERE channel_id = ? ORDER BY project_id, event_type',
     );
 
     this.countByChannelStmt = db.prepare(
-      'SELECT COUNT(*) as count FROM slack_channel_subscriptions WHERE channel_id = ?'
+      'SELECT COUNT(*) as count FROM slack_channel_subscriptions WHERE channel_id = ?',
     );
   }
 
@@ -67,7 +67,9 @@ export class SlackChannelSubscriptionRepository {
     return rows.map((r) => r.channel_id);
   }
 
-  findByChannel(channelId: string): Array<{ project_id: number; event_type: string; created_at: string }> {
+  findByChannel(
+    channelId: string,
+  ): Array<{ project_id: number; event_type: string; created_at: string }> {
     return this.findByChannelStmt.all(channelId) as Array<{
       project_id: number;
       event_type: string;

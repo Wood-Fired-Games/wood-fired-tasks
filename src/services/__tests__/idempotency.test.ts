@@ -36,7 +36,7 @@ describe('IdempotencyService', () => {
       // Insert with old timestamp directly
       db.prepare(
         `INSERT INTO idempotency_keys (key, response, created_at)
-         VALUES (?, ?, datetime('now', '-25 hours'))`
+         VALUES (?, ?, datetime('now', '-25 hours'))`,
       ).run('old-key', JSON.stringify({ id: 1 }));
 
       const result = service.get('old-key');
@@ -47,7 +47,7 @@ describe('IdempotencyService', () => {
       // Insert with recent timestamp
       db.prepare(
         `INSERT INTO idempotency_keys (key, response, created_at)
-         VALUES (?, ?, datetime('now', '-23 hours'))`
+         VALUES (?, ?, datetime('now', '-23 hours'))`,
       ).run('recent-key', JSON.stringify({ id: 2 }));
 
       const result = service.get('recent-key');
@@ -78,11 +78,11 @@ describe('IdempotencyService', () => {
       // Insert expired keys
       db.prepare(
         `INSERT INTO idempotency_keys (key, response, created_at)
-         VALUES (?, ?, datetime('now', '-25 hours'))`
+         VALUES (?, ?, datetime('now', '-25 hours'))`,
       ).run('expired-1', JSON.stringify({}));
       db.prepare(
         `INSERT INTO idempotency_keys (key, response, created_at)
-         VALUES (?, ?, datetime('now', '-48 hours'))`
+         VALUES (?, ?, datetime('now', '-48 hours'))`,
       ).run('expired-2', JSON.stringify({}));
 
       // Insert non-expired key

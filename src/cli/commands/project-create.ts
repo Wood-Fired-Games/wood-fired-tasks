@@ -15,7 +15,7 @@ export const projectCreateCommand = new Command('project-create')
       // Check if JSON mode (global flag from program)
       const program = projectCreateCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Prompt for missing required fields (interactive mode only)
       const name = await promptForMissing('name', options.name);

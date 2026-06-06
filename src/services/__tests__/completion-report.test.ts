@@ -27,7 +27,7 @@ describe('TaskService.getCompletionReport', () => {
   function completeTask(
     projectId: number,
     title: string,
-    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {}
+    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {},
   ): { id: number; completed_at: string | null } {
     const task = app.taskService.createTask({
       title,
@@ -49,7 +49,7 @@ describe('TaskService.getCompletionReport', () => {
       app.taskService.getCompletionReport({
         start: '2026-02-01T00:00:00Z',
         end: '2026-01-01T00:00:00Z',
-      })
+      }),
     ).toThrow(ValidationError);
   });
 

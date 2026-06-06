@@ -18,16 +18,10 @@ import {
   type ScoreSubmission,
   type ValidateContext,
 } from '../wsjf.service.js';
-import type {
-  WsjfClassification,
-  WsjfComponents,
-  WsjfFeatures,
-} from '../../types/wsjf.js';
+import type { WsjfClassification, WsjfComponents, WsjfFeatures } from '../../types/wsjf.js';
 import type { ValueCharter } from '../../types/task.js';
 
-const FIXTURE_DIR = fileURLToPath(
-  new URL('../../../tests/fixtures/wsjf-golden/', import.meta.url),
-);
+const FIXTURE_DIR = fileURLToPath(new URL('../../../tests/fixtures/wsjf-golden/', import.meta.url));
 const readFixture = <T>(name: string): T =>
   JSON.parse(readFileSync(`${FIXTURE_DIR}${name}`, 'utf8')) as T;
 
@@ -83,12 +77,7 @@ describe('wsjf golden-set (task #636)', () => {
       expect(components).toBeDefined();
       const c = components as WsjfComponents;
       const tol = fixture.tolerance.bucketTiers;
-      for (const key of [
-        'value',
-        'timeCriticality',
-        'riskOpportunity',
-        'jobSize',
-      ] as const) {
+      for (const key of ['value', 'timeCriticality', 'riskOpportunity', 'jobSize'] as const) {
         expect(
           Math.abs(c[key] - golden.expectedComponents[key]),
           `component "${key}" of ${golden.id}: got ${c[key]}, expected ${golden.expectedComponents[key]}`,

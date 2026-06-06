@@ -44,10 +44,7 @@ describe('MCP — acceptance_criteria (#311)', () => {
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} },
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -100,8 +97,7 @@ describe('MCP — acceptance_criteria (#311)', () => {
     })) as ToolResult;
     expect(updated.isError).not.toBe(true);
     expect(
-      (updated.structuredContent as { acceptance_criteria: string | null })
-        .acceptance_criteria,
+      (updated.structuredContent as { acceptance_criteria: string | null }).acceptance_criteria,
     ).toBe('patched via MCP');
 
     // Clear via explicit null.
@@ -110,8 +106,7 @@ describe('MCP — acceptance_criteria (#311)', () => {
       arguments: { id, updates: { acceptance_criteria: null } },
     })) as ToolResult;
     expect(
-      (cleared.structuredContent as { acceptance_criteria: string | null })
-        .acceptance_criteria,
+      (cleared.structuredContent as { acceptance_criteria: string | null }).acceptance_criteria,
     ).toBeNull();
   });
 
@@ -135,9 +130,7 @@ describe('MCP — acceptance_criteria (#311)', () => {
       result.isError === true ||
       (Array.isArray(result.content) &&
         result.content.some(
-          (c) =>
-            typeof c.text === 'string' &&
-            /(5000|too_big|max)/i.test(c.text),
+          (c) => typeof c.text === 'string' && /(5000|too_big|max)/i.test(c.text),
         ));
     expect(errored).toBe(true);
 

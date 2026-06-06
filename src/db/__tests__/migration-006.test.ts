@@ -23,7 +23,9 @@ describe('Migration 006: slack_channel_subscriptions', () => {
   describe('table creation', () => {
     it('should create slack_channel_subscriptions table', () => {
       const table = db
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='slack_channel_subscriptions'")
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='slack_channel_subscriptions'",
+        )
         .get() as { name: string } | undefined;
 
       expect(table).toBeDefined();
@@ -42,7 +44,9 @@ describe('Migration 006: slack_channel_subscriptions', () => {
       `).run('C123', projectId, 'task.created');
 
       const row = db
-        .prepare('SELECT channel_id, project_id, event_type FROM slack_channel_subscriptions WHERE channel_id = ?')
+        .prepare(
+          'SELECT channel_id, project_id, event_type FROM slack_channel_subscriptions WHERE channel_id = ?',
+        )
         .get('C123') as { channel_id: string; project_id: number; event_type: string } | undefined;
 
       expect(row).toBeDefined();
@@ -183,7 +187,9 @@ describe('Migration 006: slack_channel_subscriptions', () => {
   describe('indexes', () => {
     it('should create index on channel_id', () => {
       const index = db
-        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_slack_subs_channel_id'")
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_slack_subs_channel_id'",
+        )
         .get() as { name: string } | undefined;
 
       expect(index).toBeDefined();
@@ -192,7 +198,9 @@ describe('Migration 006: slack_channel_subscriptions', () => {
 
     it('should create index on project_id', () => {
       const index = db
-        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_slack_subs_project_id'")
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_slack_subs_project_id'",
+        )
         .get() as { name: string } | undefined;
 
       expect(index).toBeDefined();
@@ -201,7 +209,9 @@ describe('Migration 006: slack_channel_subscriptions', () => {
 
     it('should create index on event_type', () => {
       const index = db
-        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_slack_subs_event_type'")
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_slack_subs_event_type'",
+        )
         .get() as { name: string } | undefined;
 
       expect(index).toBeDefined();

@@ -11,7 +11,14 @@ import type {
 import type { WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
 
 // Task status and priority enums
-export const TASK_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked', 'backlogged'] as const;
+export const TASK_STATUSES = [
+  'open',
+  'in_progress',
+  'done',
+  'closed',
+  'blocked',
+  'backlogged',
+] as const;
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
 /**
@@ -36,8 +43,8 @@ export interface VerificationEvidence {
   verified_at?: string;
 }
 
-export type TaskStatus = typeof TASK_STATUSES[number];
-export type TaskPriority = typeof TASK_PRIORITIES[number];
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
 // Valid status transitions map
 export const VALID_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {

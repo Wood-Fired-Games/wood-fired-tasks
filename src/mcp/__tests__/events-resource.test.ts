@@ -26,16 +26,13 @@ describe('MCP Events Resource', () => {
       app.projectService,
       app.dependencyService,
       app.commentService,
-      app.db
+      app.db,
     );
 
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
 
-    client = new Client(
-      { name: 'test-client', version: '1.0.0' },
-      { capabilities: {} }
-    );
+    client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(clientTransport);
   });
 
@@ -50,9 +47,7 @@ describe('MCP Events Resource', () => {
   describe('resource listing', () => {
     it('lists events://stream resource', async () => {
       const result = await client.listResources();
-      const eventsResource = result.resources.find(
-        (r) => r.uri === 'events://stream'
-      );
+      const eventsResource = result.resources.find((r) => r.uri === 'events://stream');
 
       expect(eventsResource).toBeDefined();
       expect(eventsResource!.name).toBe('Event Stream');
@@ -141,9 +136,7 @@ describe('MCP Events Resource', () => {
       const text = (result.contents[0] as { text: string }).text;
 
       for (const eventType of ALLOWED_EVENT_TYPES) {
-        expect(text, `Resource missing event type "${eventType}"`).toContain(
-          eventType
-        );
+        expect(text, `Resource missing event type "${eventType}"`).toContain(eventType);
       }
     });
 

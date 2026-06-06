@@ -24,7 +24,7 @@ export class SlackService {
   constructor(
     private readonly botToken: string | undefined,
     private readonly appToken: string | undefined,
-    private readonly logger: MinimalLogger
+    private readonly logger: MinimalLogger,
   ) {}
 
   async start(): Promise<void> {

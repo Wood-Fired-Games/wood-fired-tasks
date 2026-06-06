@@ -18,10 +18,10 @@ dotenv.config({ path: envPath, quiet: true });
 // NotAuthenticatedError), not here. Returning '' from the getter keeps the
 // type narrow and lets resolveAuth's `apiKey.length > 0` check decide.
 export const env = {
-  API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:3000',
+  API_BASE_URL: process.env['API_BASE_URL'] || 'http://localhost:3000',
   // Getter so callers re-read process.env.API_KEY on each access — important
   // for tests that mutate env between calls.
   get API_KEY(): string {
-    return process.env.API_KEY ?? '';
+    return process.env['API_KEY'] ?? '';
   },
 };

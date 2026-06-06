@@ -167,12 +167,16 @@ interface SpawnCall {
   stdin: string;
 }
 
-function recordingSpawn(behavior: {
-  exit?: number;
-  stdout?: string;
-}): { spawnImpl: SpawnImpl; calls: SpawnCall[] } {
+function recordingSpawn(behavior: { exit?: number; stdout?: string }): {
+  spawnImpl: SpawnImpl;
+  calls: SpawnCall[];
+} {
   const calls: SpawnCall[] = [];
-  const spawnImpl = ((command: string, argv: readonly string[], options: Record<string, unknown>) => {
+  const spawnImpl = ((
+    command: string,
+    argv: readonly string[],
+    options: Record<string, unknown>,
+  ) => {
     let stdinBuf = '';
     const stdin = new Writable({
       write(chunk, _enc, cb) {
@@ -236,7 +240,11 @@ describe('resolveAdaptersPath', () => {
 
 describe('buildAdapterArgv', () => {
   it('emits one templated key=value element per non-adapter key', () => {
-    const built = buildAdapterArgv({ adapter: 'local-command', target: 'my-project', prompt: 'epic 42 closed' });
+    const built = buildAdapterArgv({
+      adapter: 'local-command',
+      target: 'my-project',
+      prompt: 'epic 42 closed',
+    });
     expect(built).toEqual({ argv: ['target=my-project', 'prompt=epic 42 closed'] });
   });
 

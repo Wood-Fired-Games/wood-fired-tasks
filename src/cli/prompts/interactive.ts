@@ -25,7 +25,7 @@ export function shouldPrompt(): boolean {
 export async function promptForMissing<T>(
   field: string,
   value: T | undefined,
-  options?: { defaultValue?: T; validate?: (v: string) => boolean }
+  options?: { defaultValue?: T; validate?: (v: string) => boolean },
 ): Promise<T> {
   // If value already provided, return it
   if (value !== undefined) {
@@ -34,9 +34,7 @@ export async function promptForMissing<T>(
 
   // If prompts disabled, throw error
   if (!shouldPrompt()) {
-    throw new Error(
-      `Missing required field: ${field}. Use --${field} or remove --no-input`
-    );
+    throw new Error(`Missing required field: ${field}. Use --${field} or remove --no-input`);
   }
 
   // Prompt user for value
@@ -45,15 +43,15 @@ export async function promptForMissing<T>(
     ...(options?.defaultValue !== undefined && {
       defaultValue: String(options.defaultValue),
     }),
-    validate: options?.validate
-      ? (v) => {
-          // v can be string | undefined from @clack/prompts
-          if (!v || !options.validate!(v)) {
-            return `Invalid value for ${field}`;
-          }
-          return undefined;
+    ...(options?.validate && {
+      validate: (v: string | undefined) => {
+        // v can be string | undefined from @clack/prompts
+        if (!v || !options.validate!(v)) {
+          return `Invalid value for ${field}`;
         }
-      : undefined,
+        return undefined;
+      },
+    }),
   });
 
   // Handle cancellation (Ctrl+C)
@@ -71,10 +69,7 @@ export async function promptForMissing<T>(
  * @returns true if user confirms or --force flag set, false otherwise
  * @throws Error if confirmation required but not in TTY
  */
-export async function confirmAction(
-  message: string,
-  defaultValue = false
-): Promise<boolean> {
+export async function confirmAction(message: string, defaultValue = false): Promise<boolean> {
   // Check for --force flag - skip confirmation if set
   const hasForce = process.argv.includes('--force');
   if (hasForce) {
@@ -83,9 +78,7 @@ export async function confirmAction(
 
   // If not in TTY, throw error (can't prompt)
   if (!process.stdin.isTTY) {
-    throw new Error(
-      'Confirmation required. Use --force or run in interactive terminal'
-    );
+    throw new Error('Confirmation required. Use --force or run in interactive terminal');
   }
 
   // Show confirmation prompt

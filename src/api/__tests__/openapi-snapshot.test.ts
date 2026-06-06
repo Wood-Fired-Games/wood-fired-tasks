@@ -67,9 +67,10 @@ function normalize(spec: Record<string, unknown>): Record<string, unknown> {
   // dependent. The list of server entries is still snapshotted so that
   // *adding* or *removing* a server surfaces as a diff.
   if (Array.isArray(clone.servers)) {
-    clone.servers = (clone.servers as Array<Record<string, unknown>>).map(
-      (s) => ({ ...s, url: '<pinned>' })
-    );
+    clone.servers = (clone.servers as Array<Record<string, unknown>>).map((s) => ({
+      ...s,
+      url: '<pinned>',
+    }));
   }
 
   return sortKeys(clone);

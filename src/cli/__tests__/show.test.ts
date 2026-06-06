@@ -138,7 +138,7 @@ describe('show command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'show', '99999']);

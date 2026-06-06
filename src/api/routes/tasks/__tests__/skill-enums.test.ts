@@ -46,10 +46,7 @@ const CANDIDATE_TOKENS = [
   'normal', // non-canonical — should never appear as enum value
 ] as const;
 
-const CANONICAL_SET = new Set<string>([
-  ...TASK_STATUSES,
-  ...TASK_PRIORITIES,
-]);
+const CANONICAL_SET = new Set<string>([...TASK_STATUSES, ...TASK_PRIORITIES]);
 
 /**
  * Allowlist of English-prose false positives. Each entry is matched with
@@ -92,9 +89,7 @@ interface SkillFinding {
 }
 
 function isLineProseAllowlisted(file: string, line: string): boolean {
-  return PROSE_ALLOWLIST.some(
-    (entry) => entry.file === file && line.includes(entry.contains),
-  );
+  return PROSE_ALLOWLIST.some((entry) => entry.file === file && line.includes(entry.contains));
 }
 
 function scanSkillFile(filePath: string): SkillFinding[] {
@@ -150,23 +145,15 @@ describe('skill enum-value consistency (#347)', () => {
     return m ? (m[1] as 'true' | 'false') : 'missing';
   }
 
-  const allSkillFiles = readdirSync(SKILLS_DIR).filter((name) =>
-    name.endsWith('.md'),
-  );
+  const allSkillFiles = readdirSync(SKILLS_DIR).filter((name) => name.endsWith('.md'));
 
   // Every shipped skill MUST declare the boolean (a separate e2e gate
   // requires the field to be present on every skill). Catch a missing /
   // malformed flag before the count math below.
-  const missingFlag = allSkillFiles.filter(
-    (name) => flagFor(name) === 'missing',
-  );
+  const missingFlag = allSkillFiles.filter((name) => flagFor(name) === 'missing');
 
-  const nonInvocableByFlag = allSkillFiles.filter(
-    (name) => flagFor(name) === 'true',
-  );
-  const invocableByFlag = allSkillFiles.filter(
-    (name) => flagFor(name) === 'false',
-  );
+  const nonInvocableByFlag = allSkillFiles.filter((name) => flagFor(name) === 'true');
+  const invocableByFlag = allSkillFiles.filter((name) => flagFor(name) === 'false');
 
   // The enum-scan below runs over the invocable surface only (the gated
   // docs are reference material, not commands installed to ~/.claude/).
@@ -214,8 +201,7 @@ describe('skill enum-value consistency (#347)', () => {
     if (offenders.length > 0) {
       const formatted = offenders
         .map(
-          (o) =>
-            `  ${o.file}:${o.line}  token="${o.token}"  line=${JSON.stringify(o.raw.trim())}`,
+          (o) => `  ${o.file}:${o.line}  token="${o.token}"  line=${JSON.stringify(o.raw.trim())}`,
         )
         .join('\n');
       throw new Error(
@@ -227,10 +213,7 @@ describe('skill enum-value consistency (#347)', () => {
   });
 
   it('canonical _enums.md doc exists and cites src/types/task.ts', () => {
-    const enumsDoc = readFileSync(
-      resolve(SKILLS_DIR, '_enums.md'),
-      'utf8',
-    );
+    const enumsDoc = readFileSync(resolve(SKILLS_DIR, '_enums.md'), 'utf8');
     expect(enumsDoc).toContain('src/types/task.ts');
     expect(enumsDoc).toContain('TASK_STATUSES');
     expect(enumsDoc).toContain('TASK_PRIORITIES');

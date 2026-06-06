@@ -197,8 +197,7 @@ describe('WSJF audit — history repository + in-transaction write (#628)', () =
     // Atomicity check: the only way a history row exists is via a real score
     // write — the count equals the number of score-bearing component writes.
     // withScore: 1 (create). noScore: 1 (update set). Total scored writes = 2.
-    const total = historyRepo.countByTaskId(withScore.id) +
-      historyRepo.countByTaskId(noScore.id);
+    const total = historyRepo.countByTaskId(withScore.id) + historyRepo.countByTaskId(noScore.id);
     expect(total).toBe(2);
   });
 

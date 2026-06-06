@@ -40,7 +40,7 @@ vi.mock('../output/spinner.js', () => ({
 vi.mock('../output/formatters.js', () => ({
   formatTaskDetail: vi.fn((task) => `Task #${task.id}: ${task.title}`),
   formatTaskTable: vi.fn((tasks) =>
-    tasks.map((t: { id: number; title: string }) => `${t.id} ${t.title}`).join('\n')
+    tasks.map((t: { id: number; title: string }) => `${t.id} ${t.title}`).join('\n'),
   ),
   colorSuccess: vi.fn((text: string) => text),
   colorError: vi.fn((text: string) => text),
@@ -129,20 +129,32 @@ describe('subtask-create command', () => {
     const { promptForMissing } = await import('../prompts/interactive.js');
 
     vi.mocked(getTask).mockResolvedValue(mockParentTask);
-    vi.mocked(promptForMissing)
-      .mockResolvedValueOnce('Subtask')
-      .mockResolvedValueOnce('alice');
+    vi.mocked(promptForMissing).mockResolvedValueOnce('Subtask').mockResolvedValueOnce('alice');
     vi.mocked(createSubtask).mockResolvedValue(mockSubtask);
 
-    await program.parseAsync(['node', 'test', 'subtask-create', '1', '-t', 'Subtask', '-c', 'alice']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'subtask-create',
+      '1',
+      '-t',
+      'Subtask',
+      '-c',
+      'alice',
+    ]);
 
     expect(getTask).toHaveBeenCalledWith(1);
-    expect(createSubtask).toHaveBeenCalledWith(1, expect.objectContaining({
-      title: 'Subtask',
-      created_by: 'alice',
-      project_id: 1,
-    }));
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Subtask created under task #1'));
+    expect(createSubtask).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        title: 'Subtask',
+        created_by: 'alice',
+        project_id: 1,
+      }),
+    );
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Subtask created under task #1'),
+    );
   });
 
   it('fetches parent task to inherit project_id', async () => {
@@ -151,17 +163,27 @@ describe('subtask-create command', () => {
 
     const parentWithProject3 = { ...mockParentTask, project_id: 3 };
     vi.mocked(getTask).mockResolvedValue(parentWithProject3);
-    vi.mocked(promptForMissing)
-      .mockResolvedValueOnce('Child Task')
-      .mockResolvedValueOnce('bob');
+    vi.mocked(promptForMissing).mockResolvedValueOnce('Child Task').mockResolvedValueOnce('bob');
     vi.mocked(createSubtask).mockResolvedValue({ ...mockSubtask, project_id: 3 });
 
-    await program.parseAsync(['node', 'test', 'subtask-create', '1', '-t', 'Child Task', '-c', 'bob']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'subtask-create',
+      '1',
+      '-t',
+      'Child Task',
+      '-c',
+      'bob',
+    ]);
 
     expect(getTask).toHaveBeenCalledWith(1);
-    expect(createSubtask).toHaveBeenCalledWith(1, expect.objectContaining({
-      project_id: 3,
-    }));
+    expect(createSubtask).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        project_id: 3,
+      }),
+    );
   });
 
   it('prompts for missing title when not provided', async () => {
@@ -177,9 +199,12 @@ describe('subtask-create command', () => {
     await program.parseAsync(['node', 'test', 'subtask-create', '1', '-c', 'alice']);
 
     expect(promptForMissing).toHaveBeenCalledWith('title', undefined);
-    expect(createSubtask).toHaveBeenCalledWith(1, expect.objectContaining({
-      title: 'prompted-title',
-    }));
+    expect(createSubtask).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        title: 'prompted-title',
+      }),
+    );
   });
 
   it('prompts for missing created-by when not provided', async () => {
@@ -195,9 +220,12 @@ describe('subtask-create command', () => {
     await program.parseAsync(['node', 'test', 'subtask-create', '1', '-t', 'Subtask']);
 
     expect(promptForMissing).toHaveBeenCalledWith('created-by', undefined);
-    expect(createSubtask).toHaveBeenCalledWith(1, expect.objectContaining({
-      created_by: 'prompted-creator',
-    }));
+    expect(createSubtask).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        created_by: 'prompted-creator',
+      }),
+    );
   });
 
   it('outputs JSON when --json flag set', async () => {
@@ -206,16 +234,24 @@ describe('subtask-create command', () => {
     const { jsonOutput } = await import('../output/json-output.js');
 
     vi.mocked(getTask).mockResolvedValue(mockParentTask);
-    vi.mocked(promptForMissing)
-      .mockResolvedValueOnce('Subtask')
-      .mockResolvedValueOnce('alice');
+    vi.mocked(promptForMissing).mockResolvedValueOnce('Subtask').mockResolvedValueOnce('alice');
     vi.mocked(createSubtask).mockResolvedValue(mockSubtask);
 
-    await program.parseAsync(['node', 'test', '--json', 'subtask-create', '1', '-t', 'Subtask', '-c', 'alice']);
+    await program.parseAsync([
+      'node',
+      'test',
+      '--json',
+      'subtask-create',
+      '1',
+      '-t',
+      'Subtask',
+      '-c',
+      'alice',
+    ]);
 
     expect(jsonOutput).toHaveBeenCalledWith(
       { task: mockSubtask },
-      { id: mockSubtask.id, parent_task_id: 1 }
+      { id: mockSubtask.id, parent_task_id: 1 },
     );
     expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('Subtask created'));
   });
@@ -227,10 +263,19 @@ describe('subtask-create command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
-    await program.parseAsync(['node', 'test', 'subtask-create', '99999', '-t', 'Test', '-c', 'test']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'subtask-create',
+      '99999',
+      '-t',
+      'Test',
+      '-c',
+      'test',
+    ]);
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -239,7 +284,16 @@ describe('subtask-create command', () => {
   it('validates parent task ID is a number', async () => {
     const { createSubtask } = await import('../api/client.js');
 
-    await program.parseAsync(['node', 'test', 'subtask-create', 'invalid', '-t', 'Test', '-c', 'test']);
+    await program.parseAsync([
+      'node',
+      'test',
+      'subtask-create',
+      'invalid',
+      '-t',
+      'Test',
+      '-c',
+      'test',
+    ]);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('must be a number'));
     expect(createSubtask).not.toHaveBeenCalled();
@@ -326,7 +380,7 @@ describe('subtask-list command', () => {
       new ApiClientError('Task not found', 404, {
         error: 'NOT_FOUND',
         message: 'Task not found',
-      })
+      }),
     );
 
     await program.parseAsync(['node', 'test', 'subtask-list', '99999']);

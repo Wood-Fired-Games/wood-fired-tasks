@@ -30,13 +30,10 @@ export const commentDeleteCommand = new Command('comment-delete')
       // Check if JSON mode (global flag from program)
       const program = commentDeleteCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Confirm deletion (unless --force)
-      const confirmed = await confirmAction(
-        `Delete comment ${commentId}?`,
-        false
-      );
+      const confirmed = await confirmAction(`Delete comment ${commentId}?`, false);
 
       if (!confirmed) {
         if (isJsonMode) {

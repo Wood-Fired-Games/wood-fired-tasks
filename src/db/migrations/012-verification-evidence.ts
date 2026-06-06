@@ -40,9 +40,7 @@ import type Database from '../driver.js';
  */
 export async function up(db: Database.Database): Promise<void> {
   db.transaction(() => {
-    db.exec(
-      'ALTER TABLE tasks ADD COLUMN verification_evidence TEXT'
-    );
+    db.exec('ALTER TABLE tasks ADD COLUMN verification_evidence TEXT');
   })();
 }
 

@@ -10,11 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  renderWith,
-  TemplatingError,
-  type TemplateLogger,
-} from '../template.js';
+import { renderWith, TemplatingError, type TemplateLogger } from '../template.js';
 import type { EventPayloadShape } from '../predicate.js';
 import { redactForLogging } from '../../util/redaction.js';
 
@@ -65,9 +61,9 @@ describe('Rule 1 — substitution position', () => {
   });
 
   it('rejects mixed substitution at runtime with TemplatingError', () => {
-    expect(() =>
-      renderWith({ title: 'prefix-{{task.project_slug}}' }, makeEvent()),
-    ).toThrow(TemplatingError);
+    expect(() => renderWith({ title: 'prefix-{{task.project_slug}}' }, makeEvent())).toThrow(
+      TemplatingError,
+    );
   });
 });
 
@@ -103,11 +99,10 @@ describe('Rule 3 — length cap', () => {
       task: { id: 1, status: 'open', tags: [], summary: big } as never,
     });
     const { logger, warns } = makeRecordingLogger();
-    const out = renderWith(
-      { body: '{{task.summary}}' },
-      event,
-      { logger },
-    ) as Record<string, unknown>;
+    const out = renderWith({ body: '{{task.summary}}' }, event, { logger }) as Record<
+      string,
+      unknown
+    >;
 
     const rendered = out.body as string;
     expect(typeof rendered).toBe('string');
@@ -131,11 +126,7 @@ describe('Rule 3 — length cap', () => {
       task: { id: 1, status: 'open', tags: [], summary: small } as never,
     });
     const { logger, warns } = makeRecordingLogger();
-    const out = renderWith(
-      { body: '{{task.summary}}' },
-      event,
-      { logger },
-    );
+    const out = renderWith({ body: '{{task.summary}}' }, event, { logger });
     expect(out).toEqual({ body: small });
     expect(warns).toHaveLength(0);
   });
@@ -155,11 +146,7 @@ describe('Rule 4 — chat-control strip', () => {
         note: '<!channel> <@U123> <#C456> hello',
       } as never,
     });
-    const out = renderWith(
-      { body: '{{task.note}}' },
-      event,
-      { stripChatControls: true },
-    );
+    const out = renderWith({ body: '{{task.note}}' }, event, { stripChatControls: true });
     expect(out).toEqual({ body: 'channel> U123> C456> hello' });
   });
 
@@ -180,11 +167,9 @@ describe('Rule 4 — chat-control strip', () => {
 describe('Rule 5 — null on miss', () => {
   it('substitutes JSON null and WARN-logs when the path misses', () => {
     const { logger, warns } = makeRecordingLogger();
-    const out = renderWith(
-      { released: '{{task.metadata.released_version}}' },
-      makeEvent(),
-      { logger },
-    );
+    const out = renderWith({ released: '{{task.metadata.released_version}}' }, makeEvent(), {
+      logger,
+    });
     expect(out).toEqual({ released: null });
     expect(warns).toHaveLength(1);
     expect(warns[0]?.msg).toBe('templating_miss');
@@ -263,10 +248,7 @@ describe('renderWith — cross-cutting', () => {
   });
 
   it('preserves non-string primitives as-is', () => {
-    const out = renderWith(
-      { count: 5, enabled: true, optional: null },
-      makeEvent(),
-    );
+    const out = renderWith({ count: 5, enabled: true, optional: null }, makeEvent());
     expect(out).toEqual({ count: 5, enabled: true, optional: null });
   });
 });

@@ -72,9 +72,7 @@ export async function startServer(options: ServeOptions = {}): Promise<{
 }
 
 export const serveCommand = new Command('serve')
-  .description(
-    'Run the Wood Fired Tasks API server (migrates the app-data DB on start)'
-  )
+  .description('Run the Wood Fired Tasks API server (migrates the app-data DB on start)')
   .addHelpText(
     'after',
     `
@@ -89,26 +87,22 @@ Examples:
   tasks serve                 Serve on HOST:PORT (default 127.0.0.1:3000)
   tasks serve --port 8080     Serve on port 8080
   HOST=0.0.0.0 tasks serve    Expose on every interface
-`
+`,
   )
-  .option(
-    '--port <n>',
-    'Port to listen on (overrides the PORT env var)',
-    (value) => {
-      const n = Number.parseInt(value, 10);
-      if (!Number.isInteger(n) || n < 0 || n > 65535) {
-        throw new Error(`--port must be an integer between 0 and 65535, got "${value}"`);
-      }
-      return n;
+  .option('--port <n>', 'Port to listen on (overrides the PORT env var)', (value) => {
+    const n = Number.parseInt(value, 10);
+    if (!Number.isInteger(n) || n < 0 || n > 65535) {
+      throw new Error(`--port must be an integer between 0 and 65535, got "${value}"`);
     }
-  )
+    return n;
+  })
   .action(async () => {
     const opts = serveCommand.opts<{ port?: number }>();
-    const { host, port } = await startServer({ port: opts.port });
+    const { host, port } = await startServer({
+      ...(opts.port !== undefined && { port: opts.port }),
+    });
     process.stdout.write(
       `Wood Fired Tasks API listening on http://${host}:${port}` +
-        (host === '127.0.0.1'
-          ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)\n'
-          : '\n')
+        (host === '127.0.0.1' ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)\n' : '\n'),
     );
   });

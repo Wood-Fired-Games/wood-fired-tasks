@@ -12,11 +12,7 @@ function makeMockClient(usersInfoImpl?: () => Promise<unknown>): WebClient {
   } as unknown as WebClient;
 }
 
-function makeSuccessResponse(opts: {
-  display_name?: string;
-  real_name?: string;
-  name?: string;
-}) {
+function makeSuccessResponse(opts: { display_name?: string; real_name?: string; name?: string }) {
   return {
     ok: true,
     user: {
@@ -42,7 +38,7 @@ describe('UserIdentityCache', () => {
   describe('resolve() calls users.info with correct userId', () => {
     it('should call users.info with the given userId', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' })),
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -56,8 +52,8 @@ describe('UserIdentityCache', () => {
     it('should return display_name when present', async () => {
       const mockClient = makeMockClient(() =>
         Promise.resolve(
-          makeSuccessResponse({ display_name: 'Alice', real_name: 'Alice M', name: 'alice' })
-        )
+          makeSuccessResponse({ display_name: 'Alice', real_name: 'Alice M', name: 'alice' }),
+        ),
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -69,8 +65,8 @@ describe('UserIdentityCache', () => {
     it('should return real_name when display_name is empty', async () => {
       const mockClient = makeMockClient(() =>
         Promise.resolve(
-          makeSuccessResponse({ display_name: '', real_name: 'Alice M', name: 'alice' })
-        )
+          makeSuccessResponse({ display_name: '', real_name: 'Alice M', name: 'alice' }),
+        ),
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -81,9 +77,7 @@ describe('UserIdentityCache', () => {
 
     it('should return name when display_name and real_name are empty', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(
-          makeSuccessResponse({ display_name: '', real_name: '', name: 'alice' })
-        )
+        Promise.resolve(makeSuccessResponse({ display_name: '', real_name: '', name: 'alice' })),
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -103,7 +97,7 @@ describe('UserIdentityCache', () => {
             },
             // no name field
           },
-        })
+        }),
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -116,7 +110,7 @@ describe('UserIdentityCache', () => {
   describe('Caching', () => {
     it('should use cached value on second resolve() call — users.info called once', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' })),
       );
       const cache = new UserIdentityCache(mockClient);
 
@@ -130,7 +124,7 @@ describe('UserIdentityCache', () => {
   describe('TTL expiry', () => {
     it('should call users.info again after TTL expires', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' })),
       );
       // 100ms TTL for testing
       const cache = new UserIdentityCache(mockClient, 100);
@@ -187,7 +181,7 @@ describe('UserIdentityCache', () => {
   describe('clear()', () => {
     it('should empty cache so next resolve() calls users.info again', async () => {
       const mockClient = makeMockClient(() =>
-        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' }))
+        Promise.resolve(makeSuccessResponse({ display_name: 'Alice' })),
       );
       const cache = new UserIdentityCache(mockClient);
 

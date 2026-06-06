@@ -62,9 +62,7 @@ describe('/tasks:loop skill — verifier dispatch wiring (#315)', () => {
   it('flips the task to blocked on the FAIL branch', () => {
     // The blocked transition is the load-bearing safety property of the
     // FAIL branch — without it a FAIL verdict could silently become done.
-    expect(skill.includes('status": "blocked"') || skill.includes("status': 'blocked'")).toBe(
-      true,
-    );
+    expect(skill.includes('status": "blocked"') || skill.includes("status': 'blocked'")).toBe(true);
   });
 
   it('has a Generator/critic separation callout', () => {

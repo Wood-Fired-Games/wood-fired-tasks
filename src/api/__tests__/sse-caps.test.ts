@@ -40,10 +40,16 @@ describe('SSEManager connection caps (task #185)', () => {
     // maxPerKey=2, maxPerIp=10, maxTotal=10 — only the per-key cap should bite
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 2, 10, 10);
 
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
     expect(manager.canAccept('A', '1.1.1.1')).toEqual({ ok: true });
 
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
     const decision = manager.canAccept('A', '1.1.1.1');
     expect(decision.ok).toBe(false);
     if (decision.ok === false) {
@@ -56,8 +62,14 @@ describe('SSEManager connection caps (task #185)', () => {
     // maxPerKey=10, maxPerIp=2, maxTotal=10 — only the per-IP cap should bite
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 10, 2, 10);
 
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'B', ip: '1.1.1.1' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'B',
+      ip: '1.1.1.1',
+    });
 
     const decision = manager.canAccept('C', '1.1.1.1');
     expect(decision.ok).toBe(false);
@@ -70,8 +82,14 @@ describe('SSEManager connection caps (task #185)', () => {
     // maxPerKey=10, maxPerIp=10, maxTotal=2 — only the global cap should bite
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 10, 10, 2);
 
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'B', ip: '2.2.2.2' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'B',
+      ip: '2.2.2.2',
+    });
 
     const decision = manager.canAccept('C', '3.3.3.3');
     expect(decision.ok).toBe(false);
@@ -100,11 +118,20 @@ describe('SSEManager connection caps (task #185)', () => {
     manager = new SSEManager(100, 5 * 60 * 1000, 30000, 10 * 60 * 1000, 3, 10, 10);
 
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(true);
-    manager.addConnection('c1', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c1', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(true);
-    manager.addConnection('c2', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c2', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(true);
-    manager.addConnection('c3', makeMockReply(), {}, undefined, { apiKeyFingerprint: 'A', ip: '1.1.1.1' });
+    manager.addConnection('c3', makeMockReply(), {}, undefined, {
+      apiKeyFingerprint: 'A',
+      ip: '1.1.1.1',
+    });
     // 4th would exceed cap
     expect(manager.canAccept('A', '1.1.1.1').ok).toBe(false);
   });
@@ -262,9 +289,7 @@ describe('per-principal SSE cap attribution (task #393)', () => {
     },
   ): Promise<FastifyInstance> {
     const Fastify = (await import('fastify')).default;
-    const { validatorCompiler, serializerCompiler } = await import(
-      'fastify-type-provider-zod'
-    );
+    const { validatorCompiler, serializerCompiler } = await import('fastify-type-provider-zod');
     const eventsRoute = (await import('../routes/events.js')).default;
     const server: any = Fastify();
     // The events route declares its schema via fastify-type-provider-zod, so
@@ -422,9 +447,9 @@ describe('/api/v1/events PAT principal end-to-end (task #393)', () => {
     db = result.app.db;
 
     // Mint a PAT row tied to the seeded legacy user (any real users.id works).
-    const legacyUser = db
-      .prepare('SELECT id FROM users WHERE is_legacy = 1 LIMIT 1')
-      .get() as { id: number };
+    const legacyUser = db.prepare('SELECT id FROM users WHERE is_legacy = 1 LIMIT 1').get() as {
+      id: number;
+    };
     const { token, prefix, suffix, hash } = generateToken();
     const info = db
       .prepare(

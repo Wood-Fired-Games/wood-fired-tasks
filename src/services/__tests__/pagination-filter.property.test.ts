@@ -174,7 +174,7 @@ describe('TaskService pagination/filter invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 
   test.prop(
@@ -183,37 +183,34 @@ describe('TaskService pagination/filter invariants', () => {
       limitA: pageSizeArb,
       limitB: pageSizeArb,
     },
-    { numRuns: 10 }
-  )(
-    'P2: envelope.total is invariant under page size',
-    async ({ fixtures, limitA, limitB }) => {
-      const app = await createTestApp();
-      try {
-        const { projectId } = seedFixtures(app, fixtures);
+    { numRuns: 10 },
+  )('P2: envelope.total is invariant under page size', async ({ fixtures, limitA, limitB }) => {
+    const app = await createTestApp();
+    try {
+      const { projectId } = seedFixtures(app, fixtures);
 
-        const pageA = app.taskService.listTasksPaginated({
-          project_id: projectId,
-          limit: limitA,
-          offset: 0,
-        });
-        const pageB = app.taskService.listTasksPaginated({
-          project_id: projectId,
-          limit: limitB,
-          offset: 0,
-        });
+      const pageA = app.taskService.listTasksPaginated({
+        project_id: projectId,
+        limit: limitA,
+        offset: 0,
+      });
+      const pageB = app.taskService.listTasksPaginated({
+        project_id: projectId,
+        limit: limitB,
+        offset: 0,
+      });
 
-        expect(pageA.total).toBe(pageB.total);
+      expect(pageA.total).toBe(pageB.total);
 
-        // Cross-check against the standalone count() helper too — they all
-        // measure the same unbounded match set.
-        const counted = app.taskService.countTasks({ project_id: projectId });
-        expect(counted).toBe(pageA.total);
-        return true;
-      } finally {
-        app.dispose();
-      }
+      // Cross-check against the standalone count() helper too — they all
+      // measure the same unbounded match set.
+      const counted = app.taskService.countTasks({ project_id: projectId });
+      expect(counted).toBe(pageA.total);
+      return true;
+    } finally {
+      app.dispose();
     }
-  );
+  });
 
   test.prop(
     {
@@ -221,7 +218,7 @@ describe('TaskService pagination/filter invariants', () => {
       filterStatus: statusArb,
       filterAssignee: assigneeArb,
     },
-    { numRuns: 12 }
+    { numRuns: 12 },
   )(
     'P3: adding a filter never widens the result (intersection is monotone)',
     async ({ fixtures, filterStatus, filterAssignee }) => {
@@ -256,7 +253,7 @@ describe('TaskService pagination/filter invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 
   test.prop(
@@ -265,7 +262,7 @@ describe('TaskService pagination/filter invariants', () => {
       pageSize: pageSizeArb,
       extraOffset: fc.integer({ min: 0, max: 5 }),
     },
-    { numRuns: 8 }
+    { numRuns: 8 },
   )(
     'P4: offsets at or past total return an empty page but preserve total',
     async ({ fixtures, pageSize, extraOffset }) => {
@@ -294,6 +291,6 @@ describe('TaskService pagination/filter invariants', () => {
       } finally {
         app.dispose();
       }
-    }
+    },
   );
 });

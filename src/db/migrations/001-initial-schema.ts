@@ -45,7 +45,9 @@ export function up(db: Database.Database): void {
 
     // Create indexes for common queries
     db.exec(`CREATE INDEX idx_tasks_project_id ON tasks(project_id)`);
-    db.exec(`CREATE INDEX idx_tasks_project_status_assignee ON tasks(project_id, status, assignee)`);
+    db.exec(
+      `CREATE INDEX idx_tasks_project_status_assignee ON tasks(project_id, status, assignee)`,
+    );
     db.exec(`CREATE INDEX idx_tasks_status_due_date ON tasks(status, due_date)`);
     db.exec(`CREATE INDEX idx_tasks_assignee ON tasks(assignee)`);
     db.exec(`CREATE INDEX idx_task_tags_task_id ON task_tags(task_id)`);

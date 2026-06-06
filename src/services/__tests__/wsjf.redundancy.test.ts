@@ -50,11 +50,7 @@ describe('WSJF 2.4 redundancy — median aggregation (task #635)', () => {
     //   timeCriticality: [5, 5, 3]   → 5
     //   riskOpportunity: [8, 13, 8]  → 8
     //   jobSize:         [2, 3, 5]   → 3
-    const fixed: WsjfComponents[] = [
-      comp(13, 5, 8, 2),
-      comp(8, 5, 13, 3),
-      comp(8, 3, 8, 5),
-    ];
+    const fixed: WsjfComponents[] = [comp(13, 5, 8, 2), comp(8, 5, 13, 3), comp(8, 3, 8, 5)];
 
     it('produces the deterministic median bucket per component', () => {
       expect(aggregateSamples(fixed)).toEqual(comp(8, 5, 8, 3));
@@ -135,9 +131,7 @@ describe('WSJF 2.4 redundancy — median aggregation (task #635)', () => {
         .mockResolvedValueOnce(comp(13, 5, 8, 3))
         .mockResolvedValueOnce(comp(8, 5, 8, 3)); // aggregate value median → 8
       // Verifier lands on 8 — exactly the aggregate, within tolerance.
-      const verify = vi
-        .fn<[], Promise<WsjfComponents>>()
-        .mockResolvedValue(comp(8, 5, 8, 3));
+      const verify = vi.fn<[], Promise<WsjfComponents>>().mockResolvedValue(comp(8, 5, 8, 3));
 
       const res = await redundantScore(sample, verify);
 
@@ -154,9 +148,7 @@ describe('WSJF 2.4 redundancy — median aggregation (task #635)', () => {
         .mockResolvedValueOnce(comp(13, 5, 8, 3))
         .mockResolvedValueOnce(comp(8, 5, 8, 3)); // value median → 8
       // Verifier lands on 2 — two ordinal steps from aggregate 8 → still disagrees.
-      const verify = vi
-        .fn<[], Promise<WsjfComponents>>()
-        .mockResolvedValue(comp(2, 5, 8, 3));
+      const verify = vi.fn<[], Promise<WsjfComponents>>().mockResolvedValue(comp(2, 5, 8, 3));
 
       const res = await redundantScore(sample, verify);
 
@@ -181,12 +173,8 @@ describe('WSJF 2.4 redundancy — median aggregation (task #635)', () => {
 
     it('a contradiction in the aggregate triggers escalation even when samples agree', async () => {
       // Every sample identical AND contradictory: jobSize=1 ∧ value=13.
-      const sample = vi
-        .fn<[], Promise<WsjfComponents>>()
-        .mockResolvedValue(comp(13, 5, 8, 1));
-      const verify = vi
-        .fn<[], Promise<WsjfComponents>>()
-        .mockResolvedValue(comp(5, 5, 8, 5)); // verifier resolves both ends
+      const sample = vi.fn<[], Promise<WsjfComponents>>().mockResolvedValue(comp(13, 5, 8, 1));
+      const verify = vi.fn<[], Promise<WsjfComponents>>().mockResolvedValue(comp(5, 5, 8, 5)); // verifier resolves both ends
 
       const res = await redundantScore(sample, verify);
 

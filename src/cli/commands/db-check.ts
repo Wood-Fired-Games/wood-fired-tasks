@@ -17,18 +17,18 @@ function formatSize(bytes: number): string {
 export const dbCheckCommand = new Command('db-check')
   .description('Run SQLite PRAGMA integrity_check and report database size')
   .action(() => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
 
     const program = dbCheckCommand.parent;
-    const isJsonMode = program?.optsWithGlobals()?.json || false;
+    const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
     const db = new Database(dbPath, { readonly: true });
 
     try {
       // Run integrity check
       const integrityResults = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
-      const passed =
-        integrityResults.length === 1 && integrityResults[0].integrity_check === 'ok';
+      const [firstResult] = integrityResults;
+      const passed = integrityResults.length === 1 && firstResult?.integrity_check === 'ok';
 
       // Get DB size info
       const pageCount = db.pragma('page_count', { simple: true }) as number;

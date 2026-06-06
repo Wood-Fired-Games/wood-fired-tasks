@@ -14,9 +14,11 @@ The repository is already in a healthy state for a small TypeScript service:
 
 - `tsconfig.json` enables `strict`, `forceConsistentCasingInFileNames`,
   declaration output, and Node16 module resolution.
-- `npm run build` compiles the production TypeScript surface.
-- `npm test` runs the Vitest suite; the latest baseline run reported 101 test
-  files and 1300 tests.
+- `npm run build` compiles the production TypeScript surface; it also runs as
+  the `build` CI job on every PR (project 37).
+- `npm test` runs the Vitest suite; as of the project-37 audit (`a872170`) the
+  suite is **247 test files / ~2,931 cases** (the older "101 files / 1300 tests"
+  figure is stale — see `docs/TYPESCRIPT_QUALITY_AUDIT_2026.md` §1.4).
 - `vitest.config.ts` enforces coverage thresholds at 85% lines, functions,
   and statements, with 75% branches.
 - `stryker.config.js` and `.github/workflows/mutation.yml` provide mutation
@@ -82,11 +84,19 @@ Strengths:
 
 Gaps:
 
-- No ESLint, typescript-eslint, Biome, Prettier, or equivalent formatter
-  configuration is present.
-- No CI job currently catches unused variables, floating promises, missing
+> **STALE (corrected project 37):** the two bullets below describe the
+> pre-tooling state. Biome **is** present (lint + formatter both enabled and
+> gated in CI); the `lint`, `build`, `depcruise`, and `complexity` CI jobs now
+> exist; `format:check` is a live gate. The accurate **residual** gap is
+> narrower: no type-aware **async-safety** lint (no-floating-promises /
+> no-unhandled-promise), and a deliberately minimal `recommended:false` rule
+> set. See `docs/TYPESCRIPT_QUALITY_AUDIT_2026.md` §1.3 / §777.
+
+- ~~No ESLint, typescript-eslint, Biome, Prettier, or equivalent formatter
+  configuration is present.~~
+- ~~No CI job currently catches unused variables, floating promises, missing
   awaits, unsafe assignment/member access, complexity, import cycles, or
-  formatting drift.
+  formatting drift.~~
 
 Direction:
 
@@ -251,10 +261,15 @@ Strengths:
 
 Gaps:
 
-- CI does not run `npm run build` in the main workflow.
-- CI has no lint/format gate.
-- Release checks are documented but not fully encoded into `prepublishOnly` or
-  a single local quality command.
+> **STALE (corrected project 37):** all three bullets below are now closed. CI
+> runs `npm run build` (`build` job), lint + format are gated (`lint` job:
+> `biome check`, `biome format .`, escape-hatch budget), and `npm run quality` +
+> `prepublishOnly` encode the local quality floor. Retained for provenance.
+
+- ~~CI does not run `npm run build` in the main workflow.~~
+- ~~CI has no lint/format gate.~~
+- ~~Release checks are documented but not fully encoded into `prepublishOnly` or
+  a single local quality command.~~
 
 Direction:
 
@@ -351,14 +366,21 @@ Suggested order:
 5. `exactOptionalPropertyTypes`
 6. `noUncheckedIndexedAccess`
 
-Deferred flags (still off, with rationale):
+Strict-flag ratchet — **ALL THREE NOW DONE (project 37, 2026-06):**
 
-- `noPropertyAccessFromIndexSignature` — deferred; needs a sweep of
-  `Record<string, any>` / dynamic access patterns; coupled with task #266.
-- `exactOptionalPropertyTypes` — deferred; broad churn around
-  optional-vs-undefined call sites and schema inference.
-- `noUncheckedIndexedAccess` — deferred; introduces `T | undefined` at every
-  index access; requires significant control-flow refactoring.
+- `noPropertyAccessFromIndexSignature` — **DONE (#763).** 210 TS4111 sites, all
+  genuine index-signature/`Record`/external-payload accesses, pure
+  `obj.foo`→`obj['foo']` conversions; zero escape hatches.
+- `exactOptionalPropertyTypes` — **DONE (#778 audit → #779 services/repos →
+  #780 surfaces + enable).** The omit-undefined / conditional-spread convention
+  (preserve the absent/`null`/value three-state — never widen DTOs to
+  `| undefined`) is documented in
+  [`docs/TYPESCRIPT_QUALITY_AUDIT_2026.md`](TYPESCRIPT_QUALITY_AUDIT_2026.md) §G.
+- `noUncheckedIndexedAccess` — **DONE (#781 inventory → #782 core → #783 surface
+  → #784 enable).** 30 errors resolved via guard-and-bind / tuple-type /
+  empty-state; the `distance.get(cur)!` anti-pattern retired. 4 pre-existing
+  blanket `!` sites remain as a documented mop-up follow-up (audit §784 / §777.E
+  F2).
 
 ### Phase 3: Reduce Unsafe Casts And Untyped Boundaries
 
@@ -411,12 +433,85 @@ Status:
   job `depcruise` in `.github/workflows/ci.yml`. Contributor workflow
   is documented under "Architecture and Boundary Checks" in
   `CONTRIBUTING.md`.
-- **Complexity reporting: deferred.** Needs an advisory-mode tool with
-  per-file thresholds calibrated against the current codebase before it
-  can be gated. Recommended follow-on: `eslint-plugin-sonarjs` (for
-  cognitive/cyclomatic complexity) or `complexity-report`. Track as a
-  separate task so the calibration pass does not block the boundary
-  gate.
+- **Complexity reporting: ADVISORY report landed in task #771.** Implemented
+  by reusing the existing Biome toolchain instead of adding a new dependency
+  (`eslint-plugin-sonarjs` / `complexity-report` were the originally-suggested
+  follow-ons but would have added an ESLint stack the repo does not otherwise
+  run). See the **"Complexity Calibration"** section immediately below for the
+  command, the calibrated outlier inventory, and the per-outlier
+  refactor/test/accept disposition. **No blocking gate was added** — the
+  calibration pass deliberately precedes any gate.
+
+#### Complexity Calibration (task #771)
+
+**Tooling.** Biome already ships `complexity/noExcessiveCognitiveComplexity`
+(the SonarSource Cognitive Complexity algorithm), so the report reuses it with
+**zero new dependencies**:
+
+- Config: [`biome.complexity.json`](../biome.complexity.json) — a dedicated
+  Biome config scoped to production TS only (`src/**/*.ts` and
+  `packages/wft-router/src/**/*.ts`, with `**/*.test.ts`, `**/*.spec.ts`,
+  `**/*.bench.ts`, `**/*.property.test.ts`, and `**/__tests__/**` excluded). It
+  sets `maxAllowedComplexity: 1` so Biome emits a diagnostic carrying the raw
+  score for **every** function (score ≥ 2); the script does the thresholding.
+- Report script:
+  [`scripts/quality/complexity-report.mjs`](../scripts/quality/complexity-report.mjs)
+  runs Biome with the JSON reporter, parses the per-function scores, and prints
+  a ranked outlier table + distribution histogram.
+- Command: **`npm run quality:complexity`**
+  (`--threshold N` changes the outlier cutoff, default 15 = Biome's own default
+  ceiling; `--top N` row count; `--json` machine output).
+
+**Advisory contract.** The report is advisory-only. `quality:complexity` exits
+`0` regardless of how complex the code is, and exits non-zero (`2`) **only** if
+Biome itself fails to execute. It is intentionally **not** part of the
+`npm run quality` / `quality:fast` / `quality:full` gate chain. CI runs it in a
+`complexity` job marked `continue-on-error: true` (report-only, not in the
+required-checks set).
+
+**Baseline (commit `ad0dc22`).** 551 functions score ≥ 2. Distribution:
+
+| Cognitive complexity | Function count |
+| -------------------- | -------------- |
+| ≥ 21                 | 28             |
+| 16–20                | 23             |
+| 11–15                | 51             |
+| 6–10                 | 133            |
+| 2–5                  | 316            |
+
+51 functions exceed Biome's default ceiling of 15. Top outliers and their
+disposition (refactor / add-test / accept):
+
+| Score | Location | Disposition |
+| ----- | -------- | ----------- |
+| 73 | `src/repositories/task.repository.ts:308` (claim transaction) | **accept (test-backed)** — one serialized CAS transaction; splitting it would fragment an intentionally-atomic claim. Already covered by claim/release concurrency + property tests. Revisit only if it grows. |
+| 51 | `src/mcp/identity-resolution.ts:154` (`resolveActorUserIdWithPath`) | **refactor (candidate)** — multi-branch identity precedence resolver; extracting each resolution source into a named helper would cut the score and improve readability. Highest-value refactor target. |
+| 45 | `src/mcp/remote/rest-client.ts:577` (SSE stream promise) | **accept** — streaming state machine with inherent branching; behavior is exercised by remote-client integration tests. |
+| 42 | `src/api/routes/auth/callback.ts:53` (OAuth callback) | **refactor (candidate)** — OAuth error/branch handling; extract token-exchange and error-mapping steps. Security-sensitive, so refactor only with added route tests. |
+| 41 | `packages/wft-router/src/sse/client.ts:368` (`runSSEClient`) | **accept** — async-generator reconnect loop; complexity is intrinsic to SSE reconnect/backoff. Covered by SSE client tests. |
+| 40 | `packages/wft-router/src/dispatch/predicate.ts:72` (`evaluateWhere`) | **add-test** — predicate evaluator with many operators; before any refactor, ensure each operator branch has a unit test, then consider a per-operator dispatch table. |
+| 38 | `src/cli/commands/doctor.ts:25` (doctor action) | **accept** — CLI diagnostic that linearly checks many conditions; low defect risk, output-only. |
+| 36 | `src/services/wsjf-health.service.ts:168` (`analyzeWsjfHealth`) | **refactor (candidate)** — health-signal aggregation; extract per-signal analyzers. Has service tests; refactor is maintainability, not correctness. |
+| 35 | `src/cli/commands/login.ts:51` (login action) | **accept** — interactive auth flow with many user-facing branches; CLI surface, low shared-logic risk. |
+| 33 | `src/services/wsjf.service.ts:395` (`validateScoreSubmission`) | **add-test** — validation branch coverage matters; keep validation paths under property/unit tests, then optionally split per-field validators. |
+
+The remaining 41 over-threshold functions (scores 16–32) are predominantly CLI
+`.action()` handlers, Fastify route handlers, and WSJF service methods. The
+general policy from this calibration:
+
+- **CLI `.action()` handlers and Fastify route handlers** — *accept by default*.
+  Their complexity is mostly linear option/branch handling at an I/O boundary
+  with low shared-logic reuse and existing integration coverage; refactor only
+  if a handler is actively churning.
+- **Service methods with validation/aggregation logic** (`wsjf.service.ts`,
+  `task.service.ts`, `topology.service.ts`, `evidence-validation.ts`) — *prefer
+  add-test, then refactor*. These carry real domain logic, so test coverage of
+  each branch is the priority; extraction into helpers is a follow-on.
+- **Repository transactions** (`task.repository.ts`) — *accept*; atomic
+  transactions should not be fragmented for a complexity number.
+
+**No blanket rewrite was performed.** This section is calibration only; any
+refactor above is a tracked follow-on, not part of task #771.
 
 ### Phase 5: Strengthen Database And Migration Safety
 
@@ -495,22 +590,19 @@ Status:
 - **Landed in task #269.** Four tightly-scoped CI/automation tweaks:
   1. `npm run build` added as the `build` CI job in
      `.github/workflows/ci.yml`.
-  2. `format:check` is **intentionally omitted from CI and from
-     `npm run quality`**; Biome's formatter is disabled in `biome.json`
-     (`formatter.enabled=false`), so a real format gate requires a
-     separate follow-on task that enables `formatter.enabled: true` and
-     lands the one-time reformat sweep. The `format:check` script is
-     kept in `package.json` but now exits non-zero with an explanatory
-     message so it cannot silently pass as a false-positive gate.
-     **Recommend that formatter-enable + reformat sweep as the next
-     quality task.**
+  2. **UPDATED (project 37, 2026-06): the formatter is now ENABLED and gated.**
+     `biome.json` has `formatter.enabled: true`, `format:check` = `biome
+     format .`, it runs as a step in the `lint` CI job, and it is chained into
+     `npm run quality`. The one-time reformat sweep landed. (The text below is
+     the historical #269 state, when `formatter.enabled=false` and `format:check`
+     was a deliberate `exit 1` placeholder — kept for provenance.)
   3. `.github/dependabot.yml` configured for `npm` and `github-actions`
      ecosystems on a weekly Monday cadence, with patch/minor grouping to
      cut PR noise.
   4. `npm run quality` composite script chains build, test, lint,
+     **format:check** (added once the formatter was enabled — project 37),
      lint:deps, depcruise, and production audit (fail-fast `&&` order,
-     cheapest gate first). `format:check` is deliberately excluded
-     until the formatter is enabled.
+     cheapest gate first).
   5. `prepublishOnly` script chains the minimum release-safe subset:
      build, test, lint:deps, production audit, and pack:check. Lint and
      format are intentionally omitted from `prepublishOnly` since they
@@ -566,7 +658,101 @@ Progress notes (task #270):
   - Additional benchmark files. Three benchmarks exist today
     (`sse-manager.bench.ts`, `cycle-detector.bench.ts`,
     `task.repository.bench.ts`) — only add more when a concrete hot path
-    with regression risk is identified.
+    with regression risk is identified. The benchmark / performance-regression
+    policy (hot paths, stable invocation, recorded baselines, advisory-vs-
+    blocking CI rule) is documented in
+    [`BENCHMARK_POLICY.md`](BENCHMARK_POLICY.md).
+
+Progress notes (task #772) — mutation-result review:
+
+- **Report source + date.** Survivors were extracted from the local Stryker
+  HTML report at `reports/mutation/mutation.html` (dated **2026-02-17**;
+  `reports/` is gitignored, so the artifact is read-only and not committed).
+  The embedded data lives in the `app.report = {…}` object inside the page;
+  note it is a JS expression, not strict JSON (it splits the literal
+  `"k.length <"+"= 0"` to avoid emitting `</` in HTML), so it must be
+  `vm`-evaluated rather than `JSON.parse`d. Run summary: 3970 mutants —
+  1416 Killed, 526 Survived, 886 NoCoverage, 239 Timeout, 903 CompileError;
+  overall score 46.2%, covered-only score 64.9%.
+- **Staleness.** The report predates the `#732` driver-seam refactor and the
+  `#761` Biome reformat sweep, so its line numbers are shifted relative to
+  `HEAD`. The *behaviour* of the triaged code (the WorkflowEngine cascade-depth
+  guard) is unchanged, so the survivor inventory is still valid; only treat the
+  cited line numbers as approximate. Request a fresh run before relying on the
+  numeric score again (see "When to request a mutation run" below).
+- **Risk triage (Survived only — NoCoverage is a separate, lower-priority
+  class).** Highest survivor counts cluster in CLI formatters / command files
+  and `mcp/tools/task-tools.ts`; those are overwhelmingly `StringLiteral` /
+  `ObjectLiteral` cosmetic mutants (low defect risk). The high-*risk* survivors
+  are the logic mutants in the service/repository layer:
+  - `src/services/workflow-engine.ts` (27 survivors) — the cascade-depth
+    recursion guard. **Actioned (see below).**
+  - `src/repositories/task.repository.ts` (26) — mostly dynamic-SQL
+    `whereClauses`/`fields` length guards and `StringLiteral` glue; the
+    `ConditionalExpression`/`EqualityOperator` survivors there are
+    partial-update field-presence checks already exercised functionally.
+    Documented-rationale: lower blast radius than the recursion guard; revisit
+    if a fresh run still flags them.
+  - Service/route `StringLiteral` survivors (`task.service.ts`,
+    `project.service.ts`, `comment.service.ts`, `api/routes/events.ts`, …) are
+    log/error-message and event-name literals — killing them asserts on exact
+    strings, which is brittle and low-value. **Documented-rationale: not
+    worth a test.**
+- **Actioned survivors (WorkflowEngine cascade-depth guard).**
+  - The `UpdateOperator` survivors on `this.cascadeDepth--` (one in
+    `handleParentAutoComplete`, one in `handleDependencyAutoUnblock`) were the
+    highest-value killable mutants: a dropped decrement leaks the recursion
+    counter across *independent* top-level cascades, which would silently
+    disable all parent-completion / auto-unblock automation after the first
+    deep cascade. The existing depth-limit test ran only a single cascade and
+    so tolerated a leaked counter.
+  - Added two focused tests in
+    [`src/services/__tests__/workflow-engine.test.ts`](../src/services/__tests__/workflow-engine.test.ts)
+    under `describe('cascade depth decrement: …')`:
+    1. Two independent deep parent chains back-to-back — the second root only
+       completes if the counter reset to 0 (kills the parent-cascade
+       `cascadeDepth--` mutant).
+    2. An auto-unblock followed by a chain whose root sits at exactly
+       `MAX_CASCADE_DEPTH = 5` — a leaked `+1` from the unblock pushes the root
+       to depth 6 and trips the guard (kills the unblock `cascadeDepth--`
+       mutant).
+    Both were verified by hand-applying each mutant and confirming the matching
+    test fails, then passes once reverted.
+  - **Not chased (equivalent-mutant rationale):** the three
+    `>= → >` (`EqualityOperator`) survivors on the depth guards
+    (`processCascade`, `handleParentAutoComplete`,
+    `handleDependencyAutoUnblock`) survive *individually* because the guard is
+    deliberately redundant (defence-in-depth) — whichever check hits `>= 5`
+    first stops the cascade, so flipping any single one to `>` leaves the
+    observable boundary unchanged. Killing one in isolation would require
+    deleting the other two guards, which we will not do. They are effectively
+    equivalent mutants under the current redundant design and are documented
+    here rather than tested.
+- **Thresholds untouched.** `stryker.config.js` still enforces `break: 75`
+  (high 80 / low 60); no threshold was lowered to absorb these survivors.
+
+#### When to request a full mutation run
+
+`npm run test:mutation` is expensive (10–30+ min) and is intentionally **not**
+on the per-PR critical path — it runs nightly / on the `mutation` label (see
+`.github/workflows/mutation.yml`). Contributors should request or trigger a
+fresh run when:
+
+- A change touches **recursion/cascade guards, transaction boundaries, state
+  machines, or cycle detection** (WorkflowEngine, claim/release CAS,
+  dependency cycle detector, SSE/event-bus transaction buffering) — i.e. logic
+  where a survived `ConditionalExpression` / `EqualityOperator` /
+  `UpdateOperator` mutant maps to a real correctness regression.
+- A repository's **dynamic-SQL builder** (`whereClauses` / `fields` assembly)
+  gains or loses a branch.
+- The existing report is **stale relative to a structural refactor** (driver
+  seam, large reformat, file moves) such that its line numbers no longer map —
+  as is the case for the 2026-02-17 report above.
+
+Do **not** request a run just to chase cosmetic `StringLiteral` / `ObjectLiteral`
+survivors in CLI formatters or log messages; those are low defect risk and
+mutation runs are a targeted, expensive signal, not a coverage-maximisation
+gate.
 
 ### Phase 8: Adopt PR And Release Quality Checklist
 
@@ -618,17 +804,21 @@ Use this checklist when reviewing non-trivial PRs:
 
 Status as of task #271 (Phase 8 close-out):
 
+> **PROJECT 37 UPDATE (2026-06):** the two items below are now fully DONE — see
+> the inline strikethroughs. The milestone closeout review is
+> [`docs/TYPESCRIPT_QUALITY_AUDIT_2026.md`](TYPESCRIPT_QUALITY_AUDIT_2026.md) §777.
+
 - **Lint gate: DONE.** Biome lint runs as the `lint` CI job and locally via
-  `npm run lint` (0/0 baseline, warning-free). **Format gate: DEFERRED** —
-  Biome formatter is intentionally disabled in `biome.json`; enabling it
-  requires a one-time reformat sweep, called out as the recommended
-  follow-on under Phase 6 status.
-- **Stricter TypeScript flags: PARTIALLY DONE.**
+  `npm run lint` (0/0 baseline, warning-free). **Format gate: DONE
+  (project 37)** — `formatter.enabled: true`, `format:check` = `biome format .`
+  runs in the `lint` CI job and in `npm run quality`; the one-time reformat
+  sweep landed. (Was DEFERRED at the #271 close.)
+- **Stricter TypeScript flags: DONE (project 37).**
   `useUnknownInCatchVariables`, `noFallthroughCasesInSwitch`, and
-  `noImplicitOverride` landed in task #265. **DEFERRED:**
-  `noPropertyAccessFromIndexSignature`, `exactOptionalPropertyTypes`, and
-  `noUncheckedIndexedAccess` — rationale captured under Phase 2 "Deferred
-  flags".
+  `noImplicitOverride` landed in task #265. The three formerly-deferred flags —
+  `noPropertyAccessFromIndexSignature` (#763), `exactOptionalPropertyTypes`
+  (#778/#779/#780), and `noUncheckedIndexedAccess` (#781/#782/#783/#784) — are
+  now **ON and permanent**. See Phase 2 "Strict-flag ratchet".
 - **Unsafe casts reduced, localized, or documented: DONE for the priority
   targets.** Repository row reads funnel through
   `src/repositories/row-mapper.ts` (task #266); remaining ad-hoc casts are
@@ -638,12 +828,15 @@ Status as of task #271 (Phase 8 close-out):
 - **Architecture / import boundaries checked automatically: DONE.**
   dependency-cruiser enforces layer rules and the no-cycles rule via
   `npm run depcruise` and the `depcruise` CI job (task #267). **Complexity
-  reporting: DEFERRED** — Phase 4 status calls out the recommended
-  follow-on (advisory-mode `eslint-plugin-sonarjs` or `complexity-report`).
+  reporting: DONE (advisory).** `npm run quality:complexity` reports
+  cognitive-complexity outliers over production TS via the existing Biome
+  toolchain (task #771); calibrated outlier inventory + dispositions are in
+  the Phase 4 "Complexity Calibration" section. No blocking gate was added.
 - **Build, tests, coverage, dependency hygiene, audit, lint, and format
-  easy to run locally and visible in CI: MOSTLY DONE.** `npm run quality`
-  chains build, test, lint, lint:deps, depcruise, and prod audit; CI runs
-  the same gates. Format is the only deferred element (see Phase 6 status).
+  easy to run locally and visible in CI: DONE (project 37).** `npm run quality`
+  chains build, test, lint, **format:check**, lint:deps, depcruise, and prod
+  audit; CI runs the same gates (plus the escape-hatch budget step). Format is
+  no longer deferred — the formatter is enabled and `format:check` is a live gate.
 - **Dependency update automation: DONE.** `.github/dependabot.yml`
   configured for `npm` and `github-actions` on a weekly Monday cadence
   with patch/minor grouping (task #269).
@@ -657,10 +850,25 @@ Status as of task #271 (Phase 8 close-out):
 Remaining open items (tracked as follow-on tasks, not blockers for this
 roadmap closeout):
 
-- Formatter enable + one-time reformat sweep (Phase 6 follow-on).
-- Complexity reporting calibration pass (Phase 4 follow-on).
-- Remaining strict-TS flag ratchet for `noPropertyAccessFromIndexSignature`,
-  `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` (Phase 2
-  deferred list).
-- Mutation review for high-risk / low-score modules and additional date-
-  filter / idempotency-TTL property tests (Phase 7 follow-on).
+- ~~Formatter enable + one-time reformat sweep~~ — **DONE (project 37).**
+- Complexity reporting calibration pass — **DONE (task #771)**; advisory
+  `npm run quality:complexity` + Phase 4 "Complexity Calibration" section.
+  Any per-outlier refactor remains a tracked follow-on.
+- ~~Remaining strict-TS flag ratchet~~ — **DONE (project 37):**
+  `noPropertyAccessFromIndexSignature` (#763), `exactOptionalPropertyTypes`
+  (#778/#779/#780), `noUncheckedIndexedAccess` (#781/#782/#783/#784) all ON.
+- Mutation review for high-risk / low-score modules — **DONE (task #772)** for
+  the WorkflowEngine cascade-depth survivors + run policy; additional date-
+  filter / idempotency-TTL property tests remain a Phase 7 follow-on.
+
+**New follow-ups surfaced by the project-37 closeout (§777.E of the audit):**
+
+- **Async-safety lint** (no-floating-promises / no-unhandled-promise) — the one
+  open high-charter-weight gap; needs a typescript-eslint layer since Biome is
+  not type-aware. Verify the partial floating/misused-promise gate from `8a81d83`
+  for coverage holes rather than assuming none.
+- **Retire the 4 pre-existing blanket bracket-index `!`** (slack formatters /
+  notifier / tasks-command + sse-manager) per the no-blanket-`!` rule — audit §784.
+- **Re-scope the vendor-neutrality exemption marker** at
+  `packages/wft-router/src/sse/client.ts` (`cursor_gap` SSE log) to the minimal
+  line set.

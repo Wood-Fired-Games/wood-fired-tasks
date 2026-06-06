@@ -8,11 +8,7 @@ import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repositor
 import { TaskService } from '../task.service.js';
 import { derivePropagatedValuePrior } from '../wsjf.service.js';
 import type { WsjfWriteDTO } from '../../types/task.js';
-import type {
-  WsjfClassification,
-  WsjfLocks,
-  WsjfSource,
-} from '../../types/wsjf.js';
+import type { WsjfClassification, WsjfLocks, WsjfSource } from '../../types/wsjf.js';
 
 /**
  * Task #644 — WSJF 4.4: propagation of a scored parent's VALUE prior to derived
@@ -90,10 +86,7 @@ describe('WSJF propagation to derived tasks (#644)', () => {
   });
 
   /** Create a fully-scored AUTO parent carrying a theme mapping. */
-  const createScoredParent = (
-    over?: Partial<WsjfWriteDTO>,
-    theme: string | null = 'Retention',
-  ) => {
+  const createScoredParent = (over?: Partial<WsjfWriteDTO>, theme: string | null = 'Retention') => {
     const wsjf: WsjfWriteDTO = {
       value: 8,
       timeCriticality: 5,

@@ -1,9 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import {
-  DependencyGraphFormatSchema,
-  DependencyGraphResponseSchema,
-} from './schemas.js';
+import { DependencyGraphFormatSchema, DependencyGraphResponseSchema } from './schemas.js';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
 
 /**
@@ -37,9 +34,9 @@ const dependencyGraphRoutes: FastifyPluginAsyncZod = async (fastify) => {
         tags: ['projects'],
         description:
           "Return a project's task dependency structure in tree (default), " +
-          "graph, or text form. Performs a single bulk SQL pass over tasks " +
-          "and task_dependencies — safe for dashboard panels that would " +
-          "otherwise N+1 against /tasks/:id/dependencies.",
+          'graph, or text form. Performs a single bulk SQL pass over tasks ' +
+          'and task_dependencies — safe for dashboard panels that would ' +
+          'otherwise N+1 against /tasks/:id/dependencies.',
         params: z.object({ id: z.coerce.number().int().positive() }),
         querystring: z.object({
           format: DependencyGraphFormatSchema,

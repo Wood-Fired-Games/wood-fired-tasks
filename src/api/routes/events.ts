@@ -147,9 +147,7 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
 
       // Get last event ID from SSE context or headers
       const lastEventIdHeader = request.headers['last-event-id'];
-      const lastEventId = lastEventIdHeader
-        ? parseInt(lastEventIdHeader as string, 10)
-        : undefined;
+      const lastEventId = lastEventIdHeader ? parseInt(lastEventIdHeader as string, 10) : undefined;
 
       // Keep connection alive
       reply.sse.keepAlive();
@@ -167,7 +165,7 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
         event: 'connected',
         data: JSON.stringify({ connectionId, filters }),
       });
-    }
+    },
   );
 };
 

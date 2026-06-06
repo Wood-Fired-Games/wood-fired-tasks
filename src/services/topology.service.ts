@@ -1,7 +1,4 @@
-import type {
-  IDependencyRepository,
-  ITaskRepository,
-} from '../repositories/interfaces.js';
+import type { IDependencyRepository, ITaskRepository } from '../repositories/interfaces.js';
 import { MAX_PAGE_LIMIT } from '../types/task.js';
 import type { TopologyReport } from '../schemas/topology.schema.js';
 import { CycleDetector } from '../utils/cycle-detector.js';
@@ -95,10 +92,7 @@ export class TopologyService {
     const allDeps = this.dependencyRepo.findAll();
     const projectEdges: Array<{ from: number; to: number }> = [];
     for (const dep of allDeps) {
-      if (
-        projectTaskIds.has(dep.task_id) &&
-        projectTaskIds.has(dep.blocks_task_id)
-      ) {
+      if (projectTaskIds.has(dep.task_id) && projectTaskIds.has(dep.blocks_task_id)) {
         projectEdges.push({ from: dep.task_id, to: dep.blocks_task_id });
       }
     }
@@ -142,6 +136,7 @@ export class TopologyService {
     let hasCycle = false;
     for (let i = 0; i < projectEdges.length; i++) {
       const held = projectEdges[i];
+      if (held === undefined) continue;
       const rest = [...projectEdges.slice(0, i), ...projectEdges.slice(i + 1)];
       const detector = new CycleDetector(
         rest.map((e) => ({ task_id: e.from, blocks_task_id: e.to })),
@@ -152,9 +147,7 @@ export class TopologyService {
       }
     }
 
-    const sortedEdges = [...projectEdges].sort(
-      (a, b) => a.from - b.from || a.to - b.to,
-    );
+    const sortedEdges = [...projectEdges].sort((a, b) => a.from - b.from || a.to - b.to);
 
     const roots: number[] = [];
     const leaves: number[] = [];

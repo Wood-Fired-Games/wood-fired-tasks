@@ -41,9 +41,7 @@ describe('completed command', () => {
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -68,7 +66,7 @@ describe('completed command', () => {
   function completeTask(
     projectId: number,
     title: string,
-    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {}
+    opts: { assignee?: string; priority?: 'low' | 'medium' | 'high' | 'urgent' } = {},
   ): void {
     const task = app.taskService.createTask({
       title,
@@ -117,19 +115,9 @@ describe('completed command', () => {
     completeTask(alpha.id, 'a1', { assignee: 'alice' });
     completeTask(beta.id, 'b1', { assignee: 'bob' });
 
-    program = buildProgram(
-      (await import('../commands/completed.js')).completedCommand
-    );
+    program = buildProgram((await import('../commands/completed.js')).completedCommand);
     program = program; // satisfy ts no-op
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'completed',
-      '-d',
-      '30',
-      '-p',
-      String(alpha.id),
-    ]);
+    await program.parseAsync(['node', 'tasks', 'completed', '-d', '30', '-p', String(alpha.id)]);
     const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logged).toContain('1 task(s) completed');
     expect(logged).toContain('Alpha');
@@ -143,15 +131,7 @@ describe('completed command', () => {
 
     const { completedCommand } = await import('../commands/completed.js');
     program = buildProgram(completedCommand);
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'completed',
-      '-d',
-      '30',
-      '-a',
-      'alice',
-    ]);
+    await program.parseAsync(['node', 'tasks', 'completed', '-d', '30', '-a', 'alice']);
     const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logged).toContain('1 task(s) completed');
     expect(logged).toContain('alice');
@@ -180,13 +160,7 @@ describe('completed command', () => {
   it('rejects partial range (--since without --until)', async () => {
     const { completedCommand } = await import('../commands/completed.js');
     program = buildProgram(completedCommand);
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'completed',
-      '--since',
-      '2026-01-01T00:00:00Z',
-    ]);
+    await program.parseAsync(['node', 'tasks', 'completed', '--since', '2026-01-01T00:00:00Z']);
     expect(process.exitCode).toBe(1);
     const errs = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(errs).toMatch(/Provide both --since and --until together/);
@@ -204,15 +178,7 @@ describe('completed command', () => {
   it('rejects non-numeric --project value', async () => {
     const { completedCommand } = await import('../commands/completed.js');
     program = buildProgram(completedCommand);
-    await program.parseAsync([
-      'node',
-      'tasks',
-      'completed',
-      '-d',
-      '7',
-      '-p',
-      'abc',
-    ]);
+    await program.parseAsync(['node', 'tasks', 'completed', '-d', '7', '-p', 'abc']);
     expect(process.exitCode).toBe(1);
     const errs = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(errs).toMatch(/--project must be a positive integer/);

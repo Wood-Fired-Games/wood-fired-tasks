@@ -19,13 +19,13 @@ export const claimCommand = new Command('claim')
       }
 
       const task = await withApiSpinner('Claiming task...', () =>
-        claimTask(id, options.assignee, options.idempotencyKey)
+        claimTask(id, options.assignee, options.idempotencyKey),
       );
 
       // Check if JSON mode
       const program = claimCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       if (isJsonMode) {
         jsonOutput({ task }, { id: task.id, assignee: task.assignee });

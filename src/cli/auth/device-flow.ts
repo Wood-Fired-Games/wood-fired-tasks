@@ -59,15 +59,13 @@ export interface RequestDeviceCodeArgs {
   fetchImpl?: typeof fetch;
 }
 
-export async function requestDeviceCode(
-  args: RequestDeviceCodeArgs,
-): Promise<DeviceCodeResponse> {
+export async function requestDeviceCode(args: RequestDeviceCodeArgs): Promise<DeviceCodeResponse> {
   const fetchImpl = args.fetchImpl ?? fetch;
   const body: Record<string, unknown> = {
     client_id: args.clientId,
     hostname: args.hostname,
   };
-  if (args.tokenName !== undefined) body.token_name = args.tokenName;
+  if (args.tokenName !== undefined) body['token_name'] = args.tokenName;
 
   const res = await fetchImpl(`${args.baseUrl}/auth/device/code`, {
     method: 'POST',
@@ -77,9 +75,7 @@ export async function requestDeviceCode(
 
   if (res.status !== 200) {
     const bodyText = await safeBodyText(res);
-    throw new Error(
-      `Failed to start device flow: ${res.status} ${bodyText.slice(0, 200)}`,
-    );
+    throw new Error(`Failed to start device flow: ${res.status} ${bodyText.slice(0, 200)}`);
   }
 
   return (await res.json()) as DeviceCodeResponse;
@@ -117,7 +113,10 @@ const MIN_INTERVAL_S = 1;
 
 const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
-const TERMINAL_ERROR_MESSAGES: Record<Exclude<DeviceTokenError, 'authorization_pending' | 'slow_down'>, string> = {
+const TERMINAL_ERROR_MESSAGES: Record<
+  Exclude<DeviceTokenError, 'authorization_pending' | 'slow_down'>,
+  string
+> = {
   expired_token: 'Login link expired. Run `tasks login` again.',
   access_denied: 'Sign-in was denied. Run `tasks login` again to retry.',
   invalid_client: "Server rejected the CLI's client_id. Contact your administrator.",
@@ -197,7 +196,7 @@ export async function pollForToken(opts: PollOptions): Promise<PollResult> {
 
     // Non-200 — parse the RFC 8628 error envelope.
     const body = await safeBodyJson(res);
-    const error = typeof body?.error === 'string' ? (body.error as string) : null;
+    const error = typeof body?.['error'] === 'string' ? (body['error'] as string) : null;
 
     if (error === 'authorization_pending') {
       opts.onEvent?.({ kind: 'pending', interval });

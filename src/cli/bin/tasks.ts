@@ -16,11 +16,7 @@ import { depAddCommand } from '../commands/dep-add.js';
 import { depRemoveCommand } from '../commands/dep-remove.js';
 import { depListCommand } from '../commands/dep-list.js';
 import { topologyCommand } from '../commands/topology.js';
-import {
-  wsjfHistoryCommand,
-  wsjfSetCommand,
-  charterHistoryCommand,
-} from '../commands/wsjf.js';
+import { wsjfHistoryCommand, wsjfSetCommand, charterHistoryCommand } from '../commands/wsjf.js';
 import { commentAddCommand } from '../commands/comment-add.js';
 import { commentListCommand } from '../commands/comment-list.js';
 import { commentDeleteCommand } from '../commands/comment-delete.js';
@@ -49,10 +45,7 @@ import { VERSION } from '../../utils/version.js';
 import { warnIfNotEvenLts } from '../../utils/node-version.js';
 
 // Configure CLI program
-program
-  .name('tasks')
-  .description('Wood Fired Tasks - Task management CLI')
-  .version(VERSION);
+program.name('tasks').description('Wood Fired Tasks - Task management CLI').version(VERSION);
 
 // Global options must be registered before subcommands to inherit properly
 // Commands access via program.optsWithGlobals() or process.argv check
@@ -64,10 +57,10 @@ program.option('--force', 'Skip confirmation prompts for destructive actions');
 // resolveAuth state before any subcommand runs.
 program.option(
   '--token <token>',
-  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)'
+  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)',
 );
 program.hook('preAction', () => {
-  const t = program.opts().token;
+  const t = program.opts()['token'];
   setTokenOverride(typeof t === 'string' && t.length > 0 ? t : null);
 });
 

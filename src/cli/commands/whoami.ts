@@ -83,14 +83,9 @@ async function fetchMe(server: string, token: string): Promise<MeResult> {
   }
 }
 
-type TokensResult =
-  | { kind: 'ok'; body: TokenListItem[] }
-  | { kind: 'failed'; reason: string };
+type TokensResult = { kind: 'ok'; body: TokenListItem[] } | { kind: 'failed'; reason: string };
 
-async function fetchTokens(
-  server: string,
-  token: string,
-): Promise<TokensResult> {
+async function fetchTokens(server: string, token: string): Promise<TokensResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -125,7 +120,7 @@ export const whoamiCommand = new Command('whoami')
   .action(async () => {
     const program = whoamiCommand.parent;
     const globalOpts = program?.optsWithGlobals() ?? {};
-    const isJson: boolean = globalOpts.json === true;
+    const isJson: boolean = globalOpts['json'] === true;
 
     const creds = readCredentials();
     if (creds === null) {
@@ -163,9 +158,7 @@ export const whoamiCommand = new Command('whoami')
           message: `Could not reach ${server}: ${meResult.message}`,
         });
       } else {
-        process.stderr.write(
-          `Could not reach ${server}: ${meResult.message}\n`,
-        );
+        process.stderr.write(`Could not reach ${server}: ${meResult.message}\n`);
       }
       process.exitCode = 1;
       return;
@@ -177,9 +170,7 @@ export const whoamiCommand = new Command('whoami')
           message: `Server returned ${meResult.status}`,
         });
       } else {
-        process.stderr.write(
-          `Could not reach ${server}: status ${meResult.status}\n`,
-        );
+        process.stderr.write(`Could not reach ${server}: status ${meResult.status}\n`);
       }
       process.exitCode = 1;
       return;
@@ -189,21 +180,17 @@ export const whoamiCommand = new Command('whoami')
     const me = meResult.body;
     let activeToken: TokenListItem | null = null;
     if (tokensResult.kind === 'ok') {
-      activeToken =
-        tokensResult.body.find((t) => t.id === token_id) ?? null;
+      activeToken = tokensResult.body.find((t) => t.id === token_id) ?? null;
     } else {
       // Surface the /me/tokens failure as a stderr warning (text mode only;
       // --json mode just omits the token field).
       if (!isJson) {
-        process.stderr.write(
-          `(warning: could not list tokens: ${tokensResult.reason})\n`,
-        );
+        process.stderr.write(`(warning: could not list tokens: ${tokensResult.reason})\n`);
       }
     }
 
-    const apiKeyEnv = process.env.API_KEY;
-    const hasApiKeyFallback =
-      typeof apiKeyEnv === 'string' && apiKeyEnv.length > 0;
+    const apiKeyEnv = process.env['API_KEY'];
+    const hasApiKeyFallback = typeof apiKeyEnv === 'string' && apiKeyEnv.length > 0;
 
     if (isJson) {
       const envelope: Record<string, unknown> = {
@@ -217,14 +204,14 @@ export const whoamiCommand = new Command('whoami')
         server,
       };
       if (activeToken) {
-        envelope.token = {
+        envelope['token'] = {
           id: activeToken.id,
           name: activeToken.name,
           lastUsedAt: activeToken.lastUsedAt,
         };
       }
       if (hasApiKeyFallback) {
-        envelope.fallback = 'API_KEY env ignored';
+        envelope['fallback'] = 'API_KEY env ignored';
       }
       emitJsonEvent(envelope);
       return;
@@ -235,19 +222,12 @@ export const whoamiCommand = new Command('whoami')
     process.stdout.write(fmtLine('Email', me.email ?? '(none)') + '\n');
     if (activeToken) {
       process.stdout.write(
-        fmtLine(
-          'Active token',
-          `${activeToken.name} (id ${activeToken.id})`,
-        ) + '\n',
+        fmtLine('Active token', `${activeToken.name} (id ${activeToken.id})`) + '\n',
       );
-      process.stdout.write(
-        fmtLine('Last used', activeToken.lastUsedAt ?? '(never)') + '\n',
-      );
+      process.stdout.write(fmtLine('Last used', activeToken.lastUsedAt ?? '(never)') + '\n');
     }
     process.stdout.write(fmtLine('Server', server) + '\n');
     if (hasApiKeyFallback) {
-      process.stdout.write(
-        '(API_KEY env var ignored — credentials file in use)\n',
-      );
+      process.stdout.write('(API_KEY env var ignored — credentials file in use)\n');
     }
   });

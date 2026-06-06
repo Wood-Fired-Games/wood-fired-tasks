@@ -43,9 +43,7 @@ describe('API_KEYS production validation', () => {
 
   it('refuses startup when API_KEYS is too short', async () => {
     process.env.API_KEYS = 'short-key';
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(
-      /at least 32 characters/i,
-    );
+    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(/at least 32 characters/i);
   });
 
   it('refuses startup when API_KEYS is a single repeated character (no entropy)', async () => {

@@ -17,23 +17,12 @@
  *
  * cheerio asserts DOM structure post-redirect.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import * as cheerio from 'cheerio';
-import type {
-  AuthenticatedUser,
-  AuthResult,
-} from '../../../../types/identity.js';
+import type { AuthenticatedUser, AuthResult } from '../../../../types/identity.js';
 import type { StrategyOutcome } from '../../../plugins/auth/strategies/types.js';
 import { resetConfig } from '../../../../config/env.js';
 import { extractSessionCookie } from '../../../../../tests/helpers/session-cookie.js';
@@ -51,9 +40,7 @@ vi.mock('../../../plugins/auth/strategies/session.js', () => ({
   tryAuth: async (request: {
     session?: { get: (k: string) => unknown };
   }): Promise<StrategyOutcome> => {
-    const sessUser = request.session?.get('user') as
-      | AuthenticatedUser
-      | undefined;
+    const sessUser = request.session?.get('user') as AuthenticatedUser | undefined;
     if (!sessUser && !stubAuthenticatedUser) return { kind: 'skip' };
     const user = (sessUser ?? stubAuthenticatedUser)!;
     const result: AuthResult = {
@@ -90,26 +77,22 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
 
     // Probe: stamp session.user so the mocked strategy + web routes
     // both see the same user.
-    server.post(
-      '/_test/sign-in',
-      { config: { skipAuth: true } },
-      async (request, reply) => {
-        const body = request.body as {
-          id: number;
-          displayName: string;
-          email: string | null;
-        };
-        request.session.set('user', {
-          id: body.id,
-          displayName: body.displayName,
-          email: body.email,
-          isLegacy: false,
-          isServiceAccount: false,
-        });
-        request.session.set('authenticatedAt', Date.now());
-        return reply.send({ ok: true });
-      },
-    );
+    server.post('/_test/sign-in', { config: { skipAuth: true } }, async (request, reply) => {
+      const body = request.body as {
+        id: number;
+        displayName: string;
+        email: string | null;
+      };
+      request.session.set('user', {
+        id: body.id,
+        displayName: body.displayName,
+        email: body.email,
+        isLegacy: false,
+        isServiceAccount: false,
+      });
+      request.session.set('authenticatedAt', Date.now());
+      return reply.send({ ok: true });
+    });
     await server.ready();
 
     const userInfo = db
@@ -152,9 +135,7 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
     const refreshed = extractSessionCookie(primer);
     if (refreshed) sessionCookie = refreshed;
     const $ = cheerio.load(primer.body);
-    csrfToken = $('form[action="/api/v1/me/tokens"]')
-      .find('input[name="_csrf"]')
-      .attr('value')!;
+    csrfToken = $('form[action="/api/v1/me/tokens"]').find('input[name="_csrf"]').attr('value')!;
     expect(csrfToken).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -191,9 +172,7 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
 
     // The token row was persisted.
     const count = harness.db
-      .prepare(
-        "SELECT COUNT(*) as c FROM api_tokens WHERE name = 'html-minted'",
-      )
+      .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'html-minted'")
       .get() as { c: number };
     expect(count.c).toBe(1);
   });
@@ -297,9 +276,7 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
     expect(body.error).toBe('csrf_invalid');
 
     const count = harness.db
-      .prepare(
-        "SELECT COUNT(*) as c FROM api_tokens WHERE name = 'should-not-mint'",
-      )
+      .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'should-not-mint'")
       .get() as { c: number };
     expect(count.c).toBe(0);
   });

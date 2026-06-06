@@ -32,8 +32,8 @@ export const updateCommand = new Command('update')
       if (options.status && !VALID_STATUSES.includes(options.status)) {
         console.error(
           colorError(
-            `Invalid status: ${options.status}. Valid options: ${VALID_STATUSES.join(', ')}`
-          )
+            `Invalid status: ${options.status}. Valid options: ${VALID_STATUSES.join(', ')}`,
+          ),
         );
         process.exitCode = 1;
         return;
@@ -43,8 +43,8 @@ export const updateCommand = new Command('update')
       if (options.priority && !VALID_PRIORITIES.includes(options.priority)) {
         console.error(
           colorError(
-            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`
-          )
+            `Invalid priority: ${options.priority}. Valid options: ${VALID_PRIORITIES.join(', ')}`,
+          ),
         );
         process.exitCode = 1;
         return;
@@ -88,7 +88,7 @@ export const updateCommand = new Command('update')
       // Check if JSON mode (global flag from program)
       const program = updateCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display success
       if (isJsonMode) {
