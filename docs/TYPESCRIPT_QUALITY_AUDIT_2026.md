@@ -449,3 +449,159 @@ What was **not** verified, and why:
   (narrative roadmap, reconciled in §4.1) and
   [`docs/AGENT_READINESS_AUDIT.md`](AGENT_READINESS_AUDIT.md) (sibling
   point-in-time audit format).
+
+---
+
+## Unsafe TypeScript Escape-Hatch Policy & Production Budget
+
+> **Project 37, phase-3 — task #766.** This section turns the §1.8 unsafe-pattern
+> census into an **enforced policy**: a documented inventory, rules for when an
+> escape hatch is allowed in production, the required inline rationale, and a
+> CI-gated **budget** (ratchet) that fails the build when a *new, unexplained*
+> production escape hatch is added. It is implemented by
+> [`scripts/quality/escape-hatch-budget.mjs`](../scripts/quality/escape-hatch-budget.mjs)
+> reading the committed baseline
+> [`scripts/quality/escape-hatch-budget.json`](../scripts/quality/escape-hatch-budget.json),
+> wired into the `lint` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+
+### A. What counts as an "escape hatch"
+
+An *escape hatch* is any construct that suppresses or bypasses TypeScript's
+type checking. This policy tracks six categories:
+
+| Category id | Pattern | Why it's risky |
+| --- | --- | --- |
+| `as_any` | `as any` cast | Erases the type entirely; downstream access is unchecked. |
+| `as_unknown` | `as unknown` cast (usually the bridge in `x as unknown as T`) | Launders one type into another, defeating structural checks. |
+| `bare_any` | bare `: any` annotation | Opts a binding/param out of inference. |
+| `ts_expect_error` | `@ts-expect-error` | Suppresses a specific compiler diagnostic. |
+| `ts_ignore` | `@ts-ignore` | Suppresses *all* diagnostics on the next line (worse than `expect-error`, and already banned in prod by the Biome `noTsIgnore` rule — §1.3). |
+| `biome_ignore` | `biome-ignore` | Suppresses a lint diagnostic. |
+
+**Scope note (non-null `!`).** This policy deliberately does **not** budget the
+non-null assertion operator (`x!`). It is far more frequent, far lower-risk in
+this codebase (mostly post-guard narrowing), and a line-grep for `!` is too
+noisy to be a meaningful ratchet. Non-null assertions on genuinely risky
+boundaries should still carry a `// SAFETY:` comment (rule B.2) but are not
+counted by the gate. This is an explicit, intentional limitation — not an
+oversight.
+
+**Methodology / precision.** Counts are **line-grep directional totals**, the
+same method as §1.8 (one match per pattern per line; comments and doc-strings
+that contain the literal token are counted; a `x as unknown as T` double-cast
+counts once for `as_unknown` and once for `as_any`-if-present). They are a
+*ratchet signal*, not an AST-precise unsafe-cast inventory. The contract is
+narrow and sufficient: **production counts must not grow without a deliberate,
+reviewed baseline bump.**
+
+### B. Policy — when a production escape hatch is allowed
+
+1. **Prefer elimination.** The first option is always to remove the need for the
+   cast: validate at the boundary with Zod (`.safeParse`/`.parse`), narrow with
+   a type guard, or fix the upstream type. Roadmap items **P2** (strict-flag
+   ratchet) and **P3** (boundary-cast reduction) in §4.2 are the standing
+   campaigns to shrink this budget.
+2. **If unavoidable, document it inline.** Every *new* production escape hatch
+   MUST carry an adjacent rationale comment in the form:
+
+   ```ts
+   // SAFETY: <one-line justification — what invariant makes this cast sound,
+   //          and why the type system can't see it>
+   const row = stmt.get(id) as unknown as TaskRow;
+   ```
+
+   The convention is the literal prefix **`// SAFETY:`** on the line above (or
+   trailing, for a single statement). `// escape-hatch:` is accepted as a
+   synonym. The justification must name the *invariant* (e.g. "row shape is
+   guaranteed by the adjacent `CREATE TABLE` schema"), not merely restate that a
+   cast is happening.
+3. **Cluster at known boundaries.** Acceptable production casts cluster at the
+   documented edges (§1.8): SQLite row mapping (funnel through
+   [`src/repositories/row-mapper.ts`](../src/repositories/row-mapper.ts)), MCP
+   `structuredContent`, Slack Block Kit, SSE event filtering, and Fastify
+   plugin registration. A cast *outside* these boundaries should be treated as a
+   review red flag even if the budget still passes.
+4. **`@ts-ignore` stays banned in production** (Biome `noTsIgnore`, §1.3). If a
+   diagnostic genuinely must be suppressed, use `@ts-expect-error` with a
+   `// SAFETY:` reason — never `@ts-ignore`.
+5. **Adding to the budget is a reviewed act.** Raising any `production.<category>`
+   ceiling in the baseline JSON is a normal code-review event: the diff shows the
+   bump, and rule B.2 requires the inline `// SAFETY:` to land in the same PR.
+   The gate's job is to make the increase *visible*, not impossible.
+
+### C. Test-only escape hatches — handled separately (lenient)
+
+Test files (`*.test.ts`, `*.spec.ts`, `*.property.test.ts`, `*.bench.ts`, and
+anything under `__tests__/`) are governed by a **deliberately more lenient**
+policy and are **NOT** gated:
+
+- Test escape hatches are largely fixture scaffolding, deliberate type-violation
+  assertions (e.g. the 7 `@ts-expect-error` in `identity-types` /
+  `fastify-augmentation` / `auth-audit` — §1.8), and mock shaping. They are
+  expected and acceptable.
+- The budget script still **counts and reports** test escapes (the
+  "informational, NOT gated" block in its output) for visibility/trend, but they
+  never fail CI.
+- The `// SAFETY:` rationale is *encouraged but not required* in tests.
+
+### D. Current production inventory (baseline at this commit)
+
+Per-category production counts, reconciled against §1.8 and seeded into
+[`scripts/quality/escape-hatch-budget.json`](../scripts/quality/escape-hatch-budget.json)
+as the gate ceilings. Scan scope is `src/` **and** `packages/wft-router/src/`.
+
+| Category | Production (baseline ceiling) | Test (informational) | Representative production refs |
+| --- | :---: | :---: | --- |
+| `as_any` | **10** | 57 | `src/services/task.service.ts:568`, `src/events/sse-manager.ts:161-162`, `src/api/routes/events.ts:129,145`, `src/api/server.ts:283` (Fastify SSE plugin), `src/services/dependency.service.ts:79` |
+| `as_unknown` | **78** | 179 | clustered at SQLite row mapping, MCP `structuredContent`, Slack Block Kit; 3 live in `packages/wft-router/src` |
+| `bare_any` | **1** | 38 | `src/cli/output/formatters.ts:26` |
+| `ts_expect_error` | **0** | 7 | none in prod (all 7 in 3 test files) |
+| `ts_ignore` | **0** | 0 | none (banned by Biome `noTsIgnore`) |
+| `biome_ignore` | **0** | 0 | none |
+| **TOTAL** | **89** | 281 | |
+
+**Reconciliation vs. the wave-1 §1.8 census.** Wave-1 reported (main `src/`
+only, one regex pass): `as any` non-test **10** ✓, `as unknown` non-test **75**,
+`@ts-expect-error`/`@ts-ignore` **0** prod / **7** test ✓, bare `: any` **2**.
+This policy's numbers differ on two categories, *with* evidence:
+
+- **`as_unknown` 75 → 78.** +2 come from including `packages/wft-router/src` in
+  the scan scope (wave-1's §1.8 counted main `src/` only — see its Known-Limit
+  #6). +1 comes from a `debounce.ts` source file that contains a stray non-UTF8
+  byte; plain `grep` reports `binary file matches` and silently drops the line,
+  so the script forces text mode (`grep -a`) to count it deterministically.
+- **`bare_any` 2 → 1.** Wave-1's `grep ': any\b'` counted 2 lines in main
+  `src/`; re-inspected, only `src/cli/output/formatters.ts:26` matches under the
+  same pattern at this commit, and it is a **comment** ("any value = disable"),
+  not a real annotation — a known artifact of line-grep imprecision (Known-Limit
+  #5). The budget treats it as a ceiling regardless; the point is "don't grow",
+  not "this is a genuine unsafe annotation."
+
+Neither delta contradicts wave-1's findings; both are explained by scan scope
+and grep mechanics, consistent with §6 Known Limits #5 and #6.
+
+### E. The CI gate (script behavior)
+
+[`scripts/quality/escape-hatch-budget.mjs`](../scripts/quality/escape-hatch-budget.mjs)
+(Node ESM, zero new deps — `node:fs` + `node:child_process` `grep`):
+
+- **`node scripts/quality/escape-hatch-budget.mjs`** — gate mode. Counts live
+  production escapes per category, compares to the baseline ceilings, prints a
+  production table + a separate (non-gating) test census, and **exits 1** if any
+  production category exceeds its ceiling (with the offending category, the
+  delta, and representative file:line refs), else **exits 0**.
+- **`--json`** — same comparison, machine-readable.
+- **`--update`** — rewrite the baseline JSON to the current production+test
+  counts. This is the **reviewed bump** mechanism (rule B.5): run it, eyeball the
+  diff, and land it alongside the `// SAFETY:`-commented cast.
+
+CI wiring: a step named *"Escape-hatch budget (fail on new unexplained
+production casts)"* in the `lint` job of `ci.yml`. It is intentionally in the
+cheap, build-free `lint` job so the ratchet reports fast on every PR.
+
+**How the gate bites (verified).** Lowering any `production.<category>` ceiling
+by 1 below the live count makes the script exit 1 with
+`❌ Escape-hatch budget EXCEEDED in production code` and lists the over-budget
+category and refs; restoring the baseline returns it to exit 0. This was
+confirmed during task #766 by temporarily setting `production.as_any` from 10 to
+9 (exit 1) and then restoring it (exit 0).

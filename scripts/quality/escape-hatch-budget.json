@@ -1,0 +1,28 @@
+{
+  "$comment": "Production escape-hatch budget baseline. Counts are line-grep directional totals (see scripts/quality/escape-hatch-budget.mjs header + docs/TYPESCRIPT_QUALITY_AUDIT_2026.md policy section). production.<category> is a CEILING: the gate fails if the live count exceeds it. Bump a ceiling DOWN as you remove escapes; bump it UP only with a reviewed justification. test.<category> is informational.",
+  "generated_methodology": "grep -rnE <pattern> src packages/wft-router/src --include=*.ts, split by test-path fragments (.test.ts/.spec.ts/.property.test.ts/.bench.ts/__tests__/).",
+  "categories": {
+    "as_any": "`as any` cast",
+    "as_unknown": "`as unknown` cast",
+    "bare_any": "bare `: any` annotation",
+    "ts_expect_error": "`@ts-expect-error`",
+    "ts_ignore": "`@ts-ignore`",
+    "biome_ignore": "`biome-ignore`"
+  },
+  "production": {
+    "as_any": 10,
+    "as_unknown": 78,
+    "bare_any": 1,
+    "ts_expect_error": 0,
+    "ts_ignore": 0,
+    "biome_ignore": 0
+  },
+  "test": {
+    "as_any": 57,
+    "as_unknown": 179,
+    "bare_any": 38,
+    "ts_expect_error": 7,
+    "ts_ignore": 0,
+    "biome_ignore": 0
+  }
+}
