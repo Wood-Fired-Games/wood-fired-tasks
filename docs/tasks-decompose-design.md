@@ -263,6 +263,44 @@ cannot silently drop through decomposition because the rider re-derives the
 touched surfaces from the candidate set itself, not from the plan's surface
 section.
 
+### Step 8d — Terminal spec-coverage audit (spec-grounded coverage)
+
+Step 8c re-derives the **8 canonical CODEBASE surfaces** from the candidate set
+and is always on. **Step 8d generalizes that rider into a SPEC-grounded coverage
+check**, active **only when the caller supplies a source spec via `--spec
+<path>`**. It is the **terminal** materialize sub-step — it runs after Step 8b
+materialization and the Step 8c rider, and **before** the Step 9
+`DECOMPOSITION.md` emit. With no `--spec` it is a bounded no-op (recorded
+`skipped (no --spec)`); it is likewise skipped under `--dry-run`.
+
+- **Why.** Step 8c only knows the eight architectural surfaces baked into the
+  codebase; it is blind to what a *particular* spec promised (an OpenAPI
+  security scheme, a docs scrub, a version bump). Per-task acceptance criteria
+  are locally complete, so a spec-declared surface no candidate happened to
+  cover drops silently. Step 8d closes that gap by cross-checking the
+  *materialized* task set against the surfaces the spec **itself** declares.
+- **Motivating example.** A manual post-decompose audit of project **29 v2.0**
+  caught three uncovered surfaces (an OpenAPI `X-API-Key` security scheme, a
+  docs scrub, a version bump) plus one wrong file reference (a task citing
+  `buildRemoteMcpEntry`). Step 8d automates that manual pass.
+- **Cross-references + outputs.** It reads the spec read-only and extracts its
+  **(1) components / surfaces table**, **(2) per-section acceptance criteria**,
+  and **(3) explicit file references**, matched against the Step 8b tasks via
+  the `decomp-<decomposition_id>` tag set. For every uncovered spec item it
+  **auto-emits a coverage task** (Step 8b `create_task` / `add_dependency` path,
+  edged to the trigger, marked `(rider)`); for a task citing a path/symbol that
+  does **not** match the spec/codebase it **flags** `DRIFT(task_id, cited,
+  expected)` for human correction (it never silently rewrites the task).
+- **Guardrail 2 stays load-bearing.** Step 8d is read-only over the spec and
+  creation-only over the backlog. It MUST NOT `Edit` / `Write`
+  `skills/tasks/decompose.md`, `docs/tasks-decompose-design.md`, or
+  `src/lib/decompose/**`, nor auto-emit a task scoped to edit those files even
+  when the spec references them — such items are recorded
+  `out-of-scope (Guardrail 2)`, never materialized.
+- **Recorded in the artifact.** The verdict lands in `DECOMPOSITION.md` body §8
+  (`## Spec-Coverage Audit`): `COVERED`, the gap-task list, any `DRIFT(...)`
+  flags, or `skipped (no --spec)`.
+
 ## Guardrails
 
 ### Guardrail 1 — separation of plan / execute
@@ -367,6 +405,10 @@ Body sections (in order):
    back to the success criteria it covers.
 6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason).
 7. `## Cost Breakdown` — orchestrator + per-subagent cost rows.
+8. `## Spec-Coverage Audit` — the Step 8d verdict (present only when `--spec`
+   was supplied): the spec surfaces checked (components, acceptance-criteria,
+   file references), the auto-emitted gap tasks (each marked `(rider)` + its
+   trigger edge), and any `DRIFT(...)` flags; `skipped (no --spec)` otherwise.
 
 ## Acceptance criteria for each candidate task
 
