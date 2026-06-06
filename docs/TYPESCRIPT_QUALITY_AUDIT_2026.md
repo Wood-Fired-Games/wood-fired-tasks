@@ -1063,3 +1063,207 @@ the #779/#780 remediation established:
    needed**. Reach for a localized, commented Fastify-SDK cast only if a future
    variance error genuinely has no clean omit/narrow fix (the #766 escape-hatch
    policy); none was required for #780.
+
+### noUncheckedIndexedAccess inventory (#781)
+
+> AUDIT / INVENTORY ONLY. The flag is **NOT** enabled — it was added to
+> `tsconfig.json` temporarily to enumerate errors, then reverted. Enabling it
+> permanently is the downstream task **#784**; core remediation is **#782**,
+> surface remediation is **#783**. `grep -n noUncheckedIndexedAccess
+> tsconfig.json` returns nothing at this commit. No source remediation was made
+> here (this is inventory-only; the categories below are advisory for #782/#783).
+
+#### A. How this was measured
+
+Temporarily set `compilerOptions.noUncheckedIndexedAccess: true` (alongside the
+already-permanent `exactOptionalPropertyTypes` / `noPropertyAccessFromIndexSignature`),
+ran `npx tsc --noEmit`, captured the error list, then reverted the one-line change.
+
+```
+# error-code histogram (30 errors total)
+  15  TS18048   '<name>' is possibly 'undefined'   (indexed value used after binding)
+   5  TS2532    Object is possibly 'undefined'      (arr[i].member / arr[i][j] inline)
+   5  TS2345    arg 'T | undefined' not assignable to param 'T'  (indexed value → fn)
+   4  TS2322    type 'T | undefined' not assignable to 'T'/'T|null' (indexed value → slot)
+   1  TS2538    Type 'undefined' cannot be used as an index type  (nested arr[arr[i]])
+```
+
+All 30 are genuine indexed-access narrowings — there is **no** incidental
+library-variance noise class here (contrast the eopt #778 probe, which dragged in
+5 Fastify Http2 errors). Every error is a `T[number]` / `Record<K,V>[K]` / tuple
+access that the flag correctly re-types to `T | undefined`.
+
+#### B. Error CATEGORIES (root causes)
+
+1. **Classic index-loop body (`const x = arr[i]; … x.member`) — the dominant
+   cluster.** A `for (let i …)` or manual `head++` cursor reads `arr[i]` into a
+   local, then dereferences it. The loop bound already guarantees the index is
+   in range, so the value is provably present, but the flag cannot see that.
+   - `src/api/plugins/auth/keys.ts:77,81,83,86` (`const k = keys[i]; k.length …`)
+   - `src/config/env.ts:349` (`rawParts[i].trim()`)
+   - `src/services/wsjf-health.service.ts:298` (`series[i] - series[i-1]`)
+   - `src/services/dependency-graph.service.ts:502` (`childIds[i]` in walk loop)
+
+2. **Manual queue/cursor dereference (`queue[head++]`, `bufferStack[len-1]`).**
+   BFS/transaction-stack code advances a hand-rolled cursor or peeks the top of
+   a stack guarded by a separate `length` check. Same "provably present, not
+   provable to TS" shape as (1).
+   - `src/events/event-bus.ts:76` (`bufferStack[length-1].push(...)`)
+   - `src/events/event-bus.ts:114` (`const parent = bufferStack[length-1]`)
+   - `src/services/wsjf-rescore.service.ts:419` (`const cur = queue[head++]`)
+   - (the sibling `queue[head++]` in `wsjf.service.ts` is already `!`-guarded —
+     see the no-blanket-`!` rule in §D; #782 should replace that existing `!`
+     too, not pattern-match it.)
+
+3. **Destructured-pair / record-lookup `*.deltas['key']` used field-by-field.**
+   A `Record<string, {from,to}>` lookup is bound to `s` then `s.from`/`s.to` are
+   read. The key is known-present from the producer, but the lookup type is
+   `… | undefined`. This is the same code mirrored on two surfaces:
+   - `src/mcp/tools/wsjf-tools.ts:165,166` (`const s = entry.deltas['wsjf_score']`)
+   - `src/mcp/remote/register-tools.ts:1163,1164` (identical block, remote copy)
+
+4. **Indexed value flowed straight into a typed param / slot (TS2345 / TS2322).**
+   An `arr[i]` / `Map.get`-style indexed read is passed to a function or assigned
+   to a `number` / `number|null` field without an intervening local, so the
+   `| undefined` hits the call/assignment boundary directly.
+   - `src/services/wsjf.service.ts:176` (`return FIB[ordinals[mid]]` → `Fib`)
+   - `src/services/wsjf.service.ts:742,743` (indexed ordinals → numeric fn args)
+   - `src/services/dependency-graph.service.ts:232` (`allIdsSorted[0]` → `number`)
+   - `src/services/topology.service.ts:143` (`held.from`,`held.to` → detector args;
+     `held = edges[i]` upstream)
+   - `src/services/device-flow-store.ts:132` (`USER_CODE_ALPHABET[byte % 31]` →
+     `string` push; modulo keeps it in range but TS sees `| undefined`)
+   - `src/cli/commands/db-check.ts:30` (`integrityResults[0].integrity_check`)
+   - `src/cli/commands/db-migrate-identities.ts:149` (`aliasMap[value]` → `number|null`,
+     guarded by a prior `hasOwnProperty` the flag does not credit)
+   - `src/cli/commands/docs.ts:76` (`file: string | undefined` from a `.map`
+     element flowing into `DocEntry.file: string`)
+
+5. **Nested index used as an index type (TS2538).** `FIB[ordinals[mid]]` — the
+   inner `ordinals[mid]` is `number | undefined`, and `undefined` is not a legal
+   array index type. One occurrence; same site as category 4's `wsjf.service.ts`.
+   - `src/services/wsjf.service.ts:907`
+
+#### C. High-risk arrays/maps/dictionaries BY LAYER
+
+**CORE — services / repositories / utilities / events (14 errors):**
+- `src/services/wsjf.service.ts` (4) — `FIB` fibonacci lookup table + `ordinals[]`
+  median math; **fixed-shape numeric tables → strongest tuple-type candidate.**
+- `src/services/wsjf-health.service.ts` (2) — `series[i]` trend deltas.
+- `src/services/topology.service.ts` (2) — `edges[i]` (`held`) cycle-detect input.
+- `src/services/dependency-graph.service.ts` (2) — `allIdsSorted[0]` root pick +
+  `childIds[i]` tree walk.
+- `src/services/wsjf-rescore.service.ts` (1) — BFS `queue[head++]`.
+- `src/services/device-flow-store.ts` (1) — `USER_CODE_ALPHABET[byte % 31]`.
+- `src/events/event-bus.ts` (2) — `bufferStack[length-1]` transaction-stack peek.
+- repositories / utils: **0 errors** — `src/repositories/**` and `src/utils/**`
+  are already clean under the flag (note for #782: nothing to do there).
+
+**SURFACE — api / cli / mcp / slack / web / router (15 errors):**
+- `src/api/plugins/auth/keys.ts` (4) — `keys[i]` API-key validation loop.
+- `src/mcp/tools/wsjf-tools.ts` (4) — `entry.deltas['wsjf_score']` history render.
+- `src/mcp/remote/register-tools.ts` (4) — identical `deltas['wsjf_score']` block
+  (remote mirror of wsjf-tools; fix both copies the same way).
+- `src/cli/commands/db-check.ts` (1) — `integrityResults[0]`.
+- `src/cli/commands/db-migrate-identities.ts` (1) — `aliasMap[value]`.
+- `src/cli/commands/docs.ts` (1) — `.map` element → `DocEntry`.
+- slack / web / router: **0 errors** under the flag.
+
+**Boundary call:** `src/config/env.ts:349` (1, `rawParts[i]`) is config glue, not a
+service. It is assigned to **#782 (core)** to keep the #783 list purely on the
+outward-facing api/cli/mcp surfaces — giving #782 = 15 and #783 = 15 (see §E).
+
+#### D. APPROVED fix patterns (and the no-blanket-`!` rule)
+
+> **REJECTED: blanket non-null assertion.** Do NOT remediate by sprinkling
+> `arr[i]!`, `map.get(k)!`, or `x!.member`. A bare `!` silently re-introduces
+> exactly the runtime-`undefined` hazard the flag exists to surface, and it
+> survives later refactors that change the bound/producer. The existing
+> `distance.get(cur)!` in `src/services/wsjf.service.ts` is the anti-pattern to
+> retire, not to copy. Each error below MUST resolve via one of patterns 1–4.
+
+1. **Guard-and-bind (default for categories 1, 2, 3).** Read once into a local,
+   test for `undefined`, and either `continue`/`break`/early-return or narrow:
+   ```ts
+   const k = keys[i];
+   if (k === undefined) continue;     // or: throw / break, per loop intent
+   // k is now `string`
+   ```
+   For stack/queue peeks where emptiness is impossible by construction but you
+   still want a tripwire, throw an explicit invariant error rather than `!`:
+   ```ts
+   const cur = queue[head++];
+   if (cur === undefined) throw new Error('queue cursor out of range');
+   ```
+
+2. **Tuple / fixed-shape types (preferred for category 4/5 numeric tables).**
+   Where the array is a compile-time-fixed table (`FIB`, fixed ordinal maps),
+   type it as a readonly tuple or `as const` so individual indices are typed
+   present, and clamp the index to the valid domain before lookup. This removes
+   the `| undefined` at the *type* level instead of asserting it away at each use.
+   For computed indices that genuinely can fall out of range, narrow the index
+   first (`if (idx < 0 || idx >= FIB.length) …`) — never index with a
+   possibly-`undefined` value (the TS2538 site).
+
+3. **Typed accessor helper (for repeated record/array lookups).** Mirror the
+   existing `src/utils/omit-undefined.ts` style with a tiny, well-named accessor
+   that centralizes the guard and gives a meaningful throw site, e.g.
+   `atOrThrow(arr, i, msg)` / `requireKey(record, key)`. Use this where the same
+   "known-present lookup" appears repeatedly (the duplicated `deltas['wsjf_score']`
+   block across wsjf-tools + register-tools is the textbook case). Keep it in
+   `src/utils/` so both core and surface can import it. **PROPOSED here; the
+   helper is implemented by #782 if #782 adopts it, then reused by #783.**
+
+4. **Explicit empty-state handling (for category 4 "first element" reads).** Where
+   `arr[0]` is read after a `length > 0` check (`allIdsSorted[0]`,
+   `integrityResults[0]`), restructure so the empty case is handled explicitly —
+   destructure with a default, `if (arr.length === 0) return …`, or
+   `const [first] = arr; if (first === undefined) …` — so the non-empty branch
+   carries a present-typed value.
+
+For `hasOwnProperty`-guarded record reads (`aliasMap[value]`, TS2322) the flag
+does not credit the guard; bind the lookup to a local and `=== undefined`-check it
+(pattern 1), or use the pattern-3 `requireKey` accessor.
+
+#### E. Scoped worklists for the split tasks
+
+**#782 — CORE (services + repositories + utilities + events; 15 errors):**
+| File | Count | Codes | Pattern |
+|---|---|---|---|
+| `src/services/wsjf.service.ts` | 4 | TS2322, TS2345×2, TS2538 | tuple type (2) + index-narrow (2) |
+| `src/services/wsjf-health.service.ts` | 2 | TS2532 | guard-and-bind (1) |
+| `src/services/topology.service.ts` | 2 | TS18048 | guard-and-bind (1) |
+| `src/services/dependency-graph.service.ts` | 2 | TS2322, TS2345 | empty-state (4) + guard (1) |
+| `src/services/wsjf-rescore.service.ts` | 1 | TS2345 | guard-and-bind (1) |
+| `src/services/device-flow-store.ts` | 1 | TS2345 | guard-and-bind (1) |
+| `src/events/event-bus.ts` | 2 | TS2532, TS18048 | guard-and-bind (1) |
+| `src/config/env.ts` | 1 | TS2532 | guard-and-bind (1) |
+- Also retire the pre-existing `distance.get(cur)!` in `wsjf.service.ts` while in
+  the file (no-blanket-`!` rule). Repositories/utils have **0** errors.
+- If #782 introduces the pattern-3 `src/utils/` accessor helper, land it here so
+  #783 can import it.
+
+**#783 — SURFACE (api + cli + mcp + slack + web + router; 15 errors):**
+| File | Count | Codes | Pattern |
+|---|---|---|---|
+| `src/api/plugins/auth/keys.ts` | 4 | TS18048 | guard-and-bind (1) |
+| `src/mcp/tools/wsjf-tools.ts` | 4 | TS18048 | guard / accessor (1 or 3) |
+| `src/mcp/remote/register-tools.ts` | 4 | TS18048 | guard / accessor (1 or 3) — same block as wsjf-tools |
+| `src/cli/commands/db-check.ts` | 1 | TS2532 | empty-state (4) |
+| `src/cli/commands/db-migrate-identities.ts` | 1 | TS2322 | guard-and-bind (1) |
+| `src/cli/commands/docs.ts` | 1 | TS2322 | guard / map-element fix (1) |
+- slack / web / router: **0** errors. The two `deltas['wsjf_score']` blocks
+  (wsjf-tools + register-tools) are duplicates — fix identically (ideal consumer
+  for the pattern-3 accessor if #782 ships it).
+
+**#784 — ENABLE:** after #782 + #783 land green, flip
+`noUncheckedIndexedAccess: true` permanently and add it to the ratchet table in §A.
+Re-run the probe to confirm 0 residual errors before flipping (BFS/queue code and
+the duplicated MCP blocks are the regression-prone spots to re-check).
+
+#### F. Self-attestation (#781)
+
+No secret, token, password, API key, or absolute local path was introduced. The
+flag is reverted (`grep -n noUncheckedIndexedAccess tsconfig.json` → empty). This
+task made **no** source edits — the deliverable is this inventory section only.
+`npm run build` passes (exit 0) with the flag OFF.
