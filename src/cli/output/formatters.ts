@@ -363,16 +363,21 @@ export function formatHealthStatus(health: HealthResponse): string {
         : 'ERROR \u2717';
   lines.push(`${bold('Service Status:')} ${statusText}`);
 
-  // Database status
-  const dbStatus = health.checks.database === 'ok';
-  const dbText = dbStatus
-    ? useColor
-      ? chalk.green('Connected') + ' ' + chalk.green('\u2713')
-      : 'Connected \u2713'
-    : useColor
-      ? chalk.red('Disconnected') + ' ' + chalk.red('\u2717')
-      : 'Disconnected \u2717';
-  lines.push(`${bold('Database:')} ${dbText}`);
+  // Database status \u2014 only present on the authenticated /health/detailed
+  // response. `checkHealth()` calls the basic `/health`, which omits `checks`,
+  // so guard before reading it (a bare `health.checks.database` crashed the
+  // command with "Cannot read properties of undefined (reading 'database')").
+  if (health.checks?.database !== undefined) {
+    const dbStatus = health.checks.database === 'ok';
+    const dbText = dbStatus
+      ? useColor
+        ? chalk.green('Connected') + ' ' + chalk.green('\u2713')
+        : 'Connected \u2713'
+      : useColor
+        ? chalk.red('Disconnected') + ' ' + chalk.red('\u2717')
+        : 'Disconnected \u2717';
+    lines.push(`${bold('Database:')} ${dbText}`);
+  }
 
   // Version
   if (health.version) {

@@ -1,6 +1,6 @@
 {
   "name": "wood-fired-tasks",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "Network-wide task tracking system for Wood Fired Games",
   "keywords": [
     "task-tracker",

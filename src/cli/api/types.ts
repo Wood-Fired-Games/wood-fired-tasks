@@ -211,7 +211,12 @@ export interface HealthResponse {
   status: 'healthy' | 'unhealthy';
   timestamp: string;
   version: string;
-  checks: {
+  /**
+   * Present on the authenticated /health/detailed response. The basic /health
+   * (what `checkHealth()` calls) returns only status/timestamp/version, so this
+   * is optional — readers MUST guard `checks?.database` (#790).
+   */
+  checks?: {
     database: 'ok' | 'failed';
   };
   /**

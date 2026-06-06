@@ -184,11 +184,19 @@ mkdir -p "$INSTALL_DIR/dist"
 cp -a "$SOURCE_DIR/dist/." "$INSTALL_DIR/dist/"
 
 # --- Copy package files ----------------------------------------------------
-echo "[5/8] Copying package.json + package-lock.json..."
+echo "[5/8] Copying package.json + package-lock.json + scripts/..."
 cp "$SOURCE_DIR/package.json" "$INSTALL_DIR/"
 if [ -f "$SOURCE_DIR/package-lock.json" ]; then
   cp "$SOURCE_DIR/package-lock.json" "$INSTALL_DIR/"
 fi
+# package.json's `postinstall` lifecycle hook runs `node scripts/postinstall.cjs`
+# during the `npm ci` below. Without scripts/ in the install dir, npm ci aborts
+# with MODULE_NOT_FOUND and the deploy fails AFTER the service is already
+# stopped (regression introduced by the 1.18 postinstall notice, #752). Refresh
+# scripts/ from source so every install-time lifecycle hook resolves. Dev-only
+# scripts come along but are inert (only postinstall.cjs runs under npm ci).
+rm -rf "$INSTALL_DIR/scripts"
+cp -a "$SOURCE_DIR/scripts" "$INSTALL_DIR/"
 
 # --- Install production dependencies ---------------------------------------
 # Prepend the node binary's directory to PATH so the npm bundled with this
@@ -203,7 +211,7 @@ echo "[6/8] Installing production dependencies (npm ci --omit=dev)..."
 # data/ directory's owner so this script does not need to be told.
 SERVICE_USER="$(stat -c '%U' "$INSTALL_DIR/data" 2>/dev/null || echo root)"
 SERVICE_GROUP="$(stat -c '%G' "$INSTALL_DIR/data" 2>/dev/null || echo root)"
-chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$INSTALL_DIR/dist" "$INSTALL_DIR/node_modules" "$INSTALL_DIR/package.json" "$INSTALL_DIR/package-lock.json" 2>/dev/null || true
+chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$INSTALL_DIR/dist" "$INSTALL_DIR/node_modules" "$INSTALL_DIR/scripts" "$INSTALL_DIR/package.json" "$INSTALL_DIR/package-lock.json" 2>/dev/null || true
 
 # --- Run migrations --------------------------------------------------------
 # Use the resolved $NODE_BIN (not the system /usr/bin/node, which may be a
