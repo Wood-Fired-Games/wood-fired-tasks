@@ -6,9 +6,9 @@
 //
 // WHAT IT DOES
 //   1. Scans the TypeScript source tree for "escape hatches" (unsafe-typing
-//      patterns: `as any`, `as unknown`, bare `: any`, `@ts-expect-error`,
-//      `@ts-ignore`, `biome-ignore`), counting them by CATEGORY and splitting
-//      PRODUCTION code from TEST code.
+//      patterns: `as any`, `as unknown`, bare `: any`, and the ts-expect-error,
+//      ts-ignore, and biome-ignore directives), counting them by CATEGORY and
+//      splitting PRODUCTION code from TEST code.
 //   2. Compares the current PRODUCTION counts against a committed baseline
 //      (scripts/quality/escape-hatch-budget.json).
 //   3. Exits NON-ZERO if any production category EXCEEDS its baseline (i.e. a
