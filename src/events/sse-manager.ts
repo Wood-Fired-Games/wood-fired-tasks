@@ -158,7 +158,7 @@ export class SSEManager {
     }
 
     // Filter by project_id (only applies to task/project events). The typed
-    // accessor narrows event.data without an `as any` cast: it returns the
+    // accessor narrows event.data without an unsafe cast: it returns the
     // numeric project_id when present, else undefined (e.g. control events).
     if (filters.project_id) {
       const eventProjectId = getEventProjectId(event);

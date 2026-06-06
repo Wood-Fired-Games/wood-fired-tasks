@@ -3,7 +3,7 @@
  *
  * Proves the wiring: the task/project/list client functions now run the REST
  * response body through the shared Zod response schemas
- * (`src/schemas/api-response.ts`) instead of casting `response.json() as T`.
+ * (`src/api/api-response.ts`) instead of casting `response.json() as T`.
  * Valid bodies pass through untouched; invalid / missing-field bodies raise a
  * clear `ApiResponseValidationError` rather than leaking an untyped shape.
  */
@@ -23,7 +23,7 @@ vi.mock('../../auth/credentials.js', () => ({
   resolveAuth: vi.fn(async () => ({ kind: 'legacy' as const, key: 'test-key' })),
 }));
 
-import { ApiResponseValidationError } from '../../../schemas/api-response.js';
+import { ApiResponseValidationError } from '../../../api/api-response.js';
 import { getTask, listTasks, listTasksPaginated, getProject, listProjects } from '../client.js';
 
 const ORIGINAL_FETCH = globalThis.fetch;

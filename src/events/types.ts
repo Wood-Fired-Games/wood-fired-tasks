@@ -52,7 +52,7 @@ export type EventSource = 'user' | 'workflow';
  * are populated ONLY for `task.status_changed` events to record the status
  * transition (e.g. `blocked` → `open`). They are typed as optional here so a
  * single `EventPayload.metadata` shape covers all event types without an
- * `as any` cast at the emit site or at consumers (SSE filter, wait-for-unblock
+ * unsafe cast at the emit site or at consumers (SSE filter, wait-for-unblock
  * predicate, workflow-engine tests).
  */
 export interface EventMetadata {
@@ -99,7 +99,7 @@ export interface StatusTransition {
  *
  * Returns the transition when the event is a `task.status_changed` whose
  * metadata carries both ends, otherwise `undefined`. Lets consumers and tests
- * read the transition without an `(event.metadata as any)` cast.
+ * read the transition without an unsafe `event.metadata` cast.
  */
 export function getStatusTransition(event: EventPayload<unknown>): StatusTransition | undefined {
   const { from, to } = event.metadata;
@@ -113,7 +113,7 @@ export function getStatusTransition(event: EventPayload<unknown>): StatusTransit
  * Narrow event payload `data` to the subset SSE filtering cares about: a
  * `project_id` for project-scoped filtering. Task and project event payloads
  * both expose `project_id`, but `EventPayload<unknown>` hides it — this typed
- * guard reads it without the `(event.data as any)` cast that previously lived
+ * guard reads it without the unsafe `event.data` cast that previously lived
  * in {@link ../events/sse-manager SSEManager.matchesFilters}.
  */
 export function getEventProjectId(event: EventPayload<unknown>): number | undefined {

@@ -23,7 +23,7 @@ import {
   parseProjectResponse,
   parseTaskListResponse,
   parseProjectListResponse,
-} from '../../schemas/api-response.js';
+} from '../../api/api-response.js';
 import { createRemoteSSEParser } from './sse-parser.js';
 
 // ── WSJF remote-parity payload types (WSJF 1.10) ──────────────────────────────

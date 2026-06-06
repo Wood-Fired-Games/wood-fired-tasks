@@ -7,7 +7,7 @@ import {
   parseProjectResponse,
   parseTaskListResponse,
   parseProjectListResponse,
-} from '../../schemas/api-response.js';
+} from '../../api/api-response.js';
 import type {
   TaskResponse,
   CreateTaskInput,

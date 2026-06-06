@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { TaskResponseSchema } from '../api/routes/tasks/schemas.js';
-import { ProjectResponseSchema } from '../api/routes/projects/schemas.js';
+import { TaskResponseSchema } from './routes/tasks/schemas.js';
+import { ProjectResponseSchema } from './routes/projects/schemas.js';
 
 /**
  * Shared REST/API RESPONSE validators for the highest-risk client paths.
