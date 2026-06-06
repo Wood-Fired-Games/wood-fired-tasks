@@ -69,6 +69,23 @@ function assert(cond, msg) {
 
 const ELEVATION_RE = /^(sudo|runas|pkexec|doas)$/i;
 
+// npm is a bare name on POSIX but the `npm.cmd` shim on Windows, and the
+// globally-installed `wood-fired-tasks` bin is likewise a `.cmd` wrapper on
+// Windows. Node ≥20 refuses to spawn a `.cmd`/`.bat` directly without a shell
+// (EINVAL, the CVE-2024-27980 hardening), and a bare `npm` can't be resolved by
+// spawnSync (PATHEXT isn't applied to argv[0]). Routing through a shell on
+// Windows resolves both: cmd.exe finds the .cmd shim, and Node auto-quotes args
+// (default windowsVerbatimArguments=false) so temp paths with spaces survive.
+const NPM = 'npm';
+const IS_WIN = process.platform === 'win32';
+
+// On Windows, a shell is required for the bare npm wrapper and for any command
+// that IS a .cmd/.bat batch file (the installed bin). POSIX never needs it.
+function needsWindowsShell(cmd) {
+  if (!IS_WIN) return false;
+  return cmd === NPM || /\.(cmd|bat)$/i.test(cmd);
+}
+
 /**
  * Run a command synchronously, capturing output. Hard-guards against ever
  * invoking an elevation binary (this smoke must NEVER prompt for a password).
@@ -77,8 +94,10 @@ function run(cmd, args, opts = {}) {
   if (ELEVATION_RE.test(cmd)) {
     fail(`refusing to run elevated command: ${cmd}`);
   }
+  const useShell = needsWindowsShell(cmd);
   const res = spawnSync(cmd, args, {
     encoding: 'utf8',
+    shell: useShell,
     ...opts,
     env: { ...process.env, ...(opts.env ?? {}) },
   });
@@ -168,11 +187,13 @@ async function main() {
 
   // -- 1. build + pack -------------------------------------------------------
   console.log('-- build --');
-  runOrFail('npm', ['run', 'build'], { cwd: REPO_ROOT, stdio: 'inherit' });
+  runOrFail(NPM, ['run', 'build'], { cwd: REPO_ROOT, stdio: 'inherit' });
 
   console.log('-- pack --');
   const packDir = mkTemp('wft-smoke-pack-');
-  const packRes = runOrFail('npm', ['pack', '--pack-destination', packDir], { cwd: REPO_ROOT });
+  const packRes = runOrFail(NPM, ['pack', '--pack-destination', packDir], {
+    cwd: REPO_ROOT,
+  });
   // `npm pack` prints the tarball filename on the last non-empty stdout line.
   const tarballName = packRes.stdout
     .split('\n')
@@ -185,7 +206,9 @@ async function main() {
   // -- 2. install -g into a TEMP prefix (no sudo: user-writable temp dir) -----
   console.log('-- install -g (temp prefix, no sudo) --');
   const prefixDir = mkTemp('wft-smoke-prefix-');
-  runOrFail('npm', ['install', '-g', tarball, '--prefix', prefixDir], { cwd: packDir });
+  runOrFail(NPM, ['install', '-g', tarball, '--prefix', prefixDir], {
+    cwd: packDir,
+  });
   // On POSIX the bin lands under <prefix>/bin; on Windows directly under prefix.
   const binName = process.platform === 'win32' ? 'wood-fired-tasks.cmd' : 'wood-fired-tasks';
   const binPath =
@@ -299,6 +322,9 @@ async function main() {
     cwd: outsideCwd,
     env: serveEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
+    // Same Windows .cmd-spawn constraint as run(): the installed bin is a
+    // batch shim, which Node ≥20 won't spawn without a shell.
+    shell: needsWindowsShell(binPath),
   });
   let serverLog = '';
   serverProc.stdout?.on('data', (d) => (serverLog += d));

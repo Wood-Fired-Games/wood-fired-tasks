@@ -1,6 +1,0 @@
-{
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "project": ["src/**/*.ts", "packages/wft-router/src/**/*.ts"],
-  "entry": ["packages/wft-router/src/bin/wft-router.ts"],
-  "ignoreDependencies": ["pino-pretty", "@stryker-mutator/api"]
-}
