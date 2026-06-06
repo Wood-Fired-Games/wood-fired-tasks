@@ -148,7 +148,9 @@ export function resolveMigrateDbPath(
   cwd: string = process.cwd(),
 ): string {
   const raw =
-    env['DATABASE_PATH'] && env['DATABASE_PATH'].length > 0 ? env['DATABASE_PATH'] : './data/tasks.db';
+    env['DATABASE_PATH'] && env['DATABASE_PATH'].length > 0
+      ? env['DATABASE_PATH']
+      : './data/tasks.db';
   return resolve(cwd, raw);
 }
 
