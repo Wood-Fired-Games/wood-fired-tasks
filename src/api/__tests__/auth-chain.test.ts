@@ -74,12 +74,12 @@ async function buildHarness(opts: {
   const userRepo = new UserRepository(db);
   const apiTokenRepo = new ApiTokenRepository(db);
 
-  // Legacy user has display_name = 'key_test-key' (label auto-derived from
-  // the bare 'test-key' API_KEYS entry).
-  const legacyUser = userRepo.findLegacyByDisplayName('key_test-key');
-  if (legacyUser === null) {
-    throw new Error('test setup: legacy user not seeded');
-  }
+  // The legacy X-API-Key auth strategy (and its key_* user seeding) was
+  // removed in the v2.0 auth cutover (#799), so we insert a plain user row
+  // directly to own the PAT rows minted by `mintPatRow` below.
+  const userInfo = db.prepare(`INSERT INTO users (display_name) VALUES (?)`).run('pat-test-user');
+  const ownerUserId = Number(userInfo.lastInsertRowid);
+  const legacyUser = { id: ownerUserId };
 
   // Pino's Logger type and Fastify's FastifyBaseLogger have a structural
   // mismatch; use `any` for the loggerInstance assignment.
@@ -246,22 +246,25 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
       expect(allLogs).toMatch(/"reasonCode":"wrong_prefix"/);
     });
 
-    it('legacy x-api-key (no Authorization) → 200 with authMethod legacy', async () => {
+    it('x-api-key (no Authorization) → 401 (legacy strategy removed in v2.0 cutover)', async () => {
+      // The legacy X-API-Key auth strategy was removed (#799). A request
+      // bearing only an X-API-Key header (no PAT/session) now falls through
+      // to the catch-all 401 with strategy=legacy reasonCode=missing_credential.
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/probe',
         headers: { 'x-api-key': 'test-key' },
       });
-      expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body);
-      expect(body.authMethod).toBe('legacy');
-      expect(body.tokenId).toBeNull();
-      expect(body.user).not.toBeNull();
-      expect(body.user.id).toBe(harness.legacyUserId);
-      expect(body.apiKeyLabel).toBe('key_test-key');
+      expect(res.statusCode).toBe(401);
+      const allLogs = harness.captured.join('');
+      expect(allLogs).toMatch(/"strategy":"legacy"/);
+      expect(allLogs).toMatch(/"reasonCode":"missing_credential"/);
     });
 
-    it('wrong x-api-key → 401 with catch-all log strategy=legacy reasonCode=unknown_token', async () => {
+    it('wrong x-api-key (no Authorization) → 401 with catch-all log strategy=legacy reasonCode=missing_credential', async () => {
+      // With the legacy strategy removed, an X-API-Key value is never
+      // inspected — the request simply has no PAT/session credential and
+      // falls through to the catch-all missing_credential 401.
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/probe',
@@ -270,7 +273,7 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
       expect(res.statusCode).toBe(401);
       const allLogs = harness.captured.join('');
       expect(allLogs).toMatch(/"strategy":"legacy"/);
-      expect(allLogs).toMatch(/"reasonCode":"unknown_token"/);
+      expect(allLogs).toMatch(/"reasonCode":"missing_credential"/);
     });
 
     it('no credentials at all → 401 with catch-all strategy=legacy reasonCode=missing_credential', async () => {
@@ -304,19 +307,19 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
       expect(allLogs).toMatch(/"auth_method":"pat"/);
     });
 
-    it('after legacy match, request log carries user_id, token_id=null, auth_method=legacy', async () => {
+    it('x-api-key (no Authorization) → 401 catch-all audit line strategy=legacy reasonCode=missing_credential', async () => {
+      // The legacy success path (re-childing user_id/token_id/auth_method=legacy)
+      // was removed with the legacy X-API-Key strategy (#799). The remaining
+      // observable is the catch-all auth.failure audit line.
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/probe',
         headers: { 'x-api-key': 'test-key' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(401);
       const allLogs = harness.captured.join('');
-      expect(allLogs).toMatch(/"user_id":\s*\d+/);
-      expect(allLogs).toMatch(/"token_id":null/);
-      expect(allLogs).toMatch(/"auth_method":"legacy"/);
-      // apiKeyLabel must also propagate (MIGR-01 compatibility).
-      expect(allLogs).toContain('"apiKeyLabel":"key_test-key"');
+      expect(allLogs).toMatch(/"strategy":"legacy"/);
+      expect(allLogs).toMatch(/"reasonCode":"missing_credential"/);
     });
   });
 
@@ -333,16 +336,17 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
       expect(body.tokenId).toBeNull();
     });
 
-    it('sessionOnly=true + legacy x-api-key → 403 session_required', async () => {
+    it('sessionOnly=true + x-api-key (no Authorization) → 401 (legacy strategy removed; auth fails before sessionOnly check)', async () => {
+      // Previously the legacy strategy authenticated the X-API-Key and the
+      // sessionOnly post-auth check returned 403. With the legacy strategy
+      // removed (#799), the X-API-Key never authenticates, so the request
+      // fails auth (401) before the sessionOnly check can run.
       const res = await harness.server.inject({
         method: 'GET',
         url: '/api/v1/probe-session-only',
         headers: { 'x-api-key': 'test-key' },
       });
-      expect(res.statusCode).toBe(403);
-      const body = JSON.parse(res.body);
-      expect(body.error).toBe('session_required');
-      expect(body.message).toContain('Personal Access Token');
+      expect(res.statusCode).toBe(401);
     });
 
     it('sessionOnly=true + valid PAT → 403 session_required', async () => {
