@@ -30,11 +30,196 @@ import { Command } from 'commander';
 import { env } from '../config/env.js';
 import { writeCredentials } from '../auth/credentials.js';
 import { openBrowser } from '../auth/browser-open.js';
-import { requestDeviceCode, pollForToken } from '../auth/device-flow.js';
+import { requestDeviceCode, pollForToken, type DeviceTokenSuccess } from '../auth/device-flow.js';
 
 /** Emit one newline-separated JSON envelope on stdout (used in --json mode). */
 function emitJsonEvent(event: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(event) + '\n');
+}
+
+/**
+ * Inputs to {@link runDeviceLogin}. All values are already resolved/validated by
+ * the caller (the `login` command and, in Phase 30 Plan 07+, the setup wizard).
+ *
+ * - `baseUrl`     — validated server base URL (the caller must `new URL()` it first).
+ * - `clientId`    — OIDC client id (`wft-cli` by default).
+ * - `hostname`    — local hostname, surfaced to the server for PAT auto-naming.
+ * - `tokenName`   — optional advisory PAT name (`--token-name`).
+ * - `openBrowser` — when `true`, best-effort auto-open the verification URL.
+ * - `isJson`      — when `true`, emit newline-separated JSON envelopes on stdout
+ *                   instead of human-friendly text on stderr.
+ */
+export interface RunDeviceLoginArgs {
+  baseUrl: string;
+  clientId: string;
+  hostname: string;
+  tokenName?: string;
+  openBrowser: boolean;
+  isJson: boolean;
+}
+
+/** Outcome of {@link runDeviceLogin}. `ok: false` means the flow already emitted
+ *  its failure output; the caller only has to set a non-zero exit code. */
+export type RunDeviceLoginResult = { ok: true; user: DeviceTokenSuccess['user'] } | { ok: false };
+
+/**
+ * Shared device-login core: request a device code, surface the verification URL
+ * + user code, best-effort open the browser, poll until approval, and persist
+ * credentials. Behavior (stdout/stderr output, exit semantics, security
+ * invariants) is identical to the original inline `login` action — this is the
+ * reusable seam consumed by the `login` command and the setup wizard.
+ *
+ * Does NOT set `process.exitCode`; on failure it returns `{ ok: false }` after
+ * emitting the appropriate error output, and the caller decides the exit code.
+ */
+export async function runDeviceLogin(args: RunDeviceLoginArgs): Promise<RunDeviceLoginResult> {
+  const { baseUrl, clientId, hostname, tokenName, openBrowser: shouldOpenBrowser, isJson } = args;
+
+  // 2. Request a device_code from the server.
+  let codeResponse;
+  try {
+    codeResponse = await requestDeviceCode({
+      baseUrl,
+      clientId,
+      hostname,
+      ...(tokenName !== undefined ? { tokenName } : {}),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (isJson) {
+      emitJsonEvent({ event: 'failed', error: 'request_failed', message });
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+    return { ok: false };
+  }
+
+  // 3. Surface the verification URL + user_code prominently.
+  const {
+    device_code,
+    user_code,
+    verification_uri,
+    verification_uri_complete,
+    interval,
+    expires_in,
+  } = codeResponse;
+
+  if (isJson) {
+    emitJsonEvent({
+      event: 'pending',
+      verification_uri,
+      verification_uri_complete,
+      user_code,
+      interval,
+      expires_in,
+    });
+  } else {
+    // Render a decorative block so the user_code is hard to misread. No
+    // ANSI color codes — copy-paste must survive piping through `tee` or
+    // a non-color terminal. The width is sized to fit `XXXX-XXXX` + 3 char
+    // padding either side (8 letters + dash + 6 spaces = 15; plus 2 borders).
+    const spaced = user_code.split('').join(' ');
+    const inner = `   ${spaced}   `;
+    const horiz = '─'.repeat(inner.length);
+    process.stderr.write('\n');
+    process.stderr.write(`Visit: ${verification_uri_complete}\n`);
+    process.stderr.write('\n');
+    process.stderr.write(`┌${horiz}┐\n`);
+    process.stderr.write(`│${inner}│\n`);
+    process.stderr.write(`└${horiz}┘\n`);
+    process.stderr.write('\n');
+    process.stderr.write('Waiting for approval...\n');
+  }
+
+  // 4. Best-effort browser launch (skipped if !openBrowser).
+  if (shouldOpenBrowser) {
+    const opened = openBrowser(verification_uri_complete);
+    if (!isJson) {
+      if (opened) {
+        process.stderr.write('(Opening browser...)\n');
+      } else {
+        process.stderr.write('(Could not auto-open browser. Open the URL above manually.)\n');
+      }
+    }
+  }
+
+  // 5. Poll until the user approves (or a terminal error fires).
+  const result = await pollForToken({
+    baseUrl,
+    deviceCode: device_code,
+    clientId,
+    initialInterval: interval,
+    expiresIn: expires_in,
+    onEvent: (e) => {
+      if (isJson) {
+        emitJsonEvent({ event: e.kind, interval: e.interval });
+      } else {
+        // Lightweight text-mode progress: one dot per pending poll. Stays
+        // quiet on slow_down so the user can see if pace ever changes.
+        if (e.kind === 'pending') {
+          process.stderr.write('.');
+        }
+      }
+    },
+  });
+
+  if (!isJson) {
+    // Newline after any pending-dot stream so the next line is clean.
+    process.stderr.write('\n');
+  }
+
+  // 6. Dispatch on result.
+  if (result.kind === 'terminal_error') {
+    if (isJson) {
+      emitJsonEvent({
+        event: 'failed',
+        error: result.error,
+        message: result.message,
+      });
+    } else {
+      process.stderr.write(`${result.message}\n`);
+    }
+    return { ok: false };
+  }
+
+  // result.kind === 'ok' — persist credentials.
+  const { response } = result;
+  try {
+    writeCredentials({
+      active: {
+        token: response.token,
+        token_id: response.token_id,
+        server: baseUrl,
+        user_id: response.user.id,
+        display_name: response.user.displayName,
+        email: response.user.email,
+        logged_in_at: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? `Failed to write credentials file: ${err.message}`
+        : 'Failed to write credentials file.';
+    if (isJson) {
+      emitJsonEvent({ event: 'failed', error: 'write_failed', message });
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+    return { ok: false };
+  }
+
+  if (isJson) {
+    emitJsonEvent({
+      event: 'logged_in',
+      user: response.user,
+      token_id: response.token_id,
+    });
+  } else {
+    process.stderr.write(`Logged in as ${response.user.displayName}\n`);
+  }
+
+  return { ok: true, user: response.user };
 }
 
 export const loginCommand = new Command('login')
@@ -74,152 +259,20 @@ export const loginCommand = new Command('login')
     const clientId: string = process.env['OIDC_CLIENT_ID'] ?? 'wft-cli';
     const hostname: string = os.hostname();
 
-    // 2. Request a device_code from the server.
-    let codeResponse;
-    try {
-      codeResponse = await requestDeviceCode({
-        baseUrl,
-        clientId,
-        hostname,
-        tokenName: opts.tokenName,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (isJson) {
-        emitJsonEvent({ event: 'failed', error: 'request_failed', message });
-      } else {
-        process.stderr.write(`${message}\n`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    // 3. Surface the verification URL + user_code prominently.
-    const {
-      device_code,
-      user_code,
-      verification_uri,
-      verification_uri_complete,
-      interval,
-      expires_in,
-    } = codeResponse;
-
-    if (isJson) {
-      emitJsonEvent({
-        event: 'pending',
-        verification_uri,
-        verification_uri_complete,
-        user_code,
-        interval,
-        expires_in,
-      });
-    } else {
-      // Render a decorative block so the user_code is hard to misread. No
-      // ANSI color codes — copy-paste must survive piping through `tee` or
-      // a non-color terminal. The width is sized to fit `XXXX-XXXX` + 3 char
-      // padding either side (8 letters + dash + 6 spaces = 15; plus 2 borders).
-      const spaced = user_code.split('').join(' ');
-      const inner = `   ${spaced}   `;
-      const horiz = '─'.repeat(inner.length);
-      process.stderr.write('\n');
-      process.stderr.write(`Visit: ${verification_uri_complete}\n`);
-      process.stderr.write('\n');
-      process.stderr.write(`┌${horiz}┐\n`);
-      process.stderr.write(`│${inner}│\n`);
-      process.stderr.write(`└${horiz}┘\n`);
-      process.stderr.write('\n');
-      process.stderr.write('Waiting for approval...\n');
-    }
-
-    // 4. Best-effort browser launch (skipped if --no-browser).
-    // Commander generates `opts.browser = false` for --no-browser.
-    if (opts.browser !== false) {
-      const opened = openBrowser(verification_uri_complete);
-      if (!isJson) {
-        if (opened) {
-          process.stderr.write('(Opening browser...)\n');
-        } else {
-          process.stderr.write('(Could not auto-open browser. Open the URL above manually.)\n');
-        }
-      }
-    }
-
-    // 5. Poll until the user approves (or a terminal error fires).
-    const result = await pollForToken({
+    // Delegate to the shared device-login core. Commander generates
+    // `opts.browser = false` for --no-browser.
+    const result = await runDeviceLogin({
       baseUrl,
-      deviceCode: device_code,
       clientId,
-      initialInterval: interval,
-      expiresIn: expires_in,
-      onEvent: (e) => {
-        if (isJson) {
-          emitJsonEvent({ event: e.kind, interval: e.interval });
-        } else {
-          // Lightweight text-mode progress: one dot per pending poll. Stays
-          // quiet on slow_down so the user can see if pace ever changes.
-          if (e.kind === 'pending') {
-            process.stderr.write('.');
-          }
-        }
-      },
+      hostname,
+      tokenName: opts.tokenName,
+      openBrowser: opts.browser !== false,
+      isJson,
     });
 
-    if (!isJson) {
-      // Newline after any pending-dot stream so the next line is clean.
-      process.stderr.write('\n');
-    }
-
-    // 6. Dispatch on result.
-    if (result.kind === 'terminal_error') {
-      if (isJson) {
-        emitJsonEvent({
-          event: 'failed',
-          error: result.error,
-          message: result.message,
-        });
-      } else {
-        process.stderr.write(`${result.message}\n`);
-      }
+    if (!result.ok) {
       process.exitCode = 1;
       return;
-    }
-
-    // result.kind === 'ok' — persist credentials.
-    const { response } = result;
-    try {
-      writeCredentials({
-        active: {
-          token: response.token,
-          token_id: response.token_id,
-          server: baseUrl,
-          user_id: response.user.id,
-          display_name: response.user.displayName,
-          email: response.user.email,
-          logged_in_at: new Date().toISOString(),
-        },
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? `Failed to write credentials file: ${err.message}`
-          : 'Failed to write credentials file.';
-      if (isJson) {
-        emitJsonEvent({ event: 'failed', error: 'write_failed', message });
-      } else {
-        process.stderr.write(`${message}\n`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    if (isJson) {
-      emitJsonEvent({
-        event: 'logged_in',
-        user: response.user,
-        token_id: response.token_id,
-      });
-    } else {
-      process.stderr.write(`Logged in as ${response.user.displayName}\n`);
     }
     // Implicit exit 0 — process.exitCode stays default.
   });
