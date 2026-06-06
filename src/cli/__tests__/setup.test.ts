@@ -459,9 +459,15 @@ describe('tasks setup — modes (task #805)', () => {
           remote: 'http://tasks.example.local:3000',
           token: FAKE_PAT,
           // Inject the OIDC probe so this test stays deterministic (no network).
-          // `disabled` routes to the manual-PAT path, which — given --token — runs
-          // the synchronous remote setup that writes the remote MCP entry.
+          // `disabled` routes to the manual-PAT path, which — given --token —
+          // validates+persists the PAT then writes the URL-only remote MCP entry.
           oidcProbe: async () => ({ ok: true, oidc: 'disabled' }),
+          // Inject the credentials-writer seam so the manual path never makes a
+          // real /api/v1/me fetch (#809). The branch hands it the --token PAT.
+          manualPatPersist: async () => ({
+            ok: true,
+            identity: { id: 1, displayName: 'Test User', email: null },
+          }),
           isInteractive: () => {
             prompted = true;
             return true;

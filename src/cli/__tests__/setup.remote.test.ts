@@ -7,9 +7,11 @@ import {
   runRemoteOnboarding,
   selectRemoteOnboardingMethod,
   probeOidcState,
+  persistManualPat,
   buildRemoteMcpEntry,
   commandsDestDir,
   patCachePath,
+  type ManualPatPersistResult,
   type OidcProbeResult,
   type RunSetupInteractiveOptions,
 } from '../commands/setup.js';
@@ -363,10 +365,20 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
     }
   });
 
-  it('oidc=disabled selects manual PAT (uses --token, persists remote entry)', () => {
+  it('oidc=disabled selects manual PAT (uses --token, persists via writeCredentials + URL-only entry)', () => {
     return withSandboxAsync(async (home, configDir) => {
       const { probe, calls } = recordingProbe({ ok: true, oidc: 'disabled' });
       const deviceLogin = vi.fn();
+      // #809: the manual path persists through the SAME credentials writer the
+      // device flow uses. Capture the (baseUrl, token) the branch hands it.
+      const persistCalls: Array<[string, string]> = [];
+      const manualPatPersist = vi.fn(async (baseUrl: string, token: string) => {
+        persistCalls.push([baseUrl, token]);
+        return {
+          ok: true as const,
+          identity: { id: 7, displayName: 'Manual User', email: null },
+        } satisfies ManualPatPersistResult;
+      });
 
       const result = await runRemoteOnboarding({
         home,
@@ -376,6 +388,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         token: FAKE_PAT,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
+        manualPatPersist,
       });
 
       expect(calls).toEqual([REMOTE_URL]);
@@ -384,11 +397,18 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       expect(result.ok).toBe(true);
       // Device flow NEVER invoked on the disabled branch.
       expect(deviceLogin).not.toHaveBeenCalled();
-      // Manual path persisted the URL-only remote MCP entry (#810); the PAT
-      // is cached separately, never embedded in claude.json.
+      // #809: the PAT was persisted via the credentials writer seam, NOT cached
+      // under the config dir.
+      expect(persistCalls).toEqual([[REMOTE_URL, FAKE_PAT]]);
+      expect(result.manualPatIdentity).toEqual({ id: 7, displayName: 'Manual User', email: null });
+      expect(result.setup?.patCache).toBeUndefined();
+      expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+      // Manual path persisted the SAME URL-only remote MCP entry (#810) the
+      // device-flow path writes; the PAT is never embedded in claude.json.
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
       expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
-      expect(result.setup?.patCache?.path).toBe(patCachePath(configDir));
+      expect(doc.mcpServers['wood-fired-tasks-remote'].env.WFT_API_KEY).toBeUndefined();
+      expect(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).not.toContain(FAKE_PAT);
     });
   });
 
@@ -398,6 +418,14 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       const deviceLogin = vi.fn();
       // Drive the injected prompt stream: type the PAT + newline.
       const input = Readable.from([`${FAKE_PAT}\n`]);
+      const persistCalls: Array<[string, string]> = [];
+      const manualPatPersist = vi.fn(async (baseUrl: string, token: string) => {
+        persistCalls.push([baseUrl, token]);
+        return {
+          ok: true as const,
+          identity: { id: 7, displayName: 'Manual User', email: null },
+        } satisfies ManualPatPersistResult;
+      });
 
       const result = await runRemoteOnboarding({
         home,
@@ -406,6 +434,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         remote: REMOTE_URL,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
+        manualPatPersist,
         isInteractive: () => true,
         promptIO: { input: input as never, output: { write: () => true } },
       });
@@ -413,11 +442,84 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       expect(result.method).toBe('manual-pat');
       expect(result.ok).toBe(true);
       expect(deviceLogin).not.toHaveBeenCalled();
-      // #810: the prompted PAT is cached to the config-dir file, NOT embedded
-      // in claude.json (the entry is URL-only).
+      // The prompted PAT was handed to the credentials-writer seam, not cached.
+      expect(persistCalls).toEqual([[REMOTE_URL, FAKE_PAT]]);
+      // #810: claude.json entry is URL-only — no embedded token.
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
       expect(doc.mcpServers['wood-fired-tasks-remote'].env.WFT_API_KEY).toBeUndefined();
-      expect(fs.readFileSync(patCachePath(configDir), 'utf8')).toBe(FAKE_PAT);
+      expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+    });
+  });
+
+  it('oidc=disabled on a non-TTY reads the PAT from the WFT_API_KEY env fallback (no hang)', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const { probe } = recordingProbe({ ok: true, oidc: 'disabled' });
+      const deviceLogin = vi.fn();
+      const persistCalls: Array<[string, string]> = [];
+      const manualPatPersist = vi.fn(async (baseUrl: string, token: string) => {
+        persistCalls.push([baseUrl, token]);
+        return {
+          ok: true as const,
+          identity: { id: 9, displayName: 'CI Bot', email: null },
+        } satisfies ManualPatPersistResult;
+      });
+
+      const prev = process.env['WFT_API_KEY'];
+      process.env['WFT_API_KEY'] = FAKE_PAT;
+      try {
+        const result = await runRemoteOnboarding({
+          home,
+          configDir,
+          log: () => {},
+          remote: REMOTE_URL,
+          // NO --token, NO TTY: must fall back to WFT_API_KEY rather than hang.
+          oidcProbe: probe,
+          deviceLogin: deviceLogin as never,
+          manualPatPersist,
+          isInteractive: () => false,
+        });
+
+        expect(result.method).toBe('manual-pat');
+        expect(result.ok).toBe(true);
+        // The env PAT was used and handed to the credentials writer seam.
+        expect(persistCalls).toEqual([[REMOTE_URL, FAKE_PAT]]);
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
+      } finally {
+        if (prev === undefined) delete process.env['WFT_API_KEY'];
+        else process.env['WFT_API_KEY'] = prev;
+      }
+    });
+  });
+
+  it('manual path with a rejected PAT writes nothing (no claude.json entry)', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const { probe } = recordingProbe({ ok: true, oidc: 'disabled' });
+      const logs: string[] = [];
+      const manualPatPersist = vi.fn(
+        async () =>
+          ({
+            ok: false,
+            reason: 'the personal access token was rejected (HTTP 401)',
+          }) satisfies ManualPatPersistResult,
+      );
+
+      const result = await runRemoteOnboarding({
+        home,
+        configDir,
+        log: (line) => logs.push(line),
+        remote: REMOTE_URL,
+        token: FAKE_PAT,
+        oidcProbe: probe,
+        manualPatPersist,
+      });
+
+      expect(result.method).toBe('manual-pat');
+      expect(result.ok).toBe(false);
+      expect(result.setup).toBeUndefined();
+      expect(logs.some((l) => /rejected/.test(l))).toBe(true);
+      // A rejected PAT leaves no half-configured install.
+      expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
     });
   });
 
@@ -426,6 +528,13 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       const { probe, calls } = recordingProbe({ ok: true, oidc: 'degraded' });
       const deviceLogin = vi.fn();
       const logs: string[] = [];
+      const manualPatPersist = vi.fn(
+        async () =>
+          ({
+            ok: true,
+            identity: { id: 7, displayName: 'Manual User', email: null },
+          }) satisfies ManualPatPersistResult,
+      );
 
       const result = await runRemoteOnboarding({
         home,
@@ -435,6 +544,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         token: FAKE_PAT,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
+        manualPatPersist,
       });
 
       expect(calls).toEqual([REMOTE_URL]);
@@ -454,6 +564,13 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       const { probe, calls } = recordingProbe({ ok: false, reason: 'ECONNREFUSED' });
       const deviceLogin = vi.fn();
       const logs: string[] = [];
+      const manualPatPersist = vi.fn(
+        async () =>
+          ({
+            ok: true,
+            identity: { id: 7, displayName: 'Manual User', email: null },
+          }) satisfies ManualPatPersistResult,
+      );
 
       const result = await runRemoteOnboarding({
         home,
@@ -463,6 +580,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         token: FAKE_PAT,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
+        manualPatPersist,
       });
 
       expect(calls).toEqual([REMOTE_URL]);
@@ -477,25 +595,126 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
     });
   });
 
-  it('manual path with no --token on a non-TTY returns ok:false with guidance', () => {
+  it('manual path with no --token, no env, on a non-TTY returns ok:false with guidance (no hang)', () => {
     return withSandboxAsync(async (home, configDir) => {
       const { probe } = recordingProbe({ ok: true, oidc: 'disabled' });
       const logs: string[] = [];
 
-      const result = await runRemoteOnboarding({
-        home,
-        configDir,
-        log: (line) => logs.push(line),
-        remote: REMOTE_URL,
-        oidcProbe: probe,
-        isInteractive: () => false,
-      });
+      // Ensure the documented env fallback is ABSENT so this asserts the
+      // "no PAT anywhere" failure rather than silently picking up the env.
+      const prev = process.env['WFT_API_KEY'];
+      delete process.env['WFT_API_KEY'];
+      try {
+        const result = await runRemoteOnboarding({
+          home,
+          configDir,
+          log: (line) => logs.push(line),
+          remote: REMOTE_URL,
+          oidcProbe: probe,
+          isInteractive: () => false,
+        });
 
-      expect(result.method).toBe('manual-pat');
+        expect(result.method).toBe('manual-pat');
+        expect(result.ok).toBe(false);
+        // Guidance names BOTH documented PAT sources (flag + env fallback).
+        expect(logs.some((l) => /--token/.test(l))).toBe(true);
+        expect(logs.some((l) => /WFT_API_KEY/.test(l))).toBe(true);
+        // Nothing persisted when no token could be obtained.
+        expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
+      } finally {
+        if (prev === undefined) delete process.env['WFT_API_KEY'];
+        else process.env['WFT_API_KEY'] = prev;
+      }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #809 — persistManualPat: validate the PAT against /api/v1/me then
+// persist it via the credentials writer.
+// ---------------------------------------------------------------------------
+
+describe('persistManualPat (validate + writeCredentials)', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  function withCredSandbox<T>(fn: () => Promise<T>): Promise<T> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-cred-'));
+    const credFile = path.join(dir, 'credentials');
+    const prev = process.env['WFT_CREDENTIALS_PATH'];
+    process.env['WFT_CREDENTIALS_PATH'] = credFile;
+    return (async () => {
+      try {
+        return await fn();
+      } finally {
+        if (prev === undefined) delete process.env['WFT_CREDENTIALS_PATH'];
+        else process.env['WFT_CREDENTIALS_PATH'] = prev;
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    })();
+  }
+
+  it('GETs /api/v1/me with a Bearer header and writes the credentials file', () => {
+    return withCredSandbox(async () => {
+      const credFile = process.env['WFT_CREDENTIALS_PATH']!;
+      globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(input)).toBe('http://tasks.example.local:3000/api/v1/me');
+        expect((init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${FAKE_PAT}`);
+        return new Response(
+          JSON.stringify({
+            id: 42,
+            displayName: 'Manual User',
+            email: 'manual@example.local',
+            isLegacy: false,
+            isServiceAccount: false,
+          }),
+          { status: 200 },
+        );
+      }) as never;
+
+      const result = await persistManualPat(REMOTE_URL, FAKE_PAT);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.identity).toEqual({
+          id: 42,
+          displayName: 'Manual User',
+          email: 'manual@example.local',
+        });
+      }
+      // Credentials file written by writeCredentials and contains the PAT.
+      expect(fs.existsSync(credFile)).toBe(true);
+      const body = fs.readFileSync(credFile, 'utf8');
+      expect(body).toContain(FAKE_PAT);
+      expect(body).toContain('user_id = 42');
+    });
+  });
+
+  it('returns ok:false and writes nothing when the PAT is rejected (401)', () => {
+    return withCredSandbox(async () => {
+      const credFile = process.env['WFT_CREDENTIALS_PATH']!;
+      globalThis.fetch = vi.fn(async () => new Response('no', { status: 401 })) as never;
+
+      const result = await persistManualPat(REMOTE_URL, FAKE_PAT);
       expect(result.ok).toBe(false);
-      expect(logs.some((l) => /--token/.test(l))).toBe(true);
-      // Nothing persisted when no token could be obtained.
-      expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
+      if (!result.ok) expect(result.reason).toMatch(/401/);
+      expect(fs.existsSync(credFile)).toBe(false);
+    });
+  });
+
+  it('returns ok:false on a network error (no credentials written)', () => {
+    return withCredSandbox(async () => {
+      const credFile = process.env['WFT_CREDENTIALS_PATH']!;
+      globalThis.fetch = vi.fn(async () => {
+        throw new Error('ECONNREFUSED');
+      }) as never;
+
+      const result = await persistManualPat(REMOTE_URL, FAKE_PAT);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toMatch(/ECONNREFUSED/);
+      expect(fs.existsSync(credFile)).toBe(false);
     });
   });
 });
