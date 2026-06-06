@@ -96,7 +96,8 @@ export class SlackNotifier {
     );
 
     for (let i = 0; i < results.length; i++) {
-      const result = results[i]!;
+      const result = results[i];
+      if (result === undefined) continue;
       if (result.status === 'rejected') {
         this.logger.error(
           { err: result.reason, channelId: channels[i], eventType },

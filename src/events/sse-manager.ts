@@ -200,8 +200,9 @@ export class SSEManager {
     // when fromEventId > 0 AND the buffer's smallest live id is greater
     // than fromEventId+1 — i.e. there is genuinely a missing range.
     if (fromEventId > 0 && this.eventBuffer.length > 0) {
-      const earliestBufferedId = this.eventBuffer[0]!.id;
-      if (earliestBufferedId > fromEventId + 1) {
+      const earliest = this.eventBuffer[0];
+      if (earliest !== undefined && earliest.id > fromEventId + 1) {
+        const earliestBufferedId = earliest.id;
         // Fire-and-forget; if the send fails the close/error handler will
         // clean up. We intentionally do not increment totalEventsSent for
         // this control message — it's not a domain event.
