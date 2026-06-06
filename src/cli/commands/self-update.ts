@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import { colorError, colorInfo, colorSuccess, colorWarn } from '../output/formatters.js';
 import { VERSION } from '../../utils/version.js';
-import { buildNpmInvocation } from '../util/npm-spawn.js';
 
 /**
  * `tasks self-update` — frictionless self-update for npm-global installs
@@ -40,6 +39,7 @@ export interface SelfUpdateDeps {
 }
 
 const PACKAGE_NAME = 'wood-fired-tasks';
+const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 /**
  * True when a spawn error / non-zero exit looks like an EACCES-class
@@ -106,15 +106,14 @@ function runNpmInstall(
   return new Promise((resolve) => {
     let stderr = '';
     let settled = false;
-    // Windows-safe npm invocation via the shared helper (task #794): handles
-    // the npm.cmd EINVAL rule (shell:true on win32) and arg-quoting in one
-    // place shared with `setup --fix-npm-prefix`, so the fix can't drift. The
-    // args here are all constants, so quoting is a no-op — but routing through
-    // the same builder keeps both call sites correct by construction.
-    const inv = buildNpmInvocation(['i', '-g', `${PACKAGE_NAME}@latest`]);
-    const child = spawn(inv.command, inv.args, {
+    const child = spawn(NPM_BIN, ['i', '-g', `${PACKAGE_NAME}@latest`], {
       stdio: ['ignore', 'inherit', 'pipe'],
-      shell: inv.shell,
+      // Windows: npm is `npm.cmd` (a batch file), and since the
+      // CVE-2024-27980 hardening Node refuses to spawn a `.cmd`/`.bat`
+      // directly without a shell (throws spawn EINVAL). Run through the shell
+      // on win32. Safe here: every arg is a constant with no spaces or shell
+      // metacharacters, so there is no quoting/injection hazard.
+      shell: process.platform === 'win32',
     });
 
     const settle = (code: number | null, error: NodeJS.ErrnoException | null) => {

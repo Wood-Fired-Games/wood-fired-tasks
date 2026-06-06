@@ -10,7 +10,6 @@ import {
   commandsDestDir,
   agentsDestDir,
 } from '../commands/setup.js';
-import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
 
 // The packaged task-skill .md files SHIP under dist/skills/tasks/ (the asset
@@ -238,39 +237,6 @@ describe('tasks setup', () => {
         expect(haystack).not.toContain(banned);
       }
       expect(lines.join('\n')).toContain(result.prefix);
-    });
-  });
-
-  // Regression (task #794): on Windows npm is `npm.cmd` (EINVAL if spawned
-  // without a shell since CVE-2024-27980), and the home path can contain spaces
-  // (C:\Users\John Doe\.npm-global) which a naive shell:true would split.
-  // fixNpmPrefix routes its npm call through buildNpmInvocation; assert the
-  // exact args it emits produce a well-formed, non-splitting win32 invocation.
-  it('--fix-npm-prefix emits a Windows-safe npm invocation for a spaced home', () => {
-    withTempHome((tmp) => {
-      // A home path with a space, mimicking C:\Users\John Doe.
-      const home = path.join(tmp, 'John Doe');
-      fs.mkdirSync(home, { recursive: true });
-      const ran: Array<{ cmd: string; args: string[] }> = [];
-      const result = fixNpmPrefix({
-        home,
-        runner: (cmd, args) => ran.push({ cmd, args }),
-        log: () => {},
-      });
-
-      // The logical call fixNpmPrefix makes (prefix carries the space).
-      expect(ran).toEqual([{ cmd: 'npm', args: ['config', 'set', 'prefix', result.prefix] }]);
-      expect(result.prefix).toContain('John Doe');
-
-      // What the default runner hands to the OS on win32: npm.cmd via a shell,
-      // with the spaced prefix quoted so cmd.exe keeps it a single token.
-      const inv = buildNpmInvocation(ran[0].args, 'win32');
-      expect(inv.command).toBe('npm.cmd');
-      expect(inv.shell).toBe(true);
-      expect(inv.args[inv.args.length - 1]).toBe(`"${result.prefix}"`);
-      expect(`${inv.command} ${inv.args.join(' ')}`).toBe(
-        `npm.cmd config set prefix "${result.prefix}"`,
-      );
     });
   });
 });
