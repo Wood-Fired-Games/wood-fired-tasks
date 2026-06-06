@@ -2,7 +2,7 @@ import Database from './driver.js';
 import { Umzug, type UmzugStorage } from 'umzug';
 import { mkdir } from 'fs/promises';
 import { join, dirname, resolve, sep } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { initDatabase } from './database.js';
 import { isMain } from '../utils/is-main.js';
 
@@ -95,11 +95,15 @@ function createUmzug(db: Database.Database): Umzug<Database.Database> {
         // Use canonical (extensionless) name so .ts and .js are treated identically
         name: canonicalName(name),
         up: async () => {
-          const migration = await import(path!);
+          // Dynamic import needs a file:// URL: on Windows an absolute path like
+          // C:\...\001.js makes ESM treat `C:` as an unsupported URL scheme
+          // (ERR_UNSUPPORTED_ESM_URL_SCHEME). pathToFileURL is a no-op-equivalent
+          // on POSIX and the correct encoding everywhere.
+          const migration = await import(pathToFileURL(path!).href);
           return migration.up(db);
         },
         down: async () => {
-          const migration = await import(path!);
+          const migration = await import(pathToFileURL(path!).href);
           return migration.down(db);
         },
       }),
