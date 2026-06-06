@@ -48,6 +48,8 @@ So device-flow login and the MCP bridge are disconnected.
   lives in `~/.claude.json`.
 - Retire the deprecated X-API-Key legacy auth path, which simplifies the token
   model this design depends on.
+- Surface an "update available" hint in the Claude Code status line with an
+  in-session update path — on by default, wiring opt-in, easily disabled.
 
 ## Non-goals
 
@@ -299,6 +301,72 @@ blocking problem is found, so it can gate CI / pre-upgrade checks.
 
 ---
 
+## Phase 4 — Update-available notification (status line)
+
+Surface "a newer `wood-fired-tasks` is published" ambiently in the Claude Code
+status line, with an in-session path to update, modeled on GSD's pattern
+(`~/.cache/gsd/gsd-update-check.json` → statusline segment → `/gsd:update`).
+The update check is **on by default** (cheap, cached, fail-silent); the
+status-line wiring is **opt-in**; the whole thing is **easily disabled**.
+
+### Check engine (reuse `update-notifier`)
+`update-notifier` is already a dependency (`self-update.ts` `defaultNotify`). It
+performs an async, TTL-gated (daily) version check and persists its own state;
+`updateNotifier({ pkg }).update` is populated (`{ current, latest, type }`) when
+a newer version exists. Reuse it — no new network/version-compare code.
+
+A small `src/cli/util/update-check.ts` runs the check at a natural,
+non-blocking moment (MCP server boot and/or CLI invocation) and writes
+`~/.cache/wood-fired-tasks/update-check.json`:
+`{ update_available, current, latest, checked_at }`. The check is best-effort:
+offline / errors leave the prior cache untouched and never block. It is skipped
+entirely when disabled (below).
+
+### Segment command: `tasks statusline-segment`
+Pure file-read of the cache — **no network**, runs on every status-line render:
+- update available **and** not disabled → print a colored segment, e.g.
+  `⬆ /tasks:update` (ANSI yellow), nothing else.
+- otherwise → print nothing, exit 0.
+- missing / stale / malformed cache → print nothing (fail-silent).
+
+### Wiring into the status line (opt-in, non-clobbering)
+The Claude Code status line is a **single command**, so wood-fired-tasks must
+not overwrite an existing one (e.g. the user's `statusline-minimal.js` or
+GSD's):
+- `setup` (interactive) **offers** to enable the hint.
+- If `settings.json` has **no** `statusLine`, setup may write one that runs
+  `tasks statusline-segment`.
+- If a `statusLine` **already exists**, setup does **not** rewrite it; it prints
+  the one-line snippet to add (`tasks statusline-segment`) to the user's own
+  script and documents it. (Auto-injecting into an arbitrary script is unsafe.)
+
+### Action path: `/tasks:update`
+Ship a `/tasks:update` slash command (into `~/.claude/commands/tasks/` via the
+existing `copySkills`) that runs `tasks self-update` — the in-session update
+path the segment points at.
+
+### Disable (easy, layered)
+All of these make both the check and the segment no-ops:
+- config flag in the config dir (`update_check = false`),
+- env var `WFT_NO_UPDATE_CHECK=1` (CI / ad-hoc),
+- `setup` opt-out (and re-running setup can toggle it).
+
+### Phase 4 acceptance
+- With an update available and the feature enabled, `tasks statusline-segment`
+  prints the hint; `/tasks:update` runs `self-update`.
+- With `update_check=false` **or** `WFT_NO_UPDATE_CHECK=1`, the segment prints
+  nothing and no network check runs.
+- A missing/stale/malformed cache yields empty segment output, exit 0 (never an
+  error in the status line).
+- `setup` offers wiring; with an existing `statusLine` it prints the snippet
+  instead of clobbering; with none it can write one (on consent).
+- Tests: segment render (enabled+available / disabled-by-flag / disabled-by-env
+  / cache-absent / cache-malformed); check writer (writes on available via a
+  mocked notifier; skips when disabled); setup wiring (no existing statusLine →
+  write; existing → snippet, no clobber).
+
+---
+
 ## Migration to v2.0
 
 Two things migrate — the schema (trivial) and auth (the real work).
@@ -358,8 +426,12 @@ lockout:
 | `setup --remote` health probe | **new (Phase 2)** | `GET /health/detailed` → branch on `oidc` state |
 | `src/cli/commands/doctor.ts` | **new (Phase 3)** | OIDC readiness + legacy-credential detector (read-only) |
 | `src/cli/commands/serve.ts` | **edit (Phase 3)** | Log resolved OIDC state on boot |
+| `src/cli/util/update-check.ts` | **new (Phase 4)** | Cached `update-notifier` check → cache JSON (fail-silent) |
+| `src/cli/commands/statusline-segment.ts` | **new (Phase 4)** | Render the status-line hint from cache (no network) |
+| `skills/tasks/update.md` (`/tasks:update`) | **new (Phase 4)** | In-session update slash command → `self-update` |
+| `setup.ts` (update-hint wiring) | **edit (Phase 4)** | Opt-in offer to wire the segment; opt-out; non-clobbering |
 | `src/cli/commands/service.ts` | **reuse** | User-scoped service install for Service mode |
-| `docs/SETUP.md`, `CHANGELOG.md` | **edit** | OIDC server recipe + v2.0 migration note + no-OIDC bootstrap docs |
+| `docs/SETUP.md`, `CHANGELOG.md` | **edit** | OIDC server recipe + v2.0 migration note + no-OIDC bootstrap + update-hint docs |
 
 ## Testing strategy
 
@@ -379,6 +451,11 @@ lockout:
   legacy-credential detector via env + `claude.json` fixtures (non-PAT
   `WFT_API_KEY`, `API_KEYS` present) asserts remediation text + non-zero exit;
   `serve` boot-log states OIDC state.
+- **Phase 4:** `statusline-segment` render matrix (enabled+available /
+  disabled-by-flag / disabled-by-env / cache-absent / cache-malformed); cached
+  update-check writer via a mocked `update-notifier` (writes on available; skips
+  when disabled); setup wiring (no `statusLine` → write; existing → snippet, no
+  clobber).
 - All phases: `npm run build` + `npm run lint` + full `vitest` suite green.
 
 ## Open risks
