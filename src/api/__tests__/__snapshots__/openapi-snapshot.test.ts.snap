@@ -5,11 +5,6 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
   "components": {
     "schemas": {},
     "securitySchemes": {
-      "apiKey": {
-        "in": "header",
-        "name": "X-API-Key",
-        "type": "apiKey",
-      },
       "bearerAuth": {
         "bearerFormat": "wft_pat_<base32>",
         "description": "Personal Access Token. Format: \`wft_pat_<32 base32 chars>\`. Mint via POST /api/v1/me/tokens (session-only).",
@@ -8662,9 +8657,6 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
     },
   },
   "security": [
-    {
-      "apiKey": [],
-    },
     {
       "bearerAuth": [],
     },

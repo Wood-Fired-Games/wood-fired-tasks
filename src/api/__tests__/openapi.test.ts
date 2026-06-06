@@ -128,24 +128,20 @@ describe('OpenAPI Documentation', () => {
     expect(healthPath.get).toBeDefined();
   });
 
-  it('The spec has securitySchemes.apiKey defined', async () => {
+  it('The spec no longer defines the legacy securitySchemes.apiKey (X-API-Key removed in v2.0)', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/docs/json',
     });
 
     const spec = JSON.parse(response.payload);
-    expect(spec.components?.securitySchemes?.apiKey).toBeDefined();
-    expect(spec.components.securitySchemes.apiKey.type).toBe('apiKey');
-    expect(spec.components.securitySchemes.apiKey.name).toBe('X-API-Key');
-    expect(spec.components.securitySchemes.apiKey.in).toBe('header');
+    expect(spec.components?.securitySchemes?.apiKey).toBeUndefined();
   });
 
-  // Phase 28 Plan 06 (PAT-04 surface documentation): the OpenAPI document
-  // must publish BOTH the legacy apiKey scheme AND the new bearerAuth
-  // (Authorization: Bearer wft_pat_*) scheme. The chain plugin already
-  // accepts either; the spec is the only client-facing surface that
-  // describes it.
+  // v2.0 auth cutover: the OpenAPI document publishes ONLY the bearerAuth
+  // (Authorization: Bearer wft_pat_*) scheme. The legacy apiKey/X-API-Key
+  // scheme was removed; the spec is the only client-facing surface that
+  // describes the supported auth.
   it('The spec has securitySchemes.bearerAuth defined (Phase 28 PAT surface)', async () => {
     const response = await server.inject({
       method: 'GET',
@@ -162,7 +158,7 @@ describe('OpenAPI Documentation', () => {
     expect(spec.components.securitySchemes.bearerAuth.description).toContain('wft_pat_');
   });
 
-  it('The top-level security array contains BOTH apiKey and bearerAuth', async () => {
+  it('The top-level security array contains ONLY bearerAuth (apiKey removed)', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/docs/json',
@@ -176,7 +172,7 @@ describe('OpenAPI Documentation', () => {
     const hasBearer = (spec.security as Array<Record<string, unknown>>).some((entry) =>
       Object.prototype.hasOwnProperty.call(entry, 'bearerAuth'),
     );
-    expect(hasApiKey).toBe(true);
+    expect(hasApiKey).toBe(false);
     expect(hasBearer).toBe(true);
   });
 
