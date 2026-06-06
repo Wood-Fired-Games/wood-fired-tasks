@@ -63,23 +63,25 @@ export function resolveRemoteMcpEntryPoint(): string {
 }
 
 /**
- * Build the deterministic REMOTE stdio MCP entry (task #738).
+ * Build the deterministic REMOTE stdio MCP entry (task #738; URL-only since
+ * #810).
  *
  * Matches the LOCAL convention (`buildLocalMcpEntry`): a `type:'stdio'` server
- * that spawns the bridge entry point with the current Node binary. The remote
- * bridge reads its target + credentials from `WFT_API_URL` / `WFT_API_KEY` in
- * `env` (see `src/mcp/remote/index.ts#resolveRemoteConfig`), so those are the
- * only two env keys we set. Kept free of timestamps / random fields so the
- * merge stays idempotent across re-runs.
+ * that spawns the bridge entry point with the current Node binary. The entry
+ * carries ONLY `WFT_API_URL` — NO token is persisted in claude.json. The
+ * bridge resolves its bearer token at runtime via `resolveRemoteConfig`
+ * (env `WFT_API_KEY` → the CLI credentials TOML file written by
+ * `tasks login` / `tasks setup`), so the secret never lands in claude.json.
+ * Kept free of timestamps / random fields so the merge stays idempotent
+ * across re-runs.
  */
-export function buildRemoteMcpEntry(apiUrl: string, apiKey: string): ClaudeMcpServerEntry {
+export function buildRemoteMcpEntry(apiUrl: string): ClaudeMcpServerEntry {
   return {
     type: 'stdio',
     command: process.execPath,
     args: [resolveRemoteMcpEntryPoint()],
     env: {
       WFT_API_URL: apiUrl,
-      WFT_API_KEY: apiKey,
     },
   };
 }
@@ -375,7 +377,7 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     merge = mergeClaudeJson({
       filePath: claudeJsonPath,
       serverName: REMOTE_SERVER_NAME,
-      entry: buildRemoteMcpEntry(apiUrl, token),
+      entry: buildRemoteMcpEntry(apiUrl),
     });
     log(
       !merge.unchanged

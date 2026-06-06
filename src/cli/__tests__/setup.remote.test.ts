@@ -50,7 +50,7 @@ async function withSandboxAsync<T>(
 }
 
 describe('tasks setup --remote', () => {
-  it('writes a wood-fired-tasks-remote MCP entry with WFT_API_URL/WFT_API_KEY, copies skills, and caches the PAT under the config dir', () => {
+  it('writes a URL-only wood-fired-tasks-remote MCP entry (WFT_API_URL, no token), copies skills, and caches the PAT under the config dir', () => {
     withSandbox((home, configDir) => {
       // Pre-seed an unrelated mcpServer to prove preservation.
       const claudeJson = path.join(home, '.claude.json');
@@ -76,10 +76,12 @@ describe('tasks setup --remote', () => {
         command: 'x',
       });
       const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
-      expect(remoteEntry).toEqual(buildRemoteMcpEntry(REMOTE_URL, FAKE_PAT));
+      expect(remoteEntry).toEqual(buildRemoteMcpEntry(REMOTE_URL));
       expect(remoteEntry.type).toBe('stdio');
       expect(remoteEntry.env.WFT_API_URL).toBe(REMOTE_URL);
-      expect(remoteEntry.env.WFT_API_KEY).toBe(FAKE_PAT);
+      // #810: URL-only entry — the token is NEVER persisted in claude.json.
+      // The bridge reads it at runtime from the credentials file / WFT_API_KEY.
+      expect(remoteEntry.env.WFT_API_KEY).toBeUndefined();
       // The local entry is NOT written in the remote path.
       expect(doc.mcpServers['wood-fired-tasks']).toBeUndefined();
       expect(result.serverName).toBe('wood-fired-tasks-remote');
@@ -331,11 +333,10 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       expect(result.ok).toBe(true);
       // Device flow NEVER invoked on the disabled branch.
       expect(deviceLogin).not.toHaveBeenCalled();
-      // Manual path persisted the remote MCP entry with the supplied PAT.
+      // Manual path persisted the URL-only remote MCP entry (#810); the PAT
+      // is cached separately, never embedded in claude.json.
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
-      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(
-        buildRemoteMcpEntry(REMOTE_URL, FAKE_PAT),
-      );
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
       expect(result.setup?.patCache?.path).toBe(patCachePath(configDir));
     });
   });
@@ -361,8 +362,11 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       expect(result.method).toBe('manual-pat');
       expect(result.ok).toBe(true);
       expect(deviceLogin).not.toHaveBeenCalled();
+      // #810: the prompted PAT is cached to the config-dir file, NOT embedded
+      // in claude.json (the entry is URL-only).
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
-      expect(doc.mcpServers['wood-fired-tasks-remote'].env.WFT_API_KEY).toBe(FAKE_PAT);
+      expect(doc.mcpServers['wood-fired-tasks-remote'].env.WFT_API_KEY).toBeUndefined();
+      expect(fs.readFileSync(patCachePath(configDir), 'utf8')).toBe(FAKE_PAT);
     });
   });
 

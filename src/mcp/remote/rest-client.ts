@@ -132,26 +132,16 @@ function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
 }
 
 /**
- * Literal PAT prefix shared with `src/services/pat-hash.ts`. Duplicated
- * here as a constant so the remote MCP package doesn't drag in the
- * server-side PAT helpers (the rest-client must stay importable from a
- * minimal stdio subprocess).
- */
-const PAT_PREFIX = 'wft_pat_';
-
-/**
  * REST API client for the remote MCP server.
  *
  * Wraps HTTP calls to the Wood Fired Tasks REST API.
- * Uses native fetch (Node 18+) with a 10-second timeout. The auth header
- * is chosen based on the apiKey prefix (Phase 31 Plan 03 Task 3, MCP-01):
+ * Uses native fetch (Node 18+) with a 10-second timeout.
  *
- *   - apiKey starts with `wft_pat_` → `Authorization: Bearer <apiKey>`
- *     (PAT path; the server's PAT strategy hashes the full string)
- *   - any other apiKey → `X-API-Key: <apiKey>` (legacy path)
- *
- * Headers are mutually exclusive so the server's auth chain never has to
- * pick between two strategies for the same request.
+ * Auth (#810): the token resolved by `resolveRemoteConfig` (env `WFT_API_KEY`
+ * → credentials TOML file) is ALWAYS sent as `Authorization: Bearer <token>`.
+ * The legacy prefix-switched `X-API-Key` path was removed once the bridge's
+ * token resolution standardized on PATs — the server's PAT strategy hashes
+ * the full string, and the credentials file the CLI writes is Bearer-PAT-only.
  */
 export class RestClient {
   private readonly baseUrl: string;
@@ -164,20 +154,15 @@ export class RestClient {
   }
 
   /**
-   * Build the mutually-exclusive auth header for this client's key.
+   * Build the Bearer auth header for this client's resolved token (#810).
    *
-   * Phase 31 Plan 03 Task 3 (MCP-01): switch header name based on prefix.
-   * Mirrors the same precedence Phase 30 Plan 05 wired into the CLI client
-   * (`src/cli/api/client.ts`). The full apiKey value flows through verbatim
-   * — the server needs the entire `wft_pat_<body>` string for the SHA-256
-   * lookup. Factored out (task #481) so the streaming `waitForUnblock` SSE
-   * path applies the identical rule as `request()` without going through it.
+   * The token flows through verbatim — the server's PAT strategy needs the
+   * entire `wft_pat_<body>` string for the SHA-256 lookup. Factored out
+   * (task #481) so the streaming `waitForUnblock` SSE path applies the
+   * identical rule as `request()` without going through it.
    */
   private authHeader(): Record<string, string> {
-    if (this.apiKey.startsWith(PAT_PREFIX)) {
-      return { Authorization: `Bearer ${this.apiKey}` };
-    }
-    return { 'X-API-Key': this.apiKey };
+    return { Authorization: `Bearer ${this.apiKey}` };
   }
 
   /**

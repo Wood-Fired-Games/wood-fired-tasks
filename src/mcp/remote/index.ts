@@ -10,6 +10,7 @@ import {
 } from '../resources/events.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
+import { readCredentials, getCredentialsPath } from '../../cli/auth/credentials.js';
 
 /**
  * Remote MCP server entry point.
@@ -20,21 +21,49 @@ import { VERSION } from '../../utils/version.js';
  * Required environment variables:
  *   WFT_API_URL  - Base URL of the REST API (e.g., http://localhost:3000
  *                  or http://your-server.local:3000). Required — no default.
- *   WFT_API_KEY  - API key for authentication. Required.
+ *
+ * Bearer token (#810): resolved with precedence
+ *   1. env `WFT_API_KEY`              (explicit operator override)
+ *   2. the CLI credentials TOML file  (written by `tasks login` / `tasks setup`)
+ *   3. fail clearly
+ * The resolved token is sent by the bridge's REST client as
+ * `Authorization: Bearer <token>` (no token is persisted in claude.json).
  */
 
 /**
- * Validate the env vars the remote MCP needs. Returns the resolved values on
+ * Read the bearer token from the SAME credentials TOML file that
+ * `tasks login` / `tasks setup` write. Delegates path resolution and TOML
+ * parsing to `src/cli/auth/credentials.ts` — the exclusive owner of that
+ * file's lifecycle — so the bridge never hand-rolls TOML parsing. Returns
+ * the active token, or `null` when the file is absent / has no usable token.
+ */
+function readTokenFromCredentialsFile(): string | null {
+  const creds = readCredentials();
+  if (creds === null) return null;
+  const token = creds.active.token;
+  return token && token.trim() !== '' ? token : null;
+}
+
+/**
+ * Validate the config the remote MCP needs. Returns the resolved values on
  * success or an Error describing exactly which variable was missing/invalid.
  * Exported so unit tests can exercise the fail-fast paths without spawning
  * the full MCP server.
+ *
+ * `apiKey` (the bearer token) is resolved with precedence (#810):
+ *   env `WFT_API_KEY` → credentials TOML file → throw.
+ * `readCredsToken` is injectable so the precedence ladder is unit-testable
+ * without touching the real on-disk credentials file.
  */
-export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
+export function resolveRemoteConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  readCredsToken: () => string | null = readTokenFromCredentialsFile,
+): {
   apiUrl: string;
   apiKey: string;
 } {
   const apiUrl = env['WFT_API_URL'];
-  const apiKey = env['WFT_API_KEY'];
+  const envKey = env['WFT_API_KEY'];
 
   if (!apiUrl || apiUrl.trim() === '') {
     throw new Error(
@@ -44,10 +73,19 @@ export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
     );
   }
 
+  // Precedence: env override wins; otherwise read the credentials file the
+  // CLI login/setup flow persists the PAT to.
+  let apiKey: string | undefined;
+  if (envKey && envKey.trim() !== '') {
+    apiKey = envKey;
+  } else {
+    apiKey = readCredsToken() ?? undefined;
+  }
+
   if (!apiKey || apiKey.trim() === '') {
     throw new Error(
-      'WFT_API_KEY must be set when running the remote MCP server. ' +
-        'Example: WFT_API_KEY=your-api-key-here',
+      'No API token found for the remote MCP server. Set WFT_API_KEY, or run ' +
+        `\`tasks login\` to write a token to the credentials file (${getCredentialsPath()}).`,
     );
   }
 
