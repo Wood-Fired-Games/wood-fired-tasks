@@ -43,7 +43,7 @@ references are clickable; raw counts come from the scans in [§5](#5-commands-us
 | `forceConsistentCasingInFileNames` | **ON** | |
 | `noPropertyAccessFromIndexSignature` | **ON** | explicit (ratcheted task #763) |
 | `exactOptionalPropertyTypes` | **ON** | explicit (ratcheted task #780; see §778/§G) |
-| `noUncheckedIndexedAccess` | **OFF** | not set → defaults off |
+| `noUncheckedIndexedAccess` | **ON** | explicit (ratcheted task #784; see §784) |
 
 Other compiler settings: `target: ES2022`, `module/moduleResolution: Node16`,
 `declaration: true`, `sourceMap: true`, `skipLibCheck: true`,
@@ -52,10 +52,13 @@ are excluded from the production compile (`**/*.test.ts`, `**/*.bench.ts`,
 `**/__tests__/**`). TypeScript dep is `typescript@^6.0.3`; Node engine is
 `>=22`.
 
-**The three "deferred" strict flags are the single largest remaining
-strictness gap.** `noUncheckedIndexedAccess` in particular is the highest-value
-defect-prevention flag still off (it forces `T | undefined` at every index /
-array access).
+**Strict-flag ratchet status.** All three formerly-deferred strict flags are now
+ON: `noPropertyAccessFromIndexSignature` (#763), `exactOptionalPropertyTypes`
+(#780), and `noUncheckedIndexedAccess` (#784, this row). The latter forces
+`T | undefined` at every index / array / record access; it landed green after the
+#782 (core) + #783 (surface) remediation passes. See §784 for the closeout note
+and the residual pre-existing bracket-index assertions that survived because they
+were already `!`-suppressed before the audit (so they produced 0 probe errors).
 
 > **Ratchet status — `noPropertyAccessFromIndexSignature` landed (task #763).**
 > Enabled in the root `tsconfig.json` (propagates to `packages/wft-router` via
@@ -1267,3 +1270,49 @@ No secret, token, password, API key, or absolute local path was introduced. The
 flag is reverted (`grep -n noUncheckedIndexedAccess tsconfig.json` → empty). This
 task made **no** source edits — the deliverable is this inventory section only.
 `npm run build` passes (exit 0) with the flag OFF.
+
+### §784 — noUncheckedIndexedAccess ENABLED (closeout)
+
+**Status: ON, ratcheted (#784).** `noUncheckedIndexedAccess: true` is now a
+permanent line in `tsconfig.json` (added directly after `exactOptionalPropertyTypes`;
+`grep -n noUncheckedIndexedAccess tsconfig.json` → line 20). The root tsconfig is
+`extends`-ed by `packages/wft-router/tsconfig.json`, so the flag covers the router
+compile as well — the full `npm run build` (`tsc && tsc -p packages/wft-router &&
+build:skills`) exits 0 with the flag on.
+
+- **Flag enabled** permanently; one-line change to `tsconfig.json`.
+- **30 errors resolved** across core (#782, 15) + surface (#783, 15) before this
+  flip. The #784 flip itself surfaced **zero** new `tsc` errors — a clean flag-flip.
+- **Zero escape hatches introduced by #782/#783/#784.** The pre-existing
+  `distance.get(cur)!` anti-pattern called out in §D was retired by #782
+  (`src/services/wsjf.service.ts:746` is now an unasserted `distance.get(cur)`
+  guarded read). No new blanket `!` were added to force the build green.
+- **Tests green:** `npx vitest run src/services src/api src/cli src/mcp` →
+  189 files / 2218 tests passed (exit 0), covering the #782/#783 fallback-behavior
+  suites.
+
+#### Remaining bracket-index assertions (pre-existing, NOT introduced here)
+
+The audit's "zero remaining blanket `!`" expectation holds for every file on the
+#782/#783 worklists. However, the flag-enable surfaced **4 pre-existing**
+bracket-index `!` assertions in files that were **never on the #781 inventory
+worklists** — precisely because they were *already* `!`-suppressed before the
+audit, so they emitted 0 errors in the #781 probe and never appeared as remediation
+targets. They are flag-governed (`arr[i]` / `arr[0]` index access) and remain as
+documented escape hatches:
+
+| File:line | Expression | Shape |
+|---|---|---|
+| `src/slack/formatters/project-formatter.ts:45` | `projects[i]!` | classic `for (i…)` index-loop body |
+| `src/slack/notifier.ts:99` | `results[i]!` | classic `for (i…)` index-loop body |
+| `src/slack/commands/tasks-command.ts:109` | `args[i]!` | classic `for (i…)` arg-parse loop |
+| `src/events/sse-manager.ts:203` | `this.eventBuffer[0]!.id` | first-element read after `length > 0` |
+
+All four are the §B-category-1 / category-4 shapes the §D guard-and-bind (pattern 1)
+and empty-state (pattern 4) fixes were designed for. They were **left untouched by
+#784** (this task is a flag-flip + doc closeout and explicitly does not edit source
+to silence or refactor errors — and these produce no errors today because the `!`
+already neutralizes them). **Follow-up:** a small mop-up task should replace these 4
+with guard-and-bind / empty-state handling per §D to bring the no-blanket-`!` rule to
+100% coverage across the index-access surface (slack/ and events/sse-manager were
+out of #782/#783 scope). Note these are NOT regressions — they pre-date the audit.
