@@ -13,6 +13,27 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v1.18.1] - 2026-06-06
+
+A patch release fixing two regressions shipped in v1.18.0.
+
+### Fixed
+- **`tasks health` no longer crashes** (#790). The CLI's `formatHealthStatus`
+  read `health.checks.database` unconditionally, but `checkHealth()` calls the
+  basic `/health` endpoint, whose body omits `checks` (that field is only on the
+  authenticated `/health/detailed`). `tasks health` exited with "Cannot read
+  properties of undefined (reading 'database')" against any server — local or
+  remote (`setup --remote`). The formatter now guards `health.checks?.database`,
+  `HealthResponse.checks` is correctly typed optional, and the Database line
+  renders only when detailed checks are present. Adds a regression test.
+- **`deploy/upgrade.sh` ships `scripts/`** (#791). The v1.18 `postinstall` hook
+  (`node scripts/postinstall.cjs`, #752) made `npm ci` in the deploy dir fail
+  with `MODULE_NOT_FOUND` because the upgrade script copied only `package.json` +
+  the lockfile, not `scripts/` — aborting the upgrade *after* the service was
+  already stopped. The script now refreshes `scripts/` alongside the package
+  files. (Remaining deploy hardening — pinning `DATABASE_PATH` so the checkout
+  deploy doesn't inherit v1.18's OS-app-data DB default — tracked in #791.)
+
 ## [v1.18] - 2026-06-06
 
 A **distribution + quality** release. The headline is frictionless single-command

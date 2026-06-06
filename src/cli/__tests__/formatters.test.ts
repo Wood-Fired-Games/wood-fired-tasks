@@ -469,4 +469,24 @@ describe('formatters: dependency + comment + health', () => {
     });
     expect(out).not.toContain('Version:');
   });
+
+  // Regression (#790): the basic /health response that `checkHealth()` fetches
+  // has NO `checks` field — only the authenticated /health/detailed does. A
+  // bare `health.checks.database` crashed `tasks health` with
+  // "Cannot read properties of undefined (reading 'database')".
+  it('formatHealthStatus does not crash when checks is absent (basic /health)', async () => {
+    const { formatHealthStatus } = await loadModule();
+    const out = formatHealthStatus({
+      status: 'healthy',
+      timestamp: '2026-05-21T10:00:00Z',
+      version: '1.18.1',
+    });
+    expect(out).toContain('Service Status:');
+    expect(out).toContain('OK');
+    expect(out).toContain('Version:');
+    expect(out).toContain('1.18.1');
+    expect(out).toContain('Last checked:');
+    // The Database line is omitted gracefully when no checks are reported.
+    expect(out).not.toContain('Database:');
+  });
 });
