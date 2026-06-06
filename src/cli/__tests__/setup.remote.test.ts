@@ -228,7 +228,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
     };
   }
 
-  it('oidc=ready selects the device-flow path (runDeviceLogin)', () => {
+  it('oidc=ready selects the device-flow path (runDeviceLogin) and writes a URL-only entry (#808)', () => {
     return withSandboxAsync(async (home, configDir) => {
       const { probe, calls } = recordingProbe({ ok: true, oidc: 'ready' });
       const deviceLogin = vi.fn(async () => ({ ok: true as const, user: undefined as never }));
@@ -250,9 +250,47 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       // Device flow was invoked with the remote base URL; manual path NOT taken.
       expect(deviceLogin).toHaveBeenCalledTimes(1);
       expect(deviceLogin.mock.calls[0]![0]).toMatchObject({ baseUrl: REMOTE_URL });
-      // No remote MCP entry written by this branch (that's #808's URL-only write).
+
+      // #808: after a successful device login the branch writes the URL-only
+      // remote MCP entry (#810). The credentials writer (inside runDeviceLogin)
+      // owns PAT persistence — there is NO host token-mint path and NO token in
+      // claude.json.
       const claudeJson = path.join(home, '.claude.json');
-      expect(fs.existsSync(claudeJson)).toBe(false);
+      const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+      const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
+      expect(remoteEntry).toEqual(buildRemoteMcpEntry(REMOTE_URL));
+      expect(remoteEntry.env.WFT_API_URL).toBe(REMOTE_URL);
+      // URL-only: no embedded token of any kind.
+      expect(remoteEntry.env.WFT_API_KEY).toBeUndefined();
+      expect(JSON.stringify(remoteEntry)).not.toContain(FAKE_PAT);
+      expect(result.setup?.serverName).toBe('wood-fired-tasks-remote');
+      expect(result.setup?.remote).toBe(true);
+      // The device-flow branch does NOT double-cache a PAT under the config dir
+      // (the credentials writer is the single owner of the minted PAT).
+      expect(result.setup?.patCache).toBeUndefined();
+      expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+    });
+  });
+
+  it('device-flow failure writes nothing (no claude.json entry)', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const { probe } = recordingProbe({ ok: true, oidc: 'ready' });
+      const deviceLogin = vi.fn(async () => ({ ok: false as const }));
+
+      const result = await runRemoteOnboarding({
+        home,
+        configDir,
+        log: () => {},
+        remote: REMOTE_URL,
+        oidcProbe: probe,
+        deviceLogin: deviceLogin as never,
+      });
+
+      expect(result.method).toBe('device-flow');
+      expect(result.ok).toBe(false);
+      expect(result.setup).toBeUndefined();
+      // Nothing persisted when the device flow fails.
+      expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
     });
   });
 
@@ -298,8 +336,21 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         const reqs = server.getRequests();
         expect(reqs.code.length).toBeGreaterThan(0);
         expect(reqs.token.length).toBeGreaterThan(0);
-        // Credentials were persisted by the device-flow core.
+        // The provisioned PAT is persisted via the credentials writer (#806),
+        // NOT under the setup config-dir PAT cache (which stays empty here).
         expect(fs.existsSync(credFile)).toBe(true);
+        expect(fs.readFileSync(credFile, 'utf8')).toContain(FAKE_PAT);
+        expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+
+        // #808/#810: the claude.json entry written by the device-flow branch is
+        // URL-only — it carries WFT_API_URL and embeds NO token.
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
+        expect(remoteEntry).toEqual(buildRemoteMcpEntry(server.baseUrl));
+        expect(remoteEntry.env.WFT_API_URL).toBe(server.baseUrl);
+        expect(remoteEntry.env.WFT_API_KEY).toBeUndefined();
+        // The minted PAT never lands in claude.json.
+        expect(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).not.toContain(FAKE_PAT);
       });
     } finally {
       // The CLI's `fetch` poll leaves a pooled keep-alive socket open; Fastify's

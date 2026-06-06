@@ -467,6 +467,78 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
 }
 
 /**
+ * Write ONLY the URL-only remote MCP bridge entry into ~/.claude.json (and copy
+ * skills/agents), WITHOUT requiring or caching a PAT (task #808).
+ *
+ * This is the device-flow counterpart to {@link runSetup}'s remote branch:
+ * after {@link runDeviceLogin} (#806) has self-provisioned the PAT and persisted
+ * it via the credentials writer, there is no token to embed or double-cache —
+ * the claude.json entry must be URL-only (#810). So this helper mirrors
+ * runSetup's claude.json/skills/agents work but deliberately OMITS the
+ * `--token`-required guard and the `cachePat` step.
+ *
+ * The written entry is exactly `buildRemoteMcpEntry(apiUrl)`: a stdio bridge
+ * carrying only `WFT_API_URL`. The bridge resolves its bearer token at runtime
+ * from the credentials file the device flow wrote.
+ */
+export function writeRemoteMcpEntryOnly(options: RunSetupOptions = {}): RunSetupResult {
+  const home = options.home ?? os.homedir();
+  const log = options.log ?? ((line: string) => console.log(line));
+
+  const apiUrl = options.remote;
+  if (typeof apiUrl !== 'string' || apiUrl.length === 0) {
+    throw new Error('writeRemoteMcpEntryOnly requires a --remote <url> base URL.');
+  }
+
+  const claudeJsonPath = path.join(home, '.claude.json');
+
+  // URL-only entry (#810) — no token is ever written into claude.json.
+  const merge = mergeClaudeJson({
+    filePath: claudeJsonPath,
+    serverName: REMOTE_SERVER_NAME,
+    entry: buildRemoteMcpEntry(apiUrl),
+  });
+  log(
+    !merge.unchanged
+      ? `Installed remote MCP server '${REMOTE_SERVER_NAME}' into ${claudeJsonPath}`
+      : `Remote MCP server '${REMOTE_SERVER_NAME}' already present in ${claudeJsonPath}`,
+  );
+
+  // ~/.claude.json may carry other credentials, so tighten to 0600 on POSIX
+  // (mirrors runSetup). Best-effort + guarded so a chmod failure never blocks.
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(claudeJsonPath, 0o600);
+    } catch {
+      /* best-effort: never block setup on a chmod failure */
+    }
+  }
+
+  const skills = copySkills(commandsDestDir(home));
+  log(
+    skills.written.length > 0
+      ? `Copied ${skills.written.length} skill(s) into ${skills.destDir}`
+      : `Skills already up to date in ${skills.destDir}`,
+  );
+
+  const agents = copyAgents(agentsDestDir(home));
+  log(
+    agents.written.length > 0
+      ? `Copied ${agents.written.length} agent(s) into ${agents.destDir}`
+      : `Agents already up to date in ${agents.destDir}`,
+  );
+
+  return {
+    claudeJsonPath,
+    claudeJsonChanged: !merge.unchanged,
+    serverName: REMOTE_SERVER_NAME,
+    remote: true,
+    skills,
+    agents,
+  };
+}
+
+/**
  * The three top-level setup modes (task #805). `local` is the back-compat
  * default; `service` installs the user-scoped background service; `remote`
  * onboards against a remote REST API (full device-flow self-provisioning lands
@@ -741,6 +813,11 @@ export async function runRemoteOnboarding(
   const oidc = probeResult.ok ? probeResult.oidc : null;
 
   if (method === 'device-flow') {
+    // Self-provision a PAT via the OIDC device flow (#806). runDeviceLogin owns
+    // the entire RFC 8628 exchange AND persists the minted PAT via the
+    // credentials writer (writeCredentials) — there is NO host token-mint path
+    // here. On failure it has already emitted its own error output; we just
+    // propagate ok:false without writing anything.
     const result = await deviceLogin({
       baseUrl,
       clientId: process.env['OIDC_CLIENT_ID'] ?? 'wft-cli',
@@ -748,7 +825,18 @@ export async function runRemoteOnboarding(
       openBrowser: true,
       isJson: false,
     });
-    return { mode: 'remote', oidc, method, ok: result.ok };
+    if (!result.ok) {
+      return { mode: 'remote', oidc, method, ok: false };
+    }
+
+    // Device login succeeded and the PAT is already persisted in the
+    // credentials file. Now write the URL-only remote MCP entry (#810) into
+    // ~/.claude.json. The entry carries ONLY WFT_API_URL — the bridge resolves
+    // its bearer token at runtime from the credentials file the device flow
+    // just wrote, so NO token is ever embedded in claude.json and NO PAT is
+    // double-cached here.
+    const setup = writeRemoteMcpEntryOnly({ ...options, remote: baseUrl });
+    return { mode: 'remote', oidc, method, ok: true, setup };
   }
 
   // method === 'manual-pat': obtain a PAT (prompt on TTY, else require --token)
