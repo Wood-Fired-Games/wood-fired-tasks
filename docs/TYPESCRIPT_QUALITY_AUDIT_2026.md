@@ -755,3 +755,120 @@ this section — only generic references to env-var *names* (`NPM_TOKEN`,
 `SESSION_COOKIE_SECRET`, `API_KEYS`) as they already appear in the cited docs,
 never any value. All controls were verified by reading the live config files
 listed above.
+
+## Repository Row-Mapping & SQLite Binding Boundaries
+
+> Audit task #770. Scope: `src/repositories/**`. Goal: every repository method
+> that reads nullable / date / tag-bearing rows funnels through the shared
+> `row-mapper.ts` (or an explicitly justified local mapper); dynamic SQL
+> update/filter builders avoid `Record<string, any>`; the legitimate
+> better-sqlite3 boundary casts that remain are documented with rationale.
+
+### A. Shared mapper contract
+
+`src/repositories/row-mapper.ts` exports two helpers that are the single
+sanctioned `unknown → RowType` boundary for the repo layer:
+
+- `mapRow<T>(stmt, ...args): T | undefined` — wraps `stmt.get(...args)`.
+- `mapRows<T>(stmt, ...args): T[]` — wraps `stmt.all(...args)`.
+
+`better-sqlite3` returns `unknown` from `.get()` / `.all()` because it has no
+knowledge of the column types the caller expects, so a cast is unavoidable at
+that boundary. Centralising it in these two helpers means
+`grep "as " src/repositories/` only surfaces genuine edge cases, and a future
+runtime row validator (e.g. Zod) is a one-file change.
+
+### B. Audit result — read-path compliance
+
+Every method reading nullable / date / tag-bearing rows now reads through the
+shared mapper or a justified local mapper:
+
+| Repository | Read paths | Mapper status |
+| --- | --- | --- |
+| `api-token` | `findById`, `findByHash`, `listByUser` | `mapRow` / `mapRows` — compliant |
+| `comment` | `findByTaskId`, `findById`, `countByTaskId` | `mapRow` / `mapRows` — compliant |
+| `dependency` | `findAll`, `findByTaskId`, `findBlockingTask` | `mapRows` — compliant |
+| `project` | `findById`, `findByName`, `findAll`, `count` | `mapRow` / `mapRows` + justified `inflateValueCharter` JSON local mapper — compliant |
+| `task` | `findById`, `findAll`, `findByFilters` | `mapRow` / `mapRows` + justified `inflateVerificationEvidence` / `inflateWsjf` JSON local mappers — compliant |
+| `user` | `findById`, `findByOidcSub`, `findBySlackUserId`, `findByEmail`, `findLegacy…`, `findServiceAccountByName`, `listAll`, **`insert`**, **`updateProfile`** | `mapRow` / `mapRows` — compliant **after this audit** (see §C) |
+| `wsjf-history` | `findByTaskId`, `countByTaskId` | `mapRows` / `mapRow` raw read + justified field-by-field projection with `parseJson` JSON local mapper — compliant |
+| `wsjf-rescore` | `findById` | `mapRow` raw read + justified field projection — compliant |
+| `project-charter-history` | `findByProjectId`, `countByProjectId` | `mapRows` raw read + justified `parseCharter` field projection — compliant |
+
+**Justified local mappers.** Three repositories (`task`, `wsjf-history`,
+`wsjf-rescore`, `project-charter-history`, `project`) read the raw row through
+the shared `mapRow`/`mapRows` and then run a *field-by-field projection* that
+the generic mapper cannot express: TEXT columns holding JSON
+(`verification_evidence`, `value_charter`, the `wsjf_*` metadata members, the
+history `classifications`/`features`/`evidence`/`source`/`locked` slots) are
+defensively parsed (`parseJson` / `parseCharter` / `parseVerificationEvidence`
+— non-JSON → `null`, never throws). This is an *explicitly justified* local
+mapper layered on top of the shared read, not a bypass: the `unknown → row`
+boundary is still the shared helper; the projection only shapes already-typed
+TEXT into typed objects.
+
+### C. Drift fixed by this audit
+
+`user.repository.ts` had two write-then-read methods that bypassed the shared
+mapper by casting a `RETURNING *` row directly:
+
+- `insert(...)` — was `this.insertStmt.get(...) as User | undefined`.
+- `updateProfile(...)` — was `this.db.prepare(sql).get(...) as User | undefined`.
+
+Both read a `users` row whose `email` column is nullable, so they belong in the
+shared-mapper boundary. They now read through `mapRow<User>(...)`. This is a
+**pure type-tightening / boundary-consolidation change with no runtime behavior
+change** — `mapRow<User>` performs exactly the same `stmt.get(...) as User |
+undefined` it previously inlined. The existing `insert` and `updateProfile`
+test blocks in `user.repository.test.ts` (including the nullable-`email`
+round-trip cases) continue to pass unchanged, so no new test was added.
+
+### D. Dynamic SQL update/filter builders
+
+No `Record<string, any>` exists in any repository source. The dynamic builders
+already use precise types:
+
+- Named-parameter accumulators (`task.update`, `task.findByFilters`,
+  `project.update`) use `SqlParams = Record<string, SqlParamValue>` where
+  `SqlParamValue = string | number | null` (`src/repositories/types.ts`).
+- The positional builder in `user.updateProfile` uses
+  `Array<string | null>` — already as narrow as its columns (`email`,
+  `display_name`) allow.
+
+`grep -rn "Record<string, any>" src/repositories --include=*.ts` returns a
+single hit: a *comment* in `types.ts` describing the historical pattern that
+`SqlParamValue` replaced. No code occurrence exists before or after this audit.
+
+### E. Remaining justified better-sqlite3 boundary casts
+
+These casts legitimately stay — they are the irreducible interface seam with
+better-sqlite3's untyped surface:
+
+1. **`info.lastInsertRowid`** — typed `number | bigint` by better-sqlite3. The
+   repos narrow it at the write boundary:
+   - `api-token.repository.ts` uses `Number(info.lastInsertRowid)` (safest —
+     coerces the `bigint` branch).
+   - `comment`, `dependency`, `project`, `task`, `wsjf-history`,
+     `wsjf-rescore`, `project-charter-history` use `info.lastInsertRowid as
+     number`. Justified because every `INTEGER PRIMARY KEY` in this schema is
+     well within `Number.MAX_SAFE_INTEGER`; better-sqlite3 only returns the
+     `bigint` branch when a rowid exceeds 2^53, which this app's id space never
+     reaches. (`Number(...)` is the marginally safer idiom but the `as number`
+     cast is sound for this schema.)
+2. **`unknown[]` rest-args on the mapper helpers** (`mapRow`/`mapRows`
+   signatures) — deliberately structural so callers pass either a prepared
+   `Database.Statement` or a `db.prepare(...)` chain without coupling the helper
+   to better-sqlite3's full generic surface.
+3. **Per-field projection casts** (`row.x as number | null`, `row.x as string`)
+   in the JSON-bearing repos (§B) — applied *after* the shared `mapRow`/
+   `mapRows` read, on a `Record<string, unknown>` row, to shape individual
+   columns the generic `mapRow<T>` can't express alongside JSON parsing.
+4. **`as { count: number }`** on `COUNT(*)` projections — a trivially-shaped
+   scalar row read through `mapRow`; the cast names the single aggregate column.
+
+### F. Self-attestation
+
+No secret, token, password, API key, or absolute local path was introduced.
+Changes were limited to `src/repositories/user.repository.ts` (route two reads
+through `mapRow<User>`) and this appended section. `tsc --noEmit`, Biome lint,
+and `vitest run src/repositories` (154 tests) all pass.

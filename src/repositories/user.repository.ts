@@ -177,9 +177,13 @@ export class UserRepository implements IUserRepository {
     if (input.displayName == null || input.displayName === '') {
       throw new TypeError('UserRepository.insert: displayName must be a non-empty string');
     }
-    const row = this.insertStmt.get(input.provider, input.sub, input.email, input.displayName) as
-      | User
-      | undefined;
+    const row = mapRow<User>(
+      this.insertStmt,
+      input.provider,
+      input.sub,
+      input.email,
+      input.displayName,
+    );
     if (!row) {
       // Defensive: better-sqlite3's RETURNING * always populates on success.
       // If we somehow get here, surface it loudly rather than returning a
@@ -235,7 +239,7 @@ export class UserRepository implements IUserRepository {
       return this.findById(id);
     }
     const sql = `UPDATE users SET ${sets.join(', ')} WHERE id = ? RETURNING *`;
-    const row = this.db.prepare(sql).get(...params, id) as User | undefined;
+    const row = mapRow<User>(this.db.prepare(sql), ...params, id);
     return row ?? null;
   }
 }
