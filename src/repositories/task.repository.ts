@@ -11,6 +11,7 @@ import type { ITaskRepository, CompletionRangeFilters, PaginationOptions } from 
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
+import { omitUndefined } from '../utils/omit-undefined.js';
 
 /**
  * Clamp pagination inputs into the supported repository range.
@@ -528,10 +529,12 @@ export class TaskRepository implements ITaskRepository {
     // Apply pagination so the server never materializes an unbounded result
     // set. The schema layer caps `limit` at 500; this is a defence in depth
     // for direct service/repo callers.
-    const { limit, offset } = resolvePagination({
-      limit: filters.limit,
-      offset: filters.offset,
-    });
+    const { limit, offset } = resolvePagination(
+      omitUndefined({
+        limit: filters.limit,
+        offset: filters.offset,
+      }),
+    );
     params['__limit'] = limit;
     params['__offset'] = offset;
 
