@@ -1,0 +1,284 @@
+# Design: interactive `setup` modes + client-driven remote auth (v2.0)
+
+**Date:** 2026-06-06
+**Status:** Approved (brainstorming)
+**Target release:** v2.0.0 (major — see Phase 0 breaking change)
+
+## Problem
+
+Two friction points in onboarding `wood-fired-tasks`:
+
+1. **`setup` is mode-blind.** Bare `wood-fired-tasks setup` silently does a *local*
+   install. There is no guided way to choose between a local on-demand server,
+   an always-on background service, or connecting to a remote server.
+
+2. **Remote onboarding requires manual PAT hand-off.** `setup --remote <url>`
+   demands a pre-minted `--token`. Today the host operator must run
+   `tasks db mint-token`, copy the secret, and transmit it to the new client by
+   hand. This is tedious and error-prone.
+
+The second point is mostly already solvable: the **OAuth 2.0 device
+authorization grant (RFC 8628) is fully implemented** — `tasks login`
+(`src/cli/commands/login.ts`) drives `requestDeviceCode` + `pollForToken`
+(`src/cli/auth/device-flow.ts`) against the server's `/auth/device/*` routes,
+and on success writes a PAT to the credentials file. A fresh client can already
+self-provision a PAT with zero host minting — **when the server has OIDC
+configured**. The gap is that `setup --remote` does not use it, and the two
+token stores below do not talk to each other.
+
+### The two-token-store split (root cause)
+
+| Path | Writes token to | Read by |
+|---|---|---|
+| `tasks login` (device flow) | credentials TOML (`$XDG_CONFIG_HOME/wood-fired-tasks/credentials`) | the **CLI** (`tasks list`, …) |
+| `setup --remote --token <pat>` | `WFT_API_KEY` env in `~/.claude.json` | the **remote MCP bridge** |
+
+The remote MCP bridge (`src/mcp/remote/index.ts` → `resolveRemoteConfig`) reads
+**only** its env vars; it never sees the credentials file `tasks login` wrote.
+So device-flow login and the MCP bridge are disconnected.
+
+## Goals
+
+- Guided, interactive `setup` that offers Local / Service / Remote, while
+  staying fully scriptable and backward-compatible for non-interactive use.
+- Remote onboarding that self-provisions a PAT via the existing device flow —
+  no manual host minting when OIDC is configured.
+- A single token store shared by `tasks login` and the remote MCP bridge, so
+  re-login rotates the bridge's token transparently and the secret no longer
+  lives in `~/.claude.json`.
+- Retire the deprecated X-API-Key legacy auth path, which simplifies the token
+  model this design depends on.
+
+## Non-goals
+
+- No new network enrollment surface (e.g. one-time enrollment codes). For
+  servers without OIDC, the fallback is manual PAT paste (host mints via
+  `tasks db mint-token` against a seeded user/service account).
+- No destructive DB migration. The `is_legacy` column/rows remain but become
+  inert once the legacy auth strategy is removed.
+- No change to the OIDC handshake, device-flow protocol, or credentials file
+  format themselves — they are reused as-is.
+
+---
+
+## Phase 0 — Sunset the legacy X-API-Key auth path
+
+The legacy path is already deprecated with a stated sunset of **2026-12-31**.
+Removing it now is a prerequisite that collapses the token model to a single
+type (`wft_pat_` PATs), which every later phase relies on.
+
+### Server changes
+- Remove the legacy strategy from the auth chain
+  (`src/api/plugins/auth/strategies/legacy.ts`, wired in
+  `src/api/plugins/auth/index.ts`). Chain becomes **PAT → session → 401**.
+- Remove `API_KEYS` parsing/validation (`src/config/env.ts`) and the register-time
+  hash precompute in the auth plugin.
+- Remove the legacy-user seeding branch in `src/services/identity-seeder.ts`.
+  Keep the unconditional service-account seeding (`slack-bot`, `mcp-bot`).
+- Remove the RFC 8594 `Deprecation`/`Sunset` response-header logic and the
+  `event: 'legacy_auth_used'` warn path.
+- Keep the `is_legacy` users column and any existing rows (inert). No migration
+  that drops data.
+
+### Client changes
+- `src/mcp/remote/rest-client.ts`: drop the `Bearer`-vs-`X-API-Key` branch
+  (currently `rest-client.ts:177-180`). **Always** send
+  `Authorization: Bearer <pat>`.
+- `src/cli/auth/credentials.ts`: remove the legacy `API_KEY` env-var precedence
+  in the auth resolution order.
+- Remove the `--api-key` / X-API-Key user-facing surface and docs.
+
+### Bootstrap after removal (documented, no new code)
+- **OIDC on:** first device-flow login auto-creates/maps the user by `oidc_sub`.
+- **OIDC off:** the host mints the first PAT against an already-seeded user or
+  service account: `tasks db mint-token --user <id> --name <label>`. Document
+  this in `docs/SETUP.md`.
+
+### Migration & versioning
+- **Breaking change → v2.0.0.** Anyone still authenticating via X-API-Key
+  (`API_KEYS` env + a non-PAT `WFT_API_KEY` baked into `claude.json`) must
+  re-login (OIDC) or re-mint a PAT *before* upgrading.
+- Add an upgrade note to `CHANGELOG.md` / `docs/SETUP.md`:
+  *"X-API-Key authentication has been removed. Re-login with `tasks login`
+  (OIDC) or re-mint a personal access token; update any baked `WFT_API_KEY`
+  values to a `wft_pat_…` token."*
+
+### Phase 0 acceptance
+- The auth chain rejects any X-API-Key request with the standard 401.
+- A server boots with no `API_KEYS` env and seeds only service accounts.
+- The remote bridge sends Bearer for every request; a non-PAT key is no longer
+  accepted by the server.
+- build + lint + full test suite green (legacy strategy tests removed/replaced;
+  no orphan references to `API_KEYS`/X-API-Key remain).
+
+---
+
+## Phase 1 — Interactive `setup` modes
+
+### Mode resolution
+`setup` gains three explicit, scriptable flags: `--local`, `--service`,
+`--remote <url>`. Resolution order:
+
+1. An explicit mode flag is present → use it, no prompt (scriptable; CI-safe).
+2. No mode flag **and** `stdout`/`stdin` is an interactive TTY → present a
+   3-item menu (Local / Service / Remote).
+3. No mode flag **and** non-TTY (pipe / CI / `--json`) → **Local** (preserves
+   today's exact behavior).
+
+> Naming: the flag is `--service`, not `--system`, to avoid colliding with the
+> existing `service install --system` *elevated* scope. The setup "Service"
+> mode installs the **user-scoped, admin-free** service.
+
+### New unit: `src/cli/util/prompt.ts`
+A thin interactive-prompt helper over Node's built-in `readline` (no new
+dependency). Exposes a small injectable seam:
+
+- `selectFromMenu(question, choices, opts?): Promise<choiceValue>` — numbered
+  single-select.
+- `promptLine(question, opts?): Promise<string>` — free text (used for remote
+  URL).
+- `promptSecret(question): Promise<string>` — no-echo input (used for the
+  manual PAT paste fallback).
+
+The seam takes an injected `input`/`output` (default `process.stdin`/`stderr`)
+so tests drive it with scripted input and assert prompts without a real TTY.
+All prompt chrome goes to **stderr** (keeps stdout clean for `--json`/pipelines,
+matching `login.ts`).
+
+### Mode: Local
+Unchanged — current `runSetup` (merge local stdio MCP entry + copy
+skills/agents).
+
+### Mode: Service
+`runSetup` (local) **plus** install the always-on background service by reusing
+the existing user-scoped backend in `src/cli/commands/service.ts`
+(systemd `--user` / launchd LaunchAgent / schtasks ONLOGON — all admin-free).
+No new service code; `setup --service` orchestrates `runSetup(local)` then the
+existing install + enable path, then a status confirmation line.
+
+### Mode: Remote
+See Phase 2 (device-flow integration). `setup --remote <url>` belongs to the
+same code path; it is described separately only because the auth wiring is the
+substantive part.
+
+### Phase 1 acceptance
+- `setup --local`, `setup --service`, `setup --remote <url>` each run their mode
+  without prompting.
+- Bare `setup` on a TTY shows the menu and dispatches the chosen mode.
+- Bare `setup` non-TTY (and `--json`) performs a Local install with no prompt
+  (existing CI smoke unaffected).
+- `setup --service` leaves an enabled user-scoped service; `service status`
+  reports it active.
+- Prompt unit tests cover menu selection, free-text, and secret input via the
+  injected seam.
+
+---
+
+## Phase 2 — Client-driven remote auth + token-store unification
+
+### Refactor for reuse
+Extract the device-flow body currently inline in `loginCommand.action`
+(`src/cli/commands/login.ts`) into a reusable
+`runDeviceLogin(opts): Promise<DeviceLoginResult>` in `src/cli/auth/`. Both
+`tasks login` and `setup --remote` call it. `loginCommand` becomes a thin
+wrapper that maps CLI flags → `runDeviceLogin` and renders text/JSON output.
+
+### `setup --remote <url>` flow
+1. Attempt **device-flow login** inline via `runDeviceLogin({ baseUrl: url })`.
+2. **OIDC on** → browser opens, user approves, server mints `cli-<host>-<date>`,
+   the CLI receives the PAT → `writeCredentials({ active: { token, server: url,
+   … } })`. Zero host minting.
+3. **OIDC off** → `requestDeviceCode` returns `501 OIDC_DISABLED`. Fall back to
+   manual PAT:
+   - TTY → `promptSecret("Paste a personal access token:")`.
+   - non-TTY → require `--token <pat>` (error with guidance if absent).
+   - The pasted token is stored via `writeCredentials` (same store).
+4. Write the remote MCP entry into `~/.claude.json` carrying **only**
+   `WFT_API_URL` (no baked secret). The bridge resolves the token from the
+   credentials file (below).
+
+### Token-store unification (core change)
+Extend `resolveRemoteConfig` in `src/mcp/remote/index.ts` to resolve with this
+precedence:
+
+1. `WFT_API_URL` / `WFT_API_KEY` env vars (back-compat with already-baked
+   `claude.json` entries; PAT values only post-Phase-0).
+2. Else the credentials TOML `active.{server, token}` (what `tasks login` /
+   `setup --remote` write), read via `src/cli/auth/credentials.ts`.
+3. Else fail fast with the existing readable "not configured / run
+   `tasks login`" error.
+
+Effects:
+- One source of truth. `tasks login` re-rotation transparently updates the
+  bridge's token on next spawn — no `claude.json` edit.
+- The secret no longer needs to live in `claude.json` for new remote setups.
+- The credentials read enforces the existing 0600 perms check.
+
+### Backward compatibility
+- `setup --remote <url> --token <pat>` still works — it now stores to the
+  credentials file; existing env-baked `claude.json` entries are still honored
+  by the bridge via precedence #1 (as long as the value is a PAT).
+
+### Security
+- The auth path is the already-shipped RFC 8628 device grant: the PAT is never
+  printed to stdout/stderr, the credentials file is 0600 with atomic write, and
+  the server-supplied `verification_uri` is opened with `shell:false`.
+- No new network surface (per the no-enrollment-code decision).
+- Net reduction in secret sprawl: the PAT moves out of `claude.json` into the
+  0600 credentials file for new remote setups.
+
+### Phase 2 acceptance
+- On an OIDC server, `setup --remote <url>` completes with no `--token`: it runs
+  the device flow, writes credentials, and writes a `claude.json` remote entry
+  containing only `WFT_API_URL`.
+- On a non-OIDC server, `setup --remote <url>` falls back to manual PAT
+  (prompt on TTY / `--token` otherwise) and stores it identically.
+- The remote MCP bridge starts with **only** `WFT_API_URL` set, resolving the
+  token from the credentials file; it still starts when `WFT_API_KEY` is set in
+  env (back-compat).
+- Re-running `tasks login` rotates the token the bridge uses without editing
+  `claude.json`.
+- Tests use the existing mock device-flow server
+  (`src/cli/__tests__/helpers/device-flow-server.ts`) for the OIDC-on path and a
+  stubbed 501 for the OIDC-off path.
+
+---
+
+## Components summary
+
+| Unit | Change | Purpose |
+|---|---|---|
+| `src/api/plugins/auth/*`, `src/config/env.ts`, `src/services/identity-seeder.ts` | **edit (Phase 0)** | Remove legacy strategy, `API_KEYS`, legacy seeding, sunset headers |
+| `src/mcp/remote/rest-client.ts` | **edit (Phase 0)** | Bearer-only |
+| `src/cli/auth/credentials.ts` | **edit (Phase 0/2)** | Drop legacy `API_KEY` precedence; reused for bridge token read |
+| `src/cli/util/prompt.ts` | **new (Phase 1)** | TTY prompt seam (menu / line / secret) |
+| `src/cli/commands/setup.ts` | **edit (Phase 1/2)** | Mode resolution + menu + service/remote orchestration |
+| `src/cli/auth/runDeviceLogin` | **new/extract (Phase 2)** | Shared device-flow core for `login` + `setup` |
+| `src/cli/commands/login.ts` | **edit (Phase 2)** | Call the extracted core |
+| `src/mcp/remote/index.ts` (`resolveRemoteConfig`) | **edit (Phase 2)** | Credentials-file fallback |
+| `src/cli/commands/service.ts` | **reuse** | User-scoped service install for Service mode |
+| `docs/SETUP.md`, `CHANGELOG.md` | **edit** | v2.0 migration note + no-OIDC bootstrap docs |
+
+## Testing strategy
+
+- **Phase 0:** auth-chain tests assert X-API-Key → 401; seeder test asserts
+  service-accounts-only with no `API_KEYS`; rest-client test asserts Bearer for
+  all keys; grep-guard that no `API_KEYS`/X-API-Key references remain.
+- **Phase 1:** prompt seam unit tests (menu/line/secret via injected IO); setup
+  mode-resolution tests (each flag; TTY menu dispatch with injected prompt;
+  non-TTY → Local); service-mode orchestration asserts the install path is
+  invoked.
+- **Phase 2:** device-flow integration via the existing mock server (OIDC-on →
+  credentials written + URL-only `claude.json` entry); 501 stub → manual-paste
+  fallback; `resolveRemoteConfig` precedence (env → file → fail); re-login
+  rotation reflected by the bridge.
+- All phases: `npm run build` + `npm run lint` + full `vitest` suite green.
+
+## Open risks
+
+- **Upgrade breakage** for any remaining X-API-Key users — mitigated by the v2.0
+  major bump and an explicit migration note. (Confirm no first-party deployment
+  still relies on X-API-Key before release.)
+- **Bridge spawned in a context without the credentials file** (e.g. a service
+  account running as a different user) — env precedence #1 remains the escape
+  hatch; documented.
