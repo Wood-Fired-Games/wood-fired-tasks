@@ -7,6 +7,7 @@ import { mergeClaudeJson, type ClaudeMcpServerEntry } from '../../setup/claude-j
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { configDir as defaultConfigDir } from '../../config/paths.js';
 import { resolvePathHint } from '../util/path-hint.js';
+import { buildNpmInvocation } from '../util/npm-spawn.js';
 
 /**
  * `tasks setup` (task #737).
@@ -270,6 +271,17 @@ export function fixNpmPrefix(options: FixNpmPrefixOptions = {}): FixNpmPrefixRes
       // Hard guard: never elevate.
       if (/^(sudo|runas|pkexec|doas)$/i.test(cmd)) {
         throw new Error('refusing to run elevated command');
+      }
+      // Windows-safe npm invocation (task #794): npm is `npm.cmd`, which since
+      // CVE-2024-27980 cannot be spawned without a shell (EINVAL), and the
+      // prefix arg can contain spaces (e.g. C:\Users\John Doe\.npm-global)
+      // which a naive `shell:true` would split. buildNpmInvocation handles both
+      // by quoting per-arg for the win32 shell. Non-npm commands (none today)
+      // fall through to a plain shell-less exec.
+      if (cmd === 'npm') {
+        const inv = buildNpmInvocation(args);
+        execFileSync(inv.command, inv.args, { stdio: 'inherit', shell: inv.shell });
+        return;
       }
       execFileSync(cmd, args, { stdio: 'inherit' });
     });
