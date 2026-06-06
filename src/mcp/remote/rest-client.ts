@@ -18,6 +18,12 @@ import type {
   CompletionReportResponse,
 } from '../../cli/api/types.js';
 import type { TopologyReport } from '../../schemas/topology.schema.js';
+import {
+  parseTaskResponse,
+  parseProjectResponse,
+  parseTaskListResponse,
+  parseProjectListResponse,
+} from '../../schemas/api-response.js';
 import { createRemoteSSEParser } from './sse-parser.js';
 
 // ── WSJF remote-parity payload types (WSJF 1.10) ──────────────────────────────
@@ -102,6 +108,15 @@ export interface RescoreResponse {
   errors: { taskId: number; errors: string[] }[];
 }
 
+/**
+ * Loose envelope-or-bare-array normalizer.
+ *
+ * NOTE (task #774): the high-risk task / project / subtask list methods now
+ * route through `parseTaskListResponse` / `parseProjectListResponse`, which
+ * schema-validate every row. This helper is retained ONLY for the deliberately
+ * deferred comment list paths (`getCommentsPaginated`). Its silent "unexpected
+ * shape → empty page" fallback is kept for those paths' backward compatibility.
+ */
 function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
   if (Array.isArray(payload)) {
     return { data: payload, total: payload.length, limit: payload.length, offset: 0 };
@@ -206,6 +221,14 @@ export class RestClient {
         return undefined as T;
       }
 
+      // Trust boundary (task #774): `request` returns the raw parsed JSON cast
+      // to `T`. This cast is UNVALIDATED — high-risk task/project/list callers
+      // below re-parse the result through the shared Zod response schemas
+      // (`parseTaskResponse` / `parseProjectResponse` / `parse*ListResponse`)
+      // so a malformed or version-skewed body fails loudly instead of leaking
+      // an untyped shape downstream. Low-risk callers (comments, dependencies,
+      // health, WSJF, topology) keep the bare cast and are documented as
+      // deferred at their call sites.
       return (await response.json()) as T;
     } catch (error) {
       if (error instanceof TypeError && error.message.includes('fetch')) {
@@ -220,21 +243,27 @@ export class RestClient {
   // ── Task operations ──────────────────────────────────────────────────────
 
   async createTask(data: CreateTaskInput): Promise<TaskResponse> {
-    return this.request<TaskResponse>('/api/v1/tasks', {
+    const endpoint = '/api/v1/tasks';
+    const payload = await this.request<unknown>(endpoint, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    return parseTaskResponse(payload, `POST ${endpoint}`);
   }
 
   async getTask(id: number): Promise<TaskResponse> {
-    return this.request<TaskResponse>(`/api/v1/tasks/${id}`);
+    const endpoint = `/api/v1/tasks/${id}`;
+    const payload = await this.request<unknown>(endpoint);
+    return parseTaskResponse(payload, `GET ${endpoint}`);
   }
 
   async updateTask(id: number, data: UpdateTaskInput): Promise<TaskResponse> {
-    return this.request<TaskResponse>(`/api/v1/tasks/${id}`, {
+    const endpoint = `/api/v1/tasks/${id}`;
+    const payload = await this.request<unknown>(endpoint, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+    return parseTaskResponse(payload, `PUT ${endpoint}`);
   }
 
   async listTasks(filters?: TaskFilters): Promise<TaskResponse[]> {
@@ -260,8 +289,9 @@ export class RestClient {
         endpoint += `?${queryString}`;
       }
     }
-    const payload = await this.request<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
-    return asPage(payload);
+    const payload = await this.request<unknown>(endpoint);
+    // Trust boundary (task #774): schema-validate every row + envelope shape.
+    return parseTaskListResponse(payload, `GET ${endpoint}`);
   }
 
   async deleteTask(id: number): Promise<void> {
@@ -269,10 +299,12 @@ export class RestClient {
   }
 
   async claimTask(taskId: number, assignee: string): Promise<TaskResponse> {
-    return this.request<TaskResponse>(`/api/v1/tasks/${taskId}/claim`, {
+    const endpoint = `/api/v1/tasks/${taskId}/claim`;
+    const payload = await this.request<unknown>(endpoint, {
       method: 'POST',
       body: JSON.stringify({ assignee }),
     });
+    return parseTaskResponse(payload, `POST ${endpoint}`);
   }
 
   async getSubtasks(parentTaskId: number, pagination?: PaginationParams): Promise<TaskResponse[]> {
@@ -292,28 +324,35 @@ export class RestClient {
       const qs = params.toString();
       if (qs) endpoint += `?${qs}`;
     }
-    const payload = await this.request<PaginatedResponse<TaskResponse> | TaskResponse[]>(endpoint);
-    return asPage(payload);
+    const payload = await this.request<unknown>(endpoint);
+    // Trust boundary (task #774): schema-validate every row + envelope shape.
+    return parseTaskListResponse(payload, `GET ${endpoint}`);
   }
 
   // ── Project operations ───────────────────────────────────────────────────
 
   async createProject(data: CreateProjectInput): Promise<ProjectResponse> {
-    return this.request<ProjectResponse>('/api/v1/projects', {
+    const endpoint = '/api/v1/projects';
+    const payload = await this.request<unknown>(endpoint, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    return parseProjectResponse(payload, `POST ${endpoint}`);
   }
 
   async getProject(id: number): Promise<ProjectResponse> {
-    return this.request<ProjectResponse>(`/api/v1/projects/${id}`);
+    const endpoint = `/api/v1/projects/${id}`;
+    const payload = await this.request<unknown>(endpoint);
+    return parseProjectResponse(payload, `GET ${endpoint}`);
   }
 
   async updateProject(id: number, data: UpdateProjectInput): Promise<ProjectResponse> {
-    return this.request<ProjectResponse>(`/api/v1/projects/${id}`, {
+    const endpoint = `/api/v1/projects/${id}`;
+    const payload = await this.request<unknown>(endpoint, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+    return parseProjectResponse(payload, `PUT ${endpoint}`);
   }
 
   async listProjects(pagination?: PaginationParams): Promise<ProjectResponse[]> {
@@ -332,10 +371,9 @@ export class RestClient {
       const qs = params.toString();
       if (qs) endpoint += `?${qs}`;
     }
-    const payload = await this.request<PaginatedResponse<ProjectResponse> | ProjectResponse[]>(
-      endpoint,
-    );
-    return asPage(payload);
+    const payload = await this.request<unknown>(endpoint);
+    // Trust boundary (task #774): schema-validate every row + envelope shape.
+    return parseProjectListResponse(payload, `GET ${endpoint}`);
   }
 
   async deleteProject(id: number): Promise<void> {
@@ -362,6 +400,12 @@ export class RestClient {
   }
 
   // ── Comment operations ───────────────────────────────────────────────────
+  //
+  // DEFERRED (task #774): comment / dependency responses are NOT yet
+  // schema-validated — they keep the bare `request<T>` cast. These are
+  // lower-risk shapes (flat numeric/string fields, no enums) than the
+  // task/project responses that were tightened. When tightened, add a
+  // `CommentResponseSchema` and mirror the `parseTaskResponse` pattern.
 
   async addComment(taskId: number, data: CreateCommentInput): Promise<CommentResponse> {
     return this.request<CommentResponse>(`/api/v1/tasks/${taskId}/comments`, {
