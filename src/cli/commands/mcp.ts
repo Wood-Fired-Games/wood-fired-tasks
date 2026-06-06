@@ -74,8 +74,10 @@ Examples:
     }
 
     const entrypoint = selectMcpEntrypoint({
-      WFT_API_URL: childEnv['WFT_API_URL'],
-      remote: opts.remote,
+      ...(childEnv['WFT_API_URL'] !== undefined && {
+        WFT_API_URL: childEnv['WFT_API_URL'],
+      }),
+      ...(opts.remote !== undefined && { remote: opts.remote }),
     });
 
     // Resolve the entrypoint relative to the repo root (this file lives at

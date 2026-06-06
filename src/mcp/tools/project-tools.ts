@@ -4,6 +4,7 @@ import { ProjectService } from '../../services/project.service.js';
 import { CreateProjectSchema, ValueCharterNullableSchema } from '../../schemas/project.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
 
 /**
  * Register all project-related MCP tools
@@ -89,10 +90,9 @@ export function registerProjectTools(server: McpServer, projectService: ProjectS
     },
     async (args) => {
       try {
-        const page = projectService.listProjectsPaginated({
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = projectService.listProjectsPaginated(
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
 
         if (page.data.length === 0) {
           return {

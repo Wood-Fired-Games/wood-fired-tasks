@@ -42,7 +42,7 @@ references are clickable; raw counts come from the scans in [§5](#5-commands-us
 | `noImplicitOverride` | **ON** | explicit (landed task #265) |
 | `forceConsistentCasingInFileNames` | **ON** | |
 | `noPropertyAccessFromIndexSignature` | **ON** | explicit (ratcheted task #763) |
-| `exactOptionalPropertyTypes` | **OFF** | not set → defaults off |
+| `exactOptionalPropertyTypes` | **ON** | explicit (ratcheted task #780; see §778/§G) |
 | `noUncheckedIndexedAccess` | **OFF** | not set → defaults off |
 
 Other compiler settings: `target: ES2022`, `module/moduleResolution: Node16`,
@@ -1011,3 +1011,55 @@ No secret, token, password, API key, or absolute local path was introduced. The
 flag is reverted (`grep exactOptional tsconfig.json` → empty). The only source
 change is the one safe `json-output.ts` edit above plus this audit section.
 `npm run build` passes (exit 0) with the flag OFF.
+
+> **Status update (#780):** the flag is now **ON** and permanent
+> (`compilerOptions.exactOptionalPropertyTypes: true` in `tsconfig.json`). The
+> "reverted" attestation above is the historical #778 state. See §G below.
+
+### G. Optional-field policy (the eopt convention, owned by #780)
+
+With `exactOptionalPropertyTypes: true` enabled permanently, the following
+policy is **load-bearing** for all new and changed code. It is the convention
+the #779/#780 remediation established:
+
+1. **Prefer omitting `undefined` keys over widening to `| undefined`.** When an
+   object literal or param-assembly site carries a possibly-`undefined` value
+   into an exact-optional target (`prop?: T`), DO NOT add `| undefined` to the
+   target's prop just to make the assignment type-check. Instead omit the key
+   when the value is `undefined`:
+   - **conditional spread** for one or two keys, keeping required keys inline:
+     `{ name, ...(x !== undefined && { x }) }`;
+   - **`omitUndefined(obj)`** (`src/utils/omit-undefined.ts`, mirrored at
+     `packages/wft-router/src/util/omit-undefined.ts` for the standalone router
+     package) when ALL keys are optional. Note `omitUndefined` maps every key to
+     optional, so do NOT use it on objects with a **required** key (e.g.
+     `CreateProjectInput.name`) — use a targeted conditional spread there.
+   - **guarded assignment** for class fields: `if (v !== undefined) this.f = v;`
+     (avoids TS2412 when a constructor threads a `T | undefined` dep into an
+     exact-optional `field?: T`).
+
+2. **Preserve the absent / `null` / value three-state.** The Create/Update DTOs
+   (`src/types/task.ts`) and the project create/update inputs encode three
+   distinct states: key **absent** = leave untouched, explicit **`null`** =
+   clear, **value** = set. `omitUndefined` and the conditional spreads above
+   strip only `undefined` — explicit `null` is preserved verbatim, so the
+   "clear the column" semantics survive. NEVER collapse this distinction by
+   widening a DTO/schema prop to `| undefined`.
+
+3. **`| undefined` is acceptable only for genuinely internal helper params** whose
+   contract treats "absent" and "undefined" identically with no three-state
+   meaning (e.g. `effectiveOrigin(env: { OIDC_REDIRECT_URI?: string | undefined; … })`
+   in `src/config/env.ts`, which already falls back to localhost for both). Do
+   not reach for this on DTO/schema/REST boundaries.
+
+4. **Fastify generic-variance footnote.** The 5–6 `src/api/server.ts`
+   TS2345/2769/2322 errors the flag once surfaced were NOT eopt issues — they were
+   a cascade from a single explicit `transport: undefined` in the logger options,
+   which pushed TS onto Fastify's trailing Http2 `Fastify()` overload and made the
+   inferred `FastifyInstance` `RawServer` generic disagree with the default-server
+   `FastifyInstance` used downstream. Replacing `transport: … : undefined` with a
+   conditional spread (`...(NODE_ENV === 'development' && { transport: … })`) so the
+   key is genuinely absent collapses ALL of them — **no library-boundary cast was
+   needed**. Reach for a localized, commented Fastify-SDK cast only if a future
+   variance error genuinely has no clean omit/narrow fix (the #766 escape-hatch
+   policy); none was required for #780.

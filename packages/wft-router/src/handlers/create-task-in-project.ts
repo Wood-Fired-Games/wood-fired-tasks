@@ -211,7 +211,7 @@ export const createTaskInProject: Handler = async (
       },
       body,
       timeoutMs: ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      fetchImpl: ctx.fetchImpl,
+      ...(ctx.fetchImpl !== undefined && { fetchImpl: ctx.fetchImpl }),
     });
     status = res.status;
     bodyText = res.bodyText;

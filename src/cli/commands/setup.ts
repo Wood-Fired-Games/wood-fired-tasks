@@ -417,7 +417,11 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
 
   let npmPrefix: FixNpmPrefixResult | undefined;
   if (options.fixNpmPrefix) {
-    npmPrefix = fixNpmPrefix({ home, runner: options.npmRunner, log });
+    npmPrefix = fixNpmPrefix({
+      home,
+      ...(options.npmRunner !== undefined && { runner: options.npmRunner }),
+      log,
+    });
   }
 
   return {
@@ -427,8 +431,8 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     remote: isRemote,
     skills,
     agents,
-    npmPrefix,
-    patCache,
+    ...(npmPrefix !== undefined && { npmPrefix }),
+    ...(patCache !== undefined && { patCache }),
   };
 }
 
@@ -462,7 +466,7 @@ export const setupCommand = new Command('setup')
         : (globalOpts['token'] as string | undefined);
     runSetup({
       fixNpmPrefix: Boolean(opts.fixNpmPrefix),
-      remote: opts.remote,
-      token,
+      ...(opts.remote !== undefined && { remote: opts.remote }),
+      ...(token !== undefined && { token }),
     });
   });

@@ -276,7 +276,10 @@ export function resetConfig(): void {
  * config was malformed; this helper is defensive for tests that pass a
  * partial env object.
  */
-export function effectiveOrigin(env: { OIDC_REDIRECT_URI?: string; PORT: number }): string {
+export function effectiveOrigin(env: {
+  OIDC_REDIRECT_URI?: string | undefined;
+  PORT: number;
+}): string {
   if (env.OIDC_REDIRECT_URI && env.OIDC_REDIRECT_URI.length > 0) {
     try {
       return new URL(env.OIDC_REDIRECT_URI).origin;

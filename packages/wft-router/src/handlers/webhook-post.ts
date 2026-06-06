@@ -320,9 +320,9 @@ export const webhookPost: Handler = async (ctx: HandlerContext): Promise<Handler
       method: 'POST',
       url: rawUrl,
       headers,
-      body,
+      ...(body !== undefined && { body }),
       timeoutMs: ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      fetchImpl: ctx.fetchImpl,
+      ...(ctx.fetchImpl !== undefined && { fetchImpl: ctx.fetchImpl }),
     });
     status = res.status;
     bodyText = res.bodyText;

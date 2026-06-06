@@ -156,8 +156,8 @@ export async function createDaemon(opts: RunDaemonOptions): Promise<WftRouterDae
       const sseOpts: SSEClientOptions = {
         endpoint: opts.endpoint,
         apiKey: opts.apiKey,
-        eventTypes: opts.eventTypes,
-        fetchImpl: opts.fetchImpl,
+        ...(opts.eventTypes !== undefined && { eventTypes: opts.eventTypes }),
+        ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
       };
       return runSSEClient(sseOpts, signal);
     });
@@ -170,8 +170,8 @@ export async function createDaemon(opts: RunDaemonOptions): Promise<WftRouterDae
     logger,
     apiBaseUrl: opts.endpoint,
     apiKey: opts.apiKey,
-    fetchImpl: opts.fetchImpl,
-    metrics: opts.metrics,
+    ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
+    ...(opts.metrics !== undefined && { metrics: opts.metrics }),
   };
 
   return new WftRouterDaemon(deps);
@@ -264,7 +264,12 @@ async function main(): Promise<void> {
   }
 
   try {
-    const code = await runDaemon({ configPath, endpoint, apiKey, metrics });
+    const code = await runDaemon({
+      configPath,
+      endpoint,
+      apiKey,
+      ...(metrics !== undefined && { metrics }),
+    });
     await metricsServer?.close();
     process.exit(code);
   } catch (err) {

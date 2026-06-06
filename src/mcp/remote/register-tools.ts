@@ -13,6 +13,7 @@ import {
   toCompactTask,
 } from '../../schemas/task.schema.js';
 import { VERSION } from '../../utils/version.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
 
 /**
  * Task #768 — parse remote MCP tool arguments through their Zod schema BEFORE
@@ -388,10 +389,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         if (page.data.length === 0) {
           return {
             content: [
@@ -453,10 +454,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         const summary = `Found ${page.data.length} of ${page.total} subtask(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`;
         return {
           content: [
@@ -548,7 +549,14 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const project = await client.createProject(args);
+        // `name` is REQUIRED on CreateProjectInput, so omitUndefined (which maps
+        // every key to optional) would over-widen it. Strip only the optional
+        // keys when undefined; explicit `null` is preserved (three-state: clear).
+        const project = await client.createProject({
+          name: args.name,
+          ...(args.description !== undefined && { description: args.description }),
+          ...(args.value_charter !== undefined && { value_charter: args.value_charter }),
+        });
         return {
           content: [
             {
@@ -614,10 +622,9 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.listProjectsPaginated({
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.listProjectsPaginated(
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         if (page.data.length === 0) {
           return {
             content: [
@@ -678,7 +685,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const project = await client.updateProject(args.id, args.updates);
+        const project = await client.updateProject(args.id, omitUndefined(args.updates));
         return {
           content: [
             {
@@ -893,10 +900,10 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     },
     async (args) => {
       try {
-        const page = await client.getCommentsPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = await client.getCommentsPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         return {
           content: [
             {

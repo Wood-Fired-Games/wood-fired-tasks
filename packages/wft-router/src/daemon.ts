@@ -79,6 +79,7 @@ import {
 } from './handlers/index.js';
 import type { MetricsRegistry } from './metrics.js';
 import { ExitCode, type SSEEvent } from './sse/index.js';
+import { omitUndefined } from './util/omit-undefined.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -242,7 +243,11 @@ export function mapSSEEvent(ev: SSEEvent): MappedEvent | null {
 
   const payload: EventPayloadShape = { type };
   if (parsed.data !== undefined && parsed.data !== null) {
-    payload.task = {
+    // omitUndefined: the EventPayloadShape sub-props are exact-optional, and the
+    // `where:` predicates branch on presence — so an undefined-valued key must
+    // be ABSENT, not present-with-undefined. Explicit `null`
+    // (parent_task_id / assignee "cleared") is preserved.
+    payload.task = omitUndefined({
       id: parsed.data.id,
       project_id: parsed.data.project_id,
       project_slug: parsed.data.project_slug,
@@ -250,14 +255,14 @@ export function mapSSEEvent(ev: SSEEvent): MappedEvent | null {
       tags: parsed.data.tags,
       parent_task_id: parsed.data.parent_task_id,
       assignee: parsed.data.assignee,
-    };
+    });
   }
   if (parsed.metadata !== undefined && parsed.metadata !== null) {
-    payload.metadata = {
+    payload.metadata = omitUndefined({
       from: parsed.metadata.from,
       to: parsed.metadata.to,
       source: parsed.metadata.source,
-    };
+    });
   }
 
   let emittedAtMs: number | null = null;
@@ -322,11 +327,21 @@ export class WftRouterDaemon {
     this.logger = deps.logger;
     this.apiBaseUrl = deps.apiBaseUrl;
     this.apiKey = deps.apiKey;
-    this.fetchImpl = deps.fetchImpl;
-    this.spawnImpl = deps.spawnImpl;
-    this.adaptersPath = deps.adaptersPath;
+    // exactOptionalPropertyTypes: these fields are exact-optional, so assigning
+    // a possibly-undefined dep would widen them; only assign when present.
+    if (deps.fetchImpl !== undefined) {
+      this.fetchImpl = deps.fetchImpl;
+    }
+    if (deps.spawnImpl !== undefined) {
+      this.spawnImpl = deps.spawnImpl;
+    }
+    if (deps.adaptersPath !== undefined) {
+      this.adaptersPath = deps.adaptersPath;
+    }
     this.env = deps.env ?? process.env;
-    this.metrics = deps.metrics;
+    if (deps.metrics !== undefined) {
+      this.metrics = deps.metrics;
+    }
 
     const now = deps.now ?? Date.now;
     this.rateLimiter =

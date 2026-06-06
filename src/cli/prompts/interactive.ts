@@ -43,15 +43,15 @@ export async function promptForMissing<T>(
     ...(options?.defaultValue !== undefined && {
       defaultValue: String(options.defaultValue),
     }),
-    validate: options?.validate
-      ? (v) => {
-          // v can be string | undefined from @clack/prompts
-          if (!v || !options.validate!(v)) {
-            return `Invalid value for ${field}`;
-          }
-          return undefined;
+    ...(options?.validate && {
+      validate: (v: string | undefined) => {
+        // v can be string | undefined from @clack/prompts
+        if (!v || !options.validate!(v)) {
+          return `Invalid value for ${field}`;
         }
-      : undefined,
+        return undefined;
+      },
+    }),
   });
 
   // Handle cancellation (Ctrl+C)

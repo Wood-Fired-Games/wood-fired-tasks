@@ -30,7 +30,7 @@ const loginWeb: FastifyPluginAsync = async (fastify) => {
       .code(200)
       .send(
         renderLogin({
-          next: typeof next === 'string' ? next : undefined,
+          ...(typeof next === 'string' && { next }),
         }),
       );
   });

@@ -103,13 +103,17 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         paths: [...LOGGER_REDACT_CONFIG.paths],
         censor: LOGGER_REDACT_CONFIG.censor,
       },
-      transport:
-        config.NODE_ENV === 'development'
-          ? {
-              target: 'pino-pretty',
-              options: { colorize: true },
-            }
-          : undefined,
+      // exactOptionalPropertyTypes: `transport?` is exact-optional in pino's
+      // LoggerOptions, so an explicit `transport: undefined` no longer satisfies
+      // it (and forces TS onto the trailing Http2 `Fastify` overload, which then
+      // cascades the FastifyInstance generic-variance errors below). Spread the
+      // key in only for development so it is genuinely ABSENT otherwise.
+      ...(config.NODE_ENV === 'development' && {
+        transport: {
+          target: 'pino-pretty',
+          options: { colorize: true },
+        },
+      }),
     },
   }).withTypeProvider<ZodTypeProvider>();
 

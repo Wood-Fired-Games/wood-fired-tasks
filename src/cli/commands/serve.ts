@@ -98,7 +98,9 @@ Examples:
   })
   .action(async () => {
     const opts = serveCommand.opts<{ port?: number }>();
-    const { host, port } = await startServer({ port: opts.port });
+    const { host, port } = await startServer({
+      ...(opts.port !== undefined && { port: opts.port }),
+    });
     process.stdout.write(
       `Wood Fired Tasks API listening on http://${host}:${port}` +
         (host === '127.0.0.1' ? ' (loopback only; set HOST=0.0.0.0 to expose on LAN)\n' : '\n'),

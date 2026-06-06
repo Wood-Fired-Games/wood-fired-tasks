@@ -23,6 +23,7 @@ import { ScoreSubmissionSchema } from '../../schemas/wsjf.schema.js';
 import { validateScoreSubmission, type ScoreSubmission } from '../../services/wsjf.service.js';
 import { WSJF_HISTORY_TRIGGERS } from '../../repositories/wsjf-history.repository.js';
 import { ValidationError } from '../../services/errors.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
 import type { WsjfWriteDTO } from '../../types/task.js';
 import type { WsjfSource } from '../../types/wsjf.js';
 
@@ -596,10 +597,10 @@ export function registerTaskTools(
     },
     async (args) => {
       try {
-        const page = taskService.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = taskService.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
 
         if (page.data.length === 0) {
           return {
@@ -722,10 +723,10 @@ export function registerTaskTools(
     },
     async (args) => {
       try {
-        const page = taskService.getSubtasksPaginated(args.task_id, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = taskService.getSubtasksPaginated(
+          args.task_id,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
         const summary = `Found ${page.data.length} of ${page.total} subtask(s) for task ${args.task_id} (limit=${page.limit}, offset=${page.offset})`;
 
         return {

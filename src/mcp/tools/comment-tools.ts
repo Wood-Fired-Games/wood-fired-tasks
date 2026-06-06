@@ -3,6 +3,7 @@ import { toStructuredContent } from '../lib/structured-content.js';
 import type { CommentService } from '../../services/comment.service.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { omitUndefined } from '../../utils/omit-undefined.js';
 import type { McpServerContext } from '../server.js';
 
 /**
@@ -82,10 +83,10 @@ export function registerCommentTools(
     async (args) => {
       try {
         const taskId = args.task_id;
-        const page = commentService.getCommentsPaginated(taskId, {
-          limit: args.limit,
-          offset: args.offset,
-        });
+        const page = commentService.getCommentsPaginated(
+          taskId,
+          omitUndefined({ limit: args.limit, offset: args.offset }),
+        );
 
         return {
           content: [

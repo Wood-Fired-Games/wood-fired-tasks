@@ -124,8 +124,8 @@ export async function httpRequest(opts: HttpRequestOptions): Promise<HttpRespons
   try {
     const response = await fetchImpl(opts.url, {
       method: opts.method,
-      headers: opts.headers,
-      body: opts.body,
+      ...(opts.headers !== undefined && { headers: opts.headers }),
+      ...(opts.body !== undefined && { body: opts.body }),
       signal: controller.signal,
     });
     const bodyText = await response.text();

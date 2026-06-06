@@ -15,7 +15,8 @@
     "useUnknownInCatchVariables": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true
+    "noPropertyAccessFromIndexSignature": true,
+    "exactOptionalPropertyTypes": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/__tests__/**", "**/*.bench.ts", "**/*.test.ts"]

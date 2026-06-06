@@ -86,7 +86,9 @@ export class ApiClientError extends Error {
   ) {
     super(message);
     this.name = 'ApiClientError';
-    this.requestId = requestId;
+    if (requestId !== undefined) {
+      this.requestId = requestId;
+    }
   }
 }
 
