@@ -87,6 +87,14 @@ describe('db-migrate-identities command (Plan 31-05)', () => {
     await runMigrations(db);
     const silent = { info: () => {}, warn: () => {} };
     seedIdentities(db, parseApiKeyEntries('k1:laptop,k2:agent-bot'), silent);
+    // v2.0 cutover (#801): the seeder no longer creates is_legacy credential
+    // rows from API_KEYS, so seed the legacy 'laptop' and 'agent-bot' users
+    // directly. The db-migrate-identities command resolves legacy
+    // display_names and the lowest-id is_legacy user fallback against these
+    // rows, exercising those paths unchanged. Insert order preserves
+    // 'laptop' as the lowest-id legacy user (the default fallback target).
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`).run('laptop');
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`).run('agent-bot');
     db.prepare(`INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`).run(
       'alice',
       'alice@example.com',

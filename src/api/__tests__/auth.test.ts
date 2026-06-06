@@ -2,20 +2,20 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
-
-// Set API keys before importing server
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('API Authentication', () => {
   let server: FastifyInstance;
   let db: Database.Database;
+  let auth: { Authorization: string };
 
   beforeAll(async () => {
-    // Ensure API keys are set before server creation
-    process.env.API_KEYS = 'test-key';
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     db = result.app.db;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(db);
   });
 
   afterAll(async () => {
@@ -60,13 +60,11 @@ describe('API Authentication', () => {
     expect(body.message).toBe('Authentication required');
   });
 
-  it('should accept requests with valid test-key', async () => {
+  it('should accept requests with a valid Bearer PAT', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/tasks',
-      headers: {
-        'x-api-key': 'test-key',
-      },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(200);
@@ -87,16 +85,22 @@ describe('API Authentication', () => {
     expect(response.headers['content-type']).toContain('application/json');
   });
 
-  // Phase 28 (Plan 04) — additive assertion: the chain plugin's legacy
-  // strategy depends on a seeded `users` row with `is_legacy=1` and
-  // `display_name='key_test-key'` (auto-derived from the bare 'test-key'
-  // API_KEYS entry by `config/env.ts:213`). Smoke-check that
-  // `seedIdentities()` ran during `createApp` and produced the row the
-  // legacy strategy will look up via `findLegacyByDisplayName`.
-  it('seeds the legacy principal so the chain plugin can resolve request.user', async () => {
+  // v2.0 (#799/#802): the legacy X-API-Key strategy and its `is_legacy`
+  // principal seeding were removed. The chain plugin now resolves
+  // `request.user` from a Bearer PAT instead. Smoke-check that the PAT seeded
+  // by `authHeaders` has a backing `users` row the chain plugin can resolve
+  // via the api_tokens -> users join.
+  it('seeds a PAT principal so the chain plugin can resolve request.user', async () => {
     const userRow = db
-      .prepare('SELECT id FROM users WHERE display_name = ? AND is_legacy = 1')
-      .get('key_test-key') as { id: number } | undefined;
+      .prepare(
+        `SELECT u.id AS id
+           FROM api_tokens t
+           JOIN users u ON u.id = t.user_id
+          WHERE t.revoked_at IS NULL
+          ORDER BY t.id DESC
+          LIMIT 1`,
+      )
+      .get() as { id: number } | undefined;
     expect(userRow).toBeDefined();
     expect(typeof userRow!.id).toBe('number');
   });

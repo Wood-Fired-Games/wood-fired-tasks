@@ -3,15 +3,13 @@ import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import type { App } from '../../index.js';
-
-// Set API key for tests
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('Task CRUD Routes', () => {
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
-  const headers = { 'x-api-key': 'test-key' };
+  let headers: { Authorization: string };
   let testProjectId: number;
 
   beforeAll(async () => {
@@ -19,6 +17,11 @@ describe('Task CRUD Routes', () => {
     server = result.server;
     app = result.app;
     db = result.app.db;
+
+    await server.ready();
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     // Create a test project
     const project = app.projectService.createProject({ name: 'Test Project' });

@@ -335,40 +335,12 @@ describe('tasks whoami (subprocess)', () => {
     expect(envelope.server).toBeDefined();
   });
 
-  it('API_KEY env set + credentials file present: text footer + JSON fallback field', async () => {
-    server = await startLogoutWhoamiServer({
-      meResponse: { status: 200, body: STUART_ME },
-      tokensResponse: {
-        status: 200,
-        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
-      },
-    });
-    seedCredentials(tmpDir, {
-      token: TEST_TOKEN,
-      token_id: 17,
-      server: server.baseUrl,
-    });
-
-    // Text mode: footer is the last visible line.
-    const resText = await runWhoami([], {
-      XDG_CONFIG_HOME: tmpDir,
-      API_KEY: 'legacy-api-key-also-set',
-    });
-    expect(resText.exitCode).toBe(0);
-    expect(resText.stdout).toContain('(API_KEY env var ignored — credentials file in use)');
-
-    // JSON mode: fallback field set.
-    const resJson = await runWhoami(['--json'], {
-      XDG_CONFIG_HOME: tmpDir,
-      API_KEY: 'legacy-api-key-also-set',
-    });
-    expect(resJson.exitCode).toBe(0);
-    const envelope = JSON.parse(resJson.stdout.trim().split('\n').slice(-1)[0]!) as Record<
-      string,
-      unknown
-    >;
-    expect(envelope.fallback).toBe('API_KEY env ignored');
-  });
+  // Removed in the v2.0 cutover (#802, commit d9ffe56 "make CLI client +
+  // credentials Bearer-PAT-only"): the `whoami` command no longer recognizes
+  // the legacy `API_KEY` env var, so it no longer emits the "API_KEY env var
+  // ignored — credentials file in use" text footer or the `fallback` JSON
+  // field. This test asserted that intentionally-removed behavior and is
+  // therefore obsolete.
 
   it('PAT value never appears in stdout or stderr (T-30-07-01)', async () => {
     server = await startLogoutWhoamiServer({

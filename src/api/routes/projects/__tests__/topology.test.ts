@@ -3,6 +3,7 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 /**
  * Integration tests for GET /api/v1/projects/:id/topology.
@@ -20,9 +21,6 @@ import type { App } from '../../../../index.js';
  *   - missing auth → 401
  */
 
-const TEST_KEY = 'test-key-topology';
-const TEST_LABEL = 'topology-route';
-
 describe('GET /api/v1/projects/:id/topology', () => {
   let server: FastifyInstance;
   let app: App;
@@ -32,16 +30,15 @@ describe('GET /api/v1/projects/:id/topology', () => {
   let dagA: number;
   let dagB: number;
   let dagC: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     // FLAT project: two tasks, no dependency edges.
     const flat = app.projectService.createProject({ name: 'Topology FLAT' });
@@ -87,8 +84,6 @@ describe('GET /api/v1/projects/:id/topology', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) delete process.env.API_KEYS;
-    else process.env.API_KEYS = prevApiKeys;
   });
 
   it('classifies a project with no edges as FLAT', async () => {

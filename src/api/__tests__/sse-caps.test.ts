@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import { SSEManager } from '../../events/sse-manager.js';
 import { createServer } from '../server.js';
 import { resetConfig } from '../../config/env.js';
-import { generateToken } from '../../services/pat-hash.js';
+import { seedAuth } from './helpers/auth.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import type { App } from '../../index.js';
@@ -140,14 +140,14 @@ describe('SSEManager connection caps (task #185)', () => {
 describe('/api/v1/events route cap rejection (task #185)', () => {
   let server: FastifyInstance;
   let app: App;
+  let auth: { Authorization: string };
+  let patTokenId: number;
   const originalKey = process.env.SSE_MAX_CONNECTIONS_PER_KEY;
   const originalIp = process.env.SSE_MAX_CONNECTIONS_PER_IP;
   const originalTotal = process.env.SSE_MAX_CONNECTIONS;
-  const originalApiKeys = process.env.API_KEYS;
 
   beforeEach(async () => {
     // Tight caps so we can exhaust them in-process.
-    process.env.API_KEYS = 'test-key';
     process.env.SSE_MAX_CONNECTIONS_PER_KEY = '1';
     process.env.SSE_MAX_CONNECTIONS_PER_IP = '10';
     process.env.SSE_MAX_CONNECTIONS = '10';
@@ -155,6 +155,13 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802).
+    // The events route derives the per-principal cap id from the matched PAT as
+    // `pat:<tokenId>`, so we keep the tokenId to saturate that exact bucket.
+    const seeded = seedAuth(app.db);
+    auth = seeded.headers;
+    patTokenId = seeded.tokenId;
   });
 
   afterEach(async () => {
@@ -166,8 +173,6 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     else process.env.SSE_MAX_CONNECTIONS_PER_IP = originalIp;
     if (originalTotal === undefined) delete process.env.SSE_MAX_CONNECTIONS;
     else process.env.SSE_MAX_CONNECTIONS = originalTotal;
-    if (originalApiKeys === undefined) delete process.env.API_KEYS;
-    else process.env.API_KEYS = originalApiKeys;
     resetConfig();
   });
 
@@ -176,15 +181,12 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     // route's `preHandler` runs canAccept BEFORE the @fastify/sse plugin
     // wraps the handler, so the rejection short-circuits cleanly even
     // when inject() would otherwise hang on the SSE keep-alive path.
-    // task #393: the inject() request below authenticates via the legacy
-    // x-api-key strategy, so its derived per-principal cap id is
-    // `legacy:<apiKeyLabel>`. The seeded label for the bare `test-key`
-    // API_KEYS entry is `key_test-key` (see auth-chain.test.ts). Saturate
-    // THAT bucket so the per-key cap bites — we no longer fingerprint the
-    // raw header.
+    // task #393: the inject() request below authenticates via a PAT, so its
+    // derived per-principal cap id is `pat:<tokenId>`. Saturate THAT bucket so
+    // the per-key cap bites.
     const saturator = makeMockReply();
     server.sseManager.addConnection('saturator', saturator, {}, undefined, {
-      apiKeyFingerprint: 'legacy:key_test-key',
+      apiKeyFingerprint: `pat:${patTokenId}`,
       ip: '127.0.0.1',
     });
 
@@ -195,9 +197,7 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     const r = await server.inject({
       method: 'GET',
       url: '/api/v1/events',
-      headers: {
-        'X-API-Key': 'test-key',
-      },
+      headers: auth,
     });
 
     expect(r.statusCode).toBe(429);
@@ -210,7 +210,7 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
 
   it('returns 429 with per-IP reason when per-IP cap exceeded', async () => {
     // Reconfigure: per-IP cap = 1, per-key high. Saturate from same IP
-    // with a different key so it's the IP cap, not the key cap, that
+    // with a different principal so it's the IP cap, not the key cap, that
     // bites the inject request.
     await server.close();
     process.env.SSE_MAX_CONNECTIONS_PER_KEY = '10';
@@ -220,20 +220,22 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+    const seeded = seedAuth(app.db);
+    auth = seeded.headers;
 
     // task #393: saturate from the same IP under a DIFFERENT principal id so
-    // it's the per-IP cap (not per-key) that bites the legacy inject request
-    // (`legacy:key_test-key`). Any distinct principal works.
+    // it's the per-IP cap (not per-key) that bites the PAT inject request
+    // (`pat:<tokenId>`). Any distinct principal works.
     const saturator = makeMockReply();
     server.sseManager.addConnection('saturator', saturator, {}, undefined, {
-      apiKeyFingerprint: 'legacy:some-other-principal',
+      apiKeyFingerprint: 'pat:some-other-principal',
       ip: '127.0.0.1',
     });
 
     const r = await server.inject({
       method: 'GET',
       url: '/api/v1/events',
-      headers: { 'X-API-Key': 'test-key' },
+      headers: auth,
     });
 
     expect(r.statusCode).toBe(429);
@@ -252,7 +254,7 @@ describe('/api/v1/events route cap rejection (task #185)', () => {
     const r = await server.inject({
       method: 'GET',
       url: '/api/v1/events',
-      headers: { 'X-API-Key': 'test-key' },
+      headers: auth,
     });
 
     expect(r.statusCode).not.toBe(401);
@@ -446,19 +448,12 @@ describe('/api/v1/events PAT principal end-to-end (task #393)', () => {
     app = result.app;
     db = result.app.db;
 
-    // Mint a PAT row tied to the seeded legacy user (any real users.id works).
-    const legacyUser = db.prepare('SELECT id FROM users WHERE is_legacy = 1 LIMIT 1').get() as {
-      id: number;
-    };
-    const { token, prefix, suffix, hash } = generateToken();
-    const info = db
-      .prepare(
-        `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes)
-         VALUES (?, 'sse-test', ?, ?, ?, '[]')`,
-      )
-      .run(legacyUser.id, prefix, suffix, hash);
-    patTokenId = Number(info.lastInsertRowid);
-    patToken = token;
+    // v2.0: legacy boot-seeded users were removed (#799/#802), so there is no
+    // `is_legacy = 1` row to own the PAT. Seed a real user + PAT via the shared
+    // helper; the events route still derives the cap id as `pat:<tokenId>`.
+    const seeded = seedAuth(db, { name: 'sse-test' });
+    patTokenId = seeded.tokenId;
+    patToken = seeded.token;
   });
 
   afterAll(async () => {

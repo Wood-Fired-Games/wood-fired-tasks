@@ -2,9 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
+import { authHeaders } from './helpers/auth.js';
 
 // Configure low limits BEFORE importing server-builder
-process.env.API_KEYS = 'test-key';
 process.env.RATE_LIMIT_MAX = '3';
 process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
 
@@ -16,11 +16,15 @@ process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
 describe('API rate limiting', () => {
   let server: FastifyInstance;
   let db: Database.Database;
+  let auth: { Authorization: string };
 
   beforeAll(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     db = result.app.db;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(result.app.db);
   });
 
   afterAll(async () => {
@@ -31,7 +35,7 @@ describe('API rate limiting', () => {
   });
 
   it('returns 429 after the 3-request threshold from the same IP', async () => {
-    const headers = { 'x-api-key': 'test-key' };
+    const headers = auth;
 
     const r1 = await server.inject({ method: 'GET', url: '/api/v1/tasks', headers });
     const r2 = await server.inject({ method: 'GET', url: '/api/v1/tasks', headers });

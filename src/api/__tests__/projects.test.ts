@@ -2,19 +2,20 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
-
-// Set API key for tests
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('Project CRUD Routes', () => {
   let server: FastifyInstance;
   let db: Database.Database;
-  const headers = { 'x-api-key': 'test-key' };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     db = result.app.db;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(db);
   });
 
   afterAll(async () => {

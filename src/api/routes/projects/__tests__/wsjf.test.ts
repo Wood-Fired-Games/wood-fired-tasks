@@ -5,15 +5,13 @@ import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
 import { WsjfRescoreRepository } from '../../../../repositories/wsjf-rescore.repository.js';
 import type { ValueCharter } from '../../../../types/task.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 /**
  * WSJF 4.5 (task #645) — integration tests for the project WSJF REST surface:
  *   GET /api/v1/projects/:id/charter-history  (chronological)
  *   GET /api/v1/projects/:id/rescore-runs     (chronological)
  */
-
-const TEST_KEY = 'test-key-project-wsjf';
-const TEST_LABEL = 'project-wsjf-route';
 
 function charter(version: number, mission: string): ValueCharter {
   return {
@@ -32,16 +30,15 @@ describe('project WSJF REST surface', () => {
   let app: App;
   let db: Database.Database;
   let projectId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     // Project with an initial charter, then re-interviewed twice → two prior
     // snapshots in project_charter_history.
@@ -80,8 +77,6 @@ describe('project WSJF REST surface', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) delete process.env.API_KEYS;
-    else process.env.API_KEYS = prevApiKeys;
   });
 
   it('GET /:id/charter-history returns prior snapshots oldest-first', async () => {
@@ -175,9 +170,6 @@ describe('project WSJF REST surface', () => {
  * whose evidence spans are verbatim substrings of the task text so the
  * deterministic gate accepts the written-back submissions.
  */
-const RANK_KEY = 'test-key-wsjf-rank';
-const RANK_LABEL = 'wsjf-rank-route';
-
 function rescoreCharter(): ValueCharter {
   return {
     mission: 'Ship a reliable storefront',
@@ -199,8 +191,7 @@ describe('project WSJF remote-parity REST surface', () => {
   let db: Database.Database;
   let projectId: number;
   let taskA: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': RANK_KEY };
+  let headers: { Authorization: string };
 
   // A full auto WSJF write whose evidence spans are verbatim substrings of the
   // seed description (so the gate accepts the rescore submission).
@@ -270,12 +261,12 @@ describe('project WSJF remote-parity REST surface', () => {
   };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${RANK_KEY}:${RANK_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     const project = app.projectService.createProject({
       name: 'Rescore Project',
@@ -312,8 +303,6 @@ describe('project WSJF remote-parity REST surface', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) delete process.env.API_KEYS;
-    else process.env.API_KEYS = prevApiKeys;
   });
 
   it('GET /:id/wsjf-ranking returns tasks ordered by descending effectiveWsjf', async () => {

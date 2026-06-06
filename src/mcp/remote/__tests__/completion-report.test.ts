@@ -3,9 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../../api/server.js';
 import type { App } from '../../../index.js';
 import { RestClient } from '../rest-client.js';
-
-// Set API key for tests BEFORE createServer so authPlugin reads it.
-process.env.API_KEYS = 'remote-mcp-test-key';
+import { seedAuth } from '../../../api/__tests__/helpers/auth.js';
 
 /**
  * Remote MCP `completion_report` parity test (task #245).
@@ -32,7 +30,10 @@ describe('RestClient.getCompletionReport (remote MCP parity for #245)', () => {
     // Bind to ephemeral port — kernel picks a free port so parallel test
     // files don't collide. Returned string is "http://127.0.0.1:NNNNN".
     const baseUrl = await server.listen({ port: 0, host: '127.0.0.1' });
-    client = new RestClient(baseUrl, 'remote-mcp-test-key');
+    // v2.0: seed a real PAT and authenticate via Bearer (X-API-Key/API_KEYS
+    // removed in #799/#800/#802). RestClient always sends Authorization: Bearer.
+    const { token } = seedAuth(app.db);
+    client = new RestClient(baseUrl, token);
 
     projectAId = app.projectService.createProject({ name: 'Alpha' }).id;
     projectBId = app.projectService.createProject({ name: 'Beta' }).id;

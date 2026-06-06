@@ -1,21 +1,24 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type { App } from '../../index.js';
-
-// Set API key for tests
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('POST /api/v1/tasks/:id/claim', () => {
   let server: FastifyInstance;
   let app: App;
-  const headers = { 'x-api-key': 'test-key', 'content-type': 'application/json' };
+  let headers: { Authorization: string; 'content-type': string };
   let testProjectId: number;
 
   beforeAll(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+
+    await server.ready();
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = { ...authHeaders(app.db), 'content-type': 'application/json' };
 
     // Create a test project
     const project = app.projectService.createProject({ name: 'Claim Test Project' });

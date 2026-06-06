@@ -9,8 +9,8 @@
  * - Server uses `:memory:` SQLite so no on-disk state leaks between runs.
  * - Each CLI invocation runs in `--json` mode, parses stdout, asserts the
  *   JSON envelope shape, and asserts exit code 0.
- * - One negative path uses a bad API key and asserts the CLI exits with
- *   `CliExitCodes.GENERAL_ERROR` (1) per `src/utils/exit-codes.ts`.
+ * - One negative path uses a bogus Bearer token and asserts the CLI exits
+ *   with `CliExitCodes.GENERAL_ERROR` (1) per `src/utils/exit-codes.ts`.
  *
  * The CLI is invoked via `node` with `tsx/cli` as the loader so we do not
  * depend on `dist/` being built. `tsx` ships in devDependencies.
@@ -19,16 +19,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import type { FastifyInstance } from 'fastify';
 import type { App } from '../../index.js';
+import { seedAuth } from '../../api/__tests__/helpers/auth.js';
 
-// The server's config schema requires API_KEYS. We MUST set it before
-// importing `../../api/server.js` because the schema is consulted lazily on
-// first config access. The CLI itself reads `API_KEY` (singular) which the
-// child-process env injects per-spawn below.
-const TEST_API_KEY = 'e2e-cli-test-key-32characters-padding!!';
-process.env.API_KEYS = TEST_API_KEY;
+// v2.0 cutover (#799/#800/#802): the X-API-Key strategy and the API_KEYS
+// config field were removed server-side, and the CLI is now Bearer-PAT-only —
+// it no longer reads the legacy `API_KEY` env var. The CLI authenticates
+// exclusively via the on-disk credentials file (a Bearer PAT), so this e2e
+// test seeds a real PAT on the server and points the child CLI at a
+// credentials file via WFT_CREDENTIALS_PATH (written per-spawn below).
 // Suppress noisy server logs in test output. `fatal` is the highest pino
 // level so request logging is silenced; the schema rejects `silent`.
 process.env.LOG_LEVEL = 'fatal';
@@ -49,6 +52,10 @@ const cliEntry = path.join(repoRoot, 'src/cli/bin/tasks.ts');
 const requireFromHere = createRequire(import.meta.url);
 const tsxCli = requireFromHere.resolve('tsx/cli', { paths: [repoRoot] });
 
+// Per-suite temp dir holding the per-spawn credentials files. Created in
+// beforeAll, removed in afterAll.
+const credsDir = mkdtempSync(path.join(tmpdir(), 'wft-e2e-creds-'));
+
 interface RunResult {
   stdout: string;
   stderr: string;
@@ -56,11 +63,34 @@ interface RunResult {
 }
 
 /**
+ * Write a minimal Bearer-PAT credentials TOML file the child CLI can read via
+ * WFT_CREDENTIALS_PATH. The CLI's `resolveAuth` only reads `active.token` (and
+ * `readCredentials` validates the full shape), so we supply a schema-valid
+ * envelope. Mode 0o600 is required — `readCredentials` refuses group/other
+ * bits.
+ */
+function writeCredsFile(filePath: string, token: string, server: string): void {
+  const body =
+    '# e2e test credentials\n' +
+    '[active]\n' +
+    `token = ${JSON.stringify(token)}\n` +
+    'token_id = 1\n' +
+    `server = ${JSON.stringify(server)}\n` +
+    'user_id = 1\n' +
+    'display_name = "e2e-test-user"\n' +
+    'logged_in_at = "2026-01-01T00:00:00.000Z"\n';
+  writeFileSync(filePath, body, { mode: 0o600 });
+  chmodSync(filePath, 0o600);
+}
+
+/**
  * Spawn the real CLI binary as a child process.
  *
  * - `args` is appended verbatim after the `tasks.ts` entry.
- * - The child inherits the parent env, then overrides `API_BASE_URL` /
- *   `API_KEY` so it talks to the ephemeral test server with the right key.
+ * - The child inherits the parent env, then overrides `API_BASE_URL` and
+ *   points `WFT_CREDENTIALS_PATH` at a per-spawn credentials file carrying
+ *   `token` as the Bearer PAT (v2.0: the CLI is Bearer-PAT-only; `API_KEY`
+ *   env is no longer consulted).
  * - stdout/stderr are captured to strings; exit code is returned. A hard
  *   10s wall-clock timeout guards against hangs.
  */
@@ -68,22 +98,18 @@ function runCli(
   args: string[],
   env: Record<string, string>,
   baseUrl: string,
-  apiKey: string,
+  token: string,
 ): Promise<RunResult> {
+  const credsPath = path.join(credsDir, `creds-${Math.random().toString(36).slice(2)}.toml`);
+  writeCredsFile(credsPath, token, baseUrl);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [tsxCli, cliEntry, ...args], {
       env: {
         ...process.env,
         ...env,
         API_BASE_URL: baseUrl,
-        API_KEY: apiKey,
-        // Force resolveAuth to the legacy API_KEY branch by pointing
-        // WFT_CREDENTIALS_PATH at a path that does not exist. Without
-        // this, the child inherits any real ~/.config/wood-fired-tasks/
-        // credentials file from the developer's home and the CLI sends
-        // its bearer token to the ephemeral test server, which rejects
-        // it (401).
-        WFT_CREDENTIALS_PATH: '/nonexistent/wft-credentials-for-e2e-test',
+        // v2.0: authenticate via the on-disk credentials file (Bearer PAT).
+        WFT_CREDENTIALS_PATH: credsPath,
         // Force non-TTY so the spinner/prompt code paths stay quiet and
         // the JSON envelope is the only thing on stdout.
         FORCE_COLOR: '0',
@@ -144,11 +170,16 @@ describe('CLI end-to-end (real binary, real server)', () => {
   let app: App;
   let baseUrl: string;
   let projectId: number;
+  // Raw Bearer PAT seeded against the server's DB; used for every happy-path
+  // CLI invocation. The negative-path test passes a bogus token instead.
+  let TEST_TOKEN: string;
 
   beforeAll(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+    // v2.0: seed a real PAT and authenticate the CLI via Bearer.
+    TEST_TOKEN = seedAuth(app.db).token;
     // Bind to an ephemeral loopback port — the kernel assigns a free port,
     // so two parallel test files (if `fileParallelism` is ever re-enabled)
     // won't collide. With the current vitest.config.ts the test suite is
@@ -162,6 +193,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   afterAll(async () => {
     await server.close();
     app.dispose();
+    rmSync(credsDir, { recursive: true, force: true });
   });
 
   it('project-create returns a JSON envelope with an id', async () => {
@@ -169,7 +201,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'project-create', '--name', 'e2e-test'],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -180,7 +212,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   it('project-list returns an array of projects', async () => {
-    const res = await runCli(['--json', 'project-list'], {}, baseUrl, TEST_API_KEY);
+    const res = await runCli(['--json', 'project-list'], {}, baseUrl, TEST_TOKEN);
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
     expect(env.success).toBe(true);
@@ -193,7 +225,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'project-show', String(projectId)],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -221,7 +253,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -238,7 +270,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'list', '--project', String(projectId)],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -249,7 +281,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   it('list --search filters by query (search/my-work surrogate)', async () => {
-    const res = await runCli(['--json', 'list', '--search', 'e2e task'], {}, baseUrl, TEST_API_KEY);
+    const res = await runCli(['--json', 'list', '--search', 'e2e task'], {}, baseUrl, TEST_TOKEN);
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
     expect(env.success).toBe(true);
@@ -260,7 +292,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   it('show returns full task detail by id', async () => {
-    const res = await runCli(['--json', 'show', String(createdTaskId)], {}, baseUrl, TEST_API_KEY);
+    const res = await runCli(['--json', 'show', String(createdTaskId)], {}, baseUrl, TEST_TOKEN);
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
     expect(env.success).toBe(true);
@@ -274,7 +306,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'claim', String(createdTaskId), '--assignee', 'e2e-bot'],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -290,7 +322,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'update', String(createdTaskId), '--status', 'done'],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -313,7 +345,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -328,7 +360,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'comment-list', String(createdTaskId)],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
@@ -355,7 +387,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(addRes.exitCode).toBe(0);
     const blockerId = (parseJsonEnvelope(addRes.stdout).data as { task: { id: number } }).task.id;
@@ -364,7 +396,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'dep-add', String(blockerId), String(createdTaskId)],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(depAdd.exitCode).toBe(0);
     const addEnv = parseJsonEnvelope(depAdd.stdout);
@@ -374,7 +406,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
       ['--json', 'dep-list', String(blockerId)],
       {},
       baseUrl,
-      TEST_API_KEY,
+      TEST_TOKEN,
     );
     expect(depList.exitCode).toBe(0);
     const listEnv = parseJsonEnvelope(depList.stdout);
@@ -386,7 +418,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   it('health returns the public health envelope', async () => {
-    const res = await runCli(['--json', 'health'], {}, baseUrl, TEST_API_KEY);
+    const res = await runCli(['--json', 'health'], {}, baseUrl, TEST_TOKEN);
     expect(res.exitCode).toBe(0);
     const env = parseJsonEnvelope(res.stdout);
     // health command writes `jsonOutput(health)` — `data` IS the health
@@ -396,7 +428,7 @@ describe('CLI end-to-end (real binary, real server)', () => {
   });
 
   // ── Failure path ────────────────────────────────────────────
-  it('exits with CliExitCodes.GENERAL_ERROR (1) when API key is wrong', async () => {
+  it('exits with CliExitCodes.GENERAL_ERROR (1) when the Bearer token is wrong', async () => {
     const res = await runCli(
       ['--json', 'list', '--project', String(projectId)],
       {},

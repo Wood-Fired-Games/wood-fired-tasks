@@ -2,20 +2,22 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 import type { App } from '../../index.js';
-
-// Configure API keys for tests
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('Error Handler', () => {
   let server: FastifyInstance;
   let app: App;
   let testProjectId: number;
+  let auth: { Authorization: string };
 
   beforeEach(async () => {
     // Create server with in-memory database
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(app.db);
 
     // Create a test project for scenarios that need valid project_id
     const project = await app.projectService.createProject({
@@ -35,7 +37,7 @@ describe('Error Handler', () => {
     const response = await server.inject({
       method: 'POST',
       url: '/api/v1/tasks',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
       payload: {},
     });
 
@@ -52,7 +54,7 @@ describe('Error Handler', () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/tasks/99999',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(404);
@@ -72,7 +74,7 @@ describe('Error Handler', () => {
     const response = await server.inject({
       method: 'POST',
       url: '/api/v1/tasks',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
       payload: {
         title: 'Test Task',
         project_id: 99999, // Non-existent project
@@ -101,7 +103,7 @@ describe('Error Handler', () => {
     const response = await server.inject({
       method: 'PUT',
       url: `/api/v1/tasks/${task.id}`,
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
       payload: {
         status: 'done',
       },
@@ -120,7 +122,7 @@ describe('Error Handler', () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/v1/projects/99999',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(404);
@@ -147,7 +149,7 @@ describe('Error Handler', () => {
     const response = await server.inject({
       method: 'POST',
       url: '/api/v1/projects',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
       payload: {
         name: 'Duplicate Project',
         created_by: 'test-user',
@@ -168,12 +170,12 @@ describe('Error Handler', () => {
       server.inject({
         method: 'GET',
         url: '/api/v1/tasks/99999',
-        headers: { 'x-api-key': 'test-key' },
+        headers: auth,
       }),
       server.inject({
         method: 'GET',
         url: '/api/v1/projects/99999',
-        headers: { 'x-api-key': 'test-key' },
+        headers: auth,
       }),
     ]);
 
@@ -187,18 +189,18 @@ describe('Error Handler', () => {
       server.inject({
         method: 'POST',
         url: '/api/v1/tasks',
-        headers: { 'x-api-key': 'test-key' },
+        headers: auth,
         payload: {},
       }),
       server.inject({
         method: 'GET',
         url: '/api/v1/tasks/99999',
-        headers: { 'x-api-key': 'test-key' },
+        headers: auth,
       }),
       server.inject({
         method: 'POST',
         url: '/api/v1/projects',
-        headers: { 'x-api-key': 'test-key' },
+        headers: auth,
         payload: {
           name: 'Duplicate Project',
           created_by: 'test-user',

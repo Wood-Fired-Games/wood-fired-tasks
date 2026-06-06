@@ -69,6 +69,12 @@ describe('db-mint-token command', () => {
     const silentLogger = { info: () => {}, warn: () => {} };
     seedIdentities(db, parseApiKeyEntries('test-key:legacy-key'), silentLogger);
 
+    // v2.0 cutover (#801): the seeder no longer creates is_legacy credential
+    // rows from API_KEYS, so seed the legacy 'legacy-key' user directly. The
+    // db-mint-token command still resolves --user against is_legacy rows via
+    // findLegacyByDisplayName, so this row exercises that path unchanged.
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`).run('legacy-key');
+
     db.prepare(`INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`).run(
       'alice',
       'alice@example.com',

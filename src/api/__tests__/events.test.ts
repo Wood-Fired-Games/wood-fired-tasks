@@ -3,19 +3,20 @@ import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import { eventBus } from '../../events/event-bus.js';
-
-// Set API keys before importing server
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('Events API (SSE)', () => {
   let server: FastifyInstance;
   let db: Database.Database;
+  let auth: { Authorization: string };
 
   beforeAll(async () => {
-    process.env.API_KEYS = 'test-key';
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     db = result.app.db;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(db);
 
     // Create test project for filtering tests
     db.prepare('INSERT INTO projects (id, name) VALUES (?, ?)').run(1, 'Test Project 1');
@@ -45,7 +46,7 @@ describe('Events API (SSE)', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/events',
-        headers: { 'X-API-Key': 'test-key' },
+        headers: auth,
       });
 
       // SSE endpoints return 500 in inject mode due to plugin limitations
@@ -57,7 +58,7 @@ describe('Events API (SSE)', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/events?project_id=1',
-        headers: { 'X-API-Key': 'test-key' },
+        headers: auth,
       });
 
       // Query parameter should be parsed (auth passed, route exists)
@@ -69,7 +70,7 @@ describe('Events API (SSE)', () => {
       const response = await server.inject({
         method: 'GET',
         url: '/api/v1/events?event_types=task.created,task.updated',
-        headers: { 'X-API-Key': 'test-key' },
+        headers: auth,
       });
 
       // Query parameter should be parsed
@@ -82,7 +83,7 @@ describe('Events API (SSE)', () => {
         method: 'GET',
         url: '/api/v1/events',
         headers: {
-          'X-API-Key': 'test-key',
+          ...auth,
           'Last-Event-ID': '5',
         },
       });

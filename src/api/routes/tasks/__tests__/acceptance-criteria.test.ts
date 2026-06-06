@@ -3,6 +3,7 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 /**
  * Wave 1.3 (task #311) — REST surface coverage for the new
@@ -19,24 +20,20 @@ import type { App } from '../../../../index.js';
  *  - Back-compat: tasks created without acceptance_criteria load with null.
  */
 
-const TEST_KEY = 'test-key-acceptance';
-const TEST_LABEL = 'wave-1-3-acceptance';
-
 describe('REST /api/v1/tasks — acceptance_criteria field (#311)', () => {
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
   let projectId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
     projectId = app.projectService.createProject({
       name: 'Wave 1.3 acceptance',
     }).id;
@@ -45,11 +42,6 @@ describe('REST /api/v1/tasks — acceptance_criteria field (#311)', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) {
-      delete process.env.API_KEYS;
-    } else {
-      process.env.API_KEYS = prevApiKeys;
-    }
   });
 
   it('POST accepts acceptance_criteria and GET returns it verbatim', async () => {

@@ -27,6 +27,7 @@ import {
   getDiscoveryFixture,
   installOidcInterceptors,
 } from '../../../tests/helpers/oidc-fixtures.js';
+import { authHeaders } from './helpers/auth.js';
 
 const ISSUER = 'https://accounts.example.com';
 const CLIENT_ID = 'test-client-id.example.com';
@@ -174,6 +175,7 @@ describe('OIDC enabled boot — persistent discovery failure boots DEGRADED (Tas
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
+  let auth: { Authorization: string };
 
   beforeAll(async () => {
     setEnabledEnv();
@@ -190,6 +192,9 @@ describe('OIDC enabled boot — persistent discovery failure boots DEGRADED (Tas
     server = result.server;
     app = result.app;
     db = result.app.db;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(app.db);
   });
 
   afterAll(async () => {
@@ -220,7 +225,7 @@ describe('OIDC enabled boot — persistent discovery failure boots DEGRADED (Tas
     const r = await server.inject({
       method: 'GET',
       url: '/health/detailed',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
     });
     expect(r.statusCode).toBe(200);
     const body = r.json();
