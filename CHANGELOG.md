@@ -13,6 +13,38 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v1.18.2] - 2026-06-06
+
+A patch release: a Windows `self-update` fix plus two install-experience
+follow-ups.
+
+### Fixed
+- **`wood-fired-tasks self-update` no longer crashes on Windows** (#793). It
+  spawned `npm` (which is `npm.cmd`) without a shell; since the CVE-2024-27980
+  hardening, Node refuses to spawn a `.cmd`/`.bat` directly and threw
+  `spawn EINVAL` (errno -4071). The npm spawn now passes `shell: true` on
+  Windows only (its args are constant — no quoting/injection hazard), with a
+  win32 regression test. Workaround on 1.18.0/1.18.1: run
+  `npm i -g wood-fired-tasks@latest` directly.
+
+### Added
+- **PATH remediation hint after global install** (#792). A child process can't
+  change the parent shell's PATH, so a fresh `npm i -g` is sometimes not
+  resolvable until a new shell. `setup` and the postinstall notice now detect
+  this (npm global bin dir vs the process PATH — no `which`/`where` shell-out)
+  and print a copy-pasteable fix per platform/shell: `hash -r` (bash, dir on
+  PATH but stale cache), `export PATH=…` + persist (posix, dir off PATH), or the
+  PowerShell `$env:Path` refresh (Windows). The postinstall path is
+  try/catch-guarded so it can never fail an install.
+
+### Changed
+- **Documented the harmless npm deprecation warnings** (#789). `prebuild-install`
+  (via `better-sqlite3`, latest still uses it) and `lodash.get`/`lodash.isequal`
+  (via `umzug` → `@rushstack/ts-command-line` → `z-schema@5`) are upstream
+  transitives — install succeeds and `npm audit` is clean. Recorded in
+  `docs/SETUP.md` with the dependency chains; eliminating the lodash pair via a
+  `z-schema@12` override is deferred (it must not risk the migration path).
+
 ## [v1.18.1] - 2026-06-06
 
 A patch release fixing two regressions shipped in v1.18.0.

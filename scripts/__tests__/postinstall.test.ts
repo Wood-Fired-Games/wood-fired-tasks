@@ -14,13 +14,18 @@ const scriptPath = path.resolve(
 );
 
 describe('postinstall script (task #752)', () => {
-  it('prints exactly one notice line pointing at `wood-fired-tasks setup`', () => {
+  it('prints the setup notice as its first line (an optional PATH hint may follow)', () => {
     const out = execFileSync(process.execPath, [scriptPath], {
       encoding: 'utf8',
     });
     const lines = out.split('\n').filter((l) => l.length > 0);
-    expect(lines).toHaveLength(1);
-    expect(out).toContain('wood-fired-tasks setup');
+    // Always leads with the single setup-notice line. Task #792 may append a
+    // PATH-remediation hint when the npm global bin dir isn't on PATH (env-
+    // dependent), so assert the notice leads rather than that it's the only line.
+    expect(lines.length).toBeGreaterThanOrEqual(1);
+    expect(lines[0]).toContain('wood-fired-tasks setup');
+    // The setup notice appears exactly once (no duplicate notice lines).
+    expect(out.match(/wood-fired-tasks setup/g) ?? []).toHaveLength(1);
   });
 
   it('has NO file-system side effects (writes nothing to its cwd)', () => {

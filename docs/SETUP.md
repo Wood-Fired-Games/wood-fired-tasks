@@ -58,6 +58,19 @@ npm i -g wood-fired-tasks
 After that, `npm i -g` and `wood-fired-tasks self-update` both work without sudo
 forever.
 
+### Deprecation warnings on install (harmless)
+
+`npm i -g wood-fired-tasks` prints a few `npm warn deprecated` lines. They are
+**expected, harmless, and come from upstream transitive dependencies** — not
+from wood-fired-tasks itself. The install succeeds and `npm audit` is clean.
+
+| Warning | Where it comes from | Status |
+| --- | --- | --- |
+| `prebuild-install@7.x` | `better-sqlite3` (the SQLite driver) still depends on it, including the latest release | Upstream-owned; nothing to do until better-sqlite3 drops it |
+| `lodash.get@4.x`, `lodash.isequal@4.x` | `umzug` (migrations) → `@rushstack/ts-command-line` → `z-schema@5` | Upstream-owned; `z-schema@12` dropped them but forcing that major override under rushstack is deferred (it must not risk the migration path) |
+
+You can safely ignore them. Tracking: project-37 #789.
+
 ### `wood-fired-tasks setup` — local Claude Code wiring
 
 `setup` does three things, all idempotent (re-runnable; a file is only rewritten

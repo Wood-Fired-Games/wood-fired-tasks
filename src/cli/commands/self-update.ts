@@ -108,6 +108,12 @@ function runNpmInstall(
     let settled = false;
     const child = spawn(NPM_BIN, ['i', '-g', `${PACKAGE_NAME}@latest`], {
       stdio: ['ignore', 'inherit', 'pipe'],
+      // Windows: npm is `npm.cmd` (a batch file), and since the
+      // CVE-2024-27980 hardening Node refuses to spawn a `.cmd`/`.bat`
+      // directly without a shell (throws spawn EINVAL). Run through the shell
+      // on win32. Safe here: every arg is a constant with no spaces or shell
+      // metacharacters, so there is no quoting/injection hazard.
+      shell: process.platform === 'win32',
     });
 
     const settle = (code: number | null, error: NodeJS.ErrnoException | null) => {

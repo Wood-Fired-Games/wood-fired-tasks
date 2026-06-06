@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { mergeClaudeJson, type ClaudeMcpServerEntry } from '../../setup/claude-json.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { configDir as defaultConfigDir } from '../../config/paths.js';
+import { resolvePathHint } from '../util/path-hint.js';
 
 /**
  * `tasks setup` (task #737).
@@ -422,6 +423,17 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
       ...(options.npmRunner !== undefined && { runner: options.npmRunner }),
       log,
     });
+  }
+
+  // Task #792: best-effort PATH remediation hint. If the npm global bin dir is
+  // not resolvable on the current PATH (or a POSIX shell may have a stale
+  // command-hash cache), print the exact one-liner to fix it. Non-fatal: a
+  // child process cannot mutate the parent shell's PATH, so this is advice only.
+  try {
+    const hint = resolvePathHint();
+    if (hint !== null) log(hint);
+  } catch {
+    /* best-effort: never block setup on a hint failure */
   }
 
   return {

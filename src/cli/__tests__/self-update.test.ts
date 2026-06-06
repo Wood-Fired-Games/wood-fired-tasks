@@ -79,6 +79,33 @@ describe('self-update command', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  // Regression: on Windows, npm is `npm.cmd`; since CVE-2024-27980 Node throws
+  // `spawn EINVAL` when spawning a .cmd without a shell. self-update must pass
+  // `shell: true` on win32 (and only there).
+  it('spawns with shell:true on win32 (npm.cmd EINVAL fix), shell:false elsewhere', async () => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+    const origPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      const recorded: { options: { shell?: boolean } } = { options: {} };
+      const child = makeFakeChild();
+      const spawn = vi.fn((_command: string, _args: readonly string[], options: object) => {
+        recorded.options = options as { shell?: boolean };
+        setImmediate(() => child.emit('close', 0));
+        return child as never;
+      });
+      __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn() });
+
+      const program = new Command();
+      program.addCommand(selfUpdateCommand);
+      await program.parseAsync(['node', 'tasks', 'self-update']);
+
+      expect(recorded.options.shell).toBe(true);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
+    }
+  });
+
   it('prints no-sudo remediation and performs NO elevation on EACCES', async () => {
     const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
 
