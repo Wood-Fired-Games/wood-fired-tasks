@@ -9,19 +9,21 @@ import { seedIdentities } from '../identity-seeder.js';
 import { createTestApp } from '../../index.js';
 
 /**
- * Tests for the Phase 27 boot-time identity seeder (Plan 6).
+ * Tests for the boot-time identity seeder.
  *
- * Goals (IDENT-04, IDENT-05, MIGR-01):
- * - Each API_KEYS entry yields one `users` row with `display_name=label`,
- *   `is_legacy=1`.
- * - Exactly one `slack-bot` row with `is_service_account=1` exists, regardless
- *   of API_KEYS contents.
- * - Idempotent: re-running with the same input produces 0 new rows.
+ * Legacy API-key seeding was removed in Phase 0 (Task #801): the seeder no
+ * longer inserts `is_legacy` credential rows on boot. Only the two service
+ * accounts (slack-bot, mcp-bot) are seeded.
+ *
+ * Goals:
+ * - The seeder NEVER inserts an `is_legacy` row, regardless of input.
+ * - Exactly one `slack-bot` and one `mcp-bot` row with `is_service_account=1`
+ *   exist after boot.
+ * - Idempotent: re-running produces 0 new rows.
  * - First-run emits one INFO line per seeded row tagged `event: 'identity-seeded'`.
  * - No-op run emits exactly one INFO summary tagged `event: 'identity-seed-noop'`.
  * - All writes wrapped in a SINGLE `db.transaction(() => {})` -- rollback on
  *   error leaves zero rows.
- * - The legacy key string itself is NEVER persisted in any users row.
  */
 
 interface MockLogger {
@@ -55,8 +57,31 @@ describe('seedIdentities', () => {
   });
 
   describe('first run', () => {
-    it('seeds 2 legacy users + 2 service-account users (slack-bot, mcp-bot) for 2 API_KEYS entries', () => {
-      const result = seedIdentities(
+    it('seeds the two service accounts (slack-bot, mcp-bot) and zero legacy rows', () => {
+      const result = seedIdentities(db, [], logger);
+
+      const legacyCount = (
+        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }
+      ).c;
+      const serviceCount = (
+        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as {
+          c: number;
+        }
+      ).c;
+      // Legacy seeding removed (Task #801): no is_legacy rows are ever created.
+      expect(legacyCount).toBe(0);
+      // BOTH slack-bot AND mcp-bot are seeded unconditionally.
+      expect(serviceCount).toBe(2);
+
+      expect(result).toEqual({
+        seeded: { service: 2 },
+        alreadyPresent: { service: 0 },
+      });
+    });
+
+    it('inserts no is_legacy rows even when legacy entries are passed', () => {
+      // Legacy entries are accepted for call-site compatibility but ignored.
+      seedIdentities(
         db,
         [
           { key: 'k1', label: 'alice' },
@@ -68,35 +93,17 @@ describe('seedIdentities', () => {
       const legacyCount = (
         db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }
       ).c;
-      const serviceCount = (
-        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as {
-          c: number;
-        }
-      ).c;
-      expect(legacyCount).toBe(2);
-      // Phase 31: BOTH slack-bot AND mcp-bot are seeded unconditionally.
-      expect(serviceCount).toBe(2);
+      expect(legacyCount).toBe(0);
 
-      expect(result).toEqual({
-        seeded: { legacy: 2, service: 2 },
-        alreadyPresent: { legacy: 0, service: 0 },
-      });
+      // 'alice'/'bob' must NOT have been persisted as users at all.
+      const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
+      expect(total).toBe(2); // only slack-bot + mcp-bot
     });
 
-    it('logs one info line per seeded row tagged event=identity-seeded', () => {
-      seedIdentities(
-        db,
-        [
-          { key: 'k1', label: 'alice' },
-          { key: 'k2', label: 'bob' },
-        ],
-        logger,
-      );
+    it('logs one info line per seeded service row tagged event=identity-seeded', () => {
+      seedIdentities(db, [], logger);
 
-      // Expect at least 4 info calls (2 legacy + 2 service). No noop summary on a first run.
-      expect(logger.info.mock.calls.length).toBeGreaterThanOrEqual(4);
-
-      // Each seeded-row call's first arg is the structured payload with event + kind.
+      // Expect exactly 2 info calls (2 service). No noop summary on a first run.
       const seededCalls = logger.info.mock.calls.filter((call) => {
         const obj = call[0];
         return (
@@ -105,10 +112,10 @@ describe('seedIdentities', () => {
           (obj as { event?: string }).event === 'identity-seeded'
         );
       });
-      expect(seededCalls).toHaveLength(4);
+      expect(seededCalls).toHaveLength(2);
 
       const kinds = seededCalls.map((call) => (call[0] as { kind: string }).kind).sort();
-      expect(kinds).toEqual(['legacy', 'legacy', 'service', 'service']);
+      expect(kinds).toEqual(['service', 'service']);
 
       // No noop summary on first run.
       const noopCalls = logger.info.mock.calls.filter((call) => {
@@ -120,23 +127,6 @@ describe('seedIdentities', () => {
         );
       });
       expect(noopCalls).toHaveLength(0);
-    });
-
-    it('empty API_KEYS array still seeds both service-account rows (slack-bot, mcp-bot)', () => {
-      const result = seedIdentities(db, [], logger);
-
-      const legacyCount = (
-        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as { c: number }
-      ).c;
-      const serviceCount = (
-        db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_service_account = 1').get() as {
-          c: number;
-        }
-      ).c;
-      expect(legacyCount).toBe(0);
-      expect(serviceCount).toBe(2);
-      expect(result.seeded.service).toBe(2);
-      expect(result.seeded.legacy).toBe(0);
     });
 
     it('both service-account rows have the correct literal display_names', () => {
@@ -160,54 +150,49 @@ describe('seedIdentities', () => {
       expect(row.slack_user_id).toBeNull();
     });
 
-    it('legacy row display_name equals entry.label verbatim', () => {
-      seedIdentities(db, [{ key: 'secret', label: 'custom-label' }], logger);
-      const row = db.prepare('SELECT display_name FROM users WHERE is_legacy = 1').get() as {
-        display_name: string;
-      };
-      expect(row.display_name).toBe('custom-label');
+    it('slack-bot row has is_service_account=1 and slack_user_id=NULL', () => {
+      seedIdentities(db, [], logger);
+      const row = db
+        .prepare(
+          "SELECT is_service_account, slack_user_id FROM users WHERE display_name = 'slack-bot'",
+        )
+        .get() as { is_service_account: number; slack_user_id: string | null };
+      expect(row.is_service_account).toBe(1);
+      expect(row.slack_user_id).toBeNull();
     });
   });
 
   describe('second run / idempotency', () => {
-    it('second run with identical API_KEYS inserts 0 new rows', () => {
-      const entries = [
-        { key: 'k1', label: 'alice' },
-        { key: 'k2', label: 'bob' },
-      ];
-      seedIdentities(db, entries, logger);
+    it('second run inserts 0 new rows', () => {
+      seedIdentities(db, [], logger);
       logger.info.mockClear();
 
-      const result = seedIdentities(db, entries, logger);
+      const result = seedIdentities(db, [], logger);
 
       const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
-      // Phase 31: 2 legacy + 2 service-account rows.
-      expect(total).toBe(4);
+      // 2 service-account rows only.
+      expect(total).toBe(2);
       expect(result).toEqual({
-        seeded: { legacy: 0, service: 0 },
-        alreadyPresent: { legacy: 2, service: 2 },
+        seeded: { service: 0 },
+        alreadyPresent: { service: 2 },
       });
     });
 
     it('second run logs exactly one identity-seed-noop summary line', () => {
-      const entries = [
-        { key: 'k1', label: 'alice' },
-        { key: 'k2', label: 'bob' },
-      ];
-      seedIdentities(db, entries, logger);
+      seedIdentities(db, [], logger);
       logger.info.mockClear();
 
-      seedIdentities(db, entries, logger);
+      seedIdentities(db, [], logger);
 
       expect(logger.info).toHaveBeenCalledTimes(1);
       const [payload] = logger.info.mock.calls[0];
       expect(payload).toMatchObject({
         event: 'identity-seed-noop',
-        counts: { legacy: 2, service: 2 },
+        counts: { service: 2 },
       });
     });
 
-    it('mcp-bot row persists across re-runs (coexists with slack-bot)', () => {
+    it('both service rows persist across re-runs', () => {
       seedIdentities(db, [], logger);
       seedIdentities(db, [], logger);
       const rows = db
@@ -222,45 +207,35 @@ describe('seedIdentities', () => {
   describe('atomicity', () => {
     it('leaves db.inTransaction false before and after the call', () => {
       expect(db.inTransaction).toBe(false);
-      seedIdentities(db, [{ key: 'k1', label: 'alice' }], logger);
+      seedIdentities(db, [], logger);
       expect(db.inTransaction).toBe(false);
     });
 
     it('rolls back ALL inserts if any insert throws (single-transaction guarantee)', () => {
-      // Monkey-patch db.prepare so the slack-bot insert throws AFTER the legacy
-      // inserts have already run inside the same transaction. The seeder must
-      // wrap everything in one transaction, so the rollback must remove the
-      // legacy rows too -- proving atomicity.
+      // Monkey-patch db.prepare so the service-account insert throws. The
+      // seeder must wrap everything in one transaction, so the rollback must
+      // remove every service row it had begun inserting -- proving atomicity.
       const realPrepare = db.prepare.bind(db);
       const prepareSpy = vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
         const stmt = realPrepare(sql);
-        // Target the slack-bot insert (the only insert that mentions is_service_account).
+        // Target the service-account insert.
         if (/is_service_account/i.test(sql) && /INSERT/i.test(sql)) {
           return {
             ...stmt,
             run: (..._args: unknown[]) => {
-              throw new Error('synthetic slack-bot insert failure');
+              throw new Error('synthetic service insert failure');
             },
           } as unknown as Database.Statement;
         }
         return stmt;
       });
 
-      expect(() =>
-        seedIdentities(
-          db,
-          [
-            { key: 'k1', label: 'alice' },
-            { key: 'k2', label: 'bob' },
-          ],
-          logger,
-        ),
-      ).toThrow(/synthetic slack-bot insert failure/);
+      expect(() => seedIdentities(db, [], logger)).toThrow(/synthetic service insert failure/);
 
       prepareSpy.mockRestore();
 
       // Re-issue prepare on the real db (the spy is gone) to verify zero rows
-      // were persisted -- the transaction rolled the legacy inserts back too.
+      // were persisted -- the transaction rolled everything back.
       const total = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
       expect(total).toBe(0);
       expect(db.inTransaction).toBe(false);
@@ -273,29 +248,10 @@ describe('seedIdentities', () => {
       const infoSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      expect(() => seedIdentities(db, [{ key: 'k1', label: 'alice' }])).not.toThrow();
+      expect(() => seedIdentities(db)).not.toThrow();
 
       infoSpy.mockRestore();
       warnSpy.mockRestore();
-    });
-  });
-
-  describe('secret hygiene', () => {
-    it('does not persist the legacy key string anywhere in the users table', () => {
-      const secret = 'secret-key-value-123';
-      seedIdentities(db, [{ key: secret, label: 'alice' }], logger);
-
-      const rows = db.prepare('SELECT * FROM users').all();
-      const serialised = JSON.stringify(rows);
-      expect(serialised).not.toContain(secret);
-    });
-
-    it('does not log the legacy key string in any info call payload', () => {
-      const secret = 'secret-key-value-XYZ';
-      seedIdentities(db, [{ key: secret, label: 'alice' }], logger);
-
-      const serialised = JSON.stringify(logger.info.mock.calls);
-      expect(serialised).not.toContain(secret);
     });
   });
 
@@ -312,30 +268,6 @@ describe('seedIdentities', () => {
     // a second INSERT that would have created a duplicate is silently
     // dropped at the DB layer (info.changes === 0) rather than producing
     // a duplicate row or throwing.
-
-    it('raw concurrent-race scenario: second INSERT becomes a DB-level no-op (legacy)', () => {
-      // Simulate "process A and process B both pass WHERE-NOT-EXISTS and
-      // both INSERT": just issue the same INSERT twice. With the partial
-      // UNIQUE index + ON CONFLICT DO NOTHING, the second one no-ops.
-      const stmt = db.prepare(
-        `INSERT INTO users (display_name, is_legacy)
-         VALUES (?, 1)
-         ON CONFLICT(display_name) WHERE is_legacy = 1 DO NOTHING`,
-      );
-
-      const r1 = stmt.run('alice');
-      const r2 = stmt.run('alice');
-
-      expect(r1.changes).toBe(1);
-      expect(r2.changes).toBe(0);
-
-      const count = (
-        db
-          .prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1 AND display_name = ?')
-          .get('alice') as { c: number }
-      ).c;
-      expect(count).toBe(1);
-    });
 
     it('raw concurrent-race scenario: second INSERT becomes a DB-level no-op (slack-bot)', () => {
       const stmt = db.prepare(
@@ -364,25 +296,20 @@ describe('seedIdentities', () => {
       // Two seeders racing past `runMigrations` (which holds BEGIN EXCLUSIVE
       // only during migration application) is what WR-04 worried about.
       // The DB-level guard makes both seeders safe.
-      const entries = [
-        { key: 'k1', label: 'alice' },
-        { key: 'k2', label: 'bob' },
-      ];
+      const r1 = seedIdentities(db, [], logger);
+      const r2 = seedIdentities(db, [], logger);
 
-      const r1 = seedIdentities(db, entries, logger);
-      const r2 = seedIdentities(db, entries, logger);
-
-      // Phase 31: 2 service rows (slack-bot, mcp-bot).
-      expect(r1.seeded).toEqual({ legacy: 2, service: 2 });
-      expect(r2.seeded).toEqual({ legacy: 0, service: 0 });
-      expect(r2.alreadyPresent).toEqual({ legacy: 2, service: 2 });
+      // 2 service rows (slack-bot, mcp-bot).
+      expect(r1.seeded).toEqual({ service: 2 });
+      expect(r2.seeded).toEqual({ service: 0 });
+      expect(r2.alreadyPresent).toEqual({ service: 2 });
 
       const total = (
         db.prepare('SELECT COUNT(*) AS c FROM users').get() as {
           c: number;
         }
       ).c;
-      expect(total).toBe(4);
+      expect(total).toBe(2);
     });
 
     it('two connections to the same on-disk DB each run seedIdentities; result is one row per identity', async () => {
@@ -406,22 +333,17 @@ describe('seedIdentities', () => {
         // on dbA; WAL makes them visible to dbB without ceremony).
         dbB = initDatabase(dbPath);
 
-        const entries = [
-          { key: 'k1', label: 'alice' },
-          { key: 'k2', label: 'bob' },
-        ];
-
-        const rA = seedIdentities(dbA, entries, logger);
-        const rB = seedIdentities(dbB, entries, logger);
+        const rA = seedIdentities(dbA, [], logger);
+        const rB = seedIdentities(dbB, [], logger);
 
         // Whichever ran first did the inserts; whichever ran second
-        // observed `alreadyPresent`. Phase 31: 2 service rows.
-        expect(rA.seeded).toEqual({ legacy: 2, service: 2 });
-        expect(rB.seeded).toEqual({ legacy: 0, service: 0 });
-        expect(rB.alreadyPresent).toEqual({ legacy: 2, service: 2 });
+        // observed `alreadyPresent`. 2 service rows.
+        expect(rA.seeded).toEqual({ service: 2 });
+        expect(rB.seeded).toEqual({ service: 0 });
+        expect(rB.alreadyPresent).toEqual({ service: 2 });
 
         const total = (dbB.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
-        expect(total).toBe(4);
+        expect(total).toBe(2);
       } finally {
         if (dbA?.open) dbA.close();
         if (dbB?.open) dbB.close();
@@ -432,13 +354,15 @@ describe('seedIdentities', () => {
 });
 
 /**
- * Task 6.4 smoke test: end-to-end verification that `createTestApp` actually
- * runs the seeder during boot and produces the expected user set when
- * API_KEYS is populated. This exercises the wiring done in src/index.ts
- * (Task 6.3) without mocking anything -- it's the closest in-process
- * approximation of "does the server boot clean and seed?".
+ * Smoke test: end-to-end verification that `createTestApp` actually runs the
+ * seeder during boot and produces the expected service-account user set. This
+ * exercises the wiring in src/index.ts without mocking anything -- it's the
+ * closest in-process approximation of "does the server boot clean and seed?".
+ *
+ * Legacy seeding removed (Task #801): even when API_KEYS is set, no legacy
+ * users are created -- only slack-bot and mcp-bot.
  */
-describe('createTestApp boot integration (Task 6.4 smoke)', () => {
+describe('createTestApp boot integration (smoke)', () => {
   let prevApiKeys: string | undefined;
 
   beforeEach(() => {
@@ -453,7 +377,7 @@ describe('createTestApp boot integration (Task 6.4 smoke)', () => {
     }
   });
 
-  it('seeds alice + bob legacy users plus slack-bot AND mcp-bot when API_KEYS is set', async () => {
+  it('seeds only slack-bot AND mcp-bot (no legacy users) even when API_KEYS is set', async () => {
     process.env.API_KEYS = 'k1:alice,k2:bob';
 
     const app = await createTestApp();
@@ -462,9 +386,16 @@ describe('createTestApp boot integration (Task 6.4 smoke)', () => {
         display_name: string;
       }[];
       const names = rows.map((r) => r.display_name);
-      // Phase 31: both service accounts seeded; sorted alphabetically:
-      // alice, bob, mcp-bot, slack-bot.
-      expect(names).toEqual(['alice', 'bob', 'mcp-bot', 'slack-bot']);
+      // Legacy seeding removed: alice/bob are NOT created. Only the two
+      // service accounts, sorted alphabetically: mcp-bot, slack-bot.
+      expect(names).toEqual(['mcp-bot', 'slack-bot']);
+
+      const legacyCount = (
+        app.db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_legacy = 1').get() as {
+          c: number;
+        }
+      ).c;
+      expect(legacyCount).toBe(0);
     } finally {
       app.dispose();
     }

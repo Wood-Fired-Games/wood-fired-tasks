@@ -38,17 +38,24 @@ const consoleStubLogger: MinimalLogger = {
 };
 
 export interface IdentitySeedResult {
-  seeded: { legacy: number; service: number };
-  alreadyPresent: { legacy: number; service: number };
+  seeded: { service: number };
+  alreadyPresent: { service: number };
 }
 
 /**
- * Idempotent boot-time seeder for legacy + service-account users.
+ * Idempotent boot-time seeder for service-account users.
  *
- * Behaviour (locked in 27-CONTEXT.md / 27-PLAN-CHECK.md, extended by
- * Plan 31-01 to seed BOTH service-account rows):
- * - For each `API_KEYS` entry, ensures one `users` row with
- *   `display_name = entry.label, is_legacy = 1` exists.
+ * Legacy API-key seeding was removed in Phase 0 (Task #801): the seeder no
+ * longer creates `is_legacy` credential rows on boot. Any pre-existing
+ * `is_legacy` rows are left inert (no migration). Only the service-account
+ * rows are seeded going forward.
+ *
+ * The `entries` parameter is retained (and ignored) so the existing call site
+ * in `src/index.ts` keeps compiling during integration; sibling task #800 is
+ * removing `API_KEYS`/`parseApiKeyEntries` from `src/config/env.js`, after
+ * which the caller will stop passing entries entirely.
+ *
+ * Behaviour:
  * - Unconditionally ensures `users` rows with
  *   `display_name = 'slack-bot', is_service_account = 1` AND
  *   `display_name = 'mcp-bot',   is_service_account = 1` exist.
@@ -59,24 +66,21 @@ export interface IdentitySeedResult {
  * - First-run: emits one INFO line per seeded row, tagged `event: 'identity-seeded'`.
  * - Idempotent run (nothing new): emits one INFO summary tagged
  *   `event: 'identity-seed-noop'`.
- * - The raw legacy key string is NEVER persisted or logged --
- *   only the label field is used.
  *
  * @param db - better-sqlite3 handle (caller owns lifecycle).
- * @param entries - parsed API_KEYS entries from `parseApiKeyEntries`.
+ * @param _entries - legacy API_KEYS entries; ignored (legacy seeding removed).
  * @param logger - optional structured logger; defaults to console-stub.
  * @returns counts of `seeded` (new) and `alreadyPresent` (skipped) rows.
  */
 export function seedIdentities(
   db: Database.Database,
-  entries: ApiKeyEntry[],
+  _entries: ApiKeyEntry[] = [],
   logger: MinimalLogger = consoleStubLogger,
 ): IdentitySeedResult {
   // Idempotent INSERT ... ON CONFLICT DO NOTHING. info.changes is 1 when a
   // row was actually inserted, 0 when the partial UNIQUE index from
   // migration 010 (WR-04 of 27-REVIEW.md) suppressed the duplicate. The
-  // backing partial UNIQUE indexes are:
-  //   idx_users_legacy_display_name  UNIQUE(display_name) WHERE is_legacy = 1
+  // backing partial UNIQUE index is:
   //   idx_users_slack_bot            UNIQUE(display_name) WHERE is_service_account = 1
   // Two concurrent boots will both attempt their INSERTs; the second one
   // becomes a DB-level no-op rather than producing a duplicate row.
@@ -84,12 +88,7 @@ export function seedIdentities(
   // The conflict target is specified as `(display_name) WHERE ...` because
   // SQLite matches partial unique indexes by their predicate — the WHERE
   // clause is required for the index to be selected as the conflict target.
-  const insertLegacyStmt = db.prepare(
-    `INSERT INTO users (display_name, is_legacy)
-     VALUES (?, 1)
-     ON CONFLICT(display_name) WHERE is_legacy = 1 DO NOTHING`,
-  );
-
+  //
   // Phase 31 (Plan 31-01): parameterised so the same prepared statement
   // seeds both 'slack-bot' AND 'mcp-bot'. The partial UNIQUE index
   // idx_users_slack_bot covers ANY service-account display_name, so the
@@ -110,33 +109,18 @@ export function seedIdentities(
   // doesn't leave misleading 'identity-seeded' lines in the log for rows
   // that were never persisted.
   interface PendingLog {
-    kind: 'legacy' | 'service';
+    kind: 'service';
     userId: number | bigint;
     displayName: string;
   }
   const pending: PendingLog[] = [];
 
   const result: IdentitySeedResult = {
-    seeded: { legacy: 0, service: 0 },
-    alreadyPresent: { legacy: 0, service: 0 },
+    seeded: { service: 0 },
+    alreadyPresent: { service: 0 },
   };
 
   db.transaction(() => {
-    for (const entry of entries) {
-      // Only `entry.label` is read -- the raw key string is never touched.
-      const info = insertLegacyStmt.run(entry.label);
-      if (info.changes > 0) {
-        result.seeded.legacy += 1;
-        pending.push({
-          kind: 'legacy',
-          userId: info.lastInsertRowid,
-          displayName: entry.label,
-        });
-      } else {
-        result.alreadyPresent.legacy += 1;
-      }
-    }
-
     // Phase 31 (Plan 31-01): seed each service account by name. Each
     // `info.changes` is reported independently so the per-row event log
     // and seeded/alreadyPresent counters remain accurate.
@@ -155,7 +139,7 @@ export function seedIdentities(
     }
   })();
 
-  const totalSeeded = result.seeded.legacy + result.seeded.service;
+  const totalSeeded = result.seeded.service;
   if (totalSeeded > 0) {
     for (const ev of pending) {
       logger.info(
@@ -173,7 +157,6 @@ export function seedIdentities(
       {
         event: 'identity-seed-noop',
         counts: {
-          legacy: result.alreadyPresent.legacy,
           service: result.alreadyPresent.service,
         },
       },
