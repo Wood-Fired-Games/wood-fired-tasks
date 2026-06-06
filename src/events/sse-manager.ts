@@ -1,5 +1,5 @@
 import type { FastifyReply } from 'fastify';
-import { EventPayload } from './types.js';
+import { EventPayload, getEventProjectId } from './types.js';
 
 interface SSEConnection {
   id: string;
@@ -157,9 +157,14 @@ export class SSEManager {
       return false;
     }
 
-    // Filter by project_id (only applies to task/project events)
-    if (filters.project_id && 'project_id' in (event.data as any)) {
-      return (event.data as any).project_id === filters.project_id;
+    // Filter by project_id (only applies to task/project events). The typed
+    // accessor narrows event.data without an `as any` cast: it returns the
+    // numeric project_id when present, else undefined (e.g. control events).
+    if (filters.project_id) {
+      const eventProjectId = getEventProjectId(event);
+      if (eventProjectId !== undefined) {
+        return eventProjectId === filters.project_id;
+      }
     }
 
     return true;
