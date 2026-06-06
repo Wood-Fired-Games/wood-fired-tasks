@@ -329,7 +329,7 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
       userFallback?: string;
       limit?: number;
     }) => {
-      const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+      const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
       const db = initDatabase(dbPath);
       try {
         // WR-05: dry-run is supposed to be side-effect-free. Previously

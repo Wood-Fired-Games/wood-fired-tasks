@@ -88,7 +88,7 @@ export const updateCommand = new Command('update')
       // Check if JSON mode (global flag from program)
       const program = updateCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display success
       if (isJsonMode) {

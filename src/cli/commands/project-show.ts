@@ -23,7 +23,7 @@ export const projectShowCommand = new Command('project-show')
       // Check if JSON mode (global flag from program)
       const program = projectShowCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display project
       if (isJsonMode) {

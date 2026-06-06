@@ -25,7 +25,7 @@ export const claimCommand = new Command('claim')
       // Check if JSON mode
       const program = claimCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       if (isJsonMode) {
         jsonOutput({ task }, { id: task.id, assignee: task.assignee });

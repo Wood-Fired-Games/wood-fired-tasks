@@ -189,7 +189,7 @@ export interface LinuxBackendOptions {
 
 /** Resolve the user systemd config base (`$XDG_CONFIG_HOME` or `$HOME/.config`). */
 export function defaultConfigBase(home: string = os.homedir()): string {
-  const xdg = process.env.XDG_CONFIG_HOME;
+  const xdg = process.env['XDG_CONFIG_HOME'];
   if (xdg && xdg.length > 0) return xdg;
   return path.join(home, '.config');
 }

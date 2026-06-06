@@ -18,7 +18,7 @@ async function main() {
   // commands). DB_PATH is accepted as a deprecated alias for backward
   // compatibility with older ~/.claude.json installs produced by install.sh
   // / install.ps1 before task #217. New installs should set DATABASE_PATH.
-  const dbPath = process.env.DATABASE_PATH || process.env.DB_PATH || './data/tasks.db';
+  const dbPath = process.env['DATABASE_PATH'] || process.env['DB_PATH'] || './data/tasks.db';
 
   // Initialize application (database, repositories, services)
   const app = await createApp(dbPath);
@@ -48,11 +48,11 @@ async function main() {
   // The default (unset / '0' / anything else) fails closed at the
   // resolver level so a revoked PAT cannot silently demote to mcp-bot
   // and mask a kill-signal.
-  const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
+  const apiKeyEntries = parseApiKeyEntries(process.env['API_KEYS']);
   const hashedEntries = precomputeHashedEntries(apiKeyEntries);
-  const allowBadPat = process.env.WFT_MCP_ALLOW_BAD_PAT === '1';
+  const allowBadPat = process.env['WFT_MCP_ALLOW_BAD_PAT'] === '1';
   const { actorUserId, path: resolutionPath } = resolveActorUserIdWithPath({
-    apiKey: process.env.WFT_API_KEY,
+    apiKey: process.env['WFT_API_KEY'],
     apiTokenRepo: app.apiTokenRepository,
     userRepo: app.userRepository,
     hashedEntries,

@@ -43,7 +43,7 @@ export const commentListCommand = new Command('comment-list')
       // Check if JSON mode (global flag from program)
       const program = commentListCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Get comments via API
       const comments = await getComments(id, {

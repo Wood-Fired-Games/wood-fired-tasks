@@ -60,7 +60,7 @@ program.option(
   'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)',
 );
 program.hook('preAction', () => {
-  const t = program.opts().token;
+  const t = program.opts()['token'];
   setTokenOverride(typeof t === 'string' && t.length > 0 ? t : null);
 });
 

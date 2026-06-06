@@ -61,7 +61,7 @@ export const wsjfHistoryCommand = new Command('wsjf-history')
       process.exitCode = 1;
       return;
     }
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = new Database(dbPath, { readonly: true });
     try {
       const history = new WsjfHistoryRepository(db).findByTaskId(id);
@@ -145,7 +145,7 @@ export const wsjfSetCommand = new Command('wsjf-set')
         return;
       }
 
-      const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+      const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
       const db = new Database(dbPath);
       try {
         const taskRepo = new TaskRepository(db);
@@ -204,7 +204,7 @@ export const charterHistoryCommand = new Command('charter-history')
       process.exitCode = 1;
       return;
     }
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = new Database(dbPath, { readonly: true });
     try {
       const history = new ProjectCharterHistoryRepository(db).findByProjectId(id);

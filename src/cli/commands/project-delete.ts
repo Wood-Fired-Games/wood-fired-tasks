@@ -21,7 +21,7 @@ export const projectDeleteCommand = new Command('project-delete')
       // Check if JSON mode (global flag from program)
       const program = projectDeleteCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Fetch project details to show what's being deleted
       const project = await getProject(id);

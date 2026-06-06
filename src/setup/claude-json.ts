@@ -94,7 +94,7 @@ export function mergeClaudeJson(options: MergeClaudeJsonOptions): MergeClaudeJso
   }
 
   // Ensure mcpServers is an object, preserving any existing servers.
-  const existingServers = parsed.mcpServers;
+  const existingServers = parsed['mcpServers'];
   const mcpServers: Record<string, unknown> =
     typeof existingServers === 'object' &&
     existingServers !== null &&
@@ -102,7 +102,7 @@ export function mergeClaudeJson(options: MergeClaudeJsonOptions): MergeClaudeJso
       ? (existingServers as Record<string, unknown>)
       : {};
   mcpServers[serverName] = entry;
-  parsed.mcpServers = mcpServers;
+  parsed['mcpServers'] = mcpServers;
 
   // Deterministic serialization: 2-space indent + trailing newline.
   const serialized = `${JSON.stringify(parsed, null, 2)}\n`;

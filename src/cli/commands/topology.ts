@@ -30,7 +30,7 @@ export const topologyCommand = new Command('topology')
       return;
     }
 
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const db = new Database(dbPath, { readonly: true });
     try {
       const taskRepo = new TaskRepository(db);

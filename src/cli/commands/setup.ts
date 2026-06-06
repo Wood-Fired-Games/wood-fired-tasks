@@ -459,7 +459,7 @@ export const setupCommand = new Command('setup')
     const token =
       typeof opts.token === 'string' && opts.token.length > 0
         ? opts.token
-        : (globalOpts.token as string | undefined);
+        : (globalOpts['token'] as string | undefined);
     runSetup({
       fixNpmPrefix: Boolean(opts.fixNpmPrefix),
       remote: opts.remote,

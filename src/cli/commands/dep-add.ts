@@ -28,7 +28,7 @@ export const depAddCommand = new Command('dep-add')
       // Check if JSON mode (global flag from program)
       const program = depAddCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Add dependency via API
       const dependency = await addDependency(id, { blocks_task_id: blocksId });

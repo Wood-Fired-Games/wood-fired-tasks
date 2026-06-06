@@ -434,7 +434,7 @@ export class TaskService {
     // would break the existing suite. A direct env read keeps the default-OFF
     // path zero-cost and side-effect-free.
     if (
-      process.env.WFT_STRICT_EVIDENCE === 'true' &&
+      process.env['WFT_STRICT_EVIDENCE'] === 'true' &&
       result.data.verification_evidence !== undefined &&
       result.data.verification_evidence !== null
     ) {

@@ -159,7 +159,7 @@ export function registerWsjfTools(server: McpServer, deps: WsjfToolDeps): void {
           }:\n`,
         ];
         timeline.forEach((entry) => {
-          const s = entry.deltas.wsjf_score;
+          const s = entry.deltas['wsjf_score'];
           summary.push(
             `- ${entry.changed_at} [${entry.trigger}] wsjf ${
               s.from === null ? '∅' : s.from

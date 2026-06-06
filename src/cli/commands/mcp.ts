@@ -70,11 +70,11 @@ Examples:
     // A `--remote <url>` flag is shorthand for setting WFT_API_URL so the
     // remote bridge picks it up through its normal env contract.
     if (opts.remote) {
-      childEnv.WFT_API_URL = opts.remote;
+      childEnv['WFT_API_URL'] = opts.remote;
     }
 
     const entrypoint = selectMcpEntrypoint({
-      WFT_API_URL: childEnv.WFT_API_URL,
+      WFT_API_URL: childEnv['WFT_API_URL'],
       remote: opts.remote,
     });
 

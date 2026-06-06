@@ -29,7 +29,7 @@ export const depRemoveCommand = new Command('dep-remove')
       // Check if JSON mode (global flag from program)
       const program = depRemoveCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Confirm removal (unless --force)
       const confirmed = await confirmAction(

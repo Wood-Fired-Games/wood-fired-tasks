@@ -80,7 +80,7 @@ export const logoutCommand = new Command('logout')
   .action(async () => {
     const program = logoutCommand.parent;
     const globalOpts = program?.optsWithGlobals() ?? {};
-    const isJson: boolean = globalOpts.json === true;
+    const isJson: boolean = globalOpts['json'] === true;
 
     // 1. Read credentials. If absent, this is idempotent — exit 0 with a
     //    friendly note. We use readCredentials() directly (not resolveAuth)

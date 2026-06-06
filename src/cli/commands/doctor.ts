@@ -23,10 +23,10 @@ function formatBytes(bytes: number): string {
 export const doctorCommand = new Command('doctor')
   .description('Run diagnostics: DB connectivity, disk space, and config validity')
   .action(async () => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
 
     const program = doctorCommand.parent;
-    const isJsonMode = program?.optsWithGlobals()?.json || false;
+    const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
     // --- Check 1: Database connectivity ---
     let dbStatus: 'PASS' | 'FAIL' = 'FAIL';

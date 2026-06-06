@@ -65,7 +65,7 @@ export async function requestDeviceCode(args: RequestDeviceCodeArgs): Promise<De
     client_id: args.clientId,
     hostname: args.hostname,
   };
-  if (args.tokenName !== undefined) body.token_name = args.tokenName;
+  if (args.tokenName !== undefined) body['token_name'] = args.tokenName;
 
   const res = await fetchImpl(`${args.baseUrl}/auth/device/code`, {
     method: 'POST',
@@ -196,7 +196,7 @@ export async function pollForToken(opts: PollOptions): Promise<PollResult> {
 
     // Non-200 — parse the RFC 8628 error envelope.
     const body = await safeBodyJson(res);
-    const error = typeof body?.error === 'string' ? (body.error as string) : null;
+    const error = typeof body?.['error'] === 'string' ? (body['error'] as string) : null;
 
     if (error === 'authorization_pending') {
       opts.onEvent?.({ kind: 'pending', interval });

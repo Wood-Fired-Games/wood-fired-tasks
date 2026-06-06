@@ -235,8 +235,8 @@ async function main(): Promise<void> {
   // the daemon with real deps, start it, and install SIGTERM/SIGINT → stop().
   const paths = getPaths();
   const configPath = readStringFlag(argv, '--config') ?? join(paths.config, 'triggers.yaml');
-  const endpoint = readStringFlag(argv, '--endpoint') ?? process.env.WFT_ROUTER_ENDPOINT ?? '';
-  const apiKey = readStringFlag(argv, '--token') ?? process.env.WFT_ROUTER_TOKEN ?? '';
+  const endpoint = readStringFlag(argv, '--endpoint') ?? process.env['WFT_ROUTER_ENDPOINT'] ?? '';
+  const apiKey = readStringFlag(argv, '--token') ?? process.env['WFT_ROUTER_TOKEN'] ?? '';
 
   if (endpoint.length === 0) {
     console.error('wft-router: --endpoint (or WFT_ROUTER_ENDPOINT) is required');

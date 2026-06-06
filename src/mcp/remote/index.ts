@@ -33,8 +33,8 @@ export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): {
   apiUrl: string;
   apiKey: string;
 } {
-  const apiUrl = env.WFT_API_URL;
-  const apiKey = env.WFT_API_KEY;
+  const apiUrl = env['WFT_API_URL'];
+  const apiKey = env['WFT_API_KEY'];
 
   if (!apiUrl || apiUrl.trim() === '') {
     throw new Error(

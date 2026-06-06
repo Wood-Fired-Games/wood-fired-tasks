@@ -39,10 +39,10 @@ export const completedCommand = new Command('completed')
   .option('-p, --project <id>', 'Filter by project ID')
   .option('-a, --assignee <name>', 'Filter by assignee')
   .action((options: CommandOptions) => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
 
     const program = completedCommand.parent;
-    const isJsonMode = program?.optsWithGlobals()?.json || false;
+    const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
     const db = new Database(dbPath, { readonly: true });
     try {
@@ -82,16 +82,16 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
   const input: Record<string, unknown> = {};
 
   if (hasExplicitRange) {
-    input.start = options.since!;
-    input.end = options.until!;
+    input['start'] = options.since!;
+    input['end'] = options.until!;
   } else if (options.days !== undefined) {
     const days = Number(options.days);
     if (!Number.isFinite(days) || days < 1) {
       throw new Error('--days must be a positive integer');
     }
-    input.days = days;
+    input['days'] = days;
   } else {
-    input.days = 7;
+    input['days'] = 7;
   }
 
   if (options.project !== undefined) {
@@ -99,11 +99,11 @@ function buildReportInput(options: CommandOptions): Record<string, unknown> {
     if (!Number.isInteger(projectId) || projectId <= 0) {
       throw new Error('--project must be a positive integer');
     }
-    input.project_id = projectId;
+    input['project_id'] = projectId;
   }
 
   if (options.assignee !== undefined) {
-    input.assignee = options.assignee;
+    input['assignee'] = options.assignee;
   }
 
   return input;

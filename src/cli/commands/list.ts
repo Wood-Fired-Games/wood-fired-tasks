@@ -99,7 +99,7 @@ export const listCommand = new Command('list')
       // Check if JSON mode (global flag from program)
       const program = listCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display results
       if (isJsonMode) {

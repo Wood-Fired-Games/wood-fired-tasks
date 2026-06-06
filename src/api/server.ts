@@ -287,8 +287,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // avoid disrupting the existing test suite, which exercises many
     // server.inject calls from 127.0.0.1; operators tune via env.
     await server.register(rateLimit, {
-      max: Number(process.env.RATE_LIMIT_MAX ?? 1000),
-      timeWindow: process.env.RATE_LIMIT_TIME_WINDOW ?? '1 minute',
+      max: Number(process.env['RATE_LIMIT_MAX'] ?? 1000),
+      timeWindow: process.env['RATE_LIMIT_TIME_WINDOW'] ?? '1 minute',
       allowList: (req) => req.url === '/health' || req.url.startsWith('/health/'),
       // The error returned here is thrown by @fastify/rate-limit; the project's
       // custom errorHandler reads `statusCode` and `code` to shape the JSON

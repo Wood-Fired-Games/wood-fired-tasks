@@ -223,9 +223,9 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
   // pre-split plugin — `validateApiKeysForProduction` throws synchronously
   // and Fastify bubbles the error up to createServer which closes the
   // server and disposes the App (server.ts:345-363 catch).
-  const entries: ApiKeyEntry[] = parseApiKeyEntries(process.env.API_KEYS);
+  const entries: ApiKeyEntry[] = parseApiKeyEntries(process.env['API_KEYS']);
   const keys = entries.map((e) => e.key);
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env['NODE_ENV'] === 'production') {
     validateApiKeysForProduction(keys);
   } else if (entries.length === 0) {
     fastify.log.warn(

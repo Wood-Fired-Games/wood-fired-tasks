@@ -116,14 +116,14 @@ export class ProjectCharterHistoryRepository implements IProjectCharterHistoryRe
   findByProjectId(projectId: number): ProjectCharterHistoryRow[] {
     const rows = mapRows<Record<string, unknown>>(this.findByProjectIdStmt, projectId);
     return rows.map((row) => ({
-      id: row.id as number,
-      project_id: row.project_id as number,
-      interview_version: row.interview_version as number,
-      charter: parseCharter(row.charter),
-      change_kind: (row.change_kind as string | null) ?? null,
-      actor_type: (row.actor_type as string | null) ?? null,
-      actor_id: (row.actor_id as string | null) ?? null,
-      changed_at: row.changed_at as string,
+      id: row['id'] as number,
+      project_id: row['project_id'] as number,
+      interview_version: row['interview_version'] as number,
+      charter: parseCharter(row['charter']),
+      change_kind: (row['change_kind'] as string | null) ?? null,
+      actor_type: (row['actor_type'] as string | null) ?? null,
+      actor_id: (row['actor_id'] as string | null) ?? null,
+      changed_at: row['changed_at'] as string,
     }));
   }
 

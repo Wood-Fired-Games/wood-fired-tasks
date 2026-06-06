@@ -220,7 +220,7 @@ export function loadConfig(): Config {
 
     // Only log and exit if we're not in a test environment
     // In tests, throw an error so it can be caught
-    if (process.env.NODE_ENV === 'test') {
+    if (process.env['NODE_ENV'] === 'test') {
       throw new Error(`Configuration validation failed:\n${errors.join('\n')}`);
     }
 

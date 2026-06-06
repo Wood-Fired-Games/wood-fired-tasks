@@ -206,11 +206,11 @@ export function registerTaskTools(
         // span (or any gate violation) throws a structured ValidationError.
         let wsjfWrite: WsjfWriteDTO | undefined;
         if (wsjfSubmission !== undefined) {
-          const project = projectService.getProject(sanitizedArgs.project_id as number);
+          const project = projectService.getProject(sanitizedArgs['project_id'] as number);
           const sourceText = [
-            sanitizedArgs.title,
-            sanitizedArgs.description,
-            sanitizedArgs.acceptance_criteria,
+            sanitizedArgs['title'],
+            sanitizedArgs['description'],
+            sanitizedArgs['acceptance_criteria'],
           ]
             .filter((s): s is string => typeof s === 'string')
             .join('\n');
@@ -358,21 +358,21 @@ export function registerTaskTools(
           const existing = taskService.getTask(args.id);
           const project = projectService.getProject(existing.project_id);
           const sourceText = [
-            updates.title ?? existing.title,
-            updates.description ?? existing.description,
-            updates.acceptance_criteria ?? existing.acceptance_criteria,
+            updates['title'] ?? existing.title,
+            updates['description'] ?? existing.description,
+            updates['acceptance_criteria'] ?? existing.acceptance_criteria,
           ]
             .filter((s): s is string => typeof s === 'string')
             .join('\n');
-          updates.wsjf = submissionToWsjfWrite(
+          updates['wsjf'] = submissionToWsjfWrite(
             wsjfSubmission as ScoreSubmission,
             project.value_charter,
             sourceText,
           );
         }
         if (Object.prototype.hasOwnProperty.call(rawUpdates, 'assignee')) {
-          updates.assignee_user_id = resolveAssigneeUserId(
-            rawUpdates.assignee as string | null | undefined,
+          updates['assignee_user_id'] = resolveAssigneeUserId(
+            rawUpdates['assignee'] as string | null | undefined,
             ctx.userRepository,
           );
         }

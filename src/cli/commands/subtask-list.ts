@@ -43,7 +43,7 @@ export const subtaskListCommand = new Command('subtask-list')
       // Check if JSON mode (global flag from program)
       const program = subtaskListCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Get subtasks via API
       const subtasks = await getSubtasks(parentId, {

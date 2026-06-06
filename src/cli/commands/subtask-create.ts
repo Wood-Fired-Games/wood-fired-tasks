@@ -32,7 +32,7 @@ export const subtaskCreateCommand = new Command('subtask-create')
       // Check if JSON mode (global flag from program)
       const program = subtaskCreateCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Fetch parent task to inherit project_id
       const parentTask = await getTask(parentId);

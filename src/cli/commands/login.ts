@@ -53,7 +53,7 @@ export const loginCommand = new Command('login')
     // the root program in src/cli/bin/{tasks,tasks-client}.ts).
     const program = loginCommand.parent;
     const globalOpts = program?.optsWithGlobals() ?? {};
-    const isJson: boolean = globalOpts.json === true;
+    const isJson: boolean = globalOpts['json'] === true;
 
     // 1. Validate base URL.
     const baseUrl: string = opts.server ?? env.API_BASE_URL;
@@ -71,7 +71,7 @@ export const loginCommand = new Command('login')
       return;
     }
 
-    const clientId: string = process.env.OIDC_CLIENT_ID ?? 'wft-cli';
+    const clientId: string = process.env['OIDC_CLIENT_ID'] ?? 'wft-cli';
     const hostname: string = os.hostname();
 
     // 2. Request a device_code from the server.

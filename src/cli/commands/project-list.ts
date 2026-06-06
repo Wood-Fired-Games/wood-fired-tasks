@@ -40,7 +40,7 @@ export const projectListCommand = new Command('project-list')
       // Check if JSON mode (global flag from program)
       const program = projectListCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Display results
       if (isJsonMode) {

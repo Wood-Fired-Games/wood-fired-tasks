@@ -23,10 +23,10 @@ interface AgentRow {
 export const statsCommand = new Command('stats')
   .description('Show task statistics: status counts, recent activity, and agent productivity')
   .action(() => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
 
     const program = statsCommand.parent;
-    const isJsonMode = program?.optsWithGlobals()?.json || false;
+    const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
     const db = new Database(dbPath, { readonly: true });
 

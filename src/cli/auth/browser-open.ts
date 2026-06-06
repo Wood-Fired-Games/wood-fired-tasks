@@ -93,7 +93,7 @@ export function openBrowser(url: string): boolean {
       args = ['/c', 'start', '""', url];
       break;
     case 'linux':
-      if (!process.env.DISPLAY) {
+      if (!process.env['DISPLAY']) {
         return false; // headless box (CI, SSH without -X) — leave the URL printed.
       }
       cmd = 'xdg-open';

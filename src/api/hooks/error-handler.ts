@@ -49,7 +49,7 @@ function logErrorByStatus(request: FastifyRequest, error: FastifyError | Error):
 
   // Expected client (4xx) error. Downgrade to keep healthy runs quiet while
   // preserving an operator-visible breadcrumb outside of tests.
-  if (process.env.NODE_ENV === 'test') {
+  if (process.env['NODE_ENV'] === 'test') {
     request.log.debug({ err: error, statusCode }, 'expected client error');
   } else {
     request.log.warn(

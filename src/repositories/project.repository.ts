@@ -132,18 +132,18 @@ export class ProjectRepository implements IProjectRepository {
 
     if (updates.name !== undefined) {
       fields.push('name = @name');
-      params.name = updates.name;
+      params['name'] = updates.name;
     }
     if (updates.description !== undefined) {
       fields.push('description = @description');
-      params.description = updates.description;
+      params['description'] = updates.description;
     }
     // WSJF (Phase 3.1): patch value_charter. `undefined` (key absent) leaves
     // the column untouched; explicit `null` clears it; an object is
     // serialized to JSON.
     if (updates.value_charter !== undefined) {
       fields.push('value_charter = @value_charter');
-      params.value_charter =
+      params['value_charter'] =
         updates.value_charter === null ? null : JSON.stringify(updates.value_charter);
     }
 

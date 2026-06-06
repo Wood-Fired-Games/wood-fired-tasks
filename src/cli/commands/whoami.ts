@@ -120,7 +120,7 @@ export const whoamiCommand = new Command('whoami')
   .action(async () => {
     const program = whoamiCommand.parent;
     const globalOpts = program?.optsWithGlobals() ?? {};
-    const isJson: boolean = globalOpts.json === true;
+    const isJson: boolean = globalOpts['json'] === true;
 
     const creds = readCredentials();
     if (creds === null) {
@@ -189,7 +189,7 @@ export const whoamiCommand = new Command('whoami')
       }
     }
 
-    const apiKeyEnv = process.env.API_KEY;
+    const apiKeyEnv = process.env['API_KEY'];
     const hasApiKeyFallback = typeof apiKeyEnv === 'string' && apiKeyEnv.length > 0;
 
     if (isJson) {
@@ -204,14 +204,14 @@ export const whoamiCommand = new Command('whoami')
         server,
       };
       if (activeToken) {
-        envelope.token = {
+        envelope['token'] = {
           id: activeToken.id,
           name: activeToken.name,
           lastUsedAt: activeToken.lastUsedAt,
         };
       }
       if (hasApiKeyFallback) {
-        envelope.fallback = 'API_KEY env ignored';
+        envelope['fallback'] = 'API_KEY env ignored';
       }
       emitJsonEvent(envelope);
       return;

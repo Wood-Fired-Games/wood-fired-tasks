@@ -24,7 +24,7 @@ export const backupCommand = new Command('backup')
     `./tasks-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`,
   )
   .action(async (options) => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
     const destPath = resolve(options.output);
 
     // Verify source database exists before attempting backup
@@ -50,7 +50,7 @@ export const backupCommand = new Command('backup')
 
       // Check JSON mode via global program options
       const program = backupCommand.parent;
-      const isJsonMode = program?.optsWithGlobals()?.json || false;
+      const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
       if (isJsonMode) {
         jsonOutput({ path: destPath, size, source: dbPath });

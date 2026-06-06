@@ -165,7 +165,7 @@ export function createMcpServer(
   // Register resources
   // Note: the API key is intentionally not passed to the resource — it would
   // be surfaced to the LLM as context (see task #196).
-  const apiUrl = process.env.API_URL || 'http://localhost:3000/api/v1';
+  const apiUrl = process.env['API_URL'] || 'http://localhost:3000/api/v1';
 
   server.resource(
     EVENTS_RESOURCE_NAME,

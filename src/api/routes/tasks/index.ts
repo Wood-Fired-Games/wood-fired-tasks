@@ -269,7 +269,7 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const bodyRec = sanitizedBody as Record<string, unknown>;
       let resolvedAssigneeUserId: number | null | undefined = undefined;
       if (Object.prototype.hasOwnProperty.call(bodyRec, 'assignee')) {
-        const assigneeVal = bodyRec.assignee as string | null | undefined;
+        const assigneeVal = bodyRec['assignee'] as string | null | undefined;
         if (assigneeVal === null || assigneeVal === '') {
           resolvedAssigneeUserId = null;
         } else if (typeof assigneeVal === 'string' && assigneeVal.includes('@')) {

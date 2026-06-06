@@ -313,15 +313,15 @@ export class TaskRepository implements ITaskRepository {
       // Only update fields that are provided (excluding tags)
       if (updates.title !== undefined) {
         fields.push('title = @title');
-        params.title = updates.title;
+        params['title'] = updates.title;
       }
       if (updates.description !== undefined) {
         fields.push('description = @description');
-        params.description = updates.description;
+        params['description'] = updates.description;
       }
       if (updates.status !== undefined) {
         fields.push('status = @status');
-        params.status = updates.status;
+        params['status'] = updates.status;
 
         // Maintain completed_at on transitions to/from 'done'.
         // Read current status inside the same transaction for consistency.
@@ -340,11 +340,11 @@ export class TaskRepository implements ITaskRepository {
       }
       if (updates.priority !== undefined) {
         fields.push('priority = @priority');
-        params.priority = updates.priority;
+        params['priority'] = updates.priority;
       }
       if (updates.assignee !== undefined) {
         fields.push('assignee = @assignee');
-        params.assignee = updates.assignee;
+        params['assignee'] = updates.assignee;
       }
       // Phase 31 (Plan 31-01): assignee_user_id is independently optional —
       // a TEXT-only update (legacy callers) does NOT clear the FK column,
@@ -352,33 +352,33 @@ export class TaskRepository implements ITaskRepository {
       // can deliberately unbind a user without removing the TEXT label).
       if (updates.assignee_user_id !== undefined) {
         fields.push('assignee_user_id = @assignee_user_id');
-        params.assignee_user_id = updates.assignee_user_id;
+        params['assignee_user_id'] = updates.assignee_user_id;
       }
       if (updates.due_date !== undefined) {
         fields.push('due_date = @due_date');
-        params.due_date = updates.due_date;
+        params['due_date'] = updates.due_date;
       }
       if (updates.parent_task_id !== undefined) {
         fields.push('parent_task_id = @parent_task_id');
-        params.parent_task_id = updates.parent_task_id;
+        params['parent_task_id'] = updates.parent_task_id;
       }
       if (updates.estimated_minutes !== undefined) {
         fields.push('estimated_minutes = @estimated_minutes');
-        params.estimated_minutes = updates.estimated_minutes;
+        params['estimated_minutes'] = updates.estimated_minutes;
       }
       // Wave 1.3 (#311): patch acceptance_criteria. `undefined` (key absent)
       // leaves the column untouched; explicit `null` clears it; a string sets
       // it. Same opt-in semantics as the other partial-update fields above.
       if (updates.acceptance_criteria !== undefined) {
         fields.push('acceptance_criteria = @acceptance_criteria');
-        params.acceptance_criteria = updates.acceptance_criteria;
+        params['acceptance_criteria'] = updates.acceptance_criteria;
       }
       // Wave 1.4 (#312): patch verification_evidence. Same opt-in semantics
       // as acceptance_criteria above. The TEXT column stores the JSON
       // serialization — explicit null clears it.
       if (updates.verification_evidence !== undefined) {
         fields.push('verification_evidence = @verification_evidence');
-        params.verification_evidence =
+        params['verification_evidence'] =
           updates.verification_evidence === null
             ? null
             : JSON.stringify(updates.verification_evidence);
@@ -400,15 +400,15 @@ export class TaskRepository implements ITaskRepository {
         fields.push('wsjf_source = @wsjf_source');
         fields.push('wsjf_classifications = @wsjf_classifications');
         fields.push('wsjf_features = @wsjf_features');
-        params.wsjf_value = w === null ? null : w.value;
-        params.wsjf_time_criticality = w === null ? null : w.timeCriticality;
-        params.wsjf_risk_opportunity = w === null ? null : w.riskOpportunity;
-        params.wsjf_job_size = w === null ? null : w.jobSize;
-        params.wsjf_evidence = w === null ? null : serializeWsjfMember(w.evidence);
-        params.wsjf_locked = w === null ? null : serializeWsjfMember(w.locked);
-        params.wsjf_source = w === null ? null : serializeWsjfMember(w.source);
-        params.wsjf_classifications = w === null ? null : serializeWsjfMember(w.classifications);
-        params.wsjf_features = w === null ? null : serializeWsjfMember(w.features);
+        params['wsjf_value'] = w === null ? null : w.value;
+        params['wsjf_time_criticality'] = w === null ? null : w.timeCriticality;
+        params['wsjf_risk_opportunity'] = w === null ? null : w.riskOpportunity;
+        params['wsjf_job_size'] = w === null ? null : w.jobSize;
+        params['wsjf_evidence'] = w === null ? null : serializeWsjfMember(w.evidence);
+        params['wsjf_locked'] = w === null ? null : serializeWsjfMember(w.locked);
+        params['wsjf_source'] = w === null ? null : serializeWsjfMember(w.source);
+        params['wsjf_classifications'] = w === null ? null : serializeWsjfMember(w.classifications);
+        params['wsjf_features'] = w === null ? null : serializeWsjfMember(w.features);
       }
 
       // Always update updated_at
@@ -454,27 +454,27 @@ export class TaskRepository implements ITaskRepository {
     // Build WHERE clause from filters
     if (filters.project_id !== undefined) {
       whereClauses.push('t.project_id = @project_id');
-      params.project_id = filters.project_id;
+      params['project_id'] = filters.project_id;
     }
 
     if (filters.status !== undefined) {
       whereClauses.push('t.status = @status');
-      params.status = filters.status;
+      params['status'] = filters.status;
     }
 
     if (filters.assignee !== undefined) {
       whereClauses.push('t.assignee = @assignee');
-      params.assignee = filters.assignee;
+      params['assignee'] = filters.assignee;
     }
 
     if (filters.due_before !== undefined) {
       whereClauses.push('t.due_date <= @due_before');
-      params.due_before = filters.due_before;
+      params['due_before'] = filters.due_before;
     }
 
     if (filters.due_after !== undefined) {
       whereClauses.push('t.due_date >= @due_after');
-      params.due_after = filters.due_after;
+      params['due_after'] = filters.due_after;
     }
 
     // Wrap updated_at comparisons in datetime() to handle mixed storage
@@ -482,12 +482,12 @@ export class TaskRepository implements ITaskRepository {
     // "YYYY-MM-DD HH:MM:SS" (SQLite datetime('now')).
     if (filters.updated_before !== undefined) {
       whereClauses.push('datetime(t.updated_at) <= datetime(@updated_before)');
-      params.updated_before = filters.updated_before;
+      params['updated_before'] = filters.updated_before;
     }
 
     if (filters.updated_after !== undefined) {
       whereClauses.push('datetime(t.updated_at) >= datetime(@updated_after)');
-      params.updated_after = filters.updated_after;
+      params['updated_after'] = filters.updated_after;
     }
 
     if (filters.tags !== undefined && filters.tags.length > 0) {
@@ -504,7 +504,7 @@ export class TaskRepository implements ITaskRepository {
     if (filters.search !== undefined) {
       // Use FTS5 MATCH for text search
       whereClauses.push('t.id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH @search)');
-      params.search = filters.search;
+      params['search'] = filters.search;
     }
 
     // Wave 1.4 (#312): verified-state filter using json_extract on the
@@ -532,8 +532,8 @@ export class TaskRepository implements ITaskRepository {
       limit: filters.limit,
       offset: filters.offset,
     });
-    params.__limit = limit;
-    params.__offset = offset;
+    params['__limit'] = limit;
+    params['__offset'] = offset;
 
     // N7 (task #342 follow-up): when the caller explicitly opts out of tag
     // hydration (`include_tags: false`), drop the `task_tags` LEFT JOIN and
@@ -701,37 +701,37 @@ export class TaskRepository implements ITaskRepository {
     // Build WHERE clause (same logic as findByFilters)
     if (filters.project_id !== undefined) {
       whereClauses.push('t.project_id = @project_id');
-      params.project_id = filters.project_id;
+      params['project_id'] = filters.project_id;
     }
 
     if (filters.status !== undefined) {
       whereClauses.push('t.status = @status');
-      params.status = filters.status;
+      params['status'] = filters.status;
     }
 
     if (filters.assignee !== undefined) {
       whereClauses.push('t.assignee = @assignee');
-      params.assignee = filters.assignee;
+      params['assignee'] = filters.assignee;
     }
 
     if (filters.due_before !== undefined) {
       whereClauses.push('t.due_date <= @due_before');
-      params.due_before = filters.due_before;
+      params['due_before'] = filters.due_before;
     }
 
     if (filters.due_after !== undefined) {
       whereClauses.push('t.due_date >= @due_after');
-      params.due_after = filters.due_after;
+      params['due_after'] = filters.due_after;
     }
 
     if (filters.updated_before !== undefined) {
       whereClauses.push('datetime(t.updated_at) <= datetime(@updated_before)');
-      params.updated_before = filters.updated_before;
+      params['updated_before'] = filters.updated_before;
     }
 
     if (filters.updated_after !== undefined) {
       whereClauses.push('datetime(t.updated_at) >= datetime(@updated_after)');
-      params.updated_after = filters.updated_after;
+      params['updated_after'] = filters.updated_after;
     }
 
     if (filters.tags !== undefined && filters.tags.length > 0) {
@@ -746,7 +746,7 @@ export class TaskRepository implements ITaskRepository {
 
     if (filters.search !== undefined) {
       whereClauses.push('t.id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH @search)');
-      params.search = filters.search;
+      params['search'] = filters.search;
     }
 
     // Wave 1.4 (#312): mirror the verified-state predicate from findByFilters
@@ -802,12 +802,12 @@ export class TaskRepository implements ITaskRepository {
 
     if (filters.project_id !== undefined) {
       whereClauses.push('t.project_id = @project_id');
-      params.project_id = filters.project_id;
+      params['project_id'] = filters.project_id;
     }
 
     if (filters.assignee !== undefined) {
       whereClauses.push('t.assignee = @assignee');
-      params.assignee = filters.assignee;
+      params['assignee'] = filters.assignee;
     }
 
     const query = `

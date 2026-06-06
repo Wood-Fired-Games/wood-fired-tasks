@@ -135,7 +135,7 @@ const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (fastify, opt
         .redirect('/auth/error?reason=exchange_failed', 302);
     }
 
-    if (claims.email_verified !== true) {
+    if (claims['email_verified'] !== true) {
       request.log.error(
         {
           sub: claims.sub,
@@ -150,10 +150,10 @@ const callbackRoute: FastifyPluginAsync<AuthRoutesOptions> = async (fastify, opt
         .redirect('/auth/error?reason=email_unverified', 302);
     }
 
-    const emailClaim = typeof claims.email === 'string' ? claims.email : null;
+    const emailClaim = typeof claims['email'] === 'string' ? claims['email'] : null;
     const displayName =
-      typeof claims.name === 'string' && claims.name.length > 0
-        ? claims.name
+      typeof claims['name'] === 'string' && claims['name'].length > 0
+        ? claims['name']
         : (emailClaim ?? claims.sub);
 
     // WR-05 fix — wrap upsert in try/catch. If the DB call throws

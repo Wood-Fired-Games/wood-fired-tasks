@@ -29,7 +29,7 @@ export const createCommand = new Command('create')
       // Check if JSON mode (global flag from program)
       const program = createCommand.parent;
       const globalOpts = program?.optsWithGlobals() || {};
-      const isJsonMode = globalOpts.json || false;
+      const isJsonMode = globalOpts['json'] || false;
 
       // Prompt for missing required fields (interactive mode only)
       const title = await promptForMissing('title', options.title);

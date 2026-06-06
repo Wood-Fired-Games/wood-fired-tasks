@@ -84,7 +84,7 @@ export function buildAuthorizationUrl(config: OidcConfig, params: AuthorizationU
     code_challenge_method: 'S256',
     state: params.state,
   };
-  if (params.nonce) oidcParams.nonce = params.nonce;
+  if (params.nonce) oidcParams['nonce'] = params.nonce;
   return client.buildAuthorizationUrl(config, oidcParams);
 }
 

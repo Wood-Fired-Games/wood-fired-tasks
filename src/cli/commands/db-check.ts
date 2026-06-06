@@ -17,10 +17,10 @@ function formatSize(bytes: number): string {
 export const dbCheckCommand = new Command('db-check')
   .description('Run SQLite PRAGMA integrity_check and report database size')
   .action(() => {
-    const dbPath = process.env.DATABASE_PATH || './data/tasks.db';
+    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
 
     const program = dbCheckCommand.parent;
-    const isJsonMode = program?.optsWithGlobals()?.json || false;
+    const isJsonMode = program?.optsWithGlobals()?.['json'] || false;
 
     const db = new Database(dbPath, { readonly: true });
 

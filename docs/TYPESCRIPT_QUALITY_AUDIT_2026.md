@@ -41,7 +41,7 @@ references are clickable; raw counts come from the scans in [§5](#5-commands-us
 | `noFallthroughCasesInSwitch` | **ON** | explicit (landed task #265) |
 | `noImplicitOverride` | **ON** | explicit (landed task #265) |
 | `forceConsistentCasingInFileNames` | **ON** | |
-| `noPropertyAccessFromIndexSignature` | **OFF** | not set → defaults off |
+| `noPropertyAccessFromIndexSignature` | **ON** | explicit (ratcheted task #763) |
 | `exactOptionalPropertyTypes` | **OFF** | not set → defaults off |
 | `noUncheckedIndexedAccess` | **OFF** | not set → defaults off |
 
@@ -56,6 +56,18 @@ are excluded from the production compile (`**/*.test.ts`, `**/*.bench.ts`,
 strictness gap.** `noUncheckedIndexedAccess` in particular is the highest-value
 defect-prevention flag still off (it forces `T | undefined` at every index /
 array access).
+
+> **Ratchet status — `noPropertyAccessFromIndexSignature` landed (task #763).**
+> Enabled in the root `tsconfig.json` (propagates to `packages/wft-router` via
+> `extends`). The flag surfaced **210 TS4111 sites** (188 root + 22 router), all
+> of which were *genuine* index-signature / `Record` / external-payload-bag
+> accesses — `process.env[...]`, Commander-parsed option bags (`['json']`,
+> `['token']`), raw SQLite row/param bags in the repositories, and external JSON
+> payloads (OIDC claims, MCP tool args, callback userinfo). Every site was a pure
+> `obj.foo` → `obj['foo']` syntactic conversion (no declared object property was
+> bracketed, no runtime behavior changed, no new test required). **Zero escape
+> hatches were needed** — there are no `noPropertyAccessFromIndexSignature`
+> exceptions recorded against the §3 budget for this flag.
 
 ### 1.2 Formatting — [`biome.json`](../biome.json)
 
