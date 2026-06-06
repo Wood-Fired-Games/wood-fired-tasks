@@ -83,7 +83,12 @@ WORKDIR /build
 # resolve from the hoisted root node_modules). Copy the manifests first for
 # layer caching, then the sources.
 COPY package.json package-lock.json ./
-RUN npm ci
+# --ignore-scripts: the root package's `postinstall` runs `node
+# scripts/postinstall.cjs`, but only the manifests are COPYed at this layer
+# (scripts/ isn't in the build context yet), so the hook would ENOENT and abort
+# `npm ci`. The hook is a pure user-facing stdout notice irrelevant to building
+# the router, so skipping lifecycle scripts here is correct and faster.
+RUN npm ci --ignore-scripts
 
 # The root tsconfig.json is the base the router's tsconfig extends. We build
 # ONLY the router project (tsc -p) rather than `npm run build` (which also runs

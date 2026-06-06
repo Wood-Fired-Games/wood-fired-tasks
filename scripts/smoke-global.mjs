@@ -69,6 +69,11 @@ function assert(cond, msg) {
 
 const ELEVATION_RE = /^(sudo|runas|pkexec|doas)$/i;
 
+// On Windows the npm shim is `npm.cmd`; spawnSync without a shell can't resolve
+// a bare `npm` (PATHEXT isn't applied to argv[0]), so it ENOENTs. Use the .cmd
+// name there so every `run('npm', …)` call works cross-platform.
+const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
 /**
  * Run a command synchronously, capturing output. Hard-guards against ever
  * invoking an elevation binary (this smoke must NEVER prompt for a password).
@@ -168,12 +173,12 @@ async function main() {
 
   // -- 1. build + pack -------------------------------------------------------
   console.log('-- build --');
-  runOrFail('npm', ['run', 'build'], { cwd: REPO_ROOT, stdio: 'inherit' });
+  runOrFail(NPM, ['run', 'build'], { cwd: REPO_ROOT, stdio: 'inherit' });
 
   console.log('-- pack --');
   const packDir = mkTemp('wft-smoke-pack-');
   const packRes = runOrFail(
-    'npm',
+    NPM,
     ['pack', '--pack-destination', packDir],
     { cwd: REPO_ROOT }
   );
@@ -193,7 +198,7 @@ async function main() {
   console.log('-- install -g (temp prefix, no sudo) --');
   const prefixDir = mkTemp('wft-smoke-prefix-');
   runOrFail(
-    'npm',
+    NPM,
     ['install', '-g', tarball, '--prefix', prefixDir],
     { cwd: packDir }
   );

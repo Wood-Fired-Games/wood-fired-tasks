@@ -4,6 +4,12 @@
   "entry": ["packages/wft-router/src/bin/wft-router.ts"],
   "ignoreDependencies": [
     "pino-pretty",
-    "@stryker-mutator/api"
+    "@stryker-mutator/api",
+    // Loaded via a dynamic string-specifier import in
+    // src/cli/commands/self-update.ts (`const specifier = 'update-notifier';
+    // await import(specifier)`) so the self-update nudge degrades silently when
+    // absent. knip can't follow that indirection statically and false-positives
+    // it as unused — it IS a runtime dependency, do NOT remove it.
+    "update-notifier"
   ]
 }

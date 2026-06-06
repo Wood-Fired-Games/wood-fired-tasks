@@ -38,13 +38,18 @@ $notice = @'
 
 '@
 
-Write-Host $notice
+# Emit on the pipeline/Output stream (stream 1), NOT Write-Host (stream 6,
+# Information). Callers capture this notice with `./install.ps1 2>&1 | Out-String`
+# (e.g. the CI smoke), and `2>&1` only merges Error into Output — it does NOT
+# capture the Information stream. Using Write-Output keeps the notice visible to
+# the console AND capturable by redirection, matching install.sh's stdout echo.
+Write-Output $notice
 
 # Attempt to delegate if the published binary is already installed.
 $bin = Get-Command wood-fired-tasks -ErrorAction SilentlyContinue
 if ($null -ne $bin) {
-    Write-Host "Detected 'wood-fired-tasks' on PATH - delegating to 'wood-fired-tasks setup'..."
-    Write-Host ""
+    Write-Output "Detected 'wood-fired-tasks' on PATH - delegating to 'wood-fired-tasks setup'..."
+    Write-Output ""
     if ($Args) {
         & wood-fired-tasks setup @Args
     } else {
@@ -53,10 +58,10 @@ if ($null -ne $bin) {
     exit $LASTEXITCODE
 }
 
-Write-Host "'wood-fired-tasks' is not on PATH yet. Install it first:"
-Write-Host ""
-Write-Host "    npm i -g wood-fired-tasks"
-Write-Host "    wood-fired-tasks setup"
-Write-Host ""
+Write-Output "'wood-fired-tasks' is not on PATH yet. Install it first:"
+Write-Output ""
+Write-Output "    npm i -g wood-fired-tasks"
+Write-Output "    wood-fired-tasks setup"
+Write-Output ""
 
 exit 0

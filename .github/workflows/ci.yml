@@ -29,6 +29,9 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      # Tests assert on packaged assets (dist/skills/tasks, dist/skills/agents)
+      # resolved via the asset resolver, so dist/ must be built first.
+      - run: npm run build
       - run: npm test
 
   coverage:
@@ -41,6 +44,9 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      # Same as the test job: coverage exercises tests that read packaged
+      # dist/skills assets via the resolver, so dist/ must exist first.
+      - run: npm run build
       - name: Run tests with coverage (fails when thresholds drop)
         run: npm run test:coverage
 
