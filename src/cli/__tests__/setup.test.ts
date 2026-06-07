@@ -10,6 +10,11 @@ import {
   resolveMcpEntryPoint,
   commandsDestDir,
   agentsDestDir,
+  settingsJsonPath,
+  buildStatuslineConfig,
+  statuslineEmbedSnippet,
+  wireStatusline,
+  offerStatuslineWiring,
   type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
@@ -354,25 +359,27 @@ describe('tasks setup — modes (task #805)', () => {
     });
   });
 
-  it('--local runs the Local path without prompting', async () => {
+  it('--local runs the Local path without prompting (the MODE menu)', async () => {
     await withTempHomeAsync(async (home) => {
-      let prompted = false;
+      let modePrompted = false;
       const result = await runSetupInteractive({
         home,
         log: () => {},
         mode: 'local',
-        // If the menu is consulted, fail loudly.
-        isInteractive: () => {
-          prompted = true;
-          return true;
-        },
+        // A TTY is simulated, but with an EXPLICIT --local mode the MODE menu
+        // must never be consulted (selectMode is the real mode-menu seam).
+        isInteractive: () => true,
         selectMode: async () => {
-          prompted = true;
+          modePrompted = true;
           return 'remote';
         },
+        // The Local path now also offers the opt-in statusline wiring (#798);
+        // decline it here so this test stays focused on mode routing.
+        confirmStatusline: async () => false,
       });
 
-      expect(prompted).toBe(false);
+      // The MODE menu was never shown (mode was explicit).
+      expect(modePrompted).toBe(false);
       expect(result.mode).toBe('local');
       if (result.mode !== 'service') {
         expect(result.remote).toBe(false);
@@ -516,6 +523,157 @@ describe('tasks setup — modes (task #805)', () => {
         expect(result.remote).toBe(false);
         const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
         expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+});
+
+describe('tasks setup — statusline wiring (task #798)', () => {
+  // Branch 1: no existing statusLine + consent → setup WRITES a statusLine that
+  // runs `tasks statusline`, against a TEMP settings.json (never the real one).
+  it('writes a statusLine on consent when none exists', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      expect(settingsPath).toBe(path.join(home, '.claude', 'settings.json'));
+      expect(fs.existsSync(settingsPath)).toBe(false);
+
+      const result = await offerStatuslineWiring({
+        home,
+        log: () => {},
+        isInteractive: () => true,
+        // Consent.
+        confirm: async () => true,
+      });
+
+      expect(result.action).toBe('written');
+      if (result.action === 'written') expect(result.changed).toBe(true);
+
+      // The TEMP settings.json now carries a statusLine running `tasks statusline`.
+      const doc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      expect(doc.statusLine).toEqual(buildStatuslineConfig());
+      expect(doc.statusLine.command).toBe('tasks statusline');
+      expect(doc.statusLine.command).toContain('tasks statusline');
+    });
+  });
+
+  // The single wiring preserves unrelated keys and is idempotent on re-run.
+  it('preserves other settings keys and is idempotent on re-run', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify({ theme: 'dark', model: 'opus' }, null, 2) + '\n',
+        'utf8',
+      );
+
+      const first = wireStatusline({ home, log: () => {} });
+      expect(first.action).toBe('written');
+      if (first.action === 'written') expect(first.changed).toBe(true);
+
+      const doc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      expect(doc.theme).toBe('dark');
+      expect(doc.model).toBe('opus');
+      expect(doc.statusLine).toEqual(buildStatuslineConfig());
+
+      const after = fs.readFileSync(settingsPath, 'utf8');
+      const second = wireStatusline({ home, log: () => {} });
+      expect(second.action).toBe('written');
+      if (second.action === 'written') expect(second.changed).toBe(false);
+      // Byte-stable: a re-run leaves settings.json untouched.
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(after);
+    });
+  });
+
+  // Branch 2: an EXISTING statusLine → setup PRINTS the embed snippet and does
+  // NOT modify settings.json.
+  it('prints the embed snippet and does NOT modify an existing statusLine', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      const existing =
+        JSON.stringify(
+          { statusLine: { type: 'command', command: 'my-custom-statusline' } },
+          null,
+          2,
+        ) + '\n';
+      fs.writeFileSync(settingsPath, existing, 'utf8');
+
+      const lines: string[] = [];
+      const result = await offerStatuslineWiring({
+        home,
+        log: (l) => lines.push(l),
+        isInteractive: () => true,
+        confirm: async () => true,
+      });
+
+      expect(result.action).toBe('embed-snippet');
+      if (result.action === 'embed-snippet') {
+        expect(result.snippet).toBe(statuslineEmbedSnippet());
+      }
+      // The existing statusLine is untouched (byte-identical).
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(existing);
+      // The embed snippet was printed for the user to splice in themselves.
+      expect(lines.join('\n')).toContain(statuslineEmbedSnippet());
+    });
+  });
+
+  // Branch 3: declining the offer → NO change (no settings.json written).
+  it('declining the offer makes no change', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+
+      const result = await offerStatuslineWiring({
+        home,
+        log: () => {},
+        isInteractive: () => true,
+        // Decline.
+        confirm: async () => false,
+      });
+
+      expect(result.action).toBe('declined');
+      // No file was created.
+      expect(fs.existsSync(settingsPath)).toBe(false);
+    });
+  });
+
+  // The offer is silently skipped on a non-TTY (never blocks, never writes).
+  it('non-TTY skips the offer silently (declined, no write)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      const result = await offerStatuslineWiring({
+        home,
+        log: () => {},
+        isInteractive: () => false,
+        confirm: async () => {
+          prompted = true;
+          return true;
+        },
+      });
+
+      expect(prompted).toBe(false);
+      expect(result.action).toBe('declined');
+      expect(fs.existsSync(settingsJsonPath(home))).toBe(false);
+    });
+  });
+
+  // End-to-end through the Local interactive path: consent wires the statusLine
+  // into the temp settings.json alongside the normal local install.
+  it('runSetupInteractive Local path offers + wires the statusline on consent', async () => {
+    await withTempHomeAsync(async (home) => {
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        isInteractive: () => true,
+        confirmStatusline: async () => true,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.statusline.action).toBe('written');
+        const doc = JSON.parse(fs.readFileSync(settingsJsonPath(home), 'utf8'));
+        expect(doc.statusLine).toEqual(buildStatuslineConfig());
       }
     });
   });

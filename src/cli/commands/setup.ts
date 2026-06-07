@@ -245,6 +245,219 @@ export function copyAgents(
   return { sourceDir, destDir, written, files };
 }
 
+/**
+ * Absolute path of Claude Code's user settings file, `~/.claude/settings.json`
+ * (task #798). `home` is injectable so tests sandbox a temp HOME and NEVER touch
+ * the real settings.json — mirroring how the rest of setup.ts is HOME-rooted.
+ */
+export function settingsJsonPath(home: string = os.homedir()): string {
+  return path.join(home, '.claude', 'settings.json');
+}
+
+/**
+ * The exact `statusLine` block setup writes into `settings.json` when none
+ * exists. A SINGLE wiring covers BOTH status-line segments — the linked-project
+ * task counts AND the update-available hint — because both are rendered by the
+ * one `tasks statusline` command (#597). The update segment's own disable
+ * controls (`WFT_NO_UPDATE_CHECK` / the `update_check = false` config flag,
+ * #797) are honored by that command at render time; this wiring does not need to
+ * re-encode them.
+ *
+ * Kept free of timestamps / random fields so the write is byte-stable and the
+ * idempotency check in {@link wireStatusline} holds across re-runs.
+ */
+export function buildStatuslineConfig(): {
+  type: 'command';
+  command: string;
+  padding: number;
+} {
+  return { type: 'command', command: 'tasks statusline', padding: 0 };
+}
+
+/**
+ * One-line embed snippet PRINTED (never auto-applied) when `settings.json`
+ * already carries a `statusLine`. Non-clobbering contract: we refuse to
+ * overwrite an existing status line, so we hand the user the exact command to
+ * splice into their own segment instead.
+ */
+export function statuslineEmbedSnippet(): string {
+  return 'tasks statusline';
+}
+
+/** Discriminated outcome of {@link wireStatusline}. */
+export type WireStatuslineResult =
+  | {
+      /** No `statusLine` existed and consent was given → setup wrote one. */
+      action: 'written';
+      path: string;
+      /** True when bytes actually changed (false on an idempotent re-run). */
+      changed: boolean;
+    }
+  | {
+      /** A `statusLine` already existed → we printed the embed snippet only. */
+      action: 'embed-snippet';
+      path: string;
+      snippet: string;
+    }
+  | {
+      /** The user declined the offer → nothing was read or written. */
+      action: 'declined';
+      path: string;
+    };
+
+export interface WireStatuslineOptions {
+  /** Override HOME root (testing). Defaults to os.homedir(). */
+  home?: string;
+  /** Injectable logger (testing). */
+  log?: (line: string) => void;
+}
+
+/**
+ * Non-clobbering wiring of `tasks statusline` into `~/.claude/settings.json`
+ * (task #798).
+ *
+ *  - No existing `statusLine` → write {@link buildStatuslineConfig} into the
+ *    file (preserving every other key), atomically, idempotently.
+ *  - Existing `statusLine` → PRINT the embed snippet and DO NOT modify the file.
+ *
+ * This is the post-consent action; the opt-in/opt-out prompt is owned by
+ * {@link offerStatuslineWiring}. Uses the same temp-HOME-safe, atomic-write
+ * (tmp + rename), idempotent (skip write when bytes are identical) patterns as
+ * the rest of setup.ts.
+ */
+export function wireStatusline(options: WireStatuslineOptions = {}): WireStatuslineResult {
+  const home = options.home ?? os.homedir();
+  const log = options.log ?? ((line: string) => console.log(line));
+  const filePath = settingsJsonPath(home);
+
+  // Read the existing settings.json, tolerating absence / malformed JSON. A
+  // busted file is treated as "no statusLine present" so we don't clobber a
+  // user's hand-rolled-but-broken config silently — we only ADD when there is
+  // no statusLine key to be found.
+  const existingRaw = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
+  let parsed: Record<string, unknown> = {};
+  let parseable = true;
+  if (existingRaw !== null) {
+    try {
+      const doc = JSON.parse(existingRaw);
+      if (doc !== null && typeof doc === 'object' && !Array.isArray(doc)) {
+        parsed = doc as Record<string, unknown>;
+      }
+    } catch {
+      parseable = false;
+    }
+  }
+
+  const ours = buildStatuslineConfig();
+
+  // Non-clobbering — with one exception for OUR OWN wiring (idempotency). A
+  // present statusLine in a parseable doc is never overwritten, UNLESS it is
+  // byte-identical to the config we'd write (i.e. a previous consented run
+  // already wired it). In that case we report an idempotent no-op `written`
+  // rather than re-printing the embed snippet on every re-run.
+  if (parseable && parsed['statusLine'] !== undefined) {
+    const isOurs = JSON.stringify(parsed['statusLine']) === JSON.stringify(ours);
+    if (isOurs) {
+      log(`statusLine already wired to \`tasks statusline\` in ${filePath}`);
+      return { action: 'written', path: filePath, changed: false };
+    }
+    log(
+      'A statusLine is already configured in ' +
+        `${filePath}; leaving it untouched. To show Wood Fired Tasks ` +
+        'counts + the update hint, embed this command in your status line:',
+    );
+    log(`  ${statuslineEmbedSnippet()}`);
+    return { action: 'embed-snippet', path: filePath, snippet: statuslineEmbedSnippet() };
+  }
+
+  // No statusLine (or an unparseable file we decline to key off): write a fresh
+  // statusLine, preserving any other keys from a parseable doc.
+  parsed['statusLine'] = ours;
+  const serialized = `${JSON.stringify(parsed, null, 2)}\n`;
+
+  // Idempotency: identical bytes → skip the write entirely.
+  if (existingRaw !== null && existingRaw === serialized) {
+    log(`statusLine already wired to \`tasks statusline\` in ${filePath}`);
+    return { action: 'written', path: filePath, changed: false };
+  }
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmpPath, serialized, 'utf8');
+  fs.renameSync(tmpPath, filePath);
+  log(`Wired \`tasks statusline\` into ${filePath} (statusLine)`);
+  return { action: 'written', path: filePath, changed: true };
+}
+
+/**
+ * Injectable yes/no consent seam for the status-line offer (task #798).
+ * Defaults to a Yes/No menu via {@link selectFromMenu}, reusing the same prompt
+ * IO seam the mode menu uses so tests drive it without a real TTY.
+ */
+export type ConfirmStatusline = (io?: PromptIO) => Promise<boolean>;
+
+/** Default Yes/No consent prompt for the status-line offer. */
+export function confirmStatuslineWiring(io?: PromptIO): Promise<boolean> {
+  return selectFromMenu<boolean>(
+    {
+      message: 'Show Wood Fired Tasks counts + update hint in your Claude Code status line?',
+      options: [
+        { label: 'Yes — wire `tasks statusline` into settings.json', value: true },
+        { label: 'No — skip (no change)', value: false },
+      ],
+      defaultValue: false,
+    },
+    io,
+  );
+}
+
+export interface OfferStatuslineOptions extends WireStatuslineOptions {
+  /**
+   * Injectable consent prompt (defaults to {@link confirmStatuslineWiring}).
+   * Tests stub this to drive the consent / decline branches.
+   */
+  confirm?: ConfirmStatusline;
+  /** Prompt IO forwarded to the consent menu (tests inject streams). */
+  promptIO?: PromptIO;
+  /**
+   * Injectable TTY predicate (defaults to {@link shouldPrompt}). On a non-TTY
+   * the offer is silently skipped (declined) so setup never blocks.
+   */
+  isInteractive?: () => boolean;
+}
+
+/**
+ * OPT-IN offer to wire `tasks statusline` into `settings.json` (task #798).
+ *
+ *  - Non-interactive (no TTY) → skip silently, return `declined` (never hang).
+ *  - Declining the offer → no read, no write, return `declined`.
+ *  - Consenting → delegate to {@link wireStatusline} (writes a fresh statusLine
+ *    OR prints the embed snippet when one already exists — non-clobbering).
+ */
+export async function offerStatuslineWiring(
+  options: OfferStatuslineOptions = {},
+): Promise<WireStatuslineResult> {
+  const home = options.home ?? os.homedir();
+  const isInteractive = options.isInteractive ?? shouldPrompt;
+  const confirm = options.confirm ?? confirmStatuslineWiring;
+
+  // Non-TTY: never prompt, never write. Honors the opt-in contract — silence
+  // means no change.
+  if (!isInteractive()) {
+    return { action: 'declined', path: settingsJsonPath(home) };
+  }
+
+  const consented = await confirm(options.promptIO);
+  if (!consented) {
+    return { action: 'declined', path: settingsJsonPath(home) };
+  }
+
+  return wireStatusline({
+    home,
+    ...(options.log !== undefined && { log: options.log }),
+  });
+}
+
 export interface FixNpmPrefixOptions {
   /** Override HOME (testing). */
   home?: string;
@@ -768,6 +981,13 @@ export interface RunSetupInteractiveOptions extends RunSetupOptions {
    * simulate a TTY / non-TTY without mutating process.stdin.
    */
   isInteractive?: () => boolean;
+  /**
+   * Injectable status-line consent prompt (#798). Defaults to
+   * {@link confirmStatuslineWiring}. The Local path offers (opt-in) to wire
+   * `tasks statusline` into `settings.json` after the core install; tests stub
+   * this to drive the consent / decline / existing-statusLine branches.
+   */
+  confirmStatusline?: ConfirmStatusline;
 }
 
 /** Result returned by the service path (no claude.json/skills work was done). */
@@ -795,7 +1015,11 @@ export interface RunSetupRemoteResult {
 }
 
 export type RunSetupInteractiveResult =
-  | (RunSetupResult & { mode: 'local' })
+  | (RunSetupResult & {
+      mode: 'local';
+      /** Outcome of the opt-in `tasks statusline` wiring offer (#798). */
+      statusline: WireStatuslineResult;
+    })
   | RunSetupServiceResult
   | RunSetupRemoteResult;
 
@@ -833,6 +1057,7 @@ export function selectSetupMode(io?: PromptIO): Promise<SetupMode> {
 export async function runSetupInteractive(
   options: RunSetupInteractiveOptions = {},
 ): Promise<RunSetupInteractiveResult> {
+  const home = options.home ?? os.homedir();
   const log = options.log ?? ((line: string) => console.log(line));
   const isInteractive = options.isInteractive ?? shouldPrompt;
   const selectMode = options.selectMode ?? selectSetupMode;
@@ -864,7 +1089,19 @@ export async function runSetupInteractive(
   // Local flows through the existing synchronous runSetup verbatim, preserving
   // all idempotency / 0600 / asset-resolver guarantees.
   const result = runSetup(options);
-  return { ...result, mode: 'local' };
+
+  // Task #798: after the core local install, OPT-IN offer to wire
+  // `tasks statusline` into ~/.claude/settings.json. Non-clobbering and
+  // skipped silently on a non-TTY (the offer never blocks / never auto-writes).
+  const statusline = await offerStatuslineWiring({
+    home,
+    log,
+    isInteractive,
+    ...(options.confirmStatusline !== undefined && { confirm: options.confirmStatusline }),
+    ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
+  });
+
+  return { ...result, mode: 'local', statusline };
 }
 
 /**
