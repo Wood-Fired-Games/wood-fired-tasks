@@ -444,6 +444,10 @@ describe('Skill File Validation', () => {
     //
     // Task #639 (WSJF 3.3) added `new-project.md` as an INVOCABLE charter
     // interview command, bumping the invocable count 14 → 15.
+    //
+    // Task #796 (Phase 4) added `update.md` as an INVOCABLE self-update
+    // command (runs `tasks self-update`; action target of the status-line
+    // update hint), bumping the invocable count 15 → 16.
     const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
@@ -451,7 +455,7 @@ describe('Skill File Validation', () => {
       .filter((f) => !f.startsWith('_'))
       .filter((f) => !NON_INVOCABLE_DOCS.has(f));
 
-    expect(skillFiles).toHaveLength(15);
+    expect(skillFiles).toHaveLength(16);
   });
 
   it('each skill file has workflow steps', () => {

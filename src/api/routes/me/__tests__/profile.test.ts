@@ -55,7 +55,6 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
   let oidcUserCookie: string;
 
   beforeAll(async () => {
-    process.env.API_KEYS = 'test-key';
     process.env.SESSION_COOKIE_SECRET = randomBytes(32).toString('base64');
     delete process.env.NODE_ENV;
     resetConfig();
@@ -64,15 +63,19 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
     const server = result.server;
     const db = result.app.db;
 
+    // v2.0 auth cutover (#799/#801): X-API-Key + legacy credential seeding
+    // were removed. Seed a legacy-flagged user directly so the isLegacy=true
+    // projection can still be exercised — now via a Bearer PAT instead of an
+    // X-API-Key request.
+    const legacyInfo = db
+      .prepare(`INSERT INTO users (display_name, is_legacy, is_service_account) VALUES (?, 1, 0)`)
+      .run('legacy-user');
     const legacyRow = db
       .prepare(
         `SELECT id, display_name, email, is_legacy, is_service_account
-         FROM users WHERE display_name = ? AND is_legacy = 1`,
+         FROM users WHERE id = ?`,
       )
-      .get('key_test-key') as UserRow | undefined;
-    if (legacyRow === undefined) {
-      throw new Error('test setup: seeded legacy user not found');
-    }
+      .get(Number(legacyInfo.lastInsertRowid)) as UserRow;
 
     const oidcInfo = db
       .prepare(
@@ -164,11 +167,15 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
     expect(body).not.toHaveProperty('authenticatedAt');
   });
 
-  it('3. legacy-authed (X-API-Key): returns 200 with isLegacy=true', async () => {
+  it('3. legacy-flagged user (PAT-authed): returns 200 with isLegacy=true', async () => {
+    // v2.0: X-API-Key is gone, but a user row may still carry is_legacy=1
+    // (migrated legacy principal). Authenticating that user via a PAT must
+    // still surface isLegacy=true in the profile projection.
+    const { token } = mintPatViaDb(harness.db, harness.legacyUser.id);
     const res = await harness.server.inject({
       method: 'GET',
       url: '/api/v1/me',
-      headers: { 'x-api-key': 'test-key' },
+      headers: { authorization: `Bearer ${token}` },
     });
 
     expect(res.statusCode).toBe(200);

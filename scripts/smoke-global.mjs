@@ -438,9 +438,23 @@ async function main() {
       remoteEntryEnv.WFT_API_URL === remoteUrl,
       `remote entry carries WFT_API_URL=${remoteUrl}`,
     );
+    // #810 security contract: the PAT is NEVER persisted into claude.json. The
+    // entry is URL-only; the bridge resolves the bearer token at runtime from
+    // the cached remote-token file written by `cachePat`.
     assert(
-      remoteEntryEnv.WFT_API_KEY === remotePat,
-      'remote entry carries WFT_API_KEY (the supplied PAT)',
+      remoteEntryEnv.WFT_API_KEY === undefined,
+      'remote entry is URL-only (no WFT_API_KEY persisted in claude.json, #810)',
+    );
+    // The PAT is cached to the platform config dir (env-paths: XDG on Linux,
+    // ~/Library on macOS, %APPDATA% on Windows — all rooted under the temp HOME
+    // here). Parse the exact path from setup's own "Cached remote PAT at <path>"
+    // log line rather than reconstructing it per-OS.
+    const cacheMatch = (remoteSetup.stdout ?? '').match(/Cached remote PAT at (.+?)\s*$/m);
+    assert(cacheMatch != null, 'setup --remote --token logged the cached PAT path');
+    const remoteTokenPath = cacheMatch[1].trim();
+    assert(
+      existsSync(remoteTokenPath) && readFileSync(remoteTokenPath, 'utf8').trim() === remotePat,
+      `setup --remote --token cached the PAT to ${remoteTokenPath}`,
     );
   } else {
     console.log('-- setup --remote: SKIPPED (set SMOKE_REMOTE=1 to enable) --');

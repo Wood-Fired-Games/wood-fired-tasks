@@ -44,7 +44,6 @@ import { hashToken } from '../../../../services/pat-hash.js';
 import { initDatabase } from '../../../../db/database.js';
 import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
-import { parseApiKeyEntries } from '../../../../config/env.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../../../repositories/api-token.repository.js';
 import { generateToken } from '../../../../services/pat-hash.js';
@@ -61,9 +60,6 @@ interface Harness {
 }
 
 async function buildHarness(): Promise<Harness> {
-  // Label syntax `key:label` so display_name is deterministically the label.
-  process.env.API_KEYS = 'verify-test-key:verify-key';
-
   const captured: string[] = [];
   const dest = new Writable({
     write(chunk, _enc, cb) {
@@ -84,14 +80,16 @@ async function buildHarness(): Promise<Harness> {
 
   const db = initDatabase(':memory:');
   await runMigrations(db);
-  const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
-  seedIdentities(db, apiKeyEntries, { info: () => {}, warn: () => {} });
+  // v2.0 cutover (#800/#801): the identity-seeder no longer creates is_legacy
+  // credential rows from API_KEYS, so seed a plain user directly to act as the
+  // device-flow approver. The device-flow logic is independent of the auth
+  // strategy — it only needs a valid users.id.
+  seedIdentities(db, [], { info: () => {}, warn: () => {} });
   const userRepo = new UserRepository(db);
   const apiTokenRepo = new ApiTokenRepository(db);
-  const legacyUser = userRepo.findLegacyByDisplayName('verify-key');
-  if (legacyUser === null) {
-    throw new Error('test setup: legacy user not seeded');
-  }
+  const approver = db
+    .prepare(`INSERT INTO users (display_name) VALUES (?) RETURNING id`)
+    .get('device-verify-user') as { id: number };
 
   // Pino / Fastify logger type mismatch — `as any` is the project pattern
   // (see auth-chain.test.ts:86).
@@ -132,7 +130,7 @@ async function buildHarness(): Promise<Harness> {
   return {
     app,
     db,
-    legacyUserId: legacyUser.id,
+    legacyUserId: approver.id,
     capturedLogs: captured,
     drainLogs: () => {
       captured.length = 0;

@@ -35,7 +35,6 @@ import {
 import { initDatabase } from '../../../../db/database.js';
 import { runMigrations } from '../../../../db/migrate.js';
 import { seedIdentities } from '../../../../services/identity-seeder.js';
-import { parseApiKeyEntries } from '../../../../config/env.js';
 import { UserRepository } from '../../../../repositories/user.repository.js';
 import type Database from '../../../../db/driver.js';
 
@@ -49,14 +48,17 @@ interface BuildResult {
 }
 
 async function buildTestApp(): Promise<BuildResult> {
-  process.env.API_KEYS = 'device-token-test-key:device-token-key';
   const db = initDatabase(':memory:');
   await runMigrations(db);
-  const apiKeyEntries = parseApiKeyEntries(process.env.API_KEYS);
-  seedIdentities(db, apiKeyEntries, { info: () => {}, warn: () => {} });
+  // v2.0 cutover (#800/#801): the identity-seeder no longer creates is_legacy
+  // credential rows from API_KEYS, so seed a plain user directly to act as the
+  // device-flow approver. The device-flow logic is independent of the auth
+  // strategy — it only needs a valid users.id.
+  seedIdentities(db, [], { info: () => {}, warn: () => {} });
   const userRepo = new UserRepository(db);
-  const legacyUser = userRepo.findLegacyByDisplayName('device-token-key');
-  if (!legacyUser) throw new Error('test setup: legacy user not seeded');
+  const approver = db
+    .prepare(`INSERT INTO users (display_name) VALUES (?) RETURNING id`)
+    .get('device-token-user') as { id: number };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app: any = Fastify({ logger: false });
@@ -66,7 +68,7 @@ async function buildTestApp(): Promise<BuildResult> {
     expectedClientId: EXPECTED_CLIENT_ID,
   });
   await app.ready();
-  return { app, db, legacyUserId: legacyUser.id };
+  return { app, db, legacyUserId: approver.id };
 }
 
 function pollJson(
@@ -288,8 +290,8 @@ describe('POST /auth/device/token', () => {
     expect(body.token_type).toBe('PAT');
     expect(body.token_id).toBe(999);
     expect(body.user.id).toBe(legacyUserId);
-    expect(body.user.displayName).toBe('device-token-key');
-    expect(body.user.isLegacy).toBe(true);
+    expect(body.user.displayName).toBe('device-token-user');
+    expect(body.user.isLegacy).toBe(false);
 
     // Replay rejected — session was removed after the 200.
     const r2 = await pollJson(app, {

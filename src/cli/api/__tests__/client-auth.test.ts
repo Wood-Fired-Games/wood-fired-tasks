@@ -128,14 +128,13 @@ describe('apiRequest auth precedence', () => {
     expect(h['x-api-key'] ?? h['X-API-Key']).toBeUndefined();
   });
 
-  it('falls back to legacy X-API-Key when no file and no override', async () => {
+  it('ignores API_KEY env entirely: throws NotAuthenticatedError when only API_KEY is set', async () => {
+    // Bearer-PAT-only contract: API_KEY env is no longer an auth source.
     process.env.API_KEY = 'legacykey';
-    const { captured } = captureFetch();
+    captureFetch();
     const { checkHealth } = await import('../client.js');
-    await checkHealth();
-    const h = flatHeaders(captured.init);
-    expect(h['x-api-key'] ?? h['X-API-Key']).toBe('legacykey');
-    expect(h['authorization'] ?? h['Authorization']).toBeUndefined();
+    const { NotAuthenticatedError } = await import('../errors.js');
+    await expect(checkHealth()).rejects.toBeInstanceOf(NotAuthenticatedError);
   });
 
   it('--token flag wins over credentials file', async () => {
@@ -160,7 +159,7 @@ describe('apiRequest auth precedence', () => {
   });
 
   it('throws NotAuthenticatedError when no credentials are available', async () => {
-    // No file, no override, no API_KEY.
+    // No file, no override.
     captureFetch();
     const { checkHealth } = await import('../client.js');
     const { NotAuthenticatedError } = await import('../errors.js');
@@ -173,8 +172,8 @@ describe('apiRequest auth precedence', () => {
     }
   });
 
-  it('preserves Content-Type: application/json on POST regardless of auth method', async () => {
-    process.env.API_KEY = 'legacykey';
+  it('preserves Content-Type: application/json on POST and sends Bearer (never X-API-Key)', async () => {
+    writeCredentials(sampleCreds);
     // Task #774: createTask now schema-validates the response body, so the stub
     // must be a complete valid TaskResponse, not a `{ id, name }` placeholder.
     const validTask = {
@@ -207,6 +206,7 @@ describe('apiRequest auth precedence', () => {
     } as unknown as Parameters<typeof createTask>[0]);
     const h = flatHeaders(captured.init);
     expect(h['content-type'] ?? h['Content-Type']).toBe('application/json');
-    expect(h['x-api-key'] ?? h['X-API-Key']).toBe('legacykey');
+    expect(h['authorization'] ?? h['Authorization']).toBe(`Bearer ${sampleCreds.active.token}`);
+    expect(h['x-api-key'] ?? h['X-API-Key']).toBeUndefined();
   });
 });

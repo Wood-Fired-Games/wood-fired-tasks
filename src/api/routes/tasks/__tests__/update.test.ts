@@ -3,6 +3,7 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 // Phase 31 Plan 02 — PATCH /api/v1/tasks/:id (PUT in REST) identity
 // propagation tests. Specifically:
@@ -17,25 +18,21 @@ import type { App } from '../../../../index.js';
 //     UNTOUCHED (existing PATCH semantics).
 //   - Body-supplied assignee_user_id is IGNORED (T-31-02 spoof mitigation).
 
-const TEST_KEY = 'test-key-update';
-const TEST_LABEL = 'p31-02-update';
-
 describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
   let testProjectId: number;
   let aliceUserId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
     const project = app.projectService.createProject({ name: 'P31-02 update' });
     testProjectId = project.id;
 
@@ -52,11 +49,6 @@ describe('PUT /api/v1/tasks/:id — assignee_user_id resolution', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) {
-      delete process.env.API_KEYS;
-    } else {
-      process.env.API_KEYS = prevApiKeys;
-    }
   });
 
   function getTaskRow(id: number): {

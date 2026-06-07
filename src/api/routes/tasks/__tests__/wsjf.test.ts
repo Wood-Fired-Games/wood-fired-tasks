@@ -3,6 +3,7 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 /**
  * WSJF 4.5 (task #645) — integration tests for the task WSJF REST surface:
@@ -16,25 +17,21 @@ import type { App } from '../../../../index.js';
  *   - valid components persist + append a `manual` score-history row.
  */
 
-const TEST_KEY = 'test-key-task-wsjf';
-const TEST_LABEL = 'task-wsjf-route';
-
 describe('task WSJF REST surface', () => {
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
   let projectId: number;
   let taskId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     const project = app.projectService.createProject({ name: 'WSJF Tasks' });
     projectId = project.id;
@@ -49,8 +46,6 @@ describe('task WSJF REST surface', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) delete process.env.API_KEYS;
-    else process.env.API_KEYS = prevApiKeys;
   });
 
   it('GET /:id/wsjf reports an unscored task as scored:false with null fields', async () => {

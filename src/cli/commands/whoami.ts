@@ -14,9 +14,7 @@
  *
  * Output modes:
  *   - text (default): 5 left-aligned fields (Display name, Email, Active
- *     token, Last used, Server) on stdout. If both API_KEY env var and the
- *     credentials file are set, a final footer line is appended noting that
- *     the credentials file took precedence.
+ *     token, Last used, Server) on stdout.
  *   - --json: a single envelope object on stdout per `<interfaces>` in
  *     30-07-PLAN.md.
  *
@@ -189,9 +187,6 @@ export const whoamiCommand = new Command('whoami')
       }
     }
 
-    const apiKeyEnv = process.env['API_KEY'];
-    const hasApiKeyFallback = typeof apiKeyEnv === 'string' && apiKeyEnv.length > 0;
-
     if (isJson) {
       const envelope: Record<string, unknown> = {
         user: {
@@ -210,9 +205,6 @@ export const whoamiCommand = new Command('whoami')
           lastUsedAt: activeToken.lastUsedAt,
         };
       }
-      if (hasApiKeyFallback) {
-        envelope['fallback'] = 'API_KEY env ignored';
-      }
       emitJsonEvent(envelope);
       return;
     }
@@ -227,7 +219,4 @@ export const whoamiCommand = new Command('whoami')
       process.stdout.write(fmtLine('Last used', activeToken.lastUsedAt ?? '(never)') + '\n');
     }
     process.stdout.write(fmtLine('Server', server) + '\n');
-    if (hasApiKeyFallback) {
-      process.stdout.write('(API_KEY env var ignored — credentials file in use)\n');
-    }
   });

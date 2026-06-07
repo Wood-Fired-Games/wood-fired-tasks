@@ -229,7 +229,11 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'deep-doc',
     purpose: 'Authoritative CLI reference for the `tasks` binary.',
     when_to_read: 'on-demand',
-    line_budget: 1500,
+    // Bumped 1500 -> 1800 by the v2.0 close (#601). The doc grew to 1692 lines
+    // with the new `statusline` command reference and the Bearer-PAT / device-flow
+    // auth content; 1800 leaves ~100 lines of headroom. Advisory budget —
+    // tighten in a follow-up once the CLI reference is split or trimmed.
+    line_budget: 1800,
     authority: 'authoritative',
     owner_role: 'CLI maintainers',
     status: 'present',

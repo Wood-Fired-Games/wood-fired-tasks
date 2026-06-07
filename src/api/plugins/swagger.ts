@@ -26,17 +26,10 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
       servers: [{ url: 'http://localhost:3000', description: 'Development' }],
       components: {
         securitySchemes: {
-          apiKey: {
-            type: 'apiKey',
-            name: 'X-API-Key',
-            in: 'header',
-          },
-          // Phase 28 Plan 06: document the Personal Access Token surface
-          // alongside the legacy X-API-Key. Routes accept EITHER scheme — the
+          // Personal Access Token is the sole documented auth surface. The
           // chain auth plugin (src/api/plugins/auth/index.ts) tries
-          // Authorization: Bearer wft_pat_* first, then falls through to
-          // X-API-Key. Both schemes are listed in the top-level `security`
-          // array so generated client code can pick either.
+          // Authorization: Bearer wft_pat_* then session. The legacy
+          // X-API-Key securityScheme was removed in the v2.0 auth cutover.
           bearerAuth: {
             type: 'http',
             scheme: 'bearer',
@@ -47,7 +40,7 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
           },
         },
       },
-      security: [{ apiKey: [] }, { bearerAuth: [] }],
+      security: [{ bearerAuth: [] }],
     },
     transform: jsonSchemaTransform,
   });

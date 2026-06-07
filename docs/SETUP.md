@@ -237,9 +237,10 @@ and `Invoke-WebRequest` instead, so it does not require `jq` or `curl`.
 ## Secrets
 
 [CRITICAL] Treat every value in `.env` as a production-grade secret. The
-file holds `API_KEYS`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and
+file holds `SESSION_COOKIE_SECRET`, `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and
 `SLACK_SIGNING_SECRET` — anything leaked here grants full access to your
-task data and Slack workspace.
+task data and Slack workspace. (PATs themselves live in the database, not
+`.env`; treat any minted `wft_pat_…` value as an equally sensitive secret.)
 
 **Rules:**
 
@@ -287,16 +288,15 @@ task data and Slack workspace.
 
 ## OIDC (Google) Configuration
 
-OIDC (OpenID Connect) is the **recommended** auth path as of v1.6. It
-replaces the legacy `X-API-Key` model with per-user identity, browser SSO
-via Google, and PATs (Personal Access Tokens) minted from a logged-in
-session. The legacy `X-API-Key` path keeps working through the v1.7 sunset
-date — see [`SECURITY.md`](../SECURITY.md) → **Legacy Auth Sunset
-Timeline**.
+OIDC (OpenID Connect) is the auth path for minting tokens. It provides
+per-user identity, browser SSO via Google, and PATs (Personal Access Tokens)
+minted from a logged-in session. All API authentication is now Bearer PAT only
+(`Authorization: Bearer <pat>`); the old `X-API-Key` header is rejected with
+401 — see [`SECURITY.md`](../SECURITY.md) → **Authentication Architecture**.
 
-OIDC is fully **optional**. Leaving all four `OIDC_*` env vars unset keeps
-the server in legacy mode; PAT minting + the web login UI are gated on the
-same env vars, so they simply do not register.
+The browser login UI and `/me`-based PAT minting are gated on the `OIDC_*`
+env vars; leaving them unset means PATs must be minted out-of-band via
+`tasks db mint-token` (see [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents)).
 
 ### 1. Create the Google OAuth client
 
@@ -367,15 +367,15 @@ visiting `/auth/login`; otherwise the session cookie is dropped and login
 silently loops back to the login page. In `development`/`test` the cookie
 is non-`secure`, so plain `http://localhost` works.
 
-### 4. (Optional) Set the legacy sunset date
+### 4. (Optional) `LEGACY_AUTH_SUNSET_DATE`
 
-The server stamps `Deprecation: true` + `Sunset: <date>` headers on every
-REST request that authenticated via the legacy `X-API-Key` path. The
-default sunset date is `2026-12-31` (six months after v1.6 ship). Override
-with:
+[NOTE] The legacy `X-API-Key` auth path has been **removed** — the server now
+rejects that header with 401, so the `Deprecation`/`Sunset` headers it used to
+stamp no longer apply. The `LEGACY_AUTH_SUNSET_DATE` env var is still parsed for
+backward compatibility but has no runtime effect; new deployments can omit it.
 
 ```bash
-# Must be a valid calendar date in YYYY-MM-DD form.
+# Still accepted (YYYY-MM-DD) but inert — retained for backward compatibility.
 LEGACY_AUTH_SUNSET_DATE=2026-12-31
 ```
 
@@ -431,7 +431,7 @@ token stops authenticating immediately; setting `--expires-at` at mint
 time bounds the blast radius if a token is ever leaked and missed during
 rotation.
 
-### 7. Migrating from an `API_KEYS`-only deployment
+### 7. Migrating from a pre-identity (key-only) deployment
 
 Historical task / comment rows that pre-date v1.6 have NULL identity FKs
 (`tasks.created_by_user_id`, `tasks.assignee_user_id`,
@@ -455,6 +455,149 @@ The CLI is detailed in [`CLI.md`](CLI.md).
 [NOTE] Re-running `migrate-identities --commit` is a no-op once every
 matchable row has been backfilled — the UPDATE is guarded by
 `AND <fk_col> IS NULL`.
+
+### 8. Migrating to v2.0 (the X-API-Key → Bearer-PAT auth cutover)
+
+v2.0 **removes the legacy `X-API-Key` shared-secret auth path**. Every
+authenticated request now carries a per-user **Bearer personal access
+token (PAT)** instead of a single shared key — `Authorization: Bearer
+<pat>` replaces the old `X-API-Key: <key>` header on every REST and remote
+MCP call. There is **no compatibility shim**: a request that still sends
+only `X-API-Key` is rejected after the cutover.
+
+**Operator migration steps:**
+
+1. **Enable the identity system** if you have not already — stand up OIDC
+   (see the [OIDC enablement recipe](#oidc-enablement-recipe-remote-onboarding)
+   below) so clients can self-onboard and mint their own PATs, or mint
+   PATs administratively for clients that cannot use OIDC.
+2. **Re-onboard each client** with `wood-fired-tasks setup --remote <url>`.
+   The command probes the server's OIDC state and picks device-flow
+   (OIDC ready) or manual-PAT (OIDC disabled/degraded) automatically, then
+   caches the resulting Bearer PAT. Clients that were configured with an
+   `X-API-Key` / shared key must be re-onboarded — the old key no longer
+   authenticates.
+3. **Retire the shared key.** Once every client carries a PAT, the old
+   `API_KEYS` / shared-secret configuration is unused and can be removed
+   from the server environment.
+
+**No data migration is required.** The cutover is an *auth-surface* change
+only — it does not touch task, project, comment, or identity tables.
+Pre-identity rows that carry `is_legacy=1` are left **inert**: they are not
+rewritten, not deleted, and require no action; they continue to read back
+exactly as before. (If you want their identity FKs backfilled for
+attribution, that is the separate, optional
+[§7 migrate-identities](#7-migrating-from-a-pre-identity-key-only-deployment)
+flow above — it is unrelated to and not needed for the v2.0 auth cutover.)
+
+## OIDC enablement recipe (remote onboarding)
+
+This is the end-to-end recipe for turning OIDC on for a shared/remote server so
+that fleet clients can self-onboard with `wood-fired-tasks setup --remote`. It
+ties together the OIDC env vars, the session-cookie secret, and the way
+`setup --remote` reacts to the server's OIDC state. Auth stays **Bearer PAT
+only** throughout — OIDC is the path that *mints* PATs; every API call still
+carries `Authorization: Bearer <pat>`.
+
+### Recipe
+
+1. **Create the Google OAuth client** and copy the Client ID / Secret —
+   [§1 above](#1-create-the-google-oauth-client). The authorised redirect URI
+   must be `<public-origin>/auth/callback`.
+2. **Set the four `OIDC_*` env vars** on the server — see
+   [§2 above](#2-set-the-oidc-env-vars). `src/config/env.ts` validates them as a
+   group: set `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and
+   `OIDC_REDIRECT_URI` **all together or not at all** (a partial set fails
+   validation on `OIDC_ISSUER_URL`). `OIDC_SCOPES` defaults to
+   `openid email profile`.
+3. **Generate `SESSION_COOKIE_SECRET`** — required whenever OIDC is enabled
+   (see below). `env.ts` enforces `!OIDC_ISSUER_URL || !!SESSION_COOKIE_SECRET`,
+   so a server with OIDC set but no cookie secret refuses to boot.
+4. **Terminate TLS** in front of the server. The session cookie is `secure` when
+   `NODE_ENV=production`, so the browser drops it over plain HTTP and login
+   silently loops — see the [OIDC cookie note](#3-generate-the-session-cookie-secret).
+5. **Restart the server** and verify the flow via `/auth/login` →
+   [§5 above](#5-verify-the-oidc-flow).
+6. **Onboard clients** with `wood-fired-tasks setup --remote <url>`; the command
+   probes the server's OIDC state and picks device-flow vs manual-PAT
+   automatically (see [setup --remote OIDC states](#setup---remote-across-oidc-states-ready--disabled--degraded)).
+
+### Generating `SESSION_COOKIE_SECRET`
+
+`SESSION_COOKIE_SECRET` is the sealed-box key for `@fastify/secure-session`.
+libsodium requires **exactly 32 bytes**, and `src/config/env.ts` enforces this
+strictly: the value must be **base64-encoded and decode to exactly 32 bytes**,
+or the server refuses to boot (`SESSION_COOKIE_SECRET must be base64-encoded 32
+bytes`). Generate one with:
+
+```bash
+openssl rand -base64 32
+```
+
+Then set it (and, optionally, the cookie name) in `.env` or your secret manager:
+
+```bash
+# Must decode to exactly 32 bytes — env.ts refuses any other length.
+SESSION_COOKIE_SECRET=<output of openssl rand -base64 32>
+
+# Optional — defaults to wft_session.
+SESSION_COOKIE_NAME=wft_session
+```
+
+[CRITICAL] Treat `SESSION_COOKIE_SECRET` as a production-grade secret. Rotating
+it invalidates every active session immediately — every user must log in again.
+
+### `setup --remote` across OIDC states (ready / disabled / degraded)
+
+`wood-fired-tasks setup --remote <url>` probes the server before deciding how to
+get a PAT onto the client. It issues `GET <url>/health/detailed` and reads
+`oidc.state` (`src/cli/commands/setup.ts` → `probeOidcState`), which mirrors the
+server's coarse OIDC state (`src/services/oidc-boot.ts`). It then routes
+deterministically via `selectRemoteOnboardingMethod`:
+
+| Server `oidc.state` | Meaning | `setup --remote` onboarding method |
+|---------------------|---------|------------------------------------|
+| `ready` | OIDC env vars set **and** issuer discovery succeeded | **device-flow** — RFC 8628 browser login (`runDeviceLogin`); the PAT is self-provisioned and written to the credentials file. |
+| `disabled` | No `OIDC_*` env vars — browser login is not available | **manual-PAT** — paste a PAT (or pass `--token`); it is validated against `GET /api/v1/me` and persisted to the same credentials file. |
+| `degraded` | OIDC is configured but issuer discovery is persistently failing (the server booted in degraded mode rather than crash-looping — see `oidc-boot.ts`) | **manual-PAT** — the device flow would fail, so `setup` informs you and falls back to the manual path. |
+| probe failure | `/health/detailed` unreachable, non-2xx, or no `oidc.state` (e.g. an older server) | **manual-PAT** — connectivity escape hatch. |
+
+In every non-`ready` case the resolved PAT lands in the **same credentials
+file** the device flow writes, and the `~/.claude.json` remote entry stays
+**URL-only** (`WFT_API_URL` with no embedded token) — the remote bridge resolves
+its bearer token from the credentials file at runtime, so the secret is never
+written into `claude.json`. A manual PAT that fails validation against
+`GET /api/v1/me` persists **nothing**: `setup` reports the reason and exits
+without a half-configured install. Mint the PAT to paste with
+`tasks db mint-token` (next section) or from the web UI (`/me`).
+
+### No-OIDC bootstrap (mint the first PAT directly)
+
+On a server **without OIDC** (`oidc.state: disabled`) there is no browser login,
+so the host operator mints the first PAT **directly against the database** with
+`tasks db mint-token` and hands it to the manual-PAT path above. The command
+requires an existing user row to target — a **seeded service/user account** (for
+a fresh deployment this is the lowest-id `is_legacy=1` user created by the
+identity backfill, or any user row already present from prior task/comment
+activity). `--user` resolves a numeric id, an email (case-insensitive), or a
+legacy `display_name`:
+
+```bash
+# Mint the bootstrap PAT against the seeded service/user account.
+# --user accepts a numeric id, email, or legacy display_name; --name is required.
+node dist/cli/bin/tasks.js db mint-token --user 1 --name bootstrap
+
+# Equivalently by email, with a bounded expiry:
+node dist/cli/bin/tasks.js db mint-token \
+  --user service@example.com --name bootstrap \
+  --expires-at 2027-05-22T00:00:00Z
+```
+
+The token is printed to stdout **exactly once** (alongside its id, user, and
+scopes). Use it as the manual PAT for `setup --remote` on a `disabled`/`degraded`
+server, or directly as `Authorization: Bearer wft_pat_<…>` / the `WFT_API_KEY`
+env var. See [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents)
+for the expiry, rotation, and revocation contract.
 
 ## Development Setup
 
@@ -480,25 +623,21 @@ PORT=3000
 LOG_LEVEL=debug
 NODE_ENV=development
 
-# Authentication
-API_KEYS=dev-key-1,dev-key-2
-
 # Database
 DATABASE_PATH=./data/tasks.db
 
 # CLI Configuration (for testing CLI commands)
 API_BASE_URL=http://localhost:3000
-API_KEY=dev-key-1
+# A PAT (wft_pat_…). Mint one with `tasks login` or `tasks db mint-token`.
+API_KEY=wft_pat_your-dev-token
 ```
 
-[IMPORTANT] `API_KEYS` (server) and `API_KEY` (client/CLI) are **separate**
-variables — note the plural vs singular. `API_KEYS` is required for the server
-and is a comma-separated list of admin keys accepted in the legacy `X-API-Key`
-header. `API_KEY` is the single value the CLI sends; for legacy-key auth set it
-to one of the entries in `API_KEYS` (the `.env` above uses `dev-key-1` for
-both). The legacy `X-API-Key` path is **deprecated as of v1.6** but still
-supported — PAT/OIDC are preferred; see [OIDC](#oidc-google-configuration) and
-the README "Security Model" for the migration path.
+[IMPORTANT] Authentication is Bearer PAT only. The CLI sends `API_KEY` (a
+`wft_pat_…` value) as `Authorization: Bearer <pat>`; `tasks login` caches a PAT
+to the credentials file and takes precedence over `API_KEY`. There is no static
+server-side key list — mint PATs at runtime via the web UI (`/me`),
+`tasks login`, or `tasks db mint-token`. See [OIDC](#oidc-google-configuration)
+and the README "Security Model".
 
 [NOTE] `DATABASE_PATH` is the canonical name validated by `src/config/env.ts`
 (default `./data/tasks.db`) and is honored consistently across every entry
@@ -561,9 +700,9 @@ This smoke is **MANUAL, not part of CI** — it is a maintainer's pre-publish
 check, kept out of the CI matrix because it boots a real HTTP server and builds
 `dist/`. It is hermetic and production-safe:
 
-- It uses a throwaway `mktemp -d` `DATABASE_PATH` and a **non-secret** local key
-  (`API_KEYS=smoke-key` / `API_KEY=smoke-key`) — it never touches the real
-  `./data` directory or any production database.
+- It uses a throwaway `mktemp -d` `DATABASE_PATH` and a **non-secret** local PAT
+  minted against that temp DB (`tasks db mint-token`), exported as `API_KEY` —
+  it never touches the real `./data` directory or any production database.
 - It points `WFT_CREDENTIALS_PATH` at the temp dir so a real cached PAT on your
   machine can't shadow the env key (matching a brand-new clone with no prior
   `tasks login`).
@@ -604,11 +743,12 @@ export PORT=3000
 # interface or rely on the container network instead of 0.0.0.0.
 export HOST=0.0.0.0
 export LOG_LEVEL=warn
-export API_KEYS=your-production-key-here
 export DATABASE_PATH=/var/lib/wood-fired-tasks/tasks.db
+# Authentication is Bearer PAT only — no key list in the environment.
+# Mint per-machine PATs at runtime (tasks login / tasks db mint-token).
 ```
 
-[IMPORTANT] Use strong, unique API keys in production. These keys provide full access to your task data.
+[IMPORTANT] Treat every minted PAT as a production-grade secret — each one provides full access to your task data. Issue one PAT per machine/agent so you can revoke them independently.
 
 [SECURITY] The server binds to `127.0.0.1` (loopback) by default. New deployments
 must opt in to LAN exposure by setting `HOST=0.0.0.0` (or a specific LAN IP).
@@ -689,13 +829,14 @@ host. It creates the `wood-fired-tasks` system user, lays out
 at `/etc/systemd/system/wood-fired-tasks.service`, writes a drop-in override
 when you have overridden the install dir or service user, and `enable`s
 the service (it does **not** start it — the first deploy starts it). After
-this completes, edit `$WFT_INSTALL_DIR/.env` to set `API_KEYS` (and any
-other server vars from the [Environment Variables](#environment-variables)
-table), then move on to the upgrade step.
+this completes, edit `$WFT_INSTALL_DIR/.env` to set the server vars from the
+[Environment Variables](#environment-variables) table (OIDC, session cookie
+secret, etc.), then move on to the upgrade step. Authentication is Bearer PAT
+only — mint PATs at runtime once the server is up, not via `.env`.
 
 ```bash
 sudo ./deploy/install.sh
-sudo $EDITOR /opt/wood-fired-tasks/.env   # set API_KEYS, etc.
+sudo $EDITOR /opt/wood-fired-tasks/.env   # set OIDC_*, SESSION_COOKIE_SECRET, etc.
 ```
 
 ### Upgrading an existing install
@@ -842,16 +983,15 @@ The CLI needs to know where to find the API server and how to authenticate:
 
 ```bash
 export API_BASE_URL=http://localhost:3000   # default; the CLI target
-export API_KEY=your-api-key-here            # a legacy key (one of API_KEYS)
+export API_KEY=wft_pat_your-token-here       # a PAT (wft_pat_…)
 ```
 
-`API_KEY` and the server's `API_KEYS` are **separate** variables. For local dev
-with legacy auth, set `API_KEY` to one of the comma-separated values in the
-server's `API_KEYS`; the CLI sends it as the legacy `X-API-Key` header. That
-legacy path is supported but **deprecated as of v1.6**. PAT/Bearer auth does not
-come from `API_KEY` — use `--token wft_pat_…` or, for interactive use,
-`npm run cli -- login` (OIDC device flow) caches a PAT to the credentials file
-and takes precedence over `API_KEY`.
+Authentication is Bearer PAT only — the CLI sends `API_KEY` (a `wft_pat_…`
+value) as `Authorization: Bearer <pat>`. For interactive use prefer
+`npm run cli -- login` (OIDC device flow), which caches a PAT to the credentials
+file and takes precedence over `API_KEY`; for one-off calls pass `--token
+wft_pat_…`. Mint PATs via the web UI (`/me`), `tasks login`, or `tasks db
+mint-token`.
 
 [TIP] Add these to your `.bashrc` or `.zshrc` for persistent configuration.
 
@@ -952,13 +1092,11 @@ Each command prints the raw `wft_pat_…` once — copy it to that machine and
 nowhere else. Bound the blast radius with `--expires-at` and rotate on a
 schedule; see
 [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents)
-and its rotation/revocation notes. (A legacy `API_KEYS` entry works too, but a
-per-machine PAT is the recommended unit — revocable, attributable, and
-expiry-bounded.)
+and its rotation/revocation notes. A per-machine PAT is the unit of access —
+revocable, attributable, and expiry-bounded.
 
-The remote bridge sends `WFT_API_KEY` as the legacy `X-API-Key` header, and
-automatically as `Authorization: Bearer …` when the value starts with
-`wft_pat_` — so a PAT drops straight into the `WFT_API_KEY` slot.
+The remote bridge sends `WFT_API_KEY` as `Authorization: Bearer …` — so a PAT
+drops straight into the `WFT_API_KEY` slot.
 
 #### 3. Run the installer in remote mode on each OS
 
@@ -1222,7 +1360,7 @@ The Swagger UI includes:
 
 - All endpoint schemas with request/response examples
 - Interactive "Try it out" functionality
-- Authentication support (X-API-Key header)
+- Authentication support (Authorization: Bearer PAT header)
 - Full schema definitions from Zod validators
 
 ## Environment Variables
@@ -1236,7 +1374,6 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `API_KEYS` | **yes** | — | Comma-separated API keys. Format: bare (`abc123`) or labelled (`abc123:alice-laptop`). Every valid key has full admin power; issue one per machine/agent. See the README "Security Model" section. |
 | `NODE_ENV` | no | `development` | One of `development`, `production`, `test`. Switches log formatting (pino-pretty in dev) and Swagger gating in production. |
 | `PORT` | no | `3000` | HTTP server port. |
 | `HOST` | no | `127.0.0.1` | Bind interface. Loopback-only by default (task #188). Set `0.0.0.0` or a LAN IP to expose. The bound interface is logged at info level on boot. |
@@ -1247,7 +1384,7 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `KEEP_ALIVE_TIMEOUT` | no | `10000` (ms) | Fastify `keepAliveTimeout`. |
 | `WAL_CHECKPOINT_INTERVAL_MS` | no | `900000` (15 min) | Interval for the periodic SQLite WAL checkpoint job. |
 | `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag to expose `/docs` and `/docs/json` when `NODE_ENV=production`. Gated by the auth plugin when enabled (task #185). |
-| `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-API-key cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
+| `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-credential (PAT) cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
 | `SSE_MAX_CONNECTIONS_PER_IP` | no | `8` | Per-IP cap on concurrent SSE connections. |
 | `SSE_MAX_CONNECTIONS` | no | `200` | Global cap on concurrent SSE connections. |
 | `SLACK_BOT_TOKEN` | conditional | — | Slack bot token (`xoxb-…`). Required if any Slack var is set; refused alone (see [`docs/SLACK.md`](SLACK.md)). |
@@ -1266,7 +1403,7 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `API_BASE_URL` | no | `http://localhost:3000` | Base URL for the REST API the CLI talks to. |
-| `API_KEY` | yes | — | Single API key sent in the `X-API-Key` header. Must match one of the entries in the server's `API_KEYS`. |
+| `API_KEY` | yes (unless logged in) | — | A PAT (`wft_pat_…`) sent as `Authorization: Bearer <pat>`. A cached PAT from `tasks login` takes precedence; `--token` overrides both. |
 | `DATABASE_PATH` | no | `./data/tasks.db` | Used by the offline CLI commands (`backup`, `doctor`, `stats`, `db-check`, `completed`) that open the SQLite database directly. |
 | `NO_COLOR` | no | unset | When set (any value), suppresses ANSI colors in CLI output. |
 
@@ -1304,16 +1441,17 @@ group (all three or none).
 ### API returns 401 Unauthorized
 
 Check that:
-1. `API_KEYS` environment variable is set on the server
-2. Your request includes `X-API-Key` header
-3. The header value matches one of the keys in `API_KEYS`
+1. Your request includes an `Authorization: Bearer <pat>` header
+2. The PAT value (`wft_pat_…`) is valid and has not been revoked or expired
+3. You are not sending the removed `X-API-Key` header — it is rejected with 401
 
 ### CLI commands fail with connection error
 
 Check that:
 1. API server is running (`npm start` or `npm run dev`)
 2. `API_BASE_URL` environment variable is set correctly
-3. `API_KEY` environment variable matches a key in server's `API_KEYS`
+3. You are authenticated — either a cached PAT from `tasks login`, an `API_KEY`
+   set to a `wft_pat_…` value, or a `--token wft_pat_…` flag
 
 ### MCP tools not working in Claude Code
 

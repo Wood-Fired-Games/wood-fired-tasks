@@ -3,7 +3,8 @@ import { createApp } from '../index.js';
 import { createMcpServer } from './server.js';
 import { resolveActorUserIdWithPath } from './identity-resolution.js';
 import { parseApiKeyEntries } from '../config/env.js';
-import { precomputeHashedEntries } from '../api/plugins/auth/strategies/legacy.js';
+import { precomputeHashedEntries } from '../api/plugins/auth/keys.js';
+import { triggerUpdateCheck } from '../cli/update/check-writer.js';
 
 /**
  * MCP server stdio entry point
@@ -89,6 +90,13 @@ async function main() {
 
   // Connect server to transport
   await server.connect(transport);
+
+  // Phase 4 (#795): fire-and-forget update-available check. Runs OFF the
+  // `tasks statusline` render hot path; records "newer version available"
+  // into the update-check cache so the status line can READ it later. Gated
+  // on isUpdateCheckEnabled() internally, best-effort (never throws), and
+  // explicitly NOT awaited so it cannot block or delay MCP boot.
+  triggerUpdateCheck();
 
   // Log to stderr (stdout reserved for JSON-RPC)
   console.error('Wood Fired Tasks MCP Server running on stdio');

@@ -3,21 +3,22 @@ import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import type { App } from '../../index.js';
-
-// Set API key for tests (same harness convention as tasks.test.ts).
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 describe('Task #383: @fastify/helmet security headers on the JSON API surface', () => {
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
-  const headers = { 'x-api-key': 'test-key' };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
   });
 
   afterAll(async () => {

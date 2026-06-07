@@ -69,6 +69,12 @@ describe('db-mint-token command', () => {
     const silentLogger = { info: () => {}, warn: () => {} };
     seedIdentities(db, parseApiKeyEntries('test-key:legacy-key'), silentLogger);
 
+    // v2.0 cutover (#801): the seeder no longer creates is_legacy credential
+    // rows from API_KEYS, so seed the legacy 'legacy-key' user directly. The
+    // db-mint-token command still resolves --user against is_legacy rows via
+    // findLegacyByDisplayName, so this row exercises that path unchanged.
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES (?, 1)`).run('legacy-key');
+
     db.prepare(`INSERT INTO users (display_name, email, is_legacy) VALUES (?, ?, 0)`).run(
       'alice',
       'alice@example.com',
@@ -195,6 +201,26 @@ describe('db-mint-token command', () => {
     expect(process.exitCode).toBe(0);
     expect(loggedStdout()).toContain(`User: ${legacy!.id} (legacy-key)`);
     expect(readTokens()).toHaveLength(1);
+  });
+
+  it('Case 3b: --user resolves by service-account display_name (v2.0 #801 bootstrap)', async () => {
+    const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
+    dbMintTokenCommand.exitOverride();
+
+    // `mcp-bot` is seeded as is_service_account=1 by seedIdentities in beforeEach.
+    // After the v2.0 cutover this is the documented no-OIDC bootstrap target.
+    const svc = readUser("display_name = 'mcp-bot' AND is_service_account = 1");
+    expect(svc).not.toBeNull();
+
+    await dbMintTokenCommand.parseAsync(['--user', 'mcp-bot', '--name', 'bootstrap'], {
+      from: 'user',
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(loggedStdout()).toContain(`User: ${svc!.id} (mcp-bot)`);
+    const rows = readTokens();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].user_id).toBe(svc!.id);
   });
 
   it('Case 4: unknown numeric --user prints "User \'99999\' not found." and exits 1', async () => {

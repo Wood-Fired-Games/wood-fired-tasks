@@ -28,11 +28,11 @@ fails, regenerate this doc. Deep references live in
 
 ## REST routes (Fastify)
 
-Authenticated `/api/v1/**` routes require `X-API-Key` (validated by
-`src/api/plugins/auth.ts`). `/health` is public; `/health/detailed` is gated by
-the same auth plugin. The `/auth/*` and `/web/*` surfaces are the OAuth /
-device-flow / browser-login layer and carry their own session/CSRF handling
-rather than `X-API-Key`. Source: the files under `src/api/routes/` (auth,
+Authenticated `/api/v1/**` routes require a Bearer PAT (`Authorization: Bearer
+<pat>`, validated by `src/api/plugins/auth.ts`). `/health` is public;
+`/health/detailed` is gated by the same auth plugin. The `/auth/*` and `/web/*`
+surfaces are the OAuth / device-flow / browser-login layer and carry their own
+session/CSRF handling rather than a Bearer PAT. Source: the files under `src/api/routes/` (auth,
 web, me, tasks, projects, comments, dependencies, events, health). Registration
 prefixes are in `src/api/server.ts`.
 
@@ -224,8 +224,10 @@ call.
 | distribution | `self-update` | `commands/self-update.ts` | Frictionless distribution (#739): `npm i -g wood-fired-tasks@latest` with no-sudo EACCES remediation. |
 | distribution | `docs` | `commands/docs.ts` | Frictionless distribution (#749): browse bundled user guides — `docs list`/`show`/`path`/`open`, resolved via the asset resolver (package root, not cwd). |
 | distribution | `service` | `commands/service.ts` | Frictionless distribution (#740/#741/#742): manage the background service — `install`/`uninstall`/`status`, admin-free by default (Linux systemctl --user, macOS launchd, Windows per-user logon task); `install --system` is the sole elevating path. |
+| statusline | `statusline` | `commands/statusline.ts` | v2.0 status line (#597): reads Claude Code's status-line JSON from stdin, renders the linked-project open/done counts + the update-available hint from a TTL cache; degrades silently (exit 0) when unlinked/offline. |
+| statusline | `link-project` | `commands/link-project.ts` | v2.0 status line (#595): links the current directory to a project by writing the repo-local `.wft/project` marker the statusline resolver reads. |
 
-**Total: 40 commands wired into Commander** (counted by
+**Total: 42 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine
@@ -296,12 +298,12 @@ filters. MCP list tools wrap the same envelope under a domain key
 
 | Surface | Header / mechanism | Required? |
 |---|---|---|
-| REST `/api/v1/**` | `X-API-Key` (against `API_KEYS` env, constant-time compare in `src/api/plugins/auth.ts`) | Yes |
+| REST `/api/v1/**` | `Authorization: Bearer <pat>` (PAT hashed + looked up in `api_tokens`, `src/api/plugins/auth.ts`) | Yes |
 | REST `/health` | none | No |
-| REST `/health/detailed` | `X-API-Key` | Yes |
+| REST `/health/detailed` | `Authorization: Bearer <pat>` | Yes |
 | Local MCP (`src/mcp/server.ts`) | stdio, trusts parent process | No |
-| Remote MCP (`src/mcp/remote/`) | `X-API-Key` forwarded to the REST server's `API_KEYS` | Yes |
-| CLI (`tasks`) | `X-API-Key` sourced from `API_KEY` env (set by the installer) | Yes |
+| Remote MCP (`src/mcp/remote/`) | `Authorization: Bearer <pat>` forwarded from `WFT_API_KEY` | Yes |
+| CLI (`tasks`) | `Authorization: Bearer <pat>` from a cached PAT (`tasks login`) or `API_KEY` env / `--token` | Yes |
 | Slack | Slack signing secret on inbound; bot token outbound | Yes |
 
 Global rate limit (`@fastify/rate-limit`) applies to every REST route except

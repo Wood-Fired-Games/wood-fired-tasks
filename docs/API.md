@@ -10,25 +10,27 @@ Complete reference for the Wood Fired Tasks REST API.
 
 ## Authentication
 
-All endpoints under `/api/v1` require authentication via the `X-API-Key` header. The authenticated `/health/detailed` route also requires `X-API-Key`. In production, the Swagger UI (`/docs`, `/docs/json`) is gated — see [Production gating](#production-gating) below.
+All endpoints under `/api/v1` require authentication via a Personal Access Token (PAT) presented as the `Authorization: Bearer <pat>` header. The authenticated `/health/detailed` route also requires a Bearer PAT. In production, the Swagger UI (`/docs`, `/docs/json`) is gated — see [Production gating](#production-gating) below.
 
 The only public, unauthenticated endpoint is `/health` (minimal liveness probe).
+
+Mint a PAT via the web UI (`/me`), `tasks login` (OIDC device flow), or `tasks db mint-token` (headless bootstrap). PAT values start with `wft_pat_`. See [SETUP.md](SETUP.md) for the full minting and bootstrap flow.
 
 ### Example Request
 
 ```bash
-curl -H "X-API-Key: your-key-here" \
+curl -H "Authorization: Bearer wft_pat_your-token-here" \
   http://localhost:3000/api/v1/tasks
 ```
 
 ### Unauthorized Response
 
-If the API key is missing or invalid, you'll receive a 401 error:
+If the token is missing or invalid, you'll receive a 401 error:
 
 ```json
 {
   "error": "UNAUTHORIZED",
-  "message": "Missing API key. Provide X-API-Key header."
+  "message": "Missing or invalid Authorization header. Provide a Bearer PAT."
 }
 ```
 
@@ -37,15 +39,11 @@ or
 ```json
 {
   "error": "UNAUTHORIZED",
-  "message": "Invalid API key."
+  "message": "Invalid token."
 }
 ```
 
-[IMPORTANT] `API_KEYS` is **REQUIRED**. The server fails to start (exit code 78, `EX_CONFIG`) if `API_KEYS` is unset or empty — there is no "auth disabled" fallback mode.
-
-- Format: a comma-separated list of one or more keys. Each entry is either a bare key (`abc123def456...`) or a labelled key (`abc123def456...:ci-runner`). Labels appear in audit logs and never expose the raw key.
-- **Production length requirement:** when `NODE_ENV=production`, each key must be at least **32 characters**. Keys that are shorter, repeat a single character, or contain placeholder phrases (`changeme`, `placeholder`, `example`, `change-me-to-a-real-key`) or values (`test`, `dev`) cause the server to refuse to start.
-- In non-production environments the length floor is not enforced, but the server still rejects every request when no keys are configured (fail-closed). Generate keys with a CSPRNG, e.g. `openssl rand -hex 32`.
+[IMPORTANT] At least one valid PAT must exist for the server to be usable. PATs are minted and revoked at runtime (web `/me`, `tasks login`, or `tasks db mint-token`) — there is no static key list in the environment and no "auth disabled" fallback mode.
 
 ## Error Handling
 
@@ -59,7 +57,7 @@ The API uses standard HTTP status codes and returns error details in JSON format
 | 201 | Created |
 | 204 | No Content (successful deletion) |
 | 400 | Bad Request (validation error) |
-| 401 | Unauthorized (missing or invalid API key) |
+| 401 | Unauthorized (missing or invalid Bearer PAT) |
 | 404 | Not Found |
 | 409 | Conflict (claim already taken, invalid state transition) |
 | 500 | Internal Server Error |
@@ -151,7 +149,7 @@ curl http://localhost:3000/health
 
 Authenticated diagnostic health check. Returns component-level status and runtime statistics for the database, the in-process event bus, and the SSE manager.
 
-**Authentication:** Required (`X-API-Key` header). Returns 401 if the key is missing or invalid.
+**Authentication:** Required (`Authorization: Bearer <pat>` header). Returns 401 if the token is missing or invalid.
 
 **Response:** 200 OK
 
@@ -189,10 +187,10 @@ Field semantics:
 
 ```bash
 curl http://localhost:3000/health/detailed \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
-[NOTE] `/health/detailed` is **not** gated off in production — it remains available behind `X-API-Key` so operators have a single uniform authenticated probe across environments. Only the unauthenticated `/health` route is intentionally minimal.
+[NOTE] `/health/detailed` is **not** gated off in production — it remains available behind a Bearer PAT so operators have a single uniform authenticated probe across environments. Only the unauthenticated `/health` route is intentionally minimal.
 
 ## Project Endpoints
 
@@ -227,7 +225,7 @@ Create a new project.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/projects \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"name": "My Project", "description": "A test project"}'
 ```
@@ -269,11 +267,11 @@ List projects (paginated). Returns the envelope `{ data, total, limit, offset }`
 ```bash
 # First page (default limit 50)
 curl http://localhost:3000/api/v1/projects \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Second page of 25
 curl "http://localhost:3000/api/v1/projects?limit=25&offset=25" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/projects/:id
@@ -296,7 +294,7 @@ Get a project by ID.
 
 ```bash
 curl http://localhost:3000/api/v1/projects/1 \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### PUT /api/v1/projects/:id
@@ -330,7 +328,7 @@ Update a project. All fields are optional (partial update).
 
 ```bash
 curl -X PUT http://localhost:3000/api/v1/projects/1 \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"name": "Updated Name"}'
 ```
@@ -347,7 +345,7 @@ Delete a project.
 
 ```bash
 curl -X DELETE http://localhost:3000/api/v1/projects/1 \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/projects/:id/topology
@@ -380,7 +378,7 @@ Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wav
 
 ```bash
 curl http://localhost:3000/api/v1/projects/1/topology \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ## Task Endpoints
@@ -435,7 +433,7 @@ Create a new task.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/tasks \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Fix login bug",
@@ -501,35 +499,35 @@ List tasks with optional filters (paginated). Returns the envelope `{ data, tota
 ```bash
 # First page (default limit 50)
 curl http://localhost:3000/api/v1/tasks \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Second page of 25
 curl "http://localhost:3000/api/v1/tasks?limit=25&offset=25" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Tasks for project 1
 curl "http://localhost:3000/api/v1/tasks?project_id=1" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Open tasks assigned to alice
 curl "http://localhost:3000/api/v1/tasks?status=open&assignee=alice" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Search for authentication tasks
 curl "http://localhost:3000/api/v1/tasks?search=authentication" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Tasks with bug tag
 curl "http://localhost:3000/api/v1/tasks?tags=bug" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Tasks updated since a given timestamp (incremental sync)
 curl "http://localhost:3000/api/v1/tasks?updated_after=2026-01-01T00:00:00Z" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Tasks updated within a window
 curl "http://localhost:3000/api/v1/tasks?updated_after=2026-01-01T00:00:00Z&updated_before=2026-02-01T00:00:00Z" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/tasks/:id
@@ -561,7 +559,7 @@ Get a task by ID.
 
 ```bash
 curl http://localhost:3000/api/v1/tasks/42 \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### PUT /api/v1/tasks/:id
@@ -611,7 +609,7 @@ Update a task. All fields are optional (partial update).
 
 ```bash
 curl -X PUT http://localhost:3000/api/v1/tasks/42 \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"status": "done"}'
 ```
@@ -626,7 +624,7 @@ Delete a task.
 
 ```bash
 curl -X DELETE http://localhost:3000/api/v1/tasks/42 \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/tasks/:id/subtasks
@@ -672,7 +670,7 @@ Get subtasks (children) of a parent task (paginated). Returns the envelope `{ da
 
 ```bash
 curl http://localhost:3000/api/v1/tasks/42/subtasks \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/tasks/completion-report
@@ -722,11 +720,11 @@ rejected with HTTP 400.
 ```bash
 # Trailing 7 days
 curl 'http://localhost:3000/api/v1/tasks/completion-report?days=7' \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Explicit window, filtered by assignee
 curl 'http://localhost:3000/api/v1/tasks/completion-report?start=2026-05-01T00:00:00Z&end=2026-05-21T23:59:59Z&assignee=alice' \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ## Comment Endpoints
@@ -763,7 +761,7 @@ Add a comment to a task.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/tasks/42/comments \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"author": "alice", "content": "Great progress!"}'
 ```
@@ -811,7 +809,7 @@ Get comments for a task in chronological order (paginated). Returns the envelope
 
 ```bash
 curl http://localhost:3000/api/v1/tasks/42/comments \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### DELETE /api/v1/tasks/:id/comments/:commentId
@@ -824,7 +822,7 @@ Delete a comment.
 
 ```bash
 curl -X DELETE http://localhost:3000/api/v1/tasks/42/comments/1 \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ## Dependency Endpoints
@@ -861,7 +859,7 @@ Add a dependency relationship (this task blocks another task).
 ```bash
 # Task 42 blocks task 43
 curl -X POST http://localhost:3000/api/v1/tasks/42/dependencies \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"blocks_task_id": 43}'
 ```
@@ -897,7 +895,7 @@ Get all dependencies for a task (tasks it blocks and tasks that block it).
 
 ```bash
 curl http://localhost:3000/api/v1/tasks/42/dependencies \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### DELETE /api/v1/tasks/:id/dependencies/:blocksTaskId
@@ -911,7 +909,7 @@ Remove a dependency relationship.
 ```bash
 # Remove dependency: task 42 no longer blocks task 43
 curl -X DELETE http://localhost:3000/api/v1/tasks/42/dependencies/43 \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ## WSJF Endpoints
@@ -922,7 +920,7 @@ The four WSJF components are Fibonacci tiers (`1, 2, 3, 5, 8, 13`). The LLM neve
 
 Four of these endpoints back the remote MCP WSJF tools (see [`docs/MCP.md`](MCP.md)): `wsjf_ranking` → `GET /projects/:id/wsjf-ranking`, `wsjf_history` → `GET /tasks/:id/score-history`, `wsjf_health` → `GET /projects/:id/wsjf-health`, `rescore_project` → `POST /projects/:id/rescore`. The `charter-history`, `rescore-runs`, and `GET`/`PUT /tasks/:id/wsjf` endpoints are REST-only (no MCP tool proxy); the task WSJF get/set and charter history are also surfaced via the CLI.
 
-**Authentication:** all WSJF endpoints require `X-API-Key` (same as every `/api/v1` route).
+**Authentication:** all WSJF endpoints require a Bearer PAT (same as every `/api/v1` route).
 
 ### Value charter
 
@@ -989,11 +987,11 @@ Rank a project's tasks by propagation-adjusted WSJF. Backs the `wsjf_ranking` MC
 ```bash
 # Frontier ranking (default)
 curl http://localhost:3000/api/v1/projects/1/wsjf-ranking \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 
 # Rank every task
 curl "http://localhost:3000/api/v1/projects/1/wsjf-ranking?scope=all" \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/projects/:id/wsjf-health
@@ -1025,7 +1023,7 @@ Lint a project's WSJF state for degeneracies and pitfalls. Backs the `wsjf_healt
 
 ```bash
 curl http://localhost:3000/api/v1/projects/1/wsjf-health \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### POST /api/v1/projects/:id/rescore
@@ -1081,7 +1079,7 @@ Deterministically rescore a project's already-scored tasks against the **current
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/projects/1/rescore \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"submissions": []}'
 ```
@@ -1117,7 +1115,7 @@ Project value-charter version history (oldest-first). One self-contained snapsho
 
 ```bash
 curl http://localhost:3000/api/v1/projects/1/charter-history \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/projects/:id/rescore-runs
@@ -1151,7 +1149,7 @@ Chronological `wsjf_rescore_run` rows (oldest-first), read-only projection.
 
 ```bash
 curl http://localhost:3000/api/v1/projects/1/rescore-runs \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### GET /api/v1/tasks/:id/wsjf
@@ -1179,7 +1177,7 @@ An unscored task returns `scored: false` and every WSJF field (`components`, `ev
 
 ```bash
 curl http://localhost:3000/api/v1/tasks/42/wsjf \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ### PUT /api/v1/tasks/:id/wsjf
@@ -1209,7 +1207,7 @@ Manual-override set/lock of the four WSJF components. Runs the enum + cross-comp
 
 ```bash
 curl -X PUT http://localhost:3000/api/v1/tasks/42/wsjf \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{
     "value": 8,
@@ -1263,7 +1261,7 @@ The stdio/remote `wsjf_history` MCP tool additionally annotates each row with a 
 
 ```bash
 curl http://localhost:3000/api/v1/tasks/42/score-history \
-  -H "X-API-Key: your-key"
+  -H "Authorization: Bearer wft_pat_your-token"
 ```
 
 ## Claim Endpoint
@@ -1323,13 +1321,13 @@ Atomically claim an unassigned task. Sets assignee and transitions status to `in
 ```bash
 # Claim a task
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "Content-Type: application/json" \
   -d '{"assignee": "agent-1"}'
 
 # Claim with idempotency key (safe to retry)
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_your-token" \
   -H "X-Idempotency-Key: claim-42-agent-1" \
   -H "Content-Type: application/json" \
   -d '{"assignee": "agent-1"}'
@@ -1393,19 +1391,19 @@ The server sends a heartbeat comment every 30 seconds to keep the connection ali
 
 ```bash
 # Subscribe to all events
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_your-token" \
   http://localhost:3000/api/v1/events
 
 # Filter by project
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_your-token" \
   "http://localhost:3000/api/v1/events?project_id=1"
 
 # Filter by event type
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_your-token" \
   "http://localhost:3000/api/v1/events?event_types=task.created,task.claimed"
 
 # Resume after reconnection
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_your-token" \
   -H "Last-Event-ID: 42" \
   http://localhost:3000/api/v1/events
 ```
@@ -1434,7 +1432,7 @@ The Swagger UI provides:
 
 - Interactive "Try it out" functionality for all endpoints
 - Complete request/response schemas
-- Authentication support (X-API-Key header)
+- Authentication support (Authorization: Bearer PAT header)
 - Example values for all fields
 - Full Zod schema validation details
 
@@ -1446,8 +1444,8 @@ Swagger UI is **disabled by default in production** (`NODE_ENV=production`). The
 |-------------|-------------------------------|--------------------------|
 | `development` or `test` | (ignored) | Exposed, no auth required. |
 | `production` | unset / `false` (default) | **Not registered** — returns 404. |
-| `production` | `true` | Exposed, but `X-API-Key` is required (same canonical auth plugin as `/api/v1`). |
+| `production` | `true` | Exposed, but a Bearer PAT is required (same canonical auth plugin as `/api/v1`). |
 
 The in-process OpenAPI spec collector is always loaded so internal tests can introspect route schemas, but the HTTP routes that serve the UI and JSON document are only mounted when the gate above allows it.
 
-[TIP] Use Swagger UI in development to explore the API and test endpoints without writing curl commands. In production, fetch the spec via `/docs/json` with your API key only after opting in with `ENABLE_SWAGGER_IN_PRODUCTION=true`.
+[TIP] Use Swagger UI in development to explore the API and test endpoints without writing curl commands. In production, fetch the spec via `/docs/json` with your Bearer PAT only after opting in with `ENABLE_SWAGGER_IN_PRODUCTION=true`.

@@ -3,6 +3,7 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 /**
  * Task #342 — integration tests for GET /api/v1/projects/:id/dependency-graph.
@@ -15,9 +16,6 @@ import type { App } from '../../../../index.js';
  *   - cycle handling reports `DAG_CYCLIC` without hanging the request
  */
 
-const TEST_KEY = 'test-key-dependency-graph';
-const TEST_LABEL = 'p342-dependency-graph';
-
 describe('GET /api/v1/projects/:id/dependency-graph', () => {
   let server: FastifyInstance;
   let app: App;
@@ -26,16 +24,15 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
   let aId: number;
   let bId: number;
   let cId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     // Seed a small DAG: a→b, b→c (linear chain).
     const project = app.projectService.createProject({
@@ -70,8 +67,6 @@ describe('GET /api/v1/projects/:id/dependency-graph', () => {
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) delete process.env.API_KEYS;
-    else process.env.API_KEYS = prevApiKeys;
   });
 
   it('returns tree shape by default (no ?format= query param)', async () => {

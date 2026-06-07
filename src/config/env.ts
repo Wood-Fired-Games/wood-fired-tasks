@@ -62,7 +62,6 @@ export const configSchema = z
     // default is visible.
     HOST: z.string().min(1).default('127.0.0.1'),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-    API_KEYS: z.string().min(1, 'API_KEYS is required and cannot be empty'),
     // task #731: default the DB to the OS app-data dir (env-paths) so a
     // quick-start `npx`/global install does not write a cwd-relative
     // `./data/tasks.db` (which moves with the process and is easy to lose).
@@ -310,12 +309,12 @@ export interface ApiKeyEntry {
 }
 
 /**
- * Parse an `API_KEYS` string into a list of `{ key, label }` entries.
+ * Parse an api-keys string into a list of `{ key, label }` entries.
  *
  * Format:
- * - `API_KEYS=abc123,def456,ghi789` — bare keys, label auto-derived.
- * - `API_KEYS=abc123:label-a,def456:label-b` — explicit labels.
- * - Mixed: `API_KEYS=abc123,def456:ci-bot` — both forms in one list.
+ * - `abc123,def456,ghi789` — bare keys, label auto-derived.
+ * - `abc123:label-a,def456:label-b` — explicit labels.
+ * - Mixed: `abc123,def456:ci-bot` — both forms in one list.
  *
  * Rules:
  * - Whitespace around keys and labels is trimmed.
@@ -334,7 +333,7 @@ export interface ApiKeyEntry {
  * - An empty label after `:` is rejected ("key:" with no label is ambiguous —
  *   operator likely intended either a bare key or forgot the label).
  *
- * This is the single source of truth for the API_KEYS format. The auth
+ * This is the single source of truth for the api-keys format. The auth
  * plugin consumes the output directly via `parseApiKeyEntries`.
  */
 export function parseApiKeyEntries(raw: string | undefined): ApiKeyEntry[] {
@@ -365,7 +364,7 @@ export function parseApiKeyEntries(raw: string | undefined): ApiKeyEntry[] {
 
     if (colonCount > 1) {
       throw new Error(
-        `API_KEYS entry #${i + 1} contains multiple ':' separators. ` +
+        `api-keys entry #${i + 1} contains multiple ':' separators. ` +
           `Use exactly one ':' between key and label, e.g. "abc123:ci-bot".`,
       );
     }
@@ -377,13 +376,13 @@ export function parseApiKeyEntries(raw: string | undefined): ApiKeyEntry[] {
 
     if (keyPart.length === 0) {
       throw new Error(
-        `API_KEYS entry #${i + 1} has an empty key before ':'. ` +
+        `api-keys entry #${i + 1} has an empty key before ':'. ` +
           `Format must be "key:label" with a non-empty key.`,
       );
     }
     if (labelPart.length === 0) {
       throw new Error(
-        `API_KEYS entry #${i + 1} has an empty label after ':'. ` +
+        `api-keys entry #${i + 1} has an empty label after ':'. ` +
           `Use a bare key (no ':') or supply a non-empty label, e.g. "abc123:ci-bot".`,
       );
     }

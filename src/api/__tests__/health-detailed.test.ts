@@ -3,26 +3,30 @@ import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 import type { App } from '../../index.js';
 import { VERSION } from '../../utils/version.js';
+import { authHeaders } from './helpers/auth.js';
 
 /**
  * task #185: /health/detailed exposes the full diagnostic payload (component
  * checks + runtime stats) and is gated by the canonical auth plugin — the
- * SAME X-API-Key requirement as /api/v1.
+ * SAME Bearer/PAT requirement as /api/v1.
  *
  * The public /health route is covered by `health.test.ts` and asserts the
  * minimal shape (no checks/stats). This file covers ONLY the detailed
  * authenticated route.
  */
-process.env.API_KEYS = 'test-key';
 
 describe('Authenticated /health/detailed', () => {
   let server: FastifyInstance;
   let app: App;
+  let auth: { Authorization: string };
 
   beforeEach(async () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    auth = authHeaders(app.db);
   });
 
   afterEach(async () => {
@@ -53,7 +57,7 @@ describe('Authenticated /health/detailed', () => {
     const response = await server.inject({
       method: 'GET',
       url: '/health/detailed',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
     });
 
     expect(response.statusCode).toBe(200);
@@ -90,7 +94,7 @@ describe('Authenticated /health/detailed', () => {
     const response = await server.inject({
       method: 'GET',
       url: '/health/detailed',
-      headers: { 'x-api-key': 'test-key' },
+      headers: auth,
     });
     expect(response.headers['content-type']).toContain('application/json');
   });

@@ -40,6 +40,8 @@ import { serveCommand } from '../commands/serve.js';
 import { setupCommand } from '../commands/setup.js';
 import { docsCommand } from '../commands/docs.js';
 import { serviceCommand } from '../commands/service.js';
+import { statuslineCommand } from '../commands/statusline.js';
+import { linkProjectCommand } from '../commands/link-project.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
 import { warnIfNotEvenLts } from '../../utils/node-version.js';
@@ -52,13 +54,10 @@ program.name('tasks').description('Wood Fired Tasks - Task management CLI').vers
 program.option('--json', 'Output as JSON (machine-readable)');
 program.option('--no-input', 'Disable interactive prompts (fail on missing required fields)');
 program.option('--force', 'Skip confirmation prompts for destructive actions');
-// Plan 30-05: --token global flag overrides credentials file + env.API_KEY.
+// Plan 30-05: --token global flag overrides the credentials file.
 // The preAction hook installs the value into the credentials module's
 // resolveAuth state before any subcommand runs.
-program.option(
-  '--token <token>',
-  'Use the given PAT as Bearer auth (overrides credentials file and API_KEY env)',
-);
+program.option('--token <token>', 'Use the given PAT as Bearer auth (overrides credentials file)');
 program.hook('preAction', () => {
   const t = program.opts()['token'];
   setTokenOverride(typeof t === 'string' && t.length > 0 ? t : null);
@@ -156,6 +155,14 @@ program.addCommand(docsCommand);
 // Register service command (task #740): manage the background service
 // (Linux: systemctl --user, admin-free); mac/Windows backends land in #741/#742.
 program.addCommand(serviceCommand);
+
+// Register statusline command (task #598): render a status line for
+// shell prompts / editor integrations.
+program.addCommand(statuslineCommand);
+
+// Register link-project command (task #598): associate the current
+// working directory with a project.
+program.addCommand(linkProjectCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133

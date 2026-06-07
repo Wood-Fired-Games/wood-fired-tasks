@@ -34,7 +34,7 @@ describe('config/paths — DATABASE_PATH default resolution', () => {
       process.env.DATABASE_PATH = '/tmp/override.db';
       vi.resetModules();
       const { configSchema } = await import('../env.js');
-      const parsed = configSchema.parse({ ...process.env, API_KEYS: 'k1' });
+      const parsed = configSchema.parse({ ...process.env });
       expect(parsed.DATABASE_PATH).toBe('/tmp/override.db');
     } finally {
       delete process.env.DATABASE_PATH;
@@ -49,7 +49,7 @@ describe('config/paths — DATABASE_PATH default resolution', () => {
 
     const env = { ...process.env };
     delete env.DATABASE_PATH;
-    const parsed = configSchema.parse({ ...env, API_KEYS: 'k1' });
+    const parsed = configSchema.parse({ ...env });
 
     expect(parsed.DATABASE_PATH).toBe(defaultDbPath);
     expect(path.isAbsolute(parsed.DATABASE_PATH)).toBe(true);

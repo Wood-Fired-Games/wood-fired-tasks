@@ -16,7 +16,6 @@ describe('Configuration Validation', () => {
     delete process.env.PORT;
     delete process.env.HOST;
     delete process.env.LOG_LEVEL;
-    delete process.env.API_KEYS;
     delete process.env.DATABASE_PATH;
     delete process.env.CONNECTION_TIMEOUT;
     delete process.env.REQUEST_TIMEOUT;
@@ -33,13 +32,10 @@ describe('Configuration Validation', () => {
 
   describe('Valid configuration', () => {
     it('should parse valid configuration with all required fields', () => {
-      process.env.API_KEYS = 'test-key-1,test-key-2';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.API_KEYS).toBe('test-key-1,test-key-2');
         expect(result.data.NODE_ENV).toBe('development');
         expect(result.data.PORT).toBe(3000);
         // task #188: HOST defaults to 127.0.0.1 (loopback) — operators must
@@ -55,8 +51,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should use defaults for optional values', () => {
-      process.env.API_KEYS = 'test-key';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
@@ -79,7 +73,6 @@ describe('Configuration Validation', () => {
       // (or a specific LAN IP). The default must never silently bind to
       // every interface; a new OSS user following the README quick-start
       // would otherwise expose the task tracker on every NIC.
-      process.env.API_KEYS = 'test-key';
 
       const result = configSchema.safeParse(process.env);
 
@@ -92,7 +85,6 @@ describe('Configuration Validation', () => {
     it('should honour explicit HOST override for LAN exposure', () => {
       // Verify the opt-in path: when an operator sets HOST=0.0.0.0
       // explicitly, the schema must pass that value through unchanged.
-      process.env.API_KEYS = 'test-key';
       process.env.HOST = '0.0.0.0';
 
       const result = configSchema.safeParse(process.env);
@@ -106,7 +98,6 @@ describe('Configuration Validation', () => {
     it('should honour an explicit LAN IP for HOST', () => {
       // A common middle ground is binding to a specific LAN IP rather
       // than 0.0.0.0; the schema must accept any non-empty string.
-      process.env.API_KEYS = 'test-key';
       process.env.HOST = '192.168.1.42';
 
       const result = configSchema.safeParse(process.env);
@@ -118,7 +109,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should accept production NODE_ENV', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.NODE_ENV = 'production';
 
       const result = configSchema.safeParse(process.env);
@@ -130,7 +120,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should accept test NODE_ENV', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.NODE_ENV = 'test';
 
       const result = configSchema.safeParse(process.env);
@@ -142,7 +131,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should transform PORT string to number', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.PORT = '8080';
 
       const result = configSchema.safeParse(process.env);
@@ -155,7 +143,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should transform timeout strings to numbers', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.CONNECTION_TIMEOUT = '5000';
       process.env.REQUEST_TIMEOUT = '3000';
       process.env.KEEP_ALIVE_TIMEOUT = '1000';
@@ -173,7 +160,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should accept custom LOG_LEVEL values', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.LOG_LEVEL = 'debug';
 
       const result = configSchema.safeParse(process.env);
@@ -185,7 +171,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should accept custom DATABASE_PATH', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.DATABASE_PATH = '/custom/path/db.sqlite';
 
       const result = configSchema.safeParse(process.env);
@@ -198,32 +183,7 @@ describe('Configuration Validation', () => {
   });
 
   describe('Invalid configuration', () => {
-    it('should fail on missing API_KEYS', () => {
-      const result = configSchema.safeParse(process.env);
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        const apiKeyError = result.error.issues.find((issue) => issue.path[0] === 'API_KEYS');
-        expect(apiKeyError).toBeDefined();
-        // Zod reports this as a required/invalid type error
-        expect(apiKeyError?.code).toBe('invalid_type');
-      }
-    });
-
-    it('should fail on empty API_KEYS', () => {
-      process.env.API_KEYS = '';
-
-      const result = configSchema.safeParse(process.env);
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        const apiKeyError = result.error.issues.find((issue) => issue.path[0] === 'API_KEYS');
-        expect(apiKeyError).toBeDefined();
-      }
-    });
-
     it('should fail on invalid NODE_ENV', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.NODE_ENV = 'invalid-env';
 
       const result = configSchema.safeParse(process.env);
@@ -232,7 +192,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should fail on invalid LOG_LEVEL', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.LOG_LEVEL = 'invalid-level';
 
       const result = configSchema.safeParse(process.env);
@@ -439,7 +398,6 @@ describe('Configuration Validation', () => {
     const tooLongSecret33 = Buffer.alloc(33).toString('base64');
 
     it('accepts a SESSION_COOKIE_SECRET of exactly 32 bytes (base64)', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SESSION_COOKIE_SECRET = validSecret32;
 
       const result = configSchema.safeParse(process.env);
@@ -451,7 +409,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects a SESSION_COOKIE_SECRET that decodes to 31 bytes', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SESSION_COOKIE_SECRET = tooShortSecret31;
 
       const result = configSchema.safeParse(process.env);
@@ -464,7 +421,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects a SESSION_COOKIE_SECRET that decodes to 33 bytes', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SESSION_COOKIE_SECRET = tooLongSecret33;
 
       const result = configSchema.safeParse(process.env);
@@ -477,7 +433,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects a non-base64 garbage SESSION_COOKIE_SECRET', () => {
-      process.env.API_KEYS = 'test-key';
       // `!!!` is not valid base64; Buffer.from is lenient but decoded length
       // will not be 32, so the refine still rejects it.
       process.env.SESSION_COOKIE_SECRET = '!!!';
@@ -492,7 +447,6 @@ describe('Configuration Validation', () => {
     });
 
     it('accepts the full OIDC quartet + SESSION_COOKIE_SECRET set together', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.OIDC_ISSUER_URL = 'https://accounts.google.com';
       process.env.OIDC_CLIENT_ID = 'client-id';
       process.env.OIDC_CLIENT_SECRET = 'client-secret';
@@ -511,7 +465,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects partial OIDC configuration (only OIDC_ISSUER_URL set)', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.OIDC_ISSUER_URL = 'https://accounts.google.com';
       process.env.SESSION_COOKIE_SECRET = validSecret32;
 
@@ -525,7 +478,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects OIDC enabled without SESSION_COOKIE_SECRET', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.OIDC_ISSUER_URL = 'https://accounts.google.com';
       process.env.OIDC_CLIENT_ID = 'client-id';
       process.env.OIDC_CLIENT_SECRET = 'client-secret';
@@ -542,8 +494,6 @@ describe('Configuration Validation', () => {
     });
 
     it('accepts disabled mode (no OIDC vars, no SESSION_COOKIE_SECRET)', () => {
-      process.env.API_KEYS = 'test-key';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
@@ -557,8 +507,6 @@ describe('Configuration Validation', () => {
     });
 
     it('defaults OIDC_SCOPES to "openid email profile" when unset', () => {
-      process.env.API_KEYS = 'test-key';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
@@ -568,8 +516,6 @@ describe('Configuration Validation', () => {
     });
 
     it('defaults SESSION_COOKIE_NAME to "wft_session" when unset', () => {
-      process.env.API_KEYS = 'test-key';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
@@ -581,8 +527,6 @@ describe('Configuration Validation', () => {
 
   describe('Slack token validation', () => {
     it('should accept config with both Slack tokens absent', () => {
-      process.env.API_KEYS = 'test-key';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
@@ -593,7 +537,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should accept config with both Slack tokens present', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SLACK_BOT_TOKEN = 'xoxb-test';
       process.env.SLACK_APP_TOKEN = 'xapp-test';
 
@@ -607,7 +550,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should reject config with only SLACK_BOT_TOKEN', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SLACK_BOT_TOKEN = 'xoxb-test';
 
       const result = configSchema.safeParse(process.env);
@@ -622,7 +564,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should reject config with only SLACK_APP_TOKEN', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SLACK_APP_TOKEN = 'xapp-test';
 
       const result = configSchema.safeParse(process.env);
@@ -635,7 +576,6 @@ describe('Configuration Validation', () => {
     });
 
     it('should include SLACK tokens in Config type', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.SLACK_BOT_TOKEN = 'xoxb-verify';
       process.env.SLACK_APP_TOKEN = 'xapp-verify';
 
@@ -655,8 +595,6 @@ describe('Configuration Validation', () => {
     // calendar-invalid date.
 
     it('defaults to 2026-12-31 when unset', () => {
-      process.env.API_KEYS = 'test-key';
-
       const result = configSchema.safeParse(process.env);
 
       expect(result.success).toBe(true);
@@ -666,7 +604,6 @@ describe('Configuration Validation', () => {
     });
 
     it('accepts a future operator-supplied date', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.LEGACY_AUTH_SUNSET_DATE = '2027-06-30';
 
       const result = configSchema.safeParse(process.env);
@@ -678,7 +615,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects a non-YYYY-MM-DD shape', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.LEGACY_AUTH_SUNSET_DATE = 'not-a-date';
 
       const result = configSchema.safeParse(process.env);
@@ -691,7 +627,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects well-formed but calendar-invalid dates (e.g. 2026-13-99)', () => {
-      process.env.API_KEYS = 'test-key';
       process.env.LEGACY_AUTH_SUNSET_DATE = '2026-13-99';
 
       const result = configSchema.safeParse(process.env);
@@ -704,7 +639,6 @@ describe('Configuration Validation', () => {
     });
 
     it('rejects an out-of-range month even if regex passes (2026-02-30)', () => {
-      process.env.API_KEYS = 'test-key';
       // 2026-02-30 matches the regex (\d{4}-\d{2}-\d{2}) but Feb 30 is not a
       // calendar-valid date. The refine() guard must catch this.
       process.env.LEGACY_AUTH_SUNSET_DATE = '2026-02-30';

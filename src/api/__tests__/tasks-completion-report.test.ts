@@ -2,9 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type { App } from '../../index.js';
-
-// Set API key for tests
-process.env.API_KEYS = 'test-key';
+import { authHeaders } from './helpers/auth.js';
 
 /**
  * GET /api/v1/tasks/completion-report
@@ -23,7 +21,7 @@ process.env.API_KEYS = 'test-key';
 describe('GET /api/v1/tasks/completion-report', () => {
   let server: FastifyInstance;
   let app: App;
-  const headers = { 'x-api-key': 'test-key' };
+  let headers: { Authorization: string };
   let projectAId: number;
   let projectBId: number;
 
@@ -31,6 +29,11 @@ describe('GET /api/v1/tasks/completion-report', () => {
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
+
+    await server.ready();
+
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
 
     projectAId = app.projectService.createProject({ name: 'Alpha' }).id;
     projectBId = app.projectService.createProject({ name: 'Beta' }).id;

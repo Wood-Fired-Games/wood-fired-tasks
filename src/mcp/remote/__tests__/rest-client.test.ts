@@ -90,24 +90,27 @@ describe('RestClient', () => {
     expect((client as unknown as { baseUrl: string }).baseUrl).toBe('http://localhost:3000');
   });
 
-  it('sends X-API-Key header on every request', async () => {
+  it('sends Authorization: Bearer header on every request', async () => {
     fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 50, offset: 0 }));
     await client.listTasks();
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
-    expect(headers['X-API-Key']).toBe('test-key');
+    expect(headers['Authorization']).toBe('Bearer test-key');
+    // The legacy X-API-Key path was removed in #810 — the bridge now
+    // standardizes on Bearer for the token resolveRemoteConfig yields.
+    expect(headers['X-API-Key']).toBeUndefined();
   });
 
-  // ── Phase 31 Plan 03 Task 3 — MCP-01 ─────────────────────────────────────
+  // ── #810 — Bearer-only auth ──────────────────────────────────────────────
   //
   // The remote MCP server is a thin stdio→HTTP proxy: every incoming JSON-
-  // RPC call becomes an outbound REST request. The auth header switches
-  // based on the WFT_API_KEY prefix so a single env var works for both
-  // legacy keys (`X-API-Key`) and PATs (`Authorization: Bearer`). Mirrors
-  // the same precedent that Phase 30 Plan 05 wired into `src/cli/api/client.ts`.
+  // RPC call becomes an outbound REST request. The token resolved by
+  // `resolveRemoteConfig` (env → credentials file) is ALWAYS sent as
+  // `Authorization: Bearer <token>`; the legacy prefix-switched X-API-Key
+  // path was removed once token resolution standardized on PATs.
 
-  describe('auth header prefix detection (MCP-01)', () => {
-    it('uses Authorization: Bearer when apiKey starts with wft_pat_', async () => {
+  describe('auth header (#810 Bearer-only)', () => {
+    it('uses Authorization: Bearer for a PAT-shaped token', async () => {
       const patClient = new RestClient(
         'http://localhost:3000',
         'wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
@@ -117,24 +120,18 @@ describe('RestClient', () => {
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
       expect(headers['Authorization']).toBe('Bearer wft_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ234567');
-      // The PAT path MUST NOT also stamp X-API-Key — the server's auth
-      // chain treats X-API-Key as the legacy strategy and could log a
-      // deprecation warning for what should be a modern PAT request.
+      // No X-API-Key — the legacy strategy header is never stamped.
       expect(headers['X-API-Key']).toBeUndefined();
     });
 
-    it('uses X-API-Key when apiKey does NOT start with wft_pat_ (legacy path)', async () => {
-      const legacyClient = new RestClient('http://localhost:3000', 'legacy-style-no-prefix');
+    it('uses Authorization: Bearer even for a non-PAT-shaped token (no legacy fallback)', async () => {
+      const otherClient = new RestClient('http://localhost:3000', 'legacy-style-no-prefix');
       fetchMock.mockResolvedValue(ok({ data: [], total: 0, limit: 50, offset: 0 }));
-      await legacyClient.listTasks();
+      await otherClient.listTasks();
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
-      expect(headers['X-API-Key']).toBe('legacy-style-no-prefix');
-      // The legacy path MUST NOT also stamp Authorization — keeping the
-      // headers mutually exclusive prevents the server's auth chain from
-      // first matching PAT (wrong-prefix → fail) before falling through
-      // to legacy.
-      expect(headers['Authorization']).toBeUndefined();
+      expect(headers['Authorization']).toBe('Bearer legacy-style-no-prefix');
+      expect(headers['X-API-Key']).toBeUndefined();
     });
 
     it('preserves apiKey verbatim in the Bearer body (no manipulation)', async () => {

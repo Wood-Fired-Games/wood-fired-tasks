@@ -87,7 +87,15 @@ function resolveUser(repo: UserRepository, arg: string): User | null {
   }
 
   // 3. Legacy display_name fallback.
-  return repo.findLegacyByDisplayName(trimmed);
+  const legacy = repo.findLegacyByDisplayName(trimmed);
+  if (legacy) return legacy;
+
+  // 4. Service-account display_name (e.g. `slack-bot` / `mcp-bot`). After the
+  // v2.0 auth cutover (#801) removed legacy API_KEYS seeding, service accounts
+  // are the only display-name-addressable seeded rows — and the documented
+  // no-OIDC bootstrap (docs/SETUP.md §8) mints the first PAT against one of
+  // them via `tasks db mint-token --user <displayName>`.
+  return repo.findServiceAccountByName(trimmed);
 }
 
 function parseScopes(csv: string | undefined): string[] {
@@ -104,7 +112,7 @@ export const dbMintTokenCommand = new Command('mint-token')
   )
   .requiredOption(
     '--user <id|email|displayName>',
-    'User identifier — numeric id, email (case-insensitive), or legacy display_name',
+    'User identifier — numeric id, email (case-insensitive), or legacy/service-account display_name',
   )
   .requiredOption('--name <name>', 'Human-readable token label')
   .option('--scopes <list>', 'Comma-separated scope list (advisory in v1.6; not enforced)')

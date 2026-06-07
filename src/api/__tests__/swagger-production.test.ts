@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../server.js';
 import { resetConfig } from '../../config/env.js';
+import { authHeaders } from './helpers/auth.js';
 
 /**
  * task #185: in NODE_ENV=production, the Swagger UI / OpenAPI JSON endpoints
  * MUST NOT be exposed to unauthenticated callers.
  *
  * - Default production config → /docs and /docs/json return 404 (not registered).
- * - Production + ENABLE_SWAGGER_IN_PRODUCTION=true → endpoints require X-API-Key.
+ * - Production + ENABLE_SWAGGER_IN_PRODUCTION=true → endpoints require Bearer/PAT.
  * - Non-production (development, test) → endpoints are unauthenticated, as before.
  *
  * Each test resets the cached config because `createServer` reads the lazy
@@ -94,10 +95,12 @@ describe('Swagger production gating (task #185)', () => {
     try {
       const result = await createServer({ dbPath: ':memory:' });
       server = result.server;
+      // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+      const auth = authHeaders(result.app.db);
       const r = await server.inject({
         method: 'GET',
         url: '/docs/json',
-        headers: { 'x-api-key': STRONG_KEY },
+        headers: auth,
       });
       expect(r.statusCode).toBe(200);
       const spec = JSON.parse(r.payload);

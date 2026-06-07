@@ -17,7 +17,8 @@
  * is atomic within a single filesystem — a reader can never see a partially
  * written file.
  *
- * `resolveAuth` walks: --token flag override > file > env.API_KEY > none.
+ * `resolveAuth` walks: --token flag override > file > none. The CLI is
+ * Bearer-PAT-only; the legacy API_KEY env var is no longer consulted.
  * The flag override is installed by the Commander preAction hook in the
  * `tasks` and `tasks-client` bin entry points (see Task 3).
  */
@@ -93,7 +94,6 @@ const CredentialsSchema = z.object({
 
 export type AuthSource =
   | { kind: 'bearer'; token: string; origin: 'flag' | 'file' }
-  | { kind: 'legacy'; key: string }
   | { kind: 'none' };
 
 /** Module-scope storage for the --token CLI flag. The Commander preAction
@@ -204,20 +204,15 @@ export async function resolveAuth(): Promise<AuthSource> {
   }
 
   // 2. Credentials file. Errors propagate (malformed TOML / insecure perms
-  //    should surface to the user — silently falling through to env.API_KEY
+  //    should surface to the user — silently falling through to "none"
   //    would mask a real problem).
   const creds = readCredentials();
   if (creds !== null) {
     return { kind: 'bearer', token: creds.active.token, origin: 'file' };
   }
 
-  // 3. Legacy API_KEY env (MIGR-01 — every pre-Phase-30 CLI workflow keeps
-  //    working unchanged).
-  const apiKey = process.env['API_KEY'];
-  if (apiKey && apiKey.length > 0) {
-    return { kind: 'legacy', key: apiKey };
-  }
-
-  // 4. None — the caller decides (apiRequest throws NotAuthenticatedError).
+  // 3. None — the caller decides (apiRequest throws NotAuthenticatedError).
+  //    The CLI is Bearer-PAT-only; the legacy API_KEY env var is no longer
+  //    consulted.
   return { kind: 'none' };
 }

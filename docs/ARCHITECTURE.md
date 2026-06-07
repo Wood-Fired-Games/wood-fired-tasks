@@ -44,7 +44,7 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
 ## Per-surface flow
 
 - **REST** (`src/api/server.ts`, `src/api/routes/**`): request -> Fastify
-  `preHandler` `authPlugin` (X-API-Key) -> route handler (Zod via
+  `preHandler` `authPlugin` (Bearer PAT) -> route handler (Zod via
   `fastify-type-provider-zod`) -> service -> repository -> SQLite. Response
   Zod-serialised, stamped with `X-Request-ID`; errors flow through
   `src/api/hooks/error-handler.ts`.
@@ -54,12 +54,12 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
   only; logs go to stderr.
 - **MCP remote** (`src/mcp/remote/index.ts` + `register-tools.ts`): stdio
   transport on the client, but each tool calls `RestClient` which POSTs to
-  the REST API with `X-API-Key`. No DB access on the client. Required env:
-  `WFT_API_URL`, `WFT_API_KEY` — both fail fast.
+  the REST API with `Authorization: Bearer <pat>`. No DB access on the client. Required env:
+  `WFT_API_URL`, `WFT_API_KEY` (the PAT) — both fail fast.
 - **CLI** (`src/cli/bin/tasks.ts` -> `src/cli/commands/*`): Commander
   subcommands call `src/cli/api/client.ts`, an HTTP client against the REST
-  API. Auth via `API_KEY` env (CLI side); server matches against
-  `API_KEYS`. Global flags: `--json`, `--no-input`, `--force`.
+  API. Auth via a cached PAT (`tasks login`) or the `API_KEY` env / `--token`
+  flag, sent as `Authorization: Bearer <pat>`. Global flags: `--json`, `--no-input`, `--force`.
 - **Slack inbound** (`/tasks` slash command ->
   `src/slack/commands/tasks-command.ts`): bolt verifies the Slack signing
   secret, then dispatches subcommands (`list`, `show`, `create`, `update`,
@@ -303,20 +303,19 @@ Three layers translate up:
 
 ## Auth boundaries
 
-- **REST**: API key per request via header `X-API-Key`. Plugin
-  `src/api/plugins/auth.ts` reads `API_KEYS` (comma-separated, optional
-  `key:label` syntax), pre-computes SHA-256 hashes, and runs
-  `timingSafeEqual` against every entry without short-circuit so match
-  position never leaks. Production enforces min 32 chars, no placeholder
-  phrases, no single-char-repeat. `/health` is unauthenticated;
+- **REST**: Personal Access Token (PAT) per request via header
+  `Authorization: Bearer <pat>`. Plugin `src/api/plugins/auth.ts` hashes the
+  presented PAT (SHA-256) and looks it up in the `api_tokens` table, then
+  resolves the bound user identity. `/health` is unauthenticated;
   `/health/detailed` is gated.
 - **MCP local** (stdio): no auth — trusts the parent process that spawned
   it. The DB path comes from `DATABASE_PATH` (or legacy `DB_PATH`).
-- **MCP remote**: passes `WFT_API_KEY` to the REST API via the same
-  `X-API-Key` header. Fails fast if `WFT_API_URL` or `WFT_API_KEY` is
-  missing.
-- **CLI**: `API_KEY` env (singular, see `src/cli/config/env.ts`) sent as
-  `X-API-Key`; `API_BASE_URL` defaults to `http://localhost:3000`.
+- **MCP remote**: passes `WFT_API_KEY` (a PAT) to the REST API via the
+  `Authorization: Bearer <pat>` header. Fails fast if `WFT_API_URL` or
+  `WFT_API_KEY` is missing.
+- **CLI**: a cached PAT (`tasks login`) or the `API_KEY` env / `--token`
+  flag, sent as `Authorization: Bearer <pat>`; `API_BASE_URL` defaults to
+  `http://localhost:3000`.
 - **Slack**: bolt verifies the Slack signing secret on every inbound slash
   command. Outbound uses the bot token; no project API key is involved.
 

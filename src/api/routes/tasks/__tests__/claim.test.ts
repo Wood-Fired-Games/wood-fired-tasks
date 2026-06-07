@@ -3,11 +3,9 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { seedAuth } from '../../../__tests__/helpers/auth.js';
 
 // Phase 31 Plan 02 — POST /api/v1/tasks/:id/claim identity propagation tests.
-
-const TEST_KEY = 'test-key-claim';
-const TEST_LABEL = 'p31-02-claim';
 
 describe('POST /api/v1/tasks/:id/claim — assignee_user_id injection', () => {
   let server: FastifyInstance;
@@ -15,33 +13,26 @@ describe('POST /api/v1/tasks/:id/claim — assignee_user_id injection', () => {
   let db: Database.Database;
   let testProjectId: number;
   let legacyUserId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0 auth cutover (#799/#801/#802): X-API-Key + legacy seeding are gone.
+    // Seed a real principal directly and authenticate via its Bearer PAT; the
+    // FK-injection contract asserts assignee_user_id resolves to this user's id.
+    const seeded = seedAuth(db);
+    legacyUserId = seeded.userId;
+    headers = seeded.headers;
     const project = app.projectService.createProject({ name: 'P31-02 claim' });
     testProjectId = project.id;
-    const legacyUser = app.userRepository.findLegacyByDisplayName(TEST_LABEL);
-    if (legacyUser === null) {
-      throw new Error('expected legacy user seeded for ' + TEST_LABEL);
-    }
-    legacyUserId = legacyUser.id;
   });
 
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) {
-      delete process.env.API_KEYS;
-    } else {
-      process.env.API_KEYS = prevApiKeys;
-    }
   });
 
   function getTaskRow(id: number): {

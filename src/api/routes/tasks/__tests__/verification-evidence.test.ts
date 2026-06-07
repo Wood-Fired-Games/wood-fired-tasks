@@ -3,6 +3,7 @@ import { createServer } from '../../../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../../../db/driver.js';
 import type { App } from '../../../../index.js';
+import { authHeaders } from '../../../__tests__/helpers/auth.js';
 
 /**
  * Wave 1.4 (task #312) — REST surface coverage for tasks.verification_evidence.
@@ -17,34 +18,25 @@ import type { App } from '../../../../index.js';
  *  - Unknown verdicts return 400 (Zod rejection at the route boundary).
  */
 
-const TEST_KEY = 'test-key-verification';
-const TEST_LABEL = 'wave-1-4-verification';
-
 describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
   let server: FastifyInstance;
   let app: App;
   let db: Database.Database;
   let projectId: number;
-  let prevApiKeys: string | undefined;
-  const headers = { 'x-api-key': TEST_KEY };
+  let headers: { Authorization: string };
 
   beforeAll(async () => {
-    prevApiKeys = process.env.API_KEYS;
-    process.env.API_KEYS = `${TEST_KEY}:${TEST_LABEL}`;
     const result = await createServer({ dbPath: ':memory:' });
     server = result.server;
     app = result.app;
     db = result.app.db;
+    // v2.0: authenticate via a seeded PAT (X-API-Key was removed in #799/#802)
+    headers = authHeaders(app.db);
   });
 
   afterAll(async () => {
     await server.close();
     db.close();
-    if (prevApiKeys === undefined) {
-      delete process.env.API_KEYS;
-    } else {
-      process.env.API_KEYS = prevApiKeys;
-    }
   });
 
   beforeEach(() => {

@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
+import { authHeaders } from './helpers/auth.js';
 
 /**
  * Production-mode API_KEYS validation (task #182).
  *
  * `createServer` must refuse startup when NODE_ENV=production AND API_KEYS
  * fails the hardening rules. Valid strong keys must continue to work.
+ *
+ * Note: API_KEYS is still a hardened **config** var (#182), but it no longer
+ * grants request auth — the X-API-Key strategy was removed in the v2.0 cutover
+ * (#799/#802). The success case therefore authenticates via a seeded Bearer PAT.
  */
 describe('API_KEYS production validation', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -77,17 +82,19 @@ describe('API_KEYS production validation', () => {
       const result = await createServer({ dbPath: ':memory:' });
       server = result.server;
 
+      // v2.0: request auth is via a seeded Bearer PAT, not the API_KEYS value.
+      const auth = authHeaders(result.app.db);
       const ok = await server.inject({
         method: 'GET',
         url: '/api/v1/tasks',
-        headers: { 'x-api-key': strongKey },
+        headers: auth,
       });
       expect(ok.statusCode).toBe(200);
 
       const bad = await server.inject({
         method: 'GET',
         url: '/api/v1/tasks',
-        headers: { 'x-api-key': 'definitely-not-the-right-key-xxxxxxxxxxxxxx' },
+        headers: { Authorization: 'Bearer definitely-not-a-real-pat-xxxxxxxxxxxx' },
       });
       expect(bad.statusCode).toBe(401);
     } finally {

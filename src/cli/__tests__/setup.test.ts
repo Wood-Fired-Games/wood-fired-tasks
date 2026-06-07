@@ -1,14 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import {
   runSetup,
+  runSetupInteractive,
   fixNpmPrefix,
   buildLocalMcpEntry,
   resolveMcpEntryPoint,
   commandsDestDir,
   agentsDestDir,
+  settingsJsonPath,
+  buildStatuslineConfig,
+  statuslineEmbedSnippet,
+  wireStatusline,
+  offerStatuslineWiring,
+  type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
@@ -271,6 +278,434 @@ describe('tasks setup', () => {
       expect(`${inv.command} ${inv.args.join(' ')}`).toBe(
         `npm.cmd config set prefix "${result.prefix}"`,
       );
+    });
+  });
+});
+
+// A FAKE token — never a real secret.
+const FAKE_PAT = 'wft_pat_FAKE_TEST_TOKEN_0123456789';
+
+// Async-safe temp HOME: the sync withTempHome above tears down in a sync
+// finally that would fire before an async callback settles, so the mode tests
+// (all async) use this awaited variant.
+async function withTempHomeAsync<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-home-'));
+  try {
+    return await fn(home);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+describe('tasks setup — modes (task #805)', () => {
+  it('no args on a simulated TTY presents the Local/Service/Remote menu', async () => {
+    await withTempHomeAsync(async (home) => {
+      const presented: ReadonlyArray<{ label: string; value: SetupMode }>[] = [];
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        // Simulate a TTY so the menu path is taken.
+        isInteractive: () => true,
+        // Stub the selector but capture that a 3-option menu would be shown,
+        // mirroring the labels selectSetupMode renders.
+        selectMode: async () => {
+          presented.push([
+            { label: 'Local', value: 'local' },
+            { label: 'Service', value: 'service' },
+            { label: 'Remote', value: 'remote' },
+          ]);
+          return 'local';
+        },
+      });
+
+      // The menu was consulted exactly once and offered all three modes.
+      expect(presented).toHaveLength(1);
+      expect(presented[0].map((o) => o.value).sort()).toEqual(['local', 'remote', 'service']);
+      // And the chosen path actually ran (local install happened).
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        expect(result.remote).toBe(false);
+        expect(result.claudeJsonChanged).toBe(true);
+      }
+    });
+  });
+
+  it('the real menu (selectSetupMode) reads a choice from an injected input stream', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+      // Select option 2 (Service) by index.
+      input.write('2\n');
+
+      const captured: Array<'local' | 'service' | 'remote'> = [];
+      await runSetupInteractive({
+        home,
+        log: () => {},
+        isInteractive: () => true,
+        promptIO: { input, output },
+        // Service path is the simplest to assert routing without disk work.
+        serviceInstall: () => captured.push('service'),
+      });
+
+      // The rendered menu contained all three labels.
+      const rendered = outChunks.join('');
+      expect(rendered).toContain('Local');
+      expect(rendered).toContain('Service');
+      expect(rendered).toContain('Remote');
+      // Index "2" routed to the service path.
+      expect(captured).toEqual(['service']);
+    });
+  });
+
+  it('--local runs the Local path without prompting (the MODE menu)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let modePrompted = false;
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        // A TTY is simulated, but with an EXPLICIT --local mode the MODE menu
+        // must never be consulted (selectMode is the real mode-menu seam).
+        isInteractive: () => true,
+        selectMode: async () => {
+          modePrompted = true;
+          return 'remote';
+        },
+        // The Local path now also offers the opt-in statusline wiring (#798);
+        // decline it here so this test stays focused on mode routing.
+        confirmStatusline: async () => false,
+      });
+
+      // The MODE menu was never shown (mode was explicit).
+      expect(modePrompted).toBe(false);
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        expect(result.remote).toBe(false);
+        // Local entry was written to ~/.claude.json.
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+
+  it('--service runs the user-scoped service install without prompting', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      let installed = false;
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'service',
+        isInteractive: () => {
+          prompted = true;
+          return true;
+        },
+        serviceInstall: () => {
+          installed = true;
+        },
+      });
+
+      expect(prompted).toBe(false);
+      expect(installed).toBe(true);
+      expect(result.mode).toBe('service');
+      // The service path does NOT touch ~/.claude.json.
+      expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
+    });
+  });
+
+  it('--service uses the DEFAULT user-scoped install from service.ts (system:false)', async () => {
+    // No injected serviceInstall: exercise the real default wiring
+    // (`() => getServiceBackend().install({ system: false })`). Spy on the
+    // service module's getServiceBackend so no systemctl/launchd/schtasks runs.
+    const service = await import('../commands/service.js');
+    const calls: Array<{ system?: boolean } | undefined> = [];
+    const fakeBackend = {
+      install: (o?: { system?: boolean }) => {
+        calls.push(o);
+      },
+      uninstall: () => {},
+      status: () => ({
+        running: false,
+        enabled: false,
+        activeState: 'inactive',
+        enabledState: 'disabled',
+        installed: false,
+      }),
+    };
+    const spy = vi.spyOn(service, 'getServiceBackend').mockReturnValue(fakeBackend);
+    try {
+      await withTempHomeAsync(async (home) => {
+        const result = await runSetupInteractive({
+          home,
+          log: () => {},
+          mode: 'service',
+          isInteractive: () => false,
+          // NOTE: serviceInstall intentionally NOT injected — assert the default.
+        });
+        expect(result.mode).toBe('service');
+      });
+      // The default path requested a user-scoped (non-elevated) install.
+      expect(calls).toEqual([{ system: false }]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('--remote runs the Remote path without prompting', async () => {
+    await withTempHomeAsync(async (home) => {
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-cfg-'));
+      try {
+        let prompted = false;
+        // An explicit --remote + --token is the NON-INTERACTIVE direct path: it
+        // writes the URL-only remote entry + caches the PAT with NO OIDC probe
+        // and NO server round-trip. Inject the probe/persist seams as spies so
+        // we can prove the direct path BYPASSES them entirely (works offline).
+        const probeSpy = vi.fn(async () => ({ ok: true, oidc: 'disabled' as const }));
+        const persistSpy = vi.fn(async () => ({
+          ok: true as const,
+          identity: { id: 1, displayName: 'Test User', email: null },
+        }));
+        const result = await runSetupInteractive({
+          home,
+          configDir,
+          log: () => {},
+          mode: 'remote',
+          remote: 'http://tasks.example.local:3000',
+          token: FAKE_PAT,
+          oidcProbe: probeSpy,
+          manualPatPersist: persistSpy,
+          isInteractive: () => {
+            prompted = true;
+            return true;
+          },
+          selectMode: async () => {
+            prompted = true;
+            return 'local';
+          },
+        });
+
+        // The mode menu was never consulted (mode was explicit), and the direct
+        // --token path never probed OIDC nor hit /api/v1/me.
+        expect(prompted).toBe(false);
+        expect(probeSpy).not.toHaveBeenCalled();
+        expect(persistSpy).not.toHaveBeenCalled();
+        expect(result.mode).toBe('remote');
+        if (result.mode === 'remote') {
+          expect(result.method).toBe('manual-pat');
+          expect(result.ok).toBe(true);
+          expect(result.setup?.remote).toBe(true);
+          const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+          const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
+          expect(remoteEntry).toBeDefined();
+          // #810: the PAT is cached separately, never persisted into claude.json.
+          expect(remoteEntry.env?.WFT_API_KEY).toBeUndefined();
+        }
+      } finally {
+        fs.rmSync(configDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('no args + non-TTY defaults to the Local path (back-compat)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        // Non-interactive environment, no explicit mode.
+        isInteractive: () => false,
+        selectMode: async () => {
+          prompted = true;
+          return 'remote';
+        },
+      });
+
+      // Menu was NEVER consulted; defaulted to local.
+      expect(prompted).toBe(false);
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        expect(result.remote).toBe(false);
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+});
+
+describe('tasks setup — statusline wiring (task #798)', () => {
+  // Branch 1: no existing statusLine + consent → setup WRITES a statusLine that
+  // runs `tasks statusline`, against a TEMP settings.json (never the real one).
+  it('writes a statusLine on consent when none exists', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      expect(settingsPath).toBe(path.join(home, '.claude', 'settings.json'));
+      expect(fs.existsSync(settingsPath)).toBe(false);
+
+      const result = await offerStatuslineWiring({
+        home,
+        log: () => {},
+        isInteractive: () => true,
+        // Consent.
+        confirm: async () => true,
+      });
+
+      expect(result.action).toBe('written');
+      if (result.action === 'written') expect(result.changed).toBe(true);
+
+      // The TEMP settings.json now carries a statusLine running `tasks statusline`.
+      const doc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      expect(doc.statusLine).toEqual(buildStatuslineConfig());
+      expect(doc.statusLine.command).toBe('tasks statusline');
+      expect(doc.statusLine.command).toContain('tasks statusline');
+    });
+  });
+
+  // The single wiring preserves unrelated keys and is idempotent on re-run.
+  it('preserves other settings keys and is idempotent on re-run', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify({ theme: 'dark', model: 'opus' }, null, 2) + '\n',
+        'utf8',
+      );
+
+      const first = wireStatusline({ home, log: () => {} });
+      expect(first.action).toBe('written');
+      if (first.action === 'written') expect(first.changed).toBe(true);
+
+      const doc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      expect(doc.theme).toBe('dark');
+      expect(doc.model).toBe('opus');
+      expect(doc.statusLine).toEqual(buildStatuslineConfig());
+
+      const after = fs.readFileSync(settingsPath, 'utf8');
+      const second = wireStatusline({ home, log: () => {} });
+      expect(second.action).toBe('written');
+      if (second.action === 'written') expect(second.changed).toBe(false);
+      // Byte-stable: a re-run leaves settings.json untouched.
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(after);
+    });
+  });
+
+  // Branch 2: an EXISTING statusLine → setup PRINTS the embed snippet and does
+  // NOT modify settings.json.
+  it('prints the embed snippet and does NOT modify an existing statusLine', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      const existing =
+        JSON.stringify(
+          { statusLine: { type: 'command', command: 'my-custom-statusline' } },
+          null,
+          2,
+        ) + '\n';
+      fs.writeFileSync(settingsPath, existing, 'utf8');
+
+      const lines: string[] = [];
+      const result = await offerStatuslineWiring({
+        home,
+        log: (l) => lines.push(l),
+        isInteractive: () => true,
+        confirm: async () => true,
+      });
+
+      expect(result.action).toBe('embed-snippet');
+      if (result.action === 'embed-snippet') {
+        expect(result.snippet).toBe(statuslineEmbedSnippet());
+      }
+      // The existing statusLine is untouched (byte-identical).
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(existing);
+      // The embed snippet was printed for the user to splice in themselves.
+      expect(lines.join('\n')).toContain(statuslineEmbedSnippet());
+    });
+  });
+
+  // Branch 2b: an UNPARSEABLE settings.json → setup PRINTS the embed snippet and
+  // does NOT overwrite the file (no silent data loss of a broken-but-recoverable
+  // config).
+  it('does NOT overwrite an unparseable settings.json (prints embed snippet)', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      const broken = '{ "statusLine": not valid json,,, ';
+      fs.writeFileSync(settingsPath, broken, 'utf8');
+
+      const lines: string[] = [];
+      const result = await offerStatuslineWiring({
+        home,
+        log: (l) => lines.push(l),
+        isInteractive: () => true,
+        confirm: async () => true,
+      });
+
+      expect(result.action).toBe('embed-snippet');
+      // The broken file is left byte-for-byte untouched.
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(broken);
+      expect(lines.join('\n')).toContain(statuslineEmbedSnippet());
+    });
+  });
+
+  // Branch 3: declining the offer → NO change (no settings.json written).
+  it('declining the offer makes no change', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+
+      const result = await offerStatuslineWiring({
+        home,
+        log: () => {},
+        isInteractive: () => true,
+        // Decline.
+        confirm: async () => false,
+      });
+
+      expect(result.action).toBe('declined');
+      // No file was created.
+      expect(fs.existsSync(settingsPath)).toBe(false);
+    });
+  });
+
+  // The offer is silently skipped on a non-TTY (never blocks, never writes).
+  it('non-TTY skips the offer silently (declined, no write)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let prompted = false;
+      const result = await offerStatuslineWiring({
+        home,
+        log: () => {},
+        isInteractive: () => false,
+        confirm: async () => {
+          prompted = true;
+          return true;
+        },
+      });
+
+      expect(prompted).toBe(false);
+      expect(result.action).toBe('declined');
+      expect(fs.existsSync(settingsJsonPath(home))).toBe(false);
+    });
+  });
+
+  // End-to-end through the Local interactive path: consent wires the statusLine
+  // into the temp settings.json alongside the normal local install.
+  it('runSetupInteractive Local path offers + wires the statusline on consent', async () => {
+    await withTempHomeAsync(async (home) => {
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        isInteractive: () => true,
+        confirmStatusline: async () => true,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.statusline.action).toBe('written');
+        const doc = JSON.parse(fs.readFileSync(settingsJsonPath(home), 'utf8'));
+        expect(doc.statusLine).toEqual(buildStatuslineConfig());
+      }
     });
   });
 });

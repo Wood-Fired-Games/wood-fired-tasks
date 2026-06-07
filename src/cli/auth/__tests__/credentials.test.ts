@@ -324,11 +324,13 @@ describe('resolveAuth precedence', () => {
     expect(auth).toEqual({ kind: 'bearer', token: sampleCreds.active.token, origin: 'file' });
   });
 
-  it('falls back to env.API_KEY when no override and no file (kind=legacy)', async () => {
+  it('ignores env.API_KEY: returns kind=none when only API_KEY is set (no override, no file)', async () => {
+    // Bearer-PAT-only contract: the legacy API_KEY env var is no longer an
+    // auth source.
     process.env.WFT_CREDENTIALS_PATH = join(tmpDir, 'missing-file');
     process.env.API_KEY = 'legacykey';
     const auth = await resolveAuth();
-    expect(auth).toEqual({ kind: 'legacy', key: 'legacykey' });
+    expect(auth).toEqual({ kind: 'none' });
   });
 
   it('returns kind=none when nothing is set', async () => {

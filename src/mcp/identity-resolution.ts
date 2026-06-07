@@ -61,8 +61,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { ApiTokenRepository } from '../repositories/api-token.repository.js';
 import type { UserRepository } from '../repositories/user.repository.js';
 import type { ApiKeyEntry } from '../config/env.js';
-import { hashKey } from '../api/plugins/auth/keys.js';
-import { precomputeHashedEntries } from '../api/plugins/auth/strategies/legacy.js';
+import { hashKey, precomputeHashedEntries } from '../api/plugins/auth/keys.js';
 import { hashToken, PAT_PREFIX } from '../services/pat-hash.js';
 
 export interface ResolveActorUserIdInput {

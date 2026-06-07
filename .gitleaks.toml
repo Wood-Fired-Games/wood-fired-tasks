@@ -68,6 +68,17 @@ regexes = [
   '''wft_pat_secret123''',
   '''wft_pat_ABCDEFG1234567890''',
   '''wft_pat_MINTED1234567890ABCDEFGHIJKLMNOP''',
+  # Documentation placeholder PATs in the v2.0 Bearer-PAT curl examples
+  # (docs/API.md, MCP.md, SETUP.md, etc.) introduced when the X-API-Key auth
+  # docs were scrubbed to Bearer-PAT (#817). The `curl-auth-header` default
+  # rule flags `Authorization: Bearer <token>` in curl examples; these bodies
+  # are obvious non-secret placeholders, not real tokens. As above, only the
+  # specific placeholder bodies are allowlisted — never the bare `wft_pat_`
+  # prefix — so a real `wft_pat_<random>` accidentally committed still trips.
+  '''wft_pat_your-token(-here)?''',
+  '''wft_pat_your-dev-token''',
+  '''wft_pat_dev-token''',
+  '''wft_pat_X{10,}''',
 ]
 
 stopwords = [

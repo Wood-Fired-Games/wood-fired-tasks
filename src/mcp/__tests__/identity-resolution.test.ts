@@ -274,7 +274,10 @@ describe('resolveActorUserId', () => {
 
   // CR-02 (legacy path): disabled legacy user falls through to mcp-bot.
   it('legacy path: falls back to mcp-bot when matched user is disabled (CR-02)', () => {
-    // Disable the seeded 'laptop' legacy user.
+    // v2.0 cutover (#801): seeder no longer creates is_legacy rows, so seed the
+    // legacy 'laptop' user directly, then disable it to exercise the
+    // disabled-legacy-user fallback the resolver still implements.
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES ('laptop', 1)`).run();
     db.prepare(
       `UPDATE users SET disabled_at = '2026-01-01T00:00:00Z' WHERE display_name = 'laptop'`,
     ).run();
@@ -290,6 +293,13 @@ describe('resolveActorUserId', () => {
   });
 
   it('legacy path: returns the legacy user.id when WFT_API_KEY matches an API_KEYS entry', () => {
+    // v2.0 cutover (#801): the identity-seeder no longer creates is_legacy
+    // credential rows on boot, so the legacy 'laptop' user must be seeded
+    // directly here. The resolver's legacy code path (Path 2) still resolves
+    // an API_KEYS label → is_legacy users row, so we exercise it by inserting
+    // the row the old seeder used to create.
+    db.prepare(`INSERT INTO users (display_name, is_legacy) VALUES ('laptop', 1)`).run();
+
     const actor = resolveActorUserId({
       apiKey: 'topsecret-key-1', // matches label 'laptop' from API_KEYS
       apiTokenRepo,

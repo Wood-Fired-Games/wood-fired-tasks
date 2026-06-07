@@ -111,15 +111,13 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    // Plan 30-05: walk the auth precedence chain (--token flag > credentials
-    // file > env.API_KEY > NotAuthenticatedError). resolveAuth owns the
-    // env.API_KEY read — this module no longer pokes process.env directly.
+    // Walk the auth precedence chain (--token flag > credentials file >
+    // NotAuthenticatedError). Bearer PAT is the only supported scheme — the
+    // CLI never sends X-API-Key.
     const auth = await resolveAuth();
     const headers: Record<string, string> = {};
     if (auth.kind === 'bearer') {
       headers['Authorization'] = `Bearer ${auth.token}`;
-    } else if (auth.kind === 'legacy') {
-      headers['X-API-Key'] = auth.key;
     } else {
       throw new NotAuthenticatedError();
     }
