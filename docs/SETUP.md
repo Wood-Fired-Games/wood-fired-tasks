@@ -456,6 +456,115 @@ The CLI is detailed in [`CLI.md`](CLI.md).
 matchable row has been backfilled — the UPDATE is guarded by
 `AND <fk_col> IS NULL`.
 
+## OIDC enablement recipe (remote onboarding)
+
+This is the end-to-end recipe for turning OIDC on for a shared/remote server so
+that fleet clients can self-onboard with `wood-fired-tasks setup --remote`. It
+ties together the OIDC env vars, the session-cookie secret, and the way
+`setup --remote` reacts to the server's OIDC state. Auth stays **Bearer PAT
+only** throughout — OIDC is the path that *mints* PATs; every API call still
+carries `Authorization: Bearer <pat>`.
+
+### Recipe
+
+1. **Create the Google OAuth client** and copy the Client ID / Secret —
+   [§1 above](#1-create-the-google-oauth-client). The authorised redirect URI
+   must be `<public-origin>/auth/callback`.
+2. **Set the four `OIDC_*` env vars** on the server — see
+   [§2 above](#2-set-the-oidc-env-vars). `src/config/env.ts` validates them as a
+   group: set `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and
+   `OIDC_REDIRECT_URI` **all together or not at all** (a partial set fails
+   validation on `OIDC_ISSUER_URL`). `OIDC_SCOPES` defaults to
+   `openid email profile`.
+3. **Generate `SESSION_COOKIE_SECRET`** — required whenever OIDC is enabled
+   (see below). `env.ts` enforces `!OIDC_ISSUER_URL || !!SESSION_COOKIE_SECRET`,
+   so a server with OIDC set but no cookie secret refuses to boot.
+4. **Terminate TLS** in front of the server. The session cookie is `secure` when
+   `NODE_ENV=production`, so the browser drops it over plain HTTP and login
+   silently loops — see the [OIDC cookie note](#3-generate-the-session-cookie-secret).
+5. **Restart the server** and verify the flow via `/auth/login` →
+   [§5 above](#5-verify-the-oidc-flow).
+6. **Onboard clients** with `wood-fired-tasks setup --remote <url>`; the command
+   probes the server's OIDC state and picks device-flow vs manual-PAT
+   automatically (see [setup --remote OIDC states](#setup---remote-across-oidc-states-ready--disabled--degraded)).
+
+### Generating `SESSION_COOKIE_SECRET`
+
+`SESSION_COOKIE_SECRET` is the sealed-box key for `@fastify/secure-session`.
+libsodium requires **exactly 32 bytes**, and `src/config/env.ts` enforces this
+strictly: the value must be **base64-encoded and decode to exactly 32 bytes**,
+or the server refuses to boot (`SESSION_COOKIE_SECRET must be base64-encoded 32
+bytes`). Generate one with:
+
+```bash
+openssl rand -base64 32
+```
+
+Then set it (and, optionally, the cookie name) in `.env` or your secret manager:
+
+```bash
+# Must decode to exactly 32 bytes — env.ts refuses any other length.
+SESSION_COOKIE_SECRET=<output of openssl rand -base64 32>
+
+# Optional — defaults to wft_session.
+SESSION_COOKIE_NAME=wft_session
+```
+
+[CRITICAL] Treat `SESSION_COOKIE_SECRET` as a production-grade secret. Rotating
+it invalidates every active session immediately — every user must log in again.
+
+### `setup --remote` across OIDC states (ready / disabled / degraded)
+
+`wood-fired-tasks setup --remote <url>` probes the server before deciding how to
+get a PAT onto the client. It issues `GET <url>/health/detailed` and reads
+`oidc.state` (`src/cli/commands/setup.ts` → `probeOidcState`), which mirrors the
+server's coarse OIDC state (`src/services/oidc-boot.ts`). It then routes
+deterministically via `selectRemoteOnboardingMethod`:
+
+| Server `oidc.state` | Meaning | `setup --remote` onboarding method |
+|---------------------|---------|------------------------------------|
+| `ready` | OIDC env vars set **and** issuer discovery succeeded | **device-flow** — RFC 8628 browser login (`runDeviceLogin`); the PAT is self-provisioned and written to the credentials file. |
+| `disabled` | No `OIDC_*` env vars — browser login is not available | **manual-PAT** — paste a PAT (or pass `--token`); it is validated against `GET /api/v1/me` and persisted to the same credentials file. |
+| `degraded` | OIDC is configured but issuer discovery is persistently failing (the server booted in degraded mode rather than crash-looping — see `oidc-boot.ts`) | **manual-PAT** — the device flow would fail, so `setup` informs you and falls back to the manual path. |
+| probe failure | `/health/detailed` unreachable, non-2xx, or no `oidc.state` (e.g. an older server) | **manual-PAT** — connectivity escape hatch. |
+
+In every non-`ready` case the resolved PAT lands in the **same credentials
+file** the device flow writes, and the `~/.claude.json` remote entry stays
+**URL-only** (`WFT_API_URL` with no embedded token) — the remote bridge resolves
+its bearer token from the credentials file at runtime, so the secret is never
+written into `claude.json`. A manual PAT that fails validation against
+`GET /api/v1/me` persists **nothing**: `setup` reports the reason and exits
+without a half-configured install. Mint the PAT to paste with
+`tasks db mint-token` (next section) or from the web UI (`/me`).
+
+### No-OIDC bootstrap (mint the first PAT directly)
+
+On a server **without OIDC** (`oidc.state: disabled`) there is no browser login,
+so the host operator mints the first PAT **directly against the database** with
+`tasks db mint-token` and hands it to the manual-PAT path above. The command
+requires an existing user row to target — a **seeded service/user account** (for
+a fresh deployment this is the lowest-id `is_legacy=1` user created by the
+identity backfill, or any user row already present from prior task/comment
+activity). `--user` resolves a numeric id, an email (case-insensitive), or a
+legacy `display_name`:
+
+```bash
+# Mint the bootstrap PAT against the seeded service/user account.
+# --user accepts a numeric id, email, or legacy display_name; --name is required.
+node dist/cli/bin/tasks.js db mint-token --user 1 --name bootstrap
+
+# Equivalently by email, with a bounded expiry:
+node dist/cli/bin/tasks.js db mint-token \
+  --user service@example.com --name bootstrap \
+  --expires-at 2027-05-22T00:00:00Z
+```
+
+The token is printed to stdout **exactly once** (alongside its id, user, and
+scopes). Use it as the manual PAT for `setup --remote` on a `disabled`/`degraded`
+server, or directly as `Authorization: Bearer wft_pat_<…>` / the `WFT_API_KEY`
+env var. See [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents)
+for the expiry, rotation, and revocation contract.
+
 ## Development Setup
 
 ### 1. Clone and Install
