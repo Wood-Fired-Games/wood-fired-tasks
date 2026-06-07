@@ -61,6 +61,15 @@ export async function startServer(options: ServeOptions = {}): Promise<{
 
   const { server, app } = await createServer({ dbPath });
 
+  // Task #811: emit ONE structured boot log line reporting the OIDC
+  // enablement state (`ready` / `disabled` / `degraded`) so operators can
+  // confirm device-flow availability straight from the boot logs. The state
+  // is resolved once at `createApp` time and surfaced as `app.oidcStatus`
+  // (see src/index.ts `OidcStatus`); we do NOT recompute it here. The message
+  // string and the `oidc` field are kept stable so tests/log-scrapers can
+  // assert against them.
+  server.log.info({ oidc: app.oidcStatus.state }, 'oidc boot state');
+
   const port = options.port ?? config.PORT;
   const host = config.HOST;
 
