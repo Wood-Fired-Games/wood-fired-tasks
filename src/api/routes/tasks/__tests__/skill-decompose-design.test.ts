@@ -443,4 +443,95 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
     // Cites the motivating retro.
     expect(skill.includes(PARITY_RETRO_FILENAME)).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // Terminal spec-coverage audit phase (task #818 — generalizes the Step 8c
+  // CODEBASE-surface rider into a SPEC-grounded coverage check that runs after
+  // Step 8 materialize and before the Step 9 emit, when --spec is supplied).
+  //
+  // These assertions are SUBSTANTIVE: dropping the audit phase, the --spec
+  // flag, the auto-emit branch, the drift-flag branch, or the Guardrail-2
+  // carve-out makes the matching test go RED. They are NOT vacuous.
+  // -------------------------------------------------------------------------
+
+  describe('Step 8d — terminal spec-coverage audit (#818)', () => {
+    it('skill documents a TERMINAL spec-coverage audit phase gated on --spec, after Step 8 and before Step 9', () => {
+      expect(skill.includes('Step 8d')).toBe(true);
+      expect(/spec-coverage audit/i.test(skill)).toBe(true);
+      expect(/terminal/i.test(skill)).toBe(true);
+      // It is gated on the new --spec input.
+      expect(skill.includes('--spec')).toBe(true);
+      // Ordering: explicitly runs before the Step 9 DECOMPOSITION.md emit.
+      expect(/BEFORE the Step 9|before the Step 9/.test(skill)).toBe(true);
+    });
+
+    it('skill argument-hint advertises the optional --spec <path> flag', () => {
+      expect(/argument-hint:[^\n]*--spec <path>/.test(skill)).toBe(true);
+    });
+
+    it('skill bounds/skips Step 8d when no spec is supplied (no-op, recorded)', () => {
+      expect(skill.includes('skipped (no --spec)')).toBe(true);
+      // The spec is never a generation input — only the terminal cross-check.
+      expect(/never (read by|seeds)|not a breakdown source|post-hoc/i.test(skill)).toBe(true);
+    });
+
+    it('skill cross-references the spec components + acceptance-criteria + file references', () => {
+      expect(/components/i.test(skill)).toBe(true);
+      expect(skill.includes('acceptance criteria')).toBe(true);
+      expect(/file reference/i.test(skill)).toBe(true);
+    });
+
+    it('skill AUTO-EMITS coverage tasks for uncovered spec items, edged to the trigger and marked (rider)', () => {
+      expect(/auto-emit coverage task/i.test(skill)).toBe(true);
+      expect(/uncovered spec item/i.test(skill)).toBe(true);
+      expect(skill.includes('edged to the trigger')).toBe(true);
+      expect(skill.includes('(rider)')).toBe(true);
+      // Reuses the Step 8b create_task / add_dependency materialize path.
+      expect(skill.includes('create_task') && skill.includes('add_dependency')).toBe(true);
+    });
+
+    it('skill FLAGS factual drift (wrong file ref) for correction without silently rewriting', () => {
+      expect(/factual drift/i.test(skill)).toBe(true);
+      expect(skill.includes('DRIFT(')).toBe(true);
+      // The named motivating examples (project 29 v2.0, buildRemoteMcpEntry).
+      expect(skill.includes('buildRemoteMcpEntry')).toBe(true);
+      expect(skill.includes('project 29')).toBe(true);
+    });
+
+    it('Step 8d honors Guardrail 2 — never edits decompose’s own files', () => {
+      // The audit MUST NOT edit the three protected paths, even when the spec
+      // references them.
+      expect(skill.includes('Guardrail 2')).toBe(true);
+      expect(skill.includes('skills/tasks/decompose.md')).toBe(true);
+      expect(skill.includes('docs/tasks-decompose-design.md')).toBe(true);
+      expect(skill.includes('src/lib/decompose/')).toBe(true);
+      expect(/out-of-scope \(Guardrail 2\)/.test(skill)).toBe(true);
+    });
+
+    it('skill records the audit verdict in DECOMPOSITION.md (body §8 Spec-Coverage Audit)', () => {
+      expect(skill.includes('## Spec-Coverage Audit')).toBe(true);
+      expect(/audit verdict/i.test(skill)).toBe(true);
+    });
+
+    it('design doc documents Step 8d as a numbered step with rationale (source of truth)', () => {
+      expect(design.includes('Step 8d')).toBe(true);
+      expect(/spec-coverage audit/i.test(design)).toBe(true);
+      // Rationale: generalizes the 8c CODEBASE-surface rider into a spec check.
+      expect(/spec-grounded/i.test(design)).toBe(true);
+      // Motivating example + drift example are cited in the design.
+      expect(design.includes('project 29') || design.includes('29 v2.0')).toBe(true);
+      expect(design.includes('buildRemoteMcpEntry')).toBe(true);
+    });
+
+    it('design doc records the §8 Spec-Coverage Audit artifact body section', () => {
+      expect(design.includes('## Spec-Coverage Audit')).toBe(true);
+    });
+
+    it('design doc keeps Step 8d Guardrail-2 safe (never edits decompose’s own files)', () => {
+      // The design must state the audit is creation-only / read-only and the
+      // protected paths stay protected.
+      expect(design.includes('Step 8d') && design.includes('Guardrail 2')).toBe(true);
+      expect(design.includes('src/lib/decompose/')).toBe(true);
+    });
+  });
 });

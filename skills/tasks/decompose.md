@@ -1,7 +1,7 @@
 ---
 name: decompose
-description: Operational planner that breaks a project-level goal into 8–25 independent leaf tasks (FLAT) or a dependency DAG, ready for /tasks:loop or /tasks:loop-dag. Runs a 9-step pipeline — goal capture → codebase recon (one Explore agent) → candidate generation (planner) → independence check (critic) → topology decision (topology_check) → coverage check (critic) → sizing → materialize (create_task + add_dependency) → DECOMPOSITION.md emit. PLANS only; never executes the tasks it materializes. Bounded ≤ 5 USD soft target / 15 USD hard cap. Refuses blast-radius goals (deploy / migrate production / delete data).
-argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed] [--dry-run]
+description: Operational planner that breaks a project-level goal into 8–25 independent leaf tasks (FLAT) or a dependency DAG, ready for /tasks:loop or /tasks:loop-dag. Runs a 9-step pipeline — goal capture → codebase recon (one Explore agent) → candidate generation (planner) → independence check (critic) → topology decision (topology_check) → coverage check (critic) → sizing → materialize (create_task + add_dependency) → DECOMPOSITION.md emit. When a source spec is supplied via --spec, a terminal Step 8d spec-coverage audit cross-checks the materialized tasks against the spec's declared surfaces and auto-emits coverage tasks for gaps. PLANS only; never executes the tasks it materializes. Bounded ≤ 5 USD soft target / 15 USD hard cap. Refuses blast-radius goals (deploy / migrate production / delete data).
+argument-hint: --project <id> --goal "..." [--success "..."] [--domain frontend|backend|docs|infra|mixed] [--spec <path>] [--dry-run]
 disable-model-invocation: false
 ---
 
@@ -60,16 +60,24 @@ mutating tools, and ONLY in Step 8 (skipped under `--dry-run`).
 ## Step 1 — Goal capture
 
 Parse `$ARGUMENTS`. Supported flags: `--project <id>`, `--goal "..."`,
-`--success "..."` (repeatable), `--domain <enum>`, `--dry-run`. Validate
-(design §3 Step 1):
+`--success "..."` (repeatable), `--domain <enum>`, `--spec <path>`,
+`--dry-run`. Validate (design §3 Step 1):
 
 > **Input model — read before you start.** Decompose consumes a *distilled*
 > brief: a `--goal` (≤ 200 words) plus 3–5 `--success` criteria. It does
-> **not** ingest a plan document — it re-derives the task breakdown from its
-> own Step-2 recon. If you are handed a long external plan, compress its
-> intent into the `--goal` and pin the acceptance bar with the success
-> criteria; the file-by-file detail is the executor's job downstream, not an
-> input here.
+> **not** ingest a plan document as a *generation* input — it re-derives the
+> task breakdown from its own Step-2 recon. If you are handed a long external
+> plan, compress its intent into the `--goal` and pin the acceptance bar with
+> the success criteria; the file-by-file detail is the executor's job
+> downstream, not an input here.
+>
+> **`--spec <path>` does NOT change that.** The optional `--spec` flag names a
+> source spec / plan / design doc that is consulted by **exactly one** step:
+> the terminal **Step 8d spec-coverage audit**, which runs after
+> materialization and cross-checks the *already-created* task set against the
+> surfaces the spec declares. The spec is never read by Steps 2–7 and never
+> seeds candidate generation — it is a post-hoc coverage cross-check, not a
+> breakdown source. When `--spec` is omitted, Step 8d is skipped entirely.
 
 - `--project <id>` — required, positive integer. Confirm it resolves via
   `wood-fired-tasks:list_projects`; refuse with a usage error if it does
@@ -80,9 +88,18 @@ Parse `$ARGUMENTS`. Supported flags: `--project <id>`, `--goal "..."`,
   5 ⇒ ask the user to add/trim (or collect interactively until 3–5).
 - `--domain <enum>` — one of `frontend | backend | docs | infra | mixed`.
   Defaults to `mixed` if omitted. Any other value ⇒ refuse.
+- `--spec <path>` — optional. Path to a source spec / plan / design doc
+  (e.g. a `docs/superpowers/specs/*.md` file). When supplied, the terminal
+  **Step 8d spec-coverage audit** cross-checks the materialized task set
+  against the spec's declared surfaces. Confirm the path exists and is
+  readable; a missing/unreadable `--spec` ⇒ refuse with a usage error. The
+  spec is read **read-only** and ONLY in Step 8d (never in Steps 2–7). When
+  omitted, Step 8d is skipped.
 - `--dry-run` — optional. When set, run §1–§7 and §9 but **SKIP §8
   materialize** (no `create_task` / `add_dependency`); the artifact records
-  `candidate_count` of the would-be tasks with `task_id: (dry-run)`.
+  `candidate_count` of the would-be tasks with `task_id: (dry-run)`. Because
+  Step 8d is a §8 sub-step, it is **also skipped under `--dry-run`** (there
+  are no materialized tasks to audit).
 
 ### Guardrail 4 — blast-radius keyword refusal (BEFORE any dispatch)
 
@@ -405,6 +422,69 @@ them), so a surface missing from the plan cannot silently drop through
 decomposition. Record every rider-emitted task in the artifact body §5 with a
 `(rider)` marker so the reader sees which tasks the invariant rider added.
 
+### Step 8d — Terminal spec-coverage audit (when `--spec` is supplied)
+
+**The TERMINAL materialize sub-step.** It runs LAST in Step 8 — after the
+Step 8b `create_task` / `add_dependency` materialization and the Step 8c
+invariant-rider pass have completed — and immediately **BEFORE the Step 9
+`DECOMPOSITION.md` emit**. Where Step 8c re-derives the **8 canonical CODEBASE
+surfaces** from the candidate set, Step 8d generalizes that rider into a
+**SPEC-grounded coverage check**: it cross-references the materialized task set
+against the surfaces the *source spec actually declares*, so an item the spec
+called for but no task covers cannot drop silently.
+
+**Bounded — skipped when no spec is supplied.** This phase is active **only
+when `--spec <path>` was passed** in Step 1 (and never under `--dry-run`, where
+no tasks were materialized). With no `--spec`, Step 8d is a **no-op**: record
+`spec_coverage_audit: skipped (no --spec)` in the artifact body §8 and proceed
+straight to Step 9. The phase performs **at most one** cross-reference pass over
+the spec; it does NOT re-run Steps 4–7.
+
+Read the `--spec` file **read-only** and extract its **declared surfaces** —
+the three classes a spec uses to pin scope:
+
+1. **Components / surfaces table** — the spec's components table or
+   `## Surface-coverage matrix` (the PLAN-TEMPLATE matrix). Every non-`N/A`
+   row / cell is a declared surface that must map to a materialized task.
+2. **Per-section acceptance criteria** — each acceptance criterion / "must"
+   bullet the spec states per phase or section.
+3. **Explicit file references** — every concrete path or symbol the spec
+   names (e.g. `src/mcp/remote/register-tools.ts`, `buildRemoteMcpEntry`).
+
+Cross-reference each declared surface against the tasks created in Step 8b
+(match by title / description / acceptance_criteria within the
+`decomp-<decomposition_id>` tag set). Then:
+
+- **(a) Auto-emit coverage tasks for uncovered spec items.** For every spec
+  component / acceptance criterion / file reference that **no** materialized
+  task covers, auto-emit a coverage task via the same Step 8b `create_task` /
+  `add_dependency` path, **edged to the trigger** (the materialized task or
+  spec item that motivated it), and stamp it with the same `(rider)` marker
+  convention as Step 8c so the reader sees which tasks the audit added.
+  *Motivating example* — a manual post-decompose audit of project 29 v2.0
+  caught three uncovered surfaces (an OpenAPI `X-API-Key` security scheme, a
+  docs scrub, and a package version bump) that no candidate task covered;
+  Step 8d auto-emits exactly those.
+- **(b) Flag factual drift for correction.** When a materialized task cites a
+  file path or symbol that does **not** match the spec or the codebase, flag
+  it in the audit verdict as `DRIFT(task_id, cited, expected)` for human
+  correction. *Motivating example* — a task citing `buildRemoteMcpEntry` when
+  the spec/codebase names a different symbol. Step 8d **flags** drift; it does
+  NOT silently rewrite the offending task.
+
+**Guardrail 2 — the audit NEVER edits decompose's own files.** Step 8d is
+read-only over the spec and creation-only over the backlog (`create_task` /
+`add_dependency`). It MUST NOT `Edit` / `Write` `skills/tasks/decompose.md`,
+`docs/tasks-decompose-design.md`, or `src/lib/decompose/**`, and it MUST NOT
+auto-emit a coverage task whose scope is to edit those files — even when the
+spec references them. A spec item that names decompose's own files is recorded
+in the audit verdict as `out-of-scope (Guardrail 2)`, never materialized.
+
+Record the audit verdict in the `DECOMPOSITION.md` body §8 (Step 9): one of
+`COVERED` (every declared surface maps to a task), the list of auto-emitted gap
+tasks (each with its `(rider)` marker + trigger edge), any `DRIFT(...)` flags,
+or `skipped (no --spec)`.
+
 ## Step 9 — Emit `DECOMPOSITION.md`
 
 Write the artifact to
@@ -437,6 +517,11 @@ the `cycle` / `high_interdependence` / `blast_radius_keyword` halt paths).
    linking back to the success criteria it covers.
 6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason).
 7. `## Cost Breakdown` — orchestrator + per-subagent cost rows + TOTAL.
+8. `## Spec-Coverage Audit` — the Step 8d verdict. Present only when
+   `--spec` was supplied: the spec surfaces checked (components,
+   acceptance-criteria, file references), the auto-emitted gap tasks (each
+   with its `(rider)` marker + trigger edge), and any `DRIFT(...)` flags.
+   Records `skipped (no --spec)` when the flag was absent.
 
 Set `generated_at`-paired end time immediately before the final write.
 
