@@ -115,10 +115,12 @@ const PROBES: readonly ProbeScenario[] = [
 
 const MAX_FILES_PER_PROBE = 6;
 // Soft bound on any single recommended-read file. Reference deep docs
-// (docs/API.md ≈ 1056, docs/CLI.md ≈ 1233, docs/MCP.md ≈ 809,
-// src/slack/commands/tasks-command.ts ≈ 1050) currently push this ceiling;
-// tighten when those files are split per the AGENT_CONTEXT.md budgets.
-const MAX_LINES_PER_PROBE_FILE = 1500;
+// (docs/API.md ≈ 1056, docs/CLI.md ≈ 1692 after the v2.0 statusline section,
+// docs/MCP.md ≈ 809, src/slack/commands/tasks-command.ts ≈ 1050) push this
+// ceiling; kept in step with the docs/CLI.md line budget in
+// scripts/agent-context/manifest.ts (1800). Tighten when those files are split
+// per the AGENT_CONTEXT.md budgets.
+const MAX_LINES_PER_PROBE_FILE = 1800;
 
 function countLines(text: string): number {
   let n = 0;

@@ -95,12 +95,12 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     ).toBe(27);
   });
 
-  it('CLI entry wires exactly 40 commands into Commander', () => {
+  it('CLI entry wires exactly 42 commands into Commander', () => {
     const count = countMatches(repoRoot, CLI_ENTRY, CLI_ADDCOMMAND_REGEX);
     expect(
       count,
       `CLI command count drifted in ${CLI_ENTRY}. ` + 'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(40);
+    ).toBe(42);
   });
 
   it('docs/INTERFACES.md restates the verified totals so a drift is visible', () => {
@@ -109,8 +109,8 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     // a stale doc even if the source counts still happen to match.
     expect(doc, 'missing "Total: 22 routes" anchor').toContain('Total: 22 routes');
     expect(doc, 'missing "Total: 27 tools" anchor').toContain('Total: 27 tools');
-    expect(doc, 'missing "Total: 40 commands" anchor (CLI subcommand count)').toContain(
-      'Total: 40 commands',
+    expect(doc, 'missing "Total: 42 commands" anchor (CLI subcommand count)').toContain(
+      'Total: 42 commands',
     );
   });
 
