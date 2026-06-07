@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { configSchema, ExitCodes, CliExitCodes, resetConfig, parseApiKeyEntries } from '../env.js';
-// task #731: DATABASE_PATH now defaults to the OS app-data path, not a
-// cwd-relative './data/tasks.db'. Assert against the same source of truth.
-import { defaultDbPath } from '../paths.js';
+// task #731 + C1/H1: DATABASE_PATH now defaults via the unified resolver
+// (env > legacy-adopt ./data/tasks.db > OS app-data). When unset, the schema
+// default delegates to `resolveDbPath()`, so assert against that exact source
+// of truth — its result depends on the test cwd (legacy file present?) and the
+// app-data DB state, which `resolveDbPath()` itself accounts for.
+import { resolveDbPath } from '../db-path.js';
 
 describe('Configuration Validation', () => {
   const originalEnv = process.env;
@@ -42,7 +45,7 @@ describe('Configuration Validation', () => {
         // opt in to LAN exposure with HOST=0.0.0.0 or a specific LAN IP.
         expect(result.data.HOST).toBe('127.0.0.1');
         expect(result.data.LOG_LEVEL).toBe('info');
-        expect(result.data.DATABASE_PATH).toBe(defaultDbPath);
+        expect(result.data.DATABASE_PATH).toBe(resolveDbPath());
         expect(result.data.CONNECTION_TIMEOUT).toBe(120000);
         expect(result.data.REQUEST_TIMEOUT).toBe(60000);
         expect(result.data.KEEP_ALIVE_TIMEOUT).toBe(10000);
@@ -60,7 +63,7 @@ describe('Configuration Validation', () => {
         // task #188: default HOST is loopback-only.
         expect(result.data.HOST).toBe('127.0.0.1');
         expect(result.data.LOG_LEVEL).toBe('info');
-        expect(result.data.DATABASE_PATH).toBe(defaultDbPath);
+        expect(result.data.DATABASE_PATH).toBe(resolveDbPath());
         expect(result.data.CONNECTION_TIMEOUT).toBe(120000);
         expect(result.data.REQUEST_TIMEOUT).toBe(60000);
         expect(result.data.KEEP_ALIVE_TIMEOUT).toBe(10000);

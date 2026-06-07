@@ -13,9 +13,7 @@
  *   1. Decorate `FastifyRequest` with `user`, `authMethod`, `tokenId`,
  *      `apiKeyLabel` at plugin load (Fastify requires decoration before any
  *      route registers).
- *   2. Validate `process.env.API_KEYS` in production (throws synchronously,
- *      which Fastify bubbles up to createServer → exits with non-zero).
- *   3. Register a `preHandler` hook that:
+ *   2. Register a `preHandler` hook that:
  *      a. Short-circuits when `request.routeOptions.config.skipAuth === true`.
  *      b. Walks PAT → session. First match wins. PAT failure does NOT fall
  *         through to session — see `enforceSessionOnly` / strategy-fail
@@ -50,8 +48,6 @@
  */
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
-import { parseApiKeyEntries, type ApiKeyEntry } from '../../../config/env.js';
-import { validateApiKeysForProduction } from './keys.js';
 import { logAuthFailure, type AuthFailureReason } from '../../../services/auth-audit.js';
 import type { AuthenticatedUser, AuthResult } from '../../../types/identity.js';
 import { tryAuth as tryPat, type PatDeps } from './strategies/pat.js';
@@ -217,20 +213,16 @@ function sendInternalError(request: FastifyRequest, reply: FastifyReply, err: un
 }
 
 const authChainImpl: FastifyPluginAsync = async (fastify) => {
-  // Parse and (in production) validate API_KEYS at register time so a
-  // misconfigured prod boot fails fast. Same fail-fast semantics as the
-  // pre-split plugin — `validateApiKeysForProduction` throws synchronously
-  // and Fastify bubbles the error up to createServer which closes the
-  // server and disposes the App (server.ts:345-363 catch).
-  const entries: ApiKeyEntry[] = parseApiKeyEntries(process.env['API_KEYS']);
-  const keys = entries.map((e) => e.key);
-  if (process.env['NODE_ENV'] === 'production') {
-    validateApiKeysForProduction(keys);
-  } else if (entries.length === 0) {
-    fastify.log.warn(
-      'No API keys configured in API_KEYS env var. All API requests will be rejected.',
-    );
-  }
+  // v2.0 auth cutover (#799/#801): the legacy X-API-Key REST strategy was
+  // removed — REST authenticates via PAT → session only. `API_KEYS` no longer
+  // gates REST access, so the old production fatal gate
+  // (`validateApiKeysForProduction`, which threw on an empty/unset API_KEYS and
+  // aborted boot) is dead and was actively hostile to upgraders who correctly
+  // dropped API_KEYS. It is removed here. A server with no users still boots
+  // and serves OIDC/PAT auth. (`parseApiKeyEntries` survives because the MCP
+  // stdio actor-resolution path still matches a legacy WFT_API_KEY against
+  // API_KEYS — see src/mcp/identity-resolution.ts — but that is an MCP concern,
+  // not a REST boot gate.)
 
   // Decorators MUST land before any route registers in this scope. The fp()
   // wrap below lifts these into the parent scope so sibling /api/v1/* routes

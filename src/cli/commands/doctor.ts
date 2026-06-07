@@ -10,6 +10,7 @@ import { colorSuccess, colorError, colorWarn, colorInfo } from '../output/format
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
 import { configSchema } from '../../config/env.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { probeOidcState, type OidcProbe, type OidcState } from './setup.js';
 import { getCredentialsPath } from '../auth/credentials.js';
 import { PAT_PREFIX } from '../../services/pat-hash.js';
@@ -395,7 +396,7 @@ export async function checkCredentialsFile(
 export const doctorCommand = new Command('doctor')
   .description('Run diagnostics: DB connectivity, disk space, config validity, and OIDC readiness')
   .action(async () => {
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
 
     const program = doctorCommand.parent;
     const isJsonMode = program?.optsWithGlobals()?.['json'] || false;

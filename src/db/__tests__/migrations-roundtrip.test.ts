@@ -246,6 +246,93 @@ describe('Migration round-trip (up -> down -> up) with schema snapshot', () => {
     });
   }
 
+  describe('populated-DB forward migration (M2 — v2.0 release blocker)', () => {
+    // The per-migration round-trip above runs on an EMPTY schema, so it proves
+    // schema stability but NOT that real data survives a forward upgrade. M2
+    // closes that gap: seed a representative populated DB at an EARLY schema
+    // state (just after migration 003, which is the first to include
+    // task_comments), then run EVERY remaining migration forward to the 2.0
+    // schema and assert all seeded rows survive.
+    it('preserves projects/tasks/comments rows when migrating an early-schema populated DB to 2.0', async () => {
+      // Migration 003 is the earliest schema that has projects + tasks +
+      // task_comments — the three row classes we assert on.
+      const idx003 = MIGRATION_FILES.findIndex((f) => /^003-/.test(f));
+      expect(idx003, 'migration 003 must exist').toBeGreaterThanOrEqual(0);
+
+      const db = initTestDatabase();
+      try {
+        // 1. Build the early schema (001..003) directly.
+        await applyMigrationsUpTo(db, MIGRATION_FILES, idx003);
+
+        // 2. Seed a representative, deterministic dataset.
+        //    2 projects, 3 tasks (across both projects), 4 comments.
+        const insertProject = db.prepare('INSERT INTO projects (name) VALUES (?)');
+        const p1 = insertProject.run('alpha').lastInsertRowid as number;
+        const p2 = insertProject.run('beta').lastInsertRowid as number;
+
+        const insertTask = db.prepare(
+          `INSERT INTO tasks (title, description, project_id, created_by)
+           VALUES (?, ?, ?, ?)`,
+        );
+        const t1 = insertTask.run('task one', 'desc one', p1, 'alice').lastInsertRowid as number;
+        const t2 = insertTask.run('task two', 'desc two', p1, 'bob').lastInsertRowid as number;
+        const t3 = insertTask.run('task three', 'desc three', p2, 'carol')
+          .lastInsertRowid as number;
+
+        const insertComment = db.prepare(
+          `INSERT INTO task_comments (task_id, author, content) VALUES (?, ?, ?)`,
+        );
+        insertComment.run(t1, 'alice', 'first comment');
+        insertComment.run(t1, 'bob', 'second comment');
+        insertComment.run(t2, 'carol', 'third comment');
+        insertComment.run(t3, 'alice', 'fourth comment');
+
+        const expected = {
+          projects: 2,
+          tasks: 3,
+          task_comments: 4,
+        };
+
+        // Sanity: the seed landed as intended before any forward migration.
+        for (const [table, count] of Object.entries(expected)) {
+          const row = db.prepare(`SELECT COUNT(*) AS c FROM "${table}"`).get() as { c: number };
+          expect(row.c, `seed precondition for ${table}`).toBe(count);
+        }
+
+        // 3. Run EVERY remaining migration forward (004..last) — the real
+        //    upgrade path an existing 1.x DB takes to reach the 2.0 schema.
+        for (let i = idx003 + 1; i < MIGRATION_FILES.length; i++) {
+          const mod = await loadMigration(MIGRATION_FILES[i]);
+          await mod.up(db);
+        }
+
+        // 4. All seeded rows must survive the full forward migration.
+        for (const [table, count] of Object.entries(expected)) {
+          const row = db.prepare(`SELECT COUNT(*) AS c FROM "${table}"`).get() as { c: number };
+          expect(row.c, `${table} rows must be preserved through forward migration`).toBe(count);
+        }
+
+        // 5. Spot-check that representative cell data (not just row counts)
+        //    survived — guards a migration that drops/renames a column.
+        const task = db.prepare('SELECT title, created_by FROM tasks WHERE id = ?').get(t1) as
+          | { title: string; created_by: string }
+          | undefined;
+        expect(task?.title).toBe('task one');
+        expect(task?.created_by).toBe('alice');
+
+        const comment = db
+          .prepare(
+            'SELECT author, content FROM task_comments WHERE task_id = ? ORDER BY id LIMIT 1',
+          )
+          .get(t1) as { author: string; content: string } | undefined;
+        expect(comment?.author).toBe('alice');
+        expect(comment?.content).toBe('first comment');
+      } finally {
+        db.close();
+      }
+    });
+  });
+
   describe('migration 005 specifically — FTS trigger restoration', () => {
     // This block is targeted at the FTS table-rebuild down() path. Even though
     // the generic schema snapshot above would also catch a missing trigger,

@@ -1,6 +1,7 @@
 import { initDatabase } from './db/database.js';
 import { runMigrations } from './db/migrate.js';
 import { parseApiKeyEntries } from './config/env.js';
+import { resolveDbPath } from './config/db-path.js';
 import { seedIdentities } from './services/identity-seeder.js';
 import { ProjectRepository } from './repositories/project.repository.js';
 import { TaskRepository } from './repositories/task.repository.js';
@@ -114,8 +115,10 @@ export interface App {
  * Initialize the application with database, repositories, and services
  */
 export async function createApp(dbPath?: string): Promise<App> {
-  // Initialize database
-  const db = initDatabase(dbPath || './data/tasks.db');
+  // Initialize database. When no explicit dbPath is threaded in, fall back to
+  // the unified resolver (env > legacy-adopt > app-data default) so this
+  // factory never opens a divergent cwd-relative ./data/tasks.db.
+  const db = initDatabase(dbPath || resolveDbPath());
 
   // Log the resolved DB path once at boot. This is the single most useful
   // diagnostic for "which database did this process actually open?" — the

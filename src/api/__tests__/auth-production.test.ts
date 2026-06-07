@@ -4,21 +4,26 @@ import type { FastifyInstance } from 'fastify';
 import { authHeaders } from './helpers/auth.js';
 
 /**
- * Production-mode API_KEYS validation (task #182).
+ * Production-mode boot behaviour around API_KEYS (v2.0 release-blocker H2).
  *
- * `createServer` must refuse startup when NODE_ENV=production AND API_KEYS
- * fails the hardening rules. Valid strong keys must continue to work.
+ * The legacy X-API-Key REST strategy was removed in the v2.0 auth cutover
+ * (#799/#802); REST now authenticates via PAT → session only. The old
+ * production fatal gate (`validateApiKeysForProduction`, which threw on an
+ * empty/weak/placeholder API_KEYS and aborted boot) therefore guarded a
+ * non-functional feature and broke upgraders who correctly dropped API_KEYS.
+ * That gate has been removed.
  *
- * Note: API_KEYS is still a hardened **config** var (#182), but it no longer
- * grants request auth — the X-API-Key strategy was removed in the v2.0 cutover
- * (#799/#802). The success case therefore authenticates via a seeded Bearer PAT.
+ * These tests pin the new contract: a production server boots WITHOUT
+ * API_KEYS and authenticates via a seeded Bearer PAT.
  */
-describe('API_KEYS production validation', () => {
+describe('production boot without API_KEYS (H2)', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalApiKeys = process.env.API_KEYS;
 
   beforeEach(() => {
     process.env.NODE_ENV = 'production';
+    // The whole point of H2: API_KEYS is unset in a correct 2.0 deployment.
+    delete process.env.API_KEYS;
   });
 
   afterEach(() => {
@@ -29,60 +34,15 @@ describe('API_KEYS production validation', () => {
     else process.env.API_KEYS = originalApiKeys;
   });
 
-  it('refuses startup when API_KEYS is empty', async () => {
-    // Empty API_KEYS triggers the Zod config schema's .min(1) first, which
-    // calls process.exit(78) outside the test environment. Vitest converts
-    // that into a thrown error we can assert on. Either way, the server must
-    // refuse to come up — this test only verifies that empty API_KEYS does
-    // NOT result in a running server.
-    process.env.API_KEYS = '';
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow();
-  });
-
-  it('refuses startup when API_KEYS is the change-me placeholder', async () => {
-    process.env.API_KEYS = 'change-me-to-a-real-key';
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(
-      /API_KEYS validation failed/i,
-    );
-  });
-
-  it('refuses startup when API_KEYS is too short', async () => {
-    process.env.API_KEYS = 'short-key';
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(/at least 32 characters/i);
-  });
-
-  it('refuses startup when API_KEYS is a single repeated character (no entropy)', async () => {
-    process.env.API_KEYS = 'a'.repeat(64);
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(
-      /single character repeated/i,
-    );
-  });
-
-  it('refuses startup when API_KEYS contains a placeholder phrase', async () => {
-    process.env.API_KEYS = 'example-' + 'x'.repeat(30);
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(
-      /placeholder phrase "example"/,
-    );
-  });
-
-  it('refuses startup when ANY of multiple comma-separated keys fails validation', async () => {
-    // First key strong, second key weak.
-    process.env.API_KEYS = 'k1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6,short';
-    await expect(createServer({ dbPath: ':memory:' })).rejects.toThrow(
-      /API_KEYS validation failed/i,
-    );
-  });
-
-  it('starts successfully with a strong 32-character key and accepts valid auth', async () => {
-    const strongKey = 'k1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6';
-    process.env.API_KEYS = strongKey;
-
+  it('boots successfully with API_KEYS unset and authenticates via a Bearer PAT', async () => {
     let server: FastifyInstance | undefined;
     try {
+      // No API_KEYS in the environment — the removed fatal gate would have
+      // aborted this boot in production. It must now succeed.
       const result = await createServer({ dbPath: ':memory:' });
       server = result.server;
 
-      // v2.0: request auth is via a seeded Bearer PAT, not the API_KEYS value.
+      // A seeded Bearer PAT authenticates; the API_KEYS value is irrelevant.
       const auth = authHeaders(result.app.db);
       const ok = await server.inject({
         method: 'GET',
@@ -91,12 +51,37 @@ describe('API_KEYS production validation', () => {
       });
       expect(ok.statusCode).toBe(200);
 
+      // A bogus PAT is still rejected — auth is enforced, it's just no longer
+      // gated on a static API_KEYS list.
       const bad = await server.inject({
         method: 'GET',
         url: '/api/v1/tasks',
         headers: { Authorization: 'Bearer definitely-not-a-real-pat-xxxxxxxxxxxx' },
       });
       expect(bad.statusCode).toBe(401);
+    } finally {
+      await server?.close();
+    }
+  });
+
+  it('boots successfully in production even when API_KEYS is set to a weak/placeholder value', async () => {
+    // Pre-2.0 this would have thrown (placeholder phrase, too short, etc.).
+    // API_KEYS no longer gates REST boot at all, so a leftover value — however
+    // weak — must not abort startup.
+    process.env.API_KEYS = 'change-me-to-a-real-key';
+
+    let server: FastifyInstance | undefined;
+    try {
+      const result = await createServer({ dbPath: ':memory:' });
+      server = result.server;
+
+      const auth = authHeaders(result.app.db);
+      const ok = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        headers: auth,
+      });
+      expect(ok.statusCode).toBe(200);
     } finally {
       await server?.close();
     }

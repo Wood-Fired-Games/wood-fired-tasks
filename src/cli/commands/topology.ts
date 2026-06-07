@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { DependencyRepository } from '../../repositories/dependency.repository.js';
 import { TopologyService } from '../../services/topology.service.js';
@@ -30,7 +31,7 @@ export const topologyCommand = new Command('topology')
       return;
     }
 
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
     const db = new Database(dbPath, { readonly: true });
     try {
       const taskRepo = new TaskRepository(db);

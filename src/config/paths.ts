@@ -28,3 +28,8 @@ export const configDir: string = paths.config;
  * Used as the `DATABASE_PATH` default when no explicit override is set.
  */
 export const defaultDbPath: string = path.join(dataDir, 'tasks.db');
+
+// NOTE: the unified DB-path resolver lives in `src/config/db-path.ts` and is
+// imported directly from there by every consumer (it imports `defaultDbPath`
+// from this file, so re-exporting it here would create a paths<->db-path
+// import cycle that dependency-cruiser rejects).

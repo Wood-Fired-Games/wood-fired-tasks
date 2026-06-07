@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { TaskRepository } from '../../repositories/task.repository.js';
@@ -39,7 +40,7 @@ export const completedCommand = new Command('completed')
   .option('-p, --project <id>', 'Filter by project ID')
   .option('-a, --assignee <name>', 'Filter by assignee')
   .action((options: CommandOptions) => {
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
 
     const program = completedCommand.parent;
     const isJsonMode = program?.optsWithGlobals()?.['json'] || false;

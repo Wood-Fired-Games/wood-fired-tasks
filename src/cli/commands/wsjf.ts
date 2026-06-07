@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { ProjectRepository } from '../../repositories/project.repository.js';
 import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
@@ -61,7 +62,7 @@ export const wsjfHistoryCommand = new Command('wsjf-history')
       process.exitCode = 1;
       return;
     }
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
     const db = new Database(dbPath, { readonly: true });
     try {
       const history = new WsjfHistoryRepository(db).findByTaskId(id);
@@ -145,7 +146,7 @@ export const wsjfSetCommand = new Command('wsjf-set')
         return;
       }
 
-      const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+      const dbPath = resolveDbPath();
       const db = new Database(dbPath);
       try {
         const taskRepo = new TaskRepository(db);
@@ -204,7 +205,7 @@ export const charterHistoryCommand = new Command('charter-history')
       process.exitCode = 1;
       return;
     }
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
     const db = new Database(dbPath, { readonly: true });
     try {
       const history = new ProjectCharterHistoryRepository(db).findByProjectId(id);

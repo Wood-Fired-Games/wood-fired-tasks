@@ -259,7 +259,7 @@ Repo-specific terms. Definitions are extractive (read the source if you need mor
 | **WorkflowEngine** | Service that cascades parent task completion and auto-unblocks dependents when their predecessors finish. |
 | **idempotency** | 24h replay cache keyed by `Idempotency-Key` header; applied today only on the claim endpoint. |
 | **SSE** | Server-Sent Events stream at `GET /api/v1/events`; long-lived per-key/per-IP connection capped by `SSE_MAX_CONNECTIONS_*`. |
-| **API key** | Server env var is `API_KEYS` (plural, comma-separated); CLI env var is `API_KEY` (singular). Both surfaces send the same header: `X-API-Key`. |
+| **PAT** | Personal access token (`wft_pat_…`). The CLI reads it from `API_KEY` and the remote MCP server from `WFT_API_KEY`; both send it as `Authorization: Bearer <pat>`. The legacy `X-API-Key` shared-secret header was **removed in v2.0** (and `API_KEYS` is no longer an auth method — it only seeds inert legacy rows). |
 
 ## 10. Source of truth
 

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { colorBold } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
@@ -23,7 +24,7 @@ interface AgentRow {
 export const statsCommand = new Command('stats')
   .description('Show task statistics: status counts, recent activity, and agent productivity')
   .action(() => {
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
 
     const program = statsCommand.parent;
     const isJsonMode = program?.optsWithGlobals()?.['json'] || false;

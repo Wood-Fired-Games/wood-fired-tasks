@@ -5,6 +5,7 @@ import { join, dirname, resolve, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { initDatabase } from './database.js';
 import { isMain } from '../utils/is-main.js';
+import { resolveDbPath } from '../config/db-path.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -144,30 +145,29 @@ export async function runMigrations(db: Database.Database): Promise<void> {
 /**
  * Resolve the database path the migration CLI should target.
  *
- * Honors `DATABASE_PATH` (the same env var the API/CLI validate via
- * src/config/env.ts, which carries the documented `./data/tasks.db`
- * default) and falls back to `./data/tasks.db` when it is unset or empty.
- * Relative paths are resolved against `cwd` so the returned value is
- * absolute and stable regardless of where the process later chdir's.
+ * Delegates to the unified resolver (`src/config/db-path.ts`) so the migration
+ * CLI converges on the EXACT same path as the API server, MCP stdio server,
+ * and every `tasks db*` subcommand. The unified precedence is:
+ *   env (DATABASE_PATH / deprecated DB_PATH) > legacy-adopt ./data/tasks.db
+ *   (when present and the app-data DB is absent, with a one-time warning) >
+ *   OS app-data default.
+ * The resolved value is then forced absolute against `cwd` so the migration
+ * CLI's returned path is stable regardless of later chdir's.
  *
  * @param env - environment map (defaults to `process.env`).
- * @param cwd - base directory for resolving relative paths (defaults to
- *   `process.cwd()`).
+ * @param cwd - base directory for resolving relative paths and probing the
+ *   legacy `./data/tasks.db` (defaults to `process.cwd()`).
  */
 export function resolveMigrateDbPath(
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
 ): string {
-  const raw =
-    env['DATABASE_PATH'] && env['DATABASE_PATH'].length > 0
-      ? env['DATABASE_PATH']
-      : './data/tasks.db';
-  return resolve(cwd, raw);
+  return resolve(cwd, resolveDbPath(env, cwd));
 }
 
 /**
- * CLI entry point body: resolve the target DB path from `DATABASE_PATH`
- * (or the documented `./data/tasks.db` fallback), ensure the parent
+ * CLI entry point body: resolve the target DB path via the unified resolver
+ * (env > legacy-adopt > app-data default), ensure the parent
  * directory exists, then run all pending migrations.
  *
  * Extracted from the `isMain` guard so it is directly unit-testable.
