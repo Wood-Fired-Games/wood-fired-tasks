@@ -330,10 +330,10 @@ export function wireStatusline(options: WireStatuslineOptions = {}): WireStatusl
   const log = options.log ?? ((line: string) => console.log(line));
   const filePath = settingsJsonPath(home);
 
-  // Read the existing settings.json, tolerating absence / malformed JSON. A
-  // busted file is treated as "no statusLine present" so we don't clobber a
-  // user's hand-rolled-but-broken config silently — we only ADD when there is
-  // no statusLine key to be found.
+  // Read the existing settings.json, tolerating absence / malformed JSON. An
+  // absent file means "write a fresh statusLine on consent"; a present but
+  // UNPARSEABLE file is left untouched (handled below) so we never clobber a
+  // user's hand-rolled-but-broken config.
   const existingRaw = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
   let parsed: Record<string, unknown> = {};
   let parseable = true;
@@ -349,6 +349,19 @@ export function wireStatusline(options: WireStatuslineOptions = {}): WireStatusl
   }
 
   const ours = buildStatuslineConfig();
+
+  // Non-clobbering for an UNPARSEABLE existing file: we cannot safely merge into
+  // JSON we can't read, and overwriting it would silently discard the user's
+  // (broken-but-recoverable) config. Print the embed snippet and write nothing.
+  if (existingRaw !== null && !parseable) {
+    log(
+      `Could not parse ${filePath} as JSON; leaving it untouched. ` +
+        'To show Wood Fired Tasks counts + the update hint, fix the file and ' +
+        'embed this command in your status line:',
+    );
+    log(`  ${statuslineEmbedSnippet()}`);
+    return { action: 'embed-snippet', path: filePath, snippet: statuslineEmbedSnippet() };
+  }
 
   // Non-clobbering — with one exception for OUR OWN wiring (idempotency). A
   // present statusLine in a parseable doc is never overwritten, UNLESS it is
@@ -370,7 +383,7 @@ export function wireStatusline(options: WireStatuslineOptions = {}): WireStatusl
     return { action: 'embed-snippet', path: filePath, snippet: statuslineEmbedSnippet() };
   }
 
-  // No statusLine (or an unparseable file we decline to key off): write a fresh
+  // No statusLine present in a parseable (or absent) doc: write a fresh
   // statusLine, preserving any other keys from a parseable doc.
   parsed['statusLine'] = ours;
   const serialized = `${JSON.stringify(parsed, null, 2)}\n`;
@@ -789,17 +802,18 @@ export type OidcProbe = (baseUrl: string) => Promise<OidcProbeResult>;
 /**
  * Default OIDC probe: `GET <baseUrl>/health/detailed` and read `oidc.state`.
  *
- * `/health/detailed` is auth-protected on the server (X-API-Key), but the only
+ * `/health/detailed` is auth-protected on the server (Bearer PAT), but the only
  * field we need — `oidc.state` — is returned in the JSON body regardless of the
  * auth-derived status code as long as the route renders. We treat ANY non-2xx
  * or unparseable/missing `oidc.state` as a probe failure and fall back to the
  * manual-PAT escape hatch (the route may not even exist on an older server).
+ * Bounded by a 5s timeout so a half-open server can't hang `setup --remote`.
  */
 export async function probeOidcState(baseUrl: string): Promise<OidcProbeResult> {
   const probeUrl = new URL('/health/detailed', baseUrl).toString();
   let response: Response;
   try {
-    response = await fetch(probeUrl, { method: 'GET' });
+    response = await fetch(probeUrl, { method: 'GET', signal: AbortSignal.timeout(5000) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, reason: `could not reach ${probeUrl}: ${message}` };

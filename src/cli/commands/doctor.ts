@@ -284,7 +284,9 @@ export type ReachabilityProbe = (baseUrl: string) => Promise<boolean>;
 export async function defaultReachabilityProbe(baseUrl: string): Promise<boolean> {
   try {
     const url = new URL('/health', baseUrl).toString();
-    await fetch(url, { method: 'GET' });
+    // Bound the probe: a server that accepts the connection but never responds
+    // must not hang `tasks doctor` forever — surface it as "not reachable".
+    await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
     return true;
   } catch {
     return false;
@@ -323,7 +325,22 @@ export async function checkCredentialsFile(
 
   // Permission check (POSIX). Any group/other bit set → insecure.
   if (POSIX) {
-    const mode = statSync(filePath).mode & 0o777;
+    let mode: number;
+    try {
+      // existsSync passed above, but stat can still throw on a dangling symlink,
+      // an EACCES parent dir, ELOOP, etc. Treat any stat failure as a blocking
+      // FAIL with the underlying reason rather than crashing the whole doctor.
+      mode = statSync(filePath).mode & 0o777;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        status: 'FAIL',
+        message: `Could not stat credentials file ${filePath}: ${msg}`,
+        remediation:
+          'Verify the file (and its parent directory) is accessible and not a broken symlink.',
+        blocking: true,
+      };
+    }
     if ((mode & 0o077) !== 0) {
       const octal = mode.toString(8).padStart(3, '0');
       return {

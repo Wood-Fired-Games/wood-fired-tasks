@@ -618,6 +618,31 @@ describe('tasks setup — statusline wiring (task #798)', () => {
     });
   });
 
+  // Branch 2b: an UNPARSEABLE settings.json → setup PRINTS the embed snippet and
+  // does NOT overwrite the file (no silent data loss of a broken-but-recoverable
+  // config).
+  it('does NOT overwrite an unparseable settings.json (prints embed snippet)', async () => {
+    await withTempHomeAsync(async (home) => {
+      const settingsPath = settingsJsonPath(home);
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      const broken = '{ "statusLine": not valid json,,, ';
+      fs.writeFileSync(settingsPath, broken, 'utf8');
+
+      const lines: string[] = [];
+      const result = await offerStatuslineWiring({
+        home,
+        log: (l) => lines.push(l),
+        isInteractive: () => true,
+        confirm: async () => true,
+      });
+
+      expect(result.action).toBe('embed-snippet');
+      // The broken file is left byte-for-byte untouched.
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(broken);
+      expect(lines.join('\n')).toContain(statuslineEmbedSnippet());
+    });
+  });
+
   // Branch 3: declining the offer → NO change (no settings.json written).
   it('declining the offer makes no change', async () => {
     await withTempHomeAsync(async (home) => {

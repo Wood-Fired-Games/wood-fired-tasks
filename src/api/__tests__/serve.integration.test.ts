@@ -136,7 +136,6 @@ describe('Task #733 — serve boots from any cwd, migrates app-data DB, /health 
     process.env.HOME = tmpHome;
     process.env.XDG_DATA_HOME = join(tmpHome, '.local', 'share');
     process.env.XDG_CONFIG_HOME = join(tmpHome, '.config');
-    process.env.API_KEYS = 'test-key';
     process.env.PORT = '0';
     process.env.HOST = '127.0.0.1';
     process.env.NODE_ENV = 'test';
