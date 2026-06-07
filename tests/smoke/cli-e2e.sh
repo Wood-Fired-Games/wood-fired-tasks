@@ -96,21 +96,18 @@ fi
 port="${WFT_E2E_PORT:-14310}"
 api_url="http://127.0.0.1:${port}"
 
-# API_KEYS doubles as the seed for the legacy user. The server's
-# identity-seeder runs on boot and inserts a row with
-# `display_name = entry.label, is_legacy = 1` for each entry — that's the
-# user the mint-token command will resolve against. Use a label that is
-# unlikely to collide with anything (so successive local runs stay clean
-# even if the DB file lingers).
-# In production mode the auth plugin enforces a 32+ char minimum on API_KEYS
-# entries (validateApiKeysForProduction). The CI server is started with
-# NODE_ENV=development to bypass that check — this is a smoke test, not a
-# security audit, and the key value is never accepted from the wire (only
-# used to seed the legacy user via the identity-seeder).
-api_key="ci-e2e-secret-not-a-real-key-padded"  # 35 chars (>= 32) so the
-# value still passes the production check if a future revert tightens
-# NODE_ENV handling. Kept >=32 chars as defense-in-depth.
-legacy_user_label="ci-e2e-bot"
+# v2.0 (#801) removed the legacy API_KEYS-based identity seeding: the server's
+# identity-seeder no longer inserts `is_legacy = 1` rows on boot. It now
+# unconditionally seeds two service-account users — `slack-bot` and `mcp-bot`
+# (`is_service_account = 1`) — on every boot. `mint-token` resolves `--user`
+# against `display_name`, so we mint against the always-seeded `mcp-bot`
+# service account rather than a legacy row that no longer exists.
+# API_KEYS is still set for the server process for back-compat (the auth plugin
+# parses it), but it is IGNORED by the seeder and never used on the wire here —
+# the round-trip authenticates with the minted Bearer PAT. Kept >=32 chars so
+# the production-mode validator stays happy if NODE_ENV handling ever tightens.
+api_key="ci-e2e-secret-not-a-real-key-padded"  # 35 chars (>= 32)
+legacy_user_label="mcp-bot"
 
 # ----- state holders + cleanup trap --------------------------------------------
 tmp=""
