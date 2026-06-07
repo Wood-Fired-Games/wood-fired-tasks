@@ -21,6 +21,8 @@ describe('doctor command', () => {
   const savedDbPath = process.env.DATABASE_PATH;
   const savedApiKeys = process.env.API_KEYS;
   const savedNodeEnv = process.env.NODE_ENV;
+  const savedApiUrl = process.env.WFT_API_URL;
+  const savedOidcRequired = process.env.WFT_OIDC_REQUIRED;
 
   async function buildProgram() {
     const { doctorCommand } = await import('../commands/doctor.js');
@@ -28,6 +30,21 @@ describe('doctor command', () => {
     p.option('--json', 'Output as JSON');
     p.addCommand(doctorCommand);
     return p;
+  }
+
+  /**
+   * Override the injectable OIDC probe (task #812) so the OIDC readiness branch
+   * is driven without a live server.
+   */
+  async function setOidcProbe(
+    probe: (
+      baseUrl: string,
+    ) => Promise<
+      { ok: true; oidc: 'ready' | 'disabled' | 'degraded' } | { ok: false; reason: string }
+    >,
+  ) {
+    const { doctorOidcDefaults } = await import('../commands/doctor.js');
+    doctorOidcDefaults.probe = probe;
   }
 
   beforeEach(() => {
@@ -44,6 +61,10 @@ describe('doctor command', () => {
     // Provide all required env so config validation passes.
     process.env.API_KEYS = 'doctor-test-key';
     process.env.NODE_ENV = 'test';
+    // Default: no remote configured → OIDC line resolves to not-configured
+    // (non-blocking) unless a test opts in by setting WFT_API_URL.
+    delete process.env.WFT_API_URL;
+    delete process.env.WFT_OIDC_REQUIRED;
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -68,6 +89,16 @@ describe('doctor command', () => {
       delete process.env.NODE_ENV;
     } else {
       process.env.NODE_ENV = savedNodeEnv;
+    }
+    if (savedApiUrl === undefined) {
+      delete process.env.WFT_API_URL;
+    } else {
+      process.env.WFT_API_URL = savedApiUrl;
+    }
+    if (savedOidcRequired === undefined) {
+      delete process.env.WFT_OIDC_REQUIRED;
+    } else {
+      process.env.WFT_OIDC_REQUIRED = savedOidcRequired;
     }
     delete process.env.NO_COLOR;
     process.exitCode = 0;
@@ -134,5 +165,94 @@ describe('doctor command', () => {
     const env = JSON.parse(written);
     expect(env.data.config.status).toBe('PASS');
     expect(env.data.config.errors).toEqual([]);
+  });
+
+  // ── OIDC readiness (task #812) ──────────────────────────────
+
+  it('OIDC line is not-configured (non-blocking) when no remote URL is set', async () => {
+    // beforeEach already deletes WFT_API_URL, so the probe must NOT run.
+    let probed = false;
+    await setOidcProbe(async () => {
+      probed = true;
+      return { ok: true, oidc: 'ready' };
+    });
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/OIDC:\s+\[N\/A\]/);
+    expect(logged).toMatch(/No remote server configured/);
+    expect(probed).toBe(false);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('OIDC line resolves to ready and exits zero when the server reports ready', async () => {
+    process.env.WFT_API_URL = 'http://oidc-test.local:3000';
+    await setOidcProbe(async () => ({ ok: true, oidc: 'ready' }));
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/OIDC:\s+\[PASS\]/);
+    expect(logged).toMatch(/OIDC login is ready/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('OIDC line resolves to disabled (non-blocking, exits zero) with a PAT remediation hint', async () => {
+    process.env.WFT_API_URL = 'http://oidc-test.local:3000';
+    await setOidcProbe(async () => ({ ok: true, oidc: 'disabled' }));
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/OIDC:\s+\[WARN\]/);
+    expect(logged).toMatch(/OIDC login is disabled/);
+    expect(logged).toMatch(/personal access token/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('OIDC degraded is non-blocking (exits zero) when OIDC is not required', async () => {
+    process.env.WFT_API_URL = 'http://oidc-test.local:3000';
+    await setOidcProbe(async () => ({ ok: true, oidc: 'degraded' }));
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/OIDC:\s+\[WARN\]/);
+    expect(logged).toMatch(/OIDC login is degraded/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('OIDC degraded BLOCKS (exits non-zero) when WFT_OIDC_REQUIRED is set', async () => {
+    process.env.WFT_API_URL = 'http://oidc-test.local:3000';
+    process.env.WFT_OIDC_REQUIRED = '1';
+    await setOidcProbe(async () => ({ ok: true, oidc: 'degraded' }));
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/OIDC:\s+\[FAIL\]/);
+    expect(logged).toMatch(/OIDC login is degraded/);
+    expect(logged).toMatch(/OIDC is required/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('OIDC unreachable BLOCKS (exits non-zero) when the probe fails', async () => {
+    process.env.WFT_API_URL = 'http://oidc-test.local:3000';
+    await setOidcProbe(async () => ({ ok: false, reason: 'connection refused' }));
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/OIDC:\s+\[FAIL\]/);
+    expect(logged).toMatch(/Could not probe/);
+    expect(logged).toMatch(/connection refused/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('--json envelope includes the resolved OIDC state and blocking flag', async () => {
+    process.env.WFT_API_URL = 'http://oidc-test.local:3000';
+    await setOidcProbe(async () => ({ ok: true, oidc: 'degraded' }));
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', '--json', 'doctor']);
+    const written = stdoutSpy.mock.calls[0][0] as string;
+    const env = JSON.parse(written);
+    expect(env.data.oidc.state).toBe('degraded');
+    expect(env.data.oidc.blocking).toBe(false);
+    expect(typeof env.data.oidc.remediation).toBe('string');
   });
 });
