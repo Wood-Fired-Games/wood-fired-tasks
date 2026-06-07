@@ -1,6 +1,6 @@
 {
   "name": "@wood-fired-games/wft-router",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "Event-router daemon that subscribes to the wood-fired-tasks SSE event stream and dispatches matched task events to vendor-neutral handlers (create_task_in_project, webhook_post, shell_exec, agent_session_dispatch). See docs/event-router-design.md for the design-of-record.",
   "license": "MIT",
   "private": true,

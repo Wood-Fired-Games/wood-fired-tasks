@@ -456,6 +456,40 @@ The CLI is detailed in [`CLI.md`](CLI.md).
 matchable row has been backfilled — the UPDATE is guarded by
 `AND <fk_col> IS NULL`.
 
+### 8. Migrating to v2.0 (the X-API-Key → Bearer-PAT auth cutover)
+
+v2.0 **removes the legacy `X-API-Key` shared-secret auth path**. Every
+authenticated request now carries a per-user **Bearer personal access
+token (PAT)** instead of a single shared key — `Authorization: Bearer
+<pat>` replaces the old `X-API-Key: <key>` header on every REST and remote
+MCP call. There is **no compatibility shim**: a request that still sends
+only `X-API-Key` is rejected after the cutover.
+
+**Operator migration steps:**
+
+1. **Enable the identity system** if you have not already — stand up OIDC
+   (see the [OIDC enablement recipe](#oidc-enablement-recipe-remote-onboarding)
+   below) so clients can self-onboard and mint their own PATs, or mint
+   PATs administratively for clients that cannot use OIDC.
+2. **Re-onboard each client** with `wood-fired-tasks setup --remote <url>`.
+   The command probes the server's OIDC state and picks device-flow
+   (OIDC ready) or manual-PAT (OIDC disabled/degraded) automatically, then
+   caches the resulting Bearer PAT. Clients that were configured with an
+   `X-API-Key` / shared key must be re-onboarded — the old key no longer
+   authenticates.
+3. **Retire the shared key.** Once every client carries a PAT, the old
+   `API_KEYS` / shared-secret configuration is unused and can be removed
+   from the server environment.
+
+**No data migration is required.** The cutover is an *auth-surface* change
+only — it does not touch task, project, comment, or identity tables.
+Pre-identity rows that carry `is_legacy=1` are left **inert**: they are not
+rewritten, not deleted, and require no action; they continue to read back
+exactly as before. (If you want their identity FKs backfilled for
+attribution, that is the separate, optional
+[§7 migrate-identities](#7-migrating-from-a-pre-identity-key-only-deployment)
+flow above — it is unrelated to and not needed for the v2.0 auth cutover.)
+
 ## OIDC enablement recipe (remote onboarding)
 
 This is the end-to-end recipe for turning OIDC on for a shared/remote server so

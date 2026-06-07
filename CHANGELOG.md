@@ -13,6 +13,39 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.0.0] - 2026-06-07
+
+The **identity auth cutover** — a breaking major. The legacy `X-API-Key`
+shared-secret auth path is **removed**; every API call now authenticates with a
+per-user **Bearer personal access token (PAT)** minted through the identity
+system. Onboarding gains an OIDC device flow and explicit setup modes, and the
+CLI grows a `statusline` command. No data migration is required: pre-identity
+(`is_legacy=1`) rows are left **inert** and continue to read back unchanged.
+
+### Changed
+- **Auth is now Bearer-PAT only.** Every authenticated REST/MCP request carries
+  `Authorization: Bearer <pat>`; the previously-supported `X-API-Key` shared-key
+  header is no longer accepted. PATs are per-user, revocable, and optionally
+  expiring (see [`docs/SETUP.md`](docs/SETUP.md)). This is the breaking change
+  that makes v2.0 a major.
+- **`setup` gains explicit modes + an OIDC device flow.** `wood-fired-tasks
+  setup --remote <url>` now probes the server's OIDC state and picks
+  **device-flow** (OIDC ready) vs **manual-PAT** (OIDC disabled/degraded)
+  automatically, replacing the old key-paste onboarding.
+
+### Added
+- **OIDC device-flow onboarding** for `setup --remote`, minting a PAT without a
+  hand-copied shared key when the server has OIDC enabled.
+- **`statusline` CLI command** for a compact at-a-glance status line.
+
+### Security
+- **Removed the `X-API-Key` shared-secret auth path entirely** (the v2.0
+  cutover). A single long-lived shared key was the broadest part of the auth
+  surface; replacing it with per-user, individually-revocable Bearer PATs scopes
+  credentials to a user, makes revocation surgical, and bounds blast radius on
+  leak. Legacy `is_legacy=1` rows are left inert — no credential migration and
+  no data migration are required.
+
 ## [v1.18.2] - 2026-06-06
 
 A patch release: a Windows `self-update` fix plus two install-experience
@@ -561,7 +594,8 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.15...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.0.0...HEAD
+[v2.0.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.18.2...v2.0.0
 [v1.15]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.14...v1.15
 [v1.14]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.13...v1.14
 [v1.13]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.12...v1.13
