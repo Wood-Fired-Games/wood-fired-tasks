@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { isMainThread } from 'node:worker_threads';
 import {
   DOCS_CATALOG,
   docNames,
@@ -17,9 +18,17 @@ import { packageRoot } from '../../assets/resolve.js';
 const ORIG_CWD = process.cwd();
 
 afterEach(() => {
-  process.chdir(ORIG_CWD);
+  // No-op when chdir is unsupported (worker thread). The withTempCwd tests that
+  // actually change cwd skip under that pool — see the note on withTempCwd.
+  if (isMainThread) process.chdir(ORIG_CWD);
 });
 
+// process.chdir() throws inside worker_threads. Stryker's vitest runner forces
+// pool:'threads' for its mutation dry run (task #823); the two tests that prove
+// docs paths are resolved via the asset resolver (NOT cwd) must change cwd, so
+// they are skipped there (it.skipIf(!isMainThread)) and run fully under normal
+// `npm test` (forks pool / main thread). The catalog and open() tests below do
+// not touch cwd and keep covering docs.ts under mutation.
 function withTempCwd<T>(fn: (dir: string) => T): T {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-docs-cwd-'));
   try {
@@ -58,7 +67,7 @@ describe('tasks docs catalog', () => {
 });
 
 describe('tasks docs resolution (asset resolver, not cwd)', () => {
-  it('resolveDocPath resolves under packageRoot, independent of cwd', () => {
+  it.skipIf(!isMainThread)('resolveDocPath resolves under packageRoot, independent of cwd', () => {
     withTempCwd((dir) => {
       // Sanity: cwd really is the temp dir, outside the repo.
       expect(process.cwd()).toBe(fs.realpathSync(dir));
@@ -73,16 +82,19 @@ describe('tasks docs resolution (asset resolver, not cwd)', () => {
     });
   });
 
-  it('show (readDoc) returns the real bundled content from a temp cwd', () => {
-    // Capture the on-disk truth from the repo first.
-    const truth = fs.readFileSync(path.join(packageRoot, 'docs', 'USAGE_PATTERNS.md'), 'utf8');
-    expect(truth.length).toBeGreaterThan(0);
+  it.skipIf(!isMainThread)(
+    'show (readDoc) returns the real bundled content from a temp cwd',
+    () => {
+      // Capture the on-disk truth from the repo first.
+      const truth = fs.readFileSync(path.join(packageRoot, 'docs', 'USAGE_PATTERNS.md'), 'utf8');
+      expect(truth.length).toBeGreaterThan(0);
 
-    withTempCwd(() => {
-      const content = readDoc('usage-patterns');
-      expect(content).toBe(truth);
-    });
-  });
+      withTempCwd(() => {
+        const content = readDoc('usage-patterns');
+        expect(content).toBe(truth);
+      });
+    },
+  );
 
   it('throws on an unknown guide name', () => {
     expect(() => resolveDocPath('nope')).toThrow(/Unknown doc/);

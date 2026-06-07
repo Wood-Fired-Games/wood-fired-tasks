@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { isMainThread } from 'node:worker_threads';
 import {
   runSetup,
   runSetupInteractive,
@@ -190,14 +191,23 @@ describe('tasks setup', () => {
     expect(arg0.startsWith(packageRoot + path.sep)).toBe(true);
     expect(arg0).toBe(resolveAssetPath('dist', 'mcp', 'index.js'));
 
-    const origCwd = process.cwd();
-    try {
-      process.chdir(os.tmpdir());
-      // Same absolute path regardless of cwd — i.e. NOT cwd-relative.
-      expect(resolveMcpEntryPoint()).toBe(arg0);
-      expect(buildLocalMcpEntry().args?.[0]).toBe(arg0);
-    } finally {
-      process.chdir(origCwd);
+    // Stronger runtime proof: changing cwd must not change the resolved path.
+    // process.chdir() throws inside worker_threads, and Stryker's vitest runner
+    // forces pool:'threads' for its mutation dry run (task #823) — so this extra
+    // check only runs under the forks pool used by normal `npm test` (main
+    // thread). The structural assertions above (arg0 starts with packageRoot,
+    // equals resolveAssetPath(...)) already prove resolver-origin without chdir,
+    // so the test still fully covers setup.ts under mutation.
+    if (isMainThread) {
+      const origCwd = process.cwd();
+      try {
+        process.chdir(os.tmpdir());
+        // Same absolute path regardless of cwd — i.e. NOT cwd-relative.
+        expect(resolveMcpEntryPoint()).toBe(arg0);
+        expect(buildLocalMcpEntry().args?.[0]).toBe(arg0);
+      } finally {
+        process.chdir(origCwd);
+      }
     }
   });
 
