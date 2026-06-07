@@ -1,15 +1,35 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
-import { statfs } from 'fs';
+import { statfs, existsSync, readFileSync, statSync } from 'fs';
 import { promisify } from 'util';
 import { dirname } from 'path';
+import os from 'node:os';
+import path from 'node:path';
+import { parse as parseToml } from 'smol-toml';
 import { colorSuccess, colorError, colorWarn, colorInfo } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
 import { configSchema } from '../../config/env.js';
 import { probeOidcState, type OidcProbe, type OidcState } from './setup.js';
+import { getCredentialsPath } from '../auth/credentials.js';
+import { PAT_PREFIX } from '../../services/pat-hash.js';
 
 const statfsAsync = promisify(statfs);
+
+const POSIX = process.platform !== 'win32';
+
+/**
+ * PAT shape check (task #813). A Personal Access Token is
+ * `wft_pat_<32 chars RFC 4648 base32 (A-Z, 2-7)>` — the SAME shape the server's
+ * PAT auth strategy validates (`src/api/plugins/auth/strategies/pat.ts`) and the
+ * minter emits (`src/services/pat-hash.ts`). The legacy-credential detector
+ * reuses this so a value that ISN'T PAT-shaped is flagged as a legacy key.
+ */
+const PAT_BODY_PATTERN = /^[A-Z2-7]{32}$/;
+export function isPatShaped(value: string): boolean {
+  if (!value.startsWith(PAT_PREFIX)) return false;
+  return PAT_BODY_PATTERN.test(value.slice(PAT_PREFIX.length));
+}
 
 /**
  * OIDC readiness probe seam (task #812). Injectable so the doctor test can
@@ -120,6 +140,240 @@ export async function evaluateOidcReadiness(
  */
 export const doctorOidcDefaults: { probe: DoctorOidcProbe } = { probe: probeOidcState };
 
+// ── Legacy-credential detection (task #813) ──────────────────────────────
+
+/**
+ * One flagged legacy-shaped credential.
+ *  - `source`      — where the value was found (env var name, or the
+ *                    `~/.claude.json` MCP entry path).
+ *  - `message`     — human-readable one-liner for the doctor output.
+ *  - `remediation` — how to remove it and migrate to a PAT.
+ */
+export interface LegacyCredentialFinding {
+  source: string;
+  message: string;
+  remediation: string;
+}
+
+export interface LegacyCredentialResult {
+  /** PASS when nothing legacy is present; FAIL when at least one is flagged. */
+  status: 'PASS' | 'FAIL';
+  findings: LegacyCredentialFinding[];
+  /** True when any finding is present — a flagged legacy credential blocks. */
+  blocking: boolean;
+}
+
+/**
+ * Best-effort read of `WFT_API_KEY` from the remote MCP entry in
+ * `~/.claude.json` (`mcpServers[*].env.WFT_API_KEY`). `setup --remote` stows the
+ * token there, so a stale legacy key can hide in the JSON even when the env is
+ * clean. Returns the first WFT_API_KEY value found across all server entries, or
+ * null. Never throws — a missing/malformed file just yields null.
+ */
+export function readClaudeJsonApiKey(filePath: string): string | null {
+  try {
+    if (!existsSync(filePath)) return null;
+    const raw = readFileSync(filePath, 'utf8');
+    if (raw.trim().length === 0) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    const servers = (parsed as { mcpServers?: unknown } | null)?.mcpServers;
+    if (typeof servers !== 'object' || servers === null) return null;
+    for (const entry of Object.values(servers as Record<string, unknown>)) {
+      const env = (entry as { env?: unknown } | null)?.env;
+      if (typeof env === 'object' && env !== null) {
+        const key = (env as Record<string, unknown>)['WFT_API_KEY'];
+        if (typeof key === 'string' && key.length > 0) return key;
+      }
+    }
+  } catch {
+    // Unreadable / malformed claude.json is not this check's concern.
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Detect legacy-shaped credentials (task #813):
+ *   - a non-PAT `WFT_API_KEY` (from env OR `~/.claude.json`), and
+ *   - any `API_KEYS` env var (the removed v1.x server-side key list).
+ *
+ * A PAT-shaped `WFT_API_KEY` is fine (that's how the bridge authenticates) and
+ * is NOT flagged. Any flagged finding is BLOCKING (forces a non-zero exit) — a
+ * legacy credential silently keeps working against an old server and masks the
+ * PAT migration, so the operator must be told to remove it.
+ *
+ * `claudeJsonPath` is injected so the test can point at a fixture.
+ */
+export function detectLegacyCredentials(
+  env: NodeJS.ProcessEnv,
+  claudeJsonPath: string,
+): LegacyCredentialResult {
+  const findings: LegacyCredentialFinding[] = [];
+
+  // 1. WFT_API_KEY from the environment — flag only when it isn't PAT-shaped.
+  const envApiKey = env['WFT_API_KEY'];
+  if (typeof envApiKey === 'string' && envApiKey.length > 0 && !isPatShaped(envApiKey)) {
+    findings.push({
+      source: 'env WFT_API_KEY',
+      message: 'WFT_API_KEY (env) is not a personal access token',
+      remediation:
+        'Unset the legacy WFT_API_KEY env var and authenticate with a PAT via `tasks login` (or `tasks setup --remote <url> --token <pat>`).',
+    });
+  }
+
+  // 2. WFT_API_KEY hiding in ~/.claude.json — flag only when not PAT-shaped.
+  const jsonApiKey = readClaudeJsonApiKey(claudeJsonPath);
+  if (jsonApiKey !== null && !isPatShaped(jsonApiKey)) {
+    findings.push({
+      source: `claude.json WFT_API_KEY (${claudeJsonPath})`,
+      message: `WFT_API_KEY in ${claudeJsonPath} is not a personal access token`,
+      remediation:
+        'Re-run `tasks setup --remote <url> --token <pat>` to replace the legacy key in ~/.claude.json with a PAT.',
+    });
+  }
+
+  // 3. API_KEYS env — the removed v1.x server-side key list. Any value is legacy.
+  const apiKeys = env['API_KEYS'];
+  if (typeof apiKeys === 'string' && apiKeys.length > 0) {
+    findings.push({
+      source: 'env API_KEYS',
+      message: 'API_KEYS env var is set (removed in v2.0)',
+      remediation:
+        'Unset API_KEYS; the server no longer uses a static key list — mint per-user PATs instead.',
+    });
+  }
+
+  return {
+    status: findings.length > 0 ? 'FAIL' : 'PASS',
+    findings,
+    blocking: findings.length > 0,
+  };
+}
+
+// ── Credentials-file check (task #813) ───────────────────────────────────
+
+/**
+ * Result of the credentials-file check (task #813). PASS/WARN/FAIL:
+ *  - WARN  → no credentials file exists yet (not an error; you may not have
+ *            logged in). Never blocking.
+ *  - FAIL  → file exists but is mode != 0600 (POSIX), or its body is not
+ *            well-formed TOML. Always blocking.
+ *  - PASS  → file exists, is 0600, and parses as TOML. `reachable`/`server`
+ *            annotate the reachability sub-probe (non-blocking on failure —
+ *            the server can simply be down).
+ */
+export interface CredentialsFileResult {
+  status: 'PASS' | 'WARN' | 'FAIL';
+  message: string;
+  remediation?: string;
+  blocking: boolean;
+  /** Server URL parsed from the file's `[active].server`, when present. */
+  server?: string;
+  /** Reachability of `server`: undefined when not probed. */
+  reachable?: boolean;
+}
+
+/** Injectable server-reachability probe so the test drives it without a server. */
+export type ReachabilityProbe = (baseUrl: string) => Promise<boolean>;
+
+/**
+ * Default reachability probe: `GET <server>/health` and treat any HTTP response
+ * (even non-2xx) as "reachable". Network errors → not reachable. Best-effort and
+ * never throws.
+ */
+export async function defaultReachabilityProbe(baseUrl: string): Promise<boolean> {
+  try {
+    const url = new URL('/health', baseUrl).toString();
+    await fetch(url, { method: 'GET' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Injectable reachability default (task #813). The doctor test overrides this.
+ */
+export const doctorReachabilityDefaults: { probe: ReachabilityProbe } = {
+  probe: defaultReachabilityProbe,
+};
+
+/**
+ * Validate the CLI credentials file (task #813): it must be mode 0600 on POSIX,
+ * well-formed TOML, and — best-effort — its `server` should be reachable.
+ *
+ * Blocking rules:
+ *  - missing file        → WARN, non-blocking (you may simply not be logged in).
+ *  - mode != 0600 (POSIX) → FAIL, blocking (a world/group-readable secret).
+ *  - malformed TOML      → FAIL, blocking.
+ *  - unreachable server  → still PASS (non-blocking); the server may be down.
+ */
+export async function checkCredentialsFile(
+  filePath: string,
+  probe: ReachabilityProbe,
+): Promise<CredentialsFileResult> {
+  if (!existsSync(filePath)) {
+    return {
+      status: 'WARN',
+      message: `No credentials file at ${filePath}`,
+      remediation: 'Run `tasks login` (or `tasks setup --remote <url>`) to authenticate.',
+      blocking: false,
+    };
+  }
+
+  // Permission check (POSIX). Any group/other bit set → insecure.
+  if (POSIX) {
+    const mode = statSync(filePath).mode & 0o777;
+    if ((mode & 0o077) !== 0) {
+      const octal = mode.toString(8).padStart(3, '0');
+      return {
+        status: 'FAIL',
+        message: `Credentials file ${filePath} has insecure permissions (mode ${octal}, expected 600)`,
+        remediation: `Run: chmod 600 ${filePath}`,
+        blocking: true,
+      };
+    }
+  }
+
+  // Well-formed TOML check.
+  let parsed: unknown;
+  try {
+    parsed = parseToml(readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      status: 'FAIL',
+      message: `Credentials file ${filePath} is malformed TOML: ${msg}`,
+      remediation: 'Run `tasks login` to regenerate the credentials file.',
+      blocking: true,
+    };
+  }
+
+  // Best-effort reachability of the recorded server. Never blocking.
+  const server = (parsed as { active?: { server?: unknown } } | null)?.active?.server;
+  if (typeof server === 'string' && server.length > 0) {
+    const reachable = await probe(server);
+    return {
+      status: 'PASS',
+      message: reachable
+        ? `Credentials file OK (0600, valid TOML); server ${server} reachable`
+        : `Credentials file OK (0600, valid TOML); server ${server} unreachable`,
+      ...(reachable
+        ? {}
+        : { remediation: `Could not reach ${server}; verify the server is running.` }),
+      blocking: false,
+      server,
+      reachable,
+    };
+  }
+
+  return {
+    status: 'PASS',
+    message: `Credentials file OK (0600, valid TOML)`,
+    blocking: false,
+  };
+}
+
 export const doctorCommand = new Command('doctor')
   .description('Run diagnostics: DB connectivity, disk space, config validity, and OIDC readiness')
   .action(async () => {
@@ -219,8 +473,29 @@ export const doctorCommand = new Command('doctor')
 
     const oidc = await evaluateOidcReadiness(baseUrl, oidcRequired, doctorOidcDefaults.probe);
 
+    // --- Check 5: Legacy-credential detector (task #813) ---
+    // Flag a non-PAT WFT_API_KEY (env or ~/.claude.json) and any API_KEYS env
+    // var. Any flagged finding is BLOCKING.
+    const claudeJsonPath =
+      process.env['WFT_CLAUDE_JSON_PATH'] || path.join(os.homedir(), '.claude.json');
+    const legacy = detectLegacyCredentials(process.env, claudeJsonPath);
+
+    // --- Check 6: Credentials file (task #813) ---
+    // Validate 0600 mode, well-formed TOML, and (best-effort) server reachability.
+    const credentials = await checkCredentialsFile(
+      getCredentialsPath(),
+      doctorReachabilityDefaults.probe,
+    );
+
     // --- Set exit code if any check fails ---
-    if (dbStatus === 'FAIL' || diskStatus === 'FAIL' || configStatus === 'FAIL' || oidc.blocking) {
+    if (
+      dbStatus === 'FAIL' ||
+      diskStatus === 'FAIL' ||
+      configStatus === 'FAIL' ||
+      oidc.blocking ||
+      legacy.blocking ||
+      credentials.blocking
+    ) {
       process.exitCode = 1;
     }
 
@@ -240,6 +515,19 @@ export const doctorCommand = new Command('doctor')
           message: oidc.message,
           blocking: oidc.blocking,
           ...(oidc.remediation !== undefined && { remediation: oidc.remediation }),
+        },
+        legacyCredentials: {
+          status: legacy.status,
+          blocking: legacy.blocking,
+          findings: legacy.findings,
+        },
+        credentialsFile: {
+          status: credentials.status,
+          message: credentials.message,
+          blocking: credentials.blocking,
+          ...(credentials.remediation !== undefined && { remediation: credentials.remediation }),
+          ...(credentials.server !== undefined && { server: credentials.server }),
+          ...(credentials.reachable !== undefined && { reachable: credentials.reachable }),
         },
       });
     } else {
@@ -281,6 +569,31 @@ export const doctorCommand = new Command('doctor')
       console.log(`OIDC:      ${oidcLabel} ${oidc.message}`);
       if (oidc.remediation !== undefined) {
         console.log(`           - ${oidc.remediation}`);
+      }
+
+      // Legacy-credential detector (task #813). PASS when clean; FAIL (blocking)
+      // when any legacy-shaped credential is present, with per-finding hints.
+      const legacyLabel = legacy.status === 'PASS' ? colorSuccess('[PASS]') : colorError('[FAIL]');
+      const legacyMessage =
+        legacy.status === 'PASS'
+          ? 'No legacy credentials detected'
+          : `${legacy.findings.length} legacy credential(s) detected`;
+      console.log(`Legacy:    ${legacyLabel} ${legacyMessage}`);
+      for (const finding of legacy.findings) {
+        console.log(`           - ${finding.message}`);
+        console.log(`             ${finding.remediation}`);
+      }
+
+      // Credentials file check (task #813).
+      const credLabel =
+        credentials.status === 'PASS'
+          ? colorSuccess('[PASS]')
+          : credentials.status === 'WARN'
+            ? colorWarn('[WARN]')
+            : colorError('[FAIL]');
+      console.log(`Creds:     ${credLabel} ${credentials.message}`);
+      if (credentials.remediation !== undefined) {
+        console.log(`           - ${credentials.remediation}`);
       }
     }
   });
