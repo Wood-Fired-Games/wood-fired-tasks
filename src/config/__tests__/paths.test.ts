@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import path from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { isMainThread } from 'node:worker_threads';
 
 /**
  * task #731 + v2.0 release-blocker C1/H1 — verify the env-paths-backed default
@@ -30,7 +31,9 @@ describe('config/paths — DATABASE_PATH default resolution', () => {
     } else {
       process.env.DATABASE_PATH = ORIGINAL;
     }
-    process.chdir(ORIGINAL_CWD);
+    // No-op when chdir is unsupported (worker thread); the one cwd-changing test
+    // skips there — see the note on it below.
+    if (isMainThread) process.chdir(ORIGINAL_CWD);
     vi.resetModules();
   });
 
@@ -54,30 +57,38 @@ describe('config/paths — DATABASE_PATH default resolution', () => {
     }
   });
 
-  it('default DB path is absolute, outside cwd, and not ./data/tasks.db (no legacy file)', async () => {
-    // Run from a clean temp cwd so the resolver's legacy probe finds nothing
-    // and falls through to the app-data default.
-    const clean = mkdtempSync(path.join(tmpdir(), 'wft-paths-clean-'));
-    try {
-      process.chdir(clean);
-      delete process.env.DATABASE_PATH;
-      vi.resetModules();
-      const { configSchema } = await import('../env.js');
-      const { defaultDbPath } = await import('../paths.js');
+  // This test chdir's into a clean temp dir to make the legacy-probe
+  // deterministic. process.chdir() throws inside worker_threads, so under
+  // Stryker's pool:'threads' mutation dry run (task #823) it skips; it runs
+  // fully under normal `npm test` (forks pool / main thread). The injectable-
+  // probe precedence suite below covers the same resolver without cwd.
+  it.skipIf(!isMainThread)(
+    'default DB path is absolute, outside cwd, and not ./data/tasks.db (no legacy file)',
+    async () => {
+      // Run from a clean temp cwd so the resolver's legacy probe finds nothing
+      // and falls through to the app-data default.
+      const clean = mkdtempSync(path.join(tmpdir(), 'wft-paths-clean-'));
+      try {
+        process.chdir(clean);
+        delete process.env.DATABASE_PATH;
+        vi.resetModules();
+        const { configSchema } = await import('../env.js');
+        const { defaultDbPath } = await import('../paths.js');
 
-      const env = { ...process.env };
-      delete env.DATABASE_PATH;
-      const parsed = configSchema.parse({ ...env });
+        const env = { ...process.env };
+        delete env.DATABASE_PATH;
+        const parsed = configSchema.parse({ ...env });
 
-      expect(parsed.DATABASE_PATH).toBe(defaultDbPath);
-      expect(path.isAbsolute(parsed.DATABASE_PATH)).toBe(true);
-      expect(parsed.DATABASE_PATH).not.toBe('./data/tasks.db');
-      expect(parsed.DATABASE_PATH.startsWith(clean)).toBe(false);
-    } finally {
-      process.chdir(ORIGINAL_CWD);
-      rmSync(clean, { recursive: true, force: true });
-    }
-  });
+        expect(parsed.DATABASE_PATH).toBe(defaultDbPath);
+        expect(path.isAbsolute(parsed.DATABASE_PATH)).toBe(true);
+        expect(parsed.DATABASE_PATH).not.toBe('./data/tasks.db');
+        expect(parsed.DATABASE_PATH.startsWith(clean)).toBe(false);
+      } finally {
+        process.chdir(ORIGINAL_CWD);
+        rmSync(clean, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('resolveDbPath — unified precedence (C1/H1)', () => {

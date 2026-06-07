@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { isMainThread } from 'node:worker_threads';
 import { Command } from 'commander';
 import { linkProjectCommand } from '../commands/link-project.js';
 import { resolveProjectFromCwd } from '../statusline/resolve-project.js';
@@ -73,7 +74,12 @@ function readMarkerPayload(cwd: string): string | undefined {
     .find((l) => l.length > 0 && !l.startsWith('#'));
 }
 
-describe('link-project command', () => {
+// The command under test reads process.cwd(), so every test chdir's into a
+// tmpdir (see runLinkProject). process.chdir() throws inside worker_threads,
+// and Stryker's vitest runner forces pool:'threads' for its mutation dry run
+// (task #823) — so this whole suite skips there and runs fully under normal
+// `npm test` (forks pool / main thread), preserving its value in CI.
+describe.skipIf(!isMainThread)('link-project command', () => {
   let cwd: string;
 
   beforeEach(() => {

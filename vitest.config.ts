@@ -5,6 +5,18 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     fileParallelism: false, // Run test files sequentially to avoid env var conflicts
+    // task #823: several integration tests do real work in setup/body — run
+    // migrations (umzug cold-imports ~30 migration modules), boot the API
+    // server, or spawn the CLI. The 5s test / 10s hook vitest defaults are too
+    // tight for them under load, and ESPECIALLY under Stryker's mutation dry
+    // run, which executes the FULL suite serially against INSTRUMENTED code with
+    // `reloadEnvironment: true` (module caches cleared per test, so every
+    // migration-running test re-pays the cold-import cost). A timed-out hook
+    // there fails the dry run and reds every shard. These ceilings only raise
+    // the upper bound — fast tests still finish fast — so they cut flakiness in
+    // normal CI without weakening any assertion.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     // Strip inherited OIDC_* env vars before each file so a developer shell that
     // exports a partial set (e.g. ~/.bashrc's lone OIDC_CLIENT_ID for `tasks
     // login`) can't trip loadConfig's all-or-nothing OIDC rule. See vitest.setup.ts.

@@ -3,33 +3,43 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { isMainThread } from 'node:worker_threads';
 import { resolveAssetPath, skillsDir, packageRoot } from '../resolve.js';
 
+// The cwd-independence tests must change the working directory, which throws
+// inside worker_threads. Stryker's vitest runner forces pool:'threads' for its
+// mutation dry run (task #823), so those tests skip there and run fully under
+// normal `npm test` (forks pool / main thread). src/assets/** is not in any
+// mutation shard, so skipping them under Stryker costs no mutation coverage.
 describe('assets/resolve', () => {
   const originalCwd = process.cwd();
 
   afterEach(() => {
-    // Always restore the original working directory.
-    process.chdir(originalCwd);
+    // Always restore the original working directory (no-op when chdir is
+    // unsupported, i.e. running inside a worker thread).
+    if (isMainThread) process.chdir(originalCwd);
   });
 
-  it('resolves an existing skills directory when run from a temp cwd outside the repo', () => {
-    let resolved: string;
-    try {
-      // chdir into an OS temp dir that lives outside the repo tree.
-      process.chdir(tmpdir());
-      resolved = skillsDir();
-    } finally {
-      process.chdir(originalCwd);
-    }
+  it.skipIf(!isMainThread)(
+    'resolves an existing skills directory when run from a temp cwd outside the repo',
+    () => {
+      let resolved: string;
+      try {
+        // chdir into an OS temp dir that lives outside the repo tree.
+        process.chdir(tmpdir());
+        resolved = skillsDir();
+      } finally {
+        process.chdir(originalCwd);
+      }
 
-    expect(isAbsolute(resolved)).toBe(true);
-    expect(existsSync(resolved)).toBe(true);
-    // Sanity: the repo ships skills/tasks/ under the package root today.
-    expect(existsSync(resolveAssetPath('skills', 'tasks'))).toBe(true);
-  });
+      expect(isAbsolute(resolved)).toBe(true);
+      expect(existsSync(resolved)).toBe(true);
+      // Sanity: the repo ships skills/tasks/ under the package root today.
+      expect(existsSync(resolveAssetPath('skills', 'tasks'))).toBe(true);
+    },
+  );
 
-  it('is cwd-independent: same result from temp dir and repo root', () => {
+  it.skipIf(!isMainThread)('is cwd-independent: same result from temp dir and repo root', () => {
     process.chdir(tmpdir());
     const fromTemp = skillsDir();
     process.chdir(originalCwd);

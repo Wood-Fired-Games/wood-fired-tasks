@@ -16,6 +16,18 @@ const shardGlobsRaw = process.env.STRYKER_MUTATE_GLOBS;
 const includes =
   shardGlobsRaw && shardGlobsRaw.trim() ? shardGlobsRaw.trim().split(/\s+/) : ['src/**/*.ts'];
 
+// Task #823: the two heaviest shards (api-routes ~1735 mutants ~7h, and
+// services+db+repos ~3999 mutants ~5.5h) blew the 300-min GH job ceiling, so
+// they are split further in mutation.yml. To split a directory WITHOUT letting
+// a newly-added file silently fall out of all shards, the "rest" shard of a
+// split uses STRYKER_MUTATE_EXCLUDE: it mutates the WHOLE directory glob minus
+// the negation patterns naming its siblings' files. Any new file in that
+// directory therefore lands in the rest shard automatically. Each entry MUST be
+// a Stryker negation glob, e.g. `!src/services/wsjf*.ts`.
+const shardExcludeRaw = process.env.STRYKER_MUTATE_EXCLUDE;
+const shardExcludes =
+  shardExcludeRaw && shardExcludeRaw.trim() ? shardExcludeRaw.trim().split(/\s+/) : [];
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
@@ -24,7 +36,7 @@ export default {
     related: false,
   },
   coverageAnalysis: 'perTest',
-  mutate: [...includes, ...exclusions],
+  mutate: [...includes, ...shardExcludes, ...exclusions],
   checkers: ['typescript'],
   tsconfigFile: 'tsconfig.json',
   typescriptChecker: {
