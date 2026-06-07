@@ -445,11 +445,13 @@ async function main() {
       remoteEntryEnv.WFT_API_KEY === undefined,
       'remote entry is URL-only (no WFT_API_KEY persisted in claude.json, #810)',
     );
-    const remoteTokenPath = path.join(
-      remoteEnv.XDG_CONFIG_HOME,
-      'wood-fired-tasks',
-      'remote-token',
-    );
+    // The PAT is cached to the platform config dir (env-paths: XDG on Linux,
+    // ~/Library on macOS, %APPDATA% on Windows — all rooted under the temp HOME
+    // here). Parse the exact path from setup's own "Cached remote PAT at <path>"
+    // log line rather than reconstructing it per-OS.
+    const cacheMatch = (remoteSetup.stdout ?? '').match(/Cached remote PAT at (.+?)\s*$/m);
+    assert(cacheMatch != null, 'setup --remote --token logged the cached PAT path');
+    const remoteTokenPath = cacheMatch[1].trim();
     assert(
       existsSync(remoteTokenPath) && readFileSync(remoteTokenPath, 'utf8').trim() === remotePat,
       `setup --remote --token cached the PAT to ${remoteTokenPath}`,

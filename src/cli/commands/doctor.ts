@@ -327,9 +327,10 @@ export async function checkCredentialsFile(
   if (POSIX) {
     let mode: number;
     try {
-      // existsSync passed above, but stat can still throw on a dangling symlink,
-      // an EACCES parent dir, ELOOP, etc. Treat any stat failure as a blocking
-      // FAIL with the underlying reason rather than crashing the whole doctor.
+      // existsSync passed above, but stat can still throw if the file is
+      // deleted between the check and the stat (TOCTOU), or the parent dir is
+      // EACCES/ELOOP. Treat any stat failure as a blocking FAIL with the
+      // underlying reason rather than crashing the whole doctor.
       mode = statSync(filePath).mode & 0o777;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

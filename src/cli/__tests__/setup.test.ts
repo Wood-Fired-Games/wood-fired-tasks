@@ -458,6 +458,15 @@ describe('tasks setup — modes (task #805)', () => {
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-cfg-'));
       try {
         let prompted = false;
+        // An explicit --remote + --token is the NON-INTERACTIVE direct path: it
+        // writes the URL-only remote entry + caches the PAT with NO OIDC probe
+        // and NO server round-trip. Inject the probe/persist seams as spies so
+        // we can prove the direct path BYPASSES them entirely (works offline).
+        const probeSpy = vi.fn(async () => ({ ok: true, oidc: 'disabled' as const }));
+        const persistSpy = vi.fn(async () => ({
+          ok: true as const,
+          identity: { id: 1, displayName: 'Test User', email: null },
+        }));
         const result = await runSetupInteractive({
           home,
           configDir,
@@ -465,16 +474,8 @@ describe('tasks setup — modes (task #805)', () => {
           mode: 'remote',
           remote: 'http://tasks.example.local:3000',
           token: FAKE_PAT,
-          // Inject the OIDC probe so this test stays deterministic (no network).
-          // `disabled` routes to the manual-PAT path, which — given --token —
-          // validates+persists the PAT then writes the URL-only remote MCP entry.
-          oidcProbe: async () => ({ ok: true, oidc: 'disabled' }),
-          // Inject the credentials-writer seam so the manual path never makes a
-          // real /api/v1/me fetch (#809). The branch hands it the --token PAT.
-          manualPatPersist: async () => ({
-            ok: true,
-            identity: { id: 1, displayName: 'Test User', email: null },
-          }),
+          oidcProbe: probeSpy,
+          manualPatPersist: persistSpy,
           isInteractive: () => {
             prompted = true;
             return true;
@@ -485,16 +486,21 @@ describe('tasks setup — modes (task #805)', () => {
           },
         });
 
-        // The mode menu was never consulted (mode was explicit). The manual-PAT
-        // path here uses the provided --token, so no secret prompt is needed.
+        // The mode menu was never consulted (mode was explicit), and the direct
+        // --token path never probed OIDC nor hit /api/v1/me.
         expect(prompted).toBe(false);
+        expect(probeSpy).not.toHaveBeenCalled();
+        expect(persistSpy).not.toHaveBeenCalled();
         expect(result.mode).toBe('remote');
         if (result.mode === 'remote') {
           expect(result.method).toBe('manual-pat');
           expect(result.ok).toBe(true);
           expect(result.setup?.remote).toBe(true);
           const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
-          expect(doc.mcpServers['wood-fired-tasks-remote']).toBeDefined();
+          const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
+          expect(remoteEntry).toBeDefined();
+          // #810: the PAT is cached separately, never persisted into claude.json.
+          expect(remoteEntry.env?.WFT_API_KEY).toBeUndefined();
         }
       } finally {
         fs.rmSync(configDir, { recursive: true, force: true });

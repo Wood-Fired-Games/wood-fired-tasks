@@ -584,9 +584,11 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
 
   const claudeJsonPath = path.join(home, '.claude.json');
 
-  // Task #738: when a remote URL is supplied, write the REMOTE bridge entry
-  // (carrying WFT_API_URL/WFT_API_KEY) under 'wood-fired-tasks-remote' instead
-  // of the local stdio entry. A token is required to author a usable entry.
+  // Task #738/#810: when a remote URL is supplied, write the URL-only REMOTE
+  // bridge entry (carrying WFT_API_URL only) under 'wood-fired-tasks-remote'
+  // instead of the local stdio entry, and cache the PAT separately. A token is
+  // required so a usable remote credential exists; it is NEVER persisted into
+  // claude.json (the bridge resolves it from the cache at runtime).
   const isRemote = typeof options.remote === 'string' && options.remote.length > 0;
   let patCache: CachePatResult | undefined;
   let serverName: string;
@@ -597,7 +599,8 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     const token = options.token;
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error(
-        '--remote requires --token <pat> so WFT_API_KEY can be set on the ' + 'remote MCP entry.',
+        '--remote requires --token <pat> so the remote PAT can be cached for ' +
+          'the bridge to use at runtime.',
       );
     }
     serverName = REMOTE_SERVER_NAME;
@@ -1095,14 +1098,18 @@ export async function runSetupInteractive(
   }
 
   // Remote: an explicit `--token` is the NON-INTERACTIVE direct path
-  // (automation / CI): write the remote bridge entry carrying WFT_API_URL +
-  // WFT_API_KEY and cache the PAT, with NO OIDC probe and NO server round-trip
-  // — so it succeeds even when the server is unreachable (the #738 contract).
-  // Only a TOKENLESS `--remote` runs the probe-driven device-flow / manual-PAT
-  // onboarding (runRemoteOnboarding), which is for the interactive operator who
-  // has no PAT yet.
+  // (automation / CI): write the URL-only remote bridge entry (WFT_API_URL only,
+  // per the #810 contract — the PAT is NEVER persisted into claude.json) and
+  // cache the PAT separately, with NO OIDC probe and NO server round-trip, so it
+  // succeeds even when the server is unreachable. Only a TOKENLESS `--remote`
+  // runs the probe-driven device-flow / manual-PAT onboarding
+  // (runRemoteOnboarding), which is for the interactive operator who has no PAT
+  // yet. Require `remote` too so a programmatic caller passing {mode:'remote',
+  // token} without a URL can't get a LOCAL install mislabeled as remote.
   if (mode === 'remote') {
-    if (typeof options.token === 'string' && options.token.length > 0) {
+    const hasToken = typeof options.token === 'string' && options.token.length > 0;
+    const hasRemote = typeof options.remote === 'string' && options.remote.length > 0;
+    if (hasToken && hasRemote) {
       const setup = runSetup(options);
       return { mode: 'remote', oidc: null, method: 'manual-pat', ok: true, setup };
     }
@@ -1284,7 +1291,7 @@ export const setupCommand = new Command('setup')
   )
   .option(
     '--token <pat>',
-    'Personal access token for `--remote`. When supplied, setup writes the remote MCP entry (WFT_API_URL + WFT_API_KEY) and caches the PAT directly — no OIDC probe, no server round-trip — so it works offline/non-interactively. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
+    'Personal access token for `--remote`. When supplied, setup writes the URL-only remote MCP entry (WFT_API_URL; the PAT is never stored in claude.json) and caches the PAT separately — no OIDC probe, no server round-trip — so it works offline/non-interactively. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
   )
   .action(
     (opts: {
