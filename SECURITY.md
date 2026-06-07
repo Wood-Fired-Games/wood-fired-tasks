@@ -76,7 +76,7 @@ We will:
 Issues we will prioritize include, but are not limited to:
 
 - Authentication bypass on any endpoint — reaching a `/api/v1` route
-  without a valid PAT, session, or `X-API-Key` credential, or bypassing
+  without a valid PAT or session credential, or bypassing
   the SSE auth path. (Note: there is no separate authorization layer to
   bypass — see "Authentication Is Not Authorization" below. Any valid
   credential is already full-access.)
@@ -102,7 +102,7 @@ Thank you for helping keep wood-fired-tasks and its users safe.
 
 ## Authentication Architecture
 
-As of v1.6, the REST API supports three authentication strategies, tried
+As of v2.0, the REST API supports two authentication strategies, tried
 in order by a Fastify chain plugin (`src/api/plugins/auth/index.ts`). The
 first strategy that produces a valid `request.user` wins; the request
 proceeds with that user's id stamped onto every write (`created_by_user_id`,
@@ -113,11 +113,10 @@ log (`user_id`, `token_id`, `auth_method`).
 |-------|----------|------------|-------------|
 | 1 | **PAT (Personal Access Token)** | A token row in `api_tokens` | `Authorization: Bearer wft_pat_<…>` |
 | 2 | **Session** | An OIDC-derived sealed-box session cookie | `Cookie: wft_session=<…>` |
-| 3 | **Legacy** | An entry in the `API_KEYS` env list | `X-API-Key: <…>` |
 
-The three strategies coexist intentionally — legacy keeps existing
-deployments running while operators migrate; PAT is the recommended
-machine credential; session is the recommended user credential.
+PAT is the recommended machine credential; session is the recommended
+user credential. (The legacy `X-API-Key` shared-secret strategy was
+**removed in v2.0** — see [Legacy `X-API-Key` Status — Removed in v2.0](#legacy-x-api-key-status--removed-in-v20) below.)
 
 ### PAT lifecycle
 
@@ -147,10 +146,10 @@ for hygiene:
   the PAT auth strategy: once `expires_at` is in the past the token fails
   with `reasonCode: expired`.
 
-The PAT prefix (`wft_pat_`) is part of the wire format: the remote MCP
-server and the CLI HTTP client switch their auth header based on the
-prefix, so the same env var (`WFT_API_KEY` for MCP, `API_KEY` for CLI)
-transparently accepts a PAT or a legacy key.
+The PAT prefix (`wft_pat_`) is part of the wire format. The remote MCP
+server and the CLI HTTP client read the PAT from their respective env var
+(`WFT_API_KEY` for MCP, `API_KEY` for CLI) and send it as
+`Authorization: Bearer <pat>`.
 
 ### Session lifecycle
 
@@ -192,9 +191,7 @@ Every authenticated request emits a structured pino log line carrying:
   guarantees they exist).
 - `token_id` — the `api_tokens.id` when strategy=PAT; NULL
   otherwise.
-- `auth_method` — one of `pat`, `session`, `legacy`.
-- `apiKeyLabel` — the human-friendly label for legacy keys, e.g.
-  `key_alice-laptop`. Absent for PAT / session.
+- `auth_method` — one of `pat`, `session`.
 
 Failures emit a counterpart `tag: auth.failure` line with a coarse
 `reasonCode` (`missing_credential`, `unknown_token`, `revoked_token`, …)
@@ -202,66 +199,32 @@ so secret values never appear in logs. The `auth-audit` helper enforces
 this — it is the **only** sanctioned way for the auth plugin to
 log into the request.
 
-## Legacy `X-API-Key` Status
+## Legacy `X-API-Key` Status — Removed in v2.0
 
-The legacy `X-API-Key` strategy is **deprecated but still fully
-supported as of v1.11.** It remains the third link in the auth chain
-(`src/api/plugins/auth/index.ts` walks PAT → session → legacy), so a
-request carrying a valid `API_KEYS` entry still authenticates and
-mutates data. PAT and OIDC session are the preferred credentials; legacy
-keys exist to keep older deployments running while operators migrate.
+The legacy `X-API-Key` shared-secret strategy was **removed entirely in
+v2.0.** The auth chain (`src/api/plugins/auth/index.ts`) now walks only
+PAT → session; a request carrying only an `X-API-Key` header gets **401**.
+There is no "auth-disabled" mode and no shared-secret fallback.
 
-There is **no scheduled removal version.** Earlier drafts of this
-document described a "v1.7 sunset" that would drop `API_KEYS` support —
-that never happened. v1.7 through v1.11 shipped with the legacy strategy
-intact, and no removal date is currently committed.
+`API_KEYS` is **no longer an auth method and is no longer a required env
+var** — it is not in the Zod config schema (`src/config/env.ts`). If set,
+it is read only as an optional seed for inert legacy `users` rows
+(`is_legacy=1`) so historical identities still render; those rows carry
+**no usable credential** and cannot authenticate a request.
 
-Legacy authentication is surfaced so operators can track migration
-progress, not blocked:
-
-- Every legacy-authed REST response carries two RFC 8594 headers:
-
-  ```
-  Deprecation: true
-  Sunset: 2026-12-31
-  ```
-
-  The `Sunset` value comes from the `LEGACY_AUTH_SUNSET_DATE` env var
-  (default `2026-12-31`, must be `YYYY-MM-DD`). It is an advisory
-  migration target, **not** an enforced cutoff — the strategy keeps
-  working past that date. PAT-authed and session-authed requests carry
-  **neither** header.
-
-- Every legacy-authed request also emits a `warn`-level log line:
-
-  ```json
-  {
-    "level": 40,
-    "event": "legacy_auth_used",
-    "userId": 1,
-    "apiKeyLabel": "key_alice-laptop",
-    "requestId": "…",
-    "requestUrl": "/api/v1/tasks",
-    "sunset": "2026-12-31"
-  }
-  ```
-
-  Aggregate `legacy_auth_used` over a rolling window to gauge migration
-  readiness — a steady decline to zero means clients have all moved to
-  PAT or session. New deployments should issue PATs (one per
-  machine/agent) or use OIDC sessions rather than `API_KEYS`.
-
-If a future release does remove the legacy strategy, the
+Every deployment must now authenticate with a per-user **PAT** (one per
+machine/agent, individually revocable) or an **OIDC session**. The
 `tasks db migrate-identities` tool (idempotent; backfills identity FKs
-for historical rows that carry only the legacy TEXT identity columns)
-is the supported pre-upgrade step. It is safe to run today.
+for historical rows that carry only the legacy TEXT identity columns) is
+the supported step to fold pre-identity data forward; it is safe to run
+at any time.
 
 ## CORS
 
 The REST API **does not register a CORS plugin** — there is no
 `@fastify/cors` (or equivalent) registration anywhere in `src/api/`, and
 `cors` is not a project dependency. This is intentional: the API is built
-for server-to-server and agent traffic (PAT / `X-API-Key` in headers),
+for server-to-server and agent traffic (PAT in the `Authorization: Bearer` header),
 plus a same-origin browser surface (`/auth/*`, `/me`, `/login`) that does
 not need cross-origin access. With no `Access-Control-Allow-Origin`
 header emitted, browsers block cross-origin reads of API responses by
@@ -283,7 +246,7 @@ default.
 Authentication identifies the caller; it does **not** scope what the
 caller may do. Wood Fired Tasks has **no RBAC, no ACL, and no tenant /
 project isolation.** Every authenticated identity — whether it arrived
-via PAT, OIDC session, or a legacy `X-API-Key` — is effectively an
+via PAT or OIDC session — is effectively an
 admin: it can read, write, and delete **every** task, project, comment,
 dependency, and Slack subscription across **every** project in the
 database. The `--scopes` minted onto a PAT are advisory metadata only and

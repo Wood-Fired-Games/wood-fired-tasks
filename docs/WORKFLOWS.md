@@ -19,7 +19,7 @@ test suite:
 
 ```
 npm ci
-cp .env.example .env   # then set API_KEYS to a real value
+cp .env.example .env   # configure DATABASE_PATH etc.; mint a PAT for API/CLI auth
 npm run migrate
 npm run build
 npm test
@@ -65,7 +65,8 @@ follow-up PR before re-adding the gate.
 
 - Start: `npm run dev` (tsx, no build needed).
 - Default endpoint: `http://127.0.0.1:3000` (controlled by `HOST` + `PORT`).
-- Requires `API_KEYS` in `.env`. Requests must send a matching `X-API-Key`.
+- Authenticated `/api/v1` requests must send a Bearer PAT
+  (`Authorization: Bearer wft_pat_…`). Mint one with `tasks db mint-token`.
 - For a production-like local run after `npm run build`: `npm run start`.
 
 ### Local MCP server (stdio)
@@ -79,8 +80,8 @@ follow-up PR before re-adding the gate.
 
 - Start: `npm run build && npm run mcp:remote`.
 - Required env: `WFT_API_URL` (e.g. `https://your-server.example/`) and
-  `WFT_API_KEY` (sent as `X-API-Key`). The server fails fast if either is
-  missing.
+  `WFT_API_KEY` (a PAT, `wft_pat_…`, sent as `Authorization: Bearer <pat>`).
+  The server fails fast if either is missing.
 - This points at a running API. Confirm which API instance you are targeting
   before running — see the network/secrets flags below.
 
@@ -88,7 +89,8 @@ follow-up PR before re-adding the gate.
 
 - In-tree: `npm run cli -- <subcommand>` (uses `tsx`, no build needed).
 - After global install: `tasks <subcommand>` (uses the published `bin`).
-- Required env: `API_KEY` (singular). Optional: `API_BASE_URL` (defaults to
+- Required env: `API_KEY` (a PAT, `wft_pat_…`, sent as `Authorization: Bearer`;
+  unless you have run `tasks login`). Optional: `API_BASE_URL` (defaults to
   `http://localhost:3000`).
 - Full reference: [docs/CLI.md](CLI.md).
 
@@ -121,9 +123,10 @@ follow-up PR before re-adding the gate.
 
 ## Environment variables
 
-Names must be exact: `API_KEYS` (plural) is the server's allowlist;
-`API_KEY` (singular) is what the CLI sends. Slack tokens must be set as a
-group (bot + app + signing) or not at all.
+Names must be exact: `API_KEY` (CLI) and `WFT_API_KEY` (remote MCP) each hold a
+PAT (`wft_pat_…`) sent as `Authorization: Bearer <pat>`. `API_KEYS` (plural) is
+**not** an auth requirement in v2.0 — see its row below. Slack tokens must be set
+as a group (bot + app + signing) or not at all.
 
 ### Local development (`.env`)
 
@@ -133,10 +136,10 @@ group (bot + app + signing) or not at all.
 | `PORT=3000`                | optional    | API listen port.                                               |
 | `HOST=127.0.0.1`           | optional    | Loopback. Only set to `0.0.0.0` for deliberate LAN exposure.   |
 | `LOG_LEVEL=info`           | optional    | `trace`/`debug`/`info`/`warn`/`error`.                         |
-| `API_KEYS`                 | REQUIRED    | Comma-separated. Each grants admin. `key:label` form allowed.  |
-| `DATABASE_PATH=./data/tasks.db` | optional | `DB_PATH` is a deprecated alias — prefer `DATABASE_PATH`.    |
+| `API_KEYS`                 | optional (legacy) | **Not an auth method, not required, not in the Zod schema.** If set, only seeds inert legacy `users` rows (`is_legacy=1`). |
+| `DATABASE_PATH`            | optional    | Defaults to the OS app-data DB; if unset and a legacy `./data/tasks.db` exists (and the app-data DB does not), it is auto-adopted with a one-time warning. `DB_PATH` is a deprecated alias — prefer `DATABASE_PATH`. |
 | `API_BASE_URL=http://localhost:3000` | optional | CLI target.                                              |
-| `API_KEY`                  | REQUIRED for CLI | Singular. Must match an entry in the server's `API_KEYS`. |
+| `API_KEY`                  | REQUIRED for CLI | A PAT (`wft_pat_…`) sent as `Authorization: Bearer` (unless you ran `tasks login`). |
 | `SLACK_BOT_TOKEN`          | group       | Set with the rest of the Slack triplet or not at all.          |
 | `SLACK_APP_TOKEN`          | group       | Set with the rest of the Slack triplet or not at all.          |
 | `SLACK_SIGNING_SECRET`     | group       | Set with the rest of the Slack triplet or not at all.          |
@@ -147,21 +150,21 @@ group (bot + app + signing) or not at all.
 | -------------------------- | --------- | ------------------------------------------------------------------ |
 | `NODE_ENV=production`      | REQUIRED  | Enables production hardening.                                      |
 | `HOST=0.0.0.0`             | typical   | Behind firewall / reverse proxy.                                   |
-| `API_KEYS`                 | REQUIRED  | Generate with `openssl rand -hex 32`. Min 32 chars enforced.       |
+| `API_KEYS`                 | optional (legacy) | **Not an auth method, not required, not in the Zod schema.** If set, only seeds inert legacy `users` rows. Issue PATs (`tasks db mint-token`) for real auth. |
 | `DATABASE_PATH=/opt/wood-fired-tasks/data/tasks.db` | typical | Matches the installer default.                  |
 | `WFT_INSTALL_DIR`          | optional  | Installer root. Default `/opt/wood-fired-tasks`.                    |
 | `WFT_SERVICE_USER`         | optional  | Installer service user. See `deploy/README.md`.                    |
 | `WFT_API_URL`              | REQUIRED (remote MCP) | URL of the running API.                                |
-| `WFT_API_KEY`              | REQUIRED (remote MCP) | Sent as `X-API-Key`.                                   |
+| `WFT_API_KEY`              | REQUIRED (remote MCP) | A PAT (`wft_pat_…`) sent as `Authorization: Bearer <pat>`. |
 | `WFT_STRICT_EVIDENCE`      | optional  | `true` opts into the anti-fabrication evidence gate (default off). Recommended for `/tasks:loop[-dag]` hosts. See [docs/RELIABILITY.md](RELIABILITY.md). |
 
 ## Network / secrets / running-API / writable-DB / approval flags
 
 - `npm test` — writes temp SQLite files in `data/` or test-scoped paths.
   Harmless locally; do not run against a production `DATABASE_PATH`.
-- `npm run dev` / `npm run start` — opens a port (default 3000), reads
-  `API_KEYS`, serves real data from `DATABASE_PATH`. Do not expose without
-  intent.
+- `npm run dev` / `npm run start` — opens a port (default 3000), authenticates
+  requests with Bearer PATs, serves real data from `DATABASE_PATH`. Do not
+  expose without intent.
 - `npm run mcp:dev` — reads `DATABASE_PATH`; no network egress.
 - `npm run mcp:remote` — network egress to `WFT_API_URL`. Requires explicit
   user approval before running against any non-local URL.

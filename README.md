@@ -16,7 +16,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
 - MCP server with 27 tools for native agent integration (local SQLite or remote HTTP modes) + cross-platform installers (Linux/macOS and Windows)
-- REST API with 47 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 40 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 34 commands
+- REST API with 52 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 45 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 42 commands
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
@@ -153,28 +153,27 @@ a single task unblock, the MCP server also exposes a `wait_for_unblock` tool
 
 ## Security Model
 
-**Read this before deploying.** Wood Fired Tasks is built for trusted multi-agent coordination. As of **v1.6** the REST API authenticates every `/api/v1` request through a three-strategy chain (`src/api/plugins/auth/index.ts`), tried in order — the first strategy that produces a valid user wins, and that user's id is stamped onto every write (`created_by_user_id`, `assignee_user_id`, …) and the per-request audit log (`user_id`, `token_id`, `auth_method`):
+**Read this before deploying.** Wood Fired Tasks is built for trusted multi-agent coordination. As of **v2.0** the REST API authenticates every `/api/v1` request through a two-strategy chain (`src/api/plugins/auth/index.ts`), tried in order — the first strategy that produces a valid user wins, and that user's id is stamped onto every write (`created_by_user_id`, `assignee_user_id`, …) and the per-request audit log (`user_id`, `token_id`, `auth_method`):
 
 | Order | Strategy | Credential | Wire format |
 |-------|----------|------------|-------------|
 | 1 | **PAT** — recommended for machines/agents | row in `api_tokens` (SHA-256 hash stored) | `Authorization: Bearer wft_pat_<…>` |
 | 2 | **Session** — recommended for humans | OIDC sign-in → sealed-box cookie | `Cookie: wft_session=<…>` |
-| 3 | **Legacy** — deprecated but still supported (see below) | entry in `API_KEYS` env list | `X-API-Key: <…>` |
 
-PATs are minted from a logged-in `/me` web session or offline via `tasks db mint-token`; the raw value is shown **once** at mint time (only a hash is stored) and revoked via the `/me` UI, `DELETE /me/tokens/:id`, or `tasks logout`. Sessions come from OIDC (`/auth/login` → provider → `/auth/callback`, protected by PKCE + state), are sealed-box-encrypted with `SESSION_COOKIE_SECRET`, and expire after 8h. The CLI and remote MCP client auto-select the header from the `wft_pat_` prefix, so the same env var accepts a PAT or a legacy key. Full detail: [SECURITY.md → Authentication Architecture](SECURITY.md#authentication-architecture).
+PATs are minted from a logged-in `/me` web session or offline via `tasks db mint-token`; the raw value is shown **once** at mint time (only a hash is stored) and revoked via the `/me` UI, `DELETE /me/tokens/:id`, or `tasks logout`. Sessions come from OIDC (`/auth/login` → provider → `/auth/callback`, protected by PKCE + state), are sealed-box-encrypted with `SESSION_COOKIE_SECRET`, and expire after 8h. The CLI and remote MCP client send the PAT as `Authorization: Bearer`. Full detail: [SECURITY.md → Authentication Architecture](SECURITY.md#authentication-architecture).
 
 ### ⚠️ Authentication is NOT authorization — every identity is admin
 
 **Read this before exposing the service to anything but trusted callers.**
 
 - **Authentication ≠ authorization.** The auth chain only *identifies* the caller; it does **not** scope what they may do.
-- **Every authenticated identity is effectively an admin.** Any valid credential — PAT, OIDC session, or legacy `X-API-Key` — can read, write, and delete **every** task, project, comment, and dependency across **every** project in the database.
+- **Every authenticated identity is effectively an admin.** Any valid credential — PAT or OIDC session — can read, write, and delete **every** task, project, comment, and dependency across **every** project in the database.
 - **There is NO RBAC, NO ACL, and NO per-project / per-tenant isolation.** These are not implemented; scoped/role-based permissions are tracked only as future work.
 - **Do NOT expose this service on a public network, and do NOT run it multi-tenant, without an external authorization layer** (e.g. an authenticating reverse proxy that enforces its own per-tenant access control in front of the API). Treat any issued credential as full admin access to all data.
 
-### Legacy `X-API-Key` is still supported (PAT / OIDC preferred)
+### Legacy `X-API-Key` was removed in v2.0
 
-The legacy `X-API-Key` strategy **still works today** — it is strategy #3 in the live auth chain (`src/api/plugins/auth/index.ts`), and `API_KEYS` is currently a **required** env var (see Configuration), so every deployment has at least one working key. It is marked **deprecated as of v1.6**: PAT and OIDC sessions are the preferred credentials going forward, but legacy keys have **not** been removed. Legacy-authed responses carry advisory RFC 8594 `Deprecation: true` + `Sunset: <LEGACY_AUTH_SUNSET_DATE>` headers (operator-controlled, default `2026-12-31`) and emit a `legacy_auth_used` warn log so operators can track migration progress. New deployments should issue **PATs** — one per machine/agent, so you can revoke an individual token without disturbing others — or use OIDC sessions. The `API_KEYS` env accepts a comma-separated list of `key` or `key:label` entries (the label surfaces in audit logs as `apiKeyLabel`; the raw key is never logged). See [SECURITY.md → Legacy Auth Sunset Timeline](SECURITY.md#legacy-auth-sunset-timeline) and `tasks db migrate-identities` for the planned migration path.
+The legacy `X-API-Key` shared-secret strategy was **removed entirely in v2.0** (`src/api/plugins/auth/index.ts` no longer accepts it). A request carrying only `X-API-Key` now gets **401**. `API_KEYS` is no longer an auth method and is **not** a required env var — it is not in the Zod env schema. If set, it only (optionally) seeds inert legacy `users` rows (`is_legacy=1`) for display/back-reference; those rows hold no usable credential. Every deployment must now issue **PATs** — one per machine/agent, so you can revoke an individual token without disturbing others — or use OIDC sessions. PATs are minted from a `/me` web session or offline via `tasks db mint-token`. See [SECURITY.md → Authentication Architecture](SECURITY.md#authentication-architecture) and `tasks db migrate-identities` for the migration path off legacy keys.
 
 ### Defense in depth
 
@@ -210,7 +209,7 @@ flowchart TB
   end
 
   subgraph guards[Auth and validation]
-    Auth[auth plugin<br/>X-API-Key]
+    Auth[auth plugin<br/>Bearer PAT / session]
     RL[Rate limiter<br/>RATE_LIMIT_*]
     Zod[Zod schemas<br/>request/response]
   end
@@ -237,7 +236,7 @@ flowchart TB
   end
 
   HumanCLI --> CLI
-  HTTPAgent -->|HTTP + X-API-Key| REST
+  HTTPAgent -->|HTTP + Bearer PAT| REST
   ClaudeMCP -->|stdio JSON-RPC| MCP
   SlackUser -->|Socket Mode| Slack
 
@@ -281,9 +280,9 @@ flowchart TB
 
 | Interface | Access Method | Transport | Auth |
 |-----------|--------------|-----------|------|
-| REST API | HTTP endpoints | Port 3000 (configurable) | PAT (`Authorization: Bearer`), session cookie, or legacy `X-API-Key` |
-| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | `API_KEY` env var (accepts a PAT or legacy key) |
-| MCP Server | stdio JSON-RPC (local) or HTTP (remote variant) | MCP client integration | None for stdio (local access); Bearer PAT or `X-API-Key` for remote |
+| REST API | HTTP endpoints | Port 3000 (configurable) | PAT (`Authorization: Bearer`) or OIDC session cookie |
+| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | `API_KEY` env var (holds a PAT, sent as `Authorization: Bearer`) |
+| MCP Server | stdio JSON-RPC (local) or HTTP (remote variant) | MCP client integration | None for stdio (local access); Bearer PAT for remote |
 | Slack subprocess | Slack Socket Mode | WebSocket to Slack | Slack signing secret + bot token |
 
 All entry points share the same TypeScript services
@@ -341,7 +340,7 @@ The `priority` enum is **augmented, not replaced**, by WSJF: once a project has 
 
 ## API Summary
 
-All `/api/v1` endpoints require authentication — a PAT (`Authorization: Bearer wft_pat_…`), an OIDC session cookie, or a legacy `X-API-Key` header (deprecated). `GET /health` is public; the OIDC sign-in flow lives under `/auth/*` (outside `/api/v1`).
+All `/api/v1` endpoints require authentication — a PAT (`Authorization: Bearer wft_pat_…`) or an OIDC session cookie. `GET /health` is public; the OIDC sign-in flow lives under `/auth/*` (outside `/api/v1`).
 
 Base URL: `http://localhost:3000`
 
@@ -417,14 +416,14 @@ The OIDC/session/PAT surface backing the auth model lives partly outside the tas
 | GET | /auth/callback | OIDC redirect callback → sets the session cookie |
 | POST | /auth/logout | Revoke the active PAT and clear the session |
 | GET | /auth/error | OIDC/session error landing page (session-expiry, 403 destinations) |
-| GET | /api/v1/me | Current authenticated user's profile (accepts session, PAT, or legacy auth) |
+| GET | /api/v1/me | Current authenticated user's profile (accepts PAT or session) |
 | GET | /api/v1/me/tokens | List the caller's personal access tokens |
 | DELETE | /api/v1/me/tokens/active | Revoke the caller's currently-active token |
 | DELETE | /api/v1/me/tokens/:id | Revoke a personal access token by ID |
 
 A device-authorization flow under `/auth/device*` (`GET /auth/device`, `POST /auth/device/code`, `POST /auth/device/token`, `POST /auth/device/verify`) supports headless PAT minting. When OIDC is **not** configured, the `/auth/*` and `/auth/device/*` routes are replaced by disabled-stub handlers (HTTP 501), so they exist in both modes but only one set is live per instance. When `SESSION_COOKIE_SECRET` is set, top-level HTML web routes (`GET /login`, `GET /me`, `GET /me/tokens`, `POST /me/tokens/:id/revoke`) are also served for the browser sign-in UI.
 
-This brings the full registered surface to **47 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **40** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the 8 live OIDC `/auth/*` routes.
+This brings the full registered surface to **52 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **45** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
 
 For detailed API documentation including request/response schemas, see [docs/API.md](docs/API.md).
 
@@ -627,15 +626,15 @@ Wood Fired Tasks streams real-time task and project change notifications via Ser
 
 ```bash
 # Subscribe to all events
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_<your-pat>" \
   http://localhost:3000/api/v1/events
 
 # Filter by project
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_<your-pat>" \
   "http://localhost:3000/api/v1/events?project_id=1"
 
 # Filter by event type
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_<your-pat>" \
   "http://localhost:3000/api/v1/events?event_types=task.created,task.claimed"
 ```
 
@@ -644,7 +643,7 @@ curl -N -H "X-API-Key: your-key" \
 Include `Last-Event-ID` header to resume from where you left off:
 
 ```bash
-curl -N -H "X-API-Key: your-key" \
+curl -N -H "Authorization: Bearer wft_pat_<your-pat>" \
   -H "Last-Event-ID: 42" \
   http://localhost:3000/api/v1/events
 ```
@@ -658,13 +657,13 @@ Multiple agents can race to claim the same task. Exactly one wins; the rest rece
 ```bash
 # Claim a task
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_<your-pat>" \
   -H "Content-Type: application/json" \
   -d '{"assignee": "agent-1"}'
 
 # With idempotency key (safe to retry)
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "X-API-Key: your-key" \
+  -H "Authorization: Bearer wft_pat_<your-pat>" \
   -H "X-Idempotency-Key: unique-key-123" \
   -H "Content-Type: application/json" \
   -d '{"assignee": "agent-1"}'
@@ -710,10 +709,10 @@ The four WSJF MCP tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsj
 |----------|-------------|---------|
 | PORT | HTTP server port | 3000 |
 | HOST | HTTP server host. Defaults to loopback only; set to `0.0.0.0` (or a specific LAN IP) to expose on the network. | 127.0.0.1 |
-| API_KEYS | Comma-separated legacy API keys (`key` or `key:label`). **Required** — the Zod config schema rejects an empty/unset value (`src/config/env.ts`), so the server exits with code 78 (`EX_CONFIG`) at startup when it is missing. There is no "auth-disabled" mode. | (required — no default) |
+| API_KEYS | Optional, legacy-only. **Not an auth method and not required** — it is not in the Zod config schema. If set (comma-separated `key` or `key:label`), it only seeds inert legacy `users` rows (`is_legacy=1`) for display/back-reference; those rows carry no usable credential. Auth is PAT (Bearer) or OIDC session. | (optional — no default) |
 | LOG_LEVEL | Logging level (debug, info, warn, error) | info |
 | NODE_ENV | Environment (development, production) | (none) |
-| DATABASE_PATH | Path to SQLite database file (canonical; MCP server also accepts legacy `DB_PATH`) | ./data/tasks.db |
+| DATABASE_PATH | Path to SQLite database file (canonical; MCP server also accepts legacy `DB_PATH`). Resolution precedence: explicit `DATABASE_PATH` > legacy `./data/tasks.db` auto-adopt (used with a one-time warning when `DATABASE_PATH` is unset, a legacy `./data/tasks.db` exists, and the app-data DB does not) > OS app-data default. | OS app-data dir — `~/.local/share/wood-fired-tasks/tasks.db` (Linux), `~/Library/Application Support/wood-fired-tasks/tasks.db` (macOS), `%APPDATA%\wood-fired-tasks\tasks.db` (Windows) |
 | API_BASE_URL | Base URL for CLI API calls | http://localhost:3000 |
 | API_KEY | API key for CLI authentication | (none) |
 | SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET | Optional Slack integration (all three required together) — see [docs/SLACK.md](docs/SLACK.md) | (none) |
@@ -733,7 +732,7 @@ variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#envi
 # Development mode with hot reload
 npm run dev
 
-# Run tests (2640 tests across 204 files)
+# Run tests (~2600+ tests)
 npm test
 
 # Watch mode for tests
@@ -771,7 +770,7 @@ SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug.
 
 ### Testing
 
-2640 tests across 204 test files covering:
+~2600+ tests covering:
 - Service layer unit tests
 - API route integration tests (all endpoints)
 - MCP tool tests (all tools)
