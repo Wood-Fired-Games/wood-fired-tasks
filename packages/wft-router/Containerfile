@@ -18,13 +18,24 @@
 # Native module note (better-sqlite3)
 # ---------------------------------------------------------------------------
 # better-sqlite3 compiles a C++ addon at install time and a node:*-slim base
-# lacks the build toolchain. We use a two-stage build: the BUILDER stage runs
-# on the full node:22 image (ships python3 + make + g++), installs/compiles all
-# deps and builds dist/, then the RUNTIME stage starts from node:22-slim and
-# `npm install`s the npm-packed router tarball — which pulls ONLY the 4 prod
-# deps (better-sqlite3, pino, yaml, zod) and rebuilds the native addon against
-# the SAME node 22 / glibc ABI as the runtime base. This keeps the runtime
-# image minimal (no dev deps, no build toolchain) while guaranteeing
+# lacks the build toolchain (python3/make/g++). So the native compile MUST NOT
+# happen in the runtime stage. We use a two-stage build:
+#
+#   BUILDER (full node:22 — ships python3 + make + g++):
+#     1. npm ci the root dev tree and `tsc -p` the router into dist/.
+#     2. `npm pack` the router into a tarball.
+#     3. Install that tarball with `--omit=dev` into a throwaway prefix, which
+#        pulls ONLY the 4 prod deps (better-sqlite3, pino, yaml, zod) and
+#        COMPILES better-sqlite3's C++ addon here, where the toolchain exists.
+#
+#   RUNTIME (minimal node:22-slim, no toolchain):
+#     `COPY --from=builder` the already-installed prod node_modules + the
+#     package tree. No npm install, no native compile happens at runtime.
+#
+# node:22 and node:22-slim are both Debian 12 (bookworm) → identical glibc and
+# the SAME node 22 C++ ABI, so the .node compiled in the builder loads cleanly
+# in the slim runtime on both linux/amd64 and linux/arm64. This keeps the
+# runtime image minimal (no dev deps, no build toolchain) while guaranteeing
 # require('better-sqlite3') works at runtime.
 #
 # ---------------------------------------------------------------------------
@@ -98,10 +109,14 @@ COPY packages/wft-router/package.json packages/wft-router/tsconfig.json ./packag
 COPY packages/wft-router/src ./packages/wft-router/src
 
 # Build the router bin -> packages/wft-router/dist, then pack it into a tarball
-# so the runtime stage can install a clean prod-only dependency tree.
+# and install a clean PROD-ONLY dependency tree from that tarball INTO /opt/app.
+# The install compiles better-sqlite3's native addon here (the builder has the
+# toolchain); the runtime stage will COPY the result, never compiling itself.
 RUN npx tsc -p packages/wft-router \
   && cd packages/wft-router \
   && npm pack --pack-destination /build
+RUN npm install --omit=dev --no-save --prefix /opt/app /build/wood-fired-games-wft-router-*.tgz \
+  && npm cache clean --force
 
 # ===========================================================================
 # Stage 2 — runtime (minimal node:22-slim; prod deps only, non-root)
@@ -121,13 +136,12 @@ RUN groupadd --system --gid 10001 wft \
 
 WORKDIR /app
 
-# Install ONLY the router's production deps from the packed tarball. npm
-# rebuilds better-sqlite3's native addon against this node:22-slim runtime, so
-# the prebuilt/compiled binary matches the runtime node ABI + glibc.
-COPY --from=builder /build/wood-fired-games-wft-router-*.tgz /tmp/wft-router.tgz
-RUN npm install --omit=dev --no-save --prefix /app /tmp/wft-router.tgz \
-  && rm /tmp/wft-router.tgz \
-  && npm cache clean --force
+# Copy the prod-only dependency tree that the BUILDER already installed AND
+# compiled (better-sqlite3's .node included). No npm install / native build
+# happens here — node:22-slim has no toolchain by design. node:22 and
+# node:22-slim share the bookworm glibc + node 22 ABI, so the compiled addon
+# loads as-is on both amd64 and arm64.
+COPY --from=builder /opt/app/node_modules /app/node_modules
 
 # The installed package lands at /app/node_modules/@wood-fired-games/wft-router.
 # Its bin (dist/bin/wft-router.js) is symlinked at /app/node_modules/.bin/wft-router.

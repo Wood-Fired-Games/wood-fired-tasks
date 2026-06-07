@@ -5,13 +5,22 @@
 #
 # It mirrors the README "Quick Start" exactly:
 #   migrate (honors DATABASE_PATH) → build → start the API →
+#   mint a PAT (`tasks db mint-token`) →
 #   `npm run cli -- --json project-create` → `npm run cli -- create` →
 #   `npm run cli -- list`.
 #
-# Safety: uses a throwaway `mktemp -d` DATABASE_PATH and a non-secret local key
-# (API_KEYS=smoke-key / API_KEY=smoke-key). It NEVER touches the real ./data
-# directory or any production database, and it binds a non-default PORT so it
-# does not clash with a server you may already be running on :3000.
+# Auth model (v2.0, #799/#801/#802): the legacy X-API-Key / API_KEYS auth path
+# was REMOVED server-side — requests bearing only X-API-Key now get 401. The
+# identity-seeder no longer seeds users from API_KEYS; on every boot it
+# unconditionally seeds two service-account users (`slack-bot`, `mcp-bot`). This
+# smoke therefore authenticates the CLI the supported way: it mints a Personal
+# Access Token against the always-seeded `mcp-bot` service account and passes it
+# via `--token "$PAT"` (highest auth precedence: --token > credentials > env).
+# It does NOT set or depend on API_KEYS for authentication.
+#
+# Safety: uses a throwaway `mktemp -d` DATABASE_PATH. It NEVER touches the real
+# ./data directory or any production database, and it binds a non-default PORT
+# so it does not clash with a server you may already be running on :3000.
 #
 # This is a MANUAL pre-publish smoke (not wired into CI) — a maintainer runs it
 # from the repo root before cutting a release to prove the documented flow still
@@ -28,25 +37,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
-# --- throwaway env: temp DB, non-secret key, non-default port ----------------
+# --- throwaway env: temp DB, non-default port --------------------------------
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wft-smoke.XXXXXX")"
 SMOKE_PORT="${SMOKE_PORT:-31731}"          # non-default to avoid clashing with :3000
 SERVER_PID=""
+PAT=""                                      # minted after the server is healthy
 
 export DATABASE_PATH="${SMOKE_DIR}/tasks.db"
-export API_KEYS="smoke-key"                # server: comma-separated admin keys
-export API_KEY="smoke-key"                 # client/CLI: legacy key (same value)
 export PORT="${SMOKE_PORT}"
 export HOST="127.0.0.1"
 export API_BASE_URL="http://localhost:${SMOKE_PORT}"
 # Point the CLI's credentials file at the (empty) temp dir so a real cached PAT
-# in ~/.config/wood-fired-tasks/credentials can't win the auth-precedence chain
-# (--token > credentials file > env.API_KEY). With no file there, the CLI falls
-# through to our env.API_KEY, exactly like a brand-new clone with no prior login.
+# in ~/.config/wood-fired-tasks/credentials can't win/leak into the auth chain
+# (--token > credentials file > env). We pass the minted PAT via --token, which
+# wins precedence outright; the empty dir keeps the smoke fully isolated.
 export WFT_CREDENTIALS_PATH="${SMOKE_DIR}/credentials"
-# Leave NODE_ENV unset (development): production mode rejects short API_KEYS
-# (<32 chars), but the documented Quick Start uses a short local key. This smoke
-# follows that same dev flow, so a non-secret "smoke-key" is accepted.
+# Leave NODE_ENV unset (development). We deliberately do NOT set API_KEYS: the
+# server boots fine without it in dev, and v2.0 removed the legacy X-API-Key /
+# API_KEYS auth path entirely (step 3c below proves X-API-Key now gets 401). The
+# CLI authenticates with a minted PAT (step 3b), not a static key.
 
 SERVER_LOG="${SMOKE_DIR}/server.log"
 
@@ -107,9 +116,31 @@ done
 [[ -n "${up}" ]] || { cat "${SERVER_LOG}" >&2 || true; fail "server did not become healthy"; }
 echo "   server healthy."
 
+# --- 3b. mint a PAT against the always-seeded `mcp-bot` service account ------
+# v2.0's identity-seeder seeds `mcp-bot` (is_service_account=1) into the temp DB
+# on boot. `tasks db mint-token` opens DATABASE_PATH directly (no HTTP), resolves
+# --user against display_name, and prints the token once on stdout: "Token: ...".
+echo "-- mint PAT (db mint-token --user mcp-bot) --"
+MINT_OUT="$(npm run --silent cli -- db mint-token --user mcp-bot --name "fresh-clone-smoke-pat")" \
+  || { echo "${MINT_OUT}" >&2; fail "mint-token failed"; }
+PAT="$(printf '%s\n' "${MINT_OUT}" | grep -E '^Token: ' | head -n 1 | sed 's/^Token: //' | tr -d '[:space:]')"
+[[ -n "${PAT}" ]] || fail "could not parse 'Token:' line from mint-token output: ${MINT_OUT}"
+echo "   minted PAT (len=${#PAT})"
+
+# --- 3c. NEGATIVE: prove v2.0 rejects legacy X-API-Key auth with 401 --------
+# An authenticated endpoint hit with ONLY a (legacy) X-API-Key header must now
+# return 401 — the legacy key path was removed server-side. This guards against
+# a regression that silently re-enables static-key auth.
+echo "-- assert X-API-Key rejected with 401 --"
+XKEY_STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "X-API-Key: smoke-key" "${API_BASE_URL}/api/v1/tasks")"
+[[ "${XKEY_STATUS}" == "401" ]] \
+  || fail "expected 401 for X-API-Key-only request, got HTTP ${XKEY_STATUS}"
+echo "   X-API-Key correctly rejected (HTTP 401)."
+
 # --- 4. create a project via the DOCUMENTED CLI, capture its id -------------
 echo "-- project-create --"
-PROJ_JSON="$(npm run --silent cli -- --json project-create --name "Smoke Project")" \
+PROJ_JSON="$(npm run --silent cli -- --json --token "${PAT}" project-create --name "Smoke Project")" \
   || fail "project-create failed"
 PROJECT_ID="$(printf '%s' "${PROJ_JSON}" | jq -r '.metadata.id')"
 [[ "${PROJECT_ID}" =~ ^[0-9]+$ ]] || fail "could not parse project id from: ${PROJ_JSON}"
@@ -117,7 +148,7 @@ echo "   created project id=${PROJECT_ID}"
 
 # --- 5. create a task in that project ---------------------------------------
 echo "-- create task --"
-TASK_JSON="$(npm run --silent cli -- --json create \
+TASK_JSON="$(npm run --silent cli -- --json --token "${PAT}" create \
   --title "Smoke task" --project "${PROJECT_ID}" --created-by "smoke")" \
   || fail "create task failed"
 TASK_ID="$(printf '%s' "${TASK_JSON}" | jq -r '.metadata.id')"
@@ -126,7 +157,7 @@ echo "   created task id=${TASK_ID}"
 
 # --- 6. list tasks in the project, assert our task is present ---------------
 echo "-- list --"
-LIST_JSON="$(npm run --silent cli -- --json list --project "${PROJECT_ID}")" \
+LIST_JSON="$(npm run --silent cli -- --json --token "${PAT}" list --project "${PROJECT_ID}")" \
   || fail "list failed"
 FOUND="$(printf '%s' "${LIST_JSON}" | jq -r --argjson id "${TASK_ID}" \
   '[.data[] | select(.id == $id)] | length')"
