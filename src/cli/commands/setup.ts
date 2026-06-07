@@ -1094,9 +1094,18 @@ export async function runSetupInteractive(
     return { mode: 'service' };
   }
 
-  // Remote: probe the server's OIDC state and branch to the right onboarding
-  // method BEFORE choosing how to authenticate (#807).
+  // Remote: an explicit `--token` is the NON-INTERACTIVE direct path
+  // (automation / CI): write the remote bridge entry carrying WFT_API_URL +
+  // WFT_API_KEY and cache the PAT, with NO OIDC probe and NO server round-trip
+  // — so it succeeds even when the server is unreachable (the #738 contract).
+  // Only a TOKENLESS `--remote` runs the probe-driven device-flow / manual-PAT
+  // onboarding (runRemoteOnboarding), which is for the interactive operator who
+  // has no PAT yet.
   if (mode === 'remote') {
+    if (typeof options.token === 'string' && options.token.length > 0) {
+      const setup = runSetup(options);
+      return { mode: 'remote', oidc: null, method: 'manual-pat', ok: true, setup };
+    }
     return runRemoteOnboarding(options);
   }
 
@@ -1275,7 +1284,7 @@ export const setupCommand = new Command('setup')
   )
   .option(
     '--token <pat>',
-    'Personal access token for the manual-PAT --remote path (OIDC disabled/degraded). Validated against the server and stored in the CLI credentials file. On a non-TTY the WFT_API_KEY env var is also honored as a fallback.',
+    'Personal access token for `--remote`. When supplied, setup writes the remote MCP entry (WFT_API_URL + WFT_API_KEY) and caches the PAT directly — no OIDC probe, no server round-trip — so it works offline/non-interactively. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
   )
   .action(
     (opts: {

@@ -438,9 +438,21 @@ async function main() {
       remoteEntryEnv.WFT_API_URL === remoteUrl,
       `remote entry carries WFT_API_URL=${remoteUrl}`,
     );
+    // #810 security contract: the PAT is NEVER persisted into claude.json. The
+    // entry is URL-only; the bridge resolves the bearer token at runtime from
+    // the cached remote-token file written by `cachePat`.
     assert(
-      remoteEntryEnv.WFT_API_KEY === remotePat,
-      'remote entry carries WFT_API_KEY (the supplied PAT)',
+      remoteEntryEnv.WFT_API_KEY === undefined,
+      'remote entry is URL-only (no WFT_API_KEY persisted in claude.json, #810)',
+    );
+    const remoteTokenPath = path.join(
+      remoteEnv.XDG_CONFIG_HOME,
+      'wood-fired-tasks',
+      'remote-token',
+    );
+    assert(
+      existsSync(remoteTokenPath) && readFileSync(remoteTokenPath, 'utf8').trim() === remotePat,
+      `setup --remote --token cached the PAT to ${remoteTokenPath}`,
     );
   } else {
     console.log('-- setup --remote: SKIPPED (set SMOKE_REMOTE=1 to enable) --');
