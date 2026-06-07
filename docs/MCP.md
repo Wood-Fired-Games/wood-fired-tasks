@@ -101,8 +101,8 @@ is available in every Codex session on the machine, not scoped to one repo.
 
 The recommended Codex wiring points at the same thin **launcher script** the
 Claude Code remote setup uses (`~/.local/bin/wft-mcp`, see
-[Keeping the API key out of client config](#keeping-the-api-key-out-of-client-config-recommended)).
-That script resolves the API key at spawn time, so Codex's stored config never
+[Keeping the PAT out of client config](#keeping-the-pat-out-of-client-config-recommended)).
+That script resolves the PAT at spawn time, so Codex's stored config never
 holds a secret:
 
 ```bash
@@ -204,19 +204,15 @@ The MCP server has two transports, and they authenticate differently:
 
 ### Local MCP — boot-time identity resolution
 
-`WFT_API_KEY` accepts two value shapes; the local MCP server resolves
-them at boot:
+`WFT_API_KEY` holds a Personal Access Token (PAT); the local MCP server
+resolves the actor at boot:
 
 1. **PAT** — values starting with `wft_pat_` are hashed (SHA-256) and
    looked up in `api_tokens`. The matched row's
    `user_id` becomes the actor for every subsequent write tool call.
    Revoked / unknown PATs fall back to `mcp-bot` (see below).
-2. **Legacy key** — anything else is matched against the `API_KEYS`
-   env list on the server side. A matching entry resolves to the
-   corresponding `users` row (the same one the legacy REST strategy
-   would resolve).
-3. **Unset / unresolved** — if `WFT_API_KEY` is missing, empty, or
-   matches no PAT/legacy entry, the actor falls back to the seeded
+2. **Unset / unresolved** — if `WFT_API_KEY` is missing, empty, or
+   matches no PAT, the actor falls back to the seeded
    `mcp-bot` service-account row. Writes are attributed to that bot.
 
 The fallback is opportunistic — the MCP server stays usable even
@@ -229,19 +225,18 @@ real PAT.
 to that row if you'd rather have an explicit credential than rely on
 the fallback.
 
-### Remote MCP — header switching on prefix
+### Remote MCP — outbound header
 
-The remote bridge's REST client looks at the `WFT_API_KEY` value at
-startup and chooses the wire header by prefix:
+The remote bridge's REST client sends the `WFT_API_KEY` value (a PAT) as
+the Bearer credential:
 
-| `WFT_API_KEY` prefix | Outbound header |
-|----------------------|-----------------|
+| `WFT_API_KEY` value | Outbound header |
+|---------------------|-----------------|
 | `wft_pat_…` | `Authorization: Bearer wft_pat_…` |
-| anything else | `X-API-Key: <value>` |
 
-The REST API's auth chain (PAT → session → legacy) decodes each
-appropriately. The remote bridge itself does not parse or validate the
-PAT — it forwards the credential and lets the server side enforce.
+The REST API's auth chain (PAT → session) decodes it. The remote bridge
+itself does not parse or validate the PAT — it forwards the credential and
+lets the server side enforce.
 
 ### Recommended flow
 
@@ -280,7 +275,7 @@ The remote server is configured entirely via environment variables and fails fas
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `WFT_API_URL` | yes | Base URL of the deployed bugs API, e.g. `http://your-server.local:3000` or `https://bugs.example.com`. The remote server appends `/api/v1` itself — supply the host root. No default; setting nothing fails startup so a misconfigured client never silently hits `localhost`. |
-| `WFT_API_KEY` | yes | API key the remote server uses for every outbound REST call. Must match a key on the API's `API_KEYS` list. |
+| `WFT_API_KEY` | yes | PAT the remote server uses for every outbound REST call. Must be a valid token in the API's `api_tokens` table (mint with `tasks login` or `tasks db mint-token`). Sent as `Authorization: Bearer <pat>`. |
 
 ### Claude Code config snippet
 
@@ -301,33 +296,32 @@ Add this alongside (or instead of) the local `wood-fired-tasks` entry in `~/.cla
 }
 ```
 
-> Prefer the [launcher-wrapper below](#keeping-the-api-key-out-of-client-config-recommended) over an inline `WFT_API_KEY` — it keeps the secret out of `~/.claude.json`.
+> Prefer the [launcher-wrapper below](#keeping-the-pat-out-of-client-config-recommended) over an inline `WFT_API_KEY` — it keeps the secret out of `~/.claude.json`.
 
 For development you can also run it via `tsx`:
 
 ```bash
-WFT_API_URL=http://localhost:3000 WFT_API_KEY=dev-key npm run mcp:remote
+WFT_API_URL=http://localhost:3000 WFT_API_KEY=wft_pat_dev-token npm run mcp:remote
 ```
 
-### Keeping the API key out of client config (recommended)
+### Keeping the PAT out of client config (recommended)
 
 Pasting `WFT_API_KEY` straight into `~/.claude.json` works, but it leaves a
 long-lived secret in a file your agent reads and writes constantly. Prefer a
-thin launcher script as the MCP `command` that injects the key at spawn time
-from the server's own environment file, so the client config holds **no
-secret**:
+thin launcher script as the MCP `command` that injects the PAT at spawn time
+from a `0600` secret file, so the client config holds **no secret**:
 
 ```bash
 #!/usr/bin/env bash
-# ~/.local/bin/wft-mcp — reads the key from the server's .env at spawn time.
+# ~/.local/bin/wft-mcp — reads the PAT from a 0600 secret file at spawn time.
 set -euo pipefail
-WFT_API_KEY="$(grep -m1 '^API_KEYS=' /opt/wood-fired-tasks/.env | cut -d= -f2- | cut -d, -f1)"
+WFT_API_KEY="$(cat /opt/wood-fired-tasks/.wft-pat)"   # mode 0600, holds a wft_pat_… value
 export WFT_API_KEY
 export WFT_API_URL="${WFT_API_URL:-http://localhost:3000}"
 exec node /opt/wood-fired-tasks/dist/mcp/remote/index.js
 ```
 
-The client entry then carries only the command — no `env` block, no key:
+The client entry then carries only the command — no `env` block, no token:
 
 ```json
 {
@@ -337,9 +331,8 @@ The client entry then carries only the command — no `env` block, no key:
 }
 ```
 
-Mint a dedicated PAT (`tasks login` / `db mint-token`) instead of reusing a
-master `API_KEYS` value when you want per-operator attribution and easy
-revocation.
+Mint a dedicated PAT (`tasks login` / `tasks db mint-token`) per operator/machine
+for attribution and easy revocation.
 
 ### Local vs remote at a glance
 
@@ -933,7 +926,7 @@ The MCP server exposes 1 resource.
 This resource does **not** stream events directly — MCP resources are request/response, not long-lived connections. Instead it returns Markdown documentation telling agents how to open an SSE connection to the REST API:
 
 - The SSE endpoint URL (`GET <apiUrl>/events`)
-- Required authentication (`X-API-Key` header — the resource never embeds the key, only the placeholder, so prompt-cache surfaces stay clean)
+- Required authentication (`Authorization: Bearer <pat>` header — the resource never embeds the token, only the placeholder, so prompt-cache surfaces stay clean)
 - Available query parameters for filtering (`project_id`, `event_types`)
 - The canonical event type list (see below)
 - Reconnection protocol (`Last-Event-ID` header)
@@ -958,7 +951,7 @@ The resource description and the server's emitted events MUST stay in sync. The 
 
 If you add or rename a domain event, update `ALLOWED_EVENT_TYPES` in `src/events/types.ts`, the table in `src/mcp/resources/events.ts`, and this table together. The `events-resource` MCP test (`src/mcp/__tests__/events-resource.test.ts`) is the canonical regression guard.
 
-**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. After reading this resource, agents open the SSE connection over HTTP (or via `curl -N`) using their `WFT_API_KEY` / local `API_KEYS` value.
+**Usage:** When Claude Code needs to discover how to subscribe to real-time task notifications. After reading this resource, agents open the SSE connection over HTTP (or via `curl -N`) using their `WFT_API_KEY` PAT as `Authorization: Bearer <pat>`.
 
 ## Skill Files
 

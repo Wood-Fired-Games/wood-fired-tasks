@@ -28,11 +28,11 @@ fails, regenerate this doc. Deep references live in
 
 ## REST routes (Fastify)
 
-Authenticated `/api/v1/**` routes require `X-API-Key` (validated by
-`src/api/plugins/auth.ts`). `/health` is public; `/health/detailed` is gated by
-the same auth plugin. The `/auth/*` and `/web/*` surfaces are the OAuth /
-device-flow / browser-login layer and carry their own session/CSRF handling
-rather than `X-API-Key`. Source: the files under `src/api/routes/` (auth,
+Authenticated `/api/v1/**` routes require a Bearer PAT (`Authorization: Bearer
+<pat>`, validated by `src/api/plugins/auth.ts`). `/health` is public;
+`/health/detailed` is gated by the same auth plugin. The `/auth/*` and `/web/*`
+surfaces are the OAuth / device-flow / browser-login layer and carry their own
+session/CSRF handling rather than a Bearer PAT. Source: the files under `src/api/routes/` (auth,
 web, me, tasks, projects, comments, dependencies, events, health). Registration
 prefixes are in `src/api/server.ts`.
 
@@ -296,12 +296,12 @@ filters. MCP list tools wrap the same envelope under a domain key
 
 | Surface | Header / mechanism | Required? |
 |---|---|---|
-| REST `/api/v1/**` | `X-API-Key` (against `API_KEYS` env, constant-time compare in `src/api/plugins/auth.ts`) | Yes |
+| REST `/api/v1/**` | `Authorization: Bearer <pat>` (PAT hashed + looked up in `api_tokens`, `src/api/plugins/auth.ts`) | Yes |
 | REST `/health` | none | No |
-| REST `/health/detailed` | `X-API-Key` | Yes |
+| REST `/health/detailed` | `Authorization: Bearer <pat>` | Yes |
 | Local MCP (`src/mcp/server.ts`) | stdio, trusts parent process | No |
-| Remote MCP (`src/mcp/remote/`) | `X-API-Key` forwarded to the REST server's `API_KEYS` | Yes |
-| CLI (`tasks`) | `X-API-Key` sourced from `API_KEY` env (set by the installer) | Yes |
+| Remote MCP (`src/mcp/remote/`) | `Authorization: Bearer <pat>` forwarded from `WFT_API_KEY` | Yes |
+| CLI (`tasks`) | `Authorization: Bearer <pat>` from a cached PAT (`tasks login`) or `API_KEY` env / `--token` | Yes |
 | Slack | Slack signing secret on inbound; bot token outbound | Yes |
 
 Global rate limit (`@fastify/rate-limit`) applies to every REST route except

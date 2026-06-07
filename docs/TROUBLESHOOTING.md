@@ -75,7 +75,7 @@ loss.**
   `EnvironmentFile` (`/opt/wood-fired-tasks/.env` by default). `systemctl cat
   wood-fired-tasks` shows the effective config.
 - Ask the running service what it opened: the authenticated `GET /health/detailed`
-  (send your `X-API-Key`) reports the resolved DB path plus a fingerprint (project
+  (send your Bearer PAT) reports the resolved DB path plus a fingerprint (project
   count, max task id, latest activity), and the MCP `check_health` tool surfaces the
   same. Compare that fingerprint to what you expect *before* concluding anything is
   lost. (The public `GET /health` stays intentionally minimal — task #185.)

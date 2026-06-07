@@ -44,21 +44,20 @@ The CLI requires these environment variables to connect to the API server:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | API_BASE_URL | Base URL of the API server | http://localhost:3000 |
-| API_KEY | Legacy key the CLI sends as the `X-API-Key` header (one of the server's `API_KEYS`) | (none - required) |
+| API_KEY | PAT the CLI sends as the `Authorization: Bearer <pat>` header (a `wft_pat_…` value) | (none - required unless logged in) |
 
-[IMPORTANT] `API_KEY` (client) and the server's `API_KEYS` (plural) are
-**separate** variables. The CLI sends `API_KEY` as the legacy `X-API-Key`
-header, so set it to one of the comma-separated entries in the server's
-`API_KEYS`. That legacy path is **deprecated as of v1.6** but still supported.
-PAT/Bearer auth does **not** come from `API_KEY` — for interactive use prefer
+[IMPORTANT] Authentication uses a Personal Access Token (PAT) sent as
+`Authorization: Bearer <pat>`. For interactive use prefer
 [`tasks login`](#tasks-login) (OIDC device flow; caches a PAT to the credentials
-file, which takes precedence over `API_KEY`), or pass `--token wft_pat_…`.
+file, which takes precedence over `API_KEY`). For scripting/CI, set `API_KEY` to
+a `wft_pat_…` value or pass `--token wft_pat_…`. Mint a PAT via the web UI (`/me`),
+`tasks login`, or `tasks db mint-token` (headless bootstrap).
 
 [TIP] Add these to your `.bashrc` or `.zshrc`:
 
 ```bash
 export API_BASE_URL=http://localhost:3000   # default; the CLI target
-export API_KEY=your-api-key-here            # legacy key OR a PAT
+export API_KEY=wft_pat_your-token-here      # a PAT
 ```
 
 ## Task Commands
