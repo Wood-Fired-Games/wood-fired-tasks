@@ -1197,6 +1197,201 @@ tasks stats --json
 }
 ```
 
+## Status-Line Commands
+
+These commands wire Wood Fired Tasks into an agent harness's status line — the
+one-line segment many coding agents render below the prompt. The capability is
+harness-agnostic; [Claude Code](https://docs.claude.com/en/docs/claude-code) is
+used here as the worked example because it pipes status-line JSON on stdin and
+reads a `statusLine` entry from `settings.json`, but any harness that can run a
+shell command and (optionally) feed it JSON on stdin can consume `tasks
+statusline`.
+
+### tasks statusline
+
+Render the one-line status-line segment for the project linked to the current
+directory. Designed to be invoked by a harness on every prompt/turn, so it is
+built to be cheap and to never fail the caller.
+
+The command reads the harness's status-line JSON from **stdin** (to EOF) and
+uses the reported working directory (`cwd`, or `workspace.current_dir` as a
+fallback) to resolve the linked project. Empty or non-JSON stdin is tolerated —
+the command falls back to `process.cwd()`. The rendered line has up to two
+independently-omittable segments:
+
+- **Counts segment** — the linked project's name plus open and done/closed
+  task counts, e.g. `myproj 3 open · 7 done`.
+- **Update-hint segment** — a short nudge to run the updater, e.g.
+  `⬆ /tasks:update`, appended only when an update is available and the
+  update-check feature is enabled (see [Update checks](#update-checks-and-the-tasksupdate-hint)).
+
+**Behavior contract:**
+
+- **Always exits `0`.** Empty/garbage stdin, an unreachable API, a missing or
+  malformed cache, or a busted config never crash the command or change the
+  exit code. The two segments degrade **independently** — a failure in one
+  never suppresses the other.
+- **Unlinked → blank.** When the directory is not linked to a project (and no
+  update hint applies), the command prints nothing and exits `0`.
+- **Fresh cache → no API call.** Counts are served from a short-TTL local cache
+  (30s). When the cache is fresh the command makes **no** REST round-trip; it
+  only refreshes over the API when the cache is stale or missing.
+- **Degraded → stale or blank.** If a refresh is needed but the API is
+  unreachable, the command falls back to the stale cached counts when present,
+  otherwise omits the counts segment. Still exits `0`.
+- **Update hint is a pure cache read.** The hint segment never makes a network
+  call; it reads the update-available cache written by the background
+  update-check writer.
+
+**Example:**
+
+```bash
+echo '{"cwd":"/path/to/repo"}' | tasks statusline
+```
+
+**Output:**
+
+```
+myproj 3 open · 7 done  ⬆ /tasks:update
+```
+
+**Options:**
+
+- `--no-color` — disable ANSI color in the rendered segment. Color is also
+  disabled when the `NO_COLOR` environment variable is set.
+- The visible width is bounded by the `COLUMNS` environment variable (or the
+  harness-reported terminal width). When the line would overflow, the counts
+  segment is truncated first; the update hint is preserved.
+
+#### Wiring it into Claude Code's `settings.json`
+
+Claude Code reads a `statusLine` entry from `~/.claude/settings.json` (or a
+project-local `.claude/settings.json`). Point it at `tasks statusline`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "tasks statusline"
+  }
+}
+```
+
+Claude Code pipes its status-line JSON to the command on stdin, so no extra
+flags are required. If `tasks` is not on the harness's `PATH`, use an absolute
+path (e.g. `npx wood-fired-tasks statusline` or the absolute path to the
+installed binary).
+
+#### Fallback shell script (harnesses without native status-line JSON)
+
+For harnesses that can run a status-line command but do **not** feed JSON on
+stdin, wrap `tasks statusline` in a small script that synthesizes the minimal
+JSON from the current directory. Save this as `wft-statusline.sh`, make it
+executable (`chmod +x wft-statusline.sh`), and point your harness at it:
+
+```bash
+#!/usr/bin/env bash
+# Fallback status-line wrapper for harnesses that don't pipe status-line JSON.
+# Synthesizes the minimal { "cwd": ... } payload from the current directory and
+# forwards it to `tasks statusline` on stdin. Always exits 0 so the host
+# status line never breaks.
+set -euo pipefail
+
+cwd="${PWD}"
+printf '{"cwd":"%s"}' "$cwd" | tasks statusline || true
+```
+
+The wrapper always exits `0`; combined with `tasks statusline`'s own
+never-fail contract, a missing project, an offline server, or a stale cache
+will never break the host status line.
+
+### tasks link-project
+
+Link the current directory to a Wood Fired Tasks project so `tasks statusline`
+(and the resolver in general) can find it. Writes a repo-local `.wft/project`
+marker file. The write is atomic (temp file + rename) and idempotent —
+re-running simply overwrites the marker.
+
+The marker stores either a numeric **project id** or a **project name**:
+
+- `tasks link-project <project>` — link to an explicit id or name. A bare
+  positive integer is stored as a numeric id; anything else is stored verbatim
+  as a name.
+- `tasks link-project` (no argument) — auto-resolve the project from the working
+  directory (same resolution `tasks statusline` uses). If a project can be
+  resolved, its id (or repo name) is persisted; if it cannot be resolved, the
+  command errors and asks you to pass an explicit id/name.
+
+**Examples:**
+
+```bash
+# Link by explicit project id
+tasks link-project 29
+
+# Link by name
+tasks link-project my-repo
+
+# Auto-resolve from the current directory
+tasks link-project
+```
+
+**Output:**
+
+```
+Linked this directory to project 29 (/path/to/repo/.wft/project)
+```
+
+**JSON output:**
+
+With the global `--json` flag, emits a single envelope on stdout:
+
+```bash
+tasks link-project 29 --json
+```
+
+```json
+{ "event": "linked", "marker": "/path/to/repo/.wft/project", "identifier": "29", "projectId": 29 }
+```
+
+**Exit codes:**
+
+Returns `0` on success. Returns `1` when no `<project>` argument is given and
+the project cannot be auto-resolved from the working directory (in `--json` mode
+this is reported as an `{ "event": "error", ... }` envelope).
+
+### Setup integration
+
+`tasks setup` offers — **opt-in** and **non-clobbering** — to wire
+`tasks statusline` into your harness's status line for you. The offer covers
+**both** rendered segments:
+
+- the **counts** segment (linked-project open / done counts), and
+- the **update-hint** segment (`⬆ /tasks:update`).
+
+Because it is non-clobbering, `setup` will not overwrite an existing
+`statusLine` entry in your `settings.json`; if one is already configured it
+leaves it untouched and reports what it found.
+
+### Update checks and the `/tasks:update` hint
+
+The update-hint segment shown by `tasks statusline` is driven by a background
+update-check feature. When a newer release is detected, the status line appends
+`⬆ /tasks:update` to nudge you to run the updater (`/tasks:update`).
+
+The feature is **on by default** and can be disabled two ways (the env var
+wins, and an explicitly falsy env var forces the feature back **on** even when
+the config flag disables it):
+
+- **Persistent opt-out** — set `update_check = false` in the CLI config file
+  (TOML), the durable per-user flag written by `tasks setup`. The config file
+  lives at `$WFT_CONFIG_PATH`, else `$XDG_CONFIG_HOME/wood-fired-tasks/config`,
+  else `~/.config/wood-fired-tasks/config`.
+- **Ad-hoc / CI override** — set `WFT_NO_UPDATE_CHECK=1` (or `true`/`yes`/`on`)
+  to disable the feature for a single invocation without touching the config
+  file. Setting it to a falsy value (`0`/`false`/empty) forces the feature on.
+
+When the feature is disabled, `tasks statusline` never appends the update hint.
+
 ## Database Administration Commands
 
 The `tasks db` parent command groups DB-admin subcommands that operate directly on the local SQLite database (read from `DATABASE_PATH`, default `./data/tasks.db`). They do not contact the API server. The flat `tasks db-check` command (documented above) coexists with this namespace by design.
