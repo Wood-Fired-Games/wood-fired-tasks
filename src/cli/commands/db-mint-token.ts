@@ -31,6 +31,7 @@
 import { Command } from 'commander';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { UserRepository } from '../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../repositories/api-token.repository.js';
 import { generateToken } from '../../services/pat-hash.js';
@@ -118,7 +119,7 @@ export const dbMintTokenCommand = new Command('mint-token')
   .option('--scopes <list>', 'Comma-separated scope list (advisory in v1.6; not enforced)')
   .option('--expires-at <iso>', 'ISO-8601 expiry timestamp (e.g. 2027-05-22T00:00:00Z)')
   .action(async (opts: { user: string; name: string; scopes?: string; expiresAt?: string }) => {
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
     const db = initDatabase(dbPath);
     try {
       // Idempotent on a current DB; surfaces a clear error against a

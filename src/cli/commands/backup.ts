@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { resolve, dirname } from 'path';
 import { existsSync, mkdirSync, statSync } from 'fs';
 import { colorError, colorSuccess } from '../output/formatters.js';
@@ -24,7 +25,7 @@ export const backupCommand = new Command('backup')
     `./tasks-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`,
   )
   .action(async (options) => {
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
     const destPath = resolve(options.output);
 
     // Verify source database exists before attempting backup

@@ -1,12 +1,33 @@
 import type Database from '../driver.js';
 
+/**
+ * Child tables that hold an `ON DELETE CASCADE` foreign key to `tasks(id)` at
+ * the point migration 005 runs (created by migrations 001–003):
+ *   - task_tags (001), task_dependencies (002), task_comments (003).
+ * They are snapshotted before the tasks-table rebuild and restored after — see
+ * the data-loss note in up().
+ */
+const TASK_CHILD_TABLES = ['task_tags', 'task_dependencies', 'task_comments'] as const;
+
 export async function up(db: Database.Database): Promise<void> {
   db.transaction(() => {
     // SQLite does not support ALTER TABLE ... MODIFY COLUMN, so we must rebuild
     // the table to change the CHECK constraint on the status column.
 
-    // Disable foreign key enforcement during the table rebuild
+    // DATA-LOSS FIX (v2.0 release blocker M2): `PRAGMA foreign_keys = OFF` is a
+    // NO-OP inside a transaction (SQLite ignores it until the outer transaction
+    // commits), and this migration's `up()` runs inside `db.transaction()`.
+    // With FK enforcement therefore still ON, the `DROP TABLE tasks` below
+    // CASCADE-deletes every child row that references tasks(id) ON DELETE
+    // CASCADE — task_comments, task_dependencies, task_tags — silently
+    // destroying comments/dependencies/tags on a 1.x → 2.0 upgrade. The pragma
+    // call is retained for documentation but cannot be relied on; instead we
+    // snapshot those child rows here and restore any that get cascade-deleted
+    // after the rebuild. The new tasks table preserves task ids verbatim
+    // (INSERT copies id), so the restored child rows' FKs remain valid.
     db.pragma('foreign_keys = OFF');
+
+    const savedChildren = snapshotChildTables(db);
 
     // Create the new tasks table with backlogged added to the CHECK constraint
     db.exec(`
@@ -87,15 +108,75 @@ export async function up(db: Database.Database): Promise<void> {
       END
     `);
 
+    // Restore any child rows that were cascade-deleted by the `DROP TABLE tasks`
+    // above (see the FK-pragma data-loss note in up()).
+    restoreChildTables(db, savedChildren);
+
     // Re-enable foreign key enforcement
     db.pragma('foreign_keys = ON');
   })();
 }
 
+/** Snapshot of every tasks-child table's rows, keyed by table name. */
+type ChildSnapshot = Record<string, Array<Record<string, unknown>>>;
+
+/**
+ * Capture all rows from each tasks-child table (task_tags / task_dependencies /
+ * task_comments) before a tasks-table rebuild. Tables absent at this migration
+ * point are skipped defensively.
+ */
+function snapshotChildTables(db: Database.Database): ChildSnapshot {
+  const snapshot: ChildSnapshot = {};
+  for (const table of TASK_CHILD_TABLES) {
+    const exists = db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(table);
+    if (!exists) continue;
+    snapshot[table] = db.prepare(`SELECT * FROM "${table}"`).all() as Array<
+      Record<string, unknown>
+    >;
+  }
+  return snapshot;
+}
+
+/**
+ * Re-insert child rows captured by `snapshotChildTables`, skipping any that
+ * already survived the rebuild (idempotent). Every child table here has an
+ * `id INTEGER PRIMARY KEY AUTOINCREMENT` column captured by `SELECT *`, so we
+ * re-insert with the original `id` preserved and skip ids that still exist.
+ * Column names are read from each saved row object so this stays correct
+ * regardless of the table's exact column set. Identifiers are quoted; values
+ * bound. None of these child tables reference each other, so one pass suffices.
+ */
+function restoreChildTables(db: Database.Database, snapshot: ChildSnapshot): void {
+  for (const table of TASK_CHILD_TABLES) {
+    const saved = snapshot[table];
+    if (!saved || saved.length === 0) continue;
+
+    const surviving = new Set(
+      (db.prepare(`SELECT id FROM "${table}"`).all() as Array<{ id: number }>).map((r) => r.id),
+    );
+
+    const columns = Object.keys(saved[0]!);
+    const colList = columns.map((c) => `"${c}"`).join(', ');
+    const placeholders = columns.map(() => '?').join(', ');
+    const insert = db.prepare(`INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`);
+
+    for (const row of saved) {
+      if (surviving.has(row['id'] as number)) continue;
+      insert.run(columns.map((c) => row[c]));
+    }
+  }
+}
+
 export async function down(db: Database.Database): Promise<void> {
   db.transaction(() => {
-    // Disable foreign key enforcement during the table rebuild
+    // Disable foreign key enforcement during the table rebuild. NOTE: this is a
+    // no-op inside a transaction (see up()'s data-loss note) — task_comments is
+    // snapshotted and restored around the rebuild to survive the FK cascade.
     db.pragma('foreign_keys = OFF');
+
+    const savedChildren = snapshotChildTables(db);
 
     // Update any backlogged tasks to open before removing the status
     db.exec(`UPDATE tasks SET status = 'open' WHERE status = 'backlogged'`);
@@ -176,6 +257,9 @@ export async function down(db: Database.Database): Promise<void> {
         VALUES('delete', old.id, old.title, old.description);
       END
     `);
+
+    // Restore any child rows cascade-deleted by the rebuild (see up()).
+    restoreChildTables(db, savedChildren);
 
     // Re-enable foreign key enforcement
     db.pragma('foreign_keys = ON');

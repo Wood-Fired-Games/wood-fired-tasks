@@ -84,10 +84,10 @@ describe('MCP Events Resource', () => {
       });
 
       const text = (result.contents[0] as { text: string }).text;
-      // Authentication section must use a placeholder, never the configured key.
-      expect(text).toContain('X-API-Key: <your-api-key>');
-      // Guide the reader to the env var they actually configured.
-      expect(text).toContain('WFT_API_KEY');
+      // v2.0: auth guidance must use a Bearer PAT, never the removed X-API-Key
+      // header, and must use a placeholder, never a configured key value.
+      expect(text).toContain('Authorization: Bearer <pat>');
+      expect(text).not.toContain('X-API-Key');
     });
 
     it('does NOT leak the configured API key into resource content (task #196)', async () => {
@@ -172,8 +172,8 @@ describe('MCP Events Resource', () => {
 
       const text = (result.contents[0] as { text: string }).text;
       expect(text).toContain('curl -N');
-      // Curl example uses the same placeholder as the auth section.
-      expect(text).toContain('X-API-Key: <your-api-key>');
+      // Curl example uses the same Bearer-PAT placeholder as the auth section.
+      expect(text).toContain('Authorization: Bearer <pat>');
     });
 
     it('documents event format with SSE structure', async () => {

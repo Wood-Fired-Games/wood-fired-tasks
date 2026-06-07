@@ -20,9 +20,11 @@ async function main() {
 
   // Task #703: thread the validated DATABASE_PATH into createServer so the
   // production server opens the operator-configured database (e.g.
-  // DATABASE_PATH=/var/lib/wft/tasks.db) instead of silently falling back to
-  // createApp's hard-coded './data/tasks.db' default. Without this, setting
-  // DATABASE_PATH only affected the CLI/MCP entry points, never the API server.
+  // DATABASE_PATH=/var/lib/wft/tasks.db) instead of falling back to createApp's
+  // resolver default. config.DATABASE_PATH already reflects the unified
+  // resolver (env > legacy-adopt > app-data) because env.ts derives the
+  // default from it; threading it here keeps the API server in lockstep with
+  // the CLI/MCP entry points so every surface opens the same file.
   const { server, app } = await createServer({ dbPath: config.DATABASE_PATH });
 
   const port = config.PORT;

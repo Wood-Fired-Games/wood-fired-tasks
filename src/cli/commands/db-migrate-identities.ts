@@ -37,6 +37,7 @@ import { readFileSync } from 'fs';
 import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { UserRepository } from '../../repositories/user.repository.js';
 import '../config/env.js';
 
@@ -332,7 +333,7 @@ export const dbMigrateIdentitiesCommand = new Command('migrate-identities')
       userFallback?: string;
       limit?: number;
     }) => {
-      const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+      const dbPath = resolveDbPath();
       const db = initDatabase(dbPath);
       try {
         // WR-05: dry-run is supposed to be side-effect-free. Previously

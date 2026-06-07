@@ -97,8 +97,13 @@ describe('backup command', () => {
 
     await program.parseAsync(['node', 'test', 'backup']);
 
+    // C1/H1: backup now resolves its source via the unified resolver. With
+    // DATABASE_PATH unset and the (mocked) fs reporting every path as existing,
+    // the resolver returns the OS app-data default (never the cwd-relative
+    // ./data/tasks.db — the already-migrated app-data DB wins).
+    const { defaultDbPath } = await import('../../config/paths.js');
     const Database = (await import('../../db/driver.js')).default;
-    expect(Database).toHaveBeenCalledWith('./data/tasks.db', { readonly: true });
+    expect(Database).toHaveBeenCalledWith(defaultDbPath, { readonly: true });
     expect(mockDbBackup).toHaveBeenCalled();
     expect(process.exitCode).toBe(0);
     expect(consoleLogSpy).toHaveBeenCalledWith(
@@ -124,13 +129,14 @@ describe('backup command', () => {
     expect(Database).toHaveBeenCalledWith('/custom/path/tasks.db', { readonly: true });
   });
 
-  it('falls back to default DATABASE_PATH when env var not set', async () => {
+  it('falls back to the resolver default DATABASE_PATH when env var not set', async () => {
     delete process.env.DATABASE_PATH;
 
     await program.parseAsync(['node', 'test', 'backup']);
 
+    const { defaultDbPath } = await import('../../config/paths.js');
     const Database = (await import('../../db/driver.js')).default;
-    expect(Database).toHaveBeenCalledWith('./data/tasks.db', { readonly: true });
+    expect(Database).toHaveBeenCalledWith(defaultDbPath, { readonly: true });
   });
 
   it('creates output directory if it does not exist', async () => {

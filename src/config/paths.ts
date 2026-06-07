@@ -28,3 +28,11 @@ export const configDir: string = paths.config;
  * Used as the `DATABASE_PATH` default when no explicit override is set.
  */
 export const defaultDbPath: string = path.join(dataDir, 'tasks.db');
+
+/**
+ * Re-export the unified DB-path resolver so `src/config/paths.ts` is the one
+ * config surface callers import for both the app-data default and the
+ * precedence-aware resolver. See `src/config/db-path.ts` for the locked
+ * resolution precedence (env > legacy-adopt > app-data).
+ */
+export { resolveDbPath, _resetDbPathWarning } from './db-path.js';

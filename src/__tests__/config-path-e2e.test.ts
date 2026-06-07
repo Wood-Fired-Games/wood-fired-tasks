@@ -27,7 +27,7 @@
  * `start.ts` makes with `config.DATABASE_PATH`.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'fs';
 import { dirname, join, resolve, sep } from 'path';
 import { tmpdir } from 'os';
 import Database from '../db/driver.js';
@@ -86,7 +86,14 @@ describe('Task #705 — migrate and API startup share the configured DB path', (
     expect(existsSync(join(tmpRoot, 'data', 'tasks.db'))).toBe(false);
   });
 
-  it('(b) migrate DEFAULT FALLBACK: unset DATABASE_PATH ⇒ ./data/tasks.db under cwd', async () => {
+  it('(b) migrate LEGACY-ADOPT: unset DATABASE_PATH ⇒ adopt existing ./data/tasks.db under cwd', async () => {
+    // v2.0 C1/H1: with DATABASE_PATH unset the unified resolver adopts an
+    // existing cwd-relative ./data/tasks.db (the upgrader's DB) rather than
+    // silently abandoning it. Seed that legacy file so this branch is taken.
+    const legacyDir = join(tmpRoot, 'data');
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, 'tasks.db'), '');
+
     const returned = await migrateCli({}, tmpRoot);
 
     const expected = join(tmpRoot, 'data', 'tasks.db');

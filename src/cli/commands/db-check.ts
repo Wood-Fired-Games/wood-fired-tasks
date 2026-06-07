@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { colorSuccess, colorError } from '../output/formatters.js';
 import { jsonOutput } from '../output/json-output.js';
 import '../config/env.js';
@@ -17,7 +18,7 @@ function formatSize(bytes: number): string {
 export const dbCheckCommand = new Command('db-check')
   .description('Run SQLite PRAGMA integrity_check and report database size')
   .action(() => {
-    const dbPath = process.env['DATABASE_PATH'] || './data/tasks.db';
+    const dbPath = resolveDbPath();
 
     const program = dbCheckCommand.parent;
     const isJsonMode = program?.optsWithGlobals()?.['json'] || false;

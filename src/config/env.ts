@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defaultDbPath } from './paths.js';
+import { resolveDbPath } from './paths.js';
 
 /**
  * sysexits.h standard exit codes
@@ -62,11 +62,17 @@ export const configSchema = z
     // default is visible.
     HOST: z.string().min(1).default('127.0.0.1'),
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-    // task #731: default the DB to the OS app-data dir (env-paths) so a
-    // quick-start `npx`/global install does not write a cwd-relative
-    // `./data/tasks.db` (which moves with the process and is easy to lose).
-    // An explicit `DATABASE_PATH` env var still wins.
-    DATABASE_PATH: z.string().min(1).default(defaultDbPath),
+    // task #731 + C1/H1: when DATABASE_PATH is unset, resolve via the unified
+    // resolver (src/config/db-path.ts). zod only invokes a function default
+    // when the env var is absent, so here the resolver only ever chooses
+    // between adopting a legacy cwd-relative ./data/tasks.db (with a loud
+    // one-time warning, upgrader data-loss guard) and the OS app-data default
+    // (the 2.0 quick-start default that does not move with the process). An
+    // explicit DATABASE_PATH env value bypasses the default entirely and wins.
+    DATABASE_PATH: z
+      .string()
+      .min(1)
+      .default(() => resolveDbPath()),
     CONNECTION_TIMEOUT: z.string().min(1).default('120000').transform(Number),
     REQUEST_TIMEOUT: z.string().min(1).default('60000').transform(Number),
     KEEP_ALIVE_TIMEOUT: z.string().min(1).default('10000').transform(Number),

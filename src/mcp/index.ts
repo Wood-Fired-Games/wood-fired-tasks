@@ -3,6 +3,7 @@ import { createApp } from '../index.js';
 import { createMcpServer } from './server.js';
 import { resolveActorUserIdWithPath } from './identity-resolution.js';
 import { parseApiKeyEntries } from '../config/env.js';
+import { resolveDbPath } from '../config/db-path.js';
 import { precomputeHashedEntries } from '../api/plugins/auth/keys.js';
 import { triggerUpdateCheck } from '../cli/update/check-writer.js';
 
@@ -13,13 +14,14 @@ import { triggerUpdateCheck } from '../cli/update/check-writer.js';
  * to stdio transport for communication with MCP clients.
  */
 async function main() {
-  // Determine database path from environment or use default.
-  //
-  // DATABASE_PATH is the canonical name (see src/config/env.ts and all CLI
-  // commands). DB_PATH is accepted as a deprecated alias for backward
-  // compatibility with older ~/.claude.json installs produced by install.sh
-  // / install.ps1 before task #217. New installs should set DATABASE_PATH.
-  const dbPath = process.env['DATABASE_PATH'] || process.env['DB_PATH'] || './data/tasks.db';
+  // Determine database path via the unified resolver (src/config/db-path.ts)
+  // so the MCP stdio server opens the EXACT same database as the API server,
+  // migration CLI, and every `tasks db*` subcommand. The resolver honours the
+  // canonical DATABASE_PATH and the deprecated DB_PATH alias (older
+  // ~/.claude.json installs from install.sh / install.ps1 before task #217),
+  // then falls back to legacy-adopt ./data/tasks.db (with a one-time warning)
+  // or the OS app-data default.
+  const dbPath = resolveDbPath();
 
   // Initialize application (database, repositories, services)
   const app = await createApp(dbPath);

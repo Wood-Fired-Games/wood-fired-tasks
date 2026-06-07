@@ -15,7 +15,7 @@
  * Re-exports are the entire public surface; this file contains NO
  * implementation. If you need to change auth behaviour, edit
  * `src/api/plugins/auth/index.ts` (chain) or `src/api/plugins/auth/keys.ts`
- * (key hashing + production validation).
+ * (key hashing).
  *
  * The `apiKeyLabel?: string` Fastify module augmentation that used to live
  * in this file (declaration of `FastifyRequest.apiKeyLabel`) was moved to
@@ -26,5 +26,5 @@
  * via `tsconfig.json` includes.
  */
 
-export { hashKey, validateApiKeysForProduction } from './auth/keys.js';
+export { hashKey } from './auth/keys.js';
 export { default, requireUser } from './auth/index.js';
