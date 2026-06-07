@@ -29,10 +29,7 @@ export const configDir: string = paths.config;
  */
 export const defaultDbPath: string = path.join(dataDir, 'tasks.db');
 
-/**
- * Re-export the unified DB-path resolver so `src/config/paths.ts` is the one
- * config surface callers import for both the app-data default and the
- * precedence-aware resolver. See `src/config/db-path.ts` for the locked
- * resolution precedence (env > legacy-adopt > app-data).
- */
-export { resolveDbPath, _resetDbPathWarning } from './db-path.js';
+// NOTE: the unified DB-path resolver lives in `src/config/db-path.ts` and is
+// imported directly from there by every consumer (it imports `defaultDbPath`
+// from this file, so re-exporting it here would create a paths<->db-path
+// import cycle that dependency-cruiser rejects).

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { resolveDbPath } from './paths.js';
+import { resolveDbPath } from './db-path.js';
 
 /**
  * sysexits.h standard exit codes

@@ -5,7 +5,7 @@ import { configSchema, ExitCodes, CliExitCodes, resetConfig, parseApiKeyEntries 
 // default delegates to `resolveDbPath()`, so assert against that exact source
 // of truth — its result depends on the test cwd (legacy file present?) and the
 // app-data DB state, which `resolveDbPath()` itself accounts for.
-import { resolveDbPath } from '../paths.js';
+import { resolveDbPath } from '../db-path.js';
 
 describe('Configuration Validation', () => {
   const originalEnv = process.env;

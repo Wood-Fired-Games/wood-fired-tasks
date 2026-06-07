@@ -125,7 +125,8 @@ describe('resolveDbPath — unified precedence (C1/H1)', () => {
 
   it('(2) adopts legacy ./data/tasks.db when present and app-data DB absent, and warns once', async () => {
     const legacy = seedLegacy(tmpRoot);
-    const { resolveDbPath, defaultDbPath } = await import('../paths.js');
+    const { resolveDbPath } = await import('../db-path.js');
+    const { defaultDbPath } = await import('../paths.js');
 
     // Deterministic via the existence-probe seam: legacy present, app-data absent.
     const exists = (p: string) => p === legacy;
@@ -140,13 +141,15 @@ describe('resolveDbPath — unified precedence (C1/H1)', () => {
   });
 
   it('(3) falls back to the app-data default when neither env nor legacy file is present', async () => {
-    const { resolveDbPath, defaultDbPath } = await import('../paths.js');
+    const { resolveDbPath } = await import('../db-path.js');
+    const { defaultDbPath } = await import('../paths.js');
     // Nothing exists per the probe seam.
     expect(resolveDbPath({}, tmpRoot, () => false)).toBe(defaultDbPath);
   });
 
   it('does NOT adopt the legacy file when the app-data DB already exists', async () => {
-    const { resolveDbPath, defaultDbPath } = await import('../paths.js');
+    const { resolveDbPath } = await import('../db-path.js');
+    const { defaultDbPath } = await import('../paths.js');
     // Both legacy and app-data DB "exist" — the already-migrated app-data DB
     // must win so a migrated install is never overridden by a stale legacy file.
     expect(resolveDbPath({}, tmpRoot, () => true)).toBe(defaultDbPath);
