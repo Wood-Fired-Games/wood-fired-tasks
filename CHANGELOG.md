@@ -11,6 +11,10 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [v2.0.6] - 2026-06-08
+
 ### Added
 - **`tasks login --token <pat>` — a manual-PAT login path.** `tasks login` was
   device-flow only and **dead-ended on a remote non-`https` server**: the OAuth
