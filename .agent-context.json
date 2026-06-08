@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-08T19:13:44.601Z",
+    "generated_at": "2026-06-08T21:06:01.413Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 116,
-      "sha256": "5e211ae3b21f0c1c627f7e398d4ef6c278f3185eccb2a92bc9593b88769d2567",
+      "actual_lines": 118,
+      "sha256": "b7e553f48cd94cbea72ce75e2fe9d504dbb1ed9319a60a4b46d6ff890dd9af53",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -357,8 +357,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 17000,
-      "actual_lines": 849,
-      "sha256": "48a2a0508f4b01bdd1c664a91cbe1a07ef18bb5cf056e110586ff239bdd1cf70"
+      "actual_lines": 850,
+      "sha256": "5993eae69ba3098ab40d2916511c9757e474e6c52b6cb18b54e36506705cc634"
     },
     {
       "path": "SECURITY.md",
