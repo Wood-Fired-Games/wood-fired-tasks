@@ -433,6 +433,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         );
       }
       const clientId = config.OIDC_CLIENT_ID as string;
+      // #833: the device-flow `client_id` is a SEPARATE logical identifier the
+      // CLI sends (default `'wft-cli'`), NOT the IdP's OAuth client id. Using
+      // OIDC_CLIENT_ID here rejected the stock CLI with `invalid_client` on any
+      // real-IdP server. Always defaulted, so device flow works out of the box.
+      const deviceClientId = config.OIDC_DEVICE_CLIENT_ID;
       await server.register(authRoutes, {
         prefix: '/auth',
         oidcConfig: app.oidcConfig,
@@ -484,9 +489,9 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         await scope.register(authPlugin);
         await scope.register(deviceCodeRoute, {
           origin,
-          expectedClientId: clientId,
+          expectedClientId: deviceClientId,
         });
-        await scope.register(deviceTokenRoute, { expectedClientId: clientId });
+        await scope.register(deviceTokenRoute, { expectedClientId: deviceClientId });
         await scope.register(deviceHtmlRoute, { origin });
       });
     } else {

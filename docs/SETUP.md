@@ -332,6 +332,14 @@ OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
 # Optional — defaults to "openid email profile". The server requires at
 # minimum "openid email" to map the OIDC subject to a local user row.
 OIDC_SCOPES=openid email profile
+
+# Optional — defaults to "wft-cli". The RFC 8628 device-flow client_id the
+# `tasks` CLI sends during `tasks setup` → Remote. DISTINCT from OIDC_CLIENT_ID
+# (the IdP's OAuth client id for the browser SSO leg): the device flow uses a
+# logical client id the CLI and server agree on. Leave unset on both sides to
+# use the default — the stock CLI then authenticates out of the box. Override
+# only if you also set OIDC_DEVICE_CLIENT_ID to a matching value on the client.
+OIDC_DEVICE_CLIENT_ID=wft-cli
 ```
 
 ### 3. Generate the session cookie secret

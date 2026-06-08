@@ -370,7 +370,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
     });
   });
 
-  it('device-flow failure writes nothing (no claude.json entry)', () => {
+  it('device-flow failure falls back to manual PAT; non-TTY + no token writes nothing (no crash)', () => {
     return withSandboxAsync(async (home, configDir) => {
       const { probe } = recordingProbe({ ok: true, oidc: 'ready' });
       const deviceLogin = vi.fn(async () => ({ ok: false as const }));
@@ -382,13 +382,51 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         remote: REMOTE_URL,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
+        // Non-TTY, no --token, no env → the manual fallback exits cleanly.
+        isInteractive: () => false,
       });
 
-      expect(result.method).toBe('device-flow');
+      // #833: a failed device flow now degrades to manual-PAT entry instead of
+      // returning a device-flow failure. With no PAT available it ends ok:false
+      // and — critically — still persists NOTHING.
+      expect(result.method).toBe('manual-pat');
       expect(result.ok).toBe(false);
       expect(result.setup).toBeUndefined();
-      // Nothing persisted when the device flow fails.
       expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
+    });
+  });
+
+  it('#833: device/code that THROWS (e.g. 400 invalid_client) does not crash — falls back to manual PAT', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const { probe } = recordingProbe({ ok: true, oidc: 'ready' });
+      // Mirror the real failure: requestDeviceCode throws on a non-200 from
+      // /auth/device/code (the invalid_client case that crashed setup).
+      const deviceLogin = vi.fn(async () => {
+        throw new Error('Failed to start device flow: 400 {"error":"invalid_client"}');
+      });
+      // Manual PAT supplied so the fallback can complete end-to-end.
+      const manualPatPersist = vi.fn(async (baseUrl: string, token: string) => ({
+        ok: true as const,
+        identity: { id: 7, displayName: 'Fallback User', email: null },
+      }));
+
+      const result = await runRemoteOnboarding({
+        home,
+        configDir,
+        log: () => {},
+        remote: REMOTE_URL,
+        token: FAKE_PAT,
+        oidcProbe: probe,
+        deviceLogin: deviceLogin as never,
+        manualPatPersist,
+      });
+
+      // Setup did NOT crash; it degraded to manual PAT and finished.
+      expect(result.method).toBe('manual-pat');
+      expect(result.ok).toBe(true);
+      expect(manualPatPersist).toHaveBeenCalledWith(REMOTE_URL, FAKE_PAT);
+      const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
     });
   });
 

@@ -1214,34 +1214,55 @@ export async function runRemoteOnboarding(
   }
 
   // 3. Branch on the selected method.
-  const method = selectRemoteOnboardingMethod(probeResult);
+  let method = selectRemoteOnboardingMethod(probeResult);
   const oidc = probeResult.ok ? probeResult.oidc : null;
 
   if (method === 'device-flow') {
     // Self-provision a PAT via the OIDC device flow (#806). runDeviceLogin owns
     // the entire RFC 8628 exchange AND persists the minted PAT via the
     // credentials writer (writeCredentials) — there is NO host token-mint path
-    // here. On failure it has already emitted its own error output; we just
-    // propagate ok:false without writing anything.
-    const result = await deviceLogin({
-      baseUrl,
-      clientId: process.env['OIDC_CLIENT_ID'] ?? 'wft-cli',
-      hostname: os.hostname(),
-      openBrowser: true,
-      isJson: false,
-    });
-    if (!result.ok) {
-      return { mode: 'remote', oidc, method, ok: false };
+    // here.
+    //
+    // client_id (#833): send the DEVICE-flow client id (`OIDC_DEVICE_CLIENT_ID`,
+    // default `'wft-cli'`), NOT the IdP's `OIDC_CLIENT_ID`. The server validates
+    // it against its own `OIDC_DEVICE_CLIENT_ID` (also defaulting to `'wft-cli'`),
+    // so the stock CLI matches a stock server out of the box.
+    let deviceOk = false;
+    try {
+      const result = await deviceLogin({
+        baseUrl,
+        clientId: process.env['OIDC_DEVICE_CLIENT_ID'] ?? 'wft-cli',
+        hostname: os.hostname(),
+        openBrowser: true,
+        isJson: false,
+      });
+      deviceOk = result.ok;
+      if (!deviceOk) {
+        log('Browser/device login did not complete; falling back to manual PAT entry.');
+      }
+    } catch (err) {
+      // #833: device/code can hard-reject (e.g. a client_id mismatch →
+      // `invalid_client`) or the network can fail. Don't crash setup — degrade
+      // to manual personal-access-token entry so onboarding can still finish.
+      const message = err instanceof Error ? err.message : String(err);
+      log(`Browser/device login could not start (${message}).`);
+      log('Falling back to manual personal-access-token entry.');
     }
 
-    // Device login succeeded and the PAT is already persisted in the
-    // credentials file. Now write the URL-only remote MCP entry (#810) into
-    // ~/.claude.json. The entry carries ONLY WFT_API_URL — the bridge resolves
-    // its bearer token at runtime from the credentials file the device flow
-    // just wrote, so NO token is ever embedded in claude.json and NO PAT is
-    // double-cached here.
-    const setup = writeRemoteMcpEntryOnly({ ...options, remote: baseUrl });
-    return { mode: 'remote', oidc, method, ok: true, setup };
+    if (deviceOk) {
+      // Device login succeeded and the PAT is already persisted in the
+      // credentials file. Now write the URL-only remote MCP entry (#810) into
+      // ~/.claude.json. The entry carries ONLY WFT_API_URL — the bridge resolves
+      // its bearer token at runtime from the credentials file the device flow
+      // just wrote, so NO token is ever embedded in claude.json and NO PAT is
+      // double-cached here.
+      const setup = writeRemoteMcpEntryOnly({ ...options, remote: baseUrl });
+      return { mode: 'remote', oidc, method, ok: true, setup };
+    }
+
+    // Device flow unavailable/aborted → fall through to the manual-PAT path
+    // below (records the method actually used so the result reflects reality).
+    method = 'manual-pat';
   }
 
   // method === 'manual-pat' (task #809): obtain a PAT, validate it, and persist

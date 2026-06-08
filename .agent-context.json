@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-08T01:02:32.088Z",
+    "generated_at": "2026-06-08T14:35:06.458Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1458,
-      "sha256": "1b7100d72394f8d9912dc9c9c12ac7c7b25366e9e8fcd65f55b5c34b8a9f5aaa"
+      "actual_lines": 1466,
+      "sha256": "e3d0994c8e4ddb38bd1a3f5a74d19abf875081d2b0a47825ee80a02566430fa4"
     },
     {
       "path": "docs/SLACK.md",
@@ -411,15 +411,56 @@
       "docs/REPO_MAP.md",
       "docs/INTERFACES.md"
     ],
-    "mcp-tool-change": ["AGENTS.md", "docs/MCP.md", "docs/REPO_MAP.md", "docs/INTERFACES.md"],
-    "cli-change": ["AGENTS.md", "docs/CLI.md", "docs/REPO_MAP.md", "docs/INTERFACES.md"],
-    "db-migration": ["AGENTS.md", "docs/REPO_MAP.md", "docs/SETUP.md", "docs/ARCHITECTURE.md"],
-    "schema-change": ["AGENTS.md", "docs/REPO_MAP.md", "docs/API.md", "docs/INTERFACES.md"],
-    "slack-change": ["AGENTS.md", "docs/SLACK.md", "docs/REPO_MAP.md"],
-    "docs-only": ["AGENTS.md", "docs/AGENT_CONTEXT.md", "CONTRIBUTING.md"],
-    "release": ["AGENTS.md", "docs/RELEASE.md", "CONTRIBUTING.md"],
-    "test-fix": ["AGENTS.md", "docs/REPO_MAP.md", "CONTRIBUTING.md"],
-    "security-sensitive": ["AGENTS.md", "SECURITY.md", "docs/SETUP.md", "docs/REPO_MAP.md"]
+    "mcp-tool-change": [
+      "AGENTS.md",
+      "docs/MCP.md",
+      "docs/REPO_MAP.md",
+      "docs/INTERFACES.md"
+    ],
+    "cli-change": [
+      "AGENTS.md",
+      "docs/CLI.md",
+      "docs/REPO_MAP.md",
+      "docs/INTERFACES.md"
+    ],
+    "db-migration": [
+      "AGENTS.md",
+      "docs/REPO_MAP.md",
+      "docs/SETUP.md",
+      "docs/ARCHITECTURE.md"
+    ],
+    "schema-change": [
+      "AGENTS.md",
+      "docs/REPO_MAP.md",
+      "docs/API.md",
+      "docs/INTERFACES.md"
+    ],
+    "slack-change": [
+      "AGENTS.md",
+      "docs/SLACK.md",
+      "docs/REPO_MAP.md"
+    ],
+    "docs-only": [
+      "AGENTS.md",
+      "docs/AGENT_CONTEXT.md",
+      "CONTRIBUTING.md"
+    ],
+    "release": [
+      "AGENTS.md",
+      "docs/RELEASE.md",
+      "CONTRIBUTING.md"
+    ],
+    "test-fix": [
+      "AGENTS.md",
+      "docs/REPO_MAP.md",
+      "CONTRIBUTING.md"
+    ],
+    "security-sensitive": [
+      "AGENTS.md",
+      "SECURITY.md",
+      "docs/SETUP.md",
+      "docs/REPO_MAP.md"
+    ]
   },
   "custom_fields": {
     "status": "Either 'present' (file exists on disk) or 'reserved' (canonical slot defined by the contract but not yet committed).",
