@@ -411,56 +411,15 @@
       "docs/REPO_MAP.md",
       "docs/INTERFACES.md"
     ],
-    "mcp-tool-change": [
-      "AGENTS.md",
-      "docs/MCP.md",
-      "docs/REPO_MAP.md",
-      "docs/INTERFACES.md"
-    ],
-    "cli-change": [
-      "AGENTS.md",
-      "docs/CLI.md",
-      "docs/REPO_MAP.md",
-      "docs/INTERFACES.md"
-    ],
-    "db-migration": [
-      "AGENTS.md",
-      "docs/REPO_MAP.md",
-      "docs/SETUP.md",
-      "docs/ARCHITECTURE.md"
-    ],
-    "schema-change": [
-      "AGENTS.md",
-      "docs/REPO_MAP.md",
-      "docs/API.md",
-      "docs/INTERFACES.md"
-    ],
-    "slack-change": [
-      "AGENTS.md",
-      "docs/SLACK.md",
-      "docs/REPO_MAP.md"
-    ],
-    "docs-only": [
-      "AGENTS.md",
-      "docs/AGENT_CONTEXT.md",
-      "CONTRIBUTING.md"
-    ],
-    "release": [
-      "AGENTS.md",
-      "docs/RELEASE.md",
-      "CONTRIBUTING.md"
-    ],
-    "test-fix": [
-      "AGENTS.md",
-      "docs/REPO_MAP.md",
-      "CONTRIBUTING.md"
-    ],
-    "security-sensitive": [
-      "AGENTS.md",
-      "SECURITY.md",
-      "docs/SETUP.md",
-      "docs/REPO_MAP.md"
-    ]
+    "mcp-tool-change": ["AGENTS.md", "docs/MCP.md", "docs/REPO_MAP.md", "docs/INTERFACES.md"],
+    "cli-change": ["AGENTS.md", "docs/CLI.md", "docs/REPO_MAP.md", "docs/INTERFACES.md"],
+    "db-migration": ["AGENTS.md", "docs/REPO_MAP.md", "docs/SETUP.md", "docs/ARCHITECTURE.md"],
+    "schema-change": ["AGENTS.md", "docs/REPO_MAP.md", "docs/API.md", "docs/INTERFACES.md"],
+    "slack-change": ["AGENTS.md", "docs/SLACK.md", "docs/REPO_MAP.md"],
+    "docs-only": ["AGENTS.md", "docs/AGENT_CONTEXT.md", "CONTRIBUTING.md"],
+    "release": ["AGENTS.md", "docs/RELEASE.md", "CONTRIBUTING.md"],
+    "test-fix": ["AGENTS.md", "docs/REPO_MAP.md", "CONTRIBUTING.md"],
+    "security-sensitive": ["AGENTS.md", "SECURITY.md", "docs/SETUP.md", "docs/REPO_MAP.md"]
   },
   "custom_fields": {
     "status": "Either 'present' (file exists on disk) or 'reserved' (canonical slot defined by the contract but not yet committed).",
