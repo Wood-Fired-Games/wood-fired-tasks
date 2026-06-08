@@ -8,7 +8,7 @@ import { resolveAssetPath } from '../../assets/resolve.js';
 import { configDir as defaultConfigDir } from '../../config/paths.js';
 import { resolvePathHint } from '../util/path-hint.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
-import { selectFromMenu, promptSecret, type PromptIO } from '../util/prompt.js';
+import { selectFromMenu, promptSecret, promptLine, type PromptIO } from '../util/prompt.js';
 import { shouldPrompt } from '../prompts/interactive.js';
 import { getServiceBackend } from './service.js';
 import { runDeviceLogin } from './login.js';
@@ -1108,7 +1108,24 @@ export async function runSetupInteractive(
   // token} without a URL can't get a LOCAL install mislabeled as remote.
   if (mode === 'remote') {
     const hasToken = typeof options.token === 'string' && options.token.length > 0;
-    const hasRemote = typeof options.remote === 'string' && options.remote.length > 0;
+    let hasRemote = typeof options.remote === 'string' && options.remote.length > 0;
+
+    // Picking "Remote" from the interactive menu sets `mode` but NEVER the base
+    // URL — only the `--remote <url>` flag populates `options.remote`. Without
+    // this prompt the menu selection falls straight into runRemoteOnboarding,
+    // which throws 'remote onboarding requires a --remote <url> base URL.'.
+    // Prompt for it here so the menu path is usable; guarded by isInteractive()
+    // so a non-TTY / programmatic caller never hangs waiting on stdin.
+    if (!hasRemote && isInteractive()) {
+      const url = (
+        await promptLine('Remote server base URL (e.g. http://host:3000): ', options.promptIO)
+      ).trim();
+      if (url.length > 0) {
+        options = { ...options, remote: url };
+        hasRemote = true;
+      }
+    }
+
     if (hasToken && hasRemote) {
       const setup = runSetup(options);
       return { mode: 'remote', oidc: null, method: 'manual-pat', ok: true, setup };

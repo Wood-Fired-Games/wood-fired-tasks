@@ -1,6 +1,7 @@
 import Database from './driver.js';
 import { Umzug, type UmzugStorage } from 'umzug';
 import { mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join, dirname, resolve, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { initDatabase } from './database.js';
@@ -157,12 +158,17 @@ export async function runMigrations(db: Database.Database): Promise<void> {
  * @param env - environment map (defaults to `process.env`).
  * @param cwd - base directory for resolving relative paths and probing the
  *   legacy `./data/tasks.db` (defaults to `process.cwd()`).
+ * @param exists - filesystem existence probe forwarded to the unified resolver
+ *   (defaults to `fs.existsSync`). Injectable so tests can isolate the
+ *   legacy-adopt vs app-data branches without depending on whether the real OS
+ *   app-data DB happens to exist on the dev machine running the suite.
  */
 export function resolveMigrateDbPath(
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
+  exists: (p: string) => boolean = existsSync,
 ): string {
-  return resolve(cwd, resolveDbPath(env, cwd));
+  return resolve(cwd, resolveDbPath(env, cwd, exists));
 }
 
 /**
@@ -175,8 +181,9 @@ export function resolveMigrateDbPath(
 export async function migrateCli(
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
+  exists: (p: string) => boolean = existsSync,
 ): Promise<string> {
-  const dbPath = resolveMigrateDbPath(env, cwd);
+  const dbPath = resolveMigrateDbPath(env, cwd, exists);
 
   // Create the parent directory (e.g. ./data, or a user-supplied path) if
   // it doesn't already exist. `recursive: true` is a no-op when present.

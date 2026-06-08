@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import {
   runSetup,
+  runSetupInteractive,
   runRemoteOnboarding,
   selectRemoteOnboardingMethod,
   probeOidcState,
@@ -211,6 +212,88 @@ describe('probeOidcState (GET /health/detailed)', () => {
     const result = await probeOidcState(REMOTE_URL);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toMatch(/ECONNREFUSED/);
+  });
+});
+
+describe('runSetupInteractive — Remote menu selection prompts for the base URL', () => {
+  // Regression: picking "Remote" from the interactive menu set `mode` but never
+  // the base URL (only the `--remote <url>` flag did), so the menu path fell
+  // straight into runRemoteOnboarding and threw 'remote onboarding requires a
+  // --remote <url> base URL.'. The interactive branch must prompt for the URL.
+  it('prompts for the URL when Remote is chosen via the menu (no --remote flag) and uses the typed URL', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const PROMPTED_URL = 'http://prompted.example.local:3000';
+      // Drive the injected prompt stream: type the base URL + newline.
+      const input = Readable.from([`${PROMPTED_URL}\n`]);
+
+      const result = await runSetupInteractive({
+        home,
+        configDir,
+        log: () => {},
+        // Simulate the menu resolving to "Remote" with NO --remote flag set.
+        selectMode: async () => 'remote',
+        isInteractive: () => true,
+        // A --token makes this the offline manual path (no probe / no network);
+        // the point under test is that the PROMPTED url threads through.
+        token: FAKE_PAT,
+        promptIO: { input: input as never, output: { write: () => true } },
+      });
+
+      expect(result.mode).toBe('remote');
+      // The typed URL — NOT a flag — produced the remote MCP entry.
+      const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(PROMPTED_URL));
+    });
+  });
+
+  it('end-to-end: menu→prompt URL→device-flow login→working MCP entry (the full interview)', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const PROMPTED_URL = 'http://prompted.example.local:3000';
+      const input = Readable.from([`${PROMPTED_URL}\n`]);
+      // OIDC ready → device-flow path; stub the login so no real browser/server.
+      const probeCalls: string[] = [];
+      const oidcProbe = async (baseUrl: string): Promise<OidcProbeResult> => {
+        probeCalls.push(baseUrl);
+        return { ok: true, oidc: 'ready' };
+      };
+      const deviceLoginCalls: Array<{ baseUrl: string }> = [];
+      const deviceLogin = vi.fn(async (opts: { baseUrl: string }) => {
+        deviceLoginCalls.push({ baseUrl: opts.baseUrl });
+        return { ok: true as const };
+      });
+
+      const result = await runSetupInteractive({
+        home,
+        configDir,
+        log: () => {},
+        selectMode: async () => 'remote',
+        isInteractive: () => true,
+        // NO --token: the interview must continue into the device-flow login.
+        promptIO: { input: input as never, output: { write: () => true } },
+        oidcProbe,
+        deviceLogin: deviceLogin as never,
+      });
+
+      // The URL the user typed drove BOTH the OIDC probe and the device login,
+      // and the interview ended with a working URL-only MCP entry.
+      expect(probeCalls).toEqual([PROMPTED_URL]);
+      expect(deviceLoginCalls).toEqual([{ baseUrl: PROMPTED_URL }]);
+      expect(result).toMatchObject({ mode: 'remote', method: 'device-flow', ok: true });
+      const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(PROMPTED_URL));
+    });
+  });
+
+  it('does NOT prompt on a non-TTY (programmatic remote with no URL still throws, no hang)', async () => {
+    await expect(
+      runSetupInteractive({
+        log: () => {},
+        // Explicit mode (the flag path) so resolution doesn't default to local;
+        // non-TTY must skip the URL prompt and fall through to the clear throw.
+        mode: 'remote',
+        isInteractive: () => false,
+      }),
+    ).rejects.toThrow('remote onboarding requires a --remote <url> base URL.');
   });
 });
 

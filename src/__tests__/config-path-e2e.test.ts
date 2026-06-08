@@ -32,8 +32,20 @@ import { dirname, join, resolve, sep } from 'path';
 import { tmpdir } from 'os';
 import Database from '../db/driver.js';
 import { resolveMigrateDbPath, migrateCli } from '../db/migrate.js';
+import { defaultDbPath } from '../config/paths.js';
 import { createApp, type App } from '../index.js';
 import { createServer } from '../api/server.js';
+
+/**
+ * Existence probe that hides the REAL OS app-data DB (`defaultDbPath`) so the
+ * legacy-adopt branch (precedence 2) fires deterministically. Without it, case
+ * (b) fails on any dev machine where the `tasks` CLI has created
+ * `~/.local/share/wood-fired-tasks/tasks.db` (it passes on clean CI by luck).
+ */
+function existsHidingAppData(p: string): boolean {
+  if (p === defaultDbPath) return false;
+  return existsSync(p);
+}
 
 // createServer builds a full Fastify instance, which forces the env Proxy to
 // validate config (API_KEYS is required). Same harness convention as the
@@ -94,7 +106,7 @@ describe('Task #705 — migrate and API startup share the configured DB path', (
     mkdirSync(legacyDir, { recursive: true });
     writeFileSync(join(legacyDir, 'tasks.db'), '');
 
-    const returned = await migrateCli({}, tmpRoot);
+    const returned = await migrateCli({}, tmpRoot, existsHidingAppData);
 
     const expected = join(tmpRoot, 'data', 'tasks.db');
     expect(returned).toBe(expected);
