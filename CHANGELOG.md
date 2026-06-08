@@ -13,6 +13,23 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.0.5] - 2026-06-08
+
+### Changed
+- **`tasks setup` → Remote now tells you the truth about what a server needs for
+  browser login.** When the server reports OIDC ready but you entered a
+  **plain-http, non-localhost URL**, browser/device login via Google SSO can
+  never complete — identity providers reject non-`https` OAuth redirect URIs
+  except for `localhost`. Previously setup would launch the device flow anyway
+  and the verification page dead-ended at the IdP callback ("unable to connect").
+  Setup now detects this up front and explains it: it tells you to either re-run
+  with an **https** URL (front the server with a TLS reverse proxy / real domain
+  so Google SSO completes) or **paste a personal access token**, and prints the
+  exact on-host command to mint one (`tasks db mint-token --user <email-or-id>`),
+  then drops straight into manual-PAT entry. `https` and `http://localhost`
+  servers are unaffected and complete browser login as before. New exported
+  helper `canUseBrowserSso()`.
+
 ## [v2.0.4] - 2026-06-08
 
 ### Fixed

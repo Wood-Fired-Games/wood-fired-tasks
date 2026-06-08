@@ -7,6 +7,7 @@ import {
   runSetupInteractive,
   runRemoteOnboarding,
   selectRemoteOnboardingMethod,
+  canUseBrowserSso,
   probeOidcState,
   persistManualPat,
   buildRemoteMcpEntry,
@@ -26,6 +27,10 @@ const tasksSkillsDir = resolveAssetPath('dist', 'skills', 'tasks');
 // A FAKE token — never a real secret.
 const FAKE_PAT = 'wft_pat_FAKE_TEST_TOKEN_0123456789';
 const REMOTE_URL = 'http://tasks.example.local:3000';
+// #835: device-flow (browser SSO) only runs for https / localhost URLs. Tests
+// that exercise the device-flow path use an https URL; plain-http non-localhost
+// URLs (REMOTE_URL) now correctly route to manual-PAT entry instead.
+const REMOTE_URL_HTTPS = 'https://tasks.example.com:3000';
 
 function withSandbox<T>(fn: (home: string, configDir: string) => T): T {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-home-'));
@@ -179,6 +184,29 @@ describe('selectRemoteOnboardingMethod', () => {
   });
 });
 
+describe('canUseBrowserSso (#835)', () => {
+  it('allows https everywhere', () => {
+    expect(canUseBrowserSso('https://tasks.example.com')).toBe(true);
+    expect(canUseBrowserSso('https://192.168.69.69:3000')).toBe(true);
+    expect(canUseBrowserSso('https://tasks.example.com/sub/path')).toBe(true);
+  });
+
+  it('allows http ONLY for loopback hosts', () => {
+    expect(canUseBrowserSso('http://localhost:3000')).toBe(true);
+    expect(canUseBrowserSso('http://127.0.0.1:3000')).toBe(true);
+  });
+
+  it('rejects plain-http non-loopback hosts (the Google-SSO blocker)', () => {
+    expect(canUseBrowserSso('http://192.168.69.69:3000')).toBe(false);
+    expect(canUseBrowserSso('http://tasks.example.com')).toBe(false);
+  });
+
+  it('rejects unparseable / non-http(s) input', () => {
+    expect(canUseBrowserSso('not a url')).toBe(false);
+    expect(canUseBrowserSso('ftp://example.com')).toBe(false);
+  });
+});
+
 describe('probeOidcState (GET /auth/login — public, unauthenticated)', () => {
   const originalFetch = globalThis.fetch;
   afterEach(() => {
@@ -235,7 +263,7 @@ describe('runSetupInteractive — Remote menu selection prompts for the base URL
   // --remote <url> base URL.'. The interactive branch must prompt for the URL.
   it('prompts for the URL when Remote is chosen via the menu (no --remote flag) and uses the typed URL', () => {
     return withSandboxAsync(async (home, configDir) => {
-      const PROMPTED_URL = 'http://prompted.example.local:3000';
+      const PROMPTED_URL = 'https://prompted.example.com:3000';
       // Drive the injected prompt stream: type the base URL + newline.
       const input = Readable.from([`${PROMPTED_URL}\n`]);
 
@@ -261,7 +289,7 @@ describe('runSetupInteractive — Remote menu selection prompts for the base URL
 
   it('end-to-end: menu→prompt URL→device-flow login→working MCP entry (the full interview)', () => {
     return withSandboxAsync(async (home, configDir) => {
-      const PROMPTED_URL = 'http://prompted.example.local:3000';
+      const PROMPTED_URL = 'https://prompted.example.com:3000';
       const input = Readable.from([`${PROMPTED_URL}\n`]);
       // OIDC ready → device-flow path; stub the login so no real browser/server.
       const probeCalls: string[] = [];
@@ -335,19 +363,20 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         home,
         configDir,
         log: () => {},
-        remote: REMOTE_URL,
+        // #835: device flow only runs for https / localhost — use https here.
+        remote: REMOTE_URL_HTTPS,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
       });
 
       // Probe happened BEFORE the onboarding action.
-      expect(calls).toEqual([REMOTE_URL]);
+      expect(calls).toEqual([REMOTE_URL_HTTPS]);
       expect(result.method).toBe('device-flow');
       expect(result.oidc).toBe('ready');
       expect(result.ok).toBe(true);
       // Device flow was invoked with the remote base URL; manual path NOT taken.
       expect(deviceLogin).toHaveBeenCalledTimes(1);
-      expect(deviceLogin.mock.calls[0]![0]).toMatchObject({ baseUrl: REMOTE_URL });
+      expect(deviceLogin.mock.calls[0]![0]).toMatchObject({ baseUrl: REMOTE_URL_HTTPS });
 
       // #808: after a successful device login the branch writes the URL-only
       // remote MCP entry (#810). The credentials writer (inside runDeviceLogin)
@@ -356,8 +385,8 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       const claudeJson = path.join(home, '.claude.json');
       const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
       const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
-      expect(remoteEntry).toEqual(buildRemoteMcpEntry(REMOTE_URL));
-      expect(remoteEntry.env.WFT_API_URL).toBe(REMOTE_URL);
+      expect(remoteEntry).toEqual(buildRemoteMcpEntry(REMOTE_URL_HTTPS));
+      expect(remoteEntry.env.WFT_API_URL).toBe(REMOTE_URL_HTTPS);
       // URL-only: no embedded token of any kind.
       expect(remoteEntry.env.WFT_API_KEY).toBeUndefined();
       expect(JSON.stringify(remoteEntry)).not.toContain(FAKE_PAT);
@@ -379,7 +408,8 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         home,
         configDir,
         log: () => {},
-        remote: REMOTE_URL,
+        // https so the device-flow path is reached (then fails → manual).
+        remote: REMOTE_URL_HTTPS,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
         // Non-TTY, no --token, no env → the manual fallback exits cleanly.
@@ -414,7 +444,8 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         home,
         configDir,
         log: () => {},
-        remote: REMOTE_URL,
+        // https so the device-flow path is reached (then throws → manual).
+        remote: REMOTE_URL_HTTPS,
         token: FAKE_PAT,
         oidcProbe: probe,
         deviceLogin: deviceLogin as never,
@@ -424,9 +455,46 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       // Setup did NOT crash; it degraded to manual PAT and finished.
       expect(result.method).toBe('manual-pat');
       expect(result.ok).toBe(true);
-      expect(manualPatPersist).toHaveBeenCalledWith(REMOTE_URL, FAKE_PAT);
+      expect(manualPatPersist).toHaveBeenCalledWith(REMOTE_URL_HTTPS, FAKE_PAT);
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
-      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(
+        buildRemoteMcpEntry(REMOTE_URL_HTTPS),
+      );
+    });
+  });
+
+  it('#835: oidc=ready but plain-http non-localhost URL → no device login; explains https + falls back to manual PAT', () => {
+    return withSandboxAsync(async (home, configDir) => {
+      const { probe } = recordingProbe({ ok: true, oidc: 'ready' });
+      const deviceLogin = vi.fn();
+      const manualPatPersist = vi.fn(async () => ({
+        ok: true as const,
+        identity: { id: 7, displayName: 'PAT User', email: null },
+      }));
+      const logs: string[] = [];
+
+      const result = await runRemoteOnboarding({
+        home,
+        configDir,
+        log: (line) => logs.push(line),
+        // http + non-localhost: Google SSO can't complete here.
+        remote: REMOTE_URL,
+        token: FAKE_PAT,
+        oidcProbe: probe,
+        deviceLogin: deviceLogin as never,
+        manualPatPersist,
+      });
+
+      // The browser flow was NOT attempted despite oidc=ready…
+      expect(deviceLogin).not.toHaveBeenCalled();
+      // …the user was told plainly why (https required) and how to mint a PAT…
+      const allLogs = logs.join('\n');
+      expect(allLogs).toMatch(/https/i);
+      expect(allLogs).toContain('tasks db mint-token');
+      // …and setup completed via the manual-PAT path.
+      expect(result.method).toBe('manual-pat');
+      expect(result.ok).toBe(true);
+      expect(manualPatPersist).toHaveBeenCalledWith(REMOTE_URL, FAKE_PAT);
     });
   });
 

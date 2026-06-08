@@ -867,6 +867,35 @@ export function selectRemoteOnboardingMethod(probe: OidcProbeResult): RemoteOnbo
 }
 
 /**
+ * Whether the browser/device login (Google SSO) can actually COMPLETE against
+ * `baseUrl` (#835).
+ *
+ * The whole OIDC dance — the verification page AND the IdP's OAuth callback —
+ * happens at the server's origin, and identity providers (Google especially)
+ * reject non-`https` OAuth redirect URIs *except* for `localhost`/`127.0.0.1`.
+ * So a server reached over plain `http` at a non-localhost address can report
+ * `oidc: 'ready'` yet still be unable to finish browser login: the user's
+ * browser gets bounced to an `http://…/auth/callback` the IdP won't honor. We
+ * detect that up front so the interview can tell the user the truth (need https,
+ * or use a PAT) instead of opening a URL that dead-ends.
+ *
+ * Returns true for any `https` URL and for `http://localhost` / `127.0.0.1` /
+ * `[::1]`; false for plain-http non-loopback hosts and unparseable input.
+ */
+export function canUseBrowserSso(baseUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  if (url.protocol !== 'http:') return false;
+  const host = url.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
+/**
  * The minimal identity envelope `GET /api/v1/me` returns (task #809). Mirrors
  * the fields {@link writeCredentials} needs so a manually-pasted PAT lands in
  * the SAME credentials file the device flow writes — the bridge then resolves
@@ -1216,6 +1245,29 @@ export async function runRemoteOnboarding(
   // 3. Branch on the selected method.
   let method = selectRemoteOnboardingMethod(probeResult);
   const oidc = probeResult.ok ? probeResult.oidc : null;
+
+  // #835: even when the server reports OIDC ready, browser login can only
+  // COMPLETE over https (or localhost) — Google rejects non-https OAuth
+  // redirect URIs everywhere else. Catch a plain-http non-localhost URL here
+  // and tell the user plainly, then route to manual-PAT entry (with on-host
+  // mint instructions) rather than opening a verification URL that dead-ends at
+  // the IdP callback.
+  if (method === 'device-flow' && !canUseBrowserSso(baseUrl)) {
+    log('');
+    log(`"${baseUrl}" is plain http at a non-localhost address.`);
+    log('Browser login via Google SSO requires an https URL — identity providers');
+    log('reject non-https OAuth redirect URIs except for localhost — so the device');
+    log('flow cannot complete against this server. To finish setup, either:');
+    log('  • re-run with an https URL for this server (e.g. front it with a TLS');
+    log('    reverse proxy / real domain so Google SSO completes), or');
+    log('  • paste a personal access token now.');
+    log('');
+    log('To mint a PAT, run this ON THE SERVER HOST:');
+    log('  tasks db mint-token --user <your-email-or-user-id>');
+    log('(or create one from your account page once logged in via the browser).');
+    log('');
+    method = 'manual-pat';
+  }
 
   if (method === 'device-flow') {
     // Self-provision a PAT via the OIDC device flow (#806). runDeviceLogin owns
