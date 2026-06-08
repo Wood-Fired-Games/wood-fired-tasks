@@ -997,59 +997,35 @@ mint-token`.
 
 ## Claude Code Integration
 
-Wood Fired Tasks includes installers for seamless Claude Code integration on Linux/macOS and Windows.
+`wood-fired-tasks setup` wires this package into Claude Code — it merges an MCP
+server entry into `~/.claude.json` and copies the `/tasks:*` slash commands into
+`~/.claude/commands/tasks/`. The canonical install flow (npm install +
+`setup`, with **Local / Service / Remote** modes) is covered under
+[Frictionless install (npm — no clone)](#frictionless-install-npm--no-clone).
+This section recaps what `setup` writes and how to roll it out across a
+multi-OS client fleet.
 
-### Install modes
+> The old `./install.sh --mode …` / `.\install.ps1 -Mode …` git-clone installers
+> are **retired** — both scripts are now deprecation shims that just delegate to
+> `wood-fired-tasks setup`. There is no `--mode`, `--api-key`, or
+> `WOOD_FIRED_TASKS_API_KEY` resolution anymore.
 
-The installer supports two modes:
+### Setup modes
 
-| Mode | Server name written to `~/.claude.json` | What it does | API key |
-|------|-----------------------------------------|--------------|---------|
-| `local` (default) | `wood-fired-tasks` | Spawns the stdio MCP server (`dist/mcp/index.js`) that opens the SQLite database in-process. | **Not used.** Local MCP only needs `DATABASE_PATH`; no key is collected, persisted, or written. |
-| `remote` | `wood-fired-tasks-remote` | Spawns the stdio bridge (`dist/mcp/remote/index.js`) that proxies every tool call to a deployed REST API. | Required. Written as `WFT_API_KEY` in the MCP entry's `env`. |
+| Mode | Invocation | Server name in `~/.claude.json` | What it does | Token |
+|------|-----------|---------------------------------|--------------|-------|
+| Local (default) | `wood-fired-tasks setup` | `wood-fired-tasks` | Spawns the stdio MCP server (`dist/mcp/index.js`) that opens the SQLite database in-process. | **Not used** — local MCP only needs `DATABASE_PATH`. |
+| Remote | `wood-fired-tasks setup --remote <url> --token wft_pat_…` | `wood-fired-tasks-remote` | Spawns the stdio bridge (`dist/mcp/remote/index.js`) that proxies every tool call to a deployed REST API. | A per-user **PAT**, cached in the CLI credentials file — **never** written into `~/.claude.json` (#810). |
+| Service | `wood-fired-tasks setup --service` | — | Installs the API server itself as a user-scoped background service (no `~/.claude.json` change). | — |
 
-Both modes write independent entries, so it is safe to run the installer in
-local mode and later add a remote entry with `--mode remote` — they coexist
-under different server names in `~/.claude.json`.
-
-### Linux and macOS
-
-```bash
-# Local mode (default) — no key prompt, no key in ~/.claude.json:
-./install.sh
-
-# Remote mode — resolves WFT_API_KEY from env, secret file, or prompt:
-WOOD_FIRED_TASKS_API_KEY="your-key-here" ./install.sh --mode remote
-```
-
-In `--mode remote`, the installer resolves the API key in this order:
-`WOOD_FIRED_TASKS_API_KEY` env var → `~/.config/wood-fired-tasks/api-key`
-(mode 600) → masked interactive prompt → `--api-key` argv flag (deprecated).
-The key is then cached at `~/.config/wood-fired-tasks/api-key` (mode 600)
-and written into the `wood-fired-tasks-remote` MCP entry's `env` as
-`WFT_API_KEY`. `~/.claude.json` (and any timestamped backup) is also
-chmod'd to 0600.
-
-In `--mode local`, none of those paths execute — even if
-`WOOD_FIRED_TASKS_API_KEY` is exported in your shell, the installer silently
-ignores it.
-
-### Windows
-
-```powershell
-# Local mode (default):
-.\install.ps1
-
-# Remote mode:
-$env:WOOD_FIRED_TASKS_API_KEY = "your-key-here"
-.\install.ps1 -Mode remote
-```
-
-Resolution order in `-Mode remote` is `-ApiKey` (deprecated) →
-`WOOD_FIRED_TASKS_API_KEY` env var → `%LOCALAPPDATA%\wood-fired-tasks\api-key`
-(user-only ACL) → masked prompt. The installer tightens the ACL on
-`~/.claude.json` (and any timestamped backup) to the current user only via
-`icacls`. `-Mode local` collects no key.
+Local and Remote write independent entries under different server names, so it
+is safe to run `wood-fired-tasks setup` (Local) and later add a remote entry
+with `wood-fired-tasks setup --remote <url> --token wft_pat_…` — they coexist.
+Running `setup` with **no arguments** on a TTY presents the Local/Service/Remote
+menu; `--local` / `--service` / `--remote` pick a path non-interactively. A
+**tokenless** `setup --remote <url>` runs the interactive OIDC **device-flow**
+(or **manual-PAT** when the server's OIDC is disabled/degraded) onboarding — see
+[`setup --remote` across OIDC states](#setup---remote-across-oidc-states-ready--disabled--degraded).
 
 ### Multi-OS client fleet (one shared on-prem server)
 
@@ -1061,7 +1037,7 @@ bridge, which proxies every MCP tool call to the shared REST API — so every
 machine sees one backlog.
 
 There are three moving parts: the **server URL** every client must reach, a
-**per-client token**, and the **per-OS installer invocation**.
+**per-client token**, and the **per-client `setup --remote` invocation**.
 
 #### 1. Make the server reachable
 
@@ -1072,8 +1048,8 @@ There are three moving parts: the **server URL** every client must reach, a
   OIDC browser login (the session cookie is `secure` in production and is
   dropped over plain HTTP — see the OIDC cookie note above) and strongly
   recommended regardless, so tokens never cross the network in cleartext.
-- The reachable origin (e.g. `https://tasks.example.com`) is the value every
-  client passes as `WOOD_FIRED_TASKS_URL`.
+- The reachable origin (e.g. `https://tasks.example.com`) is the `<url>` every
+  client passes to `wood-fired-tasks setup --remote <url>`.
 
 #### 2. Mint one token per client
 
@@ -1083,9 +1059,9 @@ with CLI access to its database):
 
 ```bash
 # One PAT per client, labelled so you can identify and revoke it precisely.
-node dist/cli/bin/tasks.js db mint-token --user alice@example.com --name alice-macbook
-node dist/cli/bin/tasks.js db mint-token --user alice@example.com --name alice-winbox
-node dist/cli/bin/tasks.js db mint-token --user bob@example.com   --name bob-linux-ws
+wood-fired-tasks db mint-token --user alice@example.com --name alice-macbook
+wood-fired-tasks db mint-token --user alice@example.com --name alice-winbox
+wood-fired-tasks db mint-token --user bob@example.com   --name bob-linux-ws
 ```
 
 Each command prints the raw `wft_pat_…` once — copy it to that machine and
@@ -1095,47 +1071,34 @@ schedule; see
 and its rotation/revocation notes. A per-machine PAT is the unit of access —
 revocable, attributable, and expiry-bounded.
 
-The remote bridge sends `WFT_API_KEY` as `Authorization: Bearer …` — so a PAT
-drops straight into the `WFT_API_KEY` slot.
+The remote bridge sends the resolved token as `Authorization: Bearer …`, so a
+`wft_pat_…` is exactly what each client passes to `setup --remote … --token`.
 
-#### 3. Run the installer in remote mode on each OS
+#### 3. Onboard each client with `setup --remote`
 
-Both installers read the same two env vars — `WOOD_FIRED_TASKS_URL` (written
-into the MCP entry as `WFT_API_URL`) and `WOOD_FIRED_TASKS_API_KEY` (written as
-`WFT_API_KEY`) — and write a `wood-fired-tasks-remote` entry to that machine's
-`~/.claude.json`. Run each from a clone of this repo on the client, with `dist/`
-built (the bridge entry point is `dist/mcp/remote/index.js`):
+On each client (with the CLI installed via `npm i -g wood-fired-tasks`), point it
+at the shared server with that machine's PAT. The command writes a **URL-only**
+`wood-fired-tasks-remote` entry to that machine's `~/.claude.json` and caches the
+PAT in the CLI credentials file (#810) — the token is never stored in
+`claude.json`:
 
-**Linux / macOS**
+**Linux / macOS / Windows** — same command everywhere:
 
 ```bash
-WOOD_FIRED_TASKS_URL="https://tasks.example.com" \
-WOOD_FIRED_TASKS_API_KEY="wft_pat_…this-machine…" \
-  ./install.sh --mode remote
+wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…this-machine…
 ```
 
-**Windows (PowerShell)**
-
-```powershell
-$env:WOOD_FIRED_TASKS_URL     = "https://tasks.example.com"
-$env:WOOD_FIRED_TASKS_API_KEY = "wft_pat_…this-machine…"
-.\install.ps1 -Mode remote
-```
-
-On every OS the token is cached with tightened permissions
-(`~/.config/wood-fired-tasks/api-key` mode 600 on Linux/macOS;
-`%LOCALAPPDATA%\wood-fired-tasks\api-key` user-only ACL on Windows) and
-`~/.claude.json` is locked down to the current user. Restart Claude Code
-afterward.
+The `--token` path is non-interactive and works offline (no OIDC probe). If the
+server has OIDC enabled and you'd rather not paste a PAT, run the tokenless form
+`wood-fired-tasks setup --remote https://tasks.example.com` and complete the
+browser **device flow** instead. Restart Claude Code afterward.
 
 #### Fleet checklist
 
 | Step | Linux | macOS | Windows |
 |------|-------|-------|---------|
-| Installer prereqs | `jq`, `curl` | `jq`, `curl` (`brew install jq`) | none (native PowerShell JSON) |
-| Set server URL | `WOOD_FIRED_TASKS_URL=…` | `WOOD_FIRED_TASKS_URL=…` | `$env:WOOD_FIRED_TASKS_URL=…` |
-| Provide token | `WOOD_FIRED_TASKS_API_KEY=…` | same | `$env:WOOD_FIRED_TASKS_API_KEY=…` |
-| Run installer | `./install.sh --mode remote` | same | `.\install.ps1 -Mode remote` |
+| Install the CLI | `npm i -g wood-fired-tasks` | same | same |
+| Onboard the client | `wood-fired-tasks setup --remote <url> --token wft_pat_…` | same | same |
 | MCP server name written | `wood-fired-tasks-remote` | same | same |
 
 Every client writes the identical `wood-fired-tasks-remote` server name pointing
@@ -1148,13 +1111,13 @@ or rotate per the PAT notes) — the rest of the fleet is unaffected.
 > (OIDC device flow) or pass `--token wft_pat_…` per command. See
 > [CLI Installation](#cli-installation).
 
-### What the Installer Does
+### What `setup` does
 
-1. **Copies skill files** to `~/.claude/commands/tasks/` (every `.md` file in `skills/tasks/`; currently 18, which includes the typed `/tasks:*` slash commands plus shared includes like `_enums`, `loop-shared`, and the `wsjf-rubric` scoring contract)
-2. **Updates MCP server configuration** in `~/.claude.json`:
+1. **Copies skill files** to `~/.claude/commands/tasks/` (every `.md` file in the packaged `skills/tasks/`; currently 19, which includes the typed `/tasks:*` slash commands plus shared includes like `_enums`, `loop-shared`, and the `wsjf-rubric` scoring contract)
+2. **Merges the MCP server entry** into `~/.claude.json`:
    - Local: adds/updates the `wood-fired-tasks` entry pointing at `dist/mcp/index.js`
-   - Remote: adds/updates the `wood-fired-tasks-remote` entry pointing at `dist/mcp/remote/index.js`
-3. **Configures environment** — `DATABASE_PATH` for local, `WFT_API_URL` + `WFT_API_KEY` for remote
+   - Remote: adds/updates the `wood-fired-tasks-remote` entry pointing at `dist/mcp/remote/index.js` (**URL-only** — the PAT lives in the credentials file)
+3. **Configures environment** — `DATABASE_PATH` for Local; `WFT_API_URL` for Remote (the PAT is cached in the CLI credentials file, not `~/.claude.json`)
 
 ### Resulting MCP Configuration
 
@@ -1175,7 +1138,8 @@ or rotate per the PAT notes) — the rest of the fleet is unaffected.
 }
 ```
 
-**Remote mode** — separate server name, holds the API key:
+**Remote mode** — separate server name, **URL-only** (the PAT is cached in the
+CLI credentials file, never written here — #810):
 
 ```json
 {
@@ -1185,13 +1149,17 @@ or rotate per the PAT notes) — the rest of the fleet is unaffected.
       "args": ["dist/mcp/remote/index.js"],
       "cwd": "/path/to/wood-fired-tasks",
       "env": {
-        "WFT_API_URL": "http://localhost:3000",
-        "WFT_API_KEY": "your-api-key-here"
+        "WFT_API_URL": "http://localhost:3000"
       }
     }
   }
 }
 ```
+
+The bridge resolves its Bearer token at runtime with precedence: env
+`WFT_API_KEY` (an explicit operator override you may add here) → the CLI
+credentials file written by `setup --remote`/`tasks login`. A leaked
+`claude.json` therefore exposes no token.
 
 [NOTE] Older installs may have `DB_PATH` instead of `DATABASE_PATH`. The MCP
 server still accepts that as a deprecated alias, but re-running the installer
@@ -1220,10 +1188,10 @@ If you previously ran `./install.sh` or `.\install.ps1` and your
 
 …you can safely **delete the `WOOD_FIRED_TASKS_API_KEY` line** by hand. The
 local MCP server will keep working with only `DATABASE_PATH`. Re-running
-`./install.sh` (default `--mode local`) also rewrites the entry without the
-key. If you also want the remote bridge, run `./install.sh --mode remote`
-to add a separate `wood-fired-tasks-remote` entry that carries
-`WFT_API_KEY` — that's where the key belongs.
+`wood-fired-tasks setup` also rewrites the entry without the key. If you also
+want the remote bridge, run `wood-fired-tasks setup --remote <url> --token
+wft_pat_…` to add a separate URL-only `wood-fired-tasks-remote` entry (the PAT
+is cached in the credentials file, not in `claude.json`).
 
 ### Skill Files
 
@@ -1414,15 +1382,19 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `DATABASE_PATH` | no | `./data/tasks.db` | Path to the SQLite database opened on stdio startup. Canonical name. |
 | `DB_PATH` | no | — | **Deprecated alias** for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs produced by pre-task-#217 versions of `install.sh` / `install.ps1`. |
 | `API_URL` | no | `http://localhost:3000/api/v1` | Only used by the optional remote MCP transport (`src/mcp/server.ts`). |
-| `WOOD_FIRED_TASKS_API_KEY` | no | — | Read by the installer in `--mode remote` to populate the `WFT_API_KEY` env on the `wood-fired-tasks-remote` MCP entry. Ignored by `--mode local` (task #258) and never read by the local MCP server itself. |
 
-### Installer (read by `install.sh` and `install.ps1` only)
+### Remote MCP bridge (read by `src/mcp/remote/index.ts`)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `WOOD_FIRED_TASKS_API_KEY` | no | — | API key consumed by the installer **only in `--mode remote`**. Resolution order: env var > on-disk secret file > masked prompt > deprecated `--api-key` flag. Silently ignored in local mode (default) since the local MCP server does not use a key. |
-| `WOOD_FIRED_TASKS_URL` | no | `http://localhost:3000` | Health-check URL the installer pings after writing `~/.claude.json`. |
-| `XDG_CONFIG_HOME` | no | `$HOME/.config` | Standard XDG variable; the installer caches the API key under `$XDG_CONFIG_HOME/wood-fired-tasks/api-key` (mode 600). |
+| `WFT_API_URL` | yes (remote) | — | Base URL of the REST API the remote bridge (`dist/mcp/remote/index.js`) proxies every tool call to. Written into the `wood-fired-tasks-remote` MCP entry by `wood-fired-tasks setup --remote <url>`. |
+| `WFT_API_KEY` | no | — | **Optional** operator override for the bridge's Bearer token. Normally unset: the bridge reads the per-user PAT from the CLI credentials file written by `setup --remote`/`tasks login` (#810). When set, this env value takes precedence. |
+
+> The legacy `install.sh` / `install.ps1` git-clone installers are **retired**
+> (deprecation shims that delegate to `wood-fired-tasks setup`) and read **no**
+> environment variables. `WOOD_FIRED_TASKS_API_KEY`, `WOOD_FIRED_TASKS_URL`,
+> `--api-key`, and the `~/.config/wood-fired-tasks/api-key` cache no longer
+> exist — use `wood-fired-tasks setup`.
 
 [TIP] In production, source these from a secret manager (1Password CLI, AWS
 Secrets Manager, Vault, Doppler, Infisical) — see the "Secrets" section at

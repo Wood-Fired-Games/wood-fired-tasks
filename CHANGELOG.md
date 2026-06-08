@@ -19,8 +19,10 @@ The **identity auth cutover** — a breaking major. The legacy `X-API-Key`
 shared-secret auth path is **removed**; every API call now authenticates with a
 per-user **Bearer personal access token (PAT)** minted through the identity
 system. Onboarding gains an OIDC device flow and explicit setup modes, and the
-CLI grows a `statusline` command. No data migration is required: pre-identity
-(`is_legacy=1`) rows are left **inert** and continue to read back unchanged.
+CLI grows `statusline` and `link-project` commands. **No credential migration is
+required** — pre-identity (`is_legacy=1`) rows are left **inert** and read back
+unchanged — and the one schema migration that touches existing data
+(migration 005) was hardened to preserve child rows (see _Fixed_).
 
 ### Changed
 - **Auth is now Bearer-PAT only.** Every authenticated REST/MCP request carries
@@ -28,23 +30,53 @@ CLI grows a `statusline` command. No data migration is required: pre-identity
   header is no longer accepted. PATs are per-user, revocable, and optionally
   expiring (see [`docs/SETUP.md`](docs/SETUP.md)). This is the breaking change
   that makes v2.0 a major.
-- **`setup` gains explicit modes + an OIDC device flow.** `wood-fired-tasks
-  setup --remote <url>` now probes the server's OIDC state and picks
-  **device-flow** (OIDC ready) vs **manual-PAT** (OIDC disabled/degraded)
-  automatically, replacing the old key-paste onboarding.
+- **`setup` gains explicit Local/Service/Remote modes + an OIDC device flow.**
+  Running `wood-fired-tasks setup` with no args on a TTY presents a
+  Local/Service/Remote menu; `--local` / `--service` / `--remote <url>` pick a
+  path non-interactively. `setup --remote <url>` probes the server's OIDC state
+  and picks **device-flow** (OIDC ready) vs **manual-PAT** (OIDC
+  disabled/degraded) automatically, replacing the old key-paste onboarding. The
+  remote MCP entry is **URL-only** — the PAT is cached in the CLI credentials
+  file, never written into `~/.claude.json` (#810).
+- **`API_KEYS` is no longer an auth method.** It only seeds inert `is_legacy=1`
+  identity rows; the dead production boot-gate that required it was removed.
 
 ### Added
 - **OIDC device-flow onboarding** for `setup --remote`, minting a PAT without a
   hand-copied shared key when the server has OIDC enabled.
-- **`statusline` CLI command** for a compact at-a-glance status line.
+- **`statusline` CLI command** for a compact at-a-glance status line, and
+  **`link-project`** to write a `.wft/project` marker that pins the working
+  directory to a project (consumed by `statusline` and CLI project resolution).
+- **`/tasks:update` slash command** (the packaged `/tasks:*` skill set is now 19).
+- **Update-available notifier** with an opt-out: set `WFT_NO_UPDATE_CHECK=1`
+  (env) or `update_check = false` (CLI config) to disable the best-effort
+  "newer version available" check.
+
+### Fixed
+- **Unified DB-path resolution — fixes silent data loss on upgrade.** `serve`/the
+  API defaulted `DATABASE_PATH` to the OS app-data dir while `migrate` and the
+  `tasks db*` commands hardcoded `./data/tasks.db`; with `DATABASE_PATH` unset
+  they could open **different** databases, silently abandoning an upgrading
+  user's `./data/tasks.db`. A single `resolveDbPath()`
+  ([`src/config/db-path.ts`](src/config/db-path.ts)) is now the source of truth:
+  explicit `DATABASE_PATH` (or the `DB_PATH` alias) > adopt an existing legacy
+  `./data/tasks.db` > app-data default.
+- **Migration 005 no longer cascade-deletes data.** `PRAGMA foreign_keys = OFF`
+  is a no-op inside a transaction, so 005's table rebuild CASCADE-deleted
+  `task_comments` / `dependencies` / `tags` when run against a populated pre-005
+  database. The migration now snapshots and restores child rows around the
+  rebuild (covered by a populated-DB round-trip test).
 
 ### Security
 - **Removed the `X-API-Key` shared-secret auth path entirely** (the v2.0
   cutover). A single long-lived shared key was the broadest part of the auth
   surface; replacing it with per-user, individually-revocable Bearer PATs scopes
   credentials to a user, makes revocation surgical, and bounds blast radius on
-  leak. Legacy `is_legacy=1` rows are left inert — no credential migration and
-  no data migration are required.
+  leak. Legacy `is_legacy=1` rows are left inert — **no credential migration is
+  required**.
+- **Closed an upgrade-time data-loss path** (the migration-005 cascade delete;
+  see _Fixed_) — a data-integrity fix for anyone upgrading across migration 005
+  with populated tables.
 
 ## [v1.18.2] - 2026-06-06
 
