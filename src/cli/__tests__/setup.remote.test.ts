@@ -167,7 +167,7 @@ describe('tasks setup --remote', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task #807 — /health/detailed OIDC-state probe + branch selector.
+// Task #807 — OIDC-state probe (public /auth/login, #831) + branch selector.
 // ---------------------------------------------------------------------------
 
 describe('selectRemoteOnboardingMethod', () => {
@@ -179,28 +179,41 @@ describe('selectRemoteOnboardingMethod', () => {
   });
 });
 
-describe('probeOidcState (GET /health/detailed)', () => {
+describe('probeOidcState (GET /auth/login — public, unauthenticated)', () => {
   const originalFetch = globalThis.fetch;
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
-  it('issues a GET to /health/detailed and reads oidc.state', async () => {
+  it('probes the PUBLIC /auth/login (not the auth-gated /health/detailed) with manual redirect (#831)', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe('http://tasks.example.local:3000/health/detailed');
+      expect(String(input)).toBe('http://tasks.example.local:3000/auth/login');
       expect(init?.method ?? 'GET').toBe('GET');
-      return new Response(JSON.stringify({ oidc: { state: 'ready' } }), { status: 200 });
+      // Must NOT follow the IdP redirect — only the status matters.
+      expect(init?.redirect).toBe('manual');
+      return new Response(null, { status: 302, headers: { location: 'https://idp.example/auth' } });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const result = await probeOidcState(REMOTE_URL);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 302 → IdP redirect → device-flow available.
     expect(result).toEqual({ ok: true, oidc: 'ready' });
   });
 
-  it('treats a non-2xx response as a probe failure', async () => {
-    globalThis.fetch = vi.fn(async () => new Response('nope', { status: 503 })) as never;
+  it('maps a 501 (OIDC-disabled stub) to oidc=disabled → manual PAT', async () => {
+    globalThis.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ error: 'oidc_disabled' }), { status: 501 }),
+    ) as never;
+    const result = await probeOidcState(REMOTE_URL);
+    expect(result).toEqual({ ok: true, oidc: 'disabled' });
+  });
+
+  it('treats an inconclusive status (e.g. 401/503) as a probe failure → manual PAT', async () => {
+    globalThis.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 }),
+    ) as never;
     const result = await probeOidcState(REMOTE_URL);
     expect(result.ok).toBe(false);
   });

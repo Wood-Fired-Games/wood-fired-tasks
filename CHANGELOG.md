@@ -13,6 +13,22 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.0.2] - 2026-06-08
+
+### Fixed
+- **`tasks setup` remote onboarding now reaches the automated device-flow login
+  instead of always falling back to manual PAT entry.** The onboarding probe
+  read the server's OIDC state from `GET /health/detailed`, but v2.0's identity
+  cutover put that endpoint behind Bearer-PAT auth — so an unauthenticated probe
+  (the only kind possible *before* you have a token) always got `401`, the OIDC
+  state was "undeterminable", and setup fell back to asking you to paste a
+  personal access token. The probe now targets the **public** `GET /auth/login`
+  endpoint (`redirect: 'manual'`): a `3xx` redirect to the IdP means browser
+  login is available (`ready`), a `501` means OIDC is disabled (`manual-pat`).
+  Verified against a live OIDC-ready server: the probe now resolves `ready`
+  where it previously 401'd, so the device-flow browser login launches as
+  intended.
+
 ## [v2.0.1] - 2026-06-08
 
 ### Fixed

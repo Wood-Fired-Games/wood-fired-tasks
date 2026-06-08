@@ -777,9 +777,11 @@ export function writeRemoteMcpEntryOnly(options: RunSetupOptions = {}): RunSetup
 export type SetupMode = 'local' | 'service' | 'remote';
 
 /**
- * Coarse OIDC subsystem state reported by `GET /health/detailed` (task #357).
- * Mirrors the server's `oidc.state` enum so the remote-setup branch selector
- * (#807) can route deterministically.
+ * Coarse OIDC subsystem state used by the remote-setup branch selector (#807)
+ * to route deterministically. Derived by {@link probeOidcState} from the public
+ * `/auth/login` endpoint (`ready` = redirects to IdP, `disabled` = 501 stub).
+ * `degraded` is retained for back-compat but is no longer emitted by the probe
+ * (an unhealthy OIDC surfaces as an inconclusive status → manual-PAT fallback).
  */
 export type OidcState = 'ready' | 'disabled' | 'degraded';
 
@@ -792,10 +794,12 @@ export type OidcState = 'ready' | 'disabled' | 'degraded';
 export type RemoteOnboardingMethod = 'device-flow' | 'manual-pat';
 
 /**
- * Result of probing `GET /health/detailed` for the OIDC state.
- *  - `{ ok: true, oidc }` — the probe returned 2xx and an `oidc.state`.
- *  - `{ ok: false, reason }` — network error / non-2xx / unparseable body.
- *    The `reason` is surfaced to the user before falling back to manual PAT.
+ * Result of probing the server for whether browser/device-flow login is
+ * available.
+ *  - `{ ok: true, oidc }` — the probe got a conclusive answer (`ready` =
+ *    device-flow available, `disabled` = no OIDC → manual PAT).
+ *  - `{ ok: false, reason }` — network error / inconclusive status. The
+ *    `reason` is surfaced to the user before falling back to manual PAT.
  */
 export type OidcProbeResult = { ok: true; oidc: OidcState } | { ok: false; reason: string };
 
@@ -803,41 +807,50 @@ export type OidcProbeResult = { ok: true; oidc: OidcState } | { ok: false; reaso
 export type OidcProbe = (baseUrl: string) => Promise<OidcProbeResult>;
 
 /**
- * Default OIDC probe: `GET <baseUrl>/health/detailed` and read `oidc.state`.
+ * Default OIDC probe: `GET <baseUrl>/auth/login` (the browser-login entry
+ * point) and read OIDC availability from the HTTP status.
  *
- * `/health/detailed` is auth-protected on the server (Bearer PAT), but the only
- * field we need — `oidc.state` — is returned in the JSON body regardless of the
- * auth-derived status code as long as the route renders. We treat ANY non-2xx
- * or unparseable/missing `oidc.state` as a probe failure and fall back to the
- * manual-PAT escape hatch (the route may not even exist on an older server).
+ * Why NOT `/health/detailed` (the original #807 target): v2.0's identity
+ * cutover put `/health/detailed` behind Bearer-PAT auth, so an unauthenticated
+ * probe — which is the ONLY kind possible during onboarding, before any PAT
+ * exists — gets a hard `401 {"error":"UNAUTHORIZED"}` with NO `oidc.state` in
+ * the body. That made this probe always fail and `setup --remote` always fall
+ * back to manual-PAT entry, defeating the automated device-flow login
+ * (wood-fired-tasks #831).
+ *
+ * `/auth/login` is PUBLIC (`skipAuth: true`) and an unambiguous signal:
+ *   - OIDC ready    → `302` redirect to the IdP authorize URL.
+ *   - OIDC disabled → the disabled-stub returns `501`.
+ * We do NOT follow the redirect (`redirect: 'manual'`) — only its status
+ * matters. Any other/unreachable status is inconclusive → manual-PAT fallback.
  * Bounded by a 5s timeout so a half-open server can't hang `setup --remote`.
  */
 export async function probeOidcState(baseUrl: string): Promise<OidcProbeResult> {
-  const probeUrl = new URL('/health/detailed', baseUrl).toString();
+  const probeUrl = new URL('/auth/login', baseUrl).toString();
   let response: Response;
   try {
-    response = await fetch(probeUrl, { method: 'GET', signal: AbortSignal.timeout(5000) });
+    response = await fetch(probeUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(5000),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, reason: `could not reach ${probeUrl}: ${message}` };
   }
 
-  if (!response.ok) {
-    return { ok: false, reason: `${probeUrl} returned HTTP ${response.status}` };
+  // 3xx → /auth/login is redirecting to the IdP → device-flow is available.
+  // (`redirect: 'manual'` surfaces the real 3xx status rather than following
+  // it; some runtimes report an opaque-redirect as status 0 with type
+  // 'opaqueredirect', which we also treat as a redirect.)
+  if ((response.status >= 300 && response.status < 400) || response.type === 'opaqueredirect') {
+    return { ok: true, oidc: 'ready' };
   }
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return { ok: false, reason: `${probeUrl} returned a non-JSON body` };
+  // 501 → the OIDC-disabled stub → no browser login; use a manual PAT.
+  if (response.status === 501) {
+    return { ok: true, oidc: 'disabled' };
   }
-
-  const oidc = (body as { oidc?: { state?: unknown } } | null)?.oidc?.state;
-  if (oidc === 'ready' || oidc === 'disabled' || oidc === 'degraded') {
-    return { ok: true, oidc };
-  }
-  return { ok: false, reason: `${probeUrl} did not report an oidc.state` };
+  return { ok: false, reason: `${probeUrl} returned HTTP ${response.status}` };
 }
 
 /**
@@ -954,8 +967,8 @@ export async function persistManualPat(
 export interface RunSetupInteractiveOptions extends RunSetupOptions {
   /**
    * Injectable OIDC-state probe for the `--remote` path (#807). Defaults to
-   * {@link probeOidcState} (a real `GET /health/detailed`). Tests stub this to
-   * drive the ready / disabled / degraded / probe-failure branches.
+   * {@link probeOidcState} (a real `GET /auth/login`, public). Tests stub this
+   * to drive the ready / disabled / probe-failure branches.
    */
   oidcProbe?: OidcProbe;
   /**
