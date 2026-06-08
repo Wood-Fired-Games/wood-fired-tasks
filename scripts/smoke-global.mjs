@@ -47,6 +47,8 @@ const REPO_ROOT = path.resolve(path.dirname(__filename), '..');
 const tempDirs = [];
 /** @type {import('node:child_process').ChildProcess | null} */
 let serverProc = null;
+/** @type {import('node:http').Server | null} — local /api/v1/me stub (SMOKE_REMOTE). */
+let meServer = null;
 
 function mkTemp(prefix) {
   const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -115,6 +117,38 @@ function runOrFail(cmd, args, opts = {}) {
   return res;
 }
 
+/**
+ * Async variant of {@link run}. Required when the command must talk to an
+ * in-process HTTP server: `spawnSync` blocks the event loop, so a Node server
+ * listening in THIS process can't accept the child's connection until the child
+ * has already exited. `spawn` keeps the loop free to serve it. Resolves
+ * `{ status, stdout, stderr }`; never rejects (spawn errors call `fail`).
+ */
+function runAsync(cmd, args, opts = {}) {
+  if (ELEVATION_RE.test(cmd)) {
+    fail(`refusing to run elevated command: ${cmd}`);
+  }
+  const useShell = needsWindowsShell(cmd);
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      shell: useShell,
+      ...opts,
+      env: { ...process.env, ...(opts.env ?? {}) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => {
+      stdout += c.toString('utf8');
+    });
+    child.stderr.on('data', (c) => {
+      stderr += c.toString('utf8');
+    });
+    child.on('error', (err) => fail(`spawn failed for ${cmd}: ${err.message}`));
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
 /** Find a free TCP port by binding :0 then releasing it. */
 async function freePort() {
   const net = await import('node:net');
@@ -135,6 +169,13 @@ function cleanup() {
       process.kill(serverProc.pid, 'SIGTERM');
     } catch {
       /* already gone */
+    }
+  }
+  if (meServer) {
+    try {
+      meServer.close();
+    } catch {
+      /* already closed */
     }
   }
   for (const dir of tempDirs) {
@@ -394,35 +435,81 @@ async function main() {
   signal('SIGKILL');
   pass('server shut down cleanly');
 
-  // -- 5. OPT-IN: setup --remote writes the remote bridge entry --------------
+  // -- 5. OPT-IN: setup --remote --token persists a real credential ----------
   // Gated behind SMOKE_REMOTE=1 so default behaviour is unchanged (backward
   // compatible). The cross-OS CI matrix sets SMOKE_REMOTE=1 so the one thing
   // the base smoke does NOT cover — that `setup --remote <url> --token <pat>`
-  // writes the `wood-fired-tasks-remote` MCP entry carrying WFT_API_URL /
-  // WFT_API_KEY — is exercised on every leg without a separate, driftable
-  // shell step.
+  // writes the URL-only `wood-fired-tasks-remote` MCP entry AND persists the
+  // validated PAT to the credentials file — is exercised on every leg without a
+  // separate, driftable shell step.
+  //
+  // #858: the `--token` path now validates the PAT against `GET /api/v1/me` and
+  // writes it to the credentials file (the bridge's single source of truth) —
+  // it no longer writes an orphaned `remote-token` cache that nothing reads. So
+  // this smoke stands up a tiny local /api/v1/me stub and asserts the credential
+  // actually lands where the CLI + bridge read it.
   if (process.env.SMOKE_REMOTE === '1') {
-    console.log('-- setup --remote (temp HOME) --');
+    console.log('-- setup --remote --token (temp HOME, local /api/v1/me) --');
     const remoteHome = mkTemp('wft-smoke-remote-home-');
     const remoteCwd = mkTemp('wft-smoke-remote-cwd-');
-    const remoteUrl = 'https://tasks.example.invalid/api';
     // 32-char throwaway PAT: non-secret, lives only in the temp HOME + config.
     const remotePat = 'smoke0pat0smoke0pat0smoke0pat0aa';
+
+    // Local identity server: persistManualPat GETs <baseUrl>/api/v1/me with a
+    // Bearer header before writing credentials. Return an identity for the
+    // matching PAT; 401 otherwise.
+    const http = await import('node:http');
+    const mePort = await freePort();
+    meServer = http.createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/api/v1/me') {
+        if (req.headers.authorization === `Bearer ${remotePat}`) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              id: 4242,
+              displayName: 'Smoke User',
+              email: 'smoke@example.invalid',
+              isLegacy: false,
+              isServiceAccount: false,
+            }),
+          );
+          return;
+        }
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'UNAUTHORIZED' }));
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise((resolve) => meServer.listen(mePort, '127.0.0.1', resolve));
+    const remoteUrl = `http://127.0.0.1:${mePort}`;
+
     const remoteEnv = {
       HOME: remoteHome,
       USERPROFILE: remoteHome, // Windows parity
-      // Keep the OS config dir inside the temp HOME on every platform so the
-      // cached PAT never lands in the runner's real config tree.
+      // Keep the OS config dir (and thus the credentials file) inside the temp
+      // HOME on every platform so the PAT never lands in the runner's real tree.
       XDG_CONFIG_HOME: path.join(remoteHome, '.config'),
       LOCALAPPDATA: path.join(remoteHome, 'AppData', 'Local'),
       APPDATA: path.join(remoteHome, 'AppData', 'Roaming'),
     };
 
-    const remoteSetup = runOrFail(binPath, ['setup', '--remote', remoteUrl, '--token', remotePat], {
-      cwd: remoteCwd,
-      env: remoteEnv,
-    });
+    // Run async (NOT runOrFail/spawnSync): the child's persistManualPat fetch
+    // hits our in-process /api/v1/me, which can only be served while this
+    // process's event loop is free — spawnSync would deadlock it.
+    const remoteSetup = await runAsync(
+      binPath,
+      ['setup', '--remote', remoteUrl, '--token', remotePat],
+      { cwd: remoteCwd, env: remoteEnv },
+    );
     if (remoteSetup.stdout) console.log(remoteSetup.stdout.trimEnd());
+    if (remoteSetup.status !== 0) {
+      if (remoteSetup.stderr) console.error(remoteSetup.stderr);
+      fail(`setup --remote --token exited ${remoteSetup.status}`);
+    }
+
+    meServer.close();
+    meServer = null;
 
     const remoteClaudeJsonPath = path.join(remoteHome, '.claude.json');
     assert(existsSync(remoteClaudeJsonPath), `${remoteClaudeJsonPath} created by setup --remote`);
@@ -440,21 +527,30 @@ async function main() {
     );
     // #810 security contract: the PAT is NEVER persisted into claude.json. The
     // entry is URL-only; the bridge resolves the bearer token at runtime from
-    // the cached remote-token file written by `cachePat`.
+    // the credentials file written below.
     assert(
       remoteEntryEnv.WFT_API_KEY === undefined,
       'remote entry is URL-only (no WFT_API_KEY persisted in claude.json, #810)',
     );
-    // The PAT is cached to the platform config dir (env-paths: XDG on Linux,
-    // ~/Library on macOS, %APPDATA% on Windows — all rooted under the temp HOME
-    // here). Parse the exact path from setup's own "Cached remote PAT at <path>"
-    // log line rather than reconstructing it per-OS.
-    const cacheMatch = (remoteSetup.stdout ?? '').match(/Cached remote PAT at (.+?)\s*$/m);
-    assert(cacheMatch != null, 'setup --remote --token logged the cached PAT path');
-    const remoteTokenPath = cacheMatch[1].trim();
+    // #858: the validated PAT is persisted to the CLI credentials file — the
+    // SAME file `tasks login` writes and the remote bridge reads. With
+    // XDG_CONFIG_HOME rooted in the temp HOME, that resolves deterministically.
+    const credPath = path.join(remoteHome, '.config', 'wood-fired-tasks', 'credentials');
+    assert(existsSync(credPath), `setup --remote --token wrote the credentials file ${credPath}`);
+    const credBody = readFileSync(credPath, 'utf8');
     assert(
-      existsSync(remoteTokenPath) && readFileSync(remoteTokenPath, 'utf8').trim() === remotePat,
-      `setup --remote --token cached the PAT to ${remoteTokenPath}`,
+      credBody.includes(remotePat),
+      'credentials file carries the validated PAT (CLI + bridge read it from here)',
+    );
+    assert(
+      credBody.includes('user_id = 4242'),
+      'credentials file carries the identity resolved from /api/v1/me',
+    );
+    // #858: the orphaned `remote-token` cache was removed — setup must no longer
+    // log it (the credentials file is the single source of truth).
+    assert(
+      !/Cached remote PAT at/i.test(remoteSetup.stdout ?? ''),
+      'setup --remote --token no longer writes the orphaned remote-token cache',
     );
   } else {
     console.log('-- setup --remote: SKIPPED (set SMOKE_REMOTE=1 to enable) --');

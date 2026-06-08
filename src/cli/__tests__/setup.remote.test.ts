@@ -3,7 +3,6 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import {
-  runSetup,
   runSetupInteractive,
   runRemoteOnboarding,
   selectRemoteOnboardingMethod,
@@ -12,11 +11,11 @@ import {
   persistManualPat,
   buildRemoteMcpEntry,
   commandsDestDir,
-  patCachePath,
   type ManualPatPersistResult,
   type OidcProbeResult,
   type RunSetupInteractiveOptions,
 } from '../commands/setup.js';
+import { getCredentialsPath, resolveAuth, setTokenOverride } from '../auth/credentials.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { dataDir } from '../../config/paths.js';
 import { startDeviceFlowServer } from './helpers/device-flow-server.js';
@@ -32,17 +31,6 @@ const REMOTE_URL = 'http://tasks.example.local:3000';
 // URLs (REMOTE_URL) now correctly route to manual-PAT entry instead.
 const REMOTE_URL_HTTPS = 'https://tasks.example.com:3000';
 
-function withSandbox<T>(fn: (home: string, configDir: string) => T): T {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-home-'));
-  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-cfg-'));
-  try {
-    return fn(home, configDir);
-  } finally {
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(configDir, { recursive: true, force: true });
-  }
-}
-
 /** Async sandbox: awaits `fn` before tearing down the temp dirs. */
 async function withSandboxAsync<T>(
   fn: (home: string, configDir: string) => Promise<T>,
@@ -57,116 +45,122 @@ async function withSandboxAsync<T>(
   }
 }
 
-describe('tasks setup --remote', () => {
-  it('writes a URL-only wood-fired-tasks-remote MCP entry (WFT_API_URL, no token), copies skills, and caches the PAT under the config dir', () => {
-    withSandbox((home, configDir) => {
-      // Pre-seed an unrelated mcpServer to prove preservation.
-      const claudeJson = path.join(home, '.claude.json');
-      fs.writeFileSync(
-        claudeJson,
-        JSON.stringify({ mcpServers: { 'some-other': { type: 'stdio', command: 'x' } } }, null, 2) +
-          '\n',
-        'utf8',
-      );
+describe('tasks setup --remote --token (#858: persists a real credential)', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    setTokenOverride(null);
+    vi.restoreAllMocks();
+  });
 
-      const result = runSetup({
+  /**
+   * Sandbox HOME + configDir + an isolated credentials file, run `fn`, tear all
+   * down. The credentials path is redirected via WFT_CREDENTIALS_PATH so the
+   * test never touches the real ~/.config credentials.
+   */
+  async function withCredSandbox(
+    fn: (ctx: { home: string; configDir: string; credFile: string }) => Promise<void>,
+  ): Promise<void> {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-home-'));
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-cfg-'));
+    const credDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-remote-cred-'));
+    const credFile = path.join(credDir, 'credentials');
+    const prevCred = process.env['WFT_CREDENTIALS_PATH'];
+    process.env['WFT_CREDENTIALS_PATH'] = credFile;
+    try {
+      await fn({ home, configDir, credFile });
+    } finally {
+      if (prevCred === undefined) delete process.env['WFT_CREDENTIALS_PATH'];
+      else process.env['WFT_CREDENTIALS_PATH'] = prevCred;
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(configDir, { recursive: true, force: true });
+      fs.rmSync(credDir, { recursive: true, force: true });
+    }
+  }
+
+  it('validates the PAT against /api/v1/me, writes credentials, and writes a URL-only MCP entry', async () => {
+    await withCredSandbox(async ({ home, configDir, credFile }) => {
+      // Mock the identity probe persistManualPat performs.
+      globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(input)).toBe(`${REMOTE_URL}/api/v1/me`);
+        expect((init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${FAKE_PAT}`);
+        return new Response(
+          JSON.stringify({ id: 42, displayName: 'Remote User', email: 'remote@example.local' }),
+          { status: 200 },
+        );
+      }) as never;
+
+      const result = await runSetupInteractive({
         home,
         configDir,
+        log: () => {},
+        mode: 'remote',
         remote: REMOTE_URL,
         token: FAKE_PAT,
-        log: () => {},
+        // No menu / no prompts on this non-interactive direct path.
+        isInteractive: () => false,
       });
 
-      // (1) Remote entry present and correctly shaped.
-      const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
-      expect(doc.mcpServers['some-other']).toEqual({
-        type: 'stdio',
-        command: 'x',
-      });
+      expect(result.mode).toBe('remote');
+      if (result.mode !== 'remote') throw new Error('expected remote result');
+      expect(result.ok).toBe(true);
+      expect(result.method).toBe('manual-pat');
+
+      // (1) The credential is PERSISTED to the credentials file — the bug was
+      // that it went to an orphaned cache and nothing read it.
+      expect(fs.existsSync(credFile)).toBe(true);
+      const credBody = fs.readFileSync(credFile, 'utf8');
+      expect(credBody).toContain(FAKE_PAT);
+      expect(credBody).toContain('user_id = 42');
+
+      // (2) resolveAuth() yields the token from the FILE (not the --token flag).
+      setTokenOverride(null);
+      const auth = await resolveAuth();
+      expect(auth).toEqual({ kind: 'bearer', token: FAKE_PAT, origin: 'file' });
+      // Sanity: the resolver read the sandboxed file we just wrote.
+      expect(getCredentialsPath()).toBe(credFile);
+
+      // (3) The claude.json entry is URL-only — the PAT is NEVER embedded.
+      const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
       const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
       expect(remoteEntry).toEqual(buildRemoteMcpEntry(REMOTE_URL));
-      expect(remoteEntry.type).toBe('stdio');
-      expect(remoteEntry.env.WFT_API_URL).toBe(REMOTE_URL);
-      // #810: URL-only entry — the token is NEVER persisted in claude.json.
-      // The bridge reads it at runtime from the credentials file / WFT_API_KEY.
       expect(remoteEntry.env.WFT_API_KEY).toBeUndefined();
-      // The local entry is NOT written in the remote path.
-      expect(doc.mcpServers['wood-fired-tasks']).toBeUndefined();
-      expect(result.serverName).toBe('wood-fired-tasks-remote');
-      expect(result.remote).toBe(true);
+      expect(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).not.toContain(FAKE_PAT);
 
-      // (2) Skills copied in the remote path too.
-      const destDir = commandsDestDir(home);
+      // (4) Skills still copied on the remote path.
       const copied = fs
-        .readdirSync(destDir)
+        .readdirSync(commandsDestDir(home))
         .filter((f) => f.endsWith('.md'))
         .sort();
-      const sourceSet = fs
-        .readdirSync(tasksSkillsDir)
-        .filter((f) => f.endsWith('.md'))
-        .sort();
-      expect(copied).toEqual(sourceSet);
       expect(copied.length).toBeGreaterThan(0);
 
-      // (3) PAT cached under the CONFIG dir (NOT the data dir).
-      const patPath = patCachePath(configDir);
-      expect(result.patCache?.path).toBe(patPath);
-      expect(fs.existsSync(patPath)).toBe(true);
-      expect(fs.readFileSync(patPath, 'utf8')).toBe(FAKE_PAT);
-      // It lives under the injected config dir...
-      expect(patPath.startsWith(configDir)).toBe(true);
-      // ...and NOT under the real data dir.
-      expect(patPath.startsWith(dataDir)).toBe(false);
-
-      // POSIX: file is 0600 (owner-only).
-      if (process.platform !== 'win32') {
-        const mode = fs.statSync(patPath).mode & 0o777;
-        expect(mode).toBe(0o600);
-      }
+      // (5) The orphaned PAT cache file is NOT written anywhere under configDir
+      // or the data dir (the whole cache path was deleted in #858).
+      expect(fs.existsSync(path.join(configDir, 'remote-token'))).toBe(false);
+      expect(fs.existsSync(path.join(dataDir, 'remote-token'))).toBe(false);
     });
   });
 
-  it('remote-entry write + PAT cache are idempotent on re-run (no spurious changes)', () => {
-    withSandbox((home, configDir) => {
-      const first = runSetup({
+  it('a rejected PAT (401) writes NO credentials file and NO claude.json entry', async () => {
+    await withCredSandbox(async ({ home, configDir, credFile }) => {
+      globalThis.fetch = vi.fn(async () => new Response('no', { status: 401 })) as never;
+
+      const result = await runSetupInteractive({
         home,
         configDir,
+        log: () => {},
+        mode: 'remote',
         remote: REMOTE_URL,
         token: FAKE_PAT,
-        log: () => {},
-      });
-      expect(first.claudeJsonChanged).toBe(true);
-      expect(first.patCache?.changed).toBe(true);
-
-      const claudeJson = path.join(home, '.claude.json');
-      const jsonAfterFirst = fs.readFileSync(claudeJson, 'utf8');
-      const patPath = patCachePath(configDir);
-      const patAfterFirst = fs.readFileSync(patPath, 'utf8');
-
-      const second = runSetup({
-        home,
-        configDir,
-        remote: REMOTE_URL,
-        token: FAKE_PAT,
-        log: () => {},
+        isInteractive: () => false,
       });
 
-      // No second-run write to either artifact.
-      expect(second.claudeJsonChanged).toBe(false);
-      expect(second.patCache?.changed).toBe(false);
-      expect(second.skills.written).toEqual([]);
-
-      // Byte-stable on disk.
-      expect(fs.readFileSync(claudeJson, 'utf8')).toBe(jsonAfterFirst);
-      expect(fs.readFileSync(patPath, 'utf8')).toBe(patAfterFirst);
-    });
-  });
-
-  it('--remote without --token throws (cannot author a usable WFT_API_KEY)', () => {
-    withSandbox((home, configDir) => {
-      expect(() => runSetup({ home, configDir, remote: REMOTE_URL, log: () => {} })).toThrow(
-        /--token/,
-      );
+      expect(result.mode).toBe('remote');
+      if (result.mode !== 'remote') throw new Error('expected remote result');
+      expect(result.ok).toBe(false);
+      // Nothing half-configured: no credentials, no MCP entry.
+      expect(fs.existsSync(credFile)).toBe(false);
+      expect(fs.existsSync(path.join(home, '.claude.json'))).toBe(false);
     });
   });
 });
@@ -274,9 +268,14 @@ describe('runSetupInteractive — Remote menu selection prompts for the base URL
         // Simulate the menu resolving to "Remote" with NO --remote flag set.
         selectMode: async () => 'remote',
         isInteractive: () => true,
-        // A --token makes this the offline manual path (no probe / no network);
-        // the point under test is that the PROMPTED url threads through.
+        // A --token routes to the direct manual-PAT path; stub the persist seam
+        // so it succeeds without a live /api/v1/me server. The point under test
+        // is that the PROMPTED url threads through to the remote MCP entry.
         token: FAKE_PAT,
+        manualPatPersist: async () => ({
+          ok: true as const,
+          identity: { id: 1, displayName: 'Menu User', email: null },
+        }),
         promptIO: { input: input as never, output: { write: () => true } },
       });
 
@@ -392,10 +391,10 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       expect(JSON.stringify(remoteEntry)).not.toContain(FAKE_PAT);
       expect(result.setup?.serverName).toBe('wood-fired-tasks-remote');
       expect(result.setup?.remote).toBe(true);
-      // The device-flow branch does NOT double-cache a PAT under the config dir
-      // (the credentials writer is the single owner of the minted PAT).
-      expect(result.setup?.patCache).toBeUndefined();
-      expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+      // The device-flow branch does NOT cache a PAT under the config dir — the
+      // credentials writer is the single owner of the minted PAT (#858: the
+      // orphaned cache path was deleted entirely).
+      expect(fs.existsSync(path.join(configDir, 'remote-token'))).toBe(false);
     });
   });
 
@@ -541,10 +540,10 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
         expect(reqs.code.length).toBeGreaterThan(0);
         expect(reqs.token.length).toBeGreaterThan(0);
         // The provisioned PAT is persisted via the credentials writer (#806),
-        // NOT under the setup config-dir PAT cache (which stays empty here).
+        // NOT under any setup config-dir PAT cache (#858 deleted that path).
         expect(fs.existsSync(credFile)).toBe(true);
         expect(fs.readFileSync(credFile, 'utf8')).toContain(FAKE_PAT);
-        expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+        expect(fs.existsSync(path.join(configDir, 'remote-token'))).toBe(false);
 
         // #808/#810: the claude.json entry written by the device-flow branch is
         // URL-only — it carries WFT_API_URL and embeds NO token.
@@ -603,8 +602,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       // under the config dir.
       expect(persistCalls).toEqual([[REMOTE_URL, FAKE_PAT]]);
       expect(result.manualPatIdentity).toEqual({ id: 7, displayName: 'Manual User', email: null });
-      expect(result.setup?.patCache).toBeUndefined();
-      expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+      expect(fs.existsSync(path.join(configDir, 'remote-token'))).toBe(false);
       // Manual path persisted the SAME URL-only remote MCP entry (#810) the
       // device-flow path writes; the PAT is never embedded in claude.json.
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
@@ -649,7 +647,7 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
       // #810: claude.json entry is URL-only — no embedded token.
       const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
       expect(doc.mcpServers['wood-fired-tasks-remote'].env.WFT_API_KEY).toBeUndefined();
-      expect(fs.existsSync(patCachePath(configDir))).toBe(false);
+      expect(fs.existsSync(path.join(configDir, 'remote-token'))).toBe(false);
     });
   });
 

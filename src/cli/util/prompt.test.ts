@@ -126,6 +126,16 @@ describe('promptLine', () => {
     input.write('windows-style\r\n');
     expect(await promise).toBe('windows-style');
   });
+
+  // #856: raw mode (used by promptSecret on a real TTY) disables CR→LF
+  // translation, so the Enter key delivers a BARE `\r` with no following `\n`.
+  // readLineFrom previously terminated only on `\n`, so the read hung forever.
+  it('terminates on a BARE CR (raw-mode Enter) and strips it', async () => {
+    const { input, output } = makeIO();
+    const promise = promptLine('', { input, output });
+    input.write('raw-mode-line\r');
+    expect(await promise).toBe('raw-mode-line');
+  });
 });
 
 describe('promptSecret', () => {
@@ -146,5 +156,15 @@ describe('promptSecret', () => {
     // The prompt label is allowed; the secret characters must never appear.
     expect(written()).toBe('Token: ');
     expect(written()).not.toContain(secret);
+  });
+
+  // #856: a pasted PAT followed by a bare-CR Enter (the raw-mode keypress) must
+  // resolve, not hang. This is the exact shape that wedged `tasks setup` /
+  // `tasks login` manual-PAT entry on a real terminal.
+  it('returns a secret terminated by a bare CR (the raw-mode hang regression)', async () => {
+    const { input, output } = makeIO();
+    const promise = promptSecret('Paste a personal access token: ', { input, output });
+    input.write('wft_pat_FAKE\r');
+    expect(await promise).toBe('wft_pat_FAKE');
   });
 });
