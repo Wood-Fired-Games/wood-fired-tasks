@@ -325,6 +325,11 @@ describe('tasks login (subprocess)', () => {
 // login must also accept a PAT, validate it against /api/v1/me, and persist it.
 // ---------------------------------------------------------------------------
 const MANUAL_PAT = 'wft_pat_MANUALLOGIN1234567890';
+// A fake PAT that the local /api/v1/me stub rejects (401), used to exercise the
+// rejected-token path. Bound to a NAMED const rather than passed inline after
+// `--token` so secret scanners don't flag a CLI-option value literal — it is not
+// a real credential (see also the gitleaks fixture allowlist in .gitleaks.toml).
+const WRONG_PAT = 'wft_pat_NOT_A_REAL_TOKEN';
 const ME_IDENTITY = { id: 11, displayName: 'Manual Login User', email: 'manual@example.com' };
 
 describe('tasks login --token (manual PAT, subprocess)', () => {
@@ -402,10 +407,9 @@ describe('tasks login --token (manual PAT, subprocess)', () => {
       me: { expectedToken: MANUAL_PAT, identity: ME_IDENTITY },
     });
 
-    const res = await runLogin(
-      ['--no-browser', '--server', server.baseUrl, '--token', 'wft_pat_WRONG_TOKEN'],
-      { XDG_CONFIG_HOME: tmpDir },
-    );
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl, '--token', WRONG_PAT], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
 
     expect(res.exitCode).toBe(1);
     expect(res.stderr).toMatch(/rejected|401/);
