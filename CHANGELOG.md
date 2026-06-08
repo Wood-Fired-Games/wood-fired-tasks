@@ -13,6 +13,17 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.0.1] - 2026-06-08
+
+### Fixed
+- **`tasks setup` interactive "Remote" selection no longer crashes.** Choosing
+  option **3) Remote** from the interactive setup menu threw
+  `remote onboarding requires a --remote <url> base URL.` because the menu set
+  the mode but never captured the server URL — only the `--remote <url>` flag
+  did. The interactive remote path now prompts for the base URL when it is not
+  supplied as a flag, guarded by a TTY check so non-interactive/CI callers still
+  fail fast with the same clear message instead of hanging on stdin.
+
 ## [v2.0.0] - 2026-06-07
 
 The **identity auth cutover** — a breaking major. The legacy `X-API-Key`
