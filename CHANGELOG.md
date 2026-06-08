@@ -23,6 +23,15 @@ _No changes yet._
   did. The interactive remote path now prompts for the base URL when it is not
   supplied as a flag, guarded by a TTY check so non-interactive/CI callers still
   fail fast with the same clear message instead of hanging on stdin.
+- **DB-path legacy-adopt tests are now hermetic.** `migrate-db-path.test.ts` and
+  `config-path-e2e.test.ts` exercise the "adopt `./data/tasks.db` when the OS
+  app-data DB is absent" precedence, but probed the real filesystem and so
+  failed on any dev machine where the `tasks` CLI had already created
+  `~/.local/share/wood-fired-tasks/tasks.db` (they passed on clean CI by luck).
+  `resolveMigrateDbPath`/`migrateCli` now forward the resolver's existing
+  injectable `exists` seam (default `fs.existsSync`, no behavior change), and the
+  tests inject a probe that hides the app-data DB — making the precedence-2
+  cases deterministic regardless of the developer's local state.
 
 ## [v2.0.0] - 2026-06-07
 
