@@ -46,6 +46,9 @@ import { ApiTokenRepository } from '../../../../repositories/api-token.repositor
 import { hashToken } from '../../../../services/pat-hash.js';
 
 const ORIGIN = 'http://localhost:3000';
+// #834: verification_uri is now derived from the request Host; inject this host
+// so the http-scheme + host reconstruct exactly ORIGIN.
+const ORIGIN_HOST = 'localhost:3000';
 const CLIENT_ID = 'cli-e2e-client.example.com';
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 
@@ -171,7 +174,8 @@ describe('device-flow end-to-end (server side)', () => {
     const codeRes = await h.app.inject({
       method: 'POST',
       url: '/auth/device/code',
-      headers: { 'content-type': 'application/json' },
+      // #834: verification_uri is derived from the request Host — pin it.
+      headers: { 'content-type': 'application/json', host: ORIGIN_HOST },
       payload: { client_id: CLIENT_ID, hostname: 'ci-runner' },
     });
     expect(codeRes.statusCode).toBe(200);

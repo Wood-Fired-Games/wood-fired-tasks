@@ -160,7 +160,8 @@ describe('auth barrel: OIDC-enabled device-flow routes registered', () => {
     const r = await h.app.inject({
       method: 'POST',
       url: '/auth/device/code',
-      headers: { 'content-type': 'application/json' },
+      // #834: verification_uri is built from the request Host, so pin it.
+      headers: { 'content-type': 'application/json', host: 'wft.example.com' },
       payload: { client_id: CLIENT_ID, hostname: 'ci-runner' },
     });
     expect(r.statusCode).toBe(200);
@@ -170,9 +171,10 @@ describe('auth barrel: OIDC-enabled device-flow routes registered', () => {
     // Envelope keys per RFC 8628 §3.2.
     expect(body.device_code).toMatch(/^[A-Za-z0-9_-]{43,}$/);
     expect(body.user_code).toMatch(/^[A-HJ-KM-NP-Z2-9]{8}$/);
-    expect(body.verification_uri).toBe(`${ORIGIN}/auth/device`);
+    // #834: derived from the request Host (the address the client reached).
+    expect(body.verification_uri).toBe('http://wft.example.com/auth/device');
     expect(body.verification_uri_complete).toBe(
-      `${ORIGIN}/auth/device?user_code=${body.user_code}`,
+      `http://wft.example.com/auth/device?user_code=${body.user_code}`,
     );
     expect(body.expires_in).toBe(600);
     expect(body.interval).toBe(5);

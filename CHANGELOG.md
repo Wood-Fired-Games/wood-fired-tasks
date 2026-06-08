@@ -13,6 +13,26 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.0.4] - 2026-06-08
+
+### Fixed
+- **Device-flow `verification_uri` now points at the address the client actually
+  connected to, not `localhost`.** `POST /auth/device/code` built the URL the
+  user opens in a browser from a STATIC configured origin (`OIDC_REDIRECT_URI`'s
+  origin), which is typically `http://localhost:3000`. A CLI that reached the
+  server over the LAN (e.g. `http://192.168.x.x:3000`) was told to open a
+  `localhost` URL pointing at its OWN machine — a dead end. The origin is now
+  derived per-request from the `Host` header (honoring `X-Forwarded-Host` /
+  `X-Forwarded-Proto` from a trusted reverse proxy), falling back to the
+  configured origin only when no `Host` is present. This is not a
+  host-header-injection vector: the `verification_uri` is returned only to the
+  same client that made the request. (Note: a Google-backed server whose OAuth
+  callback is `http://localhost` still can't complete the *browser login* leg
+  for a remote client — Google forbids non-`localhost` `http` redirect URIs — so
+  remote clients should use `tasks setup --remote <url> --token <pat>` or an
+  HTTPS domain. This fix makes the verification URL correct for properly
+  routable servers.)
+
 ## [v2.0.3] - 2026-06-08
 
 ### Fixed
