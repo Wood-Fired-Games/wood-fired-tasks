@@ -14,8 +14,9 @@ import { fileURLToPath } from 'node:url';
  * so the section cannot drift back to a git-clone / `npm run cli --` flow or
  * silently drop the no-sudo guarantee.
  *
- * SCOPE: it operates ONLY on the `## Quick Start` section and its fenced code
- * blocks — prose edits elsewhere, and rewording of the Quick Start narrative,
+ * SCOPE: it operates ONLY on the install/quickstart section — `## Install & run
+ * modes` (renamed from `## Quick Start`; both headings are still accepted) — and
+ * its fenced code blocks. Prose edits elsewhere, and rewording of the narrative,
  * do not trip it. The assertions key off the *commands* in the fenced blocks.
  *
  * CI: a vitest test, so it runs under `npm test` (`vitest run`) on every PR.
@@ -24,14 +25,15 @@ import { fileURLToPath } from 'node:url';
 const README_PATH = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'README.md');
 
 /**
- * Extract the body of the `## Quick Start` section: everything between that
- * heading and the next top-level (`## `) heading.
+ * Extract the body of the install/quickstart section: everything between the
+ * `## Install & run modes` heading (or the legacy `## Quick Start`) and the next
+ * top-level (`## `) heading.
  */
 export function extractQuickStart(markdown: string): string {
   const lines = markdown.split('\n');
-  const start = lines.findIndex((l) => /^##\s+Quick Start\s*$/.test(l));
+  const start = lines.findIndex((l) => /^##\s+(Install & run modes|Quick Start)\s*$/.test(l));
   if (start === -1) {
-    throw new Error('README is missing a "## Quick Start" section');
+    throw new Error('README is missing a "## Install & run modes" (or "## Quick Start") section');
   }
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
