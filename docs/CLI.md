@@ -48,8 +48,9 @@ The CLI requires these environment variables to connect to the API server:
 
 [IMPORTANT] Authentication uses a Personal Access Token (PAT) sent as
 `Authorization: Bearer <pat>`. For interactive use prefer
-[`tasks login`](#tasks-login) (OIDC device flow; caches a PAT to the credentials
-file, which takes precedence over `API_KEY`). For scripting/CI, set `API_KEY` to
+[`tasks login`](#tasks-login) (OIDC device flow, or `--token <pat>` for a manual
+PAT on non-`https` servers; writes a PAT to the credentials file, which takes
+precedence over `API_KEY`). For scripting/CI, set `API_KEY` to
 a `wft_pat_…` value or pass `--token wft_pat_…`. Mint a PAT via the web UI (`/me`),
 `tasks login`, or `tasks db mint-token` (headless bootstrap).
 
@@ -848,12 +849,19 @@ These commands manage the local credentials file used for Bearer (PAT) authentic
 
 ### tasks login
 
-Authenticate with the WFT server via the OAuth device flow. Requests a device code, surfaces a verification URL and user code, best-effort opens a browser, then polls until you approve. On success the minted Personal Access Token is written to the credentials file. The PAT value itself is never printed.
+Authenticate with the WFT server and write a Personal Access Token to the credentials file. The PAT value itself is never printed (stdout or stderr). Two paths:
+
+- **Device flow (default).** Requests a device code, surfaces a verification URL and user code, best-effort opens a browser, then polls until you approve. Used when browser login can complete against the server — that is, an `https` URL or `http://localhost` / `127.0.0.1`.
+- **Manual PAT.** Triggered when you pass `--token <pat>`, *or* automatically when browser login can't complete against the target server (a plain-`http` non-localhost URL — identity providers like Google reject non-`https` OAuth redirect URIs, so the device flow would dead-end). The PAT is validated against `GET /api/v1/me` and persisted to the credentials file. When no `--token` is given on such a server, `login` prints the same `https`-required / how-to-mint-a-PAT guidance `tasks setup` shows, then (on a TTY) prompts you to paste one.
+
+This makes `tasks login` reach parity with `tasks setup --remote`: a remote non-`https` server is no longer a dead end. Both commands share the manual-PAT logic (`canUseBrowserSso` gate + `persistManualPat`), so they can't drift.
+
+> Note: the login-command `--token <pat>` flag (which **persists** a credential) is distinct from the global `--token` flag (which sets a per-invocation Bearer header for outbound API calls and does **not** persist anything). `tasks login --token …` and `tasks --token … login` both reach the manual-PAT persistence path.
 
 **Examples:**
 
 ```bash
-# Standard interactive login
+# Standard interactive device-flow login (https / localhost server)
 tasks login
 
 # Don't auto-open a browser (print the URL only)
@@ -861,23 +869,28 @@ tasks login --no-browser
 
 # Override the server for this login (stored in the credentials file)
 tasks login --server https://tasks.example.com
+
+# Manual PAT — required for a remote plain-http / LAN-IP server where
+# Google SSO can't complete. Validated against /api/v1/me, then persisted.
+tasks login --server http://tasks.example.local:3000 --token wft_pat_…
 ```
 
 **Options:**
 
 | Option | Type | Description |
 |--------|------|-------------|
+| --token | string | Authenticate with a Personal Access Token instead of the device flow (required for remote non-`https` servers). Validated against `GET /api/v1/me`, then stored in the credentials file. |
 | --token-name | string | Name for the minted PAT (advisory in v1.6; reserved for v1.7 explicit naming) |
 | --no-browser | flag | Skip auto-opening the verification URL in a browser |
 | --server | string | Override `API_BASE_URL` for this invocation (persisted to the credentials file) |
 
 **Output:**
 
-In text mode, login chrome (verification URL, user code, progress) is written to **stderr**, so `tasks login && tasks list` keeps stdout clean. On success it prints `Logged in as <displayName>`. With `--json`, a sequence of newline-separated JSON event envelopes is written to stdout (`{event:"pending"}`, optional `{event:"slow_down"}`, then `{event:"logged_in"}` or `{event:"failed"}`).
+In text mode, login chrome (verification URL, user code, progress, or the manual-PAT guidance) is written to **stderr**, so `tasks login && tasks list` keeps stdout clean. On success it prints `Logged in as <displayName>`. With `--json`, a sequence of newline-separated JSON event envelopes is written to stdout — device flow: `{event:"pending"}`, optional `{event:"slow_down"}`, then `{event:"logged_in"}` or `{event:"failed"}`; manual PAT: a single `{event:"logged_in"}` or `{event:"failed"}`.
 
 **Exit codes:**
 
-Returns `0` on a successful login. Returns `1` on an invalid server URL, a failed device-code request, a terminal polling error, or a credentials-write failure.
+Returns `0` on a successful login. Returns `1` on an invalid server URL, a failed device-code request, a terminal polling error, a rejected/unreachable PAT, no PAT supplied on a non-`https` server, or a credentials-write failure.
 
 ### tasks logout
 

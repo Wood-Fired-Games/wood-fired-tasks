@@ -106,17 +106,28 @@ wood-fired-tasks setup \
   --token  wft_pat_…this-machine…
 ```
 
-This writes a **`wood-fired-tasks-remote`** entry to `~/.claude.json` (distinct
-from the local `wood-fired-tasks` entry — the two coexist) whose `env` carries
-`WFT_API_URL` (the base URL) and `WFT_API_KEY` (the PAT). That entry spawns the
-remote stdio bridge (`dist/mcp/remote/index.js`), which proxies every MCP tool
-call to the REST API over HTTP, so every machine sees one backlog.
+This writes a **URL-only `wood-fired-tasks-remote`** entry to `~/.claude.json`
+(distinct from the local `wood-fired-tasks` entry — the two coexist) whose `env`
+carries **only** `WFT_API_URL` (the base URL). The PAT is **never** embedded in
+`~/.claude.json` (#810). That entry spawns the remote stdio bridge
+(`dist/mcp/remote/index.js`), which proxies every MCP tool call to the REST API
+over HTTP, so every machine sees one backlog.
 
-The PAT is also **cached under your OS config dir** (`remote-token`, mode `0600`
-on POSIX) — operator configuration, never the data dir where the SQLite DB
-lives. `--remote` without `--token` is an error: a token is required so
-`WFT_API_KEY` can be set on the entry. Mint a per-machine PAT with
-`tasks db mint-token` (see [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents))
+When you pass `--token <pat>`, setup **validates it against `GET /api/v1/me`** and
+**persists it to the CLI credentials file** (`~/.config/wood-fired-tasks/credentials`,
+mode `0600` on POSIX) — the *same* file `tasks login` writes. The remote bridge
+then resolves its bearer token from that credentials file at runtime. There is no
+separate PAT "cache" file (the old `remote-token` cache was removed in #858 —
+nothing read it, so `setup --remote --token` reported success while leaving both
+the CLI and the bridge unauthenticated).
+
+`--token` is **optional**: omit it and `setup --remote <url>` runs the interactive
+onboarding — the OIDC **device flow** when the server supports browser login
+(https / localhost), otherwise a **manual-PAT** prompt. Supply `--token` (or set
+`WFT_API_KEY` for non-TTY/CI callers) for the non-interactive direct path, which
+skips the OIDC probe but still performs the `/api/v1/me` validation round-trip.
+Mint a per-machine PAT with `tasks db mint-token` (see
+[Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents))
 and revoke it independently to cut off a single client. For the full
 Windows/Linux/macOS fleet recipe, see
 [Multi-OS client fleet](#multi-os-client-fleet-one-shared-on-prem-server).

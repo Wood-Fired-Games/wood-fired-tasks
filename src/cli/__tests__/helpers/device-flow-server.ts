@@ -30,6 +30,16 @@ export interface TokenResponseFixture {
 export interface DeviceFlowServerOptions {
   codeResponse?: Record<string, unknown>;
   tokenResponses: TokenResponseFixture[];
+  /**
+   * When set, the server also serves `GET /api/v1/me` (used by the manual-PAT
+   * login/setup path, #857/#858): a request whose `Authorization: Bearer <pat>`
+   * matches `me.expectedToken` gets `me.identity` (HTTP 200); any other token
+   * gets 401. Omit to leave `/api/v1/me` unrouted (404).
+   */
+  me?: {
+    expectedToken: string;
+    identity: { id: number; displayName: string; email: string | null };
+  };
 }
 
 export interface DeviceFlowServer {
@@ -89,6 +99,19 @@ export async function startDeviceFlowServer(
     pollIdx += 1;
     return reply.code(fixture.status).send(fixture.body);
   });
+
+  // Optional manual-PAT identity endpoint (#857/#858). persistManualPat GETs
+  // this with a Bearer header to validate the PAT before writing credentials.
+  if (opts.me) {
+    const { expectedToken, identity } = opts.me;
+    fastify.get('/api/v1/me', async (request, reply) => {
+      const auth = request.headers.authorization ?? '';
+      if (auth === `Bearer ${expectedToken}`) {
+        return reply.code(200).send({ ...identity, isLegacy: false, isServiceAccount: false });
+      }
+      return reply.code(401).send({ error: 'UNAUTHORIZED' });
+    });
+  }
 
   const address = await fastify.listen({ port: 0, host: '127.0.0.1' });
   // Fastify v5 returns "http://127.0.0.1:<port>".

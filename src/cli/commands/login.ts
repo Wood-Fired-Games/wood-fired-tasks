@@ -31,6 +31,14 @@ import { env } from '../config/env.js';
 import { writeCredentials } from '../auth/credentials.js';
 import { openBrowser } from '../auth/browser-open.js';
 import { requestDeviceCode, pollForToken, type DeviceTokenSuccess } from '../auth/device-flow.js';
+import {
+  canUseBrowserSso,
+  browserSsoGuidance,
+  persistManualPat,
+  resolveManualPatToken,
+  type ManualPatPersist,
+} from '../auth/manual-pat.js';
+import type { PromptIO } from '../util/prompt.js';
 
 /** Emit one newline-separated JSON envelope on stdout (used in --json mode). */
 function emitJsonEvent(event: Record<string, unknown>): void {
@@ -222,11 +230,113 @@ export async function runDeviceLogin(args: RunDeviceLoginArgs): Promise<RunDevic
   return { ok: true, user: response.user };
 }
 
+/**
+ * Inputs to {@link runManualPatLogin} (task #857). Mirrors {@link RunDeviceLoginArgs}
+ * for the parts the command shares (baseUrl, isJson).
+ */
+export interface RunManualPatLoginArgs {
+  /** Validated server base URL. */
+  baseUrl: string;
+  /** Explicit PAT (`--token <pat>`); when absent, prompt on a TTY. */
+  token?: string;
+  /** When true, emit newline-separated JSON envelopes on stdout (vs text on stderr). */
+  isJson: boolean;
+  /** Injectable prompt IO (tests). Defaults to process.stdin/stdout. */
+  promptIO?: PromptIO;
+  /** Injectable TTY predicate (tests). Defaults to the real shouldPrompt. */
+  isInteractive?: () => boolean;
+  /** Injectable persistence seam (tests). Defaults to {@link persistManualPat}. */
+  manualPatPersist?: ManualPatPersist;
+}
+
+/**
+ * Manual-PAT login core (task #857): the parity-with-`tasks setup` path that
+ * lets `tasks login` finish on a server where browser SSO can't complete (a
+ * plain-http / LAN-IP server the IdP rejects), or whenever the user supplies a
+ * PAT directly.
+ *
+ * Behavior:
+ *   1. If browser SSO can't complete against `baseUrl` AND no `--token` was
+ *      supplied, print the same https-required / mint-a-PAT guidance `setup`
+ *      shows (shared via {@link browserSsoGuidance}).
+ *   2. Resolve the PAT: `--token` flag → interactive `promptSecret` (TTY only).
+ *   3. Validate + persist via {@link persistManualPat} — the SAME credentials
+ *      writer the device flow uses, so `tasks whoami` / the API client / the MCP
+ *      bridge all see the credential afterward.
+ *
+ * Security invariant (matches the device path): the PAT is NEVER written to
+ * stdout/stderr — the credentials file is its only resting place.
+ */
+export async function runManualPatLogin(
+  args: RunManualPatLoginArgs,
+): Promise<RunDeviceLoginResult> {
+  const { baseUrl, isJson } = args;
+  const hasToken = typeof args.token === 'string' && args.token.length > 0;
+
+  // Explain the https requirement up front when the user reached for `login`
+  // on a server browser SSO can't complete against and gave us no PAT to use.
+  if (!hasToken && !canUseBrowserSso(baseUrl) && !isJson) {
+    for (const line of browserSsoGuidance(baseUrl)) {
+      process.stderr.write(`${line}\n`);
+    }
+  }
+
+  const token = await resolveManualPatToken({
+    ...(args.token !== undefined && { token: args.token }),
+    ...(args.promptIO !== undefined && { promptIO: args.promptIO }),
+    ...(args.isInteractive !== undefined && { isInteractive: args.isInteractive }),
+    promptLabel: 'Paste a personal access token: ',
+  });
+
+  if (token === undefined) {
+    const message = 'No personal access token supplied. Re-run with --token <pat> to finish login.';
+    if (isJson) {
+      emitJsonEvent({ event: 'failed', error: 'no_token', message });
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+    return { ok: false };
+  }
+
+  const persist = args.manualPatPersist ?? persistManualPat;
+  const persisted = await persist(baseUrl, token);
+  if (!persisted.ok) {
+    const message = `Could not store the personal access token: ${persisted.reason}.`;
+    if (isJson) {
+      emitJsonEvent({ event: 'failed', error: 'pat_rejected', message });
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+    return { ok: false };
+  }
+
+  const user = {
+    id: persisted.identity.id,
+    displayName: persisted.identity.displayName,
+    email: persisted.identity.email,
+  } as DeviceTokenSuccess['user'];
+
+  if (isJson) {
+    emitJsonEvent({
+      event: 'logged_in',
+      user,
+      token_id: persisted.identity.tokenId ?? null,
+    });
+  } else {
+    process.stderr.write(`Logged in as ${persisted.identity.displayName}\n`);
+  }
+  return { ok: true, user };
+}
+
 export const loginCommand = new Command('login')
   .description('Authenticate with the WFT server via OAuth device flow')
   .option(
     '--token-name <name>',
     'Name for the minted PAT (currently advisory; reserved for v1.7 explicit naming)',
+  )
+  .option(
+    '--token <pat>',
+    'Authenticate with a personal access token instead of the browser device flow (required for remote non-https servers where Google SSO cannot complete). The PAT is validated against the server and stored in the credentials file.',
   )
   .option('--no-browser', 'Skip auto-opening the verification URL in a browser')
   .option(
@@ -253,6 +363,33 @@ export const loginCommand = new Command('login')
         process.stderr.write(`${msg}\n`);
       }
       process.exitCode = 1;
+      return;
+    }
+
+    // `--token` may bind to EITHER the login command (when written as
+    // `tasks login --token <pat>`) or the root program's Bearer-auth flag (when
+    // written as `tasks --token <pat> login`). Accept both so the manual-PAT
+    // login path works regardless of where Commander attached it.
+    const token: string | undefined =
+      typeof opts.token === 'string' && opts.token.length > 0
+        ? opts.token
+        : (globalOpts['token'] as string | undefined);
+    const hasToken = typeof token === 'string' && token.length > 0;
+
+    // 2. Choose the login path (task #857):
+    //   - manual-PAT when the user supplied a PAT, OR when browser SSO can't
+    //     complete against this server (plain-http non-localhost — Google
+    //     rejects the non-https OAuth redirect, so the device flow dead-ends).
+    //   - device flow otherwise (the default for https / localhost servers).
+    if (hasToken || !canUseBrowserSso(baseUrl)) {
+      const result = await runManualPatLogin({
+        baseUrl,
+        ...(token !== undefined && { token }),
+        isJson,
+      });
+      if (!result.ok) {
+        process.exitCode = 1;
+      }
       return;
     }
 

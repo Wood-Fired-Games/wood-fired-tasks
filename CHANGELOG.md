@@ -11,7 +11,42 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+- **`tasks login --token <pat>` — a manual-PAT login path.** `tasks login` was
+  device-flow only and **dead-ended on a remote non-`https` server**: the OAuth
+  device flow can't complete where Google rejects the non-`https` redirect URI,
+  and there was no way to supply a PAT instead. `login` now accepts `--token`
+  (validated against `GET /api/v1/me`, then persisted to the credentials file)
+  and, like `tasks setup`, applies the `canUseBrowserSso` gate — on a plain-`http`
+  non-localhost server it prints the `https`-required / how-to-mint-a-PAT
+  guidance and (on a TTY) prompts for one instead of launching a flow that can't
+  finish. The shared manual-PAT logic now lives in one module so `login` and
+  `setup` can't drift. (#857)
+
+### Fixed
+- **`tasks setup --remote --token <pat>` now actually authenticates you.** The
+  non-interactive `--token` path wrote the PAT to an **orphaned cache file that
+  no code reads** and never to the credentials file, so it reported success while
+  leaving *both* the CLI ("Not authenticated. Run: tasks login") and the remote
+  MCP bridge unauthenticated — the likely root cause of "remote MCP shows 0
+  projects" reports. The path now validates the PAT against `GET /api/v1/me` and
+  persists it to the credentials file (the same writer the device flow uses); the
+  bridge resolves its bearer token from there at runtime. The dead `remote-token`
+  cache (`cachePat`/`patCachePath`) was removed — the credentials file is the
+  single source of truth. (#858)
+- **The interactive "Paste a personal access token:" prompt no longer hangs on a
+  real terminal.** `promptSecret` enables TTY raw mode to suppress echo, which
+  disables CR→LF translation, so the Enter key delivers a bare `\r` (0x0D) — but
+  the line reader only terminated on `\n`, so the read blocked forever (pasted
+  PAT buffered, Enter never recognized). Hit on Windows PowerShell during
+  `tasks setup --remote` manual-PAT entry; platform-independent. The reader now
+  treats `\r`, `\n`, or `\r\n` as the line terminator. (#856)
+
+### Security
+- The `--remote --token` PAT is now stored only in the `0600` credentials file
+  and is still **never** embedded in `~/.claude.json` (the remote MCP entry stays
+  URL-only, #810). The removed `remote-token` cache eliminates a second on-disk
+  copy of the secret.
 
 ## [v2.0.5] - 2026-06-08
 

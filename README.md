@@ -119,8 +119,11 @@ wood-fired-tasks self-update       # npm i -g wood-fired-tasks@latest (no sudo)
 wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…
 ```
 
-This writes a `wood-fired-tasks-remote` MCP entry (proxying every tool to the
-REST API) and caches the PAT under your OS config dir. For a full
+This writes a URL-only `wood-fired-tasks-remote` MCP entry (proxying every tool
+to the REST API) and persists the validated PAT to the CLI credentials file —
+the same file `tasks login` writes; the bridge reads its bearer token from there
+at runtime (the PAT is never stored in `~/.claude.json`). Omit `--token` to run
+the interactive device-flow / manual-PAT onboarding instead. For a full
 Windows/Linux/macOS fleet on one on-prem server, see
 [Multi-OS client fleet](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server).
 
