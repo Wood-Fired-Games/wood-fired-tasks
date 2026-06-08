@@ -29,9 +29,15 @@ import { createSession } from '../../../services/device-flow-store.js';
 
 export interface DeviceCodeRouteOptions {
   /**
-   * Server origin used to build the verification URIs the CLI prints. Plan
-   * 30-08 sources this from `new URL(env.OIDC_REDIRECT_URI).origin`.
-   * Example: `https://woodfiredbugs.local`.
+   * FALLBACK origin for the verification URIs the CLI prints, used only when
+   * the request carries no usable Host header. Plan 30-08 sources this from
+   * `new URL(env.OIDC_REDIRECT_URI).origin`. Example: `https://woodfiredbugs.local`.
+   *
+   * #834: the verification origin is now derived PER-REQUEST from the address
+   * the client actually connected to (see {@link resolveVerificationOrigin}),
+   * because this configured value is typically `http://localhost:3000` and is
+   * unroutable for any client that reached the server over the LAN / a real
+   * hostname. `origin` remains as the no-Host-header fallback.
    */
   origin: string;
   /**
@@ -39,6 +45,44 @@ export interface DeviceCodeRouteOptions {
    * one OIDC_CLIENT_ID; we reject anything else).
    */
   expectedClientId: string;
+}
+
+/** First value of a possibly comma-joined / array-valued HTTP header. */
+function firstHeaderValue(v: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(v) ? v[0] : v;
+  if (typeof raw !== 'string') return undefined;
+  const first = raw.split(',')[0]?.trim();
+  return first && first.length > 0 ? first : undefined;
+}
+
+/**
+ * Resolve the origin (`scheme://host[:port]`) the CLIENT used to reach this
+ * server, for building the device-flow `verification_uri` the user opens in a
+ * browser (#834).
+ *
+ * Previously this was a STATIC configured origin (`OIDC_REDIRECT_URI`'s origin),
+ * which is `http://localhost:3000` on a typical server — so a CLI that connected
+ * over the LAN (e.g. `http://192.168.x.x:3000`) was told to open a localhost URL
+ * pointing at its OWN machine. We instead use the host the request arrived on,
+ * honoring `X-Forwarded-{Host,Proto}` from a trusted reverse proxy.
+ *
+ * Security: this is NOT a host-header-injection vector. The `verification_uri`
+ * is returned ONLY to the same client that sent the request, so a spoofed Host
+ * merely misdirects the spoofer. Falls back to `fallback` (the configured
+ * origin) when no Host header is present at all.
+ */
+export function resolveVerificationOrigin(
+  request: { headers: Record<string, string | string[] | undefined>; protocol?: string },
+  fallback: string,
+): string {
+  const host =
+    firstHeaderValue(request.headers['x-forwarded-host']) ??
+    firstHeaderValue(request.headers['host']);
+  if (!host) return fallback;
+  const scheme =
+    firstHeaderValue(request.headers['x-forwarded-proto']) ??
+    (request.protocol && request.protocol.length > 0 ? request.protocol : 'http');
+  return `${scheme}://${host}`;
 }
 
 /**
@@ -86,11 +130,16 @@ const deviceCodeRoute: FastifyPluginAsync<DeviceCodeRouteOptions> = async (fasti
       'device flow started',
     );
 
+    // #834: build the verification URL from the address the CLIENT connected to
+    // (request Host / X-Forwarded-*), not the static configured origin, so a
+    // remote/LAN client gets a URL it can actually open instead of localhost.
+    const origin = resolveVerificationOrigin(request, opts.origin);
+
     return reply.code(200).send({
       device_code: session.deviceCode,
       user_code: session.userCode,
-      verification_uri: `${opts.origin}/auth/device`,
-      verification_uri_complete: `${opts.origin}/auth/device?user_code=${session.userCode}`,
+      verification_uri: `${origin}/auth/device`,
+      verification_uri_complete: `${origin}/auth/device?user_code=${session.userCode}`,
       expires_in: 600 as const,
       interval: 5 as const,
     });
