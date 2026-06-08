@@ -13,6 +13,31 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.0.3] - 2026-06-08
+
+### Fixed
+- **`tasks setup` device-flow login no longer fails with `invalid_client` on
+  servers backed by a real IdP.** The RFC 8628 device-flow `client_id` was
+  validated against `OIDC_CLIENT_ID` — the *IdP's* OAuth client id used for the
+  browser SSO leg — while the CLI sends a logical `'wft-cli'`. On any server
+  using e.g. Google, those never matched, so `POST /auth/device/code` returned
+  `400 invalid_client` and setup crashed. The device-flow client id is now a
+  **separate** setting, `OIDC_DEVICE_CLIENT_ID` (defaults to `'wft-cli'` on both
+  server and CLI), decoupled from `OIDC_CLIENT_ID` and not part of the
+  all-or-nothing OIDC group — so the stock CLI authenticates against a stock
+  server with no configuration. Operators who customize it set the same value
+  on both sides.
+- **Remote onboarding degrades gracefully when the device flow can't start.**
+  A failed/throwing `POST /auth/device/code` (e.g. `invalid_client`, or a
+  network error) previously aborted `tasks setup` with a raw stack-trace-style
+  error. It now logs the reason and falls back to manual personal-access-token
+  entry, so onboarding can still complete.
+
+### Changed
+- New optional env var **`OIDC_DEVICE_CLIENT_ID`** (default `'wft-cli'`),
+  documented in `docs/SETUP.md`. No action required for existing deployments
+  using the default CLI.
+
 ## [v2.0.2] - 2026-06-08
 
 ### Fixed

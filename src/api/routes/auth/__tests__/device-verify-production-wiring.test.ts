@@ -117,6 +117,32 @@ describe('CR-01 regression — /auth/device/verify wired in auth-chain scope', (
     clearEnabledEnv();
   });
 
+  it('#833: device/code accepts the default device client_id (wft-cli), NOT the IdP OIDC_CLIENT_ID', async () => {
+    // setEnabledEnv() leaves OIDC_DEVICE_CLIENT_ID unset → server defaults it to
+    // 'wft-cli'. The stock `tasks` CLI sends 'wft-cli', so a stock server must
+    // accept it via the REAL createServer wiring…
+    const ok = await server.inject({
+      method: 'POST',
+      url: '/auth/device/code',
+      payload: { client_id: 'wft-cli', hostname: 'wiring-test' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(ok.statusCode).toBe(200);
+
+    // …and must NOT accept the IdP's OAuth client id. Before #833 the device
+    // endpoint was wired to OIDC_CLIENT_ID, so the Google client id was the only
+    // accepted value and the CLI default ('wft-cli') was rejected. The two are
+    // now decoupled.
+    const wrong = await server.inject({
+      method: 'POST',
+      url: '/auth/device/code',
+      payload: { client_id: CLIENT_ID, hostname: 'wiring-test' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(wrong.statusCode).toBe(400);
+    expect(JSON.parse(wrong.body)).toMatchObject({ error: 'invalid_client' });
+  });
+
   it('POST /auth/device/verify with valid session + CSRF → 200 Approved (not 500)', async () => {
     resetDeviceFlowStore();
 

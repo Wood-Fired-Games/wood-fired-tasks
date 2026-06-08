@@ -391,6 +391,7 @@ describe('Configuration Validation', () => {
       delete process.env.OIDC_CLIENT_SECRET;
       delete process.env.OIDC_REDIRECT_URI;
       delete process.env.OIDC_SCOPES;
+      delete process.env.OIDC_DEVICE_CLIENT_ID;
       delete process.env.SESSION_COOKIE_NAME;
       delete process.env.SESSION_COOKIE_SECRET;
     });
@@ -464,6 +465,28 @@ describe('Configuration Validation', () => {
         expect(result.data.OIDC_CLIENT_ID).toBe('client-id');
         expect(result.data.OIDC_CLIENT_SECRET).toBe('client-secret');
         expect(result.data.OIDC_REDIRECT_URI).toBe('https://example.com/auth/callback');
+      }
+    });
+
+    it('#833: OIDC_DEVICE_CLIENT_ID defaults to "wft-cli", independent of the OIDC group', () => {
+      // No OIDC vars set at all → the device client id still resolves to its
+      // default (it is NOT part of the all-or-nothing OIDC quartet), so the
+      // stock CLI's 'wft-cli' matches a stock server out of the box.
+      const result = configSchema.safeParse(process.env);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_DEVICE_CLIENT_ID).toBe('wft-cli');
+      }
+    });
+
+    it('#833: OIDC_DEVICE_CLIENT_ID is operator-overridable and does NOT require the OIDC quartet', () => {
+      process.env.OIDC_DEVICE_CLIENT_ID = 'my-cli-client';
+      const result = configSchema.safeParse(process.env);
+      // Set alone (no OIDC_ISSUER_URL/etc.) — must still validate, proving it is
+      // decoupled from the all-or-nothing OIDC group and from OIDC_CLIENT_ID.
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_DEVICE_CLIENT_ID).toBe('my-cli-client');
       }
     });
 

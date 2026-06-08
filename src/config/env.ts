@@ -111,6 +111,16 @@ export const configSchema = z
     OIDC_CLIENT_ID: z.string().min(1).optional(),
     OIDC_CLIENT_SECRET: z.string().min(1).optional(),
     OIDC_REDIRECT_URI: z.string().url().optional(),
+    // RFC 8628 device-flow client_id (#833). DISTINCT from OIDC_CLIENT_ID: the
+    // latter is the IdP's OAuth client id used for the BROWSER SSO leg
+    // (`/auth/login` → Google), which is opaque to the CLI. The device-flow
+    // `client_id` is a logical identifier the CLI and server agree on out of
+    // band; the `tasks` CLI sends `'wft-cli'` by default. Conflating the two
+    // (the original Plan-30-08 wiring used OIDC_CLIENT_ID for both) made the
+    // device flow reject the CLI's default `client_id` with `invalid_client`
+    // on any server backed by a real IdP. Defaulted so it works with the
+    // stock CLI and is NOT part of the all-or-nothing OIDC group.
+    OIDC_DEVICE_CLIENT_ID: z.string().min(1).default('wft-cli'),
     // WR-03 fix — `post_logout_redirect_uri` for RP-initiated logout.
     // Optional: when absent, the wiring at src/api/server.ts derives a
     // default from OIDC_REDIRECT_URI's origin (+ `/auth/login`). Sourcing
