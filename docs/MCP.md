@@ -160,33 +160,30 @@ already-running session. Quit and relaunch Codex (or start a new session); the
 
 ### Automatic Installation
 
-The provided installers handle configuration automatically. Both default to
-`--mode local`, which writes a `wood-fired-tasks` entry that holds only
-`DATABASE_PATH` — no API key is collected, persisted, or written, because the
-local MCP server does not use one (task #258).
-
-**Linux/macOS:**
+`wood-fired-tasks setup` handles configuration automatically. It defaults to
+the **Local** path, which writes a `wood-fired-tasks` entry that holds only
+`DATABASE_PATH` — no token is collected, persisted, or written, because the
+local MCP server does not use one.
 
 ```bash
-./install.sh                 # local (default) — no API key
-./install.sh --mode remote   # remote — prompts/reads WFT_API_KEY
+npm i -g wood-fired-tasks
+
+wood-fired-tasks setup                                              # Local (default)
+wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…  # Remote bridge
 ```
 
-**Windows:**
+`setup`:
+1. Copies skill files to `~/.claude/commands/tasks/`
+2. Adds or updates the MCP server configuration in `~/.claude.json`:
+   - Local adds/updates `wood-fired-tasks` (points at `dist/mcp/index.js`)
+   - Remote adds/updates `wood-fired-tasks-remote` (points at `dist/mcp/remote/index.js`), **URL-only**
+3. Sets `DATABASE_PATH` for the local server, or `WFT_API_URL` for the remote
+   bridge (the PAT is cached in the CLI credentials file, not `~/.claude.json` —
+   #810). Older local installs may have `DB_PATH`; both are accepted, with
+   `DATABASE_PATH` taking precedence.
 
-```powershell
-.\install.ps1                # local (default)
-.\install.ps1 -Mode remote   # remote
-```
-
-Both installers:
-1. Copy skill files to `~/.claude/commands/tasks/`
-2. Add or update the MCP server configuration in `~/.claude.json`:
-   - local mode adds/updates `wood-fired-tasks` (points at `dist/mcp/index.js`)
-   - remote mode adds/updates `wood-fired-tasks-remote` (points at `dist/mcp/remote/index.js`)
-3. Set the `DATABASE_PATH` environment variable for the local server, or
-   `WFT_API_URL` + `WFT_API_KEY` for the remote server. Older local installs
-   may have `DB_PATH`; both are accepted, with `DATABASE_PATH` taking precedence.
+> The old `./install.sh --mode …` / `.\install.ps1 -Mode …` git-clone installers
+> are retired — they now just delegate to `wood-fired-tasks setup`.
 
 See [docs/SETUP.md → Migration: removing an unused API key from older local
 installs](SETUP.md#migration-removing-an-unused-api-key-from-older-local-installs-task-258)
@@ -275,7 +272,7 @@ The remote server is configured entirely via environment variables and fails fas
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `WFT_API_URL` | yes | Base URL of the deployed bugs API, e.g. `http://your-server.local:3000` or `https://bugs.example.com`. The remote server appends `/api/v1` itself — supply the host root. No default; setting nothing fails startup so a misconfigured client never silently hits `localhost`. |
-| `WFT_API_KEY` | yes | PAT the remote server uses for every outbound REST call. Must be a valid token in the API's `api_tokens` table (mint with `tasks login` or `tasks db mint-token`). Sent as `Authorization: Bearer <pat>`. |
+| `WFT_API_KEY` | no (see note) | PAT the remote bridge sends as `Authorization: Bearer <pat>` on every outbound REST call. Must be a valid token in the API's `api_tokens` table (mint with `tasks login` or `tasks db mint-token`). **Optional override**: when unset, the bridge reads the PAT from the CLI credentials file written by `setup --remote`/`tasks login` (#810). Set it here only to override that file. |
 
 ### Claude Code config snippet
 
@@ -289,7 +286,7 @@ Add this alongside (or instead of) the local `wood-fired-tasks` entry in `~/.cla
       "args": ["/absolute/path/to/wood-fired-tasks/dist/mcp/remote/index.js"],
       "env": {
         "WFT_API_URL": "https://bugs.example.com",
-        "WFT_API_KEY": "your-api-key-here"
+        "WFT_API_KEY": "wft_pat_…"
       }
     }
   }
