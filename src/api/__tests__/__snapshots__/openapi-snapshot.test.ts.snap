@@ -530,6 +530,63 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/models/": {
+      "get": {
+        "description": "List the available Claude model catalog (runtime-discovered via the Anthropic Models API, TTL-cached). Returns \`{ models, stale }\`; \`stale: true\` means the static fallback was served (no API key / unreachable Models API).",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "models": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "type": "string",
+                          },
+                          "display_name": {
+                            "type": "string",
+                          },
+                          "family": {
+                            "type": "string",
+                          },
+                          "id": {
+                            "type": "string",
+                          },
+                        },
+                        "required": [
+                          "id",
+                          "display_name",
+                          "family",
+                          "created_at",
+                        ],
+                        "type": "object",
+                      },
+                      "type": "array",
+                    },
+                    "stale": {
+                      "type": "boolean",
+                    },
+                  },
+                  "required": [
+                    "models",
+                    "stale",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "models",
+        ],
+      },
+    },
     "/api/v1/projects/": {
       "get": {
         "description": "List projects (paginated). Returns \`{ data, total, limit, offset }\`.",
@@ -578,6 +635,409 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           },
                           "id": {
                             "type": "number",
+                          },
+                          "model_policy": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "execution": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "byCategory": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "heavy": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "light": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "maximum": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "minimal": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "moderate": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "strong": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                    },
+                                    "type": "object",
+                                  },
+                                  "constant": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string",
+                                      },
+                                      {
+                                        "enum": [
+                                          "auto",
+                                        ],
+                                        "type": "string",
+                                      },
+                                    ],
+                                  },
+                                  "default": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string",
+                                      },
+                                      {
+                                        "enum": [
+                                          "auto",
+                                        ],
+                                        "type": "string",
+                                      },
+                                    ],
+                                  },
+                                },
+                                "type": "object",
+                              },
+                              "planning": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "byCategory": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "heavy": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "light": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "maximum": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "minimal": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "moderate": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "strong": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                    },
+                                    "type": "object",
+                                  },
+                                  "constant": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string",
+                                      },
+                                      {
+                                        "enum": [
+                                          "auto",
+                                        ],
+                                        "type": "string",
+                                      },
+                                    ],
+                                  },
+                                  "default": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string",
+                                      },
+                                      {
+                                        "enum": [
+                                          "auto",
+                                        ],
+                                        "type": "string",
+                                      },
+                                    ],
+                                  },
+                                },
+                                "type": "object",
+                              },
+                              "validation": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "byCategory": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "heavy": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "light": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "maximum": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "minimal": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "moderate": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                      "strong": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string",
+                                          },
+                                          {
+                                            "enum": [
+                                              "auto",
+                                            ],
+                                            "type": "string",
+                                          },
+                                        ],
+                                      },
+                                    },
+                                    "type": "object",
+                                  },
+                                  "constant": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string",
+                                      },
+                                      {
+                                        "enum": [
+                                          "auto",
+                                        ],
+                                        "type": "string",
+                                      },
+                                    ],
+                                  },
+                                  "default": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string",
+                                      },
+                                      {
+                                        "enum": [
+                                          "auto",
+                                        ],
+                                        "type": "string",
+                                      },
+                                    ],
+                                  },
+                                },
+                                "type": "object",
+                              },
+                            },
+                            "type": "object",
                           },
                           "name": {
                             "type": "string",
@@ -1296,6 +1756,409 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "id": {
                       "type": "number",
                     },
+                    "model_policy": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "execution": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "planning": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "validation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                      },
+                      "type": "object",
+                    },
                     "name": {
                       "type": "string",
                     },
@@ -1500,6 +2363,409 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "id": {
                       "type": "number",
+                    },
+                    "model_policy": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "execution": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "planning": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "validation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                      },
+                      "type": "object",
                     },
                     "name": {
                       "type": "string",
@@ -2200,6 +3466,409 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "id": {
                       "type": "number",
+                    },
+                    "model_policy": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "execution": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "planning": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "validation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byCategory": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "heavy": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "light": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "maximum": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "minimal": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "moderate": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                                "strong": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string",
+                                    },
+                                    {
+                                      "enum": [
+                                        "auto",
+                                      ],
+                                      "type": "string",
+                                    },
+                                  ],
+                                },
+                              },
+                              "type": "object",
+                            },
+                            "constant": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                      },
+                      "type": "object",
                     },
                     "name": {
                       "type": "string",
@@ -3965,6 +5634,1254 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         },
         "tags": [
           "projects",
+        ],
+      },
+    },
+    "/api/v1/settings/model-policy": {
+      "get": {
+        "description": "Get the database-wide model-policy default. Returns the stored \`ModelPolicy\`, or \`null\` when no default is configured.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "nullable": true,
+                  "properties": {
+                    "execution": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byCategory": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "heavy": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "light": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "maximum": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "minimal": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "moderate": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "strong": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "constant": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                        "default": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                      },
+                      "type": "object",
+                    },
+                    "planning": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byCategory": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "heavy": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "light": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "maximum": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "minimal": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "moderate": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "strong": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "constant": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                        "default": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                      },
+                      "type": "object",
+                    },
+                    "validation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byCategory": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "heavy": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "light": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "maximum": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "minimal": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "moderate": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "strong": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "constant": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                        "default": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                      },
+                      "type": "object",
+                    },
+                  },
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "settings",
+        ],
+      },
+      "put": {
+        "description": "Set the database-wide model-policy default. Body is a \`ModelPolicy\` (or \`null\` to clear). An invalid policy shape yields 400.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "nullable": true,
+                "properties": {
+                  "execution": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "byCategory": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "heavy": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "light": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "maximum": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "minimal": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "moderate": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "strong": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                        },
+                        "type": "object",
+                      },
+                      "constant": {
+                        "anyOf": [
+                          {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          {
+                            "enum": [
+                              "auto",
+                            ],
+                            "type": "string",
+                          },
+                        ],
+                      },
+                      "default": {
+                        "anyOf": [
+                          {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          {
+                            "enum": [
+                              "auto",
+                            ],
+                            "type": "string",
+                          },
+                        ],
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "planning": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "byCategory": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "heavy": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "light": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "maximum": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "minimal": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "moderate": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "strong": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                        },
+                        "type": "object",
+                      },
+                      "constant": {
+                        "anyOf": [
+                          {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          {
+                            "enum": [
+                              "auto",
+                            ],
+                            "type": "string",
+                          },
+                        ],
+                      },
+                      "default": {
+                        "anyOf": [
+                          {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          {
+                            "enum": [
+                              "auto",
+                            ],
+                            "type": "string",
+                          },
+                        ],
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "validation": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "byCategory": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "heavy": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "light": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "maximum": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "minimal": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "moderate": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                          "strong": {
+                            "anyOf": [
+                              {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string",
+                              },
+                              {
+                                "enum": [
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                            ],
+                          },
+                        },
+                        "type": "object",
+                      },
+                      "constant": {
+                        "anyOf": [
+                          {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          {
+                            "enum": [
+                              "auto",
+                            ],
+                            "type": "string",
+                          },
+                        ],
+                      },
+                      "default": {
+                        "anyOf": [
+                          {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string",
+                          },
+                          {
+                            "enum": [
+                              "auto",
+                            ],
+                            "type": "string",
+                          },
+                        ],
+                      },
+                    },
+                    "type": "object",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "nullable": true,
+                  "properties": {
+                    "execution": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byCategory": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "heavy": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "light": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "maximum": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "minimal": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "moderate": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "strong": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "constant": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                        "default": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                      },
+                      "type": "object",
+                    },
+                    "planning": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byCategory": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "heavy": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "light": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "maximum": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "minimal": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "moderate": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "strong": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "constant": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                        "default": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                      },
+                      "type": "object",
+                    },
+                    "validation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byCategory": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "heavy": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "light": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "maximum": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "minimal": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "moderate": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                            "strong": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string",
+                                },
+                                {
+                                  "enum": [
+                                    "auto",
+                                  ],
+                                  "type": "string",
+                                },
+                              ],
+                            },
+                          },
+                          "type": "object",
+                        },
+                        "constant": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                        "default": {
+                          "anyOf": [
+                            {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string",
+                            },
+                            {
+                              "enum": [
+                                "auto",
+                              ],
+                              "type": "string",
+                            },
+                          ],
+                        },
+                      },
+                      "type": "object",
+                    },
+                  },
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "settings",
         ],
       },
     },

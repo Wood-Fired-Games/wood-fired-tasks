@@ -18,6 +18,12 @@ import { CommentService } from './services/comment.service.js';
 import { TopologyService } from './services/topology.service.js';
 import { DependencyGraphService } from './services/dependency-graph.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
+import { createSettingsRepository } from './repositories/settings.repository.js';
+import { createSettingsService, type SettingsService } from './services/settings.service.js';
+import {
+  createModelCatalogService,
+  type ModelCatalogService,
+} from './services/model-catalog.service.js';
 import { eventBus } from './events/event-bus.js';
 import { type OidcConfig } from './services/oidc-client.js';
 import { discoverOidcWithRetry } from './services/oidc-boot.js';
@@ -64,6 +70,20 @@ export interface App {
    * composes the requested shape in-memory.
    */
   dependencyGraphService: DependencyGraphService;
+  /**
+   * Configurable Task Models (Task 13): the database-wide model-policy default
+   * owner (task #916). Backs GET|PUT /api/v1/settings/model-policy and the
+   * `get/set_model_defaults` MCP tools.
+   */
+  settingsService: SettingsService;
+  /**
+   * Configurable Task Models (Task 13): runtime Claude-model-catalog discovery
+   * with a TTL cache + static fallback (task #917). Backs GET /api/v1/models
+   * and the `list_models` MCP tool. Never throws — degrades to the static
+   * fallback (`stale: true`) when ANTHROPIC_API_KEY is absent / the Models API
+   * is unreachable.
+   */
+  modelCatalogService: ModelCatalogService;
   /**
    * Identity-foundation repositories (Phase 27) decorated onto the Fastify
    * instance by `createServer` so the Phase 28 auth chain at
@@ -264,6 +284,17 @@ export async function createApp(dbPath?: string): Promise<App> {
     db,
   );
 
+  // Configurable Task Models (Task 13). The settings service owns the
+  // database-wide model-policy default over the `app_settings` singleton row;
+  // the model-catalog service discovers the live Claude model catalog. The
+  // catalog's `apiKey` is read from ANTHROPIC_API_KEY — when absent (e.g. CI /
+  // tests) the service serves the static fallback with `stale: true` and never
+  // throws, so no env wiring is required for the route to function.
+  const settingsService = createSettingsService(createSettingsRepository(db));
+  const modelCatalogService = createModelCatalogService({
+    apiKey: process.env['ANTHROPIC_API_KEY'],
+  });
+
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
   workflowEngine.start();
@@ -308,6 +339,8 @@ export async function createApp(dbPath?: string): Promise<App> {
     commentService,
     topologyService,
     dependencyGraphService,
+    settingsService,
+    modelCatalogService,
     userRepository,
     apiTokenRepository,
     workflowEngine,
