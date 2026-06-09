@@ -55,6 +55,10 @@ function makeMockClient() {
     deleteComment: vi.fn(),
     checkHealth: vi.fn(),
     getTopology: vi.fn(),
+    listModels: vi.fn(),
+    resolveModel: vi.fn(),
+    getModelDefaults: vi.fn(),
+    setModelDefaults: vi.fn(),
     getWsjfRanking: vi.fn(),
     getWsjfHistory: vi.fn(),
     getWsjfHealth: vi.fn(),
@@ -103,6 +107,10 @@ describe('registerRemoteTools', () => {
       'delete_comment',
       'check_health',
       'topology_check',
+      'list_models',
+      'resolve_model',
+      'get_model_defaults',
+      'set_model_defaults',
       'wsjf_ranking',
       'wsjf_history',
       'rescore_project',
@@ -681,6 +689,125 @@ describe('registerRemoteTools', () => {
     await expect(handlers.get('topology_check')!({ project_id: 1 })).rejects.toBeInstanceOf(
       McpError,
     );
+  });
+
+  // ── Model tools (remote parity, stdio ⊆ remote — task #926) ──────────────
+
+  // Parity assertion mirroring the topology_check parity test: each of the four
+  // stdio model tools (src/mcp/tools/model-tools.ts) must be present in the
+  // remote registration so the stdio model-tool set is a subset of the remote
+  // set (transport-indistinguishable).
+  it('registers all four model tools (parity with stdio MCP)', () => {
+    for (const name of [
+      'list_models',
+      'resolve_model',
+      'get_model_defaults',
+      'set_model_defaults',
+    ]) {
+      expect(handlers.has(name)).toBe(true);
+    }
+  });
+
+  it('list_models proxies GET /models + passes the catalog through verbatim', async () => {
+    const catalog = {
+      models: [
+        { id: 'claude-x', display_name: 'Claude X', family: 'claude', created_at: '2026-01-01' },
+      ],
+      stale: false,
+    };
+    client.listModels.mockResolvedValue(catalog);
+    const r = await handlers.get('list_models')!({});
+    expect(client.listModels).toHaveBeenCalledTimes(1);
+    expect(r.content[0].text).toBe('1 models');
+    // structuredContent is the raw catalog, unchanged — same shape as stdio.
+    expect(r.structuredContent).toEqual(catalog);
+  });
+
+  it('list_models flags the stale fallback in its summary text', async () => {
+    client.listModels.mockResolvedValue({ models: [], stale: true });
+    const r = await handlers.get('list_models')!({});
+    expect(r.content[0].text).toBe('0 models (stale fallback)');
+  });
+
+  it('list_models error path wraps in McpError', async () => {
+    client.listModels.mockRejectedValue(new Error('boom'));
+    await expect(handlers.get('list_models')!({})).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('resolve_model passes a concrete result through verbatim as structuredContent', async () => {
+    client.resolveModel.mockResolvedValue({ model: 'claude-opus' });
+    const r = await handlers.get('resolve_model')!({
+      project_id: 3,
+      role: 'execution',
+      task_id: 9,
+    });
+    expect(client.resolveModel).toHaveBeenCalledWith(3, 'execution', 9);
+    expect(r.content[0].text).toBe('claude-opus');
+    // Same shape the stdio resolve_model tool emits — { model } verbatim.
+    expect(r.structuredContent).toEqual({ model: 'claude-opus' });
+  });
+
+  it('resolve_model surfaces the null "inherit" sentinel unwrapped', async () => {
+    client.resolveModel.mockResolvedValue(null);
+    const r = await handlers.get('resolve_model')!({ project_id: 1, role: 'planning' });
+    expect(client.resolveModel).toHaveBeenCalledWith(1, 'planning', undefined);
+    expect(r.content[0].text).toBe('inherit (session model)');
+    // The null resolver output is surfaced unwrapped (inherit the session model)
+    // — identical to the stdio tool.
+    expect(r.structuredContent).toBeNull();
+  });
+
+  it('resolve_model error path wraps in McpError', async () => {
+    client.resolveModel.mockRejectedValue(new Error('boom'));
+    await expect(
+      handlers.get('resolve_model')!({ project_id: 1, role: 'execution' }),
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('get_model_defaults wraps the policy in { model_policy }', async () => {
+    const policy = { execution: { default: 'claude-opus' } };
+    client.getModelDefaults.mockResolvedValue(policy);
+    const r = await handlers.get('get_model_defaults')!({});
+    expect(r.content[0].text).toBe('default model policy set');
+    expect(r.structuredContent).toEqual({ model_policy: policy });
+  });
+
+  it('get_model_defaults reports "no default configured" for a null policy', async () => {
+    client.getModelDefaults.mockResolvedValue(null);
+    const r = await handlers.get('get_model_defaults')!({});
+    expect(r.content[0].text).toBe('no default configured');
+    expect(r.structuredContent).toEqual({ model_policy: null });
+  });
+
+  it('set_model_defaults persists a policy and echoes the stored value', async () => {
+    const policy = { planning: { constant: 'claude-haiku' } };
+    client.setModelDefaults.mockResolvedValue(policy);
+    const r = await handlers.get('set_model_defaults')!({ model_policy: policy });
+    expect(client.setModelDefaults).toHaveBeenCalledWith(policy);
+    expect(r.content[0].text).toBe('default model policy updated');
+    expect(r.structuredContent).toEqual({ model_policy: policy });
+  });
+
+  it('set_model_defaults clears the default with a null policy', async () => {
+    client.setModelDefaults.mockResolvedValue(null);
+    const r = await handlers.get('set_model_defaults')!({ model_policy: null });
+    expect(client.setModelDefaults).toHaveBeenCalledWith(null);
+    expect(r.content[0].text).toBe('default model policy cleared');
+    expect(r.structuredContent).toEqual({ model_policy: null });
+  });
+
+  it('set_model_defaults rejects a malformed policy with an InvalidParams McpError', async () => {
+    await expect(
+      handlers.get('set_model_defaults')!({ model_policy: { execution: { bogus: 1 } } }),
+    ).rejects.toBeInstanceOf(McpError);
+    expect(client.setModelDefaults).not.toHaveBeenCalled();
+  });
+
+  it('set_model_defaults error path wraps in McpError', async () => {
+    client.setModelDefaults.mockRejectedValue(new Error('boom'));
+    await expect(
+      handlers.get('set_model_defaults')!({ model_policy: null }),
+    ).rejects.toBeInstanceOf(McpError);
   });
 
   // ── WSJF tools (remote parity, WSJF 1.10) ─────────────────────────────────

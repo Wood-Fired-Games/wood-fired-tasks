@@ -5036,6 +5036,97 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
         ],
       },
     },
+    "/api/v1/projects/{id}/resolve-model": {
+      "get": {
+        "description": "Resolve the model for a pipeline role (execution|validation|planning) for a project, optionally task-scoped (\`task_id\`) for jobSize→category routing. Returns \`{ model }\` (a concrete id or "auto") or \`null\` (inherit the session model) — identical to the stdio \`resolve_model\` MCP tool output. Read-only.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "enum": [
+                "execution",
+                "validation",
+                "planning",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": true,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "nullable": true,
+                  "properties": {
+                    "model": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "model",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
+        },
+        "tags": [
+          "projects",
+        ],
+      },
+    },
     "/api/v1/projects/{id}/topology": {
       "get": {
         "description": "Classify a project as FLAT (parallelizable, /tasks:loop), DAG (wave-by-wave parallel dispatch, /tasks:loop-dag), or DAG_CYCLIC (BLOCKED) based on its task_dependencies graph. Returns topology, edges, roots, leaves, and an execution advisory.",
