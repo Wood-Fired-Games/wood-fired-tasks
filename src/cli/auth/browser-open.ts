@@ -70,6 +70,18 @@ function isSafeBrowserUrl(url: string): boolean {
 }
 
 export function openBrowser(url: string): boolean {
+  // Test/automation guard. When WFT_NO_BROWSER is set we never spawn a real
+  // browser — the caller still prints the URL as its fallback. The linux
+  // `!DISPLAY` branch below already covers headless CI, but it does NOT cover a
+  // developer DESKTOP running the suite (DISPLAY is set there): an in-process
+  // device-flow/login test (e.g. setup.remote.test.ts's "real device flow"
+  // case) would otherwise spawn the developer's actual browser at the mock
+  // server's verification_uri and 404. vitest.setup.ts sets this for every test
+  // file; browser-open.test.ts opts out locally to exercise the real spawn path.
+  if (process.env['WFT_NO_BROWSER']) {
+    return false;
+  }
+
   // WR-03 (Phase 30 review) — validate the URL BEFORE selecting the
   // platform spawn args. A malformed/suspicious URL → false so the caller
   // falls back to printing the URL for the user to paste manually.
