@@ -196,6 +196,9 @@ call.
 | project | `project-show` | `commands/project-show.ts` | Show project details. |
 | project | `project-update` | `commands/project-update.ts` | Update a project. |
 | project | `project-delete` | `commands/project-delete.ts` | Delete a project. |
+| project | `project-set-models` | `commands/project-set-models.ts` | Configurable Task Models (Task 12): set a project's model policy from per-role/per-category flags; persists via `PUT /projects/:id`. |
+| models | `models list` | `commands/models.ts` | Configurable Task Models (Task 12): list the runtime-discovered Claude model catalog (`GET /models`); marks a `(stale)` fallback. |
+| settings | `settings-set-models` | `commands/settings-set-models.ts` | Configurable Task Models (Task 12): set the database-wide default model policy (`PUT /settings/model-policy`). |
 | dependency | `dep-add` | `commands/dep-add.ts` | Declare a dependency. |
 | dependency | `dep-list` | `commands/dep-list.ts` | List dependencies. |
 | dependency | `dep-remove` | `commands/dep-remove.ts` | Remove a dependency. |
@@ -227,7 +230,7 @@ call.
 | statusline | `statusline` | `commands/statusline.ts` | v2.0 status line (#597): reads Claude Code's status-line JSON from stdin, renders the linked-project open/done counts + the update-available hint from a TTL cache; degrades silently (exit 0) when unlinked/offline. |
 | statusline | `link-project` | `commands/link-project.ts` | v2.0 status line (#595): links the current directory to a project by writing the repo-local `.wft/project` marker the statusline resolver reads. |
 
-**Total: 42 commands wired into Commander** (counted by
+**Total: 45 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine
