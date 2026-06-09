@@ -10,7 +10,7 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 27 tools for task, project, comment, dependency, reporting, health, topology, WSJF, and wait operations
+- 31 tools for task, project, comment, dependency, reporting, health, topology, WSJF, model, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 12 pre-built skill files for common workflows
@@ -346,7 +346,7 @@ The remote server carries every tool the local server does. `completion_report` 
 
 ## Tools Reference
 
-The MCP server exposes 27 tools organized by domain:
+The MCP server exposes 31 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -908,6 +908,64 @@ Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and ad
 
 **Usage:** Surfaced at loop start (`/tasks:loop` §2g, `/tasks:loop-dag` §2h) and post-rescore to catch the classic WSJF anti-patterns before they corrupt the ordering.
 
+### Model Tools (4 tools)
+
+The four model tools surface the **Configurable Task Models** layer: runtime Claude-model discovery and the two-layer per-slot model-policy resolver, plus get/set of the database-wide default policy. They register **only on the local (stdio) server** — and only when their backing services (model catalog, model-policy resolver, settings) are wired, which the production boot (`src/mcp/server.ts`) always does. `list_models` and `get_model_defaults` are read-only; `resolve_model` is a pure read over the resolver; `set_model_defaults` writes the global default. They are not part of the remote REST-backed subset.
+
+#### list_models
+
+List Anthropic models available at runtime, sourced from the Models API with a static fallback when offline (or when `ANTHROPIC_API_KEY` is absent). Returns `models[]` plus a `stale` flag (`true` when serving the fallback). Read-only; never throws.
+
+**Input Schema:**
+
+```json
+{}
+```
+
+**Returns:** `{ models, stale }` — the catalog verbatim.
+
+#### resolve_model
+
+Resolve the model for a pipeline role (`execution|validation|planning`) for a project, optionally task-scoped so WSJF jobSize routes by power-category. Returns `{ model }` (a concrete id), `{ model: "auto" }` (resolve from the live catalog at dispatch), or `null` (inherit the session model). Read-only.
+
+**Input Schema:**
+
+```json
+{
+  "project_id": "number (required, positive integer)",
+  "role": "execution|validation|planning (required)",
+  "task_id": "number (optional, positive integer)"
+}
+```
+
+**Returns:** The resolver output verbatim — `{ model }`, `{ model: "auto" }`, or `null`.
+
+#### get_model_defaults
+
+Get the database-wide default `ModelPolicy` (the global fallback applied when a project configures no policy of its own). Returns `{ model_policy }` (`null` when no default is configured). Read-only.
+
+**Input Schema:**
+
+```json
+{}
+```
+
+**Returns:** `{ model_policy }` — the global default policy, or `null`.
+
+#### set_model_defaults
+
+Set (or, with `null`, clear) the database-wide default `ModelPolicy`. The policy is validated before it is persisted; an invalid shape is rejected and nothing is written. Returns `{ model_policy }` (the value just stored).
+
+**Input Schema:**
+
+```json
+{
+  "model_policy": "ModelPolicy | null (required)"
+}
+```
+
+**Returns:** `{ model_policy }` — the value just stored.
+
 ## Resources Reference
 
 The MCP server exposes 1 resource.
@@ -1134,7 +1192,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:new-project`
-- Explore the 27 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 31 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Charter a project with `/tasks:new-project`, then rank the backlog by economic value with the WSJF tools (`wsjf_ranking`, `wsjf_health`) instead of a hand-set priority enum
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host

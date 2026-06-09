@@ -15,7 +15,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 **Key capabilities:**
 
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
-- MCP server with 27 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
+- MCP server with 31 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
 - REST API with 52 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 45 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 42 commands
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
@@ -560,7 +560,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 27 tools and 1 resource for Claude Code integration — Task (9), Project (5), Comment (3), Dependency (3), Health (1), Topology (1), Wait (1), and WSJF (4). A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 27 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 31 tools and 1 resource for Claude Code integration — Task (9), Project (5), Comment (3), Dependency (3), Health (1), Topology (1), Wait (1), WSJF (4), and Model (4). A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (the 27 tools without the local-only Model tools; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -815,7 +815,7 @@ slash-command reference, channel subscription model, error handling.
 ### Claude Code (MCP)
 
 The shipped MCP server registers as a stdio MCP target in `~/.claude.json`
-and exposes 27 tools plus the `/tasks:*` skill files. See
+and exposes 31 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 

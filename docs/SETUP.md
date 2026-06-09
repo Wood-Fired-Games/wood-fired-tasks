@@ -1322,7 +1322,7 @@ Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
 - API route integration tests (all REST routes, including the WSJF task/project endpoints under `/api/v1/tasks/:id/wsjf`, `/score-history`, and `/api/v1/projects/:id/wsjf-ranking`, `/wsjf-health`, `/rescore`, `/charter-history`, `/rescore-runs`)
-- MCP tool tests (all 27 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage)
+- MCP tool tests (all 31 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage, and the four Model tools `list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults`)
 - WSJF scoring/ranking tests (deterministic `validateScoreSubmission` gate, blocker-propagated `rankFrontier`, `wsjf-rescore` transaction, and the `wsjf-health` degeneracy linter)
 - CLI command tests (including `wsjf-history`, `wsjf-set`, `charter-history`)
 - Event system tests (EventBus, SSEManager, events API)

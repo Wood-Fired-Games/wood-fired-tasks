@@ -14,6 +14,10 @@ import { registerHealthTools } from './tools/health-tools.js';
 import { registerTopologyTools } from './tools/topology-tools.js';
 import { registerWaitForUnblockTools } from './tools/wait-for-unblock-tools.js';
 import { registerWsjfTools } from './tools/wsjf-tools.js';
+import { registerModelTools, registerModelDefaultsTools } from './tools/model-tools.js';
+import type { ModelCatalogService } from '../services/model-catalog.service.js';
+import type { ModelPolicyService } from '../services/model-policy.service.js';
+import type { SettingsService } from '../services/settings.service.js';
 import { TaskRepository } from '../repositories/task.repository.js';
 import { DependencyRepository } from '../repositories/dependency.repository.js';
 import { WsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
@@ -60,7 +64,7 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 27 tools and 1 resource:
+ * Factory function that creates an McpServer with 31 tools and 1 resource:
  * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
  * - 1 wait tool (wait_for_unblock) — Task #455, in-process long-poll on blocked->open
  * - 5 project tools (create, get, update, list, delete)
@@ -68,7 +72,10 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
  * - 3 comment tools (add, list, delete)
  * - 1 health tool (check_health)
  * - 1 topology tool (topology_check) — Wave 4.1 (#318), only registered when topologyService is provided
- * - 3 WSJF tools (wsjf_ranking, wsjf_history — #630; rescore_project — #641)
+ * - 4 WSJF tools (wsjf_ranking, wsjf_history — #630; rescore_project — #641; wsjf_health — #646)
+ * - 4 model tools (list_models, resolve_model — #918; get_model_defaults, set_model_defaults — #919),
+ *   Configurable Task Models Task 11 (#920), only registered when the model
+ *   catalog/policy/settings services are provided
  * - 1 resource (events://stream - SSE event stream discovery)
  *
  * This pattern allows tests to instantiate servers without stdio transport.
@@ -97,6 +104,14 @@ export function createMcpServer(
   // registered for that server instance (production boot always passes it
   // — see src/mcp/index.ts).
   topologyService?: TopologyService,
+  // Configurable Task Models Task 11 (#920): the three services backing the
+  // four model tools. Optional so the many pre-existing tests that call
+  // createMcpServer without them keep working — when any is omitted, the
+  // corresponding model tools are simply not registered (production boot
+  // always passes all three — see src/mcp/index.ts).
+  modelCatalogService?: ModelCatalogService,
+  modelPolicyService?: ModelPolicyService,
+  settingsService?: SettingsService,
 ): McpServer {
   const server = new McpServer({
     name: 'wood-fired-tasks',
@@ -161,6 +176,21 @@ export function createMcpServer(
     rescore: wsjfRescoreService,
     health: wsjfHealthService,
   });
+
+  // Configurable Task Models Task 11 (#920): register the four model tools when
+  // their backing services are provided. `list_models` + `resolve_model` need
+  // the catalog + policy resolver; `get_model_defaults` + `set_model_defaults`
+  // need the settings service. Mirrors the `topologyService` gate above — when
+  // a service is omitted (most legacy tests), its tools are simply not present.
+  if (modelCatalogService && modelPolicyService) {
+    registerModelTools(server, {
+      catalog: modelCatalogService,
+      modelPolicy: modelPolicyService,
+    });
+  }
+  if (settingsService) {
+    registerModelDefaultsTools(server, { settings: settingsService });
+  }
 
   // Register resources
   // Note: the API key is intentionally not passed to the resource — it would
