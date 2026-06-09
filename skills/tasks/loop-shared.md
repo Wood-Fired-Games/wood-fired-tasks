@@ -311,6 +311,7 @@ The YAML frontmatter is the 14 required fields from `docs/loop-run-schema.md` §
 | `tasks_attempted` | Tasks picked up so far (Step 1 increments this counter). |
 | `tasks_passed` / `tasks_failed` / `tasks_partial` / `tasks_not_verified` | Decided by the Step 7 verdict for each task. Increments on the corresponding Step 7 branch. |
 | `gate_decision` (optional) | Section 2f topology pre-flight gate; set once at run start. `allowed` for FLAT; `auto_ordered` for DAG resolved via Kahn's topological sort (Wave 11 default); `overridden` for DAG with `--i-know-what-im-doing` (skip auto-sort); `blocked` for DAG_CYCLIC. Omit the field for pre-#319 emissions (the schema marks it optional for backward compatibility). |
+| `execution_model` / `validation_model` / `planning_model` (optional) | The model ref the run forced for the worker / verifier / planning dispatches via the `--execution-model` / `--validation-model` / `--planning-model` run-arg overrides (§R). Each field is **omitted entirely when its override was unset** (the run used per-project `resolve_model`); emit only the overrides actually supplied. Pure provenance — records what the run pinned, for replay. |
 
 Use orchestrator-observed counts as the primary source; cite `agent_transactions_v` as the cross-check source for any post-run audit. The skill MUST NOT block emission on a live DB connection.
 
@@ -829,3 +830,29 @@ If a cascade has ALREADY corrupted attribution — a commit bundled multiple tas
 2. Re-stage and commit per-task via per-file checkout: for each task, `git checkout <tree-ish> -- <task's paths>` (or `git restore --staged` then `git add <task's paths>` against the already-correct tree), commit, and `git show --stat <commit>`-verify — exactly the slice loop above, one task's file-set at a time.
 
 This mirrors §N's kill-safe posture (git state is the source of truth; the operation is re-runnable) and re-establishes the `loop.md` "one task = one commit" invariant after the fact. The known-good final tree content is never discarded — only the commit boundaries are redrawn.
+
+---
+
+## §R. Model resolution
+
+**Called from:** `loop.md` §Step 4 (worker dispatch) + §7b (verifier dispatch), `loop-dag.md` §3b (worker dispatch) + §3d (verifier dispatch). This is the single canonical statement of how an orchestrator picks the `model:` for each `Agent` dispatch; the callers cite §R tersely inline and defer here.
+
+**Pipeline roles → dispatch sites.** Each `Agent` dispatch maps to a pipeline role: the **worker** subagent (Step 4 / §3b) runs the `execution` role; the **verifier** subagent (§7b / §3d) runs the `validation` role. (Planning-phase dispatches in `decompose.md` / `audit.md` / `integration-auditor` use the `planning` role — out of scope for the loop skills; see those skills.)
+
+**Resolve before each dispatch.** Immediately before composing an `Agent` call, call `resolve_model { project_id, role, task_id }` — `role` is `execution` for the worker and `validation` for the verifier, and `task_id` is the task being worked/graded so the resolver can size-route by the task's power category. The resolver is read-only and returns one of three shapes (read the returned value VERBATIM per §L — never predict it):
+
+- **`{ model: "<concrete-id>" }`** → pass `model: "<concrete-id>"` to the `Agent` call.
+- **`{ model: "auto" }`** → call `list_models` and pick the live model whose power category matches the slot's category (the worker/verifier resolve against the task's category). Pass that concrete id as `model:`. If `list_models` returns `stale: true`, the static-fallback catalog is acceptable — proceed with the best category match it lists.
+- **`null`** → pass NO `model:` (inherit the orchestrator's session model). This is the backward-compatible default for projects with no model policy.
+
+**Dispatch-time fallback (load-bearing).** If an `Agent` call errors with an *unrecognized-model* error (the resolved id is not accepted by the harness — covers the §13 harness-acceptance risk), retry the SAME dispatch ONCE with NO `model:` (inherit), and log a one-line warning naming the rejected id and the role. Do not loop on the fallback; one retry, then proceed inherited.
+
+**Run-arg overrides.** A run-level flag forces a single model ref for every dispatch of that role, bypassing per-project / per-category resolution for the run:
+
+- `--execution-model <ref>` — force the worker (execution) model.
+- `--validation-model <ref>` — force the verifier (validation) model.
+- `--planning-model <ref>` — force the planning-role model (consumed by decompose/audit dispatches; accepted here so the loop skills parse it uniformly).
+
+When an override is set for a role, skip `resolve_model` for that role and pass the override `ref` as `model:` directly (the dispatch-time fallback above still applies if the harness rejects it). `<ref>` accepts a concrete model id or `auto` (resolve via `list_models` as above).
+
+**Anti-fabrication note (§L).** The resolved model id is read VERBATIM from the `resolve_model` / `list_models` result that ALREADY RETURNED in a prior turn — never composed, guessed, or quoted in the same turn as the resolving call. If you have not yet seen the resolver's returned output, you do not yet have the model id; wait for it before dispatching. Consistent with [§L](#l-anti-fabrication--evidence-integrity-canon).

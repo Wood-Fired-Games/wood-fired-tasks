@@ -207,4 +207,49 @@ describe('LoopRunFrontmatterSchema', () => {
       expect(result.success).toBe(false);
     });
   });
+
+  // Configurable Task Models (task #924) — optional per-role model-override
+  // provenance. Each field is omitted-when-unset (`.optional()`, NOT
+  // `.nullable()`): a run with no override emits nothing for that key, so
+  // pre-#924 LOOP-RUN.md files (which never carried these keys) still parse.
+  describe('model overrides (#924 configurable task models)', () => {
+    for (const field of ['execution_model', 'validation_model', 'planning_model'] as const) {
+      it(`accepts a concrete ${field} ref`, () => {
+        const result = LoopRunFrontmatterSchema.safeParse({
+          ...VALID,
+          [field]: 'claude-opus-4-20250514',
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it(`accepts ${field}: "auto"`, () => {
+        const result = LoopRunFrontmatterSchema.safeParse({ ...VALID, [field]: 'auto' });
+        expect(result.success).toBe(true);
+      });
+
+      it(`rejects an empty ${field} (min length 1)`, () => {
+        const result = LoopRunFrontmatterSchema.safeParse({ ...VALID, [field]: '' });
+        expect(result.success).toBe(false);
+      });
+
+      it(`does not add ${field} to the required-field set (omitted when unset)`, () => {
+        // VALID never sets the model fields — it must still parse, and the
+        // parsed value must leave the key absent (not coerced to null).
+        const result = LoopRunFrontmatterSchema.safeParse(VALID);
+        expect(result.success).toBe(true);
+        const parsed = result.success ? result.data : undefined;
+        expect(parsed?.[field]).toBeUndefined();
+      });
+    }
+
+    it('accepts all three overrides together', () => {
+      const result = LoopRunFrontmatterSchema.safeParse({
+        ...VALID,
+        execution_model: 'claude-sonnet-4-20250514',
+        validation_model: 'auto',
+        planning_model: 'claude-opus-4-20250514',
+      });
+      expect(result.success).toBe(true);
+    });
+  });
 });
