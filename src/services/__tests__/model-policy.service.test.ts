@@ -40,7 +40,7 @@ describe('categoryForJobSize', () => {
   });
 });
 
-describe('resolveModel — single layer', () => {
+describe('resolveModel — within a single layer', () => {
   it('returns the project byCategory model for a scored task', () => {
     const s = createModelPolicyService(
       fakeDeps({ execution: { byCategory: { heavy: 'claude-opus-4-8' } } }, null, { 7: 8 }),
@@ -77,13 +77,13 @@ describe('resolveModel — single layer', () => {
     expect(s.resolveModel(1, 'execution', 9)).toEqual({ model: 'glob-strong' });
   });
 
-  it('ignores the global layer entirely when the project configures a policy', () => {
+  it('inherits the global role when the project configures a different role', () => {
     const s = createModelPolicyService(
       // project policy present but has nothing for `validation`; global does.
-      // single-layer ⇒ project layer wins wholesale ⇒ null, no global fallthrough.
+      // two-layer per-slot ⇒ the unset project `validation` slots inherit global.
       fakeDeps({ execution: { default: 'proj-exec' } }, { validation: { default: 'glob-val' } }),
     );
-    expect(s.resolveModel(1, 'validation', 9)).toBeNull();
+    expect(s.resolveModel(1, 'validation', 9)).toEqual({ model: 'glob-val' });
   });
 
   it('returns null when neither layer sets anything', () => {
@@ -136,5 +136,62 @@ describe('resolveModel — single layer', () => {
       const s = createModelPolicyService(fakeDeps({ planning: {} }, null));
       expect(s.resolveModel(1, 'planning')).toBeNull();
     });
+  });
+});
+
+describe('resolveModel — per-slot merge', () => {
+  it('prefers the project category over the global category', () => {
+    const s = createModelPolicyService(
+      fakeDeps(
+        { execution: { byCategory: { heavy: 'proj-model' } } },
+        { execution: { byCategory: { heavy: 'glob-model' } } },
+        { 7: 8 },
+      ),
+    );
+    expect(s.resolveModel(1, 'execution', 7)).toEqual({ model: 'proj-model' });
+  });
+
+  it('inherits an unset project category from the global category', () => {
+    const s = createModelPolicyService(
+      fakeDeps(
+        { execution: { byCategory: { minimal: 'proj-min' } } }, // heavy unset on project
+        { execution: { byCategory: { heavy: 'glob-heavy' } } },
+        { 7: 8 },
+      ),
+    );
+    expect(s.resolveModel(1, 'execution', 7)).toEqual({ model: 'glob-heavy' });
+  });
+
+  it('merges default independently of byCategory', () => {
+    const s = createModelPolicyService(
+      fakeDeps(
+        { execution: { default: 'proj-default' } },
+        { execution: { byCategory: { heavy: 'glob-heavy' } } },
+        { 7: 99 }, // off-scale -> no category -> default path
+      ),
+    );
+    expect(s.resolveModel(1, 'execution', 7)).toEqual({ model: 'proj-default' });
+  });
+
+  it('uses project.default over a global byCategory when the task has no category', () => {
+    const s = createModelPolicyService(
+      fakeDeps(
+        { execution: { default: 'proj-default' } },
+        { execution: { byCategory: { heavy: 'glob-heavy' }, default: 'glob-default' } },
+        // no jobSize for task 7 ⇒ unscored ⇒ no category ⇒ default path
+      ),
+    );
+    expect(s.resolveModel(1, 'execution', 7)).toEqual({ model: 'proj-default' });
+  });
+
+  it('per-slot merges the planning constant across layers', () => {
+    const s = createModelPolicyService(
+      // project planning has only a default; constant inherits from global.
+      fakeDeps(
+        { planning: { default: 'proj-plan-default' } },
+        { planning: { constant: 'glob-plan-const' } },
+      ),
+    );
+    expect(s.resolveModel(1, 'planning')).toEqual({ model: 'glob-plan-const' });
   });
 });

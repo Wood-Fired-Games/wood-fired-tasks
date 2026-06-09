@@ -1,23 +1,25 @@
 /**
- * Task 5 (project "Configurable Task Models") — model-policy.service.
+ * Task 6 (project "Configurable Task Models") — model-policy.service.
  *
  * The single owner of the WSJF-jobSize → power-category bijection and the
- * SINGLE-LAYER model resolver.
+ * TWO-LAYER PER-SLOT model resolver.
  *
  * `categoryForJobSize` is a strict 1:1 relabel of the Fibonacci jobSize tiers
  * {1,2,3,5,8,13} → the six {@link PowerCategory} values, ascending by power.
  * Any off-scale or absent jobSize maps to `null`.
  *
- * `resolveModel` is SINGLE-LAYER: it consults the project policy if one is
- * configured, otherwise the global policy — it does NOT merge the two layers
- * per slot. The two-layer per-slot merge is a separate downstream task (#915);
- * do not add it here.
+ * `resolveModel` performs a TWO-LAYER PER-SLOT MERGE: for the requested role,
+ * each slot — the task category's `byCategory` entry, the `constant`, and the
+ * `default` — is resolved INDEPENDENTLY as `project[role][slot] ?? global[role][slot]`.
+ * So an unset project slot inherits the corresponding global slot (cross-layer);
+ * the project layer is NOT taken wholesale.
  *
- * Within the chosen layer, resolution for a role is:
- *   1. If the task is scored and the role has a `byCategory` entry for that
+ * Within the merged role, resolution precedence is:
+ *   1. If the task is scored and the merged `byCategory` has an entry for that
  *      task's category → that model.
- *   2. Else the role `default`.
- *   3. The `planning` role uses its `constant` instead of category routing.
+ *   2. Else the merged role `default`.
+ *   3. The `planning` role uses its merged `constant` (falling back to merged
+ *      `default`) instead of category routing.
  * A resolved `auto` sentinel round-trips as `{ model: 'auto' }`; an absent
  * value yields `null` ("inherit the session model").
  *
@@ -61,7 +63,7 @@ const FIB_TO_CATEGORY: Record<number, PowerCategory> = {
  * Create a model-policy service instance with the supplied dependencies.
  *
  * @returns An object exposing `categoryForJobSize` (the bijection) and
- *   `resolveModel` (single-layer resolve).
+ *   `resolveModel` (two-layer per-slot merge resolve).
  */
 export function createModelPolicyService(deps: ModelPolicyDeps) {
   const categoryForJobSize = (jobSize: number | null | undefined): PowerCategory | null =>
@@ -71,25 +73,32 @@ export function createModelPolicyService(deps: ModelPolicyDeps) {
     ref == null ? null : ref === 'auto' ? { model: 'auto' } : { model: ref };
 
   /**
-   * Resolve a single role within a SINGLE layer. The project layer wins when
-   * the project configures any policy at all; otherwise the global layer is
-   * used. No per-slot cross-layer merge (that is task #915).
+   * Resolve a single role with a TWO-LAYER PER-SLOT MERGE. Each slot is
+   * resolved independently as `project ?? global`, so an unset project slot
+   * inherits the corresponding global slot rather than discarding the global
+   * layer wholesale. Slot precedence within the merged role is
+   * byCategory → constant → default → null.
    */
   const resolveModel = (projectId: number, role: PipelineRole, taskId?: number): ResolvedModel => {
-    // Single-layer selection: project policy if present, else global.
-    const policy: ModelPolicy | null = deps.getProjectPolicy(projectId) ?? deps.getGlobalPolicy();
-    const rolePolicy = policy?.[role] as RolePolicy | undefined;
-    if (rolePolicy == null) return null;
+    const projectRole = deps.getProjectPolicy(projectId)?.[role] as RolePolicy | undefined;
+    const globalRole = deps.getGlobalPolicy()?.[role] as RolePolicy | undefined;
 
-    // The planning role is category-agnostic: it pins a single constant.
+    // The planning role is category-agnostic: per-slot merge constant, then default.
     if (role === 'planning') {
-      return toResolved(rolePolicy.constant ?? rolePolicy.default);
+      const constant = projectRole?.constant ?? globalRole?.constant;
+      const dflt = projectRole?.default ?? globalRole?.default;
+      return toResolved(constant ?? dflt);
     }
 
-    // Category routing for a scored task, else the role default.
+    // Category routing for a scored task: per-slot merge the byCategory entry,
+    // then fall through to the per-slot-merged default.
     const category = taskId != null ? categoryForJobSize(deps.getJobSize(taskId)) : null;
-    const byCat = category != null ? rolePolicy.byCategory?.[category] : undefined;
-    return toResolved(byCat ?? rolePolicy.default);
+    const byCat =
+      category != null
+        ? (projectRole?.byCategory?.[category] ?? globalRole?.byCategory?.[category])
+        : undefined;
+    const dflt = projectRole?.default ?? globalRole?.default;
+    return toResolved(byCat ?? dflt);
   };
 
   return { categoryForJobSize, resolveModel };
