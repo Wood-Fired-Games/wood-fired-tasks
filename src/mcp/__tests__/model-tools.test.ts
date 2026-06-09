@@ -15,9 +15,11 @@
 import { describe, it, expect } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { registerModelTools } from '../tools/model-tools.js';
+import { registerModelTools, registerModelDefaultsTools } from '../tools/model-tools.js';
 import type { ModelCatalogService } from '../../services/model-catalog.service.js';
 import type { ModelPolicyService, ResolvedModel } from '../../services/model-policy.service.js';
+import type { SettingsService } from '../../services/settings.service.js';
+import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
 
 /** A registered tool, as captured from `registerTool`. */
 interface CapturedTool {
@@ -80,6 +82,20 @@ function fakeModelPolicy(
       return resolved;
     },
   } as unknown as ModelPolicyService;
+}
+
+/**
+ * A settings fake backed by an in-memory cell. `getModelPolicyDefault` returns
+ * whatever `setModelPolicyDefault` last stored; defaults to `null` (no policy).
+ */
+function fakeSettings(initial: ModelPolicy | null = null): SettingsService {
+  let stored: ModelPolicy | null = initial;
+  return {
+    getModelPolicyDefault: () => stored,
+    setModelPolicyDefault: (policy: ModelPolicy | null) => {
+      stored = policy;
+    },
+  } as unknown as SettingsService;
 }
 
 describe('registerModelTools', () => {
@@ -208,6 +224,78 @@ describe('registerModelTools', () => {
 
       await expect(
         callTool(tools, 'resolve_model', { project_id: 0, role: 'execution' }),
+      ).rejects.toThrow();
+    });
+  });
+});
+
+describe('registerModelDefaultsTools', () => {
+  it('registers both get_model_defaults and set_model_defaults', () => {
+    const { server, tools } = makeFakeServer();
+    registerModelDefaultsTools(server, { settings: fakeSettings() });
+    expect([...tools.keys()].sort()).toEqual(['get_model_defaults', 'set_model_defaults']);
+  });
+
+  describe('get_model_defaults', () => {
+    it('returns structuredContent { model_policy: null } when no default is set', async () => {
+      const { server, tools } = makeFakeServer();
+      registerModelDefaultsTools(server, { settings: fakeSettings(null) });
+
+      const out = await callTool(tools, 'get_model_defaults', {});
+
+      expect(out.structuredContent).toEqual({ model_policy: null });
+      expect(out.content[0].type).toBe('text');
+      expect(out.content[0].text).toBe('no default configured');
+    });
+
+    it('returns the configured default verbatim under model_policy', async () => {
+      const policy: ModelPolicy = { planning: { constant: 'auto' } };
+      const { server, tools } = makeFakeServer();
+      registerModelDefaultsTools(server, { settings: fakeSettings(policy) });
+
+      const out = await callTool(tools, 'get_model_defaults', {});
+
+      expect(out.structuredContent).toEqual({ model_policy: policy });
+      expect(out.content[0].text).toBe('default model policy set');
+    });
+  });
+
+  describe('set_model_defaults', () => {
+    it('set_model_defaults then get_model_defaults round-trips { model_policy }', async () => {
+      const settings = fakeSettings();
+      const { server, tools } = makeFakeServer();
+      registerModelDefaultsTools(server, { settings });
+
+      const policy = { planning: { constant: 'auto' } };
+      const setOut = await callTool(tools, 'set_model_defaults', { model_policy: policy });
+      expect(setOut.structuredContent).toEqual({ model_policy: policy });
+      expect(setOut.content[0].text).toBe('default model policy updated');
+
+      const getOut = await callTool(tools, 'get_model_defaults', {});
+      expect(getOut.structuredContent).toEqual({ model_policy: policy });
+    });
+
+    it('clears the default with a null model_policy', async () => {
+      const settings = fakeSettings({ execution: { default: 'auto' } });
+      const { server, tools } = makeFakeServer();
+      registerModelDefaultsTools(server, { settings });
+
+      const setOut = await callTool(tools, 'set_model_defaults', { model_policy: null });
+      expect(setOut.structuredContent).toEqual({ model_policy: null });
+      expect(setOut.content[0].text).toBe('default model policy cleared');
+
+      const getOut = await callTool(tools, 'get_model_defaults', {});
+      expect(getOut.structuredContent).toEqual({ model_policy: null });
+    });
+
+    it('rejects an invalid model_policy at the input schema layer', async () => {
+      const { server, tools } = makeFakeServer();
+      registerModelDefaultsTools(server, { settings: fakeSettings() });
+
+      await expect(
+        callTool(tools, 'set_model_defaults', {
+          model_policy: { execution: { byFib: {} } },
+        }),
       ).rejects.toThrow();
     });
   });

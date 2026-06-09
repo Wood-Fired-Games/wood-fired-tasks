@@ -24,8 +24,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toStructuredContent } from '../lib/structured-content.js';
 import { convertToMcpError } from '../errors.js';
+import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
 import type { ModelCatalogService } from '../../services/model-catalog.service.js';
 import type { ModelPolicyService, PipelineRole } from '../../services/model-policy.service.js';
+import type { SettingsService } from '../../services/settings.service.js';
 
 /** Injected dependencies for {@link registerModelTools}. */
 export interface ModelToolsDeps {
@@ -106,6 +108,82 @@ export function registerModelTools(server: McpServer, deps: ModelToolsDeps): voi
             resolved == null
               ? (null as unknown as ReturnType<typeof toStructuredContent>)
               : toStructuredContent(resolved),
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    },
+  );
+}
+
+/** Injected dependencies for {@link registerModelDefaultsTools}. */
+export interface ModelDefaultsToolsDeps {
+  /** The settings service owning the database-wide model-policy default (task #916). */
+  settings: SettingsService;
+}
+
+/**
+ * Register the read/write `get_model_defaults` and `set_model_defaults` MCP
+ * tools onto `server`, backed by the injected settings service.
+ *
+ * Both surface the global default policy as `structuredContent { model_policy }`
+ * (mirroring the `registerModelTools` registration shape — `toStructuredContent`
+ * + `convertToMcpError`). `set_model_defaults` validates its input through
+ * `ModelPolicyNullableSchema` (a `null` policy clears the default).
+ */
+export function registerModelDefaultsTools(server: McpServer, deps: ModelDefaultsToolsDeps): void {
+  server.registerTool(
+    'get_model_defaults',
+    {
+      description:
+        'Get the database-wide default ModelPolicy (the global fallback applied ' +
+        'when a project has no policy of its own). Returns { model_policy } ' +
+        '(null when no default is configured). Read-only.',
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const policy = deps.settings.getModelPolicyDefault();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: policy == null ? 'no default configured' : 'default model policy set',
+            },
+          ],
+          structuredContent: toStructuredContent({ model_policy: policy }),
+        };
+      } catch (error) {
+        throw convertToMcpError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'set_model_defaults',
+    {
+      description:
+        'Set (or, with null, clear) the database-wide default ModelPolicy. The ' +
+        'policy is validated before it is persisted; an invalid shape is ' +
+        'rejected. Returns { model_policy } (the value just stored).',
+      inputSchema: z.object({
+        model_policy: ModelPolicyNullableSchema,
+      }),
+    },
+    async (args) => {
+      try {
+        deps.settings.setModelPolicyDefault(args.model_policy);
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                args.model_policy == null
+                  ? 'default model policy cleared'
+                  : 'default model policy updated',
+            },
+          ],
+          structuredContent: toStructuredContent({ model_policy: args.model_policy }),
         };
       } catch (error) {
         throw convertToMcpError(error);
