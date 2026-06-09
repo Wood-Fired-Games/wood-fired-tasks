@@ -447,6 +447,76 @@ Are you sure you want to delete project #1? (y/N): y
 Project #1 deleted successfully
 ```
 
+## Model Commands
+
+The **Configurable Task Models** layer lets you route each pipeline role
+(`execution` for `/tasks:loop` & `/tasks:loop-dag` workers, `validation` for
+verifiers, `planning` for `/tasks:decompose` / `/tasks:audit` /
+integration-auditor dispatches) at a chosen Claude model — globally or
+per-project. Model refs are a runtime-discovered catalog model id or the
+`auto` sentinel (resolve the best live model at dispatch). The six power
+categories are `minimal`, `light`, `moderate`, `strong`, `heavy`, `maximum`.
+
+> The easiest way to author a policy interactively is the
+> [`/tasks:set-models`](#configurable-models) skill, which interviews you and
+> calls these commands for you. The commands below are the non-interactive
+> surface.
+
+### tasks models list
+
+List the runtime-discovered Claude model catalog (sourced from the Models API,
+with a static fallback when offline or when `ANTHROPIC_API_KEY` is unset). Each
+row is `<id>  <display_name>  [<family>]`; a `(stale)` suffix and a warning
+line indicate the static fallback was served.
+
+**Example:**
+
+```bash
+tasks models list
+tasks --json models list   # { models, stale } for scripting
+```
+
+### tasks project-set-models <id>
+
+Set a single project's model policy. The per-role flags assemble a partial
+`ModelPolicy` that is validated and merged into the project's `model_policy`
+column (`PUT /projects/:id`). Flag shapes:
+
+- `--<role>-<category> <model|auto>` — route a role's power category (e.g.
+  `--execution-heavy claude-opus-4-1` or `--validation-light auto`).
+- `--<role>-default <model|auto>` — the role's fallback when no category route
+  matches.
+- `--planning-constant <model|auto>` — a single constant model for **every**
+  planning dispatch (the planning role's simplest, most common setting — used
+  because decompose/audit/integration-auditor have no per-task power category
+  to size-route against).
+
+Where `<role>` ∈ `execution | validation | planning`.
+
+**Example:**
+
+```bash
+# Heavy execution work → Opus; everything else inherits the global default.
+tasks project-set-models 7 --execution-heavy claude-opus-4-1 --execution-default auto
+
+# Pin all planning dispatches for project 7 to a cheaper model.
+tasks project-set-models 7 --planning-constant claude-haiku-4
+```
+
+### tasks settings-set-models
+
+Set the **database-wide default** model policy (`PUT /settings/model-policy`).
+Identical flag surface to `project-set-models` (minus the `<id>` argument). A
+project with no `model_policy` of its own inherits this default; an
+unconfigured default means dispatches inherit the orchestrator's session model
+(the backward-compatible behaviour).
+
+**Example:**
+
+```bash
+tasks settings-set-models --planning-constant auto --validation-default auto
+```
+
 ## Dependency Commands
 
 ### tasks dep-add <taskId> <blocksTaskId>
@@ -1403,6 +1473,27 @@ the config flag disables it):
   file. Setting it to a falsy value (`0`/`false`/empty) forces the feature on.
 
 When the feature is disabled, `tasks statusline` never appends the update hint.
+
+## Configurable models
+
+The CLI's [Model Commands](#model-commands) (`models list`,
+`project-set-models`, `settings-set-models`) are the low-level surface for the
+**Configurable Task Models** layer. They map onto the MCP model tools
+(`list_models` / `resolve_model` / `get_model_defaults` / `set_model_defaults`
+— see [MCP.md](MCP.md#model-tools-4-tools)) and the model routes in
+[API.md](API.md#models--model-policy-endpoints) (`GET /models`,
+`GET|PUT /settings/model-policy`, `GET /projects/:id/resolve-model`, plus
+`model_policy` on the project routes).
+
+For day-to-day use, prefer the **`/tasks:set-models`** skill — an adaptive
+interview that discovers the live model catalog, asks which roles/categories
+you want to pin, and writes the policy for you via the commands above (project
+scope or global default). The loop skills then resolve each dispatch's model
+through `resolve_model` per
+[loop-shared.md §R](../skills/tasks/loop-shared.md): workers run the
+`execution` role, verifiers the `validation` role, and
+`/tasks:decompose` / `/tasks:audit` / the integration-auditor run the
+`planning` role.
 
 ## Database Administration Commands
 

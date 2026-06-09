@@ -34,14 +34,17 @@ into it.
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand
 `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`.
 On `InputValidationError`, load via `ToolSearch`
-(`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__add_dependency`)
-and retry.
+(`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__create_task,mcp__wood-fired-tasks__add_dependency,mcp__wood-fired-tasks__resolve_model,mcp__wood-fired-tasks__list_models`)
+and retry. (`resolve_model` / `list_models` are consumed by the
+**planning-role model resolution** below — they are read-only and do NOT
+count as execution-side mutating tools.)
 
 **Allowed MCP tool surface (Guardrail 1 — planner, not executor):**
 
 - `list_projects` — resolve / validate the `--project` id (read-only).
 - `list_tasks` — read existing backlog for idempotency dedup (read-only).
 - `topology_check` — classify the Step-4 edge set (read-only; Wave 4.1 / #318).
+- `resolve_model` / `list_models` — resolve the `planning`-role dispatch model (read-only; see below).
 - `create_task` — materialize a surviving candidate (Step 8 only).
 - `add_dependency` — materialize a dependency edge (Step 8 only).
 
@@ -54,6 +57,29 @@ plan — exactly the plan/execute fusion this skill exists to prevent. If a
 step seems to need one of these, you have misread the design — stop and
 re-read §5 Guardrail 1. `create_task` and `add_dependency` are the ONLY
 mutating tools, and ONLY in Step 8 (skipped under `--dry-run`).
+
+### Planning-role model resolution (resolve ONCE, before any dispatch)
+
+Every subagent this skill dispatches — the Step-2 recon Explore agent, the
+Step-3 planner, the Step-4 / Step-6 critics — is a **planning-phase**
+dispatch and runs the `planning` pipeline role. Resolve its `model:` ONCE,
+before the first dispatch, per the canonical contract in
+[loop-shared.md §R](loop-shared.md#r-model-resolution):
+
+> Call `resolve_model { project_id, role: 'planning' }`. **`task_id` is
+> OMITTED** — decompose's recon/planner/critic all run *before* any task
+> exists, so there is no per-task power category to size-route against; the
+> `planning` slot's `constant` / `default` governs. Pass the `--project`
+> id as `project_id` (it is required and already validated in Step 1, so the
+> target project is always known here); on `null` pass **no** `model:` and
+> inherit the orchestrator's session model (the backward-compatible default).
+
+Read the resolver's returned value VERBATIM (per §R's anti-fabrication note
+/ §L) and reuse the SAME resolved `model:` for all four dispatches below. If
+a run supplied `--planning-model <ref>`, skip `resolve_model` and pass that
+ref directly (dispatch-time fallback per §R still applies). The dispatch-time
+fallback (retry once with no `model:` on an unrecognized-model error) applies
+to each `Agent` call.
 
 ---
 
@@ -133,7 +159,8 @@ dedup key reused by Step 8 and recorded in the Step 9 frontmatter. Record
 Dispatch **exactly ONE** Explore-agent subagent, bounded
 `≤ 50 tool calls` and `≤ 8 minutes wall time` (design §3 Step 2). Use the
 `Agent` tool with `subagent_type: "Explore"` and
-`name: "decompose-recon"`. The Explore agent reads `AGENTS.md` /
+`name: "decompose-recon"`. **Set `model:` to the planning-role model
+resolved once in Preflight** ([loop-shared.md §R](loop-shared.md#r-model-resolution)). The Explore agent reads `AGENTS.md` /
 `CLAUDE.md` / `docs/REPO_MAP.md` first to find entry points, then walks
 only the subtree relevant to the goal + `--domain` (e.g. `frontend` →
 `src/web/**` first; `infra` → `deploy/**` first; `mixed` disables the
@@ -159,7 +186,8 @@ subagent type is only registered for sessions started after `install.sh`;
 an `Agent` call with an unknown `subagent_type` FAILS the whole dispatch).
 Pass `name: "decompose-planner"` so it is addressable for repair
 round-trips. Bounds: `≤ 30 tool calls / ≤ 6 minutes` (design Subagents
-table).
+table). **Set `model:` to the planning-role model resolved once in
+Preflight** ([loop-shared.md §R](loop-shared.md#r-model-resolution)).
 
 **Inline planner brief (embed verbatim, then append the inputs):**
 
@@ -190,8 +218,9 @@ first, and STOP.
 
 Dispatch a **critic** subagent (default `subagent_type:
 "general-purpose"`, `name: "decompose-critic-independence"`, bounds
-`≤ pairs(N) tool calls / ≤ 4 minutes`) to do **pairwise** comparison of the
-candidates: for each pair return `INDEPENDENT` | `ORDERED(a→b)` |
+`≤ pairs(N) tool calls / ≤ 4 minutes`, `model:` = the planning-role model
+resolved once in Preflight — [loop-shared.md §R](loop-shared.md#r-model-resolution))
+to do **pairwise** comparison of the candidates: for each pair return `INDEPENDENT` | `ORDERED(a→b)` |
 `MUTUALLY_EXCLUSIVE`. Aggregate the verdicts into a dependency **edge set**
 (one directed edge per `ORDERED` verdict; `MUTUALLY_EXCLUSIVE` pairs are
 flagged for user attention).
@@ -241,8 +270,9 @@ Topology Verdict section so a reader knows the classification was local.
 
 Dispatch a second **critic** subagent (default `subagent_type:
 "general-purpose"`, `name: "decompose-critic-coverage"`, bounds
-`≤ 20 tool calls / ≤ 3 minutes`) with `(success_criteria, union of
-candidate acceptance_criteria)`. It returns exactly one of:
+`≤ 20 tool calls / ≤ 3 minutes`, `model:` = the planning-role model
+resolved once in Preflight — [loop-shared.md §R](loop-shared.md#r-model-resolution))
+with `(success_criteria, union of candidate acceptance_criteria)`. It returns exactly one of:
 
 - `COMPLETE` — every success criterion is covered by ≥ 1 acceptance
   criterion. Proceed to §7.

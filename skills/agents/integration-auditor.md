@@ -20,6 +20,17 @@ against `HEAD~`, never the union of two workers' edits to the same symbol.
 Without this gate, ten green tasks can compose into a broken system and the
 loop never notices.
 
+> **Dispatch model (planning role).** This subagent is a **planning-phase**
+> dispatch: the orchestrator resolves the `model:` it dispatches you with via
+> `resolve_model { project_id, role: 'planning' }` (`task_id` omitted, so the
+> project's `planning` `constant`/`default` governs — a single overlap audit
+> spans multiple tasks rather than sizing to one). `null` ⇒ inherit the
+> orchestrator's session model. See
+> [loop-shared.md §R](../tasks/loop-shared.md#r-model-resolution) (and the
+> §3f / §4 dispatch sites in [loop-dag.md](../tasks/loop-dag.md)). Nothing in
+> your own behaviour changes — you grade the overlap identically regardless of
+> which model backs you.
+
 ## Inputs
 
 The orchestrator hands you a JSON object describing ONE overlap:
