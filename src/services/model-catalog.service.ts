@@ -33,9 +33,15 @@ export interface ModelCatalog {
 /**
  * Static, hand-maintained fallback catalog. Used whenever live discovery is
  * unavailable (no key / non-OK response / network error). Ordered newest-power
- * first (opus → sonnet → haiku) to mirror the family power ladder.
+ * first (fable → opus → sonnet → haiku) to mirror the family power ladder.
  */
 export const STATIC_FALLBACK_MODELS: ModelCatalogEntry[] = [
+  {
+    id: 'claude-fable-5',
+    display_name: 'Claude Fable 5',
+    family: 'fable',
+    created_at: '2026-05-01T00:00:00Z',
+  },
   {
     id: 'claude-opus-4-8',
     display_name: 'Claude Opus 4.8',

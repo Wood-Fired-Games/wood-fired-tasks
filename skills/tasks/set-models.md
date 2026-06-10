@@ -1,6 +1,6 @@
 ---
 name: set-models
-description: Adaptive model-policy interview for Wood Fired Tasks — links a Claude model to each pipeline role (execution, validation, planning), routing execution/validation by the six power categories (Minimal · Light · Moderate · Strong · Heavy · Maximum) with monotonically-rising suggestions after each pick, then persists the resulting ModelPolicy to the project layer (update_project) or the global default layer (set_model_defaults). Use when configuring which models the loop worker / verifier / planner run on, setting per-category model power, or when asked to run the model interview.
+description: Adaptive model-policy interview for Wood Fired Tasks — links a Claude model to each pipeline role (execution, validation, planning), routing execution/validation by the six power categories (Minimal · Light · Moderate · Strong · Heavy · Maximum) via one four-stage checklist question per role (Minimal+Light · Moderate+Strong · Heavy · Maximum) with monotonically-ascending recommendations, then persists the resulting ModelPolicy to the project layer (update_project) or the global default layer (set_model_defaults). Use when configuring which models the loop worker / verifier / planner run on, setting per-category model power, or when asked to run the model interview.
 argument-hint: [--global | --project <id>]
 disable-model-invocation: false
 ---
@@ -21,11 +21,13 @@ Where this skill and that spec could drift, the spec wins. Section
 references below (§N) point into it.
 
 > **Mental model.** You are filling in a small table: three roles × (for
-> `execution` / `validation`) six power categories. You do it by asking the
-> user one question at a time, offering the **live** model catalog plus an
-> "auto" escape hatch, and you keep each subsequent suggestion at least as
-> powerful as the last so the table reads as a sensible ascending ladder. You
-> write exactly once, at the end, to the layer the user targeted.
+> `execution` / `validation`) six power categories. You do it with ONE
+> four-stage `AskUserQuestion` call per role — the stages render as a
+> checklist the user works through with no model round-trip between stages —
+> offering the **live** model catalog plus an "auto" escape hatch, with each
+> stage's recommendation at least as powerful as the previous stage's so the
+> table reads as a sensible ascending ladder. You write exactly once, at the
+> end, to the layer the user targeted.
 
 ---
 
@@ -108,35 +110,50 @@ from.
 
 ### 4. Walk `execution`, then `validation` (category-routed)
 
-For role `execution`, then role `validation`, walk the six categories in
-ascending order **minimal → light → moderate → strong → heavy → maximum**. Ask
-**one `AskUserQuestion` per category**:
+For role `execution`, then role `validation`, ask **one `AskUserQuestion`
+call carrying exactly four questions** (the four stages render as a
+checklist the user works through with no pause between stages). The six
+categories are folded into four stages — the two pairs at the bottom of the
+ladder share one pick each:
+
+| Stage | Categories covered | One pick stores to |
+| --- | --- | --- |
+| 1 | **Minimal + Light** (jobSize 1–2) | `byCategory.minimal` AND `byCategory.light` |
+| 2 | **Moderate + Strong** (jobSize 3–5) | `byCategory.moderate` AND `byCategory.strong` |
+| 3 | **Heavy** (jobSize 8) | `byCategory.heavy` |
+| 4 | **Maximum** (jobSize 13) | `byCategory.maximum` |
+
+Per stage:
 
 - **Options** = the discovered catalog models (live or fallback) **plus** a
   final `"Let me decide (auto)"` option that records the `auto` sentinel for
-  that category.
-- **Recommended (first/default) option** is derived from the **previous pick**
-  in the same role to form a **monotonic capability ladder**: the recommended
-  model for category *N* must be **≥** the capability of the model picked for
-  category *N−1*. Concretely, after each pick, set the next category's
-  recommended option to the lowest catalog model whose implied power is at
-  least the last pick's power. For the first category (`minimal`) recommend the
-  lowest-power catalog model.
-- **`auto` is skipped in the ladder:** if the user picks `"Let me decide
-  (auto)"` for a category, do NOT advance the ladder floor from it — carry the
-  last *concrete* pick forward as the floor for the next recommendation.
+  the stage's category (or categories).
+- **Recommended (first/default) options ascend monotonically across the four
+  stages**: stage 1 recommends the lowest-power catalog model; each later
+  stage recommends a model **≥** the previous stage's recommendation, ending
+  with the most powerful catalog model on stage 4. Because all four stages
+  ship in one call, recommendations are computed up front from the catalog's
+  power order — they cannot react to the user's in-call picks. For the
+  SECOND role's call, seed stage 1's recommendation from the first role's
+  stage-1 pick when it was concrete (carry the established floor across
+  roles); `auto` picks never move the floor.
+- **Pair semantics:** a stage-1 or stage-2 pick (including `auto`) is stored
+  under BOTH of its categories. If the user wants the paired categories
+  split (e.g. a different model for `minimal` vs `light`), they can say so
+  via the "Other" free-text option — honor it by recording the two values
+  separately.
 
 Record each pick under `byCategory[<category>]` for the role. A category the
 user explicitly leaves at `auto` stores the `auto` sentinel; categories may be
 left unset to fall through to the role `default` / next layer (§4.4) — but the
-ascending walk fills all six by default.
+four-stage walk fills all six by default.
 
 ### 5. Ask the single planning question
 
 For role `planning`, ask **one** question: a single model for the constant
 planning slot, with the same `"Let me decide (auto)"` option. Record it as
 `planning.constant`. Only if the user explicitly asks for per-category planning
-routing, branch into the same six-category walk for `planning.byCategory`;
+routing, branch into the same four-stage walk for `planning.byCategory`;
 otherwise the constant governs (§5).
 
 ### 6. Confirm and persist
