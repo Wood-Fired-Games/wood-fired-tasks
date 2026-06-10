@@ -52,7 +52,11 @@ export type HealthCheckId =
   | 'stale-time-criticality'
   | 'high-fallback-ratio'
   | 'score-churn'
-  | 'auto-sized-pending';
+  | 'auto-sized-pending'
+  // Task #1004: emitted by `check_health` (src/mcp/tools/health-tools.ts), not
+  // the WSJF linter — it shares this findings shape so all health surfaces
+  // speak one language.
+  | 'blocked-without-edge';
 
 /** One linter finding: which check fired, how bad, why, and what to do. */
 export interface HealthFinding {

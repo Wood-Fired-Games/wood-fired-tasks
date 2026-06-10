@@ -36,6 +36,7 @@ import {
   type VerificationEvidence as VerificationEvidenceInput,
 } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
+import type { DependencyService } from './dependency.service.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
 import { DEFAULT_CLAIM_TTL_MINUTES } from './claim-release.service.js';
@@ -202,12 +203,19 @@ export class TaskService {
    *   {@link wsjfAuditEnabled}.
    * @param wsjfHistoryRepo WSJF (#628): append-only history writer, paired with
    *   `db`. Must wrap the SAME connection as `taskRepo`.
+   * @param dependencyService Task #1004: edge writer + validator for the atomic
+   *   block-with-dependency path (`updateTask` with `blocked_by`). Optional for
+   *   back-compat with the many shorter constructions; the `blocked_by` path
+   *   requires BOTH this and `db` (one transaction spans the edge adds and the
+   *   status write) and throws a clear BusinessError when either is missing.
+   *   Must wrap the SAME connection as `taskRepo` (production wiring does).
    */
   constructor(
     private readonly taskRepo: ITaskRepository,
     private readonly projectRepo: IProjectRepository,
     private readonly db?: Database.Database,
     private readonly wsjfHistoryRepo?: IWsjfHistoryRepository,
+    private readonly dependencyService?: DependencyService,
   ) {}
 
   /**
@@ -725,6 +733,22 @@ export class TaskService {
       throw new ValidationError(fieldErrors);
     }
 
+    // Task #1004: narrow semantics — `blocked_by` is ONLY meaningful as part of
+    // an atomic block-with-dependency. Supplying it without `status: 'blocked'`
+    // is a validation error rather than a silent edge-add, so the affordance
+    // cannot be half-used (the failure class it exists to kill is a blocked
+    // status without an edge; the inverse — edges added under a non-blocked
+    // status — would be a different, unintended operation).
+    if (result.data.blocked_by !== undefined && result.data.status !== 'blocked') {
+      throw new ValidationError({
+        blocked_by: [
+          "blocked_by is only valid together with status: 'blocked'. " +
+            'To add dependency edges without blocking, use the dependency surface ' +
+            '(add_dependency / dep-add) instead.',
+        ],
+      });
+    }
+
     // Fetch existing task
     const existing = this.taskRepo.findById(id);
     if (!existing) {
@@ -813,6 +837,9 @@ export class TaskService {
     const {
       wsjf: parsedWsjfUpdate,
       verification_evidence: parsedEvidenceUpdate,
+      // Task #1004: blocked_by is NOT a task column — it drives the atomic
+      // edge-add below and must not leak into the repository patch.
+      blocked_by: parsedBlockedBy,
       ...updateRest
     } = result.data;
     const updatesForRepo: UpdateTaskDTO = {
@@ -863,22 +890,55 @@ export class TaskService {
       }
     }
     const wsjfTrigger: WsjfHistoryTrigger = wsjfUpdate?.manual === true ? 'manual' : 'update';
+    const performWrite = (): Task & { tags: string[] } => {
+      if (wsjfUpdate !== undefined && wsjfUpdate !== null && this.wsjfAuditEnabled()) {
+        const prevWsjfScore = this.currentWsjfScore(existing);
+        return this.db!.transaction(() => {
+          const updated = this.taskRepo.update(id, updatesForRepo);
+          this.appendWsjfHistory({
+            taskId: updated.id,
+            projectId: updated.project_id,
+            trigger: wsjfTrigger,
+            wsjf: wsjfUpdate,
+            prevWsjfScore,
+          });
+          return updated;
+        })();
+      }
+      return this.taskRepo.update(id, updatesForRepo);
+    };
     let updatedTask: Task & { tags: string[] };
-    if (wsjfUpdate !== undefined && wsjfUpdate !== null && this.wsjfAuditEnabled()) {
-      const prevWsjfScore = this.currentWsjfScore(existing);
-      updatedTask = this.db!.transaction(() => {
-        const updated = this.taskRepo.update(id, updatesForRepo);
-        this.appendWsjfHistory({
-          taskId: updated.id,
-          projectId: updated.project_id,
-          trigger: wsjfTrigger,
-          wsjf: wsjfUpdate,
-          prevWsjfScore,
-        });
-        return updated;
+    if (parsedBlockedBy !== undefined) {
+      // Task #1004: atomic block-with-dependency. The dependency edges and the
+      // status write commit in ONE transaction — all-or-nothing. Any invalid
+      // edge (nonexistent blocker → NotFoundError, self-reference →
+      // ValidationError, cycle → BusinessError) throws inside the transaction
+      // and rolls back EVERYTHING, so a blocked status can never land without
+      // its edge and no partial edge set can land without the status.
+      //
+      // Validation is the DependencyService's — `addDependency` runs the
+      // existence / self / cycle checks per edge (no duplicated cycle logic
+      // here). Edges that already exist are skipped (idempotent re-block, e.g.
+      // appending a second blocker to an already-blocked task).
+      if (!this.dependencyService || !this.db) {
+        throw new BusinessError(
+          'blocked_by requires the transactional wiring (db + DependencyService) ' +
+            'that production boot supplies. This TaskService was constructed without it.',
+        );
+      }
+      const blockerIds = [...new Set(parsedBlockedBy)];
+      updatedTask = this.db.transaction(() => {
+        const alreadyBlocking = new Set(
+          this.dependencyService!.getBlockers(id).map((d) => d.task_id),
+        );
+        for (const blockerId of blockerIds) {
+          if (alreadyBlocking.has(blockerId)) continue;
+          this.dependencyService!.addDependency({ task_id: blockerId, blocks_task_id: id });
+        }
+        return performWrite();
       })();
     } else {
-      updatedTask = this.taskRepo.update(id, updatesForRepo);
+      updatedTask = performWrite();
     }
 
     // Emit task.updated event after successful database operation

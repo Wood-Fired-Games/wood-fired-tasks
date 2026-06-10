@@ -435,10 +435,23 @@ Update an existing task by ID.
     "estimated_minutes": "number (optional, 0-10080)",
     "assignee": "string (optional, max 100 chars)",
     "due_date": "string (optional, ISO8601 format)",
-    "tags": ["array of strings (optional)"]
+    "tags": ["array of strings (optional)"],
+    "blocked_by": ["array of task IDs (optional, 1-50; ONLY valid with status: 'blocked')"]
   }
 }
 ```
+
+**Atomic block-with-dependency (task #1004):** when blocking a task on other
+task(s) — e.g. a bounce-style flow that files a defect task and parks the
+original behind it — pass `blocked_by: [taskIds]` together with
+`status: "blocked"`. The server adds one `blocker → task` dependency edge per
+id AND flips the status in ONE transaction: an invalid edge (nonexistent
+blocker, self-reference, cycle) rolls back the entire call, so a blocked
+status can never land without its edge. Edges that already exist are skipped
+(idempotent re-block). `blocked_by` without `status: "blocked"` is rejected.
+This matters because the `blocked → open` auto-unblock only fires off a
+dependency edge — a blocked task with no edge is a dead end that
+`check_health` flags as a `blocked-without-edge` warning.
 
 **Usage:** When Claude Code needs to modify task fields, change status, update assignee, or adjust priority.
 
@@ -763,6 +776,19 @@ Check service health status, database connectivity, and version information.
 ```json
 {}
 ```
+
+**Findings (task #1004):** the healthy response's `structuredContent` carries a
+`findings` array of severity-tagged lint findings in the shared
+`{ check, severity, message, suggestion, taskIds }` shape (same style as
+`wsjf_health`). Currently one check is implemented:
+
+- `blocked-without-edge` (severity `warning`) — tasks in status `blocked` with
+  ZERO blocking dependency edges. These can never auto-unblock (the
+  `blocked → open` workflow transition only fires off an edge); fix with
+  `dep-add` / `add_dependency`, or re-block atomically via `update_task` with
+  `status: "blocked"` + `blocked_by: [taskIds]`.
+
+An empty `findings` array means no lint fired.
 
 **Usage:** When Claude Code needs to verify the MCP server and database are functioning correctly.
 

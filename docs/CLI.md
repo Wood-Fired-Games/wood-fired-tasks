@@ -275,18 +275,16 @@ Update a task. All options are optional (partial update).
 **Examples:**
 
 ```bash
-# Update status
+# Update status / assignee / priority
 tasks update 42 --status done
-
-# Update assignee and priority
 tasks update 42 --assignee bob --priority urgent
 
 # Update multiple fields
-tasks update 42 \
-  --status in_progress \
-  --description "Updated description" \
-  --due "2026-03-01T00:00:00Z" \
-  --tags "backend,api,urgent"
+tasks update 42 --status in_progress --description "Updated description" \
+  --due "2026-03-01T00:00:00Z" --tags "backend,api,urgent"
+
+# Block atomically on other tasks (edge + status in one transaction)
+tasks update 42 --status blocked --blocked-by 57,58
 ```
 
 **Options:**
@@ -300,6 +298,7 @@ tasks update 42 \
 | --assignee | string | Update assignee name |
 | --due | string | Update due date (ISO8601 format) |
 | --tags | string | Update tags (comma-separated, replaces all tags) |
+| --blocked-by | string | Blocking task IDs (comma-separated). Only valid with `--status blocked`: adds the blocking dependency edge(s) and sets the status atomically (task #1004) — the task auto-unblocks when the blockers close |
 
 **Output:**
 

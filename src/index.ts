@@ -269,7 +269,18 @@ export async function createApp(dbPath?: string): Promise<App> {
     charterHistory: charterHistoryRepo,
     db,
   });
-  const taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
+  // Task #1004: DependencyService is constructed BEFORE TaskService so the
+  // atomic block-with-dependency path (`update_task` with `blocked_by`) can be
+  // injected — the edge adds and the status write share `db` and commit in one
+  // transaction.
+  const dependencyService = new DependencyService(dependencyRepo, taskRepo);
+  const taskService = new TaskService(
+    taskRepo,
+    projectRepo,
+    db,
+    wsjfHistoryRepo,
+    dependencyService,
+  );
 
   // Guaranteed-task-sizing (#992, design spec §5): idempotent boot sweep.
   // The earliest point both `taskService` (the size-only `autoSizeTask`
@@ -283,7 +294,6 @@ export async function createApp(dbPath?: string): Promise<App> {
   // row leaves previously committed rows intact; idempotent on re-boot.
   backfillJobSizes(taskService, taskRepo);
 
-  const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
   const topologyService = new TopologyService(taskRepo, dependencyRepo);
   // N6: pass the better-sqlite3 handle so the bulk reads (count + paginated

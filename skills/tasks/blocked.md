@@ -38,7 +38,8 @@ Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<to
    - If comment fails: report error, do NOT proceed to step 6 (task stays in current state, user retries).
 
 6. **Update task status**
-   - Call `wood-fired-tasks:update_task` with `id=<id>, updates={ "status": "blocked" }`.
+   - **If the blocker IS another task** (the reason names a task id, or you just filed a defect/follow-up task for it — the bounce-style flow): call `wood-fired-tasks:update_task` with `id=<id>, updates={ "status": "blocked", "blocked_by": [<blockerTaskIds>] }`. This is ATOMIC — the blocking dependency edge(s) and the status flip commit together (all-or-nothing), so the task auto-unblocks (`blocked` → `open`) when the blocker closes. NEVER set `status: "blocked"` and then `add_dependency` as two calls; if the second call is skipped or fails, the task is blocked forever (no edge ⇒ the workflow engine's auto-unblock never fires). `blocked_by` without `status: "blocked"` is rejected.
+   - **Otherwise** (external blocker — vendor, credentials, environment): call `wood-fired-tasks:update_task` with `id=<id>, updates={ "status": "blocked" }`. Note: edge-less blocked tasks never auto-unblock and are flagged by `check_health` (`blocked-without-edge` warning); someone must manually move the task back to `open`.
    - On failure: surface error AND note "Reason comment WAS recorded — manual status flip needed."
 
 7. **Confirm completion**

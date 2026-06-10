@@ -233,6 +233,10 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // with the new `statusline` command reference and the Bearer-PAT / device-flow
     // auth content; 1800 leaves ~100 lines of headroom. Advisory budget —
     // tighten in a follow-up once the CLI reference is split or trimmed.
+    // #1004 (atomic block-with-dependency) kept the budget at 1800 by
+    // condensing the `tasks update` examples to fit the `--blocked-by` row —
+    // the onboarding-smoke probe (MAX_LINES_PER_PROBE_FILE) hard-caps every
+    // recommended-read doc at 1800, so the advisory budget must not exceed it.
     line_budget: 1800,
     authority: 'authoritative',
     owner_role: 'CLI maintainers',

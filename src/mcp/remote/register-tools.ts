@@ -212,7 +212,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     'update_task',
     {
       description:
-        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags.',
+        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags. ' +
+        "When blocking on other tasks, pass `blocked_by: [taskIds]` WITH `status: 'blocked'` " +
+        'to add the blocking dependency edge(s) and flip the status atomically ' +
+        '(all-or-nothing; an invalid edge rolls the whole call back). ' +
+        '`blocked_by` without `status: "blocked"` is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
         updates: UpdateTaskSchema,

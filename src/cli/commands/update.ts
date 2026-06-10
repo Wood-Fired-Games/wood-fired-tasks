@@ -18,6 +18,11 @@ export const updateCommand = new Command('update')
   .option('-a, --assignee <name>', 'New assignee')
   .option('--due <date>', 'New due date (ISO8601)')
   .option('--tags <tags>', 'New tags (comma-separated, replaces existing)')
+  .option(
+    '--blocked-by <ids>',
+    'Blocking task IDs (comma-separated). Only valid with --status blocked: ' +
+      'adds the blocking dependency edge(s) and sets the status atomically',
+  )
   .action(async (idStr, options) => {
     try {
       // Parse and validate task ID
@@ -73,6 +78,30 @@ export const updateCommand = new Command('update')
       }
       if (options.tags !== undefined) {
         updates.tags = options.tags.split(',').map((tag: string) => tag.trim());
+      }
+      if (options.blockedBy !== undefined) {
+        // Task #1004: atomic block-with-dependency. Mirror the server's narrow
+        // semantics client-side so the misuse fails before the wire.
+        if (options.status !== 'blocked') {
+          console.error(
+            colorError(
+              '--blocked-by is only valid together with --status blocked ' +
+                '(the edge-add and the status flip commit atomically). ' +
+                'To add edges without blocking, use `tasks dep-add` instead.',
+            ),
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const blockedBy = options.blockedBy.split(',').map((s: string) => parseInt(s.trim(), 10));
+        if (blockedBy.length === 0 || blockedBy.some((n: number) => isNaN(n) || n <= 0)) {
+          console.error(
+            colorError('Invalid --blocked-by: must be comma-separated positive task IDs'),
+          );
+          process.exitCode = 1;
+          return;
+        }
+        updates.blocked_by = blockedBy;
       }
 
       // Check if any updates were specified

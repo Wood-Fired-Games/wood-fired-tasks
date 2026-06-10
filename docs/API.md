@@ -612,9 +612,18 @@ Update a task. All fields are optional (partial update).
   "estimated_minutes": "number (optional, 0-10080)",
   "assignee": "string (optional, max 100 chars)",
   "due_date": "string (optional, ISO8601 format)",
-  "tags": ["array of strings (optional, max 20 tags, each max 50 chars)"]
+  "tags": ["array of strings (optional, max 20 tags, each max 50 chars)"],
+  "blocked_by": ["array of task IDs (optional, 1-50; ONLY valid with status: 'blocked')"]
 }
 ```
+
+[NOTE] **Atomic block-with-dependency (task #1004):** pass `blocked_by: [taskIds]`
+together with `status: "blocked"` to add the blocking dependency edge(s) and flip
+the status in ONE transaction (all-or-nothing — a nonexistent blocker,
+self-reference, or cycle rolls the whole call back; already-existing edges are
+skipped). `blocked_by` without `status: "blocked"` is rejected with a validation
+error. Without an edge a blocked task never auto-unblocks (the `blocked -> open`
+workflow transition fires only off a dependency edge).
 
 **Response:** 200 OK
 

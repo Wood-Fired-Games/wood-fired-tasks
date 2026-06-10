@@ -196,6 +196,13 @@ export const UpdateTaskSchema = z
     // WSJF (task #627): patch the WSJF score. `null` clears all four components;
     // an object sets them (all-four-or-none enforced by WsjfWriteSchema).
     wsjf: WsjfWriteSchema.nullable(),
+    // Task #1004: atomic block-with-dependency. ONLY valid alongside
+    // `status: 'blocked'` (the service rejects it otherwise — narrow semantics
+    // by design). The service adds one `blocker -> this task` dependency edge
+    // per id AND sets the status in ONE transaction: an invalid edge
+    // (nonexistent blocker, self-reference, cycle) rolls back the whole call,
+    // so an edge-less blocked state cannot be created through this affordance.
+    blocked_by: z.array(z.number().int().positive()).min(1).max(50),
   })
   .partial();
 
@@ -229,6 +236,10 @@ export const UpdateTaskClientSchema = z
     // WSJF (task #627): clients may patch the WSJF score directly. `null` clears
     // it; an object sets all four components (all-four-or-none enforced).
     wsjf: WsjfWriteSchema.nullable(),
+    // Task #1004: atomic block-with-dependency — see UpdateTaskSchema. Clients
+    // pass this WITH `status: 'blocked'` so the blocking edge(s) and the status
+    // flip commit together (no more edge-less blocked dead ends).
+    blocked_by: z.array(z.number().int().positive()).min(1).max(50),
   })
   .partial()
   .strict();

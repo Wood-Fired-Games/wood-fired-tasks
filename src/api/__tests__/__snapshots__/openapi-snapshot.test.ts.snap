@@ -5313,6 +5313,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                               "high-fallback-ratio",
                               "score-churn",
                               "auto-sized-pending",
+                              "blocked-without-edge",
                             ],
                             "type": "string",
                           },
@@ -8638,6 +8639,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "maxLength": 100,
                     "nullable": true,
                     "type": "string",
+                  },
+                  "blocked_by": {
+                    "items": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "maxItems": 50,
+                    "minItems": 1,
+                    "type": "array",
                   },
                   "description": {
                     "maxLength": 5000,

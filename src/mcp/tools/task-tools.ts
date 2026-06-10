@@ -315,7 +315,11 @@ export function registerTaskTools(
         'Update an existing task by ID. Can update title, description, status, ' +
         'priority, assignee, due_date, tags, and the WSJF score. Pass a ' +
         '`wsjf_submission` ({classification, features}) to (re)score via the ' +
-        'deterministic gate — a bad evidence span is rejected with a structured error.',
+        'deterministic gate — a bad evidence span is rejected with a structured error. ' +
+        "When blocking on other tasks, pass `blocked_by: [taskIds]` WITH `status: 'blocked'` " +
+        'to add the blocking dependency edge(s) and flip the status atomically ' +
+        '(all-or-nothing; an invalid edge rolls the whole call back). ' +
+        '`blocked_by` without `status: "blocked"` is rejected.',
       // WR-04: UpdateTaskClientSchema omits server-derived assignee_user_id.
       // Clients change assignment by passing `assignee` (email or display
       // name); the handler resolves the FK server-side via
