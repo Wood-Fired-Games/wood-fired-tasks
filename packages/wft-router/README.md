@@ -69,6 +69,9 @@ so a restart within the same window dispatches nothing. See
 [docs/event-router-design.md §Cold-start sweep](../../docs/event-router-design.md).
 
 - **Recipes** (full walkthroughs): [docs/automation-recipes/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/docs/automation-recipes)
+  - [claude-routines.md](../../docs/automation-recipes/claude-routines.md) — dispatch a routine on task close
+  - [persistent-agent-sessions.md](../../docs/automation-recipes/persistent-agent-sessions.md) — drive a long-lived agent session
+  - [agent-delegated-wsjf-sizing.md](../../docs/automation-recipes/agent-delegated-wsjf-sizing.md) — delegate full WSJF classification to an agent on task creation
 - **Reference adapters** for `agent_session_dispatch`: [examples/adapters/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/examples/adapters)
 - **Schema, predicate & templating rules**: [docs/event-router-design.md](https://github.com/Wood-Fired-Games/wood-fired-tasks/blob/main/docs/event-router-design.md)
 

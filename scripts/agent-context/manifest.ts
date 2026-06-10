@@ -354,6 +354,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'docs/automation-recipes/agent-delegated-wsjf-sizing.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: delegate a full WSJF classification to an agent when a task is created with an auto-sized job size, using the task.created event, an assignee predicate, and the agent_session_dispatch handler; covers the source.jobSize session-level self-gate, update_task wsjf_submission shape, and idempotency.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/ONBOARDING_SMOKE.md',
     role: 'onboarding-smoke',
     purpose:
