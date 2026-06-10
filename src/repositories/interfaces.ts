@@ -11,6 +11,7 @@ import type {
   CreateCommentDTO,
 } from '../types/task.js';
 import type { User, ApiToken, UserUpsertInput } from '../types/identity.js';
+import type { Fib, WsjfSource } from '../types/wsjf.js';
 
 /**
  * Bounded pagination options accepted by every list-style repository call.
@@ -45,6 +46,18 @@ export interface ITaskRepository {
   findById(id: number): (Task & { tags: string[] }) | null;
   findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }>;
   update(id: number, updates: UpdateTaskDTO): Task & { tags: string[] };
+  /**
+   * Guaranteed-task-sizing (#987, design spec §2/§3): SIZE-ONLY write. Sets
+   * `wsjf_job_size` and the `wsjf_source` provenance map (with `jobSize`
+   * stamped `'auto'`) while leaving the three Cost-of-Delay component columns
+   * (`wsjf_value`, `wsjf_time_criticality`, `wsjf_risk_opportunity`) and their
+   * JSON metadata UNTOUCHED — so a fresh task stays unscored for ranking but
+   * becomes routable. This is the column-write half of the no-bypass invariant
+   * (#628); the service layer wraps it together with the `auto_size` history
+   * append in ONE `db.transaction(...)`. NOT reachable from any client schema
+   * (`CreateTaskClientSchema` / `WsjfWriteSchema` reject size-only payloads).
+   */
+  writeAutoJobSize(id: number, jobSize: Fib, source: WsjfSource): Task & { tags: string[] };
   delete(id: number): void;
   /**
    * Filter + paginate tasks. `filters.limit`/`filters.offset` ride along on

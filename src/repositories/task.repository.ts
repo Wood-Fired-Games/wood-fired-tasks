@@ -7,6 +7,7 @@ import type {
   VerificationEvidence,
 } from '../types/task.js';
 import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
+import type { Fib, WsjfSource } from '../types/wsjf.js';
 import type { ITaskRepository, CompletionRangeFilters, PaginationOptions } from './interfaces.js';
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
 import { mapRow, mapRows } from './row-mapper.js';
@@ -441,6 +442,43 @@ export class TaskRepository implements ITaskRepository {
       throw new Error(`Task with id ${id} not found`);
     }
 
+    return result;
+  }
+
+  /**
+   * Guaranteed-task-sizing (#987, design spec §2/§3): the SIZE-ONLY column
+   * write. Sets ONLY `wsjf_job_size` + `wsjf_source` (with `jobSize='auto'`),
+   * deliberately NOT touching `wsjf_value` / `wsjf_time_criticality` /
+   * `wsjf_risk_opportunity` (or their JSON metadata) — they stay NULL on a
+   * fresh task, so the task remains UNSCORED for ranking (`componentsOf`'s
+   * any-null exclusion) while `wsjf_job_size` makes `resolve_model` routing
+   * engage.
+   *
+   * Issues no `BEGIN`/`COMMIT` of its own: the service layer (#628 no-bypass
+   * invariant) calls this from inside ONE `db.transaction(...)` alongside the
+   * `auto_size` history append so the column write and its audit row commit
+   * atomically. Throws if the task id does not exist (parity with `update`).
+   */
+  writeAutoJobSize(id: number, jobSize: Fib, source: WsjfSource): Task & { tags: string[] } {
+    const stmt = this.db.prepare(
+      `UPDATE tasks
+       SET wsjf_job_size = @wsjf_job_size,
+           wsjf_source = @wsjf_source,
+           updated_at = datetime('now')
+       WHERE id = @id`,
+    );
+    const info = stmt.run({
+      id,
+      wsjf_job_size: jobSize,
+      wsjf_source: serializeWsjfMember(source),
+    });
+    if (info.changes === 0) {
+      throw new Error(`Task with id ${id} not found`);
+    }
+    const result = this.findById(id);
+    if (!result) {
+      throw new Error(`Task with id ${id} not found`);
+    }
     return result;
   }
 

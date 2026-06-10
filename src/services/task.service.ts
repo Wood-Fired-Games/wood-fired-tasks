@@ -19,7 +19,7 @@ import {
   VerificationEvidence,
 } from '../types/task.js';
 import { omitUndefined } from '../utils/omit-undefined.js';
-import type { WsjfComponents } from '../types/wsjf.js';
+import type { WsjfComponents, WsjfSource } from '../types/wsjf.js';
 import {
   computeWsjf,
   validateManualScore,
@@ -254,6 +254,90 @@ export class TaskService {
       riskOpportunity: task.wsjf_risk_opportunity as Fib,
       jobSize: task.wsjf_job_size as Fib,
     });
+  }
+
+  /**
+   * Guaranteed-task-sizing (#987, design spec §2/§3) — the SERVER-INTERNAL,
+   * SIZE-ONLY WSJF write path. Sets `wsjf_job_size` + `wsjf_source.jobSize='auto'`
+   * (all five other `source` slots also `'auto'`) while leaving the three
+   * Cost-of-Delay component columns NULL, so the task becomes routable for
+   * `resolve_model` yet stays honestly UNSCORED for WSJF ranking (no fabricated
+   * value / time-criticality / risk).
+   *
+   * The column write and its append-only `auto_size` history row commit in ONE
+   * `db.transaction(...)` — the #628 no-bypass invariant. The history row records
+   * `jobSize` with the three CoD components NULL and `wsjfScore=null` (there is
+   * no full WSJF without the numerator), `trigger='auto_size'` (or the caller's
+   * override, e.g. `'boot_sweep'` for the §5 backfill).
+   *
+   * This method is NOT reachable from `CreateTaskClientSchema` / `WsjfWriteSchema`
+   * input — those reject a size-only payload (all four components required). It
+   * is intentionally a server-only entry point: the downstream auto-size-on-create
+   * (#989), update recompute (#991), boot sweep (#992), and health finding (#993)
+   * tasks all call THIS helper rather than smuggling a half-scored payload through
+   * the client gates.
+   *
+   * When the audit hook is NOT wired (a 2-arg `TaskService` construction with no
+   * `db` / history repo) the size still persists via the repository, but no
+   * history row is appended — back-compat parity with the create/update paths.
+   *
+   * @param args.taskId    the task to size.
+   * @param args.jobSize   the Fibonacci tier (the caller maps `estimated_minutes`
+   *                        via {@link minutesToTier} from `wsjf.service`).
+   * @param args.trigger   history trigger; defaults to `'auto_size'`. Boot-sweep
+   *                        callers (#992) pass `'boot_sweep'`.
+   * @param args.actorType / args.actorId  optional provenance for the audit row.
+   * @returns the updated task row (with tags).
+   */
+  autoSizeTask(args: {
+    taskId: number;
+    jobSize: Fib;
+    trigger?: WsjfHistoryTrigger;
+    actorType?: string | null;
+    actorId?: string | null;
+  }): Task & { tags: string[] } {
+    const existing = this.taskRepo.findById(args.taskId);
+    if (!existing) {
+      throw new NotFoundError('Task', args.taskId);
+    }
+    // Provenance: a size-only auto write stamps EVERY `source` slot 'auto'. The
+    // three CoD components are NULL, so their provenance is moot, but the map's
+    // shape (Record<WsjfComponentKey, ...>) requires all four keys; 'auto' is
+    // the honest value (server-derived, no human input).
+    const source: WsjfSource = {
+      value: 'auto',
+      timeCriticality: 'auto',
+      riskOpportunity: 'auto',
+      jobSize: 'auto',
+    };
+    const trigger: WsjfHistoryTrigger = args.trigger ?? 'auto_size';
+
+    if (this.wsjfAuditEnabled()) {
+      // prev_wsjf_score is the task's WSJF BEFORE this write — null whenever the
+      // task is not fully scored (the normal case for an auto-size target), and
+      // the real ratio if a classified score somehow precedes the auto write.
+      const prevWsjfScore = this.currentWsjfScore(existing);
+      return this.db!.transaction(() => {
+        const updated = this.taskRepo.writeAutoJobSize(args.taskId, args.jobSize, source);
+        // Size-only history row: CoD components NULL, jobSize set, no full score.
+        this.wsjfHistoryRepo!.append({
+          taskId: updated.id,
+          projectId: updated.project_id,
+          trigger,
+          value: null,
+          timeCriticality: null,
+          riskOpportunity: null,
+          jobSize: args.jobSize,
+          wsjfScore: null,
+          prevWsjfScore,
+          source,
+          actorType: args.actorType ?? null,
+          actorId: args.actorId ?? null,
+        });
+        return updated;
+      })();
+    }
+    return this.taskRepo.writeAutoJobSize(args.taskId, args.jobSize, source);
   }
 
   /**

@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { WsjfWriteSchema } from '../../schemas/task.schema.js';
 import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
@@ -242,5 +243,144 @@ describe('WSJF audit — history repository + in-transaction write (#628)', () =
     expect(rows[0].trigger).toBe('auto_size');
     expect(rows[0].job_size).toBe(3);
     expect(rows[0].value).toBeNull();
+  });
+});
+
+/**
+ * Task #987 — server-internal size-only WSJF write path (`autoSizeTask`).
+ *
+ * Acceptance criteria (verbatim):
+ *   1. Internal method (not reachable from CreateTaskClientSchema/WsjfWriteSchema
+ *      input) writes wsjf_job_size + wsjf_source.jobSize='auto' with CoD
+ *      components NULL.
+ *   2. Rollback test proves the column write and history row land atomically
+ *      (forced history failure leaves wsjf_job_size NULL).
+ *   3. WsjfWriteSchema still rejects a size-only payload arriving from a client.
+ */
+describe('WSJF size-only auto write path — autoSizeTask (#987)', () => {
+  let db: Database.Database;
+  let projectRepo: ProjectRepository;
+  let taskRepo: TaskRepository;
+  let historyRepo: WsjfHistoryRepository;
+  let service: TaskService;
+  let projectId: number;
+
+  beforeEach(async () => {
+    db = initDatabase(':memory:');
+    await runMigrations(db);
+    projectRepo = new ProjectRepository(db);
+    taskRepo = new TaskRepository(db);
+    historyRepo = new WsjfHistoryRepository(db);
+    service = new TaskService(taskRepo, projectRepo, db, historyRepo);
+    projectId = projectRepo.create({ name: 'Auto-size Project' }).id;
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  const baseInput = (extra?: Record<string, unknown>) => ({
+    title: 'Sizeless task',
+    description: 'desc',
+    priority: 'medium' as const,
+    project_id: projectId,
+    created_by: 'tester',
+    ...extra,
+  });
+
+  it('AC1: writes wsjf_job_size + wsjf_source.jobSize=auto with CoD components NULL', () => {
+    // A bare create leaves every wsjf_* column NULL (unscored).
+    const created = service.createTask(baseInput());
+    expect(taskRepo.findById(created.id)!.wsjf_job_size).toBeNull();
+
+    // Server-internal size-only write: tier 5.
+    const sized = service.autoSizeTask({ taskId: created.id, jobSize: 5 });
+
+    // Column write: jobSize set, source.jobSize='auto'.
+    const row = taskRepo.findById(sized.id)!;
+    expect(row.wsjf_job_size).toBe(5);
+    expect(row.wsjf_source).not.toBeNull();
+    expect(row.wsjf_source!.jobSize).toBe('auto');
+    // The three Cost-of-Delay components stay NULL (no fabricated CoD).
+    expect(row.wsjf_value).toBeNull();
+    expect(row.wsjf_time_criticality).toBeNull();
+    expect(row.wsjf_risk_opportunity).toBeNull();
+
+    // History row: trigger=auto_size, jobSize recorded, CoD NULL, no full score.
+    const history = historyRepo.findByTaskId(sized.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].trigger).toBe('auto_size');
+    expect(history[0].job_size).toBe(5);
+    expect(history[0].value).toBeNull();
+    expect(history[0].time_criticality).toBeNull();
+    expect(history[0].risk_opportunity).toBeNull();
+    expect(history[0].wsjf_score).toBeNull();
+    expect(history[0].prev_wsjf_score).toBeNull();
+    expect(history[0].source!.jobSize).toBe('auto');
+  });
+
+  it('AC1 (boot_sweep trigger): caller may override the history trigger', () => {
+    const created = service.createTask(baseInput({ title: 'swept task' }));
+    service.autoSizeTask({ taskId: created.id, jobSize: 3, trigger: 'boot_sweep' });
+
+    const history = historyRepo.findByTaskId(created.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].trigger).toBe('boot_sweep');
+    expect(history[0].job_size).toBe(3);
+  });
+
+  it('AC2: column write + history row are atomic — a forced history failure rolls back the size', () => {
+    const created = service.createTask(baseInput({ title: 'rollback task' }));
+    expect(taskRepo.findById(created.id)!.wsjf_job_size).toBeNull();
+
+    // Force the in-transaction history append to throw AFTER the column UPDATE
+    // has run inside the same transaction. The transaction must roll BOTH back.
+    const boom = new Error('forced history failure');
+    const spy = vi.spyOn(historyRepo, 'append').mockImplementation(() => {
+      throw boom;
+    });
+
+    expect(() => service.autoSizeTask({ taskId: created.id, jobSize: 8 })).toThrow(boom);
+
+    spy.mockRestore();
+
+    // Atomicity: the column write was rolled back — wsjf_job_size is still NULL,
+    // and no history row was committed.
+    const row = taskRepo.findById(created.id)!;
+    expect(row.wsjf_job_size).toBeNull();
+    expect(row.wsjf_source).toBeNull();
+    expect(historyRepo.countByTaskId(created.id)).toBe(0);
+  });
+
+  it('AC3: WsjfWriteSchema still rejects a size-only payload arriving from a client', () => {
+    // A client trying to smuggle a size-only write through the wsjf payload
+    // (only jobSize, no value/timeCriticality/riskOpportunity) must be rejected
+    // by the schema boundary — all-four-or-none holds, so the server-internal
+    // path is the ONLY way a size-only write reaches the DB.
+    const sizeOnly = WsjfWriteSchema.safeParse({ jobSize: 3 });
+    expect(sizeOnly.success).toBe(false);
+
+    // And the same payload routed through the public create_task service surface
+    // is rejected (the client cannot reach autoSizeTask via input).
+    expect(() => service.createTask(baseInput({ wsjf: { jobSize: 3 } }))).toThrow();
+
+    // No half-scored task was created beyond the schema gate.
+    const tasks = taskRepo.findByFilters({ project_id: projectId });
+    for (const t of tasks) {
+      // Any task that exists either is fully unscored or fully scored — never
+      // value-NULL-but-CoD-set via the client path.
+      if (t.wsjf_value !== null) {
+        expect(t.wsjf_time_criticality).not.toBeNull();
+      }
+    }
+  });
+
+  it('back-compat: a TaskService without the audit hook persists the size but writes no history', () => {
+    const unaudited = new TaskService(taskRepo, projectRepo);
+    const created = unaudited.createTask(baseInput({ title: 'unaudited auto-size' }));
+    const sized = unaudited.autoSizeTask({ taskId: created.id, jobSize: 2 });
+
+    expect(taskRepo.findById(sized.id)!.wsjf_job_size).toBe(2);
+    expect(historyRepo.countByTaskId(sized.id)).toBe(0);
   });
 });
