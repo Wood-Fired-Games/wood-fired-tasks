@@ -118,22 +118,18 @@ describe('resolveModel — within a single layer', () => {
 
     it('routes a scored planning task through byCategory before the constant (uniform slot walk)', () => {
       const s = createModelPolicyService(
-        fakeDeps(
-          { planning: { constant: 'pin', byCategory: { heavy: 'planning-heavy' } } },
-          null,
-          { 7: 8 },
-        ),
+        fakeDeps({ planning: { constant: 'pin', byCategory: { heavy: 'planning-heavy' } } }, null, {
+          7: 8,
+        }),
       );
       expect(s.resolveModel(1, 'planning', 7)).toEqual({ model: 'planning-heavy' });
     });
 
     it('uses the planning constant when no task_id is supplied (the normal §R planning dispatch)', () => {
       const s = createModelPolicyService(
-        fakeDeps(
-          { planning: { constant: 'pin', byCategory: { heavy: 'planning-heavy' } } },
-          null,
-          { 7: 8 },
-        ),
+        fakeDeps({ planning: { constant: 'pin', byCategory: { heavy: 'planning-heavy' } } }, null, {
+          7: 8,
+        }),
       );
       expect(s.resolveModel(1, 'planning')).toEqual({ model: 'pin' });
     });
