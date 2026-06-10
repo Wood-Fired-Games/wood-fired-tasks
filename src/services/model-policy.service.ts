@@ -70,12 +70,26 @@ export interface ResolverTask {
   wsjf_job_size: number | null;
 }
 
+/**
+ * The project facts the resolver needs: the row's parsed model policy
+ * (`null` when the project configures none). Returned from ONE shared fetch
+ * (task #931) that doubles as the task-#928 existence guard — a `null`
+ * RESULT means "no such project", a `null` POLICY means "project exists,
+ * no policy".
+ */
+export interface ResolverProject {
+  model_policy: ModelPolicy | null;
+}
+
 /** Injectable dependencies for {@link createModelPolicyService}. */
 export interface ModelPolicyDeps {
-  /** Whether a project with this id exists (task #928 existence guard). */
-  projectExists: (projectId: number) => boolean;
-  /** The project's model policy, or `null` when the project configures none. */
-  getProjectPolicy: (projectId: number) => ModelPolicy | null;
+  /**
+   * ONE shared project fetch (task #931): `null` when no such project exists
+   * (the task-#928 existence guard), otherwise the project's policy facts.
+   * Replaces the former `projectExists` + `getProjectPolicy` pair, which
+   * fetched + inflated the same row twice per `resolveModel` call.
+   */
+  getProject: (projectId: number) => ResolverProject | null;
   /** The global model policy, or `null` when none is configured. */
   getGlobalPolicy: () => ModelPolicy | null;
   /**
@@ -185,8 +199,10 @@ export function createModelPolicyService(deps: ModelPolicyDeps) {
   const resolveModel = (projectId: number, role: PipelineRole, taskId?: number): ResolvedModel => {
     // Existence guard (task #928): a nonexistent project must error, not
     // silently resolve against the global default. Mirrors the REST route's
-    // 404 so every transport behaves identically.
-    if (!deps.projectExists(projectId)) {
+    // 404 so every transport behaves identically. ONE shared fetch (task
+    // #931): the same row also carries the project policy used below.
+    const project = deps.getProject(projectId);
+    if (project == null) {
       throw new NotFoundError('Project', projectId);
     }
 
@@ -208,7 +224,7 @@ export function createModelPolicyService(deps: ModelPolicyDeps) {
       }
     }
 
-    const projectRole = deps.getProjectPolicy(projectId)?.[role] as RolePolicy | undefined;
+    const projectRole = project.model_policy?.[role] as RolePolicy | undefined;
     const globalRole = deps.getGlobalPolicy()?.[role] as RolePolicy | undefined;
 
     // One uniform slot walk for every role: byCategory (task-scoped) →

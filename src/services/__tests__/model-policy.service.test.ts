@@ -13,6 +13,8 @@ import { runMigrations } from '../../db/migrate.js';
 import { ProjectRepository } from '../../repositories/project.repository.js';
 import { TaskRepository } from '../../repositories/task.repository.js';
 import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
+import { createSettingsRepository } from '../../repositories/settings.repository.js';
+import { createSettingsService } from '../settings.service.js';
 import { TaskService } from '../task.service.js';
 
 /**
@@ -28,8 +30,8 @@ const fakeDeps = (
   global: ModelPolicy | null,
   jobSizeByTask: Record<number, number | null> = {},
 ) => ({
-  projectExists: () => true,
-  getProjectPolicy: () => project,
+  // Task #931: ONE shared project fetch — existence + policy in a single dep.
+  getProject: () => ({ model_policy: project }),
   getGlobalPolicy: () => global,
   getTask: (taskId: number) => ({ project_id: 1, wsjf_job_size: jobSizeByTask[taskId] ?? null }),
 });
@@ -232,8 +234,7 @@ describe('resolveModel — per-slot merge', () => {
 describe('resolveModel — input validation (task #928)', () => {
   it('throws NotFoundError for a nonexistent project (no silent global-default resolution)', () => {
     const s = createModelPolicyService({
-      projectExists: () => false,
-      getProjectPolicy: () => null,
+      getProject: () => null, // no such project
       getGlobalPolicy: () => ({ execution: { default: 'glob-default' } }),
       getTask: () => null,
     });
@@ -243,8 +244,7 @@ describe('resolveModel — input validation (task #928)', () => {
 
   it('throws NotFoundError for a nonexistent task (no silent default-merge routing)', () => {
     const s = createModelPolicyService({
-      projectExists: () => true,
-      getProjectPolicy: () => ({ execution: { default: 'proj-default' } }),
+      getProject: () => ({ model_policy: { execution: { default: 'proj-default' } } }),
       getGlobalPolicy: () => null,
       getTask: () => null, // no such task
     });
@@ -254,8 +254,9 @@ describe('resolveModel — input validation (task #928)', () => {
 
   it('throws ValidationError when the task belongs to a different project (no foreign jobSize routing)', () => {
     const s = createModelPolicyService({
-      projectExists: () => true,
-      getProjectPolicy: () => ({ execution: { byCategory: { heavy: 'h' }, default: 'd' } }),
+      getProject: () => ({
+        model_policy: { execution: { byCategory: { heavy: 'h' }, default: 'd' } },
+      }),
       getGlobalPolicy: () => null,
       // task 7 exists but lives in project 2, not the requested project 1.
       getTask: () => ({ project_id: 2, wsjf_job_size: 8 }),
@@ -274,8 +275,7 @@ describe('resolveModel — input validation (task #928)', () => {
 
   it('does not consult the task at all when no taskId is supplied', () => {
     const s = createModelPolicyService({
-      projectExists: () => true,
-      getProjectPolicy: () => ({ execution: { default: 'd' } }),
+      getProject: () => ({ model_policy: { execution: { default: 'd' } } }),
       getGlobalPolicy: () => null,
       getTask: () => {
         throw new Error('getTask must not be called without a taskId');
@@ -447,13 +447,16 @@ describe('size-only auto task routes byCategory at every tier (task #994)', () =
    */
   function resolver() {
     return createModelPolicyService({
-      projectExists: (id) => projectRepo.findById(id) !== null,
-      getProjectPolicy: (id) => (id === projectId ? projectPolicy : null),
+      // Task #931: one shared project fetch — existence from the real repo
+      // row, the test policy substituted for the matching project id.
+      getProject: (id) =>
+        projectRepo.findById(id) === null
+          ? null
+          : { model_policy: id === projectId ? projectPolicy : null },
       getGlobalPolicy: () => null,
-      getTask: (taskId) => {
-        const t = taskRepo.findById(taskId);
-        return t === null ? null : { project_id: t.project_id, wsjf_job_size: t.wsjf_job_size };
-      },
+      // Task #931: the dedicated resolver-facts fast path, exactly as
+      // production wires it in createApp.
+      getTask: (taskId) => taskRepo.findResolverFacts(taskId),
     });
   }
 
@@ -521,5 +524,75 @@ describe('size-only auto task routes byCategory at every tier (task #994)', () =
       return (exec as { model: string }).model;
     });
     expect(new Set(resolved).size).toBe(6);
+  });
+
+  it('findResolverFacts fast path matches the full findById inflation for a task with tags (task #931)', () => {
+    // A scored task WITH tags — the exact shape whose old read path paid for
+    // the projects JOIN + tags query + full WSJF inflation just to surface
+    // two integers.
+    const created = taskRepo.create(
+      {
+        title: 'fast-path parity',
+        status: 'open',
+        priority: 'medium',
+        project_id: projectId,
+        created_by: 'test-agent',
+        wsjf: { value: 5, timeCriticality: 3, riskOpportunity: 2, jobSize: 8 },
+      },
+      ['alpha', 'beta'],
+    );
+    const full = taskRepo.findById(created.id);
+    expect(full?.tags).toEqual(['alpha', 'beta']);
+    // The dedicated prepared lookup returns value-identical facts.
+    expect(taskRepo.findResolverFacts(created.id)).toEqual({
+      project_id: full?.project_id,
+      wsjf_job_size: full?.wsjf_job_size,
+    });
+    expect(taskRepo.findResolverFacts(created.id)).toEqual({
+      project_id: projectId,
+      wsjf_job_size: 8,
+    });
+
+    // Unscored task: wsjf_job_size NULL round-trips as null on both paths.
+    const unscored = taskRepo.create(
+      {
+        title: 'fast-path parity (unscored)',
+        status: 'open',
+        priority: 'medium',
+        project_id: projectId,
+        created_by: 'test-agent',
+      },
+      ['gamma'],
+    );
+    expect(taskRepo.findResolverFacts(unscored.id)).toEqual({
+      project_id: projectId,
+      wsjf_job_size: taskRepo.findById(unscored.id)?.wsjf_job_size ?? null,
+    });
+
+    // Nonexistent task: null on both paths (the task-#928 existence guard).
+    expect(taskRepo.findResolverFacts(999999)).toBeNull();
+    expect(taskRepo.findById(999999)).toBeNull();
+  });
+
+  it('memoized global policy is invalidated when the default is rewritten (task #931: set → resolve → set new → resolve)', () => {
+    // Resolver wired EXACTLY like production createApp: getGlobalPolicy reads
+    // through the real (memoizing) settings service over the real repo.
+    const settings = createSettingsService(createSettingsRepository(db));
+    const s = createModelPolicyService({
+      getProject: (id) => (projectRepo.findById(id) == null ? null : { model_policy: null }),
+      getGlobalPolicy: () => settings.getModelPolicyDefault(),
+      getTask: (taskId) => taskRepo.findResolverFacts(taskId),
+    });
+
+    settings.setModelPolicyDefault({ execution: { default: 'first-default' } });
+    expect(s.resolveModel(projectId, 'execution')).toEqual({ model: 'first-default' });
+
+    // Rewrite the default → the memo is invalidated → resolve sees the NEW policy.
+    settings.setModelPolicyDefault({ execution: { default: 'second-default' } });
+    expect(s.resolveModel(projectId, 'execution')).toEqual({ model: 'second-default' });
+
+    // Clearing invalidates too → resolve falls through to null (inherit).
+    settings.setModelPolicyDefault(null);
+    expect(s.resolveModel(projectId, 'execution')).toBeNull();
   });
 });

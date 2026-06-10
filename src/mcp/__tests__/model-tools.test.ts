@@ -242,8 +242,7 @@ describe('registerModelTools', () => {
       /** The real service over a one-project/one-task fake world. */
       const realModelPolicy = () =>
         createModelPolicyService({
-          projectExists: (projectId) => projectId === 1,
-          getProjectPolicy: () => null,
+          getProject: (projectId) => (projectId === 1 ? { model_policy: null } : null),
           getGlobalPolicy: () => ({ execution: { default: 'glob-default' } }),
           // Task 7 exists and belongs to project 1; everything else is missing.
           getTask: (taskId) => (taskId === 7 ? { project_id: 1, wsjf_job_size: 8 } : null),
@@ -288,8 +287,7 @@ describe('registerModelTools', () => {
         registerModelTools(server, {
           catalog: fakeCatalog({ models: [], stale: true }),
           modelPolicy: createModelPolicyService({
-            projectExists: () => true,
-            getProjectPolicy: () => null,
+            getProject: () => ({ model_policy: null }),
             getGlobalPolicy: () => ({ execution: { default: 'glob-default' } }),
             // Task 7 exists but lives in project 2, not the requested project 1.
             getTask: () => ({ project_id: 2, wsjf_job_size: 8 }),

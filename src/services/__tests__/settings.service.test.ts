@@ -64,6 +64,40 @@ describe('settings service — model policy default', () => {
       ).toThrow();
     });
 
+    it('memoizes the parsed default and invalidates on set (task #931)', () => {
+      let reads = 0;
+      const store: { v: string | null } = { v: JSON.stringify({ planning: { constant: 'auto' } }) };
+      const svc = createSettingsService({
+        readModelPolicyDefault: () => {
+          reads += 1;
+          return store.v;
+        },
+        writeModelPolicyDefault: (json) => {
+          store.v = json;
+        },
+      });
+
+      expect(svc.getModelPolicyDefault()).toEqual({ planning: { constant: 'auto' } });
+      expect(svc.getModelPolicyDefault()).toEqual({ planning: { constant: 'auto' } });
+      // The second read is served from the memo — no raw re-read / re-parse.
+      expect(reads).toBe(1);
+
+      // A rewrite invalidates: the next read re-reads and returns the NEW policy.
+      svc.setModelPolicyDefault({ planning: { constant: 'claude-opus-4-8' } });
+      expect(svc.getModelPolicyDefault()).toEqual({ planning: { constant: 'claude-opus-4-8' } });
+      expect(reads).toBe(2);
+
+      // A REJECTED write changes nothing, so the memo survives intact.
+      expect(() => svc.setModelPolicyDefault({ execution: { byFib: {} } } as never)).toThrow();
+      expect(svc.getModelPolicyDefault()).toEqual({ planning: { constant: 'claude-opus-4-8' } });
+      expect(reads).toBe(2);
+
+      // Clearing invalidates too: the next read sees the NULL column.
+      svc.setModelPolicyDefault(null);
+      expect(svc.getModelPolicyDefault()).toBeNull();
+      expect(reads).toBe(3);
+    });
+
     it('clears the default when passed null (writes NULL)', () => {
       const store: { v: string | null } = { v: JSON.stringify({ planning: { constant: 'auto' } }) };
       const svc = makeService(store);

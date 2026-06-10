@@ -25,6 +25,10 @@ import {
   createModelCatalogService,
   type ModelCatalogService,
 } from './services/model-catalog.service.js';
+import {
+  createModelPolicyService,
+  type ModelPolicyService,
+} from './services/model-policy.service.js';
 import { eventBus } from './events/event-bus.js';
 import { type OidcConfig } from './services/oidc-client.js';
 import { discoverOidcWithRetry } from './services/oidc-boot.js';
@@ -85,6 +89,15 @@ export interface App {
    * is unreachable.
    */
   modelCatalogService: ModelCatalogService;
+  /**
+   * Configurable Task Models (task #931): the jobSize→category bijection +
+   * two-layer per-slot model resolver. Constructed ONCE here (like
+   * settingsService / modelCatalogService) and consumed by BOTH transports —
+   * the REST route (`GET /projects/:id/resolve-model` via the Fastify
+   * decoration) and the stdio MCP `resolve_model` tool — instead of each
+   * hand-wiring an identical dep bundle over fresh repositories.
+   */
+  modelPolicyService: ModelPolicyService;
   /**
    * Identity-foundation repositories (Phase 27) decorated onto the Fastify
    * instance by `createServer` so the Phase 28 auth chain at
@@ -319,6 +332,24 @@ export async function createApp(dbPath?: string): Promise<App> {
     apiKey: process.env['ANTHROPIC_API_KEY'],
   });
 
+  // Configurable Task Models (task #931): the model-policy resolver, wired
+  // ONCE for every transport. Its three lookups are injected over the same
+  // repositories every other service shares:
+  //   - getProject       ← ONE shared project fetch: `null` = no such project
+  //     (the task-#928 existence guard → NotFoundError), otherwise the row's
+  //     parsed `model_policy`. Replaces the former projectExists +
+  //     getProjectPolicy pair that fetched + inflated the same row twice.
+  //   - getGlobalPolicy  ← the SAME settings service backing get/set defaults
+  //     (memoized read — see settings.service.ts, task #931).
+  //   - getTask          ← the dedicated two-column resolver-facts lookup
+  //     (project membership + WSJF jobSize tier; `null` when the task does
+  //     not exist — task #928 validation) instead of full findById inflation.
+  const modelPolicyService = createModelPolicyService({
+    getProject: (projectId) => projectRepo.findById(projectId),
+    getGlobalPolicy: () => settingsService.getModelPolicyDefault(),
+    getTask: (taskId) => taskRepo.findResolverFacts(taskId),
+  });
+
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
   workflowEngine.start();
@@ -365,6 +396,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     dependencyGraphService,
     settingsService,
     modelCatalogService,
+    modelPolicyService,
     userRepository,
     apiTokenRepository,
     workflowEngine,

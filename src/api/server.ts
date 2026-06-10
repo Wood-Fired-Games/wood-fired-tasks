@@ -19,12 +19,7 @@ import { TopologyService } from '../services/topology.service.js';
 import { CommentService } from '../services/comment.service.js';
 import { SettingsService } from '../services/settings.service.js';
 import { ModelCatalogService } from '../services/model-catalog.service.js';
-import {
-  createModelPolicyService,
-  type ModelPolicyService,
-} from '../services/model-policy.service.js';
-import { ProjectRepository } from '../repositories/project.repository.js';
-import { TaskRepository } from '../repositories/task.repository.js';
+import type { ModelPolicyService } from '../services/model-policy.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { ClaimReleaseService } from '../services/claim-release.service.js';
@@ -153,32 +148,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // back the /settings/model-policy and /models routes respectively.
   server.decorate('settingsService', app.settingsService);
   server.decorate('modelCatalogService', app.modelCatalogService);
-  // Configurable Task Models (Task #926): construct the model-policy resolver
-  // behind GET /projects/:id/resolve-model. Its three lookups are injected over
-  // the SAME `app.db` handle every other service shares (db-backed repos are
-  // stateless prepared-statement holders), mirroring how `src/mcp/index.ts`
-  // wires the resolver behind the stdio `resolve_model` tool:
-  //   - getProjectPolicy ← a project's parsed `model_policy` column.
-  //   - getGlobalPolicy  ← the SAME settings service backing get/set defaults.
-  //   - getTask          ← a task's project membership + WSJF jobSize tier
-  //     (`null` when the task does not exist — task #928 validation).
-  //   - projectExists    ← existence guard (task #928): nonexistent project
-  //     → NotFoundError instead of a silent global-default resolution.
-  const modelPolicyProjectRepo = new ProjectRepository(app.db);
-  const modelPolicyTaskRepo = new TaskRepository(app.db);
-  const modelPolicyService = createModelPolicyService({
-    projectExists: (projectId) => modelPolicyProjectRepo.findById(projectId) != null,
-    getProjectPolicy: (projectId) =>
-      modelPolicyProjectRepo.findById(projectId)?.model_policy ?? null,
-    getGlobalPolicy: () => app.settingsService.getModelPolicyDefault(),
-    getTask: (taskId) => {
-      const task = modelPolicyTaskRepo.findById(taskId);
-      return task == null
-        ? null
-        : { project_id: task.project_id, wsjf_job_size: task.wsjf_job_size ?? null };
-    },
-  });
-  server.decorate('modelPolicyService', modelPolicyService);
+  // Configurable Task Models (Task #926 / #931): the model-policy resolver
+  // behind GET /projects/:id/resolve-model. Constructed ONCE in `createApp`
+  // (same instance the stdio MCP server wires behind its `resolve_model`
+  // tool) — see src/index.ts for the dep wiring.
+  server.decorate('modelPolicyService', app.modelPolicyService);
   server.decorate('db', app.db);
   // Task #357: expose OIDC boot state to /health/detailed so a degraded
   // discovery is a queryable signal, not just a one-time boot log line.

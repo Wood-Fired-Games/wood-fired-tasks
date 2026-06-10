@@ -60,10 +60,14 @@ const modelPolicyRoutes: FastifyPluginAsyncZod = async (fastify) => {
       // the clear path persists SQL NULL rather than tripping the service's
       // non-null Zod parse. A non-null body has already passed the
       // `ModelPolicyNullableSchema` body validator (invalid → 400 upstream).
-      fastify.settingsService.setModelPolicyDefault(request.body ?? null);
-      // Echo the persisted policy back so callers get a post-write confirmation
-      // (and round-trip the canonical stored shape).
-      return reply.send(fastify.settingsService.getModelPolicyDefault());
+      const policy = request.body ?? null;
+      fastify.settingsService.setModelPolicyDefault(policy);
+      // Echo the validated body back. `request.body` has already been parsed
+      // through `ModelPolicyNullableSchema` by the route's body validator —
+      // the SAME canonical shape the service just persisted — so re-reading +
+      // re-validating the singleton row here was a redundant round-trip
+      // (task #931). A write failure throws before this line.
+      return reply.send(policy);
     },
   );
 };

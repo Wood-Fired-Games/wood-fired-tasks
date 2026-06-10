@@ -127,6 +127,7 @@ function inflateWsjf<T extends Record<string, unknown>>(task: T): T {
 export class TaskRepository implements ITaskRepository {
   private insertTaskStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
+  private findResolverFactsStmt: Database.Statement;
   private deleteStmt: Database.Statement;
   private findTagsByTaskIdStmt: Database.Statement;
   private insertTagStmt: Database.Statement;
@@ -166,6 +167,13 @@ export class TaskRepository implements ITaskRepository {
       `SELECT t.*, p.name as project_name
        FROM tasks t INNER JOIN projects p ON p.id = t.project_id
        WHERE t.id = ?`,
+    );
+    // Task #931 — model-resolver fast path: `resolveModel` only needs the
+    // task's project membership + WSJF jobSize tier, so reading them through
+    // `findById` (projects JOIN + a second tags query + full WSJF/evidence
+    // JSON inflation) was pure hot-path waste. Two INTEGER columns by PK.
+    this.findResolverFactsStmt = db.prepare(
+      'SELECT project_id, wsjf_job_size FROM tasks WHERE id = ?',
     );
     this.deleteStmt = db.prepare('DELETE FROM tasks WHERE id = ?');
     this.findTagsByTaskIdStmt = db.prepare(
@@ -258,6 +266,22 @@ export class TaskRepository implements ITaskRepository {
     const tags = tagRows.map((row) => row.tag);
 
     return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
+  }
+
+  /**
+   * Task #931 — the model-resolver's task facts (project membership + WSJF
+   * jobSize tier) via a dedicated prepared two-column PK lookup. Returns the
+   * exact `ResolverTask` shape `ModelPolicyDeps.getTask` needs, or `null`
+   * when no such task exists (the task-#928 existence guard). Value-identical
+   * to reading the same two fields off `findById`, minus the JOIN, the tags
+   * query, and the full row inflation.
+   */
+  findResolverFacts(id: number): { project_id: number; wsjf_job_size: number | null } | null {
+    const row = mapRow<{ project_id: number; wsjf_job_size: number | null }>(
+      this.findResolverFactsStmt,
+      id,
+    );
+    return row == null ? null : { project_id: row.project_id, wsjf_job_size: row.wsjf_job_size };
   }
 
   findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }> {

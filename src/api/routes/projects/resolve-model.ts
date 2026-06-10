@@ -24,14 +24,15 @@ import { PipelineRoleSchema } from '../../../schemas/model-policy.schema.js';
  * wires in-process (project policy ?? global default, per-slot merge, jobSize→
  * category routing when `task_id` is supplied).
  *
- * Project-existence is enforced explicitly so a missing project yields a 404
- * ProblemDetails (mirrors the sibling `/:id/topology` and `/:id/dependency-graph`
- * routes). Without the guard an unknown project would resolve to the global
- * default (or null) silently rather than signalling the bad id. Since task
- * #928 the resolver itself ALSO validates: a nonexistent `task_id` throws
- * NotFoundError (→ 404) and a `task_id` belonging to a different project
- * throws ValidationError (→ 400), so size-routing can never silently use a
- * foreign task's jobSize.
+ * Project-existence is enforced by the resolver itself (task #928): a missing
+ * project throws NotFoundError → 404 ProblemDetails (mirrors the sibling
+ * `/:id/topology` and `/:id/dependency-graph` routes), so an unknown project
+ * never resolves to the global default (or null) silently. The route carries
+ * no separate pre-fetch guard (task #931): the resolver's single project
+ * fetch doubles as the 404 check. The resolver also validates `task_id`: a
+ * nonexistent one throws NotFoundError (→ 404) and one belonging to a
+ * different project throws ValidationError (→ 400), so size-routing can never
+ * silently use a foreign task's jobSize.
  *
  * Auth: inherits the standard projects-route auth chain (the parent
  * `projectRoutes` plugin is mounted inside the `/api/v1` scope that wires
@@ -66,9 +67,11 @@ const resolveModelRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      // Existence guard → 404 on a missing project. getProject throws
-      // NotFoundError, mapped to the 404 ProblemDetails by the error handler.
-      fastify.projectService.getProject(request.params.id);
+      // Existence guard → 404 on a missing project: since task #928 the
+      // resolver itself throws NotFoundError (mapped to the 404
+      // ProblemDetails by the error handler), so the former
+      // `projectService.getProject` pre-fetch here was a redundant second
+      // fetch + full inflation of the same row (task #931 — one shared fetch).
       const resolved = fastify.modelPolicyService.resolveModel(
         request.params.id,
         request.query.role,
