@@ -15,11 +15,27 @@
  * booting the real `createMcpServer(...)`, and we reuse the stub-server pattern
  * from register-tools.test.ts to harvest the remote surface.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import type { FastifyInstance } from 'fastify';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createTestApp } from '../../index.js';
+import type { App } from '../../index.js';
+import type { Task } from '../../types/task.js';
 import { createMcpServer } from '../server.js';
+import { createServer } from '../../api/server.js';
+import { RestClient } from '../remote/rest-client.js';
+import { seedAuth } from '../../api/__tests__/helpers/auth.js';
 import { registerRemoteTools } from '../remote/register-tools.js';
+
+// Standard (non-compatibility) MCP CallTool result shape — the SDK union's
+// index signature otherwise resolves content/structuredContent to unknown.
+interface ParityToolResult {
+  content: Array<{ type: string; text?: string }>;
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure, exported helpers — the negative cases below are deterministic unit
@@ -174,5 +190,125 @@ describe('stdio ⊆ remote MCP tool parity (#648)', () => {
   // The current tree must have FULL parity — the allowlist is empty.
   it('the shipped allowlist is empty (current tree has full parity)', () => {
     expect(LOCAL_ONLY_ALLOWLIST).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BEHAVIOURAL parity (task #995): the structural guard above proves every stdio
+// tool has a remote registration. This block proves the guaranteed-task-sizing
+// gates PRODUCE IDENTICAL RESULTS through both transports — the same WSJF-less
+// create yields the same auto-sized job tier, and the same decompose-gate
+// payload is rejected on both. The remote leg drives the production remote-MCP
+// create path (RestClient → live REST hop); the stdio leg drives an in-memory
+// MCP server over the same service graph createTestApp builds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('stdio ↔ remote behavioural parity for sizing gates (#995)', () => {
+  let server: FastifyInstance;
+  let restApp: App;
+  let token: string;
+  let remoteClient: RestClient;
+  let restProjectId: number;
+
+  // Reusable in-memory stdio MCP client over its own isolated app.
+  let stdioApp: App;
+  let stdioClient: Client;
+  let stTransport: InMemoryTransport;
+  let ctTransport: InMemoryTransport;
+  let stdioProjectId: number;
+
+  beforeAll(async () => {
+    // Remote leg: real Fastify server on an ephemeral loopback port + a
+    // Bearer-authenticated RestClient — the exact remote-MCP create pipe.
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    restApp = result.app;
+    const baseUrl = await server.listen({ port: 0, host: '127.0.0.1' });
+    token = seedAuth(restApp.db).token;
+    remoteClient = new RestClient(baseUrl, token);
+    restProjectId = restApp.projectService.createProject({ name: 'Parity' }).id;
+
+    // Stdio leg: in-memory MCP server/client over an isolated app.
+    stdioApp = await createTestApp();
+    const mcpServer = createMcpServer(
+      stdioApp.taskService,
+      stdioApp.projectService,
+      stdioApp.dependencyService,
+      stdioApp.commentService,
+      stdioApp.db,
+    );
+    [stTransport, ctTransport] = InMemoryTransport.createLinkedPair();
+    await mcpServer.connect(stTransport);
+    stdioClient = new Client({ name: 'parity-client', version: '1.0.0' }, { capabilities: {} });
+    await stdioClient.connect(ctTransport);
+    stdioProjectId = stdioApp.projectService.createProject({ name: 'Parity' }).id;
+  }, 30_000);
+
+  afterAll(async () => {
+    await ctTransport.close();
+    await stTransport.close();
+    await server.close();
+    stdioApp.dispose();
+    restApp.dispose();
+  });
+
+  it('identical WSJF-less create payload yields identical wsjf_job_size on both surfaces', async () => {
+    // estimated_minutes 240 → minutesToTier tier 5, deterministically, on both.
+    const basePayload = {
+      title: 'WSJF-less parity create',
+      created_by: 'parity-tester',
+      estimated_minutes: 240,
+    };
+
+    // Remote proxy create. The REST TaskResponse strips wsjf_* (by contract),
+    // so the auto-sized tier is read from the authoritative service row.
+    const remoteCreated = await remoteClient.createTask({
+      ...basePayload,
+      project_id: restProjectId,
+    } as never);
+    const remoteRow = restApp.taskService.getTask(remoteCreated.id) as Task & {
+      wsjf_job_size: number | null;
+      wsjf_source: { jobSize?: string } | null;
+    };
+
+    // Stdio create — structuredContent exposes the full row INCLUDING wsjf_*.
+    const stdioCreated = (await stdioClient.callTool({
+      name: 'create_task',
+      arguments: { ...basePayload, project_id: stdioProjectId },
+    })) as ParityToolResult;
+    expect(stdioCreated.isError).toBeFalsy();
+    const stdioRow = stdioCreated.structuredContent as {
+      wsjf_job_size: number | null;
+      wsjf_source: { jobSize?: string } | null;
+    };
+
+    expect(remoteRow.wsjf_job_size).toBe(5);
+    expect(stdioRow.wsjf_job_size).toBe(5);
+    expect(stdioRow.wsjf_job_size).toBe(remoteRow.wsjf_job_size);
+    expect(remoteRow.wsjf_source?.jobSize).toBe('auto');
+    expect(stdioRow.wsjf_source?.jobSize).toBe('auto');
+  });
+
+  it('identical decompose-gate payload is rejected on both surfaces', async () => {
+    const gatePayload = {
+      title: 'Sizeless decompose leaf (parity)',
+      created_by: 'decompose-skill',
+      tags: ['decomp-parity-xyz'],
+    };
+
+    // Remote: RestClient.createTask throws on the 400 (envelope message).
+    await expect(
+      remoteClient.createTask({ ...gatePayload, project_id: restProjectId } as never),
+    ).rejects.toThrow(/Validation failed/);
+
+    // Stdio: same ValidationError class, surfaced as an isError result.
+    const stdioResult = (await stdioClient.callTool({
+      name: 'create_task',
+      arguments: { ...gatePayload, project_id: stdioProjectId },
+    })) as ParityToolResult;
+    expect(stdioResult.isError).toBe(true);
+    if (stdioResult.content[0].type === 'text') {
+      expect(stdioResult.content[0].text).toContain('Validation failed');
+    }
   });
 });
