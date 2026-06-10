@@ -85,6 +85,18 @@ export interface Task {
   updated_at: string; // ISO8601
   version: number;
   claimed_at: string | null;
+  /**
+   * Task #1003: claim-TTL visibility. NEVER stored — computed at read time
+   * by `TaskService.getTask` for tasks holding an active claim
+   * (`in_progress` + assignee + claimed_at). `claim_ttl_minutes` is the
+   * sweep timeout ({@link ../services/claim-release.service DEFAULT_CLAIM_TTL_MINUTES});
+   * `claim_remaining_seconds` is the floor-clamped seconds until the claim
+   * becomes eligible for auto-release (measured from the LATER of
+   * claimed_at / updated_at, mirroring the sweep's staleness predicate).
+   * Absent (undefined) on unclaimed tasks and on list projections.
+   */
+  claim_ttl_minutes?: number;
+  claim_remaining_seconds?: number;
   completed_at: string | null; // ISO8601; set when status transitions to 'done'
   /**
    * Wave 1.3 (task #311): optional free-form acceptance criteria. Plain

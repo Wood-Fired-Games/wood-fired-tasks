@@ -658,7 +658,8 @@ Wood Fired Tasks streams real-time task and project change notifications via Ser
 | task.updated | Task fields modified |
 | task.deleted | Task deleted |
 | task.status_changed | Task status transition |
-| task.claimed | Task claimed by agent |
+| task.claimed | Task claimed by agent (also emitted on a same-assignee claim renewal) |
+| task.claim_released | Stale claim auto-released by the TTL sweep (carries `previous_assignee`, `expired_claimed_at`, `released_at`) |
 | project.created | New project created |
 | project.updated | Project modified |
 | project.deleted | Project deleted |

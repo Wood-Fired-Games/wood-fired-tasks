@@ -1369,7 +1369,17 @@ curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
 - Uses CAS (Compare-And-Swap) with a `version` field for optimistic locking
 - Uses `BEGIN IMMEDIATE` SQLite transactions to acquire write lock early
 - Verified with 20 concurrent agents: exactly 1 success, 19 conflicts, 0 server errors
-- Stale claims auto-released after 30 minutes of inactivity
+- Stale claims auto-released after 30 minutes of inactivity; the sweep emits
+  a `task.claim_released` SSE event so the former holder can react
+
+**Claim renewal (heartbeat):**
+
+A claim call by the **same assignee** on a task they already hold
+`in_progress` is a renewal, not a conflict: it refreshes `claimed_at`
+(restarting the 30-minute TTL window) and returns 200 with the refreshed
+task. A different assignee still receives 409. `GET /tasks/:id` surfaces
+`claim_ttl_minutes` and `claim_remaining_seconds` (computed at read time,
+present only while a claim is active) so holders know when to renew.
 
 ## Event Stream Endpoint
 
@@ -1398,7 +1408,8 @@ Subscribe to real-time task and project change notifications via Server-Sent Eve
 | task.updated | Task fields modified |
 | task.deleted | Task deleted |
 | task.status_changed | Task status transition |
-| task.claimed | Task claimed by agent |
+| task.claimed | Task claimed by agent (also emitted on a same-assignee claim renewal) |
+| task.claim_released | Stale claim auto-released by the TTL sweep; `data` carries `previous_assignee`, `expired_claimed_at`, `released_at` |
 | project.created | New project created |
 | project.updated | Project modified |
 | project.deleted | Project deleted |

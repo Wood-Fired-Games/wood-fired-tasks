@@ -498,6 +498,8 @@ Atomically claim an unassigned task, setting assignee and transitioning status t
 
 **Usage:** When Claude Code needs to claim a task for an agent. Returns the updated task on success. Returns a 409-equivalent error if the task is already claimed or not in a claimable state. Multiple agents can race to claim; exactly one wins.
 
+**Renewal (heartbeat, task #1003):** calling `claim_task` with the **same** `assignee` on a task that assignee already holds `in_progress` is a renewal, not a conflict — it refreshes `claimed_at` (restarting the 30-minute claim TTL) and returns the refreshed task. A different assignee still gets the 409-equivalent error. While a claim is active, `get_task` surfaces `claim_ttl_minutes` and `claim_remaining_seconds` (computed at read time) so holders know when to renew; when the TTL lapses the sweep auto-releases the claim and emits a `task.claim_released` event.
+
 #### list_subtasks
 
 List subtasks (children) of a parent task. Paginated.
@@ -998,7 +1000,8 @@ The resource description and the server's emitted events MUST stay in sync. The 
 | `task.updated` | Task field(s) updated |
 | `task.deleted` | Task deleted |
 | `task.status_changed` | Task status transitioned |
-| `task.claimed` | Task atomically claimed by an agent via `claim_task` |
+| `task.claimed` | Task atomically claimed by an agent via `claim_task` (also emitted on a same-assignee claim renewal) |
+| `task.claim_released` | Stale claim auto-released by the TTL sweep; `data` carries `previous_assignee`, `expired_claimed_at`, `released_at` |
 | `project.created` | New project created |
 | `project.updated` | Project updated |
 | `project.deleted` | Project deleted |

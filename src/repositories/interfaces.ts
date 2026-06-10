@@ -95,6 +95,14 @@ export interface ITaskRepository {
     assignee: string,
     assigneeUserId?: number | null,
   ): (Task & { tags: string[] }) | null;
+  /**
+   * Task #1003: claim renewal (heartbeat). Refreshes `claimed_at` (and
+   * `updated_at`) for a task the SAME assignee already holds `in_progress`,
+   * extending the claim-TTL window without changing assignee or status.
+   * Returns the refreshed task, or `null` when the (id, assignee,
+   * in_progress) predicate no longer matches (claim lapsed or stolen).
+   */
+  renewClaim(id: number, assignee: string): (Task & { tags: string[] }) | null;
   findCompletedInRange(filters: CompletionRangeFilters): Array<Task & { tags: string[] }>;
 }
 

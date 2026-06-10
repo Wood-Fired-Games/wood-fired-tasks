@@ -269,7 +269,7 @@ Source: `src/services/`.
 | `project.service.ts` | `createProject`, `getProject`, `listProjectsPaginated`, `updateProject`, `deleteProject` | `project.created`, `project.updated`, `project.deleted` |
 | `comment.service.ts` | `addComment`, `getCommentsPaginated`, `deleteComment` | (none — task events cover audit) |
 | `dependency.service.ts` | `addDependency`, `removeDependency`, `getBlockedBy`, `getBlockers` | (none) |
-| `claim-release.service.ts` | `releaseClaim` | `task.updated` (on auto-release) |
+| `claim-release.service.ts` | `releaseClaim` | `task.updated` + `task.claim_released` (on auto-release) |
 | `idempotency.service.ts` | `get`, `set`, `cleanup` | n/a |
 | `slack.service.ts` | `start`, `stop`, `isEnabled`, `getApp` | n/a (consumes events, does not emit) |
 | `workflow-engine.ts` | `start`, `stop` | re-emits `task.updated`/`status_changed` on cascade |

@@ -232,6 +232,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     eventBus.subscribe('task.deleted', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('task.status_changed', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('task.claimed', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('task.claim_released', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.created', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event)),

@@ -707,6 +707,27 @@ export class TaskRepository implements ITaskRepository {
     return claimTransaction.immediate();
   }
 
+  renewClaim(id: number, assignee: string): (Task & { tags: string[] }) | null {
+    // Task #1003: claim renewal (heartbeat). The WHERE predicate is the
+    // renewal contract — only the CURRENT holder of an in_progress claim can
+    // refresh it. Refreshing claimed_at (and updated_at) restarts the
+    // ClaimReleaseService TTL window; version bumps like every other write.
+    const info = this.db
+      .prepare(
+        `UPDATE tasks
+         SET claimed_at = datetime('now'), updated_at = datetime('now'),
+             version = version + 1
+         WHERE id = ? AND assignee = ? AND status = 'in_progress'`,
+      )
+      .run(id, assignee);
+
+    if (info.changes === 0) {
+      return null;
+    }
+
+    return this.findById(id);
+  }
+
   findChildren(parentId: number, pagination?: PaginationOptions): Array<Task & { tags: string[] }> {
     const { limit, offset } = resolvePagination(pagination);
     const query = `

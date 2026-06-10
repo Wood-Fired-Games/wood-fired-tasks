@@ -155,17 +155,19 @@ in [docs/MCP.md](MCP.md), [docs/API.md](API.md), [docs/CLI.md](CLI.md).
 
 ### Claim acquire / release
 
-- Acquire (`TaskService.claimTask`): validates task exists, status is `open`,
-  no existing assignee. `TaskRepository.claimTask` does an atomic CAS
-  (`BEGIN IMMEDIATE` + version bump). On success emits `task.claimed`. REST
-  `POST /:id/claim` honours `X-Idempotency-Key` (8-128 chars,
-  `[A-Za-z0-9_-]`), cached 24 h by `IdempotencyService`.
-- Release (stale sweep): `ClaimReleaseService` ticks every 5 minutes. Claim
-  is stale when `assignee IS NOT NULL AND status='in_progress' AND
-  claimed_at <= now-30min AND updated_at <= now-30min` — **30-minute idle
-  timeout**, reset by any update or comment activity via `updated_at`.
-  Stale rows reset to `status='open', assignee=NULL, claimed_at=NULL,
-  version+1` and emit `task.updated` with `metadata.source='workflow'`.
+- Acquire (`TaskService.claimTask`): validates task exists, status `open`, no
+  assignee; `TaskRepository.claimTask` does an atomic CAS (`BEGIN IMMEDIATE` +
+  version bump); emits `task.claimed`. REST `POST /:id/claim` honours
+  `X-Idempotency-Key` (8-128 chars, `[A-Za-z0-9_-]`), cached 24 h.
+- Renew (task #1003): a same-assignee claim of a held `in_progress` task
+  refreshes `claimed_at` (restarting the TTL) and re-emits `task.claimed`;
+  `getTask` adds `claim_ttl_minutes` + `claim_remaining_seconds` while active.
+- Release (stale sweep): `ClaimReleaseService` ticks every 5 min; stale =
+  `assignee NOT NULL AND status='in_progress'` with BOTH `claimed_at` and
+  `updated_at` ≤ now-30min (**30-minute idle timeout**, reset by any update,
+  comment, or renewal). Stale rows reset to `status='open', assignee=NULL,
+  claimed_at=NULL, version+1`, emitting `task.updated` + `task.claim_released`
+  (`previous_assignee`/`expired_claimed_at`/`released_at`, `source='workflow'`).
 
 ### Status transitions
 
@@ -196,9 +198,9 @@ were back-filled with `updated_at` as best-available approximation.
 ### Event emission
 
 Event bus type: `src/events/event-bus.ts` (singleton). Emitted types:
-`task.created`, `task.updated`, `task.deleted`, `task.status_changed`,
-`task.claimed`, `project.created`, `project.updated`, `project.deleted`
-(runtime list: `ALLOWED_EVENT_TYPES` in `src/events/types.ts`). Emitted by
+`task.created/updated/deleted/status_changed/claimed/claim_released`,
+`project.created/updated/deleted` (runtime list: `ALLOWED_EVENT_TYPES`
+in `src/events/types.ts`). Emitted by
 services after a successful repository write. Consumers:
 
 - `WorkflowEngine` — listens to `task.status_changed` with

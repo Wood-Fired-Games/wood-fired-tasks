@@ -38,6 +38,7 @@ import {
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
+import { DEFAULT_CLAIM_TTL_MINUTES } from './claim-release.service.js';
 import { validateVerificationEvidence } from './evidence-validation.js';
 import type Database from '../db/driver.js';
 
@@ -51,6 +52,49 @@ const FTS_SYNTAX_ERROR_MESSAGE =
 
 function ftsValidationError(): ValidationError {
   return new ValidationError({ search: [FTS_SYNTAX_ERROR_MESSAGE] });
+}
+
+/**
+ * Task #1003: parse a task timestamp into epoch millis. The repository
+ * normalizes `updated_at` to ISO 8601 (`...T...Z`), but `claimed_at` may
+ * still carry SQLite's raw `YYYY-MM-DD HH:MM:SS` (UTC) shape — naive
+ * `new Date(...)` would parse that as LOCAL time, skewing the remaining-TTL
+ * math by the host's UTC offset. Returns null on unparseable input.
+ */
+function parseUtcTimestamp(value: string): number | null {
+  const sqliteShape = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
+  const iso = sqliteShape ? `${sqliteShape[1]}T${sqliteShape[2]}.000Z` : value;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Task #1003: claim-TTL visibility on the single-task read path. For a task
+ * holding an active claim, attach `claim_ttl_minutes` (the
+ * ClaimReleaseService sweep timeout) and `claim_remaining_seconds` — the
+ * floor-clamped seconds until the claim becomes ELIGIBLE for auto-release.
+ * Measured from the LATER of `claimed_at` / `updated_at`, mirroring the
+ * sweep's staleness predicate (both must exceed the TTL, so any activity or
+ * a same-assignee re-claim restarts the window). Unclaimed tasks pass
+ * through untouched — the fields stay absent (additive, optional).
+ */
+function withClaimTtl<T extends Task>(task: T): T {
+  if (task.status !== 'in_progress' || task.assignee === null || task.claimed_at === null) {
+    return task;
+  }
+  const claimedMs = parseUtcTimestamp(task.claimed_at);
+  const updatedMs = parseUtcTimestamp(task.updated_at);
+  if (claimedMs === null || updatedMs === null) {
+    return task;
+  }
+  const windowStartMs = Math.max(claimedMs, updatedMs);
+  const expiresAtMs = windowStartMs + DEFAULT_CLAIM_TTL_MINUTES * 60 * 1000;
+  const remainingSeconds = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+  return {
+    ...task,
+    claim_ttl_minutes: DEFAULT_CLAIM_TTL_MINUTES,
+    claim_remaining_seconds: remainingSeconds,
+  };
 }
 
 /**
@@ -578,13 +622,20 @@ export class TaskService {
 
   /**
    * Get task by ID
+   *
+   * Task #1003: for tasks holding an active claim (`in_progress` + assignee
+   * + claimed_at), the response additionally carries `claim_ttl_minutes` and
+   * `claim_remaining_seconds` (computed at read time, never stored) so
+   * `get_task` consumers can see when the ClaimReleaseService sweep will
+   * auto-release the claim — and renew (same-assignee `claim_task`) before
+   * it does.
    */
   getTask(id: number): Task & { tags: string[] } {
     const task = this.taskRepo.findById(id);
     if (!task) {
       throw new NotFoundError('Task', id);
     }
-    return task;
+    return withClaimTtl(task);
   }
 
   /**
@@ -934,6 +985,32 @@ export class TaskService {
     const existing = this.taskRepo.findById(taskId);
     if (!existing) {
       throw new NotFoundError('Task', taskId);
+    }
+
+    // Task #1003: claim RENEWAL (heartbeat). A claim_task call by the SAME
+    // assignee on a task they already hold in_progress refreshes claimed_at
+    // — extending the ClaimReleaseService TTL window — and returns success
+    // instead of the already-claimed conflict. A DIFFERENT assignee still
+    // falls through to the existing 409-equivalent errors below. This keeps
+    // the renewal affordance on the existing tool surface (stdio MCP,
+    // remote MCP, REST, CLI all flow through this method) without adding a
+    // new MCP tool.
+    if (existing.status === 'in_progress' && existing.assignee === assignee) {
+      const renewed = this.taskRepo.renewClaim(taskId, assignee);
+      if (!renewed) {
+        // Raced: the claim lapsed (sweep released it) or changed hands
+        // between our read and the renewal UPDATE.
+        throw new BusinessError(
+          `Task ${taskId} claim could not be renewed (claim changed concurrently)`,
+        );
+      }
+      eventBus.emit('task.claimed', {
+        eventType: 'task.claimed',
+        timestamp: new Date().toISOString(),
+        data: renewed,
+        metadata: { source },
+      });
+      return renewed;
     }
 
     // Validate task is in claimable state
