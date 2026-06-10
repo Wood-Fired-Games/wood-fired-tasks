@@ -24,7 +24,7 @@ references below (§N) point into it.
 > `execution` / `validation`) six power categories. You do it with ONE
 > four-stage `AskUserQuestion` call per role — the stages render as a
 > checklist the user works through with no model round-trip between stages —
-> offering the **live** model catalog plus an "auto" escape hatch, with each
+> offering the **live** model catalog (one option per family), with each
 > stage's recommendation at least as powerful as the previous stage's so the
 > table reads as a sensible ascending ladder. You write exactly once, at the
 > end, to the layer the user targeted.
@@ -125,14 +125,17 @@ ladder share one pick each:
 
 Per stage:
 
-- **Options** = the discovered catalog models (live or fallback) **plus** a
-  final `"Let me decide (auto)"` option that records the `auto` sentinel for
-  the stage's category (or categories).
+- **Options** = the discovered catalog models (live or fallback), one option
+  per family — the newest catalog entry of each family (`AskUserQuestion`
+  caps a question at 4 options; the four families fit exactly). Do NOT offer
+  an `auto` option: the user can still type `auto` (or any off-list catalog
+  id, or a per-pair split) via the automatic "Other" free-text option, and
+  the sentinel remains fully supported by the schema and resolver.
 - **Option order is FIXED and identical on every stage and every role:**
-  ascending catalog power (lowest-power model first → most powerful last),
-  then `"Let me decide (auto)"` always last. Never reorder options to float
-  the recommendation to the front — the user scans the same list shape on
-  every question; only the `(Recommended)` tag moves.
+  ascending catalog power (lowest-power family first → most powerful last).
+  Never reorder options to float the recommendation to the front — the user
+  scans the same list shape on every question; only the `(Recommended)` tag
+  moves.
 - **Recommendations come from the canonical Default Model Map in
   [`loop-shared.md` §R](loop-shared.md) — the same table `auto` resolution
   uses.** Per stage, map the stage's categories + the role to the table's
@@ -146,23 +149,23 @@ Per stage:
   the map ascends monotonically by construction. If the user's earlier
   concrete pick in the same role already exceeds a later stage's mapped
   model, recommend the higher of the two (never recommend below an
-  established floor; `auto` picks never move the floor).
-- **Pair semantics:** a stage-1 or stage-2 pick (including `auto`) is stored
-  under BOTH of its categories. If the user wants the paired categories
-  split (e.g. a different model for `minimal` vs `light`), they can say so
-  via the "Other" free-text option — honor it by recording the two values
-  separately.
+  established floor; `auto` values entered via "Other" never move the floor).
+- **Pair semantics:** a stage-1 or stage-2 pick (including an "Other"-entered
+  `auto`) is stored under BOTH of its categories. If the user wants the
+  paired categories split (e.g. a different model for `minimal` vs `light`),
+  they can say so via the "Other" free-text option — honor it by recording
+  the two values separately.
 
 Record each pick under `byCategory[<category>]` for the role. A category the
-user explicitly leaves at `auto` stores the `auto` sentinel; categories may be
+user explicitly sets to `auto` (via "Other") stores the `auto` sentinel; categories may be
 left unset to fall through to the role `default` / next layer (§4.4) — but the
 four-stage walk fills all six by default.
 
 ### 5. Ask the single planning question
 
 For role `planning`, ask **one** question: a single model for the constant
-planning slot, with the same fixed option order as §4 (ascending catalog
-power, `auto` last) and the same `"Let me decide (auto)"` option. The
+planning slot, with the same options and fixed order as §4 (one option per
+family, ascending catalog power; `auto` reachable via "Other" only). The
 `(Recommended)` tag goes on the Default Model Map's planning line — the
 newest opus-family catalog model (planning is one dispatch with
 project-wide blast radius; cost-insensitive). Record it as
