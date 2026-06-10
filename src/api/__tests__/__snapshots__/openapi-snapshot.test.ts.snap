@@ -5097,6 +5097,30 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
             },
             "description": "Default Response",
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
           "404": {
             "content": {
               "application/json": {
@@ -7789,6 +7813,8 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "rescore",
                           "manual",
                           "propagation",
+                          "auto_size",
+                          "boot_sweep",
                         ],
                         "type": "string",
                       },
@@ -9081,6 +9107,8 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "rescore",
                           "manual",
                           "propagation",
+                          "auto_size",
+                          "boot_sweep",
                         ],
                         "type": "string",
                       },
