@@ -13,6 +13,57 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.1.0] - 2026-06-09
+
+### Added
+- **Configurable Task Models** (PR #55, project 39 — 17 tasks). Route the
+  `/tasks:loop` worker (`execution`), verifier (`validation`), and planning
+  agents — decompose / audit / integration-auditor (`planning`) — to different
+  Anthropic models via a per-project + database-default `model_policy`.
+  - **Policy model:** six power categories (`minimal…maximum`, a 1:1 relabel of
+    the WSJF jobSize Fibonacci tiers) plus an `auto` sentinel; per-role
+    `byCategory` routing with a uniform `byCategory → constant → default →
+    null` slot walk, two-layer per-slot merge (`project ?? global`). Migration
+    016 adds `projects.model_policy` and the `app_settings` singleton.
+  - **Runtime model catalog:** live discovery via the Anthropic Models API
+    (set the optional `ANTHROPIC_API_KEY`) with a static fallback marked
+    `stale: true` — the read path never throws.
+  - **MCP:** four new tools — `list_models`, `resolve_model`,
+    `get_model_defaults`, `set_model_defaults` — on **both** the stdio and
+    remote servers (tool count 27 → 31).
+  - **REST:** `GET /models`, `GET|PUT /settings/model-policy`,
+    `GET /projects/:id/resolve-model`, and `model_policy` on project
+    create/update/get.
+  - **CLI:** `tasks models list`, `tasks project-set-models <id>`, and
+    `tasks settings-set-models` — the set-models commands fetch-merge-write
+    client-side, so incremental invocations never destroy earlier role config.
+  - **Skills:** a `/tasks:set-models` interview (one four-stage checklist
+    question per role, fixed option order, catalog-only options) and a
+    canonical, telemetry-grounded **Default Model Map** in `loop-shared.md` §R
+    that makes `auto` resolution deterministic (execution
+    sonnet/sonnet/opus/fable across the category ladder, validation
+    haiku/sonnet/opus/opus, planning opus). Optional
+    `--execution-model` / `--validation-model` / `--planning-model` run-arg
+    overrides ride LOOP-RUN frontmatter for replay provenance.
+
+### Fixed
+- **Test suite no longer launches the developer's real browser.**
+  `setup.remote.test.ts` drove the device flow with `openBrowser: true`, so
+  every `npm test` on a DISPLAY-set desktop spawned `xdg-open` at a mock
+  server. `openBrowser()` now honors `WFT_NO_BROWSER`, set for every test via
+  `vitest.setup.ts`.
+- **Documentation counts drift.** README / `docs/INTERFACES.md` / `docs/MCP.md`
+  had stale tool (27 vs 31), route (52/45 vs 59/52), and CLI command (42 vs 45)
+  counts, plus a stale "model tools are stdio-only" claim from before remote
+  parity landed; the `interfaces-counts` drift guard now covers the model-tools
+  file so the next addition cannot dodge it.
+
+### Security
+- No security-relevant changes. The new `/models`, `/settings/model-policy`,
+  and `resolve-model` routes inherit the standard `/api/v1` auth chain; the
+  optional `ANTHROPIC_API_KEY` is only ever sent to the Anthropic Models API
+  and is never echoed in responses or logs.
+
 ## [v2.0.6] - 2026-06-08
 
 ### Added
