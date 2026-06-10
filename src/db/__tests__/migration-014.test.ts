@@ -119,28 +119,42 @@ describe('migration 014: projects.value_charter', () => {
   });
 
   it('up() after down() restores the schema (round-trip)', async () => {
-    // Assert on the SET of column names, not the raw CREATE TABLE SQL.
-    // down() drops value_charter and up() re-appends it at the END of the
-    // column list, so when a LATER migration (e.g. 016 model_policy) has also
-    // added a projects column, the physical column ORDER legitimately changes
-    // across the round-trip even though every column is restored. The intent of
-    // this test is "down()->up() restores the value_charter column", which is
-    // order-independent — comparing the column-name set captures that without
-    // coupling to the ordering side effects of sibling migrations.
-    const columnNames = () =>
-      (db.prepare("PRAGMA table_info('projects')").all() as Array<{ name: string }>)
-        .map((c) => c.name)
-        .sort();
+    // Assert on the sorted SET of full column definitions — (name, type,
+    // notnull, dflt_value, pk) tuples from PRAGMA table_info — not the raw
+    // CREATE TABLE SQL. down() drops value_charter and up() re-appends it at
+    // the END of the column list, so when a LATER migration (e.g. 016
+    // model_policy) has also added a projects column, the physical column
+    // ORDER legitimately changes across the round-trip even though every
+    // column is restored. Sorting by name makes the comparison
+    // order-insensitive while still failing on any type / NOT NULL /
+    // DEFAULT / PRIMARY KEY drift that a name-only set would miss.
+    interface ColumnDef {
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: unknown;
+      pk: number;
+    }
+    const columnDefs = () =>
+      (db.prepare("PRAGMA table_info('projects')").all() as ColumnDef[])
+        .map(({ name, type, notnull, dflt_value, pk }) => ({
+          name,
+          type,
+          notnull,
+          dflt_value,
+          pk,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
 
-    const before = columnNames();
-    expect(before).toContain('value_charter');
+    const before = columnDefs();
+    expect(before.map((c) => c.name)).toContain('value_charter');
 
     const { up, down } = await import('../migrations/014-value-charter.js');
     await down(db);
     await up(db);
 
-    const after = columnNames();
+    const after = columnDefs();
     expect(after).toEqual(before);
-    expect(after).toContain('value_charter');
+    expect(after.map((c) => c.name)).toContain('value_charter');
   });
 });

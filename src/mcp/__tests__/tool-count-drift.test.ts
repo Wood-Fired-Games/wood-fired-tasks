@@ -233,6 +233,23 @@ describe('MCP tool-count drift regression (task #260)', () => {
     ).toEqual([]);
   });
 
+  it('DOMAIN_TO_FILE covers every src/mcp/tools/*-tools.ts file (completeness)', () => {
+    // DOMAIN_TO_FILE must stay a map (the doc-heading domain names cannot be
+    // derived from filenames), so guard it with a completeness assert instead:
+    // a NEW *-tools.ts registration file that is not added to the map — and
+    // therefore not cross-checked against a docs/MCP.md heading — fails here.
+    const filesOnDisk = readdirSync(TOOLS_DIR)
+      .filter((f) => f.endsWith('-tools.ts'))
+      .sort();
+    const filesInMap = Object.values(DOMAIN_TO_FILE).sort();
+    expect(
+      filesInMap,
+      'DOMAIN_TO_FILE is out of sync with src/mcp/tools/*-tools.ts. ' +
+        'Add the new registration file (with its docs/MCP.md domain heading) to ' +
+        'DOMAIN_TO_FILE in tool-count-drift.test.ts, or remove the stale entry.',
+    ).toEqual(filesOnDisk);
+  });
+
   it('per-domain counts in docs/MCP.md match per-file registerTool counts', () => {
     const mcpDocAbs = join(REPO_ROOT, 'docs/MCP.md');
     const content = readFileSync(mcpDocAbs, 'utf-8');
