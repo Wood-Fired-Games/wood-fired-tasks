@@ -167,9 +167,10 @@ describe('MCP tool-count drift regression (task #260)', () => {
     // the app; the resolver is built over a fake-but-typed dep bundle (this test
     // never invokes the tools, only counts them).
     const modelPolicyService = createModelPolicyService({
+      projectExists: () => true,
       getProjectPolicy: () => null,
       getGlobalPolicy: () => null,
-      getJobSize: () => null,
+      getTask: () => null,
     });
     const server = createMcpServer(
       app.taskService,

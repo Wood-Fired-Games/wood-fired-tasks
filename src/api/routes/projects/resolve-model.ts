@@ -27,7 +27,11 @@ import type { PipelineRole } from '../../../services/model-policy.service.js';
  * Project-existence is enforced explicitly so a missing project yields a 404
  * ProblemDetails (mirrors the sibling `/:id/topology` and `/:id/dependency-graph`
  * routes). Without the guard an unknown project would resolve to the global
- * default (or null) silently rather than signalling the bad id.
+ * default (or null) silently rather than signalling the bad id. Since task
+ * #928 the resolver itself ALSO validates: a nonexistent `task_id` throws
+ * NotFoundError (→ 404) and a `task_id` belonging to a different project
+ * throws ValidationError (→ 400), so size-routing can never silently use a
+ * foreign task's jobSize.
  *
  * Auth: inherits the standard projects-route auth chain (the parent
  * `projectRoutes` plugin is mounted inside the `/api/v1` scope that wires
@@ -56,6 +60,7 @@ const resolveModelRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }),
         response: {
           200: ResolveModelResponseSchema,
+          400: ErrorResponseSchema,
           404: ErrorResponseSchema,
         },
       },

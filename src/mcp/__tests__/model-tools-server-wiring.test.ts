@@ -24,9 +24,10 @@ const MODEL_TOOL_NAMES = [
 
 async function listToolNames(app: App, withModelServices: boolean): Promise<string[]> {
   const modelPolicyService = createModelPolicyService({
+    projectExists: () => true,
     getProjectPolicy: () => null,
     getGlobalPolicy: () => null,
-    getJobSize: () => null,
+    getTask: () => null,
   });
   const server = withModelServices
     ? createMcpServer(

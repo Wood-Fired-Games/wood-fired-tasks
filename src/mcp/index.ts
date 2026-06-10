@@ -84,17 +84,27 @@ async function main() {
   //     inflates the JSON column to a ModelPolicy | null).
   //   - getGlobalPolicy  ← the database-wide default owned by the settings
   //     service (the SAME instance the API and `get/set_model_defaults` use).
-  //   - getJobSize       ← a task's WSJF jobSize Fibonacci tier (the
-  //     `wsjf_job_size` column inflated onto the Task by TaskRepository).
+  //   - getTask          ← a task's project membership + WSJF jobSize tier
+  //     (the `project_id` / `wsjf_job_size` columns inflated by TaskRepository);
+  //     `null` when the task does not exist (task #928 validation).
+  //   - projectExists    ← existence guard so a nonexistent project errors
+  //     instead of silently resolving the global default (task #928 parity
+  //     with the REST route's 404).
   // The repos are built over the SAME `app.db` handle every other service
   // shares (db-backed repos are stateless prepared-statement holders), mirroring
   // how server.ts constructs the WSJF repos.
   const projectRepo = new ProjectRepository(app.db);
   const taskRepo = new TaskRepository(app.db);
   const modelPolicyService = createModelPolicyService({
+    projectExists: (projectId) => projectRepo.findById(projectId) != null,
     getProjectPolicy: (projectId) => projectRepo.findById(projectId)?.model_policy ?? null,
     getGlobalPolicy: () => app.settingsService.getModelPolicyDefault(),
-    getJobSize: (taskId) => taskRepo.findById(taskId)?.wsjf_job_size ?? null,
+    getTask: (taskId) => {
+      const task = taskRepo.findById(taskId);
+      return task == null
+        ? null
+        : { project_id: task.project_id, wsjf_job_size: task.wsjf_job_size ?? null };
+    },
   });
 
   // Create MCP server with initialized services + boot-time context

@@ -23,11 +23,24 @@
  * A resolved `auto` sentinel round-trips as `{ model: 'auto' }`; an absent
  * value yields `null` ("inherit the session model").
  *
- * All policy/jobSize lookups are injected so the unit tests run hermetically
- * with fake deps — no DB or network access.
+ * INPUT VALIDATION (task #928 — PR #55 review follow-up): `resolveModel`
+ * errors LOUDLY instead of silently mis-routing:
+ *   - a nonexistent `projectId` throws `NotFoundError('Project', …)` — without
+ *     this guard a bad id silently resolved against the global default (the
+ *     REST route 404'd but the stdio MCP tool did not: a transport parity gap);
+ *   - a nonexistent `taskId` throws `NotFoundError('Task', …)`;
+ *   - a `taskId` belonging to a DIFFERENT project throws `ValidationError` —
+ *     otherwise the foreign task's jobSize would size-route the wrong project.
+ * Both transports (REST route + stdio MCP tool) and the remote MCP proxy
+ * (which forwards to REST) share this single guard because they all wire the
+ * SAME service.
+ *
+ * All policy/project/task lookups are injected so the unit tests run
+ * hermetically with fake deps — no DB or network access.
  */
 
 import type { ModelPolicy, PowerCategory, RolePolicy } from '../schemas/model-policy.schema.js';
+import { NotFoundError, ValidationError } from './errors.js';
 
 /** The three pipeline dispatch roles a policy can configure. */
 export type PipelineRole = 'execution' | 'validation' | 'planning';
@@ -35,14 +48,29 @@ export type PipelineRole = 'execution' | 'validation' | 'planning';
 /** Resolver result: a concrete model, the `auto` sentinel, or `null` (inherit). */
 export type ResolvedModel = { model: string } | { model: 'auto' } | null;
 
+/**
+ * The task facts the resolver validates against: which project the task
+ * belongs to, plus its WSJF jobSize tier (`null` when unscored).
+ */
+export interface ResolverTask {
+  project_id: number;
+  wsjf_job_size: number | null;
+}
+
 /** Injectable dependencies for {@link createModelPolicyService}. */
 export interface ModelPolicyDeps {
+  /** Whether a project with this id exists (task #928 existence guard). */
+  projectExists: (projectId: number) => boolean;
   /** The project's model policy, or `null` when the project configures none. */
   getProjectPolicy: (projectId: number) => ModelPolicy | null;
   /** The global model policy, or `null` when none is configured. */
   getGlobalPolicy: () => ModelPolicy | null;
-  /** The task's WSJF jobSize Fibonacci tier, or `null` when unscored. */
-  getJobSize: (taskId: number) => number | null;
+  /**
+   * The task's project membership + WSJF jobSize Fibonacci tier, or `null`
+   * when no such task exists (task #928: replaces the bare `getJobSize`
+   * lookup so the resolver can validate existence + project membership).
+   */
+  getTask: (taskId: number) => ResolverTask | null;
 }
 
 /**
@@ -78,8 +106,37 @@ export function createModelPolicyService(deps: ModelPolicyDeps) {
    * inherits the corresponding global slot rather than discarding the global
    * layer wholesale. Slot precedence within the merged role is
    * byCategory → constant → default → null.
+   *
+   * Validates loudly (task #928): throws `NotFoundError` for a nonexistent
+   * project or task, and `ValidationError` when `taskId` names a task that
+   * belongs to a different project than `projectId`.
    */
   const resolveModel = (projectId: number, role: PipelineRole, taskId?: number): ResolvedModel => {
+    // Existence guard (task #928): a nonexistent project must error, not
+    // silently resolve against the global default. Mirrors the REST route's
+    // 404 so every transport behaves identically.
+    if (!deps.projectExists(projectId)) {
+      throw new NotFoundError('Project', projectId);
+    }
+
+    // Task guard (task #928): a nonexistent task — or one belonging to a
+    // DIFFERENT project — must error rather than silently size-routing via
+    // the merged default or the foreign task's jobSize.
+    let task: ResolverTask | null = null;
+    if (taskId != null) {
+      task = deps.getTask(taskId);
+      if (task == null) {
+        throw new NotFoundError('Task', taskId);
+      }
+      if (task.project_id !== projectId) {
+        throw new ValidationError({
+          task_id: [
+            `Task ${taskId} belongs to project ${task.project_id}, not project ${projectId}`,
+          ],
+        });
+      }
+    }
+
     const projectRole = deps.getProjectPolicy(projectId)?.[role] as RolePolicy | undefined;
     const globalRole = deps.getGlobalPolicy()?.[role] as RolePolicy | undefined;
 
@@ -88,7 +145,7 @@ export function createModelPolicyService(deps: ModelPolicyDeps) {
     // Planning dispatches normally omit task_id, so byCategory falls through
     // to constant — but a category-routed planning policy (or a constant on
     // execution/validation) is honored exactly as the schema admits it.
-    const category = taskId != null ? categoryForJobSize(deps.getJobSize(taskId)) : null;
+    const category = task != null ? categoryForJobSize(task.wsjf_job_size) : null;
     const byCat =
       category != null
         ? (projectRole?.byCategory?.[category] ?? globalRole?.byCategory?.[category])

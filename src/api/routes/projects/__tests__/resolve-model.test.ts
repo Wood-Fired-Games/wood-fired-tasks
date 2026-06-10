@@ -21,6 +21,8 @@ import { authHeaders } from '../../../__tests__/helpers/auth.js';
  *   - invalid params (bad role / non-positive id) → 400 via zod
  *   - missing project id → 404 ProblemDetails (existence guard)
  *   - missing auth → 401
+ *   - task #928: in-project task_id → 200; nonexistent task_id → 404;
+ *     task_id from a different project → 400 (no foreign jobSize routing)
  */
 
 describe('GET /api/v1/projects/:id/resolve-model', () => {
@@ -29,6 +31,8 @@ describe('GET /api/v1/projects/:id/resolve-model', () => {
   let db: Database.Database;
   let projectWithPolicy: number;
   let projectNoPolicy: number;
+  let taskInPolicyProject: number;
+  let taskInOtherProject: number;
   let headers: { Authorization: string };
 
   beforeAll(async () => {
@@ -52,6 +56,21 @@ describe('GET /api/v1/projects/:id/resolve-model', () => {
     // and the null fall-through.
     const noPolicy = app.projectService.createProject({ name: 'resolve-no-policy' });
     projectNoPolicy = noPolicy.id;
+
+    // Task #928 validation fixtures: one task in each project, so a task_id
+    // can be exercised both in-project (happy path) and cross-project (400).
+    taskInPolicyProject = app.taskService.createTask({
+      title: 'resolve-model in-project task',
+      project_id: projectWithPolicy,
+      priority: 'medium',
+      created_by: 'seed',
+    }).id;
+    taskInOtherProject = app.taskService.createTask({
+      title: 'resolve-model foreign task',
+      project_id: projectNoPolicy,
+      priority: 'medium',
+      created_by: 'seed',
+    }).id;
   });
 
   afterAll(async () => {
@@ -130,6 +149,44 @@ describe('GET /api/v1/projects/:id/resolve-model', () => {
       headers,
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('resolves normally for a task_id belonging to the project (task #928 regression)', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectWithPolicy}/resolve-model?role=execution&task_id=${taskInPolicyProject}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ model: 'claude-opus' });
+  });
+
+  it('returns 404 for a nonexistent task_id (task #928 — no silent default routing)', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectWithPolicy}/resolve-model?role=execution&task_id=999999`,
+      headers,
+    });
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('NOT_FOUND');
+    expect(body.details).toEqual({ entity: 'Task', id: 999999 });
+  });
+
+  it('returns 400 for a task_id belonging to a different project (task #928 — no foreign jobSize routing)', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectWithPolicy}/resolve-model?role=execution&task_id=${taskInOtherProject}`,
+      headers,
+    });
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.details).toEqual({
+      task_id: [
+        `Task ${taskInOtherProject} belongs to project ${projectNoPolicy}, not project ${projectWithPolicy}`,
+      ],
+    });
   });
 
   it('rejects an unauthenticated request with 401', async () => {

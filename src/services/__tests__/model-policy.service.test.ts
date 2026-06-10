@@ -1,20 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
 import { createModelPolicyService } from '../model-policy.service.js';
+import { NotFoundError, ValidationError } from '../errors.js';
 
 /**
  * Build a service with fully fake, injected deps. `project`/`global` are the
  * two policy layers (either may be `null`); `jobSizeByTask` maps taskId → its
- * WSJF Fibonacci jobSize (absent ⇒ unscored ⇒ `null`).
+ * WSJF Fibonacci jobSize (absent ⇒ unscored ⇒ `null`). Every project exists
+ * and every task belongs to project 1 (the projectId all the happy-path tests
+ * resolve against) — the task-#928 validation error paths are exercised by
+ * their own dedicated deps below.
  */
 const fakeDeps = (
   project: ModelPolicy | null,
   global: ModelPolicy | null,
   jobSizeByTask: Record<number, number | null> = {},
 ) => ({
+  projectExists: () => true,
   getProjectPolicy: () => project,
   getGlobalPolicy: () => global,
-  getJobSize: (taskId: number) => jobSizeByTask[taskId] ?? null,
+  getTask: (taskId: number) => ({ project_id: 1, wsjf_job_size: jobSizeByTask[taskId] ?? null }),
 });
 
 describe('categoryForJobSize', () => {
@@ -209,5 +214,61 @@ describe('resolveModel — per-slot merge', () => {
       ),
     );
     expect(s.resolveModel(1, 'planning')).toEqual({ model: 'glob-plan-const' });
+  });
+});
+
+describe('resolveModel — input validation (task #928)', () => {
+  it('throws NotFoundError for a nonexistent project (no silent global-default resolution)', () => {
+    const s = createModelPolicyService({
+      projectExists: () => false,
+      getProjectPolicy: () => null,
+      getGlobalPolicy: () => ({ execution: { default: 'glob-default' } }),
+      getTask: () => null,
+    });
+    expect(() => s.resolveModel(999, 'execution')).toThrow(NotFoundError);
+    expect(() => s.resolveModel(999, 'execution')).toThrow('Project with id 999 not found');
+  });
+
+  it('throws NotFoundError for a nonexistent task (no silent default-merge routing)', () => {
+    const s = createModelPolicyService({
+      projectExists: () => true,
+      getProjectPolicy: () => ({ execution: { default: 'proj-default' } }),
+      getGlobalPolicy: () => null,
+      getTask: () => null, // no such task
+    });
+    expect(() => s.resolveModel(1, 'execution', 404404)).toThrow(NotFoundError);
+    expect(() => s.resolveModel(1, 'execution', 404404)).toThrow('Task with id 404404 not found');
+  });
+
+  it('throws ValidationError when the task belongs to a different project (no foreign jobSize routing)', () => {
+    const s = createModelPolicyService({
+      projectExists: () => true,
+      getProjectPolicy: () => ({ execution: { byCategory: { heavy: 'h' }, default: 'd' } }),
+      getGlobalPolicy: () => null,
+      // task 7 exists but lives in project 2, not the requested project 1.
+      getTask: () => ({ project_id: 2, wsjf_job_size: 8 }),
+    });
+    expect(() => s.resolveModel(1, 'execution', 7)).toThrow(ValidationError);
+    try {
+      s.resolveModel(1, 'execution', 7);
+      expect.unreachable('resolveModel must throw for a foreign task');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ValidationError);
+      expect((error as ValidationError).fieldErrors).toEqual({
+        task_id: ['Task 7 belongs to project 2, not project 1'],
+      });
+    }
+  });
+
+  it('does not consult the task at all when no taskId is supplied', () => {
+    const s = createModelPolicyService({
+      projectExists: () => true,
+      getProjectPolicy: () => ({ execution: { default: 'd' } }),
+      getGlobalPolicy: () => null,
+      getTask: () => {
+        throw new Error('getTask must not be called without a taskId');
+      },
+    });
+    expect(s.resolveModel(1, 'execution')).toEqual({ model: 'd' });
   });
 });

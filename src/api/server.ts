@@ -160,14 +160,23 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // wires the resolver behind the stdio `resolve_model` tool:
   //   - getProjectPolicy ← a project's parsed `model_policy` column.
   //   - getGlobalPolicy  ← the SAME settings service backing get/set defaults.
-  //   - getJobSize       ← a task's WSJF jobSize Fibonacci tier.
+  //   - getTask          ← a task's project membership + WSJF jobSize tier
+  //     (`null` when the task does not exist — task #928 validation).
+  //   - projectExists    ← existence guard (task #928): nonexistent project
+  //     → NotFoundError instead of a silent global-default resolution.
   const modelPolicyProjectRepo = new ProjectRepository(app.db);
   const modelPolicyTaskRepo = new TaskRepository(app.db);
   const modelPolicyService = createModelPolicyService({
+    projectExists: (projectId) => modelPolicyProjectRepo.findById(projectId) != null,
     getProjectPolicy: (projectId) =>
       modelPolicyProjectRepo.findById(projectId)?.model_policy ?? null,
     getGlobalPolicy: () => app.settingsService.getModelPolicyDefault(),
-    getJobSize: (taskId) => modelPolicyTaskRepo.findById(taskId)?.wsjf_job_size ?? null,
+    getTask: (taskId) => {
+      const task = modelPolicyTaskRepo.findById(taskId);
+      return task == null
+        ? null
+        : { project_id: task.project_id, wsjf_job_size: task.wsjf_job_size ?? null };
+    },
   });
   server.decorate('modelPolicyService', modelPolicyService);
   server.decorate('db', app.db);
