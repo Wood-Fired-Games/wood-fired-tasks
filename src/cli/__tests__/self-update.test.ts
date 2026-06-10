@@ -1,13 +1,18 @@
 /**
- * In-process tests for src/cli/commands/self-update.ts (task #739).
+ * In-process tests for src/cli/commands/self-update.ts (tasks #739, #934).
  *
- * The `self-update` command spawns `npm i -g wood-fired-tasks@latest` and
- * exits. Tests inject a recording mock spawn (no real npm process) and a
- * mock notifier (no network), asserting:
+ * The `self-update` command spawns `npm i -g wood-fired-tasks@latest`, then
+ * re-syncs bundled skills/agents into ~/.claude, and exits. Tests inject a
+ * recording mock spawn (no real npm process), a mock notifier (no network),
+ * and a recording syncAssets (no real ~/.claude writes), asserting:
  *   1. the exact npm args are spawned, then the process "exits" (exitCode 0)
  *   2. the EACCES path prints no-sudo remediation and NEVER invokes any
  *      elevation (no sudo / runas / pkexec / doas)
  *   3. the update-notifier nudge seam is wired and fires
+ *   4. the skills/agents sync runs after a successful install, is skipped on
+ *      a failed install, fails loudly when it throws, and defaults to the
+ *      SAME copySkills/copyAgents pair `tasks setup` uses (contract: the
+ *      README's "keep it up to date" promise covers skills, task #934)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
@@ -26,6 +31,25 @@ function makeFakeChild() {
 async function loadFresh() {
   vi.resetModules();
   return import('../commands/self-update.js');
+}
+
+// A recording syncAssets stub shaped like the real copySkills/copyAgents
+// results. Keeps every test off the real ~/.claude.
+function makeSyncStub(written: { skills?: string[]; agents?: string[] } = {}) {
+  return vi.fn(() => ({
+    skills: {
+      sourceDir: '/pkg/dist/skills/tasks',
+      destDir: '/home/test/.claude/commands/tasks',
+      written: written.skills ?? [],
+      files: written.skills ?? [],
+    },
+    agents: {
+      sourceDir: '/pkg/dist/skills/agents',
+      destDir: '/home/test/.claude/agents',
+      written: written.agents ?? [],
+      files: written.agents ?? [],
+    },
+  }));
 }
 
 describe('self-update command', () => {
@@ -65,7 +89,7 @@ describe('self-update command', () => {
       return child as never;
     });
     const notify = vi.fn();
-    __setSelfUpdateDeps({ spawn: spawn as never, notify });
+    __setSelfUpdateDeps({ spawn: spawn as never, notify, syncAssets: makeSyncStub() });
 
     const program = new Command();
     program.addCommand(selfUpdateCommand);
@@ -94,7 +118,7 @@ describe('self-update command', () => {
         setImmediate(() => child.emit('close', 0));
         return child as never;
       });
-      __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn() });
+      __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets: makeSyncStub() });
 
       const program = new Command();
       program.addCommand(selfUpdateCommand);
@@ -185,6 +209,142 @@ describe('self-update command', () => {
     const notify = vi.fn();
     __setSelfUpdateDeps({ notify });
     expect(typeof notify).toBe('function');
+  });
+
+  it('re-syncs skills/agents after a successful install and reports what changed (task #934)', async () => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+
+    const child = makeFakeChild();
+    let installDone = false;
+    const spawn = vi.fn(() => {
+      setImmediate(() => {
+        installDone = true;
+        child.emit('close', 0);
+      });
+      return child as never;
+    });
+    let syncedAfterInstall = false;
+    const syncAssets = makeSyncStub({ skills: ['set-models.md'], agents: [] });
+    const recordingSync = vi.fn(() => {
+      syncedAfterInstall = installDone;
+      return syncAssets();
+    });
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets: recordingSync });
+
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update']);
+
+    // Sync ran exactly once, strictly AFTER npm finished (the files on disk
+    // are only the new version once the install completes).
+    expect(recordingSync).toHaveBeenCalledTimes(1);
+    expect(syncedAfterInstall).toBe(true);
+
+    const out = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toMatch(/Refreshed 1 skill\(s\)/);
+    expect(out).toMatch(/commands[/\\]tasks/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('reports "already up to date" when the sync writes nothing', async () => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+
+    const child = makeFakeChild();
+    const spawn = vi.fn(() => {
+      setImmediate(() => child.emit('close', 0));
+      return child as never;
+    });
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets: makeSyncStub() });
+
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update']);
+
+    const out = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toMatch(/already up to date/);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does NOT sync skills when the npm install fails', async () => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+
+    const child = makeFakeChild();
+    const spawn = vi.fn(() => {
+      setImmediate(() => child.emit('close', 1));
+      return child as never;
+    });
+    const syncAssets = makeSyncStub();
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets });
+
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update']);
+
+    expect(syncAssets).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('fails loudly (non-zero + setup remediation) when the skills sync throws', async () => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+
+    const child = makeFakeChild();
+    const spawn = vi.fn(() => {
+      setImmediate(() => child.emit('close', 0));
+      return child as never;
+    });
+    const syncAssets = vi.fn(() => {
+      throw new Error('EROFS: read-only file system');
+    });
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets });
+
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update']);
+
+    const errOut = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errOut).toMatch(/skills\/agents.*failed/);
+    expect(errOut).toMatch(/EROFS/);
+    expect(errOut).toMatch(/wood-fired-tasks setup/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('CONTRACT: the default sync is setup’s own copySkills/copyAgents (no drift)', async () => {
+    // Mock the setup module BEFORE loading self-update so the default
+    // syncAssets closure binds to the mocks. This pins the contract that the
+    // update path and the onboarding path share one implementation.
+    vi.resetModules();
+    const copySkills = vi.fn(() => ({
+      sourceDir: 's',
+      destDir: '/home/test/.claude/commands/tasks',
+      written: [],
+      files: [],
+    }));
+    const copyAgents = vi.fn(() => ({
+      sourceDir: 's',
+      destDir: '/home/test/.claude/agents',
+      written: [],
+      files: [],
+    }));
+    vi.doMock('../commands/setup.js', () => ({ copySkills, copyAgents }));
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await import('../commands/self-update.js');
+
+    const child = makeFakeChild();
+    const spawn = vi.fn(() => {
+      setImmediate(() => child.emit('close', 0));
+      return child as never;
+    });
+    // No syncAssets injected — exercise the default wiring.
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn() });
+
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update']);
+
+    expect(copySkills).toHaveBeenCalledTimes(1);
+    expect(copyAgents).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(0);
+
+    vi.doUnmock('../commands/setup.js');
   });
 
   it('isEaccesFailure classifies structured + textual EACCES/EPERM', async () => {

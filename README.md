@@ -143,7 +143,7 @@ user scope.
 
 ```bash
 wood-fired-tasks service install   # Linux: user-scoped systemd unit (admin-free)
-wood-fired-tasks self-update       # npm i -g wood-fired-tasks@latest (no sudo)
+wood-fired-tasks self-update       # npm i -g @latest + re-sync skills (no sudo)
 ```
 
 **Point at a shared remote server** (the *Remote client* mode above) with

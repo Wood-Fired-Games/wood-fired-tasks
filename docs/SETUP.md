@@ -158,8 +158,13 @@ unless `--port` overrides it. The unauthenticated `GET /health` route returns
 wood-fired-tasks self-update
 ```
 
-This runs `npm i -g wood-fired-tasks@latest` and exits with npm's exit code. It
-**never escalates**: on an EACCES (root-owned global prefix) it prints the
+This runs `npm i -g wood-fired-tasks@latest`, then re-syncs the bundled
+skills into `~/.claude/commands/tasks/` and the subagent definitions into
+`~/.claude/agents/` — the same idempotent copy `setup` performs, so a release
+that adds or changes a skill is fully picked up by `self-update` alone (no
+`setup` re-run needed). If the install succeeds but the skills sync fails, it
+says so and exits non-zero; re-run `wood-fired-tasks setup` to retry the sync.
+It **never escalates**: on an EACCES (root-owned global prefix) it prints the
 writable-prefix remediation (the same `~/.npm-global` fix as `--fix-npm-prefix`)
 and exits non-zero rather than suggesting sudo. The database schema needs no
 special handling — it migrates automatically the next time `serve` (or the
