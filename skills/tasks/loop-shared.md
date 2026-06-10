@@ -842,7 +842,20 @@ This mirrors §N's kill-safe posture (git state is the source of truth; the oper
 **Resolve before each dispatch.** Immediately before composing an `Agent` call, call `resolve_model { project_id, role, task_id }` — `role` is `execution` for the worker and `validation` for the verifier, and `task_id` is the task being worked/graded so the resolver can size-route by the task's power category. The resolver is read-only and returns one of three shapes (read the returned value VERBATIM per §L — never predict it):
 
 - **`{ model: "<concrete-id>" }`** → pass `model: "<concrete-id>"` to the `Agent` call.
-- **`{ model: "auto" }`** → call `list_models` and pick the live model whose power category matches the slot's category (the worker/verifier resolve against the task's category). Pass that concrete id as `model:`. If `list_models` returns `stale: true`, the static-fallback catalog is acceptable — proceed with the best category match it lists.
+- **`{ model: "auto" }`** → call `list_models` and resolve via the **Default Model Map** below: take the row for the task's power category and the column for the slot's role (planning uses the planning line), then pick the FIRST catalog entry whose `family` matches the mapped family — the catalog is ordered newest-power-first, so the first match is the newest of that family. If the catalog has no entry for that family, step DOWN the family ladder (`fable → opus → sonnet → haiku`) to the nearest family present; ultimate fallback = the first catalog entry. If the slot has no power category (the task carries no jobSize), use the `moderate, strong` row. Pass the resolved concrete id as `model:`. If `list_models` returns `stale: true`, the static-fallback catalog is acceptable — resolve the same way against it.
+
+  **Default Model Map (canonical).** `set-models.md` §4/§5 derive their `(Recommended)` tags from this SAME table — change it here, never fork it there. Grounded in loop telemetry (2026-06-09 runs: the jobSize band predicts ~4× worker API calls and ~7× input tokens bottom→top band; the verifier costs ~22% of the worker at the same model) plus current model capability/pricing:
+
+  | Power category (jobSize) | `execution` family | `validation` family |
+  | --- | --- | --- |
+  | `minimal`, `light` (1–2) | sonnet | haiku |
+  | `moderate`, `strong` (3–5) | sonnet | sonnet |
+  | `heavy` (8) | opus | opus |
+  | `maximum` (13) | fable | opus |
+
+  `planning` (no category — single constant): **opus**.
+
+  Rationale anchors: sonnet is the execution FLOOR — a failed cheap-worker retry costs more than the haiku savings on a code-writing dispatch; validation may sit one notch below execution at the bottom (reading-dominant, lowest stakes) but converges to the worker's tier at the top (a false PASS ships a defect; verifying a >8-file change is itself deep reasoning); fable is reserved for `maximum` horizons (>8 files / new subsystems — the longest loops, where top-tier long-horizon coherence pays); planning is one dispatch with project-wide blast radius, so it is cost-insensitive. Known limitation: jobSize measures BREADTH (files touched), not reasoning depth — a deep one-file task under-routes; the escape hatches are the manual jobSize lock (`tasks wsjf-set`) and the `--execution-model` run-arg override.
 - **`null`** → pass NO `model:` (inherit the orchestrator's session model). This is the backward-compatible default for projects with no model policy.
 
 **Dispatch-time fallback (load-bearing).** If an `Agent` call errors with an *unrecognized-model* error (the resolved id is not accepted by the harness — covers the §13 harness-acceptance risk), retry the SAME dispatch ONCE with NO `model:` (inherit), and log a one-line warning naming the rejected id and the role. Do not loop on the fallback; one retry, then proceed inherited.

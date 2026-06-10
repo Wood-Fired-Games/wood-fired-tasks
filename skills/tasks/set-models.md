@@ -133,17 +133,20 @@ Per stage:
   then `"Let me decide (auto)"` always last. Never reorder options to float
   the recommendation to the front — the user scans the same list shape on
   every question; only the `(Recommended)` tag moves.
-- **Recommendations ascend monotonically across the four stages**: stage 1
-  recommends the lowest-power catalog model; each later stage recommends a
-  model **≥** the previous stage's recommendation, ending with the most
-  powerful catalog model on stage 4. Mark the recommended option by
-  appending `(Recommended)` to its label **in place** (per the fixed order
-  above). Because all four stages ship in one call, recommendations are
-  computed up front from the catalog's power order — they cannot react to
-  the user's in-call picks. For the SECOND role's call, seed stage 1's
-  recommendation from the first role's stage-1 pick when it was concrete
-  (carry the established floor across roles); `auto` picks never move the
-  floor.
+- **Recommendations come from the canonical Default Model Map in
+  [`loop-shared.md` §R](loop-shared.md) — the same table `auto` resolution
+  uses.** Per stage, map the stage's categories + the role to the table's
+  family, then recommend the newest live catalog model of that family
+  (first catalog entry matching the family; step down the
+  `fable → opus → sonnet → haiku` ladder if the family is absent). With the
+  current catalog that yields: `execution` →
+  Sonnet · Sonnet · Opus · Fable across the four stages; `validation` →
+  Haiku · Sonnet · Opus · Opus. Mark the mapped option by appending
+  `(Recommended)` to its label **in place** (per the fixed order above) —
+  the map ascends monotonically by construction. If the user's earlier
+  concrete pick in the same role already exceeds a later stage's mapped
+  model, recommend the higher of the two (never recommend below an
+  established floor; `auto` picks never move the floor).
 - **Pair semantics:** a stage-1 or stage-2 pick (including `auto`) is stored
   under BOTH of its categories. If the user wants the paired categories
   split (e.g. a different model for `minimal` vs `light`), they can say so
@@ -159,7 +162,10 @@ four-stage walk fills all six by default.
 
 For role `planning`, ask **one** question: a single model for the constant
 planning slot, with the same fixed option order as §4 (ascending catalog
-power, `auto` last) and the same `"Let me decide (auto)"` option. Record it as
+power, `auto` last) and the same `"Let me decide (auto)"` option. The
+`(Recommended)` tag goes on the Default Model Map's planning line — the
+newest opus-family catalog model (planning is one dispatch with
+project-wide blast radius; cost-insensitive). Record it as
 `planning.constant`. Only if the user explicitly asks for per-category planning
 routing, branch into the same four-stage walk for `planning.byCategory`;
 otherwise the constant governs (§5).
