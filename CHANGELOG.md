@@ -13,6 +13,21 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 _No changes yet._
 
+## [v2.1.1] - 2026-06-09
+
+### Fixed
+- **`tasks self-update` now re-syncs bundled skills/agents into `~/.claude`**
+  (PR #57, task #934). The command previously only ran
+  `npm i -g wood-fired-tasks@latest`, so a release that added or changed a
+  skill (first hit: v2.1.0's `/tasks:set-models`) left self-updaters with
+  stale `~/.claude/commands/tasks/` while reporting success — violating the
+  README's "keep it up to date" contract. After a clean install, self-update
+  now runs the same idempotent `copySkills()`/`copyAgents()` sync `tasks
+  setup` uses, reports what it refreshed, and exits non-zero with a
+  `tasks setup` remediation hint if the sync itself fails. A contract test
+  pins the default sync to setup's own implementation so the update and
+  onboarding paths cannot drift.
+
 ## [v2.1.0] - 2026-06-09
 
 ### Added
@@ -814,7 +829,9 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.1...HEAD
+[v2.1.1]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.0...v2.1.1
+[v2.1.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.0.6...v2.1.0
 [v2.0.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.18.2...v2.0.0
 [v1.15]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.14...v1.15
 [v1.14]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.13...v1.14
