@@ -1,7 +1,7 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
-import type { PipelineRole } from '../../../services/model-policy.service.js';
+import { PipelineRoleSchema } from '../../../schemas/model-policy.schema.js';
 
 /**
  * Configurable Task Models (Task #926) — GET /api/v1/projects/:id/resolve-model
@@ -55,7 +55,7 @@ const resolveModelRoutes: FastifyPluginAsyncZod = async (fastify) => {
           'MCP tool output. Read-only.',
         params: z.object({ id: z.coerce.number().int().positive() }),
         querystring: z.object({
-          role: z.enum(['execution', 'validation', 'planning']),
+          role: PipelineRoleSchema,
           task_id: z.coerce.number().int().positive().optional(),
         }),
         response: {
@@ -71,7 +71,7 @@ const resolveModelRoutes: FastifyPluginAsyncZod = async (fastify) => {
       fastify.projectService.getProject(request.params.id);
       const resolved = fastify.modelPolicyService.resolveModel(
         request.params.id,
-        request.query.role as PipelineRole,
+        request.query.role,
         request.query.task_id,
       );
       // `resolved` is `{ model } | { model: 'auto' } | null` — sent verbatim so

@@ -4,10 +4,12 @@ import { colorWarn } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import {
+  PIPELINE_ROLES,
   POWER_CATEGORIES,
   ModelPolicySchema,
   type ModelPolicy,
   type ModelRef,
+  type PipelineRole,
   type RolePolicy,
 } from '../../schemas/model-policy.schema.js';
 
@@ -26,9 +28,13 @@ import {
  * validated partial `ModelPolicy` (`ModelPolicySchema.parse`).
  */
 
-/** The three dispatch roles a policy can configure. */
-export const MODEL_ROLES = ['execution', 'validation', 'planning'] as const;
-export type ModelRole = (typeof MODEL_ROLES)[number];
+/**
+ * The three dispatch roles a policy can configure. Derived from the
+ * single-source `PIPELINE_ROLES` (task #929); kept under the CLI-local names
+ * so existing call sites are undisturbed.
+ */
+export const MODEL_ROLES = PIPELINE_ROLES;
+export type ModelRole = PipelineRole;
 
 /**
  * Register the per-role model flags on a Commander command:

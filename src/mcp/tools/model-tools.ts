@@ -24,9 +24,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { toStructuredContent } from '../lib/structured-content.js';
 import { convertToMcpError } from '../errors.js';
-import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
+import {
+  ModelPolicyNullableSchema,
+  PipelineRoleSchema,
+} from '../../schemas/model-policy.schema.js';
 import type { ModelCatalogService } from '../../services/model-catalog.service.js';
-import type { ModelPolicyService, PipelineRole } from '../../services/model-policy.service.js';
+import type { ModelPolicyService } from '../../services/model-policy.service.js';
 import type { SettingsService } from '../../services/settings.service.js';
 
 /** Injected dependencies for {@link registerModelTools}. */
@@ -79,17 +82,13 @@ export function registerModelTools(server: McpServer, deps: ModelToolsDeps): voi
         'at dispatch), or null (inherit the session model). Read-only.',
       inputSchema: z.object({
         project_id: z.number().int().positive(),
-        role: z.enum(['execution', 'validation', 'planning']),
+        role: PipelineRoleSchema,
         task_id: z.number().int().positive().optional(),
       }),
     },
     async (args) => {
       try {
-        const resolved = deps.modelPolicy.resolveModel(
-          args.project_id,
-          args.role as PipelineRole,
-          args.task_id,
-        );
+        const resolved = deps.modelPolicy.resolveModel(args.project_id, args.role, args.task_id);
         return {
           content: [
             {

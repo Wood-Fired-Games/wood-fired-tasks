@@ -31,9 +31,18 @@ export interface ModelCatalog {
 }
 
 /**
+ * The family power ladder, descending by power (task #929 — PR #55 review
+ * follow-up). Previously prose-only in `skills/tasks/loop-shared.md` §R; this
+ * is now THE code constant: `familyOf` token matching, `resolveAuto` ladder
+ * fallback, and the static fallback catalog ordering all derive from it.
+ */
+export const FAMILY_LADDER = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+export type ModelFamily = (typeof FAMILY_LADDER)[number];
+
+/**
  * Static, hand-maintained fallback catalog. Used whenever live discovery is
  * unavailable (no key / non-OK response / network error). Ordered newest-power
- * first (fable → opus → sonnet → haiku) to mirror the family power ladder.
+ * first (the {@link FAMILY_LADDER} order) to mirror the family power ladder.
  */
 export const STATIC_FALLBACK_MODELS: ModelCatalogEntry[] = [
   {
@@ -63,13 +72,18 @@ export const STATIC_FALLBACK_MODELS: ModelCatalogEntry[] = [
 ];
 
 /**
- * Infer a model's family from its id. Prefers a known family token
- * (`opus`/`sonnet`/`haiku`) appearing anywhere in the id; otherwise falls back
+ * Infer a model's family from its id. Prefers a known {@link FAMILY_LADDER}
+ * token appearing anywhere in the id — so prefixed ids (e.g.
+ * `us.anthropic.claude-fable-5-...`) resolve correctly; otherwise falls back
  * to the second hyphen-delimited segment (e.g. `claude-<family>-...`), and
  * finally to `'unknown'` so the field is always a non-empty string.
+ *
+ * Task #929 fix: the token list previously omitted `fable` (it worked only via
+ * the `split('-')[1]` fallback, which breaks on prefixed ids); it now derives
+ * from {@link FAMILY_LADDER} so the ladder and the matcher cannot drift.
  */
-const familyOf = (id: string): string =>
-  ['opus', 'sonnet', 'haiku'].find((f) => id.includes(f)) ?? id.split('-')[1] ?? 'unknown';
+export const familyOf = (id: string): string =>
+  FAMILY_LADDER.find((f) => id.includes(f)) ?? id.split('-')[1] ?? 'unknown';
 
 /** Injectable dependencies for {@link createModelCatalogService}. */
 export interface CatalogDeps {

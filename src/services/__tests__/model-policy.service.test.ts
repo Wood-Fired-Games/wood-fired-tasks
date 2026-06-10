@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
-import { createModelPolicyService } from '../model-policy.service.js';
+import type { ModelCatalogEntry } from '../model-catalog.service.js';
+import {
+  createModelPolicyService,
+  DEFAULT_MODEL_MAP,
+  resolveAuto,
+} from '../model-policy.service.js';
 import { NotFoundError, ValidationError } from '../errors.js';
 
 /**
@@ -270,5 +275,88 @@ describe('resolveModel — input validation (task #928)', () => {
       },
     });
     expect(s.resolveModel(1, 'execution')).toEqual({ model: 'd' });
+  });
+});
+
+describe('resolveAuto — deterministic auto resolution (task #929)', () => {
+  /** Catalog factory: newest-power-first entries with explicit families. */
+  const entry = (id: string, family: string): ModelCatalogEntry => ({
+    id,
+    display_name: id,
+    family,
+    created_at: '',
+  });
+  const fullCatalog = [
+    entry('claude-fable-5', 'fable'),
+    entry('claude-opus-4-8', 'opus'),
+    entry('claude-sonnet-4-6', 'sonnet'),
+    entry('claude-haiku-4-5', 'haiku'),
+  ];
+
+  it('routes every category × role per the Default Model Map', () => {
+    expect(resolveAuto(fullCatalog, 'minimal', 'execution')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, 'minimal', 'validation')).toBe('claude-haiku-4-5');
+    expect(resolveAuto(fullCatalog, 'light', 'execution')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, 'light', 'validation')).toBe('claude-haiku-4-5');
+    expect(resolveAuto(fullCatalog, 'moderate', 'execution')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, 'moderate', 'validation')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, 'strong', 'execution')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, 'strong', 'validation')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, 'heavy', 'execution')).toBe('claude-opus-4-8');
+    expect(resolveAuto(fullCatalog, 'heavy', 'validation')).toBe('claude-opus-4-8');
+    expect(resolveAuto(fullCatalog, 'maximum', 'execution')).toBe('claude-fable-5');
+    expect(resolveAuto(fullCatalog, 'maximum', 'validation')).toBe('claude-opus-4-8');
+  });
+
+  it('planning resolves to the newest opus regardless of category', () => {
+    expect(resolveAuto(fullCatalog, null, 'planning')).toBe('claude-opus-4-8');
+    expect(resolveAuto(fullCatalog, 'minimal', 'planning')).toBe('claude-opus-4-8');
+    expect(resolveAuto(fullCatalog, 'maximum', 'planning')).toBe('claude-opus-4-8');
+  });
+
+  it('a null category (unscored task) uses the moderate/strong row', () => {
+    expect(resolveAuto(fullCatalog, null, 'execution')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(fullCatalog, null, 'validation')).toBe('claude-sonnet-4-6');
+  });
+
+  it('picks the FIRST catalog entry of the family (newest-power-first order)', () => {
+    const catalog = [entry('claude-sonnet-5-0', 'sonnet'), entry('claude-sonnet-4-6', 'sonnet')];
+    expect(resolveAuto(catalog, 'moderate', 'execution')).toBe('claude-sonnet-5-0');
+  });
+
+  it('steps DOWN the family ladder when the mapped family is absent', () => {
+    // maximum/execution maps to fable; no fable in the catalog → opus.
+    const noFable = fullCatalog.filter((m) => m.family !== 'fable');
+    expect(resolveAuto(noFable, 'maximum', 'execution')).toBe('claude-opus-4-8');
+    // ...and with opus also gone, steps down again → sonnet.
+    const noFableNoOpus = noFable.filter((m) => m.family !== 'opus');
+    expect(resolveAuto(noFableNoOpus, 'maximum', 'execution')).toBe('claude-sonnet-4-6');
+    expect(resolveAuto(noFableNoOpus, 'heavy', 'validation')).toBe('claude-sonnet-4-6');
+  });
+
+  it('falls back to the first catalog entry when no ladder family below is present', () => {
+    // minimal/validation maps to haiku (ladder bottom — nothing below); a
+    // catalog with no haiku exercises the ultimate first-entry fallback.
+    const catalog = [entry('claude-fable-5', 'fable'), entry('some-future-model', 'future')];
+    expect(resolveAuto(catalog, 'minimal', 'validation')).toBe('claude-fable-5');
+  });
+
+  it('returns null on an empty catalog', () => {
+    expect(resolveAuto([], 'moderate', 'execution')).toBeNull();
+    expect(resolveAuto([], null, 'planning')).toBeNull();
+  });
+
+  it('DEFAULT_MODEL_MAP is the §R table verbatim', () => {
+    expect(DEFAULT_MODEL_MAP).toEqual({
+      byCategory: {
+        minimal: { execution: 'sonnet', validation: 'haiku' },
+        light: { execution: 'sonnet', validation: 'haiku' },
+        moderate: { execution: 'sonnet', validation: 'sonnet' },
+        strong: { execution: 'sonnet', validation: 'sonnet' },
+        heavy: { execution: 'opus', validation: 'opus' },
+        maximum: { execution: 'fable', validation: 'opus' },
+      },
+      planning: 'opus',
+    });
   });
 });

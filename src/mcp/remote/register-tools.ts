@@ -14,7 +14,10 @@ import {
 } from '../../schemas/task.schema.js';
 import { VERSION } from '../../utils/version.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
-import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
+import {
+  ModelPolicyNullableSchema,
+  PipelineRoleSchema,
+} from '../../schemas/model-policy.schema.js';
 
 /**
  * Task #768 — parse remote MCP tool arguments through their Zod schema BEFORE
@@ -1118,7 +1121,7 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
         'at dispatch), or null (inherit the session model). Read-only.',
       inputSchema: z.object({
         project_id: z.number().int().positive(),
-        role: z.enum(['execution', 'validation', 'planning']),
+        role: PipelineRoleSchema,
         task_id: z.number().int().positive().optional(),
       }),
     },

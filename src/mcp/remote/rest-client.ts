@@ -18,7 +18,11 @@ import type {
   CompletionReportResponse,
 } from '../../cli/api/types.js';
 import type { TopologyReport } from '../../schemas/topology.schema.js';
-import type { ModelPolicy, ModelPolicyNullable } from '../../schemas/model-policy.schema.js';
+import type {
+  ModelPolicy,
+  ModelPolicyNullable,
+  PipelineRole,
+} from '../../schemas/model-policy.schema.js';
 import {
   parseTaskResponse,
   parseProjectResponse,
@@ -520,7 +524,7 @@ export class RestClient {
    */
   async resolveModel(
     projectId: number,
-    role: 'execution' | 'validation' | 'planning',
+    role: PipelineRole,
     taskId?: number,
   ): Promise<ResolvedModelPayload> {
     const query = new URLSearchParams({ role });

@@ -39,11 +39,24 @@
  * hermetically with fake deps — no DB or network access.
  */
 
-import type { ModelPolicy, PowerCategory, RolePolicy } from '../schemas/model-policy.schema.js';
+import type {
+  ModelPolicy,
+  PipelineRole,
+  PowerCategory,
+  RolePolicy,
+} from '../schemas/model-policy.schema.js';
+import {
+  FAMILY_LADDER,
+  type ModelCatalogEntry,
+  type ModelFamily,
+} from './model-catalog.service.js';
 import { NotFoundError, ValidationError } from './errors.js';
 
-/** The three pipeline dispatch roles a policy can configure. */
-export type PipelineRole = 'execution' | 'validation' | 'planning';
+/**
+ * The role triple is single-sourced in `model-policy.schema.ts` (task #929);
+ * re-exported here so existing service-level importers keep working.
+ */
+export type { PipelineRole } from '../schemas/model-policy.schema.js';
 
 /** Resolver result: a concrete model, the `auto` sentinel, or `null` (inherit). */
 export type ResolvedModel = { model: string } | { model: 'auto' } | null;
@@ -86,6 +99,64 @@ const FIB_TO_CATEGORY: Record<number, PowerCategory> = {
   8: 'heavy',
   13: 'maximum',
 };
+
+/**
+ * The canonical Default Model Map (task #929 — PR #55 review follow-up).
+ * Previously prose-only in `skills/tasks/loop-shared.md` §R; this constant is
+ * now THE source `resolveAuto` routes against. Per power category, the model
+ * FAMILY each role's `auto` slot should resolve to; `planning` carries no
+ * category, so it is a single constant family.
+ *
+ * Grounded in loop telemetry (2026-06-09 runs): sonnet is the execution floor;
+ * validation sits one notch below execution at the bottom and converges at the
+ * top; fable is reserved for `maximum` horizons; planning is one dispatch with
+ * project-wide blast radius (cost-insensitive) → opus.
+ */
+export const DEFAULT_MODEL_MAP: {
+  byCategory: Record<PowerCategory, { execution: ModelFamily; validation: ModelFamily }>;
+  planning: ModelFamily;
+} = {
+  byCategory: {
+    minimal: { execution: 'sonnet', validation: 'haiku' },
+    light: { execution: 'sonnet', validation: 'haiku' },
+    moderate: { execution: 'sonnet', validation: 'sonnet' },
+    strong: { execution: 'sonnet', validation: 'sonnet' },
+    heavy: { execution: 'opus', validation: 'opus' },
+    maximum: { execution: 'fable', validation: 'opus' },
+  },
+  planning: 'opus',
+};
+
+/**
+ * Deterministically resolve an `auto` slot to a concrete catalog model id
+ * (task #929): code-level replacement for the per-orchestrator §R prose table
+ * lookup in `skills/tasks/loop-shared.md`.
+ *
+ * Semantics (verbatim from §R):
+ *   1. Map (category, role) → family via {@link DEFAULT_MODEL_MAP}; `planning`
+ *      uses the single planning constant; a `null` category (unscored task)
+ *      uses the `moderate, strong` row.
+ *   2. Pick the FIRST catalog entry of that family — the catalog is ordered
+ *      newest-power-first, so the first match is the newest of that family.
+ *   3. If the family is absent, step DOWN the {@link FAMILY_LADDER}
+ *      (fable → opus → sonnet → haiku) to the nearest family present.
+ *   4. Ultimate fallback: the first catalog entry; `null` on an empty catalog.
+ */
+export function resolveAuto(
+  catalog: ModelCatalogEntry[],
+  category: PowerCategory | null,
+  role: PipelineRole,
+): string | null {
+  const family =
+    role === 'planning'
+      ? DEFAULT_MODEL_MAP.planning
+      : DEFAULT_MODEL_MAP.byCategory[category ?? 'moderate'][role];
+  for (const candidate of FAMILY_LADDER.slice(FAMILY_LADDER.indexOf(family))) {
+    const match = catalog.find((m) => m.family === candidate);
+    if (match != null) return match.id;
+  }
+  return catalog[0]?.id ?? null;
+}
 
 /**
  * Create a model-policy service instance with the supplied dependencies.
