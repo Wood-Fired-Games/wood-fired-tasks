@@ -118,6 +118,7 @@ const HealthFindingSchema = z.object({
     'stale-time-criticality',
     'high-fallback-ratio',
     'score-churn',
+    'auto-sized-pending',
   ]),
   severity: z.enum(['info', 'warning', 'critical']),
   message: z.string(),

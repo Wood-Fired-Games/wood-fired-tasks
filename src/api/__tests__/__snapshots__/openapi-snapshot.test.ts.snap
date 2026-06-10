@@ -5312,6 +5312,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                               "stale-time-criticality",
                               "high-fallback-ratio",
                               "score-churn",
+                              "auto-sized-pending",
                             ],
                             "type": "string",
                           },

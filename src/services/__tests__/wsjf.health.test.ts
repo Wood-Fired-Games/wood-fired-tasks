@@ -218,6 +218,40 @@ describe('analyzeWsjfHealth (#646) — score-churn across rescores', () => {
   });
 });
 
+describe('analyzeWsjfHealth — auto-sized-pending', () => {
+  it('fires with severity info and correct count when auto-sized tasks exist', () => {
+    const snaps = [
+      snap(10, null, { autoSized: true }), // auto-sized, CoD not yet classified
+      snap(11, null, { autoSized: true }),
+      snap(12, C(1, 1, 1, 8)), // fully scored → not auto-sized pending
+    ];
+    const report = analyzeWsjfHealth(7, snaps, NO_HISTORY);
+    const f = report.findings.find((x) => x.check === 'auto-sized-pending');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('info');
+    expect(f!.taskIds.sort((a, b) => a - b)).toEqual([10, 11]);
+    expect(f!.message).toContain('2');
+    expect(f!.message.length).toBeGreaterThan(0);
+    expect(f!.suggestion.length).toBeGreaterThan(0);
+  });
+
+  it('is absent when no auto-sized tasks exist', () => {
+    const report = analyzeWsjfHealth(7, HEALTHY_SNAPSHOTS, NO_HISTORY);
+    expect(report.findings.map((f) => f.check)).not.toContain('auto-sized-pending');
+  });
+
+  it('is absent when auto-sized field is false or omitted', () => {
+    const snaps = [
+      snap(1, null), // unscored but NOT auto-sized
+      snap(2, C(1, 1, 1, 8)),
+      snap(3, C(13, 8, 5, 1)),
+      snap(4, C(5, 3, 8, 3)),
+    ];
+    const report = analyzeWsjfHealth(7, snaps, NO_HISTORY);
+    expect(report.findings.map((f) => f.check)).not.toContain('auto-sized-pending');
+  });
+});
+
 describe('analyzeWsjfHealth (#646) — every finding is well-formed', () => {
   it('all findings carry severity + non-empty message + suggestion', () => {
     // A maximally degenerate backlog: triggers several checks at once.
@@ -348,6 +382,87 @@ describe('WsjfHealthService + wsjf_health tool (#646)', () => {
     const sc = result.structuredContent as { healthy: boolean; findings: unknown[] };
     expect(sc.healthy).toBe(true);
     expect(sc.findings).toEqual([]);
+  });
+
+  it('auto-sized-pending: WsjfHealthService detects tasks with source=auto and null CoD', () => {
+    // Stub a task repository with one auto-sized task (wsjf_source.jobSize='auto',
+    // CoD columns null) and one fully-scored task.
+    const svc = new WsjfHealthService({
+      tasks: {
+        count: () => 2,
+        findByFilters: () => [
+          {
+            id: 200,
+            title: 'auto-sized task',
+            description: null,
+            status: 'open',
+            priority: 'medium',
+            project_id: projectId,
+            project_name: 'p',
+            parent_task_id: null,
+            estimated_minutes: 60,
+            assignee: null,
+            created_by: 't',
+            due_date: null,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+            version: 1,
+            claimed_at: null,
+            completed_at: null,
+            acceptance_criteria: null,
+            verification_evidence: null,
+            wsjf_value: null,
+            wsjf_time_criticality: null,
+            wsjf_risk_opportunity: null,
+            wsjf_job_size: 3,
+            wsjf_evidence: null,
+            wsjf_locked: null,
+            wsjf_source: { value: 'auto', timeCriticality: 'auto', riskOpportunity: 'auto', jobSize: 'auto' },
+            wsjf_classifications: null,
+            wsjf_features: null,
+          },
+          {
+            id: 201,
+            title: 'fully scored task',
+            description: null,
+            status: 'open',
+            priority: 'medium',
+            project_id: projectId,
+            project_name: 'p',
+            parent_task_id: null,
+            estimated_minutes: null,
+            assignee: null,
+            created_by: 't',
+            due_date: null,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+            version: 1,
+            claimed_at: null,
+            completed_at: null,
+            acceptance_criteria: null,
+            verification_evidence: null,
+            wsjf_value: 5,
+            wsjf_time_criticality: 3,
+            wsjf_risk_opportunity: 2,
+            wsjf_job_size: 3,
+            wsjf_evidence: null,
+            wsjf_locked: null,
+            wsjf_source: { value: 'manual', timeCriticality: 'manual', riskOpportunity: 'manual', jobSize: 'manual' },
+            wsjf_classifications: null,
+            wsjf_features: null,
+          },
+        ],
+      } as unknown as ITaskRepository,
+      history: {
+        findByTaskId: () => [],
+      } as unknown as IWsjfHistoryRepository,
+    });
+
+    const report = svc.check(projectId);
+    const f = report.findings.find((x) => x.check === 'auto-sized-pending');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('info');
+    expect(f!.taskIds).toEqual([200]);
   });
 
   it('score-churn consumes wsjf_score_history across rescore runs', () => {
