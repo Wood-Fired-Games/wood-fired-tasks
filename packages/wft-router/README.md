@@ -60,6 +60,14 @@ slugs / URL / token-env names, and check it before going live:
 wft-router --validate triggers.example.yaml
 ```
 
+**Cold-start sweep** (opt-in, default off): set `sweep_on_start: true` on a
+rule or under `defaults:` and the daemon sweeps the OPEN backlog once on
+startup, dispatching at most one synthesized event per matching rule — so
+backlogs that predate the wiring (or arrived while the router was down) still
+wake their targets. Dedup: `sweep:<rule>:<floor(now / idempotency_window)>`,
+so a restart within the same window dispatches nothing. See
+[docs/event-router-design.md §Cold-start sweep](../../docs/event-router-design.md).
+
 - **Recipes** (full walkthroughs): [docs/automation-recipes/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/docs/automation-recipes)
 - **Reference adapters** for `agent_session_dispatch`: [examples/adapters/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/examples/adapters)
 - **Schema, predicate & templating rules**: [docs/event-router-design.md](https://github.com/Wood-Fired-Games/wood-fired-tasks/blob/main/docs/event-router-design.md)

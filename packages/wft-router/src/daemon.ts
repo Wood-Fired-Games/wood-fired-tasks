@@ -66,6 +66,7 @@ import {
   type EventPayloadShape,
   type IdempotencyStore,
 } from './dispatch/index.js';
+import { findFirstMatchingOpenTask, sweepEventId } from './dispatch/startup-sweep.js';
 import {
   agentSessionDispatch,
   createTaskInProject,
@@ -311,6 +312,8 @@ export class WftRouterDaemon {
   private readonly env: NodeJS.ProcessEnv;
   /** Optional metrics registry (task #434); incremented only when injected. */
   private readonly metrics?: MetricsRegistry;
+  /** Injected clock (shared with debounce/rate-limit; drives sweep buckets). */
+  private readonly now: () => number;
 
   private phase: DaemonPhase = 'idle';
   private readonly abortController = new AbortController();
@@ -324,6 +327,8 @@ export class WftRouterDaemon {
   private rateLimitedDropped = 0;
   /** Resolved exit code once the consume loop finishes. */
   private exitCode: ExitCode = ExitCode.CleanShutdown;
+  /** The one-shot cold-start sweep (task #1005); null when no rule opted in. */
+  private sweepPromise: Promise<void> | null = null;
 
   constructor(deps: DaemonDeps) {
     this.config = deps.config;
@@ -350,6 +355,7 @@ export class WftRouterDaemon {
     }
 
     const now = deps.now ?? Date.now;
+    this.now = now;
     this.rateLimiter =
       deps.rateLimiter ??
       new RateLimiter({
@@ -386,6 +392,30 @@ export class WftRouterDaemon {
     });
 
     this.consumeLoop = this.runConsumeLoop();
+
+    // Cold-start sweep (task #1005): OPT-IN one-shot pass over the OPEN
+    // backlog for rules with `sweep_on_start: true` (per-rule or via
+    // `defaults:`). Runs detached alongside the SSE loop and is tracked so
+    // `stop()` drains it. With no opted-in rule this is a no-op (zero
+    // behavior change for existing deployments).
+    const sweepRules = this.config.rules.filter(
+      (rule) => rule.sweep_on_start ?? this.config.defaults?.sweep_on_start ?? false,
+    );
+    if (sweepRules.length > 0) {
+      this.sweepPromise = this.runStartupSweep(sweepRules);
+      this.track(this.sweepPromise);
+    }
+  }
+
+  /**
+   * Await the cold-start sweep's completion (resolves immediately when no
+   * rule opted in). Exposed so tests — and operators embedding the daemon —
+   * can deterministically observe "sweep finished" without racing `stop()`.
+   */
+  async waitForSweep(): Promise<void> {
+    if (this.sweepPromise !== null) {
+      await this.sweepPromise;
+    }
   }
 
   /**
@@ -475,6 +505,76 @@ export class WftRouterDaemon {
       );
       return ExitCode.CleanShutdown;
     }
+  }
+
+  /**
+   * Cold-start sweep (task #1005): for each opted-in rule, query the
+   * task-list REST API for OPEN tasks matching the rule's `where:` block and
+   * — when any match — synthesize AT MOST ONE dispatch through the SAME
+   * `dispatchRule` machinery a live event uses (debounce → rate-limit →
+   * handler → idempotency claim).
+   *
+   * Idempotency identity: `event_id = sweep:<rule_name>:<bucket>` with
+   * `bucket = floor(now / idempotency_window_ms)` (see
+   * dispatch/startup-sweep.ts). A second restart inside the same window
+   * mints the SAME id, so the handler's `store.claim(...)` suppresses the
+   * dispatch — zero kicks; a later sweep (bucket rolled) may kick again.
+   *
+   * Rules are swept sequentially and each failure is isolated: a transport
+   * error on one rule logs a WARN and moves on — the sweep must never take
+   * down the live SSE pipeline.
+   */
+  private async runStartupSweep(rules: readonly TriggersRule[]): Promise<void> {
+    for (const rule of rules) {
+      if (this.abortController.signal.aborted) {
+        return;
+      }
+      try {
+        await this.sweepRule(rule);
+      } catch (err) {
+        this.logger.warn(
+          { rule_name: rule.name, error: err instanceof Error ? err.message : String(err) },
+          'wft_router_sweep_failed',
+        );
+      }
+    }
+  }
+
+  /** Sweep ONE rule: query, predicate-match, then dispatch at most once. */
+  private async sweepRule(rule: TriggersRule): Promise<void> {
+    const match = await findFirstMatchingOpenTask(rule, {
+      apiBaseUrl: this.apiBaseUrl,
+      authToken: this.apiKey,
+      signal: this.abortController.signal,
+      ...(this.fetchImpl !== undefined && { fetchImpl: this.fetchImpl }),
+    });
+    if (match === null) {
+      this.logger.info({ rule_name: rule.name }, 'wft_router_sweep_no_match');
+      return;
+    }
+
+    const windowS =
+      rule.idempotency_window_s ??
+      this.config.defaults?.idempotency_window_s ??
+      WFT_ROUTER_DEFAULTS.idempotency_window_s;
+    const nowMs = this.now();
+    const mapped: MappedEvent = {
+      payload: match.payload,
+      eventId: sweepEventId(rule.name, windowS, nowMs),
+      emittedAtMs: nowMs,
+    };
+
+    this.logger.info(
+      {
+        rule_name: rule.name,
+        event_id: mapped.eventId,
+        matched_count: match.matchedCount,
+        open_total: match.openTotal,
+        task_id: match.payload.task?.id ?? null,
+      },
+      'wft_router_sweep_dispatch',
+    );
+    await this.dispatchRule(rule, mapped);
   }
 
   /**
