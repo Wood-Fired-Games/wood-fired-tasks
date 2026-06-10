@@ -4,6 +4,7 @@ import { TaskService } from '../task.service.js';
 import { ProjectService } from '../project.service.js';
 import { ValidationError, BusinessError, NotFoundError } from '../errors.js';
 import { eventBus } from '../../events/event-bus.js';
+import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
 import type { App } from '../../index.js';
 
 describe('TaskService', () => {
@@ -284,6 +285,88 @@ describe('TaskService', () => {
         });
         expect(task.id).toBeGreaterThan(0);
         expect(task.wsjf_job_size).toBe(8);
+      });
+    });
+
+    // Guaranteed-task-sizing (design §2/§3, #989): auto-size WSJF-less creates.
+    // Every create carrying NEITHER a raw `wsjf` payload NOR a `wsjf_submission`
+    // is auto-sized through the size-only path: tier = minutesToTier(minutes)
+    // (tier-3 residual default when minutes absent), source.jobSize='auto', CoD
+    // components NULL, with an auto_size history row. This makes every new task
+    // immediately routable by ModelPolicy.byCategory.
+    describe('auto-size WSJF-less creates (§2/§3)', () => {
+      it.each([
+        [45, 3],
+        [15, 1],
+        [961, 13],
+      ])(
+        'AC1: estimated_minutes=%i with no wsjf stores wsjf_job_size=%i, source.jobSize=auto',
+        (minutes, expectedTier) => {
+          const task = taskService.createTask({
+            title: `Auto-sized ${minutes}m`,
+            project_id: testProjectId,
+            created_by: 'user',
+            estimated_minutes: minutes,
+          });
+          expect(task.wsjf_job_size).toBe(expectedTier);
+          expect(task.wsjf_source).not.toBeNull();
+          expect(task.wsjf_source!.jobSize).toBe('auto');
+        },
+      );
+
+      it('AC2: no estimated_minutes and no wsjf stores wsjf_job_size=3, source.jobSize=auto', () => {
+        const task = taskService.createTask({
+          title: 'Bare quick capture',
+          project_id: testProjectId,
+          created_by: 'user',
+        });
+        expect(task.wsjf_job_size).toBe(3);
+        expect(task.wsjf_source).not.toBeNull();
+        expect(task.wsjf_source!.jobSize).toBe('auto');
+      });
+
+      it('AC3: an auto_size history row exists with CoD components NULL', () => {
+        const task = taskService.createTask({
+          title: 'Bare with history',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 45,
+        });
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const history = historyRepo.findByTaskId(task.id);
+        expect(history).toHaveLength(1);
+        expect(history[0].trigger).toBe('auto_size');
+        expect(history[0].job_size).toBe(3);
+        // Cost-of-Delay components are NULL — no fabricated CoD.
+        expect(history[0].value).toBeNull();
+        expect(history[0].time_criticality).toBeNull();
+        expect(history[0].risk_opportunity).toBeNull();
+        expect(history[0].wsjf_score).toBeNull();
+      });
+
+      it('AC4: a create carrying wsjf is untouched by auto-sizing (no double write)', () => {
+        const task = taskService.createTask({
+          title: 'Fully scored on create',
+          project_id: testProjectId,
+          created_by: 'user',
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+        });
+        // jobSize stays the supplied 2 (NOT overwritten by an auto tier), and the
+        // CoD components persist — this is a real classification, not size-only.
+        // A raw wsjf write supplies no `source`, so `wsjf_source` is NULL: the
+        // task was emphatically NOT auto-sized (an auto write would have stamped
+        // source.jobSize='auto').
+        expect(task.wsjf_job_size).toBe(2);
+        expect(task.wsjf_value).toBe(8);
+        expect(task.wsjf_source).toBeNull();
+
+        // Exactly ONE history row, and it is the create row — NOT an auto_size
+        // follow-up (no double write).
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const history = historyRepo.findByTaskId(task.id);
+        expect(history).toHaveLength(1);
+        expect(history[0].trigger).toBe('create');
+        expect(history.some((h) => h.trigger === 'auto_size')).toBe(false);
       });
     });
   });

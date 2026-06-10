@@ -168,20 +168,25 @@ describe('WSJF audit — history repository + in-transaction write (#628)', () =
   });
 
   it('AC4 (write-path matrix): every component write path appends history; non-score paths do not', () => {
-    // Path A: create WITH score → 1 history row.
+    // Path A: create WITH score → 1 `create` history row (no auto_size, the
+    //         create carried a full payload).
     const withScore = service.createTask(baseInput({ wsjf: fullWsjf() }));
     expect(historyRepo.countByTaskId(withScore.id)).toBe(1);
 
-    // Path B: create WITHOUT score → 0 history rows (nothing to audit).
+    // Path B: create WITHOUT score → the guaranteed-task-sizing auto-size (#989)
+    //         appends exactly 1 `auto_size` row (size-only, CoD components NULL).
     const noScore = service.createTask(baseInput({ title: 'no score' }));
-    expect(historyRepo.countByTaskId(noScore.id)).toBe(0);
+    const bRows = historyRepo.findByTaskId(noScore.id);
+    expect(bRows).toHaveLength(1);
+    expect(bRows[0].trigger).toBe('auto_size');
+    expect(bRows[0].value).toBeNull();
 
-    // Path C: update sets a score on a previously-unscored task → 1 new row,
-    //         prev_wsjf_score null (was unscored).
+    // Path C: update sets a full score on the auto-sized task → 1 new `update`
+    //         row. prev_wsjf_score is still null (the auto size left CoD NULL, so
+    //         the task was not fully scored before this write).
     service.updateTask(noScore.id, { wsjf: fullWsjf() });
-    const cRows = historyRepo.findByTaskId(noScore.id);
+    const cRows = historyRepo.findByTaskId(noScore.id).filter((h) => h.trigger === 'update');
     expect(cRows).toHaveLength(1);
-    expect(cRows[0].trigger).toBe('update');
     expect(cRows[0].prev_wsjf_score).toBeNull();
 
     // Path D: update that does NOT touch wsjf → no new history row.
@@ -195,11 +200,10 @@ describe('WSJF audit — history repository + in-transaction write (#628)', () =
     const cleared = taskRepo.findById(withScore.id)!;
     expect(cleared.wsjf_value).toBeNull();
 
-    // Atomicity check: the only way a history row exists is via a real score
-    // write — the count equals the number of score-bearing component writes.
-    // withScore: 1 (create). noScore: 1 (update set). Total scored writes = 2.
+    // Atomicity check: a history row exists only via a real component/size write.
+    // withScore: 1 (create). noScore: 2 (auto_size on create + update set).
     const total = historyRepo.countByTaskId(withScore.id) + historyRepo.countByTaskId(noScore.id);
-    expect(total).toBe(2);
+    expect(total).toBe(3);
   });
 
   it('atomicity: a component write and its history row commit together', () => {
@@ -221,23 +225,12 @@ describe('WSJF audit — history repository + in-transaction write (#628)', () =
   it('auto_size trigger: history row with trigger=auto_size is accepted by the repository', () => {
     // Server-internal sizing (Prong B / §3 of the guaranteed-task-sizing spec)
     // appends rows with trigger='auto_size' to distinguish them from
-    // client-driven scoring paths.  This test verifies the enum is present and
-    // the repository round-trips the value correctly.
+    // client-driven scoring paths. A bare create now drives that path itself
+    // (#989), so the create's OWN auto_size row demonstrates the enum is present
+    // and the repository round-trips the value (size-only, CoD NULL, tier-3
+    // residual default for the absent estimated_minutes).
     const task = service.createTask(baseInput({ title: 'auto-sized task' }));
 
-    const rowId = historyRepo.append({
-      taskId: task.id,
-      projectId: projectId,
-      trigger: 'auto_size',
-      value: null,
-      timeCriticality: null,
-      riskOpportunity: null,
-      jobSize: 3,
-      wsjfScore: null,
-      prevWsjfScore: null,
-    });
-
-    expect(rowId).toBeGreaterThan(0);
     const rows = historyRepo.findByTaskId(task.id);
     expect(rows).toHaveLength(1);
     expect(rows[0].trigger).toBe('auto_size');
@@ -288,9 +281,28 @@ describe('WSJF size-only auto write path — autoSizeTask (#987)', () => {
     ...extra,
   });
 
+  // Guaranteed-task-sizing (#989): `service.createTask` now auto-sizes every
+  // WSJF-less create, so it no longer yields a genuinely unsized task. These
+  // tests exercise the #987 `autoSizeTask` helper in ISOLATION and need a truly
+  // NULL-size starting row. Mint that directly through the repository (which
+  // bypasses the service's auto-size-on-create) — the equivalent of a row
+  // written by an older binary or a direct-SQLite writer, the exact backfill
+  // target both the boot sweep (#992) and this helper are designed for.
+  const createUnsized = (title = 'Sizeless task') =>
+    taskRepo.create(
+      {
+        title,
+        status: 'open',
+        priority: 'medium',
+        project_id: projectId,
+        created_by: 'tester',
+      },
+      [],
+    );
+
   it('AC1: writes wsjf_job_size + wsjf_source.jobSize=auto with CoD components NULL', () => {
-    // A bare create leaves every wsjf_* column NULL (unscored).
-    const created = service.createTask(baseInput());
+    // A bare unsized row leaves every wsjf_* column NULL (unscored).
+    const created = createUnsized();
     expect(taskRepo.findById(created.id)!.wsjf_job_size).toBeNull();
 
     // Server-internal size-only write: tier 5.
@@ -320,7 +332,7 @@ describe('WSJF size-only auto write path — autoSizeTask (#987)', () => {
   });
 
   it('AC1 (boot_sweep trigger): caller may override the history trigger', () => {
-    const created = service.createTask(baseInput({ title: 'swept task' }));
+    const created = createUnsized('swept task');
     service.autoSizeTask({ taskId: created.id, jobSize: 3, trigger: 'boot_sweep' });
 
     const history = historyRepo.findByTaskId(created.id);
@@ -330,7 +342,7 @@ describe('WSJF size-only auto write path — autoSizeTask (#987)', () => {
   });
 
   it('AC2: column write + history row are atomic — a forced history failure rolls back the size', () => {
-    const created = service.createTask(baseInput({ title: 'rollback task' }));
+    const created = createUnsized('rollback task');
     expect(taskRepo.findById(created.id)!.wsjf_job_size).toBeNull();
 
     // Force the in-transaction history append to throw AFTER the column UPDATE
@@ -377,7 +389,9 @@ describe('WSJF size-only auto write path — autoSizeTask (#987)', () => {
 
   it('back-compat: a TaskService without the audit hook persists the size but writes no history', () => {
     const unaudited = new TaskService(taskRepo, projectRepo);
-    const created = unaudited.createTask(baseInput({ title: 'unaudited auto-size' }));
+    // Mint a NULL-size row directly (the unaudited service would auto-size it on
+    // create), then exercise the helper's audit-disabled branch in isolation.
+    const created = createUnsized('unaudited auto-size');
     const sized = unaudited.autoSizeTask({ taskId: created.id, jobSize: 2 });
 
     expect(taskRepo.findById(sized.id)!.wsjf_job_size).toBe(2);

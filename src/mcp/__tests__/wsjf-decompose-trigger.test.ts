@@ -167,12 +167,15 @@ describe('WSJF decompose batch scoring trigger (#633)', () => {
   });
 
   // Decompose OPT-OUT path (skills/tasks/decompose.md Step 8a opt-out note):
-  // materializing WITHOUT `wsjf_submission` (and without `wsjf_trigger`) creates
-  // an unscored task — no gate, no components, no history row. This is the
-  // documented "WSJF unwanted / no charter" escape hatch; selection falls back
-  // to priority+ID. Guards against the schema's raw `wsjf` path being silently
-  // required.
-  it('omitting wsjf_submission creates an UNSCORED task (decompose opt-out)', async () => {
+  // materializing WITHOUT `wsjf_submission` (and without `wsjf_trigger`) opts out
+  // of full WSJF scoring — no classification, no Cost-of-Delay components, so the
+  // task stays honestly UNSCORED for ranking (selection falls back to
+  // priority+ID). Guaranteed-task-sizing (#989) changes ONE thing: the create is
+  // now auto-sized (size-only) so it is immediately routable by
+  // ModelPolicy.byCategory. With no `estimated_minutes` it takes the §3 tier-3
+  // residual default, source.jobSize='auto', and an `auto_size` history row —
+  // while value/time-criticality/risk stay NULL (no fabricated CoD).
+  it('omitting wsjf_submission leaves CoD unscored but auto-sizes the task (decompose opt-out)', async () => {
     const project = app.projectService.createProject({ name: 'Unscored Proj' });
     app.projectService.updateProject(project.id, { value_charter: charter });
 
@@ -189,12 +192,17 @@ describe('WSJF decompose batch scoring trigger (#633)', () => {
     const task = result.structuredContent as { id: number };
 
     const stored = app.taskService.getTask(task.id);
+    // Cost-of-Delay components stay NULL — still honestly unscored for ranking.
     expect(stored.wsjf_value).toBeNull();
     expect(stored.wsjf_time_criticality).toBeNull();
     expect(stored.wsjf_risk_opportunity).toBeNull();
-    expect(stored.wsjf_job_size).toBeNull();
+    // But the task IS now auto-sized (tier-3 residual default, source=auto).
+    expect(stored.wsjf_job_size).toBe(3);
+    expect(stored.wsjf_source?.jobSize).toBe('auto');
 
+    // The timeline carries exactly the one auto_size row.
     const timeline = await historyTimeline(task.id);
-    expect(timeline).toHaveLength(0);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0].trigger).toBe('auto_size');
   });
 });

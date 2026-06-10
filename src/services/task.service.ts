@@ -521,6 +521,27 @@ export class TaskService {
       task = this.taskRepo.create(createDto, result.data.tags);
     }
 
+    // Guaranteed-task-sizing (design §2/§3, #989): the core guarantee — every
+    // new task is immediately routable by `ModelPolicy.byCategory`. A create
+    // carrying NEITHER a raw `wsjf` payload NOR a `wsjf_submission` (both arrive
+    // at the service as a non-null `wsjf` WriteDTO — the MCP/REST layers convert
+    // `wsjf_submission` → `wsjf` before reaching here, and the Prong-A gate above
+    // already rejected the decompose-tag-without-submission case) is auto-sized
+    // through the SIZE-ONLY {@link autoSizeTask} path (#987): tier =
+    // `minutesToTier(estimated_minutes)`, which deterministically returns the
+    // §3 tier-3 residual default when `estimated_minutes` is absent. This writes
+    // `wsjf_job_size` + `wsjf_source.jobSize='auto'` (CoD components stay NULL)
+    // plus an `auto_size` history row in ONE transaction — an immediate
+    // size-only follow-up to the insert, NOT a half-scored payload smuggled
+    // through the client gates. We re-read through the helper so the
+    // `task.created` event below carries the sized row, not the sizeless insert.
+    if (wsjf === null) {
+      task = this.autoSizeTask({
+        taskId: task.id,
+        jobSize: minutesToTier(result.data.estimated_minutes),
+      });
+    }
+
     // Emit task.created event after successful database operation
     eventBus.emit('task.created', {
       eventType: 'task.created',
