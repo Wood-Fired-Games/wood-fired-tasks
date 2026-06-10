@@ -618,12 +618,11 @@ Update a task. All fields are optional (partial update).
 ```
 
 [NOTE] **Atomic block-with-dependency (task #1004):** pass `blocked_by: [taskIds]`
-together with `status: "blocked"` to add the blocking dependency edge(s) and flip
-the status in ONE transaction (all-or-nothing — a nonexistent blocker,
-self-reference, or cycle rolls the whole call back; already-existing edges are
-skipped). `blocked_by` without `status: "blocked"` is rejected with a validation
-error. Without an edge a blocked task never auto-unblocks (the `blocked -> open`
-workflow transition fires only off a dependency edge).
+with `status: "blocked"` to add the blocking dependency edge(s) and flip the status
+in ONE transaction (all-or-nothing — a nonexistent blocker, self-reference, or cycle
+rolls the whole call back; already-existing edges are skipped). `blocked_by` without
+`status: "blocked"` is rejected. Without an edge a blocked task never auto-unblocks
+(the `blocked -> open` workflow transition fires only off a dependency edge).
 
 **Response:** 200 OK
 
@@ -1360,13 +1359,7 @@ Atomically claim an unassigned task. Sets assignee and transitions status to `in
 **Examples:**
 
 ```bash
-# Claim a task
-curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "Authorization: Bearer wft_pat_your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"assignee": "agent-1"}'
-
-# Claim with idempotency key (safe to retry)
+# Claim a task (add the X-Idempotency-Key header to make retries safe)
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
   -H "Authorization: Bearer wft_pat_your-token" \
   -H "X-Idempotency-Key: claim-42-agent-1" \
@@ -1383,12 +1376,12 @@ curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
 
 **Claim renewal (heartbeat):**
 
-A claim call by the **same assignee** on a task they already hold
-`in_progress` is a renewal, not a conflict: it refreshes `claimed_at`
-(restarting the 30-minute TTL window) and returns 200 with the refreshed
-task. A different assignee still receives 409. `GET /tasks/:id` surfaces
-`claim_ttl_minutes` and `claim_remaining_seconds` (computed at read time,
-present only while a claim is active) so holders know when to renew.
+A claim call by the **same assignee** on a task they already hold `in_progress`
+is a renewal, not a conflict: it refreshes `claimed_at` (restarting the 30-minute
+TTL window) and returns 200 with the refreshed task. A different assignee still
+receives 409. `GET /tasks/:id` surfaces `claim_ttl_minutes` and
+`claim_remaining_seconds` (computed at read time, present only while a claim is
+active) so holders know when to renew.
 
 ## Event Stream Endpoint
 
