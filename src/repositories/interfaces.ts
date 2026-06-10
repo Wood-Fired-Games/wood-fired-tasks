@@ -58,6 +58,17 @@ export interface ITaskRepository {
    * (`CreateTaskClientSchema` / `WsjfWriteSchema` reject size-only payloads).
    */
   writeAutoJobSize(id: number, jobSize: Fib, source: WsjfSource): Task & { tags: string[] };
+  /**
+   * Guaranteed-task-sizing (#992, design spec §5): the boot-sweep candidate
+   * scan. Returns the `{ id, estimated_minutes }` pairs for every task whose
+   * `wsjf_job_size IS NULL` and whose status is NOT terminal (∉ {done,closed})
+   * — the exact set the idempotent boot sweep backfills via
+   * `TaskService.autoSizeTask`. Returns ONLY the two columns the sweep needs
+   * (id to address the row, estimated_minutes to feed `minutesToTier`) so the
+   * scan stays cheap on a large backlog and never has to inflate full rows.
+   * A second invocation after a successful sweep returns `[]` (idempotence).
+   */
+  findIdsWithNullJobSize(): Array<{ id: number; estimated_minutes: number | null }>;
   delete(id: number): void;
   /**
    * Filter + paginate tasks. `filters.limit`/`filters.offset` ride along on

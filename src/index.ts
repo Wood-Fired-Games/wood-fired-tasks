@@ -13,6 +13,7 @@ import { WsjfHistoryRepository } from './repositories/wsjf-history.repository.js
 import { ProjectCharterHistoryRepository } from './repositories/project-charter-history.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
+import { backfillJobSizes } from './services/job-size-backfill.js';
 import { DependencyService } from './services/dependency.service.js';
 import { CommentService } from './services/comment.service.js';
 import { TopologyService } from './services/topology.service.js';
@@ -269,6 +270,19 @@ export async function createApp(dbPath?: string): Promise<App> {
     db,
   });
   const taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
+
+  // Guaranteed-task-sizing (#992, design spec §5): idempotent boot sweep.
+  // The earliest point both `taskService` (the size-only `autoSizeTask`
+  // writer + its wired `boot_sweep` audit hook) and `taskRepo` (the
+  // NULL-size candidate scan) exist — this is the boot-step the spec wires
+  // "immediately after seedIdentities" (line ~157), deferred only to here
+  // because the sweep needs the service. Backfills `wsjf_job_size` for every
+  // non-done/non-closed task left sizeless by the migration era so
+  // `resolve_model`'s `byCategory` routing engages on the live backlog. ONE
+  // db.transaction per row (in `autoSizeTask`), so a mid-sweep failure on one
+  // row leaves previously committed rows intact; idempotent on re-boot.
+  backfillJobSizes(taskService, taskRepo);
+
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
   const commentService = new CommentService(commentRepo, taskRepo);
   const topologyService = new TopologyService(taskRepo, dependencyRepo);

@@ -482,6 +482,29 @@ export class TaskRepository implements ITaskRepository {
     return result;
   }
 
+  /**
+   * Guaranteed-task-sizing (#992, design spec §5): the boot-sweep candidate
+   * scan. Returns `{ id, estimated_minutes }` for every task with a NULL
+   * `wsjf_job_size` whose status is NOT terminal ({done,closed} excluded —
+   * AC 3 skips them). Selects only the two columns the sweep consumes (id to
+   * address the autoSizeTask write, estimated_minutes for `minutesToTier`) so
+   * a large backlog scan stays cheap and never inflates full rows / tags.
+   * A run after a successful sweep returns `[]` (every row now has a size),
+   * which is the idempotence backbone (AC 2).
+   */
+  findIdsWithNullJobSize(): Array<{ id: number; estimated_minutes: number | null }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, estimated_minutes
+         FROM tasks
+         WHERE wsjf_job_size IS NULL
+           AND status NOT IN ('done', 'closed')
+         ORDER BY id`,
+      )
+      .all() as Array<{ id: number; estimated_minutes: number | null }>;
+    return rows;
+  }
+
   delete(id: number): void {
     this.deleteStmt.run(id);
   }
