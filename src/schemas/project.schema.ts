@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ModelPolicyNullableSchema } from './model-policy.schema.js';
 
 /**
  * WSJF (Phase 3.1): the modified Fibonacci scale {1,2,3,5,8,13} used for
@@ -60,6 +61,7 @@ export const CreateProjectSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be 100 characters or less'),
   description: z.string().max(1000).optional().nullable(),
   value_charter: ValueCharterNullableSchema.optional(),
+  model_policy: ModelPolicyNullableSchema.optional(),
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
@@ -71,5 +73,6 @@ export const UpdateProjectSchema = z.object({
     .optional(),
   description: z.string().max(1000).optional().nullable(),
   value_charter: ValueCharterNullableSchema.optional(),
+  model_policy: ModelPolicyNullableSchema.optional(),
 });
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;

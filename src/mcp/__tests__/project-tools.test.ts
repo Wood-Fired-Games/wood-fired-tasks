@@ -512,6 +512,94 @@ describe('MCP Project Tools', () => {
       expect(fetched.value_charter).toEqual(validCharter);
     });
 
+    it('accepts model_policy and returns it in structuredContent; get_project includes it', async () => {
+      const createResult = (await client.callTool({
+        name: 'create_project',
+        arguments: { name: 'Project Model Policy via Update' },
+      })) as ToolResult;
+      const projectId = (createResult.structuredContent as { id: number }).id;
+
+      const modelPolicy = {
+        execution: { byCategory: { heavy: 'claude-opus-4-8' }, default: 'auto' },
+        validation: { default: 'claude-sonnet-4-6' },
+      };
+
+      const updateResult = (await client.callTool({
+        name: 'update_project',
+        arguments: {
+          id: projectId,
+          updates: { model_policy: modelPolicy },
+        },
+      })) as ToolResult;
+
+      expect(updateResult.isError).toBeFalsy();
+      const updated = updateResult.structuredContent as {
+        model_policy: typeof modelPolicy | null;
+      };
+      expect(updated.model_policy).toEqual(modelPolicy);
+
+      // get_project must surface the persisted model_policy too.
+      const getResult = (await client.callTool({
+        name: 'get_project',
+        arguments: { id: projectId },
+      })) as ToolResult;
+      const fetched = getResult.structuredContent as {
+        model_policy: typeof modelPolicy | null;
+      };
+      expect(fetched.model_policy).toEqual(modelPolicy);
+    });
+
+    it('clears model_policy with an explicit null', async () => {
+      const createResult = (await client.callTool({
+        name: 'create_project',
+        arguments: { name: 'Project Model Policy Clear' },
+      })) as ToolResult;
+      const projectId = (createResult.structuredContent as { id: number }).id;
+
+      // Set a policy, then clear it.
+      await client.callTool({
+        name: 'update_project',
+        arguments: {
+          id: projectId,
+          updates: { model_policy: { planning: { constant: 'auto' } } },
+        },
+      });
+
+      const clearResult = (await client.callTool({
+        name: 'update_project',
+        arguments: { id: projectId, updates: { model_policy: null } },
+      })) as ToolResult;
+
+      expect(clearResult.isError).toBeFalsy();
+      const cleared = clearResult.structuredContent as { model_policy: unknown };
+      expect(cleared.model_policy).toBeNull();
+    });
+
+    it('rejects a malformed model_policy on update with a structured error', async () => {
+      const createResult = (await client.callTool({
+        name: 'create_project',
+        arguments: { name: 'Project Bad Model Policy Update' },
+      })) as ToolResult;
+      const projectId = (createResult.structuredContent as { id: number }).id;
+
+      const result = (await client.callTool({
+        name: 'update_project',
+        arguments: {
+          id: projectId,
+          updates: {
+            // `byFib` is not a valid RolePolicy key (strict schema).
+            model_policy: { execution: { byFib: {} } },
+          },
+        },
+      })) as ToolResult;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].type).toBe('text');
+      if (result.content[0].type === 'text') {
+        expect(result.content[0].text).toContain('MCP error');
+      }
+    });
+
     it('rejects a malformed charter on update with a structured error', async () => {
       const createResult = (await client.callTool({
         name: 'create_project',

@@ -154,6 +154,80 @@ describe('Project CRUD Routes', () => {
     expect(body.description).toBe('Updated description');
   });
 
+  it('PUT /projects/:id with model_policy persists; GET returns it', async () => {
+    // Create a project first.
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers,
+      payload: { name: 'Model Policy Project' },
+    });
+    const created = JSON.parse(createResponse.body);
+
+    const model_policy = {
+      execution: { default: 'auto', byCategory: { maximum: 'claude-opus-4-8' } },
+      validation: { constant: 'claude-sonnet-4-6' },
+    };
+
+    // PUT the policy.
+    const updateResponse = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/projects/${created.id}`,
+      headers,
+      payload: { model_policy },
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(JSON.parse(updateResponse.body).model_policy).toEqual(model_policy);
+
+    // GET round-trips the persisted policy.
+    const getResponse = await server.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${created.id}`,
+      headers,
+    });
+    expect(getResponse.statusCode).toBe(200);
+    expect(JSON.parse(getResponse.body).model_policy).toEqual(model_policy);
+  });
+
+  it('POST /projects with model_policy persists it', async () => {
+    const model_policy = { planning: { constant: 'claude-opus-4-8' } };
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers,
+      payload: { name: 'Create With Policy', model_policy },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const created = JSON.parse(createResponse.body);
+    expect(created.model_policy).toEqual(model_policy);
+
+    const getResponse = await server.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${created.id}`,
+      headers,
+    });
+    expect(JSON.parse(getResponse.body).model_policy).toEqual(model_policy);
+  });
+
+  it('PUT /projects/:id with an invalid model_policy → 400', async () => {
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers,
+      payload: { name: 'Invalid Policy Project' },
+    });
+    const created = JSON.parse(createResponse.body);
+
+    const response = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/projects/${created.id}`,
+      headers,
+      // Unknown role key — rejected by ModelPolicySchema's `.strict()`.
+      payload: { model_policy: { orchestrator: { constant: 'claude-opus-4-8' } } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
   it('should delete a project and return 204', async () => {
     // Create a project first
     const createResponse = await server.inject({

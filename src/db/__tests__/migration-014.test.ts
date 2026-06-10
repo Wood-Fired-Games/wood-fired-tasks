@@ -119,24 +119,28 @@ describe('migration 014: projects.value_charter', () => {
   });
 
   it('up() after down() restores the schema (round-trip)', async () => {
-    const before = db
-      .prepare(
-        `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='projects'`,
-      )
-      .all();
+    // Assert on the SET of column names, not the raw CREATE TABLE SQL.
+    // down() drops value_charter and up() re-appends it at the END of the
+    // column list, so when a LATER migration (e.g. 016 model_policy) has also
+    // added a projects column, the physical column ORDER legitimately changes
+    // across the round-trip even though every column is restored. The intent of
+    // this test is "down()->up() restores the value_charter column", which is
+    // order-independent — comparing the column-name set captures that without
+    // coupling to the ordering side effects of sibling migrations.
+    const columnNames = () =>
+      (db.prepare("PRAGMA table_info('projects')").all() as Array<{ name: string }>)
+        .map((c) => c.name)
+        .sort();
+
+    const before = columnNames();
+    expect(before).toContain('value_charter');
 
     const { up, down } = await import('../migrations/014-value-charter.js');
     await down(db);
     await up(db);
 
-    const after = db
-      .prepare(
-        `SELECT name, type, sql FROM sqlite_master
-         WHERE type='table' AND name='projects'`,
-      )
-      .all();
-
+    const after = columnNames();
     expect(after).toEqual(before);
+    expect(after).toContain('value_charter');
   });
 });

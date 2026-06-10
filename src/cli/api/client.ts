@@ -26,6 +26,7 @@ import type {
   PaginatedResponse,
   PaginationParams,
 } from './types.js';
+import type { ModelPolicyNullable } from '../../schemas/model-policy.schema.js';
 
 /**
  * Accept either the new pagination envelope `{ data, total, limit, offset }`
@@ -531,6 +532,50 @@ export async function claimTask(
     headers,
   });
   return parseTaskResponse(payload, `POST ${endpoint}`);
+}
+
+// ── Configurable Task Models (Task 12) ──────────────────────
+
+/** One discovered catalog model, mirroring the server's `GET /models` row. */
+export interface ModelCatalogEntry {
+  id: string;
+  display_name: string;
+  family: string;
+  created_at: string;
+}
+
+/** The `{ models, stale }` envelope returned by `GET /models`. */
+export interface ModelCatalogResponse {
+  models: ModelCatalogEntry[];
+  stale: boolean;
+}
+
+/**
+ * Fetch the runtime-discovered Claude model catalog. `stale: true` means the
+ * static fallback was served (no API key / unreachable Models API).
+ */
+export async function listModels(): Promise<ModelCatalogResponse> {
+  return apiRequest<ModelCatalogResponse>('/api/v1/models');
+}
+
+/**
+ * Get the database-wide model-policy default (`ModelPolicy | null`).
+ */
+export async function getModelPolicyDefault(): Promise<ModelPolicyNullable> {
+  return apiRequest<ModelPolicyNullable>('/api/v1/settings/model-policy');
+}
+
+/**
+ * Set (or, with `null`, clear) the database-wide model-policy default.
+ * Echoes the persisted policy back.
+ */
+export async function setModelPolicyDefault(
+  policy: ModelPolicyNullable,
+): Promise<ModelPolicyNullable> {
+  return apiRequest<ModelPolicyNullable>('/api/v1/settings/model-policy', {
+    method: 'PUT',
+    body: JSON.stringify(policy),
+  });
 }
 
 // ── Health check functions ──────────────────────────────────

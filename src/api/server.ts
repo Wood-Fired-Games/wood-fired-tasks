@@ -17,6 +17,14 @@ import { DependencyService } from '../services/dependency.service.js';
 import { DependencyGraphService } from '../services/dependency-graph.service.js';
 import { TopologyService } from '../services/topology.service.js';
 import { CommentService } from '../services/comment.service.js';
+import { SettingsService } from '../services/settings.service.js';
+import { ModelCatalogService } from '../services/model-catalog.service.js';
+import {
+  createModelPolicyService,
+  type ModelPolicyService,
+} from '../services/model-policy.service.js';
+import { ProjectRepository } from '../repositories/project.repository.js';
+import { TaskRepository } from '../repositories/task.repository.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { ClaimReleaseService } from '../services/claim-release.service.js';
@@ -31,6 +39,8 @@ import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
 import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
+import modelsRoutes from './routes/models/index.js';
+import modelPolicyRoutes from './routes/settings/model-policy.js';
 import meRoutes from './routes/me/index.js';
 import webRoutes from './routes/web/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
@@ -65,6 +75,12 @@ declare module 'fastify' {
     dependencyGraphService: DependencyGraphService;
     topologyService: TopologyService;
     commentService: CommentService;
+    /** Configurable Task Models (Task 13): backs GET|PUT /settings/model-policy. */
+    settingsService: SettingsService;
+    /** Configurable Task Models (Task 13): backs GET /models. */
+    modelCatalogService: ModelCatalogService;
+    /** Configurable Task Models (Task #926): backs GET /projects/:id/resolve-model. */
+    modelPolicyService: ModelPolicyService;
     idempotencyService: IdempotencyService;
     db: Database.Database;
     sseManager: SSEManager;
@@ -133,6 +149,27 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('dependencyGraphService', app.dependencyGraphService);
   server.decorate('topologyService', app.topologyService);
   server.decorate('commentService', app.commentService);
+  // Configurable Task Models (Task 13): the settings + model-catalog services
+  // back the /settings/model-policy and /models routes respectively.
+  server.decorate('settingsService', app.settingsService);
+  server.decorate('modelCatalogService', app.modelCatalogService);
+  // Configurable Task Models (Task #926): construct the model-policy resolver
+  // behind GET /projects/:id/resolve-model. Its three lookups are injected over
+  // the SAME `app.db` handle every other service shares (db-backed repos are
+  // stateless prepared-statement holders), mirroring how `src/mcp/index.ts`
+  // wires the resolver behind the stdio `resolve_model` tool:
+  //   - getProjectPolicy ← a project's parsed `model_policy` column.
+  //   - getGlobalPolicy  ← the SAME settings service backing get/set defaults.
+  //   - getJobSize       ← a task's WSJF jobSize Fibonacci tier.
+  const modelPolicyProjectRepo = new ProjectRepository(app.db);
+  const modelPolicyTaskRepo = new TaskRepository(app.db);
+  const modelPolicyService = createModelPolicyService({
+    getProjectPolicy: (projectId) =>
+      modelPolicyProjectRepo.findById(projectId)?.model_policy ?? null,
+    getGlobalPolicy: () => app.settingsService.getModelPolicyDefault(),
+    getJobSize: (taskId) => modelPolicyTaskRepo.findById(taskId)?.wsjf_job_size ?? null,
+  });
+  server.decorate('modelPolicyService', modelPolicyService);
   server.decorate('db', app.db);
   // Task #357: expose OIDC boot state to /health/detailed so a degraded
   // discovery is a queryable signal, not just a one-time boot log line.
@@ -541,6 +578,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
         // Register events route
         await api.register(eventsRoute, { prefix: '/events' });
+
+        // Configurable Task Models (Task 13): the model catalog + the
+        // database-wide model-policy default.
+        await api.register(modelsRoutes, { prefix: '/models' });
+        await api.register(modelPolicyRoutes, { prefix: '/settings' });
 
         // Phase 28 Plan 28-05: per-caller resources. All routes inside
         // meRoutes carry `config: { sessionOnly: true }` so the auth-chain

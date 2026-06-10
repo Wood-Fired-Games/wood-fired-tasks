@@ -397,7 +397,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'project-front-door',
     purpose: 'Product-level overview, install, quickstart.',
     when_to_read: 'reference',
-    line_budget: 850,
+    // 850 → 875: Configurable Task Models added the Model Tools (4) domain
+    // table to the MCP summary (the doc sat at 848/850 before it).
+    line_budget: 875,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',

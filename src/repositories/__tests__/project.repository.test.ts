@@ -176,4 +176,54 @@ describe('ProjectRepository', () => {
     expect(updated.description).toBe('changed');
     expect(updated.value_charter).toEqual(sampleCharter);
   });
+
+  // Configurable Task Models: model_policy persistence at the repository
+  // boundary. Mirrors the value_charter coverage above.
+  const samplePolicy = {
+    validation: { default: 'auto' },
+  } as const;
+
+  it('should default model_policy to null when not supplied', () => {
+    const project = repo.create({ name: 'No Policy' });
+    expect(project.model_policy).toBeNull();
+  });
+
+  it('should persist and read back a model_policy identically', () => {
+    const created = repo.create({
+      name: 'Policy Project',
+      model_policy: samplePolicy,
+    });
+    expect(created.model_policy).toEqual(samplePolicy);
+
+    const found = repo.findById(created.id);
+    expect(found?.model_policy).toEqual(samplePolicy);
+
+    const byName = repo.findByName('Policy Project');
+    expect(byName?.model_policy).toEqual(samplePolicy);
+
+    const all = repo.findAll();
+    expect(all.find((p) => p.id === created.id)?.model_policy).toEqual(samplePolicy);
+  });
+
+  it('should update model_policy and clear it with explicit null', () => {
+    const project = repo.create({ name: 'Updatable Policy' });
+    expect(project.model_policy).toBeNull();
+
+    const set = repo.update(project.id, { model_policy: samplePolicy });
+    expect(set.model_policy).toEqual(samplePolicy);
+
+    const cleared = repo.update(project.id, { model_policy: null });
+    expect(cleared.model_policy).toBeNull();
+  });
+
+  it('should leave model_policy untouched when update omits it', () => {
+    const project = repo.create({
+      name: 'Untouched Policy',
+      model_policy: samplePolicy,
+    });
+
+    const updated = repo.update(project.id, { description: 'changed' });
+    expect(updated.description).toBe('changed');
+    expect(updated.model_policy).toEqual(samplePolicy);
+  });
 });

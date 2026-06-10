@@ -1322,7 +1322,7 @@ Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
 - API route integration tests (all REST routes, including the WSJF task/project endpoints under `/api/v1/tasks/:id/wsjf`, `/score-history`, and `/api/v1/projects/:id/wsjf-ranking`, `/wsjf-health`, `/rescore`, `/charter-history`, `/rescore-runs`)
-- MCP tool tests (all 27 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage)
+- MCP tool tests (all 31 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage, and the four Model tools `list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults`)
 - WSJF scoring/ranking tests (deterministic `validateScoreSubmission` gate, blocker-propagated `rankFrontier`, `wsjf-rescore` transaction, and the `wsjf-health` degeneracy linter)
 - CLI command tests (including `wsjf-history`, `wsjf-set`, `charter-history`)
 - Event system tests (EventBus, SSEManager, events API)
@@ -1384,6 +1384,12 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 |----------|----------|---------|-------------|
 | `RATE_LIMIT_MAX` | no | `1000` | Maximum requests per window (global, via `@fastify/rate-limit`). `/health` is allow-listed. |
 | `RATE_LIMIT_TIME_WINDOW` | no | `1 minute` | Window string accepted by `@fastify/rate-limit`. |
+
+### Model catalog (read directly in `src/index.ts`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | no | — | Anthropic API key for the model-catalog service's runtime model discovery (`GET https://api.anthropic.com/v1/models`), which backs `GET /api/v1/models` and the `list_models`/`resolve_model` MCP tools. When unset (or the Models API is unreachable) the catalog serves a static fallback with `stale: true` — the Configurable Task Models feature keeps working, just against the bundled model list. The key is only ever sent to the Anthropic API; it is never echoed in responses or logs. |
 
 ### CLI (read by `src/cli/config/env.ts` and individual commands)
 

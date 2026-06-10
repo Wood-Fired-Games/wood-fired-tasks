@@ -4,6 +4,7 @@ import { CreateProjectSchema, UpdateProjectSchema } from '../../../schemas/task.
 import { ProjectResponseSchema, ProjectListPaginatedResponseSchema } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
+import resolveModelRoutes from './resolve-model.js';
 import projectWsjfRoutes from './wsjf.js';
 
 // Pagination query schema for GET /projects. Mirrors task list bounds.
@@ -102,6 +103,12 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // MCP `topology_check` proxy tool. Registered as a child plugin alongside
   // dependency-graph so its colocated `schema:` block lives in its own file.
   await fastify.register(topologyRoutes);
+
+  // GET /:id/resolve-model — model-policy resolver over REST (task #926),
+  // backing the remote MCP `resolve_model` proxy tool. Registered as a child
+  // plugin alongside topology so its colocated `schema:` block lives in its
+  // own file.
+  await fastify.register(resolveModelRoutes);
 
   // WSJF 4.5 (#645): GET /:id/charter-history + GET /:id/rescore-runs.
   // Registered as a child plugin alongside topology so its colocated `schema:`

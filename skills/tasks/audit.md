@@ -31,8 +31,9 @@ drift, the design doc wins. Section references below (§N) point into it.
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand
 `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`.
 On `InputValidationError`, load via `ToolSearch`
-(`select:mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__list_projects`)
-and retry.
+(`select:mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__resolve_model,mcp__wood-fired-tasks__list_models`)
+and retry. (`resolve_model` / `list_models` resolve the `planning`-role
+verifier-dispatch model below — both are read-only.)
 
 **Allowed MCP tool surface is the READ-ONLY set ONLY:**
 
@@ -41,6 +42,28 @@ and retry.
 - `get_dependencies` — read-only dependency lookup.
 - `list_tasks` — read-only list query (resolve a `--project` run).
 - `list_projects` — read-only project list.
+- `resolve_model` / `list_models` — resolve the `planning`-role dispatch model (read-only; see below).
+
+### Planning-role model resolution (resolve ONCE, before dispatch)
+
+The verifier subagents this skill dispatches in Step 3 are **planning-phase**
+graders — audit is the retroactive half of the planning pipeline — so they run
+the `planning` pipeline role. Resolve the dispatch `model:` ONCE, before the
+Step-3 loop, per the canonical contract in
+[loop-shared.md §R](loop-shared.md#r-model-resolution):
+
+> Call `resolve_model { project_id, role: 'planning' }`. **`task_id` is
+> OMITTED** so the `planning` slot's `constant` / `default` governs (audit
+> grades many tasks with one resolved model rather than size-routing per
+> task). Use the `project_id` resolved from the LOOP-RUN.md in Step 1 (always
+> known here); on `null` pass **no** `model:` and inherit the orchestrator's
+> session model (the backward-compatible default). If a run supplied
+> `--planning-model <ref>`, skip `resolve_model` and pass that ref directly.
+
+Read the resolver's returned value VERBATIM (per §R's anti-fabrication note /
+§L) and reuse the SAME resolved `model:` for every verifier dispatch. The
+dispatch-time fallback (retry once with no `model:` on an unrecognized-model
+error) applies per §R.
 
 **The mutating tools are NOT permitted (Guardrail 2):** `update_task`,
 `add_comment`, `claim_task`, `create_task`, `create_project`,
@@ -150,12 +173,15 @@ Embed the full body of
 prompt prefix (read it at run time so prompt updates flow through),
 followed by a fenced JSON block with the `VerifierInputs` envelope.
 **Always pass `name: "audit-verifier-task-<id>"`** so the verifier is
-addressable for schema-repair round-trips after its first message.
+addressable for schema-repair round-trips after its first message. **Set
+`model:` to the planning-role model resolved once in Preflight**
+([loop-shared.md §R](loop-shared.md#r-model-resolution)).
 
 ```
 Agent(
   subagent_type: "general-purpose",          // or "tasks-verifier" if registered
   name: "audit-verifier-task-<id>",          // REQUIRED — addressable for repair
+  model: <planning-role model resolved in Preflight, or omit to inherit>, // loop-shared.md §R
   description: "Audit-grade task #<id> against acceptance criteria",
   prompt: <<-EOF
 ${body of skills/agents/tasks-verifier.md}

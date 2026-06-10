@@ -83,14 +83,18 @@ export class ProjectService {
       throw new BusinessError('Project with this name already exists');
     }
 
-    // Create project. `description` / `value_charter` are omitted when absent so
-    // the optional columns stay untouched; explicit `null` is preserved (the
-    // absent / null / value three-state convention). `name` stays required.
+    // Create project. `description` / `value_charter` / `model_policy` are
+    // omitted when absent so the optional columns stay untouched; explicit
+    // `null` is preserved (the absent / null / value three-state convention).
+    // `name` stays required.
     const createDto: CreateProjectDTO = {
       name: result.data.name,
       ...(result.data.description !== undefined && { description: result.data.description }),
       ...(result.data.value_charter !== undefined && {
         value_charter: result.data.value_charter,
+      }),
+      ...(result.data.model_policy !== undefined && {
+        model_policy: result.data.model_policy,
       }),
     };
     const project = this.projectRepo.create(createDto);

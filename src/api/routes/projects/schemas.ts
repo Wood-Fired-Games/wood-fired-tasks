@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
 import { ValueCharterSchema } from '../../../schemas/project.schema.js';
+import { ModelPolicySchema } from '../../../schemas/model-policy.schema.js';
 
 export {
   DependencyGraphTreeResponseSchema,
@@ -25,6 +26,13 @@ export const ProjectResponseSchema = z.object({
   // project has no charter. Optional so legacy callers / partial rows that omit
   // the column do not fail response serialization.
   value_charter: ValueCharterSchema.nullable().optional(),
+  // Configurable Task Models (Task 13): the parsed per-project model policy
+  // rides on every project response so the remote (REST + MCP proxy) path can
+  // read it back after a create/update. `null` when the project has no policy
+  // (the global `app_settings.model_policy_default` applies instead). Optional
+  // so legacy callers / partial rows that omit the column do not fail response
+  // serialization.
+  model_policy: ModelPolicySchema.nullable().optional(),
 });
 
 export const ProjectListResponseSchema = z.array(ProjectResponseSchema);

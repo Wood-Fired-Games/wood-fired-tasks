@@ -406,7 +406,7 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (15 invocable files)', () => {
+  it('skill file count matches expected (17 invocable files)', () => {
     // Update this count when adding or removing a skill file in
     // `skills/tasks/`. The README ("N Claude Code skill files") and
     // docs/MCP.md ("N pre-built skill files") references should be
@@ -448,6 +448,10 @@ describe('Skill File Validation', () => {
     // Task #796 (Phase 4) added `update.md` as an INVOCABLE self-update
     // command (runs `tasks self-update`; action target of the status-line
     // update hint), bumping the invocable count 15 → 16.
+    //
+    // Task #923 (Configurable Task Models, Task 14) added `set-models.md`
+    // as an INVOCABLE adaptive model-policy interview command, bumping the
+    // invocable count 16 → 17.
     const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
@@ -455,7 +459,7 @@ describe('Skill File Validation', () => {
       .filter((f) => !f.startsWith('_'))
       .filter((f) => !NON_INVOCABLE_DOCS.has(f));
 
-    expect(skillFiles).toHaveLength(16);
+    expect(skillFiles).toHaveLength(17);
   });
 
   it('each skill file has workflow steps', () => {

@@ -9,6 +9,11 @@ import type {
 // `WsjfHistoryTrigger` union is owned by the append-only history repository,
 // which is the single source of truth for the closed trigger set.
 import type { WsjfHistoryTrigger } from '../repositories/wsjf-history.repository.js';
+// Configurable Task Models: the `ModelPolicy` shape is owned by the Zod
+// contract in `src/schemas/model-policy.schema.ts`. Import it for the field
+// types below and re-export so consumers of `task.ts` see one parsed shape.
+import type { ModelPolicy } from '../schemas/model-policy.schema.js';
+export type { ModelPolicy, ModelRef } from '../schemas/model-policy.schema.js';
 
 // Task status and priority enums
 export const TASK_STATUSES = [
@@ -194,6 +199,15 @@ export interface Project {
    * seen by service / route / MCP / CLI consumers.
    */
   value_charter: ValueCharter | null;
+  /**
+   * Configurable Task Models: the project's model routing policy. NULL when
+   * no per-project policy is configured (the global
+   * `app_settings.model_policy_default` applies instead). Stored as a JSON
+   * string in SQLite (alongside `value_charter`); this field is the parsed
+   * object as seen by service / route / MCP / CLI consumers. The
+   * authoritative validator is `src/schemas/model-policy.schema.ts`.
+   */
+  model_policy: ModelPolicy | null;
 }
 
 export interface TaskTag {
@@ -338,6 +352,31 @@ export interface CreateProjectDTO {
    * explicit `null` clears it; `undefined` leaves the column untouched.
    */
   value_charter?: ValueCharter | null;
+  /**
+   * Configurable Task Models: optional per-project model policy.
+   * `undefined`/absent persists NULL; an object is serialized to JSON by the
+   * repository. On update, explicit `null` clears it; `undefined` leaves the
+   * column untouched. Mirrors `value_charter` wiring.
+   */
+  model_policy?: ModelPolicy | null;
+}
+
+export interface UpdateProjectDTO {
+  name?: string;
+  description?: string | null;
+  /**
+   * WSJF (Phase 3.1): patch the value charter. `undefined` (key absent)
+   * leaves the column untouched; explicit `null` clears it; an object sets it
+   * (serialized to JSON by the repository).
+   */
+  value_charter?: ValueCharter | null;
+  /**
+   * Configurable Task Models: patch the per-project model policy. `undefined`
+   * (key absent) leaves the column untouched; explicit `null` clears it; an
+   * object sets it (serialized to JSON by the repository). Mirrors
+   * `value_charter` wiring.
+   */
+  model_policy?: ModelPolicy | null;
 }
 
 export interface CreateDependencyDTO {

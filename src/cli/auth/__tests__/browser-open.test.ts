@@ -29,10 +29,16 @@ function makeFakeChild(): FakeChild {
 
 let origPlatform: NodeJS.Platform;
 let origDisplay: string | undefined;
+let origNoBrowser: string | undefined;
 
 beforeEach(() => {
   origPlatform = process.platform;
   origDisplay = process.env.DISPLAY;
+  // vitest.setup.ts sets WFT_NO_BROWSER=1 globally so no test launches a real
+  // browser. THIS file is the one place that must exercise openBrowser's real
+  // spawn dispatch, so opt out of the global guard for its tests.
+  origNoBrowser = process.env.WFT_NO_BROWSER;
+  delete process.env.WFT_NO_BROWSER;
   spawnMock.mockReset();
 });
 
@@ -42,6 +48,11 @@ afterEach(() => {
     delete process.env.DISPLAY;
   } else {
     process.env.DISPLAY = origDisplay;
+  }
+  if (origNoBrowser === undefined) {
+    delete process.env.WFT_NO_BROWSER;
+  } else {
+    process.env.WFT_NO_BROWSER = origNoBrowser;
   }
 });
 

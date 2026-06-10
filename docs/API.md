@@ -204,7 +204,8 @@ Create a new project.
 {
   "name": "string (required, max 100 chars)",
   "description": "string (optional, max 1000 chars)",
-  "value_charter": "ValueCharter object (optional) — see Value charter below"
+  "value_charter": "ValueCharter object (optional) — see Value charter below",
+  "model_policy": "ModelPolicy | null (optional) — per-project model routing; see Models & model-policy Endpoints"
 }
 ```
 
@@ -231,6 +232,8 @@ curl -X POST http://localhost:3000/api/v1/projects \
 ```
 
 [NOTE] `value_charter` is the per-project reference frame for WSJF Business-Value scoring (see [WSJF Endpoints](#wsjf-endpoints)). It is optional and defaults to `null`; projects with no charter behave exactly as before, sorting by `priority` then age. The field shape is documented under [Value charter](#value-charter).
+
+[NOTE] `model_policy` is the optional per-project model-routing policy for the **Configurable Task Models** layer. It is accepted on create/update, returned on every project response, and `null` when unset (the global default from `GET /settings/model-policy` applies instead). See [Models & model-policy Endpoints](#models--model-policy-endpoints) for the shape and the resolver route.
 
 ### GET /api/v1/projects
 
@@ -307,9 +310,12 @@ Update a project. All fields are optional (partial update).
 {
   "name": "string (optional, max 100 chars)",
   "description": "string (optional, max 1000 chars)",
-  "value_charter": "ValueCharter object (optional) — see Value charter below"
+  "value_charter": "ValueCharter object (optional) — see Value charter below",
+  "model_policy": "ModelPolicy | null (optional) — per-project model routing; see Models & model-policy Endpoints"
 }
 ```
+
+The CLI `tasks project-set-models <id>` command merges a partial `model_policy` through this route.
 
 **Response:** 200 OK
 
@@ -380,6 +386,32 @@ Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wav
 curl http://localhost:3000/api/v1/projects/1/topology \
   -H "Authorization: Bearer wft_pat_your-token"
 ```
+
+### GET /api/v1/projects/:id/resolve-model
+
+Resolve the model for a pipeline role. Delegates to `ModelPolicyService.resolveModel(projectId, role, taskId?)` (project policy ?? global default, per-slot merge, jobSize→category routing when `task_id` is supplied). The body IS the resolver output **verbatim** — identical to the stdio/remote `resolve_model` MCP tool: `{ "model": "<id>" }`, `{ "model": "auto" }`, or a bare `null` (inherit). Read-only. Query: `role` (required, `execution|validation|planning`); `task_id` (optional positive int → routes by the task's WSJF power category). **Response:** 200 OK — the resolver output; 404 — project does not exist.
+
+## Models & model-policy Endpoints
+
+The **Configurable Task Models** layer exposes runtime model discovery and the database-wide default `ModelPolicy` over REST so the remote MCP proxy, the dashboard, and the [`/tasks:set-models`](#configurable-models) interview can read/write policy without a stdio MCP connection. Per-project policy rides on the project routes (`model_policy`); the global default lives here; resolution is `GET /projects/:id/resolve-model` above.
+
+A `ModelPolicy` is a per-role (`execution | validation | planning`) object; each role may carry `byCategory` (one of the six power categories `minimal | light | moderate | strong | heavy | maximum` → a model ref), a `default` ref, and — for `planning` — a single `constant` ref. A model ref is a catalog model id or the `auto` sentinel.
+
+### GET /api/v1/models
+
+List the runtime-discovered Claude model catalog (Anthropic Models API, TTL-cached, static fallback when offline / no `ANTHROPIC_API_KEY`). Body is `{ models, stale }` — identical to the stdio `list_models` MCP tool; `stale: true` means the static fallback was served. NEVER throws; always 200.
+
+```json
+{ "models": [ { "id": "claude-opus-4-1", "display_name": "Claude Opus 4.1", "family": "opus", "created_at": "2025-08-05" } ], "stale": false }
+```
+
+### GET /api/v1/settings/model-policy
+
+Get the database-wide model-policy default (`app_settings.model_policy_default`). **Response:** 200 OK — the stored `ModelPolicy`, or `null` when no default is configured.
+
+### PUT /api/v1/settings/model-policy
+
+Set (or, with a `null` body, clear) the database-wide model-policy default. Body is a `ModelPolicy` (or `null`); an invalid shape is rejected with **400** at the boundary. The 200 body echoes the persisted policy back.
 
 ## Task Endpoints
 

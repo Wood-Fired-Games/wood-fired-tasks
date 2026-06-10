@@ -20,3 +20,16 @@ for (const key of Object.keys(process.env)) {
     delete process.env[key];
   }
 }
+
+/**
+ * Never launch a real browser from the test suite. openBrowser()
+ * (src/cli/auth/browser-open.ts) honors WFT_NO_BROWSER and returns false
+ * without spawning. Without this, in-process device-flow/login tests
+ * (e.g. setup.remote.test.ts's "drives the real device flow" case) call the
+ * real deviceLogin({ openBrowser: true }) and spawn `xdg-open` against the mock
+ * server's verification_uri on any developer DESKTOP where DISPLAY is set —
+ * popping the user's browser to a 404 once per `npm test` run. CI never saw it
+ * (headless, no DISPLAY). browser-open.test.ts deletes this in its own hooks to
+ * exercise the real spawn path.
+ */
+process.env['WFT_NO_BROWSER'] = '1';
