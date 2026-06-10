@@ -216,4 +216,31 @@ describe('WSJF audit — history repository + in-transaction write (#628)', () =
     expect(task.wsjf_value).toBe(8); // score still persisted
     expect(historyRepo.countByTaskId(created.id)).toBe(0); // no audit row
   });
+
+  it('auto_size trigger: history row with trigger=auto_size is accepted by the repository', () => {
+    // Server-internal sizing (Prong B / §3 of the guaranteed-task-sizing spec)
+    // appends rows with trigger='auto_size' to distinguish them from
+    // client-driven scoring paths.  This test verifies the enum is present and
+    // the repository round-trips the value correctly.
+    const task = service.createTask(baseInput({ title: 'auto-sized task' }));
+
+    const rowId = historyRepo.append({
+      taskId: task.id,
+      projectId: projectId,
+      trigger: 'auto_size',
+      value: null,
+      timeCriticality: null,
+      riskOpportunity: null,
+      jobSize: 3,
+      wsjfScore: null,
+      prevWsjfScore: null,
+    });
+
+    expect(rowId).toBeGreaterThan(0);
+    const rows = historyRepo.findByTaskId(task.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].trigger).toBe('auto_size');
+    expect(rows[0].job_size).toBe(3);
+    expect(rows[0].value).toBeNull();
+  });
 });

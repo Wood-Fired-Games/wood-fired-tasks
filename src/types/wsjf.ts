@@ -44,6 +44,8 @@ export const WSJF_HISTORY_TRIGGERS = [
   'rescore',
   'manual',
   'propagation',
+  'auto_size',
+  'boot_sweep',
 ] as const;
 
 export type WsjfHistoryTrigger = (typeof WSJF_HISTORY_TRIGGERS)[number];
