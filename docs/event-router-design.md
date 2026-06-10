@@ -488,11 +488,22 @@ backlog.
   explicitly set; no built-in auth (the operator's reverse proxy owns
   that). Counters (all carry the `wft_router_` prefix in the exposition
   output, e.g. `wft_router_dispatched_total`): `events_received_total`,
-  `matched_rules_total`, `dispatched_total` (labelled `{handler,status}`),
-  `handler_errors_total` (labelled `{handler}`), `rate_limit_dropped_total`
-  (labelled `{rule}`), `permanently_failed_total` (labelled `{rule}`).
+  `events_received_by_kind_total` (labelled `{kind}` ∈ mappable / control /
+  unmappable — control = server keep-alive pings, which prove the socket
+  is alive but NOT that delivery works), `matched_rules_total`,
+  `dispatched_total` (labelled `{handler,status}`), `handler_errors_total`
+  (labelled `{handler}`), `rate_limit_dropped_total` (labelled `{rule}`),
+  `permanently_failed_total` (labelled `{rule}`). Gauges:
+  `wft_router_last_real_event_age_seconds` (seconds since the last
+  MAPPABLE domain event; alert on it to catch a deaf-but-pinging stream)
+  and `process_start_time_seconds` (standard Prometheus process-start
+  convention, so operators can tell a fresh process's small counters from
+  stale history). Opt-in self-heal: `--stale-resubscribe-after <s>` (or
+  `WFT_ROUTER_STALE_RESUBSCRIBE_AFTER`) re-opens the SSE subscription —
+  resume id preserved — when no real event arrived for `<s>` seconds
+  while control pings kept flowing; 0/absent = disabled.
   Histograms (handler latency, debounce coalescing) are DEFERRED — the
-  counters above are what the `/metrics` endpoint currently exposes.
+  series above are what the `/metrics` endpoint currently exposes.
 
 ### Config validation
 

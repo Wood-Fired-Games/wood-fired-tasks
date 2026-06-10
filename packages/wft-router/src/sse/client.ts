@@ -114,6 +114,15 @@ export interface SSEClientOptions {
    * (the server pings well inside that, so 90 s = a few missed pings).
    */
   idleTimeoutMs?: number;
+  /**
+   * OPT-IN self-heal for a DEAF stream: when > 0, a connection that keeps
+   * delivering frames (server pings flow, so the idle timeout never fires)
+   * but no REAL (non-control) event for this many ms is dropped and
+   * re-opened. The `Last-Event-Id` resume position is preserved, so events
+   * the deaf connection missed replay from the server's retention window.
+   * 0 / absent = disabled (the default — behavior is unchanged).
+   */
+  staleResubscribeAfterMs?: number;
 }
 
 /** Default per-spec ceilings, exported for the daemon assembly to reuse. */
@@ -127,6 +136,20 @@ export const DEFAULT_UNREACHABLE_LIMIT_MS = 15 * 60_000;
 export const DEFAULT_IDLE_TIMEOUT_MS = 90_000;
 
 const EVENTS_PATH = '/api/v1/events';
+
+/**
+ * SSE event names the server uses as CONTROL frames — protocol keep-alives
+ * that prove the socket is alive but carry no domain payload (the server
+ * emits `event: ping` every 30 s). Control frames are NOT "real" events:
+ * they must not reset silence detection, and the daemon logs them at debug
+ * level rather than warning about unmappable events.
+ */
+export const CONTROL_EVENT_NAMES: ReadonlySet<string> = new Set(['ping']);
+
+/** True when the event is a known control frame, not a domain event. */
+export function isControlEvent(ev: SSEEvent): boolean {
+  return ev.event !== undefined && CONTROL_EVENT_NAMES.has(ev.event);
+}
 
 /** Sentinel rejection used by {@link readWithIdleTimeout} on idle expiry. */
 class IdleTimeoutError extends Error {
@@ -249,7 +272,8 @@ type ConnectionResult =
   | { kind: 'closed_clean' }
   | { kind: 'auth_failed'; status: number }
   | { kind: 'gap'; status: number }
-  | { kind: 'network_error'; message: string };
+  | { kind: 'network_error'; message: string }
+  | { kind: 'stale'; silentForMs: number };
 
 /**
  * Drive a single HTTP connection: open, stream, parse, yield. An async
@@ -270,6 +294,8 @@ async function* runOneConnection(
   fetchImpl: typeof fetch,
   signal: AbortSignal,
   idleTimeoutMs: number,
+  nowFn: () => number,
+  staleAfterMs: number,
 ): AsyncGenerator<SSEEvent, ConnectionResult> {
   const header = authHeader(apiKey);
   const headers: Record<string, string> = {
@@ -308,6 +334,13 @@ async function* runOneConnection(
   const parser = createSSEParser();
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8');
+  /**
+   * Deaf-stream baseline: connection-open counts as the last "real" event so
+   * a fresh connection gets one full `staleAfterMs` window to deliver before
+   * the self-heal fires (which also bounds the heal to at most one
+   * resubscribe per window).
+   */
+  let lastRealEventAt = nowFn();
 
   try {
     for (;;) {
@@ -332,7 +365,24 @@ async function* runOneConnection(
         return { kind: 'closed_clean' };
       }
       const text = decoder.decode(chunk.value, { stream: true });
-      for (const event of parser.feed(text)) yield event;
+      for (const event of parser.feed(text)) {
+        if (!isControlEvent(event)) {
+          lastRealEventAt = nowFn();
+        }
+        yield event;
+        if (staleAfterMs > 0 && nowFn() - lastRealEventAt >= staleAfterMs) {
+          // DEAF stream: control frames keep arriving (so the idle timeout
+          // never fires) but no real event within the threshold. Tear the
+          // connection down and report `stale` so the run loop resubscribes
+          // immediately with the resume position preserved.
+          try {
+            await reader.cancel();
+          } catch {
+            /* already torn down */
+          }
+          return { kind: 'stale', silentForMs: nowFn() - lastRealEventAt };
+        }
+      }
     }
   } finally {
     // Best-effort: release the reader so the socket can recycle.
@@ -376,6 +426,7 @@ export async function* runSSEClient(
   const maxBackoffMs = opts.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
   const unreachableLimitMs = opts.unreachableLimitMs ?? DEFAULT_UNREACHABLE_LIMIT_MS;
   const idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  const staleResubscribeAfterMs = opts.staleResubscribeAfterMs ?? 0;
   const url = buildUrl(opts.endpoint, opts.eventTypes);
 
   let lastEventId: string | undefined;
@@ -393,7 +444,16 @@ export async function* runSSEClient(
      * the socket drops.
      */
     let eventsThisConnection = 0;
-    const conn = runOneConnection(url, opts.apiKey, lastEventId, fetchImpl, signal, idleTimeoutMs);
+    const conn = runOneConnection(
+      url,
+      opts.apiKey,
+      lastEventId,
+      fetchImpl,
+      signal,
+      idleTimeoutMs,
+      () => clock.now(),
+      staleResubscribeAfterMs,
+    );
     let result: ConnectionResult;
     for (;;) {
       const next = await conn.next();
@@ -442,6 +502,23 @@ export async function* runSSEClient(
         lastEventId = undefined;
         // Reset failure tracking too — the server is healthy, just
         // beyond our retention window.
+        firstFailureAt = null;
+        attempts = 0;
+        continue;
+      }
+      case 'stale': {
+        // Self-heal (opt-in): the connection delivered control frames but no
+        // real event within the threshold. Resubscribe IMMEDIATELY, keeping
+        // the Last-Event-Id resume position so anything the deaf connection
+        // missed replays from the server's retention window. No failure
+        // accounting — the endpoint is demonstrably reachable. Bounded to at
+        // most one resubscribe per threshold window (the fresh connection
+        // starts a new baseline).
+        logger.warn('sse_stale_resubscribe', {
+          silent_for_ms: result.silentForMs,
+          threshold_ms: staleResubscribeAfterMs,
+          last_event_id: lastEventId,
+        });
         firstFailureAt = null;
         attempts = 0;
         continue;

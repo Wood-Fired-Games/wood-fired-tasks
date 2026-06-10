@@ -45,6 +45,7 @@ unless `--config <path>` is given.
 | `--validate <path>` | Schema-check a config and exit (0 ok / 78 invalid) |
 | `--metrics-port <n>` | Expose Prometheus `/metrics` (off by default) |
 | `--metrics-bind <addr>` | Metrics bind address (default `127.0.0.1`) |
+| `--stale-resubscribe-after <s>` | Opt-in self-heal: re-open the SSE subscription when no real event arrived for `<s>` seconds while keep-alive pings kept flowing (or `WFT_ROUTER_STALE_RESUBSCRIBE_AFTER`); 0/absent = off |
 | `--version` / `-V` | Print version |
 
 Reserved by the design spec, not yet implemented: `--dry-run`, `--once`, `--rebuild-idempotency`.

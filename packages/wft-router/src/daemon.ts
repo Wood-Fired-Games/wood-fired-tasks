@@ -78,7 +78,7 @@ import {
   type HandlerOutcome,
 } from './handlers/index.js';
 import type { MetricsRegistry } from './metrics.js';
-import { ExitCode, type SSEEvent } from './sse/index.js';
+import { ExitCode, isControlEvent, type SSEEvent } from './sse/index.js';
 import { omitUndefined } from './util/omit-undefined.js';
 
 // ---------------------------------------------------------------------------
@@ -106,6 +106,12 @@ export interface DaemonLogger extends HandlerLogger {
   info(obj: Record<string, unknown>, msg?: string): void;
   warn(obj: Record<string, unknown>, msg?: string): void;
   error(obj: Record<string, unknown>, msg?: string): void;
+  /**
+   * Optional debug sink (pino provides one; test fakes may omit it).
+   * Control frames — e.g. the server's 30 s keep-alive ping — log here
+   * instead of polluting WARN with `wft_router_event_unmappable` noise.
+   */
+  debug?(obj: Record<string, unknown>, msg?: string): void;
 }
 
 /** Injected dependencies for the daemon. Every external surface is here. */
@@ -485,14 +491,29 @@ export class WftRouterDaemon {
     this.metrics?.incEventsReceived();
 
     if (ev.id !== undefined && ev.id.length > 0) {
-      this.lastEventId = ev.id; // in-memory cursor seam (durable persist deferred)
+      this.lastEventId = ev.id; // in-memory resume seam (durable persist deferred)
+    }
+
+    // Known control frames (server keep-alive pings) are expected protocol
+    // noise: count them as `control`, log at debug, and never warn — a WARN
+    // every 30 s both buries real problems and falsely suggests the stream
+    // is broken when it is merely idle (task #1002).
+    if (isControlEvent(ev)) {
+      this.metrics?.incEventsByKind('control');
+      this.logger.debug?.({ event_name: ev.event }, 'wft_router_control_event');
+      return;
     }
 
     const mapped = mapSSEEvent(ev);
     if (mapped === null) {
+      this.metrics?.incEventsByKind('unmappable');
       this.logger.warn({ event_id: ev.id, event_name: ev.event }, 'wft_router_event_unmappable');
       return;
     }
+
+    // A REAL (mappable domain) event: feed the deaf-stream age gauge.
+    this.metrics?.incEventsByKind('mappable');
+    this.metrics?.markRealEvent();
 
     // Stage 1+2: which rules match this event (type + predicate)?
     const matched = this.config.rules.filter(

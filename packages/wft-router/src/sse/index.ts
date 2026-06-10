@@ -14,6 +14,8 @@ export {
   computeBackoffMs,
   defaultClock,
   defaultLogger,
+  isControlEvent,
+  CONTROL_EVENT_NAMES,
   ExitCode,
   DEFAULT_MAX_BACKOFF_MS,
   DEFAULT_UNREACHABLE_LIMIT_MS,
