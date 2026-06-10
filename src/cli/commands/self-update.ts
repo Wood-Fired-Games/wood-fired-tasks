@@ -3,14 +3,22 @@ import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'child_
 import { colorError, colorInfo, colorSuccess, colorWarn } from '../output/formatters.js';
 import { VERSION } from '../../utils/version.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
+import { copySkills, copyAgents, type CopySkillsResult, type CopyAgentsResult } from './setup.js';
 
 /**
  * `tasks self-update` — frictionless self-update for npm-global installs
  * (project #36, task #739).
  *
- * Spawns `npm i -g wood-fired-tasks@latest` and exits with that child's exit
- * code. The DB schema does NOT need touching here — migrate-on-next-serve
- * handles it the next time the service boots against the upgraded binary.
+ * Spawns `npm i -g wood-fired-tasks@latest`, then re-syncs the bundled
+ * skills/agents into ~/.claude (task #934): the npm install replaces the
+ * files under the global prefix in place, so the post-install copySkills /
+ * copyAgents read the NEW version's assets even though this process is still
+ * running the old binary. Without this step, any release that adds or
+ * changes a skill leaves self-updaters with stale ~/.claude/commands/tasks
+ * while self-update reports success — violating the README's "keep it up to
+ * date" contract. The DB schema does NOT need touching here —
+ * migrate-on-next-serve handles it the next time the service boots against
+ * the upgraded binary.
  *
  * EACCES policy: a global npm install under a root-owned prefix fails with
  * EACCES. We DO NOT escalate (no sudo / runas / elevation of ANY kind).
@@ -34,9 +42,16 @@ export type SpawnFn = (
 // never breaks `self-update` itself).
 export type NotifyFn = (currentVersion: string) => void | Promise<void>;
 
+// Injectable skills/agents sync seam (task #934). Defaults to the same
+// copySkills/copyAgents pair `tasks setup` uses, so the update path and the
+// onboarding path cannot drift. Tests inject a recorder to avoid touching the
+// real ~/.claude.
+export type SyncAssetsFn = () => { skills: CopySkillsResult; agents: CopyAgentsResult };
+
 export interface SelfUpdateDeps {
   spawn?: SpawnFn;
   notify?: NotifyFn;
+  syncAssets?: SyncAssetsFn;
 }
 
 const PACKAGE_NAME = 'wood-fired-tasks';
@@ -146,6 +161,8 @@ export const selfUpdateCommand = new Command('self-update')
       (selfUpdateCommand as unknown as { _deps?: SelfUpdateDeps })._deps ?? {};
     const spawn = deps.spawn ?? (nodeSpawn as unknown as SpawnFn);
     const notify = deps.notify ?? defaultNotify;
+    const syncAssets: SyncAssetsFn =
+      deps.syncAssets ?? (() => ({ skills: copySkills(), agents: copyAgents() }));
 
     // update-notifier nudge: surface a "newer version available" hint before
     // we attempt the upgrade. Best-effort and never blocks the update.
@@ -171,6 +188,33 @@ export const selfUpdateCommand = new Command('self-update')
     if (code !== 0) {
       console.error(colorError(`Update failed: npm exited with code ${code}`));
       process.exitCode = code ?? 1;
+      return;
+    }
+
+    // npm replaced the package files under the global prefix in place, so the
+    // sync below reads the NEW version's dist/skills even though this process
+    // still runs the old binary. A sync failure is loud and non-zero: "update
+    // succeeded but your skills are stale" is exactly the silent state this
+    // step exists to eliminate (task #934).
+    try {
+      const { skills, agents } = syncAssets();
+      const refreshed = skills.written.length + agents.written.length;
+      console.log(
+        refreshed > 0
+          ? colorInfo(
+              `Refreshed ${skills.written.length} skill(s) in ${skills.destDir} and ${agents.written.length} agent(s) in ${agents.destDir}`,
+            )
+          : colorInfo(`Skills and agents already up to date in ${skills.destDir}`),
+      );
+    } catch (syncError) {
+      const message = syncError instanceof Error ? syncError.message : String(syncError);
+      console.error(
+        colorError(
+          `Update installed, but syncing bundled skills/agents into ~/.claude failed: ${message}`,
+        ),
+      );
+      console.error(colorWarn(`Run \`${PACKAGE_NAME} setup\` to retry the skills sync.`));
+      process.exitCode = 1;
       return;
     }
 
