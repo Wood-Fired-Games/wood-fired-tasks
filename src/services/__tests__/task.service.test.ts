@@ -156,6 +156,61 @@ describe('TaskService', () => {
         }),
       ).toThrow(ValidationError);
     });
+
+    // Guaranteed-task-sizing (design §1, Prong A): the server-side decompose
+    // contract gate. A `decomp-*` tag without a `wsjf_submission` is rejected
+    // uniformly (stdio MCP, remote MCP, REST all funnel through createTask).
+    describe('decompose contract gate (Prong A)', () => {
+      const validWsjf = () => ({
+        value: 8,
+        timeCriticality: 5,
+        riskOpportunity: 3,
+        jobSize: 2,
+      });
+
+      it('rejects a decomp-* tagged create with no wsjf_submission, naming the tag and wsjf_submission', () => {
+        let thrown: unknown;
+        try {
+          taskService.createTask({
+            title: 'Sizeless decomposed leaf',
+            project_id: testProjectId,
+            created_by: 'decompose',
+            tags: ['decomp-xyz'],
+          });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ValidationError);
+        const ve = thrown as ValidationError;
+        const message = JSON.stringify(ve.fieldErrors);
+        expect(message).toContain('decomp-xyz');
+        expect(message).toContain('wsjf_submission');
+      });
+
+      it('accepts a decomp-* tagged create WITH a valid wsjf_submission', () => {
+        const task = taskService.createTask({
+          title: 'Sized decomposed leaf',
+          project_id: testProjectId,
+          created_by: 'decompose',
+          tags: ['decomp-xyz'],
+          wsjf: validWsjf(),
+        });
+
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.tags).toContain('decomp-xyz');
+        expect(task.wsjf_job_size).toBe(2);
+      });
+
+      it('does NOT reject an untagged WSJF-less create (falls through to auto-sizing)', () => {
+        const task = taskService.createTask({
+          title: 'Quick capture, no tags, no wsjf',
+          project_id: testProjectId,
+          created_by: 'user',
+        });
+
+        expect(task.id).toBeGreaterThan(0);
+      });
+    });
   });
 
   describe('getTask', () => {

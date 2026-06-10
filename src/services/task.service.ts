@@ -275,6 +275,29 @@ export class TaskService {
       throw new ValidationError(fieldErrors);
     }
 
+    // Guaranteed-task-sizing (design §1, Prong A): server-side decompose
+    // contract gate. A `decomp-*` tag is the marker the decompose skill stamps
+    // on every materialized leaf; carrying it without a `wsjf_submission` means
+    // the skill skipped Step 8 sizing and would mint a sizeless task — the exact
+    // failure class that produced the 114 sizeless Tiny Worlds tasks and silently
+    // degraded model routing. Reject it as a contract violation (422-class) on
+    // EVERY surface (stdio MCP, remote MCP, REST) because they all funnel through
+    // here. The MCP/REST layers convert `wsjf_submission` → the `wsjf` WriteDTO
+    // before reaching the service, so a non-null `wsjf` payload IS the evidence
+    // that a submission was made; its absence is the violation. The error names
+    // the offending tag and instructs the caller to re-run decompose Step 8 with
+    // a `wsjf_submission` (mirrors the WFT_STRICT_EVIDENCE teaching-rejection).
+    const decompTag = result.data.tags.find((tag) => tag.startsWith('decomp-'));
+    if (decompTag !== undefined && (result.data.wsjf === undefined || result.data.wsjf === null)) {
+      throw new ValidationError({
+        wsjf_submission: [
+          `Task carries the decompose tag '${decompTag}' but no 'wsjf_submission'. ` +
+            `Decompose-materialized tasks MUST be sized: re-run decompose Step 8 to ` +
+            `produce a 'wsjf_submission' for this task before creating it.`,
+        ],
+      });
+    }
+
     // Verify project exists
     const project = this.projectRepo.findById(result.data.project_id);
     if (!project) {
