@@ -3,7 +3,11 @@ import { SSEManager } from '../sse-manager.js';
 import { EventPayload } from '../types.js';
 import { EventEmitter } from 'events';
 
-// Mock FastifyReply for testing
+// Mock FastifyReply for testing.
+// task #1001: mirrors the @fastify/sse surface the manager touches —
+// `sse.close()` ends the stream (the real plugin calls `reply.raw.end()`,
+// which fires the raw `close` event), so tests can assert that
+// server-initiated evictions actually close the peer stream.
 function createMockReply(): any {
   const raw = new EventEmitter();
   const sentEvents: any[] = [];
@@ -14,6 +18,9 @@ function createMockReply(): any {
       send: vi.fn((data: any) => {
         sentEvents.push(data);
         return Promise.resolve();
+      }),
+      close: vi.fn(() => {
+        raw.emit('close');
       }),
     },
     _getSentEvents: () => sentEvents,
@@ -349,6 +356,116 @@ describe('SSEManager', () => {
         expect.objectContaining({
           event: 'task.created',
         }),
+      );
+    });
+  });
+
+  describe('server-initiated eviction closes the stream (task #1001)', () => {
+    const makeEvent = (id: number): EventPayload<unknown> => ({
+      eventType: 'task.created',
+      timestamp: new Date().toISOString(),
+      data: { id, title: `Event ${id}`, project_id: 1 },
+      metadata: { source: 'user' },
+    });
+
+    it('age-out CLOSES the peer stream (not just the map entry)', () => {
+      manager = new SSEManager();
+      const reply = createMockReply();
+
+      manager.addConnection('conn-1', reply, {});
+
+      // Advance past maxConnectionAgeMs (10 min) + one heartbeat tick so the
+      // sweep observes the over-age connection.
+      vi.advanceTimersByTime(10 * 60 * 1000 + 30000);
+
+      // The stream must be closed so the client sees a FIN and reconnects.
+      // Before the fix, only the map entry was deleted and the socket stayed
+      // open — the client went silently deaf.
+      expect(reply.sse.close).toHaveBeenCalled();
+    });
+
+    it('aged-out client reconnecting with Last-Event-ID resumes events', () => {
+      manager = new SSEManager();
+      const reply1 = createMockReply();
+
+      manager.addConnection('conn-1', reply1, {});
+      manager.broadcast(makeEvent(1)); // event ID 1 — received live
+      expect(reply1._getSentEvents().some((e: any) => e.id === '1')).toBe(true);
+
+      // Age the connection out.
+      vi.advanceTimersByTime(10 * 60 * 1000 + 30000);
+      expect(reply1.sse.close).toHaveBeenCalled();
+
+      // An event fires while the client is disconnected...
+      manager.broadcast(makeEvent(2)); // event ID 2
+
+      // ...and the reconnecting client (Last-Event-ID: 1) replays it. The
+      // buffer TTL is aligned to the age window, so the missed event is
+      // still available even though the previous connection lived 10+ min.
+      const reply2 = createMockReply();
+      manager.addConnection('conn-2', reply2, {}, 1);
+
+      const resumed = reply2._getSentEvents();
+      expect(resumed.length).toBe(1);
+      expect(resumed[0].id).toBe('2');
+      expect(resumed[0].event).toBe('task.created');
+    });
+
+    it('send failure closes the stream, not just the map entry', async () => {
+      manager = new SSEManager();
+      const reply = createMockReply();
+      reply.sse.send.mockRejectedValue(new Error('write failed'));
+
+      manager.addConnection('conn-1', reply, {});
+      manager.broadcast(makeEvent(1));
+
+      // Let the rejection handler run.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(reply.sse.close).toHaveBeenCalled();
+    });
+
+    it('heartbeat ping failure closes the stream', async () => {
+      manager = new SSEManager();
+      const reply = createMockReply();
+      reply.sse.send.mockRejectedValueOnce(new Error('write failed'));
+
+      manager.addConnection('conn-1', reply, {});
+      vi.advanceTimersByTime(30000);
+      await Promise.resolve();
+
+      expect(reply.sse.close).toHaveBeenCalled();
+    });
+
+    it('shutdown closes every peer stream', () => {
+      manager = new SSEManager();
+      const reply1 = createMockReply();
+      const reply2 = createMockReply();
+
+      manager.addConnection('conn-1', reply1, {});
+      manager.addConnection('conn-2', reply2, {});
+
+      manager.shutdown();
+
+      expect(reply1.sse.close).toHaveBeenCalled();
+      expect(reply2.sse.close).toHaveBeenCalled();
+    });
+
+    it('tolerates replies without a close surface (defensive fallback)', () => {
+      manager = new SSEManager();
+      // Minimal mock: no sse.close, raw without end (EventEmitter only) —
+      // mirrors older test harnesses. Eviction must not throw.
+      const raw = new EventEmitter();
+      const reply: any = { raw, sse: { send: vi.fn(() => Promise.resolve()) } };
+
+      manager.addConnection('conn-1', reply, {});
+      vi.advanceTimersByTime(10 * 60 * 1000 + 30000);
+
+      // Connection is gone from the map even though no close surface existed.
+      manager.broadcast(makeEvent(1));
+      expect(reply.sse.send).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'task.created' }),
       );
     });
   });
