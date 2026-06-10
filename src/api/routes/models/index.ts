@@ -1,5 +1,6 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { ModelCatalogEntrySchema } from '../../../schemas/model-catalog.schema.js';
 
 /**
  * Configurable Task Models (Task 13) — GET /api/v1/models
@@ -17,14 +18,6 @@ import { z } from 'zod';
  * Auth: inherits the standard `/api/v1` auth chain (the parent plugin is
  * mounted inside the `/api/v1` scope that wires `authPlugin`). No custom guard.
  */
-
-/** One discovered model, mirroring `ModelCatalogEntry` from the catalog service. */
-const ModelCatalogEntrySchema = z.object({
-  id: z.string(),
-  display_name: z.string(),
-  family: z.string(),
-  created_at: z.string(),
-});
 
 /** The `{ models, stale }` envelope returned by GET /models. */
 export const ModelCatalogResponseSchema = z.object({

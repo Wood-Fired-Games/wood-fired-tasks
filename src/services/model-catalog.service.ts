@@ -16,13 +16,14 @@
  * clock and a fake fetch — no real network access.
  */
 
-/** A single discovered model, normalised to the fields downstream code needs. */
-export interface ModelCatalogEntry {
-  id: string;
-  display_name: string;
-  family: string;
-  created_at: string;
-}
+import type { ModelCatalogEntry } from '../schemas/model-catalog.schema.js';
+
+/**
+ * A single discovered model (task #930: the shape is declared ONCE in
+ * `src/schemas/model-catalog.schema.ts`; re-exported here so catalog
+ * consumers keep importing it from the service that produces it).
+ */
+export type { ModelCatalogEntry };
 
 /** The result of a catalog lookup. `stale` is true when served from fallback. */
 export interface ModelCatalog {

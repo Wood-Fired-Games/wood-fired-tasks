@@ -13,6 +13,7 @@ import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
 import { omitUndefined } from '../utils/omit-undefined.js';
+import { parseJsonColumn } from '../utils/parse-json-column.js';
 
 /**
  * Clamp pagination inputs into the supported repository range.
@@ -89,22 +90,6 @@ function inflateVerificationEvidence<
 }
 
 /**
- * WSJF (#627): defensive JSON parse for the wsjf_* TEXT columns. Mirrors
- * `parseVerificationEvidence` — a non-JSON string surfaces `null` rather than
- * crashing the whole query. Validation against the Zod schema happens at the
- * write boundary; read-side parsing trusts the bytes were validated on the
- * way in.
- */
-function parseWsjfJson<T>(raw: string | null | undefined): T | null {
-  if (raw === null || raw === undefined) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * WSJF (#627): serialize a wsjf_* JSON metadata member for storage. `undefined`
  * (caller omitted it) and explicit `null` both persist as a NULL column;
  * anything else is JSON.stringify'd. Validation already happened at the schema
@@ -134,7 +119,7 @@ function inflateWsjf<T extends Record<string, unknown>>(task: T): T {
   const out: Record<string, unknown> = { ...task };
   for (const col of WSJF_JSON_COLUMNS) {
     const raw = task[col];
-    out[col] = typeof raw === 'string' ? parseWsjfJson(raw) : (raw ?? null);
+    out[col] = typeof raw === 'string' ? parseJsonColumn(raw) : (raw ?? null);
   }
   return out as T;
 }

@@ -373,24 +373,6 @@ export interface CreateProjectDTO {
   model_policy?: ModelPolicy | null;
 }
 
-export interface UpdateProjectDTO {
-  name?: string;
-  description?: string | null;
-  /**
-   * WSJF (Phase 3.1): patch the value charter. `undefined` (key absent)
-   * leaves the column untouched; explicit `null` clears it; an object sets it
-   * (serialized to JSON by the repository).
-   */
-  value_charter?: ValueCharter | null;
-  /**
-   * Configurable Task Models: patch the per-project model policy. `undefined`
-   * (key absent) leaves the column untouched; explicit `null` clears it; an
-   * object sets it (serialized to JSON by the repository). Mirrors
-   * `value_charter` wiring.
-   */
-  model_policy?: ModelPolicy | null;
-}
-
 export interface CreateDependencyDTO {
   task_id: number;
   blocks_task_id: number;

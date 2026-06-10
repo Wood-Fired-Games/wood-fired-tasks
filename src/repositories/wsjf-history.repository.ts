@@ -15,6 +15,7 @@ export { WSJF_HISTORY_TRIGGERS } from '../types/wsjf.js';
 export type { WsjfHistoryTrigger } from '../types/wsjf.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import { AppendOnlyViolationError } from './errors.js';
+import { parseJsonColumn } from '../utils/parse-json-column.js';
 
 /**
  * WSJF (task #628): append-only repository over the `wsjf_score_history` table
@@ -118,16 +119,6 @@ function serialize(value: unknown): string | null {
   return value === undefined || value === null ? null : JSON.stringify(value);
 }
 
-/** Defensive JSON parse for a TEXT column (non-JSON → null, never throws). */
-function parseJson<T>(raw: unknown): T | null {
-  if (typeof raw !== 'string') return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
 export class WsjfHistoryRepository implements IWsjfHistoryRepository {
   private readonly insertStmt: Database.Statement;
   private readonly findByTaskIdStmt: Database.Statement;
@@ -200,11 +191,11 @@ export class WsjfHistoryRepository implements IWsjfHistoryRepository {
       time_criticality: (row['time_criticality'] as number | null) ?? null,
       risk_opportunity: (row['risk_opportunity'] as number | null) ?? null,
       job_size: (row['job_size'] as number | null) ?? null,
-      classifications: parseJson<WsjfClassification>(row['classifications']),
-      features: parseJson<WsjfFeatures>(row['features']),
-      evidence: parseJson<WsjfEvidence>(row['evidence']),
-      source: parseJson<WsjfSource>(row['source']),
-      locked: parseJson<WsjfLocks>(row['locked']),
+      classifications: parseJsonColumn<WsjfClassification>(row['classifications']),
+      features: parseJsonColumn<WsjfFeatures>(row['features']),
+      evidence: parseJsonColumn<WsjfEvidence>(row['evidence']),
+      source: parseJsonColumn<WsjfSource>(row['source']),
+      locked: parseJsonColumn<WsjfLocks>(row['locked']),
       wsjf_score: (row['wsjf_score'] as number | null) ?? null,
       prev_wsjf_score: (row['prev_wsjf_score'] as number | null) ?? null,
     }));

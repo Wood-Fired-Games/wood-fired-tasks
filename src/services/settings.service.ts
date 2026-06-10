@@ -15,7 +15,7 @@ import { ModelPolicySchema, type ModelPolicy } from '../schemas/model-policy.sch
  *    rather than throwing — `getGlobalPolicy` runs inside every
  *    `resolve_model` call, so a single bad row must read as "no default", not
  *    brick the entire resolution surface. Mirrors the project-layer read path
- *    (`parseModelPolicy` in project.repository.ts).
+ *    (`parseJsonColumn(raw, ModelPolicySchema)` in project.repository.ts).
  *  - `setModelPolicyDefault(policy)` validates a non-null policy through
  *    `ModelPolicySchema` (rejecting an invalid shape BEFORE persisting), then
  *    stringifies and writes it. Passing `null` clears the default (writes NULL).
