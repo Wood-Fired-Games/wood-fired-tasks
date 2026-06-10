@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
 import type { ModelCatalogEntry } from '../model-catalog.service.js';
 import {
@@ -7,6 +7,13 @@ import {
   resolveAuto,
 } from '../model-policy.service.js';
 import { NotFoundError, ValidationError } from '../errors.js';
+import type Database from '../../db/driver.js';
+import { initDatabase } from '../../db/database.js';
+import { runMigrations } from '../../db/migrate.js';
+import { ProjectRepository } from '../../repositories/project.repository.js';
+import { TaskRepository } from '../../repositories/task.repository.js';
+import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
+import { TaskService } from '../task.service.js';
 
 /**
  * Build a service with fully fake, injected deps. `project`/`global` are the
@@ -358,5 +365,161 @@ describe('resolveAuto — deterministic auto resolution (task #929)', () => {
       },
       planning: 'opus',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #994 — VERIFICATION: a size-only AUTO task (created through
+// TaskService.createTask with NO wsjf payload) resolves to a CONCRETE byCategory
+// model at EVERY Fibonacci tier 1/2/3/5/8/13 — never null / inherit.
+//
+// The sizing-guarantee work (#985–#993) made createTask auto-size WSJF-less
+// creates: a create with neither a raw `wsjf` payload nor a `wsjf_submission`
+// is written through the SIZE-ONLY autoSizeTask path — `wsjf_job_size` =
+// minutesToTier(estimated_minutes), `wsjf_source.jobSize='auto'`, and the three
+// Cost-of-Delay columns left NULL. That jobSize is exactly what
+// model-policy.service routes `byCategory` off, so when a project configures a
+// byCategory policy covering all six power categories, every such task MUST
+// resolve to a concrete model id for both the execution and validation roles.
+//
+// minutesToTier thresholds (read from src/services/wsjf.service.ts):
+//   <= 15 → 1, <= 30 → 2, <= 60 → 3, <= 240 → 5, <= 960 → 8, > 960 → 13.
+// The `estimated_minutes` values below sit squarely inside each band so the
+// mapping is unambiguous and the test does not depend on boundary behaviour.
+//
+// Tasks are created THROUGH TaskService.createTask (real in-memory DB), never
+// hand-inserted, so this proves the END-TO-END auto-size → byCategory route.
+// ---------------------------------------------------------------------------
+describe('size-only auto task routes byCategory at every tier (task #994)', () => {
+  let db: Database.Database;
+  let taskService: TaskService;
+  let projectId: number;
+  let projectRepo: ProjectRepository;
+  let taskRepo: TaskRepository;
+
+  // A byCategory policy covering ALL SIX power categories, distinct per
+  // (category, role) so a wrong route is detectable. Configured on the project
+  // layer; the global layer is null so nothing leaks in via the per-slot merge.
+  const projectPolicy: ModelPolicy = {
+    execution: {
+      byCategory: {
+        minimal: 'exec-minimal',
+        light: 'exec-light',
+        moderate: 'exec-moderate',
+        strong: 'exec-strong',
+        heavy: 'exec-heavy',
+        maximum: 'exec-maximum',
+      },
+    },
+    validation: {
+      byCategory: {
+        minimal: 'val-minimal',
+        light: 'val-light',
+        moderate: 'val-moderate',
+        strong: 'val-strong',
+        heavy: 'val-heavy',
+        maximum: 'val-maximum',
+      },
+    },
+  };
+
+  beforeEach(async () => {
+    db = initDatabase(':memory:');
+    await runMigrations(db);
+    projectRepo = new ProjectRepository(db);
+    taskRepo = new TaskRepository(db);
+    const wsjfHistoryRepo = new WsjfHistoryRepository(db);
+    // Audit hook wired (db + history repo) so createTask takes the real
+    // auto-size-on-create transaction, exactly as production boot does.
+    taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
+    projectId = projectRepo.create({ name: 'Sizing Project' }).id;
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  /**
+   * Build a resolver whose deps read REAL rows from this test's DB: project
+   * existence and policy from the repos, the task's project + jobSize from the
+   * actually-created row. Mirrors production wiring — no fakes for the facts
+   * under test.
+   */
+  function resolver() {
+    return createModelPolicyService({
+      projectExists: (id) => projectRepo.findById(id) !== null,
+      getProjectPolicy: (id) => (id === projectId ? projectPolicy : null),
+      getGlobalPolicy: () => null,
+      getTask: (taskId) => {
+        const t = taskRepo.findById(taskId);
+        return t === null ? null : { project_id: t.project_id, wsjf_job_size: t.wsjf_job_size };
+      },
+    });
+  }
+
+  // estimated_minutes chosen mid-band so minutesToTier is unambiguous.
+  const TIER_CASES: Array<{ minutes: number; tier: number; category: string }> = [
+    { minutes: 10, tier: 1, category: 'minimal' },
+    { minutes: 25, tier: 2, category: 'light' },
+    { minutes: 45, tier: 3, category: 'moderate' },
+    { minutes: 120, tier: 5, category: 'strong' },
+    { minutes: 600, tier: 8, category: 'heavy' },
+    { minutes: 1500, tier: 13, category: 'maximum' },
+  ];
+
+  it.each(
+    TIER_CASES,
+  )('estimated_minutes=$minutes auto-sizes to tier $tier and resolves byCategory exec+val to concrete models', ({
+    minutes,
+    tier,
+    category,
+  }) => {
+    // Create through the public service with NO wsjf payload → auto-sized.
+    const task = taskService.createTask({
+      title: `auto tier ${tier}`,
+      project_id: projectId,
+      created_by: 'test-agent',
+      estimated_minutes: minutes,
+    });
+
+    // The create auto-sized to the expected tier with a SIZE-ONLY write:
+    // jobSize set, CoD components NULL, source.jobSize='auto'.
+    expect(task.wsjf_job_size).toBe(tier);
+    expect(task.wsjf_value).toBeNull();
+    expect(task.wsjf_time_criticality).toBeNull();
+    expect(task.wsjf_risk_opportunity).toBeNull();
+    expect(task.wsjf_source?.jobSize).toBe('auto');
+
+    const s = resolver();
+    // The bijection relabels the jobSize tier to its power category.
+    expect(s.categoryForJobSize(task.wsjf_job_size)).toBe(category);
+
+    // resolve_model returns a CONCRETE byCategory model — never null/inherit —
+    // for BOTH the execution and validation roles.
+    const exec = s.resolveModel(projectId, 'execution', task.id);
+    const val = s.resolveModel(projectId, 'validation', task.id);
+    expect(exec).toEqual({ model: `exec-${category}` });
+    expect(val).toEqual({ model: `val-${category}` });
+    expect(exec).not.toBeNull();
+    expect(val).not.toBeNull();
+  });
+
+  it('all six tiers resolve to six DISTINCT concrete execution models (no tier collapses to inherit)', () => {
+    const resolved = TIER_CASES.map(({ minutes, tier }) => {
+      const task = taskService.createTask({
+        title: `distinct tier ${tier}`,
+        project_id: projectId,
+        created_by: 'test-agent',
+        estimated_minutes: minutes,
+      });
+      const s = resolver();
+      const exec = s.resolveModel(projectId, 'execution', task.id);
+      const val = s.resolveModel(projectId, 'validation', task.id);
+      // Neither role ever inherits the session model for an auto-sized task.
+      expect(exec).not.toBeNull();
+      expect(val).not.toBeNull();
+      return (exec as { model: string }).model;
+    });
+    expect(new Set(resolved).size).toBe(6);
   });
 });
