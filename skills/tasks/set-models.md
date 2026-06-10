@@ -128,15 +128,22 @@ Per stage:
 - **Options** = the discovered catalog models (live or fallback) **plus** a
   final `"Let me decide (auto)"` option that records the `auto` sentinel for
   the stage's category (or categories).
-- **Recommended (first/default) options ascend monotonically across the four
-  stages**: stage 1 recommends the lowest-power catalog model; each later
-  stage recommends a model **≥** the previous stage's recommendation, ending
-  with the most powerful catalog model on stage 4. Because all four stages
-  ship in one call, recommendations are computed up front from the catalog's
-  power order — they cannot react to the user's in-call picks. For the
-  SECOND role's call, seed stage 1's recommendation from the first role's
-  stage-1 pick when it was concrete (carry the established floor across
-  roles); `auto` picks never move the floor.
+- **Option order is FIXED and identical on every stage and every role:**
+  ascending catalog power (lowest-power model first → most powerful last),
+  then `"Let me decide (auto)"` always last. Never reorder options to float
+  the recommendation to the front — the user scans the same list shape on
+  every question; only the `(Recommended)` tag moves.
+- **Recommendations ascend monotonically across the four stages**: stage 1
+  recommends the lowest-power catalog model; each later stage recommends a
+  model **≥** the previous stage's recommendation, ending with the most
+  powerful catalog model on stage 4. Mark the recommended option by
+  appending `(Recommended)` to its label **in place** (per the fixed order
+  above). Because all four stages ship in one call, recommendations are
+  computed up front from the catalog's power order — they cannot react to
+  the user's in-call picks. For the SECOND role's call, seed stage 1's
+  recommendation from the first role's stage-1 pick when it was concrete
+  (carry the established floor across roles); `auto` picks never move the
+  floor.
 - **Pair semantics:** a stage-1 or stage-2 pick (including `auto`) is stored
   under BOTH of its categories. If the user wants the paired categories
   split (e.g. a different model for `minimal` vs `light`), they can say so
@@ -151,7 +158,8 @@ four-stage walk fills all six by default.
 ### 5. Ask the single planning question
 
 For role `planning`, ask **one** question: a single model for the constant
-planning slot, with the same `"Let me decide (auto)"` option. Record it as
+planning slot, with the same fixed option order as §4 (ascending catalog
+power, `auto` last) and the same `"Let me decide (auto)"` option. Record it as
 `planning.constant`. Only if the user explicitly asks for per-category planning
 routing, branch into the same four-stage walk for `planning.byCategory`;
 otherwise the constant governs (§5).
