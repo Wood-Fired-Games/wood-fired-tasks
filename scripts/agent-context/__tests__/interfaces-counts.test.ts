@@ -85,7 +85,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     ).toBe(22);
   });
 
-  it('MCP tool files together register exactly 27 tools', () => {
+  it('MCP tool files together register exactly 31 tools', () => {
     const perFile = MCP_TOOL_FILES.map((rel) => ({
       file: rel,
       count: countMatches(repoRoot, rel, MCP_TOOL_REGEX),

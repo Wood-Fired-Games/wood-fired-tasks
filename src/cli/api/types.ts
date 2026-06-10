@@ -108,9 +108,11 @@ export interface UpdateProjectInput {
   /** WSJF (Phase 3.1): patch the value charter; `null` clears, absent leaves untouched. */
   value_charter?: ValueCharter | null;
   /**
-   * Configurable Task Models (Task 12): patch the per-project model policy;
-   * `null` clears, absent leaves untouched. The server merges this into the
-   * stored `model_policy` column via `PUT /projects/:id`.
+   * Configurable Task Models (Task 12): set the per-project model policy;
+   * `null` clears, absent leaves untouched. NOTE: a non-null value REPLACES
+   * the stored `model_policy` column wholesale via `PUT /projects/:id` —
+   * callers wanting incremental updates must fetch-merge-write (the
+   * `project-set-models` command does this via `mergeModelPolicies`).
    */
   model_policy?: ModelPolicy | null;
 }

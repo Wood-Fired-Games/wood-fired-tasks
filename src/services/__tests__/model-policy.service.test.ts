@@ -116,15 +116,35 @@ describe('resolveModel — within a single layer', () => {
       expect(s.resolveModel(1, 'planning')).toEqual({ model: 'claude-opus-4-8' });
     });
 
-    it('uses the planning constant even for a scored task (no category routing)', () => {
+    it('routes a scored planning task through byCategory before the constant (uniform slot walk)', () => {
       const s = createModelPolicyService(
         fakeDeps(
-          { planning: { constant: 'pin', byCategory: { heavy: 'should-be-ignored' } } },
+          { planning: { constant: 'pin', byCategory: { heavy: 'planning-heavy' } } },
           null,
           { 7: 8 },
         ),
       );
-      expect(s.resolveModel(1, 'planning', 7)).toEqual({ model: 'pin' });
+      expect(s.resolveModel(1, 'planning', 7)).toEqual({ model: 'planning-heavy' });
+    });
+
+    it('uses the planning constant when no task_id is supplied (the normal §R planning dispatch)', () => {
+      const s = createModelPolicyService(
+        fakeDeps(
+          { planning: { constant: 'pin', byCategory: { heavy: 'planning-heavy' } } },
+          null,
+          { 7: 8 },
+        ),
+      );
+      expect(s.resolveModel(1, 'planning')).toEqual({ model: 'pin' });
+    });
+
+    it('honors a constant on the execution role (byCategory → constant → default)', () => {
+      const s = createModelPolicyService(
+        fakeDeps({ execution: { constant: 'exec-pin' } }, null, { 7: 8 }),
+      );
+      // No byCategory entry and no default — the constant must resolve, not null.
+      expect(s.resolveModel(1, 'execution', 7)).toEqual({ model: 'exec-pin' });
+      expect(s.resolveModel(1, 'execution')).toEqual({ model: 'exec-pin' });
     });
 
     it('falls back to the planning default when no constant is set', () => {

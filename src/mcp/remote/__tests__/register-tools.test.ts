@@ -747,14 +747,15 @@ describe('registerRemoteTools', () => {
     expect(r.structuredContent).toEqual({ model: 'claude-opus' });
   });
 
-  it('resolve_model surfaces the null "inherit" sentinel unwrapped', async () => {
+  it('resolve_model OMITS structuredContent for the null "inherit" sentinel', async () => {
     client.resolveModel.mockResolvedValue(null);
     const r = await handlers.get('resolve_model')!({ project_id: 1, role: 'planning' });
     expect(client.resolveModel).toHaveBeenCalledWith(1, 'planning', undefined);
     expect(r.content[0].text).toBe('inherit (session model)');
-    // The null resolver output is surfaced unwrapped (inherit the session model)
-    // — identical to the stdio tool.
-    expect(r.structuredContent).toBeNull();
+    // The wire schema types structuredContent as an optional RECORD — a
+    // literal null fails client-side validation. Inherit = absent key,
+    // identical to the stdio tool.
+    expect('structuredContent' in r).toBe(false);
   });
 
   it('resolve_model error path wraps in McpError', async () => {

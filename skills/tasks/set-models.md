@@ -189,7 +189,8 @@ Assemble the `ModelPolicy`:
 back as a per-category table and ask the user to confirm. On confirmation,
 persist to the resolved layer:
 
-- **project layer** → `update_project { id: <project id>, model_policy: <policy> }`.
+- **project layer** → `update_project { id: <project id>, updates: { model_policy: <policy> } }`
+  (the tool's input schema requires the `updates` wrapper object).
 - **global layer** → `set_model_defaults { model_policy: <policy> }`.
 
 Do not write before the user confirms.

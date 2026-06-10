@@ -97,17 +97,14 @@ export function registerModelTools(server: McpServer, deps: ModelToolsDeps): voi
               text: resolved == null ? 'inherit (session model)' : resolved.model,
             },
           ],
-          // The AC requires the resolver output VERBATIM. A concrete result is
-          // an object and round-trips through `toStructuredContent`; the
-          // `null` ("inherit") sentinel is surfaced unwrapped. The SDK callback
-          // return type only admits a record (or `undefined`) for
-          // `structuredContent`, so the bare-`null` case needs the one cast at
-          // this boundary — exactly the sanctioned widening pattern used by
-          // `toStructuredContent` itself.
-          structuredContent:
-            resolved == null
-              ? (null as unknown as ReturnType<typeof toStructuredContent>)
-              : toStructuredContent(resolved),
+          // A concrete result round-trips through `toStructuredContent`. The
+          // `null` ("inherit") sentinel OMITS the key entirely: the MCP wire
+          // schema types `structuredContent` as an optional RECORD
+          // (`z.record(...).optional()` in CallToolResultSchema), so a literal
+          // `null` fails client-side result validation in SDK-built clients.
+          // The text line ("inherit (session model)") carries the sentinel;
+          // absence of structuredContent === inherit.
+          ...(resolved == null ? {} : { structuredContent: toStructuredContent(resolved) }),
         };
       } catch (error) {
         throw convertToMcpError(error);

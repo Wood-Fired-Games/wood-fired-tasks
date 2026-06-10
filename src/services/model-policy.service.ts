@@ -83,22 +83,19 @@ export function createModelPolicyService(deps: ModelPolicyDeps) {
     const projectRole = deps.getProjectPolicy(projectId)?.[role] as RolePolicy | undefined;
     const globalRole = deps.getGlobalPolicy()?.[role] as RolePolicy | undefined;
 
-    // The planning role is category-agnostic: per-slot merge constant, then default.
-    if (role === 'planning') {
-      const constant = projectRole?.constant ?? globalRole?.constant;
-      const dflt = projectRole?.default ?? globalRole?.default;
-      return toResolved(constant ?? dflt);
-    }
-
-    // Category routing for a scored task: per-slot merge the byCategory entry,
-    // then fall through to the per-slot-merged default.
+    // One uniform slot walk for every role: byCategory (task-scoped) →
+    // constant → default → null, each slot per-slot-merged project ?? global.
+    // Planning dispatches normally omit task_id, so byCategory falls through
+    // to constant — but a category-routed planning policy (or a constant on
+    // execution/validation) is honored exactly as the schema admits it.
     const category = taskId != null ? categoryForJobSize(deps.getJobSize(taskId)) : null;
     const byCat =
       category != null
         ? (projectRole?.byCategory?.[category] ?? globalRole?.byCategory?.[category])
         : undefined;
+    const constant = projectRole?.constant ?? globalRole?.constant;
     const dflt = projectRole?.default ?? globalRole?.default;
-    return toResolved(byCat ?? dflt);
+    return toResolved(byCat ?? constant ?? dflt);
   };
 
   return { categoryForJobSize, resolveModel };

@@ -174,7 +174,7 @@ describe('registerModelTools', () => {
       expect(out.content[0].text).toBe('claude-sonnet-4-6');
     });
 
-    it('surfaces the null ("inherit") sentinel verbatim', async () => {
+    it('OMITS structuredContent for the null ("inherit") sentinel (wire schema only admits a record)', async () => {
       const { server, tools } = makeFakeServer();
       registerModelTools(server, {
         catalog: fakeCatalog({ models: [], stale: true }),
@@ -186,7 +186,9 @@ describe('registerModelTools', () => {
         role: 'planning',
       });
 
-      expect(out.structuredContent).toBeNull();
+      // CallToolResultSchema types structuredContent as z.record(...).optional()
+      // — a literal null fails client-side validation, so inherit = absent key.
+      expect('structuredContent' in out).toBe(false);
       expect(out.content[0].text).toBe('inherit (session model)');
     });
 

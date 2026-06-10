@@ -16,7 +16,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
 - MCP server with 31 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
-- REST API with 52 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 45 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 42 commands
+- REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 45 commands
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
@@ -454,7 +454,7 @@ The OIDC/session/PAT surface backing the auth model lives partly outside the tas
 
 A device-authorization flow under `/auth/device*` (`GET /auth/device`, `POST /auth/device/code`, `POST /auth/device/token`, `POST /auth/device/verify`) supports headless PAT minting. When OIDC is **not** configured, the `/auth/*` and `/auth/device/*` routes are replaced by disabled-stub handlers (HTTP 501), so they exist in both modes but only one set is live per instance. When `SESSION_COOKIE_SECRET` is set, top-level HTML web routes (`GET /login`, `GET /me`, `GET /me/tokens`, `POST /me/tokens/:id/revoke`) are also served for the browser sign-in UI.
 
-This brings the full registered surface to **52 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **45** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
+This brings the full registered surface to **59 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **52** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
 
 For detailed API documentation including request/response schemas, see [docs/API.md](docs/API.md).
 

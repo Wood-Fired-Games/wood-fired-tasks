@@ -1,18 +1,23 @@
 import { Command } from 'commander';
-import { setModelPolicyDefault } from '../api/client.js';
+import { getModelPolicyDefault, setModelPolicyDefault } from '../api/client.js';
 import { colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import { addModelPolicyOptions, buildModelPolicyFromOptions } from './models.js';
+import {
+  addModelPolicyOptions,
+  buildModelPolicyFromOptions,
+  mergeModelPolicies,
+} from './models.js';
 
 /**
  * Configurable Task Models (Task 12) — `tasks settings-set-models [flags]`.
  *
  * Assembles a partial `ModelPolicy` from the per-role flags (identical to
- * `project set-models`), validates it, and persists it as the database-wide
- * model-policy DEFAULT via the global default setter (`PUT
- * /settings/model-policy`). A project without its own `model_policy` inherits
- * this default.
+ * `project-set-models`), validates it, merges it CLIENT-SIDE over the
+ * currently-stored global default (the server's write is a wholesale
+ * replace), and persists the merged result via the global default setter
+ * (`PUT /settings/model-policy`). A project without its own `model_policy`
+ * inherits this default.
  */
 export const settingsSetModelsCommand = addModelPolicyOptions(
   new Command('settings-set-models').description(
@@ -36,7 +41,10 @@ export const settingsSetModelsCommand = addModelPolicyOptions(
       return;
     }
 
-    const persisted = await setModelPolicyDefault(modelPolicy);
+    // Fetch-merge-write: keep incremental invocations non-destructive (the
+    // server replaces the stored default wholesale).
+    const current = await getModelPolicyDefault();
+    const persisted = await setModelPolicyDefault(mergeModelPolicies(current, modelPolicy));
 
     const program = settingsSetModelsCommand.parent;
     const globalOpts = program?.optsWithGlobals() || {};

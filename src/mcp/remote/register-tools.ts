@@ -1132,15 +1132,12 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
               text: resolved == null ? 'inherit (session model)' : resolved.model,
             },
           ],
-          // The AC requires the resolver output VERBATIM. A concrete result is
-          // an object and round-trips through `toStructuredContent`; the `null`
-          // ("inherit") sentinel is surfaced unwrapped — exactly the same
-          // boundary cast the stdio tool documents (the SDK callback return type
-          // only admits a record or `undefined` for `structuredContent`).
-          structuredContent:
-            resolved == null
-              ? (null as unknown as ReturnType<typeof toStructuredContent>)
-              : toStructuredContent(resolved),
+          // A concrete result round-trips through `toStructuredContent`. The
+          // `null` ("inherit") sentinel OMITS the key — the MCP wire schema
+          // types `structuredContent` as an optional RECORD, so a literal
+          // `null` fails client-side result validation. Mirrors the stdio
+          // tool exactly; absence of structuredContent === inherit.
+          ...(resolved == null ? {} : { structuredContent: toStructuredContent(resolved) }),
         };
       } catch (error) {
         throw new McpError(

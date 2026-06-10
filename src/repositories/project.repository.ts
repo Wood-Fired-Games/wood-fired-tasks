@@ -1,4 +1,5 @@
 import type Database from '../db/driver.js';
+import { ModelPolicySchema } from '../schemas/model-policy.schema.js';
 import type { Project, CreateProjectDTO, ValueCharter, ModelPolicy } from '../types/task.js';
 import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
 import type { IProjectRepository, PaginationOptions } from './interfaces.js';
@@ -27,16 +28,21 @@ function parseValueCharter(raw: string | null | undefined): ValueCharter | null 
 /**
  * Configurable Task Models: parse the JSON-string `model_policy` column into a
  * typed object so callers see a structured value (matching the Project type).
- * Mirrors `parseValueCharter`.
+ * Mirrors `parseValueCharter` — but ALSO validates the shape on read.
  *
- * Defensive: a non-JSON string (corruption / hand-edit) surfaces as `null`
- * rather than crashing the query. Shape validation is enforced by
- * `ModelPolicySchema` on write — read-side parsing trusts the stored bytes.
+ * Defensive: a non-JSON string OR a non-conforming shape (corruption,
+ * hand-edit, forward-version row written by a newer build) surfaces as `null`
+ * rather than crashing the query. Validation on read matters here because
+ * `ModelPolicySchema` is `.strict()` and project RESPONSE schemas embed it:
+ * an unvalidated stored shape would reach fastify-type-provider-zod's
+ * response serializer and turn `GET /projects` into a 500 for every project
+ * over one bad row. Degrading to `null` reads as "no policy → inherit".
  */
 function parseModelPolicy(raw: string | null | undefined): ModelPolicy | null {
   if (raw === null || raw === undefined) return null;
   try {
-    return JSON.parse(raw) as ModelPolicy;
+    const parsed = ModelPolicySchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }

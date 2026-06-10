@@ -10,7 +10,12 @@ import { ModelPolicySchema, type ModelPolicy } from '../schemas/model-policy.sch
  * Contract:
  *  - `getModelPolicyDefault()` reads the raw column; `null` (no default set)
  *    round-trips as `null`, otherwise the JSON is parsed and validated through
- *    `ModelPolicySchema` before being returned.
+ *    `ModelPolicySchema` before being returned. A non-conforming stored value
+ *    (corrupt JSON, forward-version shape, hand-edited row) DEGRADES TO `null`
+ *    rather than throwing — `getGlobalPolicy` runs inside every
+ *    `resolve_model` call, so a single bad row must read as "no default", not
+ *    brick the entire resolution surface. Mirrors the project-layer read path
+ *    (`parseModelPolicy` in project.repository.ts).
  *  - `setModelPolicyDefault(policy)` validates a non-null policy through
  *    `ModelPolicySchema` (rejecting an invalid shape BEFORE persisting), then
  *    stringifies and writes it. Passing `null` clears the default (writes NULL).
@@ -36,11 +41,21 @@ export interface SettingsDeps {
  */
 export function createSettingsService(deps: SettingsDeps) {
   return {
-    /** The global model-policy default, or `null` when none is configured. */
+    /**
+     * The global model-policy default, or `null` when none is configured.
+     * Defensive read: a stored value that fails JSON.parse or the schema
+     * degrades to `null` (see the contract note above).
+     */
     getModelPolicyDefault(): ModelPolicy | null {
       const raw = deps.readModelPolicyDefault();
       if (raw == null) return null;
-      return ModelPolicySchema.parse(JSON.parse(raw));
+      try {
+        const parsed = ModelPolicySchema.safeParse(JSON.parse(raw));
+        return parsed.success ? parsed.data : null;
+      } catch {
+        // Corrupt JSON bytes — degrade, never throw from the read path.
+        return null;
+      }
     },
     /** Set (or, with `null`, clear) the global model-policy default. Validates before writing. */
     setModelPolicyDefault(policy: ModelPolicy | null): void {

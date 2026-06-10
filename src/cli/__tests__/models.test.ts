@@ -7,7 +7,9 @@ vi.mock('../api/client.js', async (importOriginal) => {
   return {
     ...actual,
     listModels: vi.fn(),
+    getProject: vi.fn(),
     updateProject: vi.fn(),
+    getModelPolicyDefault: vi.fn(),
     setModelPolicyDefault: vi.fn(),
   };
 });
@@ -129,8 +131,9 @@ describe('project-set-models command', () => {
   });
 
   it('persists the merged model_policy via updateProject', async () => {
-    const { updateProject } = await import('../api/client.js');
+    const { getProject, updateProject } = await import('../api/client.js');
     const { projectSetModelsCommand } = await import('../commands/project-set-models.js');
+    vi.mocked(getProject).mockResolvedValue(mockProject);
     vi.mocked(updateProject).mockResolvedValue(mockProject);
 
     const program = makeProgram(projectSetModelsCommand);
@@ -145,10 +148,47 @@ describe('project-set-models command', () => {
       'auto',
     ]);
 
+    expect(getProject).toHaveBeenCalledWith(7);
     expect(updateProject).toHaveBeenCalledWith(7, {
       model_policy: {
         execution: { byCategory: { heavy: 'claude-opus-4-8' } },
         validation: { default: 'auto' },
+      },
+    });
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('merges new flags over the stored policy instead of replacing it', async () => {
+    const { getProject, updateProject } = await import('../api/client.js');
+    const { projectSetModelsCommand } = await import('../commands/project-set-models.js');
+    vi.mocked(getProject).mockResolvedValue({
+      ...mockProject,
+      model_policy: {
+        execution: { byCategory: { heavy: 'claude-opus-4-8' }, default: 'auto' },
+        planning: { constant: 'claude-opus-4-8' },
+      },
+    });
+    vi.mocked(updateProject).mockResolvedValue(mockProject);
+
+    const program = makeProgram(projectSetModelsCommand);
+    await program.parseAsync([
+      'node',
+      'test',
+      'project-set-models',
+      '7',
+      '--execution-heavy',
+      'claude-fable-5',
+      '--validation-default',
+      'auto',
+    ]);
+
+    // Stored execution.default + planning survive; the heavy route is
+    // overridden; validation is added — nothing is destroyed.
+    expect(updateProject).toHaveBeenCalledWith(7, {
+      model_policy: {
+        execution: { byCategory: { heavy: 'claude-fable-5' }, default: 'auto' },
+        validation: { default: 'auto' },
+        planning: { constant: 'claude-opus-4-8' },
       },
     });
     expect(process.exitCode).toBe(0);
@@ -197,8 +237,9 @@ describe('settings-set-models command', () => {
   });
 
   it('calls the global default setter (setModelPolicyDefault)', async () => {
-    const { setModelPolicyDefault } = await import('../api/client.js');
+    const { getModelPolicyDefault, setModelPolicyDefault } = await import('../api/client.js');
     const { settingsSetModelsCommand } = await import('../commands/settings-set-models.js');
+    vi.mocked(getModelPolicyDefault).mockResolvedValue(null);
     vi.mocked(setModelPolicyDefault).mockResolvedValue({
       planning: { constant: 'auto' },
     });

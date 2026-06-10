@@ -479,8 +479,11 @@ tasks --json models list   # { models, stale } for scripting
 ### tasks project-set-models <id>
 
 Set a single project's model policy. The per-role flags assemble a partial
-`ModelPolicy` that is validated and merged into the project's `model_policy`
-column (`PUT /projects/:id`). Flag shapes:
+`ModelPolicy` that is validated, **merged client-side over the currently
+stored policy** (fetch-merge-write — the server's `PUT /projects/:id` replaces
+the column wholesale), and persisted. Incremental invocations are therefore
+non-destructive: adding validation routing later does not erase earlier
+execution flags. Flag shapes:
 
 - `--<role>-<category> <model|auto>` — route a role's power category (e.g.
   `--execution-heavy claude-opus-4-1` or `--validation-light auto`).
@@ -506,7 +509,8 @@ tasks project-set-models 7 --planning-constant claude-haiku-4
 ### tasks settings-set-models
 
 Set the **database-wide default** model policy (`PUT /settings/model-policy`).
-Identical flag surface to `project-set-models` (minus the `<id>` argument). A
+Identical flag surface and the same client-side fetch-merge-write semantics as
+`project-set-models` (minus the `<id>` argument). A
 project with no `model_policy` of its own inherits this default; an
 unconfigured default means dispatches inherit the orchestrator's session model
 (the backward-compatible behaviour).

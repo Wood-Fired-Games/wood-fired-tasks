@@ -1,9 +1,13 @@
 import { Command } from 'commander';
-import { updateProject } from '../api/client.js';
+import { getProject, updateProject } from '../api/client.js';
 import { formatProjectDetail, colorError, colorWarn, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
-import { addModelPolicyOptions, buildModelPolicyFromOptions } from './models.js';
+import {
+  addModelPolicyOptions,
+  buildModelPolicyFromOptions,
+  mergeModelPolicies,
+} from './models.js';
 import type { UpdateProjectInput } from '../api/types.js';
 
 /**
@@ -11,9 +15,10 @@ import type { UpdateProjectInput } from '../api/types.js';
  *
  * Assembles a partial `ModelPolicy` from the per-role flags
  * (`--<role>-<category>`, `--<role>-default`, `--planning-constant`), validates
- * it via `ModelPolicySchema.parse` (inside `buildModelPolicyFromOptions`), and
- * persists it through the project update path (`PUT /projects/:id`). The server
- * merges the partial policy into the stored `model_policy` column.
+ * it via `ModelPolicySchema.parse` (inside `buildModelPolicyFromOptions`),
+ * merges it CLIENT-SIDE over the project's currently-stored policy (the
+ * server's `model_policy` write is a wholesale replace), and persists the
+ * merged result through the project update path (`PUT /projects/:id`).
  */
 export const projectSetModelsCommand = addModelPolicyOptions(
   new Command('project-set-models')
@@ -44,7 +49,13 @@ export const projectSetModelsCommand = addModelPolicyOptions(
       return;
     }
 
-    const updates: UpdateProjectInput = { model_policy: modelPolicy };
+    // Fetch-merge-write: the server replaces the column wholesale, so merge
+    // the partial flag policy over the stored one here to keep incremental
+    // invocations non-destructive.
+    const current = await getProject(id);
+    const updates: UpdateProjectInput = {
+      model_policy: mergeModelPolicies(current.model_policy ?? null, modelPolicy),
+    };
     const project = await updateProject(id, updates);
 
     const program = projectSetModelsCommand.parent;

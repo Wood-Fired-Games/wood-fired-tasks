@@ -112,6 +112,33 @@ export function buildModelPolicyFromOptions(
   return ModelPolicySchema.parse(policy);
 }
 
+/**
+ * Deep-merge a flag-assembled PARTIAL policy over the currently-stored one,
+ * per role and per slot (byCategory entries merge key-wise; `constant` and
+ * `default` override only when the partial sets them). The server's
+ * `model_policy` write is a wholesale column REPLACE, so this client-side
+ * merge is what makes incremental invocations ("add validation routing
+ * without retyping the execution flags") non-destructive — the documented
+ * `set-models` UX. Returns a schema-validated complete policy to persist.
+ */
+export function mergeModelPolicies(
+  existing: ModelPolicy | null | undefined,
+  partial: ModelPolicy,
+): ModelPolicy {
+  const merged: ModelPolicy = {};
+  for (const role of MODEL_ROLES) {
+    const base = existing?.[role];
+    const patch = partial[role];
+    if (base === undefined && patch === undefined) continue;
+    const rolePolicy: RolePolicy = { ...base, ...patch };
+    if (base?.byCategory !== undefined || patch?.byCategory !== undefined) {
+      rolePolicy.byCategory = { ...base?.byCategory, ...patch?.byCategory };
+    }
+    merged[role] = rolePolicy;
+  }
+  return ModelPolicySchema.parse(merged);
+}
+
 // ── `models list` ───────────────────────────────────────────
 
 const modelsListCommand = new Command('list')
