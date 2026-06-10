@@ -24,24 +24,27 @@ import { minutesToTier } from './wsjf.service.js';
  *     so `findIdsWithNullJobSize()` returns `[]` on the next boot and the sweep
  *     writes zero rows and zero history entries.
  *   - Per-row errors are log-and-continue: a single bad row must not block the
- *     server from coming up, nor abort the remaining backfill. (Full
- *     observability / a swept/skipped/failed summary line is the separate rider
- *     task #998 — kept possible here, not implemented.)
+ *     server from coming up, nor abort the remaining backfill.
+ *   - A single summary log line emitted after the loop reports swept/skipped/
+ *     failed counts for operator observability (task #998).
  *
  * @param taskService the size-only writer (`autoSizeTask`) and its wired audit
  *                     hook. The boot wiring passes the same instance the app
  *                     exposes, so the `boot_sweep` history rows are appended.
  * @param taskRepo    the candidate scanner (`findIdsWithNullJobSize`). Shares
  *                     the same `db` handle as `taskService`.
- * @returns `{ swept, failed }` counts — `swept` is rows successfully sized,
- *          `failed` is rows whose per-row write threw and was logged-and-skipped.
+ * @returns `{ swept, skipped, failed }` counts — `swept` is rows successfully
+ *          sized, `skipped` is always 0 (done/closed are pre-filtered by the
+ *          repository query), `failed` is rows whose per-row write threw and
+ *          was logged-and-continued.
  */
 export function backfillJobSizes(
   taskService: TaskService,
   taskRepo: ITaskRepository,
-): { swept: number; failed: number } {
+): { swept: number; skipped: number; failed: number } {
   const candidates = taskRepo.findIdsWithNullJobSize();
   let swept = 0;
+  const skipped = 0;
   let failed = 0;
 
   for (const candidate of candidates) {
@@ -70,5 +73,20 @@ export function backfillJobSizes(
     }
   }
 
-  return { swept, failed };
+  // Summary line — one entry per boot sweep so operators can gauge backlog debt
+  // and catch repeated failures without trawling per-row entries (#998).
+  // Uses console.error (stderr) so it lands in the same boot-log stream as the
+  // per-row failure entries above; `level` differentiates the two in log
+  // aggregators. (biome noConsole only allows error/warn in services/.)
+  console.error(
+    JSON.stringify({
+      level: 'info',
+      msg: 'job_size_backfill.complete',
+      swept,
+      skipped,
+      failed,
+    }),
+  );
+
+  return { swept, skipped, failed };
 }

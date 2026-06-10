@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -92,6 +92,47 @@ describe('boot sweep — idempotent NULL job-size backfill (#992)', () => {
     db.close();
     return { projectId, openIds, doneId, closedId };
   }
+
+  it('AC1+summary: happy-path summary line reports swept/skipped/failed=0 after all rows succeed', async () => {
+    const { openIds } = await seed();
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const db = initDatabase(dbPath);
+    await runMigrations(db);
+    const projectRepo = new ProjectRepository(db);
+    const taskRepo = new TaskRepository(db);
+    const historyRepo = new WsjfHistoryRepository(db);
+    const { TaskService } = await import('../../services/task.service.js');
+    const service = new TaskService(taskRepo, projectRepo, db, historyRepo);
+
+    const result = backfillJobSizes(service, taskRepo);
+
+    expect(result.swept).toBe(openIds.length);
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(0);
+
+    // Exactly one summary log line with the expected shape.
+    const summaryLines = errorSpy.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(args[0] as string);
+        } catch {
+          return null;
+        }
+      })
+      .filter((obj) => obj !== null && obj.msg === 'job_size_backfill.complete');
+    expect(summaryLines).toHaveLength(1);
+    expect(summaryLines[0]).toMatchObject({
+      level: 'info',
+      msg: 'job_size_backfill.complete',
+      swept: openIds.length,
+      skipped: 0,
+      failed: 0,
+    });
+
+    errorSpy.mockRestore();
+    db.close();
+  });
 
   it('AC1: backfills NULL-size non-terminal tasks with size + source.jobSize=auto + boot_sweep history', async () => {
     const { openIds } = await seed();
@@ -190,9 +231,51 @@ describe('boot sweep — idempotent NULL job-size backfill (#992)', () => {
       return original(args);
     }) as typeof service.autoSizeTask;
 
+    // Spy on console.error — both per-row failures and the summary use stderr.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const result = backfillJobSizes(service, taskRepo);
+
     expect(result.failed).toBe(1);
     expect(result.swept).toBe(openIds.length - 1);
+    expect(result.skipped).toBe(0);
+
+    // Parse all JSON lines captured on stderr.
+    const parsedLines = errorSpy.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(args[0] as string);
+        } catch {
+          return null;
+        }
+      })
+      .filter((obj) => obj !== null);
+
+    // (a) The failing row's task id + error message were logged via console.error.
+    const errorLines = parsedLines.filter((obj) => obj.msg === 'job_size_backfill.row_failed');
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toMatchObject({
+      level: 'error',
+      msg: 'job_size_backfill.row_failed',
+      taskId: boomId,
+      err: 'forced mid-sweep failure',
+    });
+
+    // (b) The sweep continued — other rows were swept (asserted via return value
+    //     and db state below).
+
+    // (c) Summary line reports correct swept/skipped/failed counts.
+    const summaryLines = parsedLines.filter((obj) => obj.msg === 'job_size_backfill.complete');
+    expect(summaryLines).toHaveLength(1);
+    expect(summaryLines[0]).toMatchObject({
+      level: 'info',
+      msg: 'job_size_backfill.complete',
+      swept: openIds.length - 1,
+      skipped: 0,
+      failed: 1,
+    });
+
+    errorSpy.mockRestore();
 
     // The non-failing rows committed; the failing row is still NULL — and the
     // commits did NOT roll back (per-row transaction).
