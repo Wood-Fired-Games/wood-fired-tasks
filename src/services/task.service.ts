@@ -24,6 +24,7 @@ import {
   computeWsjf,
   validateManualScore,
   derivePropagatedValuePrior,
+  minutesToTier,
   type PropagatedValuePrior,
 } from './wsjf.service.js';
 import {
@@ -341,6 +342,55 @@ export class TaskService {
   }
 
   /**
+   * Guaranteed-task-sizing (design §4): minutes-vs-jobSize conflict gate for
+   * RAW wsjf writes. When a create/update carries BOTH an `estimated_minutes`
+   * and a raw `wsjf` payload bearing a jobSize, reject iff
+   * `minutesToTier(estimated_minutes)` lands on a DIFFERENT tier than
+   * `wsjf.jobSize` — naming both values. "Conflict" means a different tier
+   * after mapping (45 vs 60 min both map to tier 3 and must NOT error), never
+   * different raw numbers.
+   *
+   * The gate deliberately does NOT apply to `wsjf_submission` classifications.
+   * Those arrive at this service already converted to a WriteDTO by
+   * `submissionToWsjfWrite` (src/mcp/tools/task-tools.ts), which stamps an
+   * all-`'auto'` `source` map (`source.jobSize === 'auto'`) — the only
+   * service-visible signal distinguishing a submission/auto-sized write from a
+   * raw/manual/pre-computed one. A classification is evidence-backed judgment
+   * (already validated by the `jobSizeBand` clamp) and legitimately pairs a
+   * short `estimated_minutes` with a band-chosen high tier, so it outranks the
+   * minutes prior. A raw write (no `source`, or `source.jobSize !== 'auto'`)
+   * is the manual/pre-computed path the gate guards.
+   *
+   * No-op when `estimated_minutes` is absent (nothing to compare) or when no
+   * raw `wsjf` jobSize is present.
+   *
+   * @param estimatedMinutes the create/update `estimated_minutes` (or absent).
+   * @param wsjf             the normalized WSJF WriteDTO for this write (or null).
+   */
+  private assertMinutesTierConsistency(
+    estimatedMinutes: number | null | undefined,
+    wsjf: WsjfWriteDTO | null | undefined,
+  ): void {
+    // Nothing to compare without both a minutes estimate and a raw jobSize.
+    if (estimatedMinutes === undefined || estimatedMinutes === null) return;
+    if (wsjf === undefined || wsjf === null) return;
+    // Exempt submission-derived / auto-sized writes: their jobSize is an
+    // evidence-backed (or server-computed) judgment, marked `source.jobSize='auto'`.
+    if (wsjf.source?.jobSize === 'auto') return;
+    const minutesTier = minutesToTier(estimatedMinutes);
+    if (minutesTier !== wsjf.jobSize) {
+      throw new ValidationError({
+        wsjf: [
+          `estimated_minutes ${estimatedMinutes} maps to job-size tier ${minutesTier}, ` +
+            `but the supplied wsjf.jobSize is ${wsjf.jobSize}. These disagree: ` +
+            `either correct estimated_minutes so minutesToTier matches the tier, ` +
+            `or set wsjf.jobSize to ${minutesTier}.`,
+        ],
+      });
+    }
+  }
+
+  /**
    * Create a new task with validation
    * Tasks always start with status 'open' regardless of input
    */
@@ -430,6 +480,10 @@ export class TaskService {
       ...normalizeWsjfWrite(parsedWsjf),
     };
     const wsjf = (createDto.wsjf ?? null) as WsjfWriteDTO | null;
+    // Guaranteed-task-sizing (design §4): reject a raw wsjf write whose jobSize
+    // disagrees (after minutesToTier mapping) with estimated_minutes. Exempts
+    // submission-derived writes (source.jobSize === 'auto').
+    this.assertMinutesTierConsistency(result.data.estimated_minutes, wsjf);
     // WSJF (#643): a manual override on create runs the same manual gate as
     // update_task (enum + shared contradiction rule, no classification needed)
     // and audits with `trigger='manual'`; an auto create keeps `trigger='create'`.
@@ -714,6 +768,11 @@ export class TaskService {
     // `existing` row we already loaded above. Clearing the score (`wsjf: null`)
     // is not a component-value write, so it appends no history row.
     const wsjfUpdate = result.data.wsjf as WsjfWriteDTO | null | undefined;
+    // Guaranteed-task-sizing (design §4): same minutes-vs-jobSize conflict gate
+    // on the update raw-wsjf path. Compares the update's own `estimated_minutes`
+    // against a raw `wsjf.jobSize`; exempts submission-derived writes
+    // (source.jobSize === 'auto').
+    this.assertMinutesTierConsistency(result.data.estimated_minutes, wsjfUpdate);
     // WSJF (#643): a manual override (`wsjf.manual === true`) skips the
     // classification/evidence requirement but MUST still pass the manual gate —
     // enum membership + the SHARED contradiction rule (jobSize=1 ∧ value=13 →

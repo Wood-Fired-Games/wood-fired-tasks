@@ -211,6 +211,81 @@ describe('TaskService', () => {
         expect(task.id).toBeGreaterThan(0);
       });
     });
+
+    // Guaranteed-task-sizing (design §4): minutes-vs-jobSize conflict gate for
+    // RAW wsjf writes. estimated_minutes=20 maps to tier 2 (minutesToTier).
+    describe('minutes-vs-jobSize conflict gate (§4)', () => {
+      it('rejects estimated_minutes=20 with raw wsjf.jobSize=8, naming both tier values', () => {
+        let thrown: unknown;
+        try {
+          taskService.createTask({
+            title: 'Conflicting raw size',
+            project_id: testProjectId,
+            created_by: 'user',
+            estimated_minutes: 20,
+            wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 8 },
+          });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ValidationError);
+        const message = JSON.stringify((thrown as ValidationError).fieldErrors);
+        // Names both the minutes-derived tier (2) and the supplied jobSize (8).
+        expect(message).toContain('tier 2');
+        expect(message).toContain('8');
+        expect(message).toContain('20');
+      });
+
+      it('accepts estimated_minutes=20 with raw wsjf.jobSize=2 (same tier)', () => {
+        const task = taskService.createTask({
+          title: 'Consistent raw size',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+        });
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.wsjf_job_size).toBe(2);
+      });
+
+      it('does NOT reject a submission-derived write (source.jobSize=auto) whose tier differs from minutes', () => {
+        // A submission arrives at the service already converted to a WriteDTO by
+        // submissionToWsjfWrite, which stamps an all-`auto` source map. The gate
+        // must exempt it even when the band-chosen jobSize crosses the minutes
+        // tier (estimated_minutes=20 → tier 2, but jobSize=8).
+        const task = taskService.createTask({
+          title: 'Submission-derived high tier',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+          wsjf: {
+            value: 8,
+            timeCriticality: 5,
+            riskOpportunity: 3,
+            jobSize: 8,
+            source: {
+              value: 'auto',
+              timeCriticality: 'auto',
+              riskOpportunity: 'auto',
+              jobSize: 'auto',
+            },
+          },
+        });
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.wsjf_job_size).toBe(8);
+      });
+
+      it('passes a raw wsjf write with NO estimated_minutes (nothing to compare)', () => {
+        const task = taskService.createTask({
+          title: 'Raw size, no minutes',
+          project_id: testProjectId,
+          created_by: 'user',
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 8 },
+        });
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.wsjf_job_size).toBe(8);
+      });
+    });
   });
 
   describe('getTask', () => {
@@ -254,6 +329,45 @@ describe('TaskService', () => {
       const updated = taskService.updateTask(created.id, { title: 'Updated' });
 
       expect(updated.title).toBe('Updated');
+    });
+
+    // Guaranteed-task-sizing (design §4): the conflict gate also guards the
+    // update raw-wsjf path. estimated_minutes=20 → tier 2; raw jobSize=8 conflicts.
+    it('rejects an update carrying estimated_minutes=20 and raw wsjf.jobSize=8 (cross-tier conflict)', () => {
+      const created = taskService.createTask({
+        title: 'To update',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      let thrown: unknown;
+      try {
+        taskService.updateTask(created.id, {
+          estimated_minutes: 20,
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 8 },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ValidationError);
+      const message = JSON.stringify((thrown as ValidationError).fieldErrors);
+      expect(message).toContain('tier 2');
+      expect(message).toContain('8');
+      expect(message).toContain('20');
+    });
+
+    it('accepts an update with estimated_minutes=20 and raw wsjf.jobSize=2 (same tier)', () => {
+      const created = taskService.createTask({
+        title: 'To update consistently',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const updated = taskService.updateTask(created.id, {
+        estimated_minutes: 20,
+        wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+      });
+      expect(updated.wsjf_job_size).toBe(2);
     });
 
     it('changes priority', () => {
