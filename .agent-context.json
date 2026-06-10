@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-09T23:26:22.676Z",
+    "generated_at": "2026-06-10T00:44:27.189Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -92,8 +92,8 @@
       "status": "present",
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
-      "actual_lines": 374,
-      "sha256": "744eadf84e0a8563c0c9e43720fd0b2ccf2aab4536f7f80c5649a0d0d30d152b",
+      "actual_lines": 383,
+      "sha256": "b922289e482e184bc4d8b28948cd7e7b9bc8af212fe2aa046b093300a044564f",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -136,7 +136,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 1201,
-      "sha256": "6bbf4ec317faf580ba4b6db0d8632a57122380618bea819248219e5fc21b58a2"
+      "sha256": "111213fedd9c4d79cfd20b5b5fc879228b323fa6858a6ac7af8b8669e5660553"
     },
     {
       "path": "docs/CLI.md",
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1477,
-      "sha256": "022c167ff7a94ccb0d12b8ae06c56bc41a99837acf3209f334add29ff7eea3dc"
+      "actual_lines": 1483,
+      "sha256": "b56471a666496832bdfd9cfff75fbedc195aa376e000ea9b5648dd42e3de318d"
     },
     {
       "path": "docs/SLACK.md",
@@ -351,14 +351,14 @@
       "role": "project-front-door",
       "purpose": "Product-level overview, install, quickstart.",
       "when_to_read": "reference",
-      "line_budget": 850,
+      "line_budget": 875,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
-      "approx_token_budget": 17000,
-      "actual_lines": 850,
-      "sha256": "b8526f358b4a47d325e899e32453f228f55f219da73615c179932b3ac8568a7f"
+      "approx_token_budget": 17500,
+      "actual_lines": 859,
+      "sha256": "2d5c56cb1e2e5c45d90671f020b117385904068ab4bd7a88222e50f13354fee1"
     },
     {
       "path": "SECURITY.md",

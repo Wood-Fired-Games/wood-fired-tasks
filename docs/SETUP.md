@@ -1385,6 +1385,12 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `RATE_LIMIT_MAX` | no | `1000` | Maximum requests per window (global, via `@fastify/rate-limit`). `/health` is allow-listed. |
 | `RATE_LIMIT_TIME_WINDOW` | no | `1 minute` | Window string accepted by `@fastify/rate-limit`. |
 
+### Model catalog (read directly in `src/index.ts`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | no | — | Anthropic API key for the model-catalog service's runtime model discovery (`GET https://api.anthropic.com/v1/models`), which backs `GET /api/v1/models` and the `list_models`/`resolve_model` MCP tools. When unset (or the Models API is unreachable) the catalog serves a static fallback with `stale: true` — the Configurable Task Models feature keeps working, just against the bundled model list. The key is only ever sent to the Anthropic API; it is never echoed in responses or logs. |
+
 ### CLI (read by `src/cli/config/env.ts` and individual commands)
 
 | Variable | Required | Default | Description |

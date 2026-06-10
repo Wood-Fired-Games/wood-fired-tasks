@@ -7,7 +7,7 @@ import { addModelPolicyOptions, buildModelPolicyFromOptions } from './models.js'
 import type { UpdateProjectInput } from '../api/types.js';
 
 /**
- * Configurable Task Models (Task 12) — `tasks project set-models <id> [flags]`.
+ * Configurable Task Models (Task 12) — `tasks project-set-models <id> [flags]`.
  *
  * Assembles a partial `ModelPolicy` from the per-role flags
  * (`--<role>-<category>`, `--<role>-default`, `--planning-constant`), validates

@@ -910,7 +910,7 @@ Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and ad
 
 ### Model Tools (4 tools)
 
-The four model tools surface the **Configurable Task Models** layer: runtime Claude-model discovery and the two-layer per-slot model-policy resolver, plus get/set of the database-wide default policy. They register **only on the local (stdio) server** — and only when their backing services (model catalog, model-policy resolver, settings) are wired, which the production boot (`src/mcp/server.ts`) always does. `list_models` and `get_model_defaults` are read-only; `resolve_model` is a pure read over the resolver; `set_model_defaults` writes the global default. They are not part of the remote REST-backed subset.
+The four model tools surface the **Configurable Task Models** layer: runtime Claude-model discovery and the two-layer per-slot model-policy resolver, plus get/set of the database-wide default policy. They register on **both** servers: locally only when their backing services (model catalog, model-policy resolver, settings) are wired — which the production boot (`src/mcp/server.ts`) always does — and remotely (#926) as REST proxies with byte-identical input/output schemas (`list_models` → `GET /api/v1/models`, `resolve_model` → `GET /api/v1/projects/:id/resolve-model`, `get_model_defaults`/`set_model_defaults` → `GET|PUT /api/v1/settings/model-policy`). `list_models` and `get_model_defaults` are read-only; `resolve_model` is a pure read over the resolver; `set_model_defaults` writes the global default.
 
 #### list_models
 

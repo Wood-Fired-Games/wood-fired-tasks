@@ -560,7 +560,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 31 tools and 1 resource for Claude Code integration — Task (9), Project (5), Comment (3), Dependency (3), Health (1), Topology (1), Wait (1), WSJF (4), and Model (4). A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (the 27 tools without the local-only Model tools; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 31 tools and 1 resource for Claude Code integration — Task (9), Project (5), Comment (3), Dependency (3), Health (1), Topology (1), Wait (1), WSJF (4), and Model (4). A second entry point (`npm run mcp:remote`) exposes the same 31 tools REST-backed (the four Model tools proxy `GET /models`, `GET /projects/:id/resolve-model`, and `GET|PUT /settings/model-policy`; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -628,6 +628,15 @@ The MCP server exposes 31 tools and 1 resource for Claude Code integration — T
 | wsjf_history | Append-only WSJF score-history timeline for a task (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes |
 | rescore_project | (Mutation) Deterministically rescore a project's scored tasks against the current value charter; skips locked components; returns evaluated/changed/skipped-locked counts |
 | wsjf_health | Non-blocking degeneracy/pitfall linter for a project's WSJF state (empty findings ⇔ healthy) |
+
+### Model Tools (4)
+
+| Tool | Description |
+|------|-------------|
+| list_models | Runtime-discovered Claude model catalog (Anthropic Models API, TTL-cached); `stale: true` when serving the static fallback |
+| resolve_model | Resolve the model for a pipeline role (`execution` \| `validation` \| `planning`) for a project, optionally task-scoped for jobSize→category routing; returns `{ model }` or `null` (inherit the session model) |
+| get_model_defaults | Read the database-wide default `ModelPolicy` (`null` when unset) |
+| set_model_defaults | (Mutation) Set or clear the database-wide default `ModelPolicy` |
 
 ### Resources (1)
 

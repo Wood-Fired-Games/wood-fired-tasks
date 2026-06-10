@@ -6,7 +6,7 @@ import { jsonOutput } from '../output/json-output.js';
 import { addModelPolicyOptions, buildModelPolicyFromOptions } from './models.js';
 
 /**
- * Configurable Task Models (Task 12) — `tasks settings set-models [flags]`.
+ * Configurable Task Models (Task 12) — `tasks settings-set-models [flags]`.
  *
  * Assembles a partial `ModelPolicy` from the per-role flags (identical to
  * `project set-models`), validates it, and persists it as the database-wide

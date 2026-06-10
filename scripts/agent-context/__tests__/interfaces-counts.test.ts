@@ -14,7 +14,7 @@
  * Source files this test reads:
  *   - src/api/routes/{health,events}.ts and
  *     src/api/routes/{tasks,projects,comments,dependencies}/index.ts
- *   - src/mcp/tools/{comment,dependency,health,project,task}-tools.ts
+ *   - src/mcp/tools/{comment,dependency,health,project,task,topology,wait-for-unblock,wsjf,model}-tools.ts
  *   - src/cli/bin/tasks.ts
  *   - docs/INTERFACES.md
  */
@@ -47,6 +47,9 @@ const MCP_TOOL_FILES = [
   'src/mcp/tools/wait-for-unblock-tools.ts',
   // WSJF 1.10: wsjf_ranking, wsjf_history, rescore_project, wsjf_health.
   'src/mcp/tools/wsjf-tools.ts',
+  // Configurable Task Models: list_models, resolve_model, get_model_defaults,
+  // set_model_defaults.
+  'src/mcp/tools/model-tools.ts',
 ] as const;
 
 const CLI_ENTRY = 'src/cli/bin/tasks.ts';
@@ -92,7 +95,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
       total,
       `MCP tool count drifted. Per-file: ${JSON.stringify(perFile)}. ` +
         'Update docs/INTERFACES.md and regenerate.',
-    ).toBe(27);
+    ).toBe(31);
   });
 
   it('CLI entry wires exactly 45 commands into Commander', () => {
@@ -108,7 +111,7 @@ describe('interface counts (drift detection for docs/INTERFACES.md)', () => {
     // Each surface must restate its total verbatim so this test can detect
     // a stale doc even if the source counts still happen to match.
     expect(doc, 'missing "Total: 22 routes" anchor').toContain('Total: 22 routes');
-    expect(doc, 'missing "Total: 27 tools" anchor').toContain('Total: 27 tools');
+    expect(doc, 'missing "Total: 31 tools" anchor').toContain('Total: 31 tools');
     expect(doc, 'missing "Total: 45 commands" anchor (CLI subcommand count)').toContain(
       'Total: 45 commands',
     );
