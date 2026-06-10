@@ -237,7 +237,7 @@ export class MetricsRegistry {
     if (family === undefined) {
       throw new Error(`metrics: increment of undeclared family ${name}`);
     }
-    const key = labels.map(([k, v]) => `${k}=${v}`).join(' ');
+    const key = labels.map(([k, v]) => `${k}=${v}`).join('\u0000');
     const existing = family.get(key);
     if (existing === undefined) {
       family.set(key, { labels, key, value: delta });
