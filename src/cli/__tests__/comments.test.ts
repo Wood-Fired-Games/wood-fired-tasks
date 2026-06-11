@@ -78,6 +78,7 @@ describe('comment-add command', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let program: Command;
+  let origCredPath: string | undefined;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -85,6 +86,13 @@ describe('comment-add command', () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     process.exitCode = 0;
+
+    // Isolate credentials: point at a nonexistent path so resolveIdentityName
+    // (used by comment-add to default --author, #1007) returns null and these
+    // tests exercise the explicit-flag / prompt paths without picking up the
+    // developer's real on-disk login.
+    origCredPath = process.env.WFT_CREDENTIALS_PATH;
+    process.env.WFT_CREDENTIALS_PATH = '/nonexistent/wft-comments-test/credentials';
 
     const { commentAddCommand } = await import('../commands/comment-add.js');
     program = new Command();
@@ -95,6 +103,8 @@ describe('comment-add command', () => {
   });
 
   afterEach(() => {
+    if (origCredPath === undefined) delete process.env.WFT_CREDENTIALS_PATH;
+    else process.env.WFT_CREDENTIALS_PATH = origCredPath;
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
   });

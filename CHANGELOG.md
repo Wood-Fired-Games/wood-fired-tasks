@@ -21,6 +21,15 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   JSON envelope's `metadata.statusFilter` names the effective filter
   (`all` or the requested status). The default view is unchanged.
 
+### Fixed
+- **Non-interactive `tasks create` / `tasks comment-add` default attribution to
+  the logged-in identity** (task #1007). Scripted runs no longer fail with
+  "Missing required field: created-by" (or `author`) when `--created-by` /
+  `--author` is omitted but credentials are present — the value defaults to the
+  credentials display name (email fallback), the same identity `tasks whoami`
+  reports. The original error is preserved only when no identity can be resolved
+  (no credentials file).
+
 ## [v2.1.1] - 2026-06-09
 
 ### Fixed

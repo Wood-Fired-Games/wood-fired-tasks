@@ -4,6 +4,7 @@ import { formatTaskDetail, colorSuccess, colorError } from '../output/formatters
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { promptForMissing } from '../prompts/interactive.js';
+import { resolveIdentityName } from '../auth/credentials.js';
 import type { CreateTaskInput } from '../api/types.js';
 
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -31,10 +32,18 @@ export const createCommand = new Command('create')
       const globalOpts = program?.optsWithGlobals() || {};
       const isJsonMode = globalOpts['json'] || false;
 
+      // When --created-by is omitted, default to the logged-in identity
+      // (credentials PAT user) so scripted, non-interactive runs no longer
+      // have to hardcode an email (papercut #1007). promptForMissing then
+      // short-circuits (value is defined) — interactive prompting and the
+      // "Missing required field: created-by" error remain ONLY when no
+      // identity can be resolved (no credentials).
+      const createdByOverride = options.createdBy ?? resolveIdentityName() ?? undefined;
+
       // Prompt for missing required fields (interactive mode only)
       const title = await promptForMissing('title', options.title);
       const projectStr = await promptForMissing('project', options.project);
-      const createdBy = await promptForMissing('created-by', options.createdBy);
+      const createdBy = await promptForMissing('created-by', createdByOverride);
 
       // Parse and validate project ID
       const project = typeof projectStr === 'number' ? projectStr : parseInt(projectStr, 10);
