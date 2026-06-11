@@ -11,7 +11,19 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v2.2.0] - 2026-06-11
+
 ### Added
+- **Guaranteed task sizing.** Every task now carries a server-derived job size
+  so the Configurable-Task-Models `resolve_model` size routing (shipped in
+  v2.1.0) engages on the live backlog, while each task stays honestly
+  *unscored* for WSJF ranking: a deterministic `minutesToTier` mapping,
+  `auto_size` / `boot_sweep` history triggers, a server-internal size-only
+  write path, a `decomp-*` submission-contract gate, auto-sizing of WSJF-less
+  creates, a minutes-vs-jobSize conflict gate, recompute on `update_task` when
+  `estimated_minutes` changes (manual sizes are never clobbered), an idempotent
+  **boot sweep** that backfills NULL job sizes on every server start, and a
+  `wsjf_health` auto-sized-pending finding.
 - **`wft list --status all`** explicit sentinel and a `statusFilter` echo in
   `--json` output (task #1006). The default `wft list` view already returns
   every status — open, in_progress, blocked, done, and closed — and the
@@ -21,7 +33,29 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   JSON envelope's `metadata.statusFilter` names the effective filter
   (`all` or the requested status). The default view is unchanged.
 
+### Changed
+- **Configurable Task Models hardening** (PR-#55 review follow-ups, #928–#933):
+  `resolve_model` parity hardening for missing-project and foreign/nonexistent
+  `task_id`; single-sourced `PIPELINE_ROLES` / `FAMILY_LADDER` /
+  `DEFAULT_MODEL_MAP` with a code-level `resolveAuto`; the `modelPolicyService`
+  is now wired once in `createApp` with a memoized global policy and a prepared
+  resolver lookup; the model-catalog wire shape, model-tool definitions, and
+  JSON-column parser are single-sourced.
+- **wft-router**: real-event age gauge, start time, by-kind split, debug
+  pings, and stale-subscription resubscribe; plus an opt-in cold-start sweep
+  that dispatches pre-existing open backlogs so a freshly started router does
+  not miss work created while it was down.
+
 ### Fixed
+- **SSE**: close the stream on every server-initiated eviction and align the
+  buffer TTL with the connection age window, so long-lived clients no longer
+  silently go deaf at the eviction boundary (#1001).
+- **Claims**: same-assignee renewal, a `task.claim_released` event, and TTL
+  visibility — long-running workers no longer lose their claim without a signal
+  (#1003).
+- **Atomic block-with-dependency** via `update_task blocked_by`: a `blocked`
+  status without a blocking edge is rejected rather than becoming a dead end
+  (#1004).
 - **Non-interactive `tasks create` / `tasks comment-add` default attribution to
   the logged-in identity** (task #1007). Scripted runs no longer fail with
   "Missing required field: created-by" (or `author`) when `--created-by` /
@@ -29,6 +63,8 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   credentials display name (email fallback), the same identity `tasks whoami`
   reports. The original error is preserved only when no identity can be resolved
   (no credentials file).
+- **wft-router**: spell the NUL label-separator as a `\u0000` escape rather than
+  a raw byte.
 
 ## [v2.1.1] - 2026-06-09
 
