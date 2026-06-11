@@ -1,12 +1,13 @@
 import { Command } from 'commander';
 import { getProject, updateProject } from '../api/client.js';
-import { formatProjectDetail, colorError, colorWarn, colorSuccess } from '../output/formatters.js';
+import { formatProjectDetail, colorError, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import {
   addModelPolicyOptions,
-  buildModelPolicyFromOptions,
   mergeModelPolicies,
+  parseSetModelsOptions,
+  resolveSetModelsJsonMode,
 } from './models.js';
 import type { UpdateProjectInput } from '../api/types.js';
 
@@ -33,21 +34,9 @@ export const projectSetModelsCommand = addModelPolicyOptions(
       return;
     }
 
-    let modelPolicy;
-    try {
-      modelPolicy = buildModelPolicyFromOptions(options);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(colorError(`Invalid model policy: ${msg}`));
-      process.exitCode = 1;
-      return;
-    }
-
-    if (modelPolicy === undefined) {
-      console.log(colorWarn('No model flags specified. Use --help to see available options.'));
-      process.exitCode = 1;
-      return;
-    }
+    const parsed = parseSetModelsOptions(options);
+    if (parsed.stop) return;
+    const modelPolicy = parsed.policy;
 
     // Fetch-merge-write: the server replaces the column wholesale, so merge
     // the partial flag policy over the stored one here to keep incremental
@@ -58,9 +47,7 @@ export const projectSetModelsCommand = addModelPolicyOptions(
     };
     const project = await updateProject(id, updates);
 
-    const program = projectSetModelsCommand.parent;
-    const globalOpts = program?.optsWithGlobals() || {};
-    const isJsonMode = globalOpts['json'] || false;
+    const isJsonMode = resolveSetModelsJsonMode(projectSetModelsCommand);
 
     if (isJsonMode) {
       jsonOutput({ project }, { id: project.id });

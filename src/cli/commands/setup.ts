@@ -821,6 +821,14 @@ export interface RunSetupInteractiveOptions extends RunSetupOptions {
    */
   deviceLogin?: typeof runDeviceLogin;
   /**
+   * Injectable browser opener forwarded to the device-flow login (replaces the
+   * former no-browser env bandaid). Defaults to undefined, so production
+   * uses the real {@link openBrowser}. Tests that drive the REAL device flow
+   * (without stubbing {@link deviceLogin}) pass a stub here so the suite never
+   * spawns a real browser on a DISPLAY-set desktop.
+   */
+  opener?: (url: string) => boolean;
+  /**
    * Injectable manual-PAT persistence seam (#809). Defaults to
    * {@link persistManualPat} (validate the PAT against `GET /api/v1/me`, then
    * write the credentials file). Tests stub this to drive the manual branch
@@ -1096,6 +1104,7 @@ export async function runRemoteOnboarding(
         clientId: process.env['OIDC_DEVICE_CLIENT_ID'] ?? 'wft-cli',
         hostname: os.hostname(),
         openBrowser: true,
+        ...(options.opener !== undefined && { opener: options.opener }),
         isJson: false,
       });
       deviceOk = result.ok;

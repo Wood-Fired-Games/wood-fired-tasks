@@ -54,6 +54,9 @@ function emitJsonEvent(event: Record<string, unknown>): void {
  * - `hostname`    — local hostname, surfaced to the server for PAT auto-naming.
  * - `tokenName`   — optional advisory PAT name (`--token-name`).
  * - `openBrowser` — when `true`, best-effort auto-open the verification URL.
+ * - `opener`      — injectable browser-launch seam. Defaults to the real
+ *                   {@link openBrowser}. Tests pass a stub so the suite never
+ *                   spawns a real browser; production never overrides it.
  * - `isJson`      — when `true`, emit newline-separated JSON envelopes on stdout
  *                   instead of human-friendly text on stderr.
  */
@@ -63,6 +66,13 @@ export interface RunDeviceLoginArgs {
   hostname: string;
   tokenName?: string;
   openBrowser: boolean;
+  /**
+   * Injectable browser opener (defaults to {@link openBrowser}). This is the
+   * seam that replaces the former no-browser env bandaid: tests inject a
+   * stub instead of relying on a global env flag that, if leaked, would
+   * silently disable browser login for real users.
+   */
+  opener?: (url: string) => boolean;
   isJson: boolean;
 }
 
@@ -82,6 +92,7 @@ export type RunDeviceLoginResult = { ok: true; user: DeviceTokenSuccess['user'] 
  */
 export async function runDeviceLogin(args: RunDeviceLoginArgs): Promise<RunDeviceLoginResult> {
   const { baseUrl, clientId, hostname, tokenName, openBrowser: shouldOpenBrowser, isJson } = args;
+  const opener = args.opener ?? openBrowser;
 
   // 2. Request a device_code from the server.
   let codeResponse;
@@ -141,7 +152,7 @@ export async function runDeviceLogin(args: RunDeviceLoginArgs): Promise<RunDevic
 
   // 4. Best-effort browser launch (skipped if !openBrowser).
   if (shouldOpenBrowser) {
-    const opened = openBrowser(verification_uri_complete);
+    const opened = opener(verification_uri_complete);
     if (!isJson) {
       if (opened) {
         process.stderr.write('(Opening browser...)\n');

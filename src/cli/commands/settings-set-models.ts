@@ -1,12 +1,13 @@
 import { Command } from 'commander';
 import { getModelPolicyDefault, setModelPolicyDefault } from '../api/client.js';
-import { colorError, colorWarn, colorSuccess } from '../output/formatters.js';
+import { colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import {
   addModelPolicyOptions,
-  buildModelPolicyFromOptions,
   mergeModelPolicies,
+  parseSetModelsOptions,
+  resolveSetModelsJsonMode,
 } from './models.js';
 
 /**
@@ -25,30 +26,16 @@ export const settingsSetModelsCommand = addModelPolicyOptions(
   ),
 ).action(async (options: Record<string, string | undefined>) => {
   try {
-    let modelPolicy;
-    try {
-      modelPolicy = buildModelPolicyFromOptions(options);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(colorError(`Invalid model policy: ${msg}`));
-      process.exitCode = 1;
-      return;
-    }
-
-    if (modelPolicy === undefined) {
-      console.log(colorWarn('No model flags specified. Use --help to see available options.'));
-      process.exitCode = 1;
-      return;
-    }
+    const parsed = parseSetModelsOptions(options);
+    if (parsed.stop) return;
+    const modelPolicy = parsed.policy;
 
     // Fetch-merge-write: keep incremental invocations non-destructive (the
     // server replaces the stored default wholesale).
     const current = await getModelPolicyDefault();
     const persisted = await setModelPolicyDefault(mergeModelPolicies(current, modelPolicy));
 
-    const program = settingsSetModelsCommand.parent;
-    const globalOpts = program?.optsWithGlobals() || {};
-    const isJsonMode = globalOpts['json'] || false;
+    const isJsonMode = resolveSetModelsJsonMode(settingsSetModelsCommand);
 
     if (isJsonMode) {
       jsonOutput({ model_policy: persisted });

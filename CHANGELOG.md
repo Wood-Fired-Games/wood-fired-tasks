@@ -65,8 +65,9 @@ _No changes yet._
 - **Test suite no longer launches the developer's real browser.**
   `setup.remote.test.ts` drove the device flow with `openBrowser: true`, so
   every `npm test` on a DISPLAY-set desktop spawned `xdg-open` at a mock
-  server. `openBrowser()` now honors `WFT_NO_BROWSER`, set for every test via
-  `vitest.setup.ts`.
+  server. `runDeviceLogin` now takes an injectable `opener` seam (defaulting to
+  the real `openBrowser`); tests inject a stub instead of relying on a global
+  env flag that, if leaked, would silently disable browser login for real users.
 - **Documentation counts drift.** README / `docs/INTERFACES.md` / `docs/MCP.md`
   had stale tool (27 vs 31), route (52/45 vs 59/52), and CLI command (42 vs 45)
   counts, plus a stale "model tools are stdio-only" claim from before remote
