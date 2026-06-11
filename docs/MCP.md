@@ -375,7 +375,7 @@ The MCP server exposes 31 tools organized by domain:
 | `wsjf_ranking` | WSJF | Rank a project's tasks by propagation-adjusted WSJF; `scope="frontier"` (default) excludes blocked/not-ready, `scope="all"` ranks every task; returns base vs effective WSJF with the downstream Cost-of-Delay propagation breakdown. |
 | `wsjf_history` | WSJF | Return a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes vs the previous entry. |
 | `rescore_project` | WSJF | (MUTATION) Deterministically rescore a project's already-scored tasks against the current value charter; skips locked components, writes one history row per changed task. |
-| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn. |
+| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn, auto-sized-pending. |
 | `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. On both servers: local resolves over the in-process bus, remote over the SSE stream. |
 
 ### Task Tools (9 tools)
@@ -402,6 +402,42 @@ Create a new task in a project.
 ```
 
 **Usage:** When Claude Code needs to create a new task, bug report, or work item.
+
+**Guaranteed task sizing (guaranteed-task-sizing, #985–#993).** Every task is
+created routable — it always carries a Job Size so `resolve_model` can pick a
+power category — without ever fabricating a Cost-of-Delay numerator. Three
+server-side behaviors enforce this on **every** create surface (stdio MCP,
+remote MCP, REST), because they all funnel through `TaskService.createTask`:
+
+- **Decompose submission gate (design §1, Prong A).** A create that carries a
+  `decomp-*` tag (the marker the decompose skill stamps on every materialized
+  leaf) but **no** `wsjf_submission` is rejected as a 422-class contract
+  violation. Carrying a `decomp-*` tag without a submission means the decompose
+  skill skipped its Step 8 sizing and would mint a sizeless task — the exact
+  failure class that produced the 114 sizeless legacy tasks and silently
+  degraded model routing. The error names the offending tag and instructs the
+  caller to re-run decompose Step 8 to produce a `wsjf_submission`.
+- **Auto-sizing of WSJF-less creates (design §2/§3, #989).** A create carrying
+  NEITHER a raw `wsjf` payload NOR a `wsjf_submission` is auto-sized through a
+  server-internal, SIZE-ONLY write: `wsjf_job_size = minutesToTier(estimated_minutes)`
+  and `wsjf_source.jobSize = 'auto'` (all six `source` slots `'auto'`), while
+  the three Cost-of-Delay component columns stay NULL. The task becomes
+  routable yet stays honestly **unscored** for WSJF ranking (no fabricated
+  value / time-criticality / risk). The size-only column write and its
+  append-only `auto_size` history row commit in ONE transaction.
+- **Minutes-vs-jobSize conflict gate (design §4).** When a create carries BOTH
+  `estimated_minutes` AND a raw `wsjf` payload bearing a `jobSize`, the create
+  is rejected iff `minutesToTier(estimated_minutes)` lands on a **different**
+  tier than `wsjf.jobSize`. "Conflict" means a different tier after mapping (45
+  vs 60 min both map to tier 3 and do NOT error), never different raw numbers.
+  The gate deliberately exempts submission-derived / auto-sized writes
+  (`wsjf_source.jobSize === 'auto'`): a classification legitimately pairs a
+  short `estimated_minutes` with a band-chosen high tier and outranks the
+  minutes prior.
+
+`minutesToTier` is the single deterministic minutes→Fibonacci-tier map:
+`null`/absent → 3, ≤ 15 → 1, ≤ 30 → 2, ≤ 60 → 3, ≤ 240 → 5, ≤ 960 → 8,
+> 960 → 13.
 
 #### get_task
 
@@ -452,6 +488,22 @@ status can never land without its edge. Edges that already exist are skipped
 This matters because the `blocked → open` auto-unblock only fires off a
 dependency edge — a blocked task with no edge is a dead end that
 `check_health` flags as a `blocked-without-edge` warning.
+
+**Auto job-size recompute on minutes change (guaranteed-task-sizing, #991).**
+When an `update_task` changes `estimated_minutes` AND the task's persisted
+`wsjf_source.jobSize` is still `'auto'`, the server recomputes the Job Size via
+`minutesToTier(estimated_minutes)` through the same SIZE-ONLY write path as
+create (writing a `wsjf_job_size` column update + an append-only `auto_size`
+history row in ONE transaction). This fires ONLY when BOTH hold: (1) the update
+carries a `estimated_minutes` value that is present AND **different** from the
+row's prior value (a status-only or same-minutes update is a no-op), and (2)
+the row's existing `wsjf_source.jobSize === 'auto'`. A **manual** size
+(`wsjf_source.jobSize === 'manual'`) or a fully classification-scored row
+(`jobSize !== 'auto'`) is NEVER clobbered — the recompute only ever touches
+server-derived sizes. The same minutes-vs-jobSize conflict gate as create also
+applies to the update raw-`wsjf` path (reject when `minutesToTier(estimated_minutes)`
+disagrees with a supplied raw `wsjf.jobSize`; submission-derived writes with
+`wsjf_source.jobSize === 'auto'` are exempt).
 
 **Usage:** When Claude Code needs to modify task fields, change status, update assignee, or adjust priority.
 
@@ -902,6 +954,26 @@ Return a task's append-only WSJF score-history timeline (oldest-first). Each ent
 
 **Returns:** A chronological (oldest-first) array of score-history entries, each with the four components, `wsjf_score`, `prev_wsjf_score`, the `deltas` map, the `trigger`, actor/charter/rescore-run provenance, and the stored classifications/features/evidence.
 
+**`trigger` enum.** Each history row records WHY it was written. The closed set
+of triggers is:
+
+| Trigger | Written when |
+| --- | --- |
+| `create` | A new task is created carrying a full WSJF score. |
+| `update` | A generic `update_task` re-scores the task. |
+| `decompose` | A decompose-materialized leaf is scored from its `wsjf_submission`. |
+| `single_create` | A single (non-decompose) `create_task` carries a score. |
+| `rescore` | `rescore_project` re-runs the deterministic gate against the current charter. |
+| `manual` | A manual override (`wsjf.manual === true`) on create or update. |
+| `propagation` | A score change propagated from a related task. |
+| `auto_size` | A SIZE-ONLY auto write (guaranteed-task-sizing): `wsjf_job_size` set from `minutesToTier`, all three Cost-of-Delay components NULL, `wsjf_score` NULL. Emitted by the auto-size-on-create (#989) and minutes-change recompute (#991) paths. |
+| `boot_sweep` | A SIZE-ONLY auto write produced by the server's startup backfill sweep (#992), which sizes any pre-existing sizeless tasks. Same shape as `auto_size` — only the trigger differs, so the sweep's writes are filterable in the history. |
+
+`auto_size` and `boot_sweep` rows carry `jobSize` only: their `value`,
+`timeCriticality`, `riskOpportunity`, and `wsjf_score` are all `null` (there is
+no full WSJF without the Cost-of-Delay numerator), and their `source` map is
+all-`'auto'`.
+
 **Usage:** When Claude Code needs the provenance trail behind a task's current WSJF score — e.g. to explain a rescore, audit a manual override, or replay a score under a prior charter version.
 
 #### rescore_project
@@ -922,7 +994,7 @@ Return a task's append-only WSJF score-history timeline (oldest-first). Each ent
 
 #### wsjf_health
 
-Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The six severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, and `score-churn` (only possible because the score-history table exists). Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
+Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The seven severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, `score-churn` (only possible because the score-history table exists), and `auto-sized-pending` (guaranteed-task-sizing #993; severity `info`) — tasks that are auto-sized (`wsjf_source.jobSize === 'auto'`) with their three Cost-of-Delay components still NULL, i.e. the size-only auto-write has run but no full classification has followed. The `auto-sized-pending` finding is an informational reminder to classify the Cost-of-Delay components so the task contributes a real WSJF score; it never blocks. Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
 
 **Input Schema:**
 
