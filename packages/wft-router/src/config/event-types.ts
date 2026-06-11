@@ -22,6 +22,7 @@ export const ALLOWED_EVENT_TYPES = [
   'task.deleted',
   'task.status_changed',
   'task.claimed',
+  'task.claim_released',
   'project.created',
   'project.updated',
   'project.deleted',

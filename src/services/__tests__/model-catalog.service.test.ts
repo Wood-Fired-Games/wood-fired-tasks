@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createModelCatalogService, STATIC_FALLBACK_MODELS } from '../model-catalog.service.js';
+import {
+  FAMILY_LADDER,
+  createModelCatalogService,
+  familyOf,
+  STATIC_FALLBACK_MODELS,
+} from '../model-catalog.service.js';
 
 const ok = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200 });
 
@@ -116,6 +121,30 @@ describe('model-catalog service', () => {
     t = 2000;
     await svc.list();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  describe('familyOf (task #929)', () => {
+    it('recognizes fable via the FAMILY_LADDER token list', () => {
+      expect(familyOf('claude-fable-5')).toBe('fable');
+    });
+
+    it('recognizes every ladder family on prefixed model ids', () => {
+      // Prefixed ids (e.g. Bedrock-style) defeat the split('-')[1] fallback —
+      // the ladder token match must carry them.
+      expect(familyOf('us.anthropic.claude-fable-5-20260501-v1:0')).toBe('fable');
+      expect(familyOf('us.anthropic.claude-opus-4-8-20260101-v1:0')).toBe('opus');
+      expect(familyOf('us.anthropic.claude-sonnet-4-6-20250901-v1:0')).toBe('sonnet');
+      expect(familyOf('us.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe('haiku');
+    });
+
+    it('falls back to the second hyphen segment, then unknown', () => {
+      expect(familyOf('claude-nova-1')).toBe('nova');
+      expect(familyOf('mysterymodel')).toBe('unknown');
+    });
+
+    it('FAMILY_LADDER is the §R ladder, descending by power', () => {
+      expect(FAMILY_LADDER).toEqual(['fable', 'opus', 'sonnet', 'haiku']);
+    });
   });
 
   it('refresh() busts the cache and refetches immediately', async () => {

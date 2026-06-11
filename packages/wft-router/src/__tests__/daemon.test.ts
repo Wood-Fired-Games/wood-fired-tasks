@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { TriggersConfig } from '../config/triggers-schema.js';
 import { IdempotencyStore } from '../dispatch/index.js';
+import { GAUGE_NAMES, METRIC_NAMES, MetricsRegistry } from '../metrics.js';
 import { ExitCode, type SSEEvent } from '../sse/index.js';
 import { WftRouterDaemon, mapSSEEvent, type DaemonDeps, type HandlerRegistry } from '../daemon.js';
 import type { Handler, HandlerContext, HandlerOutcome } from '../handlers/index.js';
@@ -356,6 +357,117 @@ describe('WftRouterDaemon — lifecycle (AC #3)', () => {
       apiKey: 'wft_pat_x',
     });
     await expect(daemon.stop()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #1002 — deaf-stream observability: ping demotion, by-kind split, gauge
+// ---------------------------------------------------------------------------
+
+/** Recording logger that captures every level, including optional debug. */
+function recordingLogger(): {
+  logger: DaemonDeps['logger'];
+  warns: Array<{ obj: Record<string, unknown>; msg?: string }>;
+  debugs: Array<{ obj: Record<string, unknown>; msg?: string }>;
+} {
+  const warns: Array<{ obj: Record<string, unknown>; msg?: string }> = [];
+  const debugs: Array<{ obj: Record<string, unknown>; msg?: string }> = [];
+  return {
+    warns,
+    debugs,
+    logger: {
+      info: () => undefined,
+      error: () => undefined,
+      warn: (obj, msg) => warns.push({ obj, ...(msg !== undefined && { msg }) }),
+      debug: (obj, msg) => debugs.push({ obj, ...(msg !== undefined && { msg }) }),
+    },
+  };
+}
+
+describe('WftRouterDaemon — deaf-stream observability (task #1002)', () => {
+  it('logs pings at debug (no unmappable WARN), splits counters, and a silent stream drives the age gauge up', async () => {
+    let now = 1_000_000;
+    const metrics = new MetricsRegistry({ now: () => now });
+    const { logger, warns, debugs } = recordingLogger();
+
+    // One real event, then ONLY server keep-alive pings (the exact wire
+    // shape src/events/sse-manager.ts sends: `event: ping`, empty data)
+    // while the clock advances — the deaf-stream scenario from the
+    // maxConnectionAge eviction incident.
+    const sseSource: DaemonDeps['sseSource'] = async function* gen(_signal: AbortSignal) {
+      yield taskEvent('1', 'task.created', { id: 1 });
+      await Promise.resolve();
+      now += 60_000;
+      yield { event: 'ping', data: '' };
+      await Promise.resolve();
+      now += 60_000;
+      yield { event: 'ping', data: '' };
+      await Promise.resolve();
+      return ExitCode.CleanShutdown;
+    };
+
+    const daemon = new WftRouterDaemon({
+      config: configWith([]),
+      store: memStore(),
+      sseSource,
+      handlers: {
+        create_task_in_project: recordingHandler([], 'x'),
+        webhook_post: recordingHandler([], 'x'),
+        shell_exec: recordingHandler([], 'x'),
+        agent_session_dispatch: recordingHandler([], 'x'),
+      },
+      logger,
+      apiBaseUrl: 'https://api.test',
+      apiKey: 'wft_pat_x',
+      metrics,
+    });
+
+    daemon.start();
+    await daemon.wait();
+    await daemon.stop();
+
+    // Pings are control frames: debug-level, NEVER the unmappable WARN.
+    expect(warns.filter((w) => w.msg === 'wft_router_event_unmappable')).toEqual([]);
+    expect(debugs.filter((d) => d.msg === 'wft_router_control_event')).toHaveLength(2);
+
+    const out = metrics.render();
+    // Total preserved; split by kind.
+    expect(out).toContain(`\n${METRIC_NAMES.eventsReceived} 3\n`);
+    expect(out).toContain(`${METRIC_NAMES.eventsByKind}{kind="mappable"} 1`);
+    expect(out).toContain(`${METRIC_NAMES.eventsByKind}{kind="control"} 2`);
+    expect(out).toContain(`${METRIC_NAMES.eventsByKind}{kind="unmappable"} 0`);
+    // The real event reset the baseline at t=1_000_000; two silent minutes
+    // of ping-only traffic later the gauge reads 120 s.
+    expect(out).toContain(`\n${GAUGE_NAMES.lastRealEventAge} 120\n`);
+  });
+
+  it('still WARNs (and counts unmappable) for genuinely malformed events', async () => {
+    const metrics = new MetricsRegistry({ now: () => 0 });
+    const { logger, warns, debugs } = recordingLogger();
+
+    const daemon = new WftRouterDaemon({
+      config: configWith([]),
+      store: memStore(),
+      sseSource: sseSourceFromEvents([{ id: 'x', event: 'task.created', data: '{not json' }]),
+      handlers: {
+        create_task_in_project: recordingHandler([], 'x'),
+        webhook_post: recordingHandler([], 'x'),
+        shell_exec: recordingHandler([], 'x'),
+        agent_session_dispatch: recordingHandler([], 'x'),
+      },
+      logger,
+      apiBaseUrl: 'https://api.test',
+      apiKey: 'wft_pat_x',
+      metrics,
+    });
+
+    daemon.start();
+    await daemon.wait();
+    await daemon.stop();
+
+    expect(warns.filter((w) => w.msg === 'wft_router_event_unmappable')).toHaveLength(1);
+    expect(debugs).toEqual([]);
+    expect(metrics.render()).toContain(`${METRIC_NAMES.eventsByKind}{kind="unmappable"} 1`);
   });
 });
 

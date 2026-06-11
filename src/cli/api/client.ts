@@ -27,6 +27,7 @@ import type {
   PaginationParams,
 } from './types.js';
 import type { ModelPolicyNullable } from '../../schemas/model-policy.schema.js';
+import type { ModelCatalogEntry } from '../../schemas/model-catalog.schema.js';
 
 /**
  * Accept either the new pagination envelope `{ data, total, limit, offset }`
@@ -536,13 +537,12 @@ export async function claimTask(
 
 // ── Configurable Task Models (Task 12) ──────────────────────
 
-/** One discovered catalog model, mirroring the server's `GET /models` row. */
-export interface ModelCatalogEntry {
-  id: string;
-  display_name: string;
-  family: string;
-  created_at: string;
-}
+/**
+ * One discovered catalog model — the server's `GET /models` row (task #930:
+ * the shape is declared once in `src/schemas/model-catalog.schema.ts` and
+ * re-exported here for CLI consumers).
+ */
+export type { ModelCatalogEntry };
 
 /** The `{ models, stale }` envelope returned by `GET /models`. */
 export interface ModelCatalogResponse {

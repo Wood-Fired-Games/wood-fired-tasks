@@ -278,7 +278,10 @@ describe('MCP WSJF Tools (#630)', () => {
       );
     });
 
-    it('returns an empty timeline for a task with no WSJF history', async () => {
+    it('returns only the auto_size row for a CoD-unscored task', async () => {
+      // Guaranteed-task-sizing (#989): a bare create no longer leaves an empty
+      // timeline — it is auto-sized (size-only), so the timeline carries exactly
+      // one `auto_size` entry while the task stays unscored for CoD/ranking.
       const result = (await client.callTool({
         name: 'create_task',
         arguments: {
@@ -294,8 +297,9 @@ describe('MCP WSJF Tools (#630)', () => {
         arguments: { task_id: taskId },
       })) as ToolResult;
       expect(history.isError).toBeFalsy();
-      const data = history.structuredContent as { timeline: unknown[] };
-      expect(data.timeline).toHaveLength(0);
+      const data = history.structuredContent as { timeline: Array<{ trigger: string }> };
+      expect(data.timeline).toHaveLength(1);
+      expect(data.timeline[0].trigger).toBe('auto_size');
     });
   });
 

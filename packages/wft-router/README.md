@@ -45,6 +45,7 @@ unless `--config <path>` is given.
 | `--validate <path>` | Schema-check a config and exit (0 ok / 78 invalid) |
 | `--metrics-port <n>` | Expose Prometheus `/metrics` (off by default) |
 | `--metrics-bind <addr>` | Metrics bind address (default `127.0.0.1`) |
+| `--stale-resubscribe-after <s>` | Opt-in self-heal: re-open the SSE subscription when no real event arrived for `<s>` seconds while keep-alive pings kept flowing (or `WFT_ROUTER_STALE_RESUBSCRIBE_AFTER`); 0/absent = off |
 | `--version` / `-V` | Print version |
 
 Reserved by the design spec, not yet implemented: `--dry-run`, `--once`, `--rebuild-idempotency`.
@@ -59,7 +60,18 @@ slugs / URL / token-env names, and check it before going live:
 wft-router --validate triggers.example.yaml
 ```
 
+**Cold-start sweep** (opt-in, default off): set `sweep_on_start: true` on a
+rule or under `defaults:` and the daemon sweeps the OPEN backlog once on
+startup, dispatching at most one synthesized event per matching rule — so
+backlogs that predate the wiring (or arrived while the router was down) still
+wake their targets. Dedup: `sweep:<rule>:<floor(now / idempotency_window)>`,
+so a restart within the same window dispatches nothing. See
+[docs/event-router-design.md §Cold-start sweep](../../docs/event-router-design.md).
+
 - **Recipes** (full walkthroughs): [docs/automation-recipes/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/docs/automation-recipes)
+  - [claude-routines.md](../../docs/automation-recipes/claude-routines.md) — dispatch a routine on task close
+  - [persistent-agent-sessions.md](../../docs/automation-recipes/persistent-agent-sessions.md) — drive a long-lived agent session
+  - [agent-delegated-wsjf-sizing.md](../../docs/automation-recipes/agent-delegated-wsjf-sizing.md) — delegate full WSJF classification to an agent on task creation
 - **Reference adapters** for `agent_session_dispatch`: [examples/adapters/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/examples/adapters)
 - **Schema, predicate & templating rules**: [docs/event-router-design.md](https://github.com/Wood-Fired-Games/wood-fired-tasks/blob/main/docs/event-router-design.md)
 

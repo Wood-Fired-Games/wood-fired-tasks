@@ -93,7 +93,7 @@ tasks create \
 |--------|-------|------|-------------|
 | --title | -t | string | Task title (required) |
 | --project | -p | number | Project ID (required) |
-| --created-by | -c | string | Creator name (required) |
+| --created-by | -c | string | Creator name. Required only when no identity can be resolved — when a credentials file is present (`tasks whoami` succeeds), this defaults to the logged-in identity (display name, email fallback) so scripted `--no-input` creates need not hardcode it. An explicit `--created-by` always wins. |
 | --description | -d | string | Task description |
 | --priority | | string | Priority: low, medium, high, urgent (default: medium) |
 | --assignee | -a | string | Assignee name |
@@ -150,7 +150,7 @@ tasks list
 # Filter by project
 tasks list --project 1
 
-# Filter by status
+# Filter by status (or `--status all` for every status, explicitly)
 tasks list --status open
 
 # Filter by assignee
@@ -171,7 +171,7 @@ tasks list --project 1 --status in_progress --assignee bob
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
 | --project | -p | number | Filter by project ID |
-| --status | -s | string | Filter by status (open, in_progress, done, closed, blocked) |
+| --status | -s | string | Filter by status (`open`, `in_progress`, `done`, `closed`, `blocked`, or `all`). **Default: no filter — every status is shown, incl. `blocked` and `closed`** (so a script never mistakes an open→blocked transition for a deleted task); pass `all` to request every status explicitly. In `--json` mode `metadata.statusFilter` echoes the effective filter. |
 | --assignee | -a | string | Filter by assignee name |
 | --search | | string | Search in title and description |
 | --tags | | string | Filter by tags (comma-separated) |
@@ -275,18 +275,16 @@ Update a task. All options are optional (partial update).
 **Examples:**
 
 ```bash
-# Update status
+# Update status / assignee / priority
 tasks update 42 --status done
-
-# Update assignee and priority
 tasks update 42 --assignee bob --priority urgent
 
 # Update multiple fields
-tasks update 42 \
-  --status in_progress \
-  --description "Updated description" \
-  --due "2026-03-01T00:00:00Z" \
-  --tags "backend,api,urgent"
+tasks update 42 --status in_progress --description "Updated description" \
+  --due "2026-03-01T00:00:00Z" --tags "backend,api,urgent"
+
+# Block atomically on other tasks (edge + status in one transaction)
+tasks update 42 --status blocked --blocked-by 57,58
 ```
 
 **Options:**
@@ -300,6 +298,7 @@ tasks update 42 \
 | --assignee | string | Update assignee name |
 | --due | string | Update due date (ISO8601 format) |
 | --tags | string | Update tags (comma-separated, replaces all tags) |
+| --blocked-by | string | Blocking task IDs (comma-separated). Only valid with `--status blocked`: adds the blocking dependency edge(s) and sets the status atomically (task #1004) — the task auto-unblocks when the blockers close |
 
 **Output:**
 
@@ -735,7 +734,7 @@ tasks comment-add 42 \
 
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
-| --author | -a | string | Comment author (required, max 100 chars) |
+| --author | -a | string | Comment author (max 100 chars). Required only when no identity can be resolved — with a credentials file present it defaults to the logged-in identity (display name, email fallback), like `tasks create --created-by`. An explicit `--author` always wins. |
 | --content | -c | string | Comment content (required, max 5000 chars) |
 
 **Output:**

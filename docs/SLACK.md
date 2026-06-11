@@ -218,6 +218,7 @@ subscribes to these EventBus event types at startup:
 - `task.updated`
 - `task.status_changed`
 - `task.claimed`
+- `task.claim_released`
 - `task.deleted`
 
 For each event:

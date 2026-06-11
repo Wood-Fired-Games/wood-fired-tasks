@@ -5,54 +5,20 @@ import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../type
 import type { IProjectRepository, PaginationOptions } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
-
-/**
- * WSJF (Phase 3.1): parse the JSON-string `value_charter` column into a
- * typed object so callers see a structured value (matching the Project type)
- * instead of having to JSON.parse themselves. Mirrors
- * `parseVerificationEvidence` in task.repository.ts.
- *
- * Defensive: a non-JSON string (corruption / hand-edit) surfaces as `null`
- * rather than crashing the query. Shape validation is enforced by
- * `ValueCharterSchema` on write — read-side parsing trusts the stored bytes.
- */
-function parseValueCharter(raw: string | null | undefined): ValueCharter | null {
-  if (raw === null || raw === undefined) return null;
-  try {
-    return JSON.parse(raw) as ValueCharter;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Configurable Task Models: parse the JSON-string `model_policy` column into a
- * typed object so callers see a structured value (matching the Project type).
- * Mirrors `parseValueCharter` — but ALSO validates the shape on read.
- *
- * Defensive: a non-JSON string OR a non-conforming shape (corruption,
- * hand-edit, forward-version row written by a newer build) surfaces as `null`
- * rather than crashing the query. Validation on read matters here because
- * `ModelPolicySchema` is `.strict()` and project RESPONSE schemas embed it:
- * an unvalidated stored shape would reach fastify-type-provider-zod's
- * response serializer and turn `GET /projects` into a 500 for every project
- * over one bad row. Degrading to `null` reads as "no policy → inherit".
- */
-function parseModelPolicy(raw: string | null | undefined): ModelPolicy | null {
-  if (raw === null || raw === undefined) return null;
-  try {
-    const parsed = ModelPolicySchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
+import { parseJsonColumn } from '../utils/parse-json-column.js';
 
 /**
  * In-place transform converting the raw TEXT columns `value_charter` and
  * `model_policy` (string-or-null) into the parsed `ValueCharter | null` /
- * `ModelPolicy | null` shapes upstream consumers expect. Returns a new object
- * so the original row is not mutated.
+ * `ModelPolicy | null` shapes upstream consumers expect (via the shared
+ * `parseJsonColumn`). `value_charter` trusts the stored bytes
+ * (`ValueCharterSchema` validates on write); `model_policy` ALSO validates on
+ * read: `ModelPolicySchema` is `.strict()` and project RESPONSE schemas embed
+ * it, so an unvalidated stored shape (corruption, hand-edit, forward-version
+ * row written by a newer build) would reach fastify-type-provider-zod's
+ * response serializer and turn `GET /projects` into a 500 for every project
+ * over one bad row. Degrading to `null` reads as "no policy → inherit".
+ * Returns a new object so the original row is not mutated.
  */
 function inflateValueCharter<
   T extends {
@@ -62,10 +28,14 @@ function inflateValueCharter<
 >(project: T): T & { value_charter: ValueCharter | null; model_policy: ModelPolicy | null } {
   const rawCharter = project.value_charter;
   const parsedCharter =
-    typeof rawCharter === 'string' ? parseValueCharter(rawCharter) : (rawCharter ?? null);
+    typeof rawCharter === 'string'
+      ? parseJsonColumn<ValueCharter>(rawCharter)
+      : (rawCharter ?? null);
   const rawPolicy = project.model_policy;
   const parsedPolicy =
-    typeof rawPolicy === 'string' ? parseModelPolicy(rawPolicy) : (rawPolicy ?? null);
+    typeof rawPolicy === 'string'
+      ? parseJsonColumn(rawPolicy, ModelPolicySchema)
+      : (rawPolicy ?? null);
   return { ...project, value_charter: parsedCharter, model_policy: parsedPolicy };
 }
 

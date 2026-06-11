@@ -9,7 +9,8 @@ export type TaskEventType =
   | 'task.updated'
   | 'task.deleted'
   | 'task.status_changed'
-  | 'task.claimed'; // Defined but not emitted in Phase 14
+  | 'task.claimed' // Defined but not emitted in Phase 14
+  | 'task.claim_released'; // Task #1003: TTL sweep released a stale claim
 
 /**
  * Event types for project lifecycle
@@ -30,6 +31,7 @@ export const ALLOWED_EVENT_TYPES = [
   'task.deleted',
   'task.status_changed',
   'task.claimed',
+  'task.claim_released',
   'project.created',
   'project.updated',
   'project.deleted',
@@ -78,6 +80,26 @@ export interface EventPayload<T> {
  * Task event with tags included
  */
 export type TaskEvent = EventPayload<Task & { tags: string[] }>;
+
+/**
+ * Task #1003: payload for `task.claim_released` — emitted by the
+ * ClaimReleaseService TTL sweep when a stale `in_progress` claim is
+ * auto-released back to `open`. Carries the full (post-release) task plus
+ * the claim's forensic trail so the former holder (and wft-router rules)
+ * can react: who held it, when the expired claim was taken, and when the
+ * sweep released it.
+ */
+export type ClaimReleasedEvent = EventPayload<
+  Task & {
+    tags: string[];
+    /** Assignee that held the claim before the TTL sweep released it. */
+    previous_assignee: string;
+    /** The `claimed_at` timestamp that exceeded the TTL (pre-release value). */
+    expired_claimed_at: string;
+    /** When the sweep released the claim (ISO 8601). */
+    released_at: string;
+  }
+>;
 
 /**
  * Project event

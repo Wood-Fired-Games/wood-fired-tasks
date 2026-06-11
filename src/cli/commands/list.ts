@@ -6,12 +6,25 @@ import { jsonOutput, messageOutput } from '../output/json-output.js';
 import type { TaskFilters } from '../api/types.js';
 
 const VALID_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked'];
+// `all` is a CLI-only sentinel meaning "no server-side status filter" — it is
+// NOT a real task status, so it is accepted by the CLI but never forwarded as
+// `?status=` to the API. Listing every status (including blocked + closed) is
+// exactly what omitting the filter already does server-side.
+const STATUS_ALL = 'all';
 const MAX_LIMIT = 500;
 
 export const listCommand = new Command('list')
   .description('List tasks with optional filters')
   .option('-p, --project <id>', 'Filter by project ID', parseInt)
-  .option('-s, --status <status>', 'Filter by status')
+  .option(
+    '-s, --status <status>',
+    // Default (no --status): the server applies NO status filter, so every
+    // status is returned — open, in_progress, blocked, done, AND closed. None
+    // are hidden. Pass a single status to narrow, or the explicit sentinel
+    // `all` to make "every status (incl. blocked + closed)" self-documenting
+    // in scripts. Valid values: open | in_progress | blocked | done | closed | all.
+    `Filter by status (default: all statuses shown, incl. blocked + closed). Use 'all' to be explicit.`,
+  )
   .option('-a, --assignee <name>', 'Filter by assignee')
   .option('--search <query>', 'Search tasks by title/description')
   .option('--tags <tags>', 'Filter by tags (comma-separated)')
@@ -23,11 +36,16 @@ export const listCommand = new Command('list')
   .option('--offset <n>', 'Zero-based offset for pagination (default 0)', (v) => parseInt(v, 10))
   .action(async (options) => {
     try {
-      // Validate status if provided
-      if (options.status && !VALID_STATUSES.includes(options.status)) {
+      // Validate status if provided. `all` is the explicit "every status"
+      // sentinel and is accepted alongside the real statuses.
+      if (
+        options.status &&
+        options.status !== STATUS_ALL &&
+        !VALID_STATUSES.includes(options.status)
+      ) {
         console.error(
           colorError(
-            `Invalid status: ${options.status}. Valid options: ${VALID_STATUSES.join(', ')}`,
+            `Invalid status: ${options.status}. Valid options: ${[...VALID_STATUSES, STATUS_ALL].join(', ')}`,
           ),
         );
         process.exitCode = 1;
@@ -65,7 +83,9 @@ export const listCommand = new Command('list')
       if (options.project !== undefined) {
         filters.project_id = options.project;
       }
-      if (options.status) {
+      // `all` means "no server-side status filter" — every status (incl.
+      // blocked + closed) is returned. Any other value narrows to that status.
+      if (options.status && options.status !== STATUS_ALL) {
         filters.status = options.status;
       }
       if (options.assignee) {
@@ -101,10 +121,19 @@ export const listCommand = new Command('list')
       const globalOpts = program?.optsWithGlobals() || {};
       const isJsonMode = globalOpts['json'] || false;
 
+      // Effective status filter, echoed so machine consumers can detect
+      // exactly what they asked for. `all` is reported when no status was
+      // requested (or `--status all` was passed) — i.e. blocked + closed are
+      // included rather than silently filtered out.
+      const statusFilter =
+        options.status && options.status !== STATUS_ALL ? options.status : STATUS_ALL;
+
       // Display results
       if (isJsonMode) {
-        // JSON mode: output envelope to stdout
-        jsonOutput(tasks, { count: tasks.length });
+        // JSON mode: output envelope to stdout. `statusFilter` names the
+        // effective filter so scripts never mistake a status transition
+        // (e.g. open → blocked) for a deleted task.
+        jsonOutput(tasks, { count: tasks.length, statusFilter });
       } else {
         // Terminal mode: formatted output
         if (tasks.length === 0) {

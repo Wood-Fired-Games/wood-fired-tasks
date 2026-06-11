@@ -58,6 +58,12 @@ export interface UpdateTaskInput {
   tags?: string[];
   /** Wave 1.3 (#311): patch acceptance criteria; null clears, string sets. */
   acceptance_criteria?: string | null;
+  /**
+   * Task #1004: atomic block-with-dependency. Only valid alongside
+   * `status: 'blocked'` — the server adds the blocking edge(s) and sets the
+   * status in one transaction (an invalid edge rolls back the whole call).
+   */
+  blocked_by?: number[];
 }
 
 export interface TaskFilters {

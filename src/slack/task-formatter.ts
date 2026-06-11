@@ -38,6 +38,7 @@ const EVENT_LABELS: Record<string, string> = {
   'task.updated': 'Task updated',
   'task.status_changed': 'Status changed',
   'task.claimed': 'Task claimed',
+  'task.claim_released': 'Claim released (TTL expired)',
   'task.deleted': 'Task deleted',
 };
 

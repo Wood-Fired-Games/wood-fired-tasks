@@ -85,6 +85,18 @@ export interface Task {
   updated_at: string; // ISO8601
   version: number;
   claimed_at: string | null;
+  /**
+   * Task #1003: claim-TTL visibility. NEVER stored — computed at read time
+   * by `TaskService.getTask` for tasks holding an active claim
+   * (`in_progress` + assignee + claimed_at). `claim_ttl_minutes` is the
+   * sweep timeout ({@link ../services/claim-release.service DEFAULT_CLAIM_TTL_MINUTES});
+   * `claim_remaining_seconds` is the floor-clamped seconds until the claim
+   * becomes eligible for auto-release (measured from the LATER of
+   * claimed_at / updated_at, mirroring the sweep's staleness predicate).
+   * Absent (undefined) on unclaimed tasks and on list projections.
+   */
+  claim_ttl_minutes?: number;
+  claim_remaining_seconds?: number;
   completed_at: string | null; // ISO8601; set when status transitions to 'done'
   /**
    * Wave 1.3 (task #311): optional free-form acceptance criteria. Plain
@@ -357,24 +369,6 @@ export interface CreateProjectDTO {
    * `undefined`/absent persists NULL; an object is serialized to JSON by the
    * repository. On update, explicit `null` clears it; `undefined` leaves the
    * column untouched. Mirrors `value_charter` wiring.
-   */
-  model_policy?: ModelPolicy | null;
-}
-
-export interface UpdateProjectDTO {
-  name?: string;
-  description?: string | null;
-  /**
-   * WSJF (Phase 3.1): patch the value charter. `undefined` (key absent)
-   * leaves the column untouched; explicit `null` clears it; an object sets it
-   * (serialized to JSON by the repository).
-   */
-  value_charter?: ValueCharter | null;
-  /**
-   * Configurable Task Models: patch the per-project model policy. `undefined`
-   * (key absent) leaves the column untouched; explicit `null` clears it; an
-   * object sets it (serialized to JSON by the repository). Mirrors
-   * `value_charter` wiring.
    */
   model_policy?: ModelPolicy | null;
 }

@@ -2,6 +2,7 @@ import type Database from '../db/driver.js';
 import type { ValueCharter } from '../types/task.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import { AppendOnlyViolationError } from './errors.js';
+import { parseJsonColumn } from '../utils/parse-json-column.js';
 
 /**
  * WSJF (task #642, WSJF 4.2): append-only writer + reader for the
@@ -65,16 +66,6 @@ export interface IProjectCharterHistoryRepository {
 
 const CHARTER_HISTORY_TABLE = 'project_charter_history';
 
-/** Defensive JSON parse for a TEXT column (non-JSON → null, never throws). */
-function parseCharter(raw: unknown): ValueCharter | null {
-  if (typeof raw !== 'string') return null;
-  try {
-    return JSON.parse(raw) as ValueCharter;
-  } catch {
-    return null;
-  }
-}
-
 export class ProjectCharterHistoryRepository implements IProjectCharterHistoryRepository {
   private readonly insertStmt: Database.Statement;
   private readonly findByProjectIdStmt: Database.Statement;
@@ -119,7 +110,7 @@ export class ProjectCharterHistoryRepository implements IProjectCharterHistoryRe
       id: row['id'] as number,
       project_id: row['project_id'] as number,
       interview_version: row['interview_version'] as number,
-      charter: parseCharter(row['charter']),
+      charter: parseJsonColumn<ValueCharter>(row['charter']),
       change_kind: (row['change_kind'] as string | null) ?? null,
       actor_type: (row['actor_type'] as string | null) ?? null,
       actor_id: (row['actor_id'] as string | null) ?? null,

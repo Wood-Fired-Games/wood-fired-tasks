@@ -397,7 +397,7 @@ The verdict controls whether the task closes, blocks, or stays in_progress. **Do
 
 - **`verdict: "FAIL"`** → the task is NOT done. The orchestrator MUST:
   1. Call `wood-fired-tasks:add_comment` with the failed checks formatted as a markdown bulleted list (one bullet per `checks[i]` with `status: "FAIL"`, citing the check `name` and its `evidence_url_or_text`).
-  2. Call `wood-fired-tasks:update_task` with `updates: { "status": "blocked", "verification_evidence": <full evidence> }`.
+  2. Call `wood-fired-tasks:update_task` with `updates: { "status": "blocked", "verification_evidence": <full evidence> }`. **If the failure produced a follow-up/defect task** (a bounce-style flow where the fix is tracked as its own task), include `"blocked_by": [<defectTaskId>]` in the SAME call — the blocking edge and the status flip commit atomically, so the task auto-unblocks when the defect closes. Setting `status: "blocked"` and adding the edge as two separate calls is FORBIDDEN: if the edge call is skipped or fails, the task is blocked forever (`check_health` flags these as `blocked-without-edge`).
   3. Do NOT call Step 8's close-as-done path. Move on to the next task in the loop.
 
   ```

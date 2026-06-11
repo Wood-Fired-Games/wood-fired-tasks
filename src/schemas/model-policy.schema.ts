@@ -16,6 +16,17 @@ export const POWER_CATEGORIES = [
 export const PowerCategorySchema = z.enum(POWER_CATEGORIES);
 export type PowerCategory = (typeof POWER_CATEGORIES)[number];
 
+/**
+ * The three pipeline dispatch roles a policy can configure (task #929 —
+ * PR #55 review follow-up). THE single source of the role triple: every other
+ * role-enum site (`ModelPolicySchema` keys, the `resolve_model` tool/route
+ * input schemas, the remote rest-client union, the CLI flag roles) derives
+ * from these exports — never restate the literals.
+ */
+export const PIPELINE_ROLES = ['execution', 'validation', 'planning'] as const;
+export const PipelineRoleSchema = z.enum(PIPELINE_ROLES);
+export type PipelineRole = (typeof PIPELINE_ROLES)[number];
+
 /** A concrete catalog model id, or the `auto` sentinel (resolve at dispatch). */
 export const ModelRefSchema = z.union([z.string().min(1).max(200), z.literal('auto')]);
 export type ModelRef = z.infer<typeof ModelRefSchema>;
@@ -57,7 +68,9 @@ export const ModelPolicySchema = z
     execution: RolePolicySchema,
     validation: RolePolicySchema,
     planning: RolePolicySchema,
-  })
+    // `satisfies` ties these keys to PIPELINE_ROLES at compile time: adding or
+    // renaming a role without updating the single source is a type error.
+  } satisfies Record<PipelineRole, typeof RolePolicySchema>)
   .partial()
   .strict();
 export type ModelPolicy = z.infer<typeof ModelPolicySchema>;

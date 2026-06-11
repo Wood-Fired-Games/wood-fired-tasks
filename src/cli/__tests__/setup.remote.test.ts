@@ -526,15 +526,27 @@ describe('runRemoteOnboarding — probe + branch matrix (task #807)', () => {
     try {
       await withSandboxAsync(async (home, configDir) => {
         const { probe } = recordingProbe({ ok: true, oidc: 'ready' });
+        // Drive the REAL device flow (deviceLogin is NOT stubbed) but inject a
+        // stub opener so the suite never spawns a real browser on a DISPLAY-set
+        // desktop. Returns false (no spawn); the printed-URL fallback is enough.
+        const openerCalls: string[] = [];
+        const stubOpener = (url: string): boolean => {
+          openerCalls.push(url);
+          return false;
+        };
         const result = await runRemoteOnboarding({
           home,
           configDir,
           log: () => {},
           remote: server.baseUrl,
           oidcProbe: probe,
+          opener: stubOpener,
         });
         expect(result.method).toBe('device-flow');
         expect(result.ok).toBe(true);
+        // The injected opener received the verification URL (proves the seam is
+        // wired and no real browser was spawned).
+        expect(openerCalls.length).toBe(1);
         // The device flow POSTed to /code and /token on the mock server.
         const reqs = server.getRequests();
         expect(reqs.code.length).toBeGreaterThan(0);

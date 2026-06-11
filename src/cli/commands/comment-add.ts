@@ -4,6 +4,7 @@ import { colorError, colorSuccess } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import { promptForMissing } from '../prompts/interactive.js';
+import { resolveIdentityName } from '../auth/credentials.js';
 
 export const commentAddCommand = new Command('comment-add')
   .description('Add a comment to a task')
@@ -25,8 +26,15 @@ export const commentAddCommand = new Command('comment-add')
       const globalOpts = program?.optsWithGlobals() || {};
       const isJsonMode = globalOpts['json'] || false;
 
+      // When --author is omitted, default to the logged-in identity
+      // (credentials PAT user) so scripted, non-interactive runs no longer
+      // have to hardcode an author (papercut #1007). promptForMissing then
+      // short-circuits — interactive prompting / the "Missing required field:
+      // author" error remain ONLY when no identity can be resolved.
+      const authorOverride = options.author ?? resolveIdentityName() ?? undefined;
+
       // Prompt for missing required fields
-      const author = await promptForMissing('author', options.author);
+      const author = await promptForMissing('author', authorOverride);
       const content = await promptForMissing('content', options.content);
 
       // Add comment via API

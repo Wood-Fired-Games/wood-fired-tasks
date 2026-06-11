@@ -14,9 +14,11 @@
 
 import { describe, it, expect } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { registerModelTools, registerModelDefaultsTools } from '../tools/model-tools.js';
 import type { ModelCatalogService } from '../../services/model-catalog.service.js';
+import { createModelPolicyService } from '../../services/model-policy.service.js';
 import type { ModelPolicyService, ResolvedModel } from '../../services/model-policy.service.js';
 import type { SettingsService } from '../../services/settings.service.js';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
@@ -227,6 +229,94 @@ describe('registerModelTools', () => {
       await expect(
         callTool(tools, 'resolve_model', { project_id: 0, role: 'execution' }),
       ).rejects.toThrow();
+    });
+
+    /**
+     * Task #928 — parity hardening. These use the REAL resolver (with fake
+     * lookups) so the full path is exercised: service throws → handler's
+     * convertToMcpError → McpError on the wire. Before #928 the stdio path
+     * silently resolved a NONEXISTENT project against the global default
+     * while REST 404'd — a per-transport behavior split.
+     */
+    describe('validation errors surface as MCP errors (task #928)', () => {
+      /** The real service over a one-project/one-task fake world. */
+      const realModelPolicy = () =>
+        createModelPolicyService({
+          getProject: (projectId) => (projectId === 1 ? { model_policy: null } : null),
+          getGlobalPolicy: () => ({ execution: { default: 'glob-default' } }),
+          // Task 7 exists and belongs to project 1; everything else is missing.
+          getTask: (taskId) => (taskId === 7 ? { project_id: 1, wsjf_job_size: 8 } : null),
+        });
+
+      it('rejects a nonexistent project_id with an InvalidRequest McpError (not a silent global-default resolution)', async () => {
+        const { server, tools } = makeFakeServer();
+        registerModelTools(server, {
+          catalog: fakeCatalog({ models: [], stale: true }),
+          modelPolicy: realModelPolicy(),
+        });
+
+        const promise = callTool(tools, 'resolve_model', { project_id: 999, role: 'execution' });
+        await expect(promise).rejects.toBeInstanceOf(McpError);
+        await expect(promise).rejects.toMatchObject({
+          code: ErrorCode.InvalidRequest,
+          message: expect.stringContaining('Project with id 999 not found'),
+        });
+      });
+
+      it('rejects a nonexistent task_id with an InvalidRequest McpError', async () => {
+        const { server, tools } = makeFakeServer();
+        registerModelTools(server, {
+          catalog: fakeCatalog({ models: [], stale: true }),
+          modelPolicy: realModelPolicy(),
+        });
+
+        const promise = callTool(tools, 'resolve_model', {
+          project_id: 1,
+          role: 'execution',
+          task_id: 404404,
+        });
+        await expect(promise).rejects.toBeInstanceOf(McpError);
+        await expect(promise).rejects.toMatchObject({
+          code: ErrorCode.InvalidRequest,
+          message: expect.stringContaining('Task with id 404404 not found'),
+        });
+      });
+
+      it('rejects a task_id belonging to a different project with an InvalidParams McpError', async () => {
+        const { server, tools } = makeFakeServer();
+        registerModelTools(server, {
+          catalog: fakeCatalog({ models: [], stale: true }),
+          modelPolicy: createModelPolicyService({
+            getProject: () => ({ model_policy: null }),
+            getGlobalPolicy: () => ({ execution: { default: 'glob-default' } }),
+            // Task 7 exists but lives in project 2, not the requested project 1.
+            getTask: () => ({ project_id: 2, wsjf_job_size: 8 }),
+          }),
+        });
+
+        const promise = callTool(tools, 'resolve_model', {
+          project_id: 1,
+          role: 'execution',
+          task_id: 7,
+        });
+        await expect(promise).rejects.toBeInstanceOf(McpError);
+        await expect(promise).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+      });
+
+      it('still resolves the happy path through the real service (regression)', async () => {
+        const { server, tools } = makeFakeServer();
+        registerModelTools(server, {
+          catalog: fakeCatalog({ models: [], stale: true }),
+          modelPolicy: realModelPolicy(),
+        });
+
+        const out = await callTool(tools, 'resolve_model', {
+          project_id: 1,
+          role: 'execution',
+          task_id: 7,
+        });
+        expect(out.structuredContent).toEqual({ model: 'glob-default' });
+      });
     });
   });
 });

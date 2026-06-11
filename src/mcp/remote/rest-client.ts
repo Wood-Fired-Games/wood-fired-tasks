@@ -18,7 +18,12 @@ import type {
   CompletionReportResponse,
 } from '../../cli/api/types.js';
 import type { TopologyReport } from '../../schemas/topology.schema.js';
-import type { ModelPolicy, ModelPolicyNullable } from '../../schemas/model-policy.schema.js';
+import type {
+  ModelPolicy,
+  ModelPolicyNullable,
+  PipelineRole,
+} from '../../schemas/model-policy.schema.js';
+import type { ModelCatalogEntry } from '../../schemas/model-catalog.schema.js';
 import {
   parseTaskResponse,
   parseProjectResponse,
@@ -110,24 +115,16 @@ export interface RescoreResponse {
 }
 
 // ── Configurable Task Models remote-parity payload types (task #926) ──────────
-// Structural projections of the model REST responses, kept as plain types so
-// the remote rest-client stays importable from a minimal stdio subprocess
-// without dragging in server schema modules (same isolation principle as the
-// WSJF payload types above). The catalog entry / envelope mirror
-// `ModelCatalogResponseSchema`; the resolver output mirrors the service's
-// `ResolvedModel`.
-
-/** One discovered model, mirroring the catalog service's `ModelCatalogEntry`. */
-export interface ModelCatalogEntryPayload {
-  id: string;
-  display_name: string;
-  family: string;
-  created_at: string;
-}
+// Structural projections of the model REST responses. The catalog entry is the
+// shared `ModelCatalogEntry` shape (task #930: declared once in
+// `src/schemas/model-catalog.schema.ts`; the `import type` is erased at build
+// time, so the rest-client stays importable from a minimal stdio subprocess —
+// the same isolation principle as the WSJF payload types above). The resolver
+// output mirrors the service's `ResolvedModel`.
 
 /** The `{ models, stale }` envelope returned by GET /models. */
 export interface ModelCatalogPayload {
-  models: ModelCatalogEntryPayload[];
+  models: ModelCatalogEntry[];
   stale: boolean;
 }
 
@@ -520,7 +517,7 @@ export class RestClient {
    */
   async resolveModel(
     projectId: number,
-    role: 'execution' | 'validation' | 'planning',
+    role: PipelineRole,
     taskId?: number,
   ): Promise<ResolvedModelPayload> {
     const query = new URLSearchParams({ role });

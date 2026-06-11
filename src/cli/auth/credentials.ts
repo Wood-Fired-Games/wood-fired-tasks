@@ -197,6 +197,34 @@ export function deleteCredentials(filePath: string = getCredentialsPath()): bool
   return true;
 }
 
+/**
+ * Resolve the logged-in identity's display name for attribution defaults
+ * (e.g. `tasks create --created-by`, `tasks comment-add --author`).
+ *
+ * Source of truth is the on-disk credentials file (`readCredentials`) — the
+ * SAME file `tasks whoami` reads. We prefer `display_name`; if it is empty
+ * (service accounts may have a blank display name) we fall back to `email`.
+ *
+ * Returns `null` when no identity can be resolved (no credentials file, or
+ * a credentials file with neither a display name nor an email). Callers then
+ * fall back to their existing "missing required field" behaviour so scripted
+ * runs without any identity still surface an actionable error.
+ *
+ * NOTE: this is intentionally a thin, synchronous read of the local file —
+ * it does NOT hit the network. The credentials file is written by
+ * `tasks login` from the server's identity envelope, so the cached
+ * display_name/email already reflect the authenticated user.
+ */
+export function resolveIdentityName(filePath: string = getCredentialsPath()): string | null {
+  const creds = readCredentials(filePath);
+  if (creds === null) return null;
+  const { display_name, email } = creds.active;
+  const name = display_name.trim();
+  if (name.length > 0) return name;
+  if (email && email.trim().length > 0) return email.trim();
+  return null;
+}
+
 export async function resolveAuth(): Promise<AuthSource> {
   // 1. --token flag wins unconditionally.
   if (currentTokenOverride !== null) {

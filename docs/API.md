@@ -612,9 +612,17 @@ Update a task. All fields are optional (partial update).
   "estimated_minutes": "number (optional, 0-10080)",
   "assignee": "string (optional, max 100 chars)",
   "due_date": "string (optional, ISO8601 format)",
-  "tags": ["array of strings (optional, max 20 tags, each max 50 chars)"]
+  "tags": ["array of strings (optional, max 20 tags, each max 50 chars)"],
+  "blocked_by": ["array of task IDs (optional, 1-50; ONLY valid with status: 'blocked')"]
 }
 ```
+
+[NOTE] **Atomic block-with-dependency (task #1004):** pass `blocked_by: [taskIds]`
+with `status: "blocked"` to add the blocking dependency edge(s) and flip the status
+in ONE transaction (all-or-nothing — a nonexistent blocker, self-reference, or cycle
+rolls the whole call back; already-existing edges are skipped). `blocked_by` without
+`status: "blocked"` is rejected. Without an edge a blocked task never auto-unblocks
+(the `blocked -> open` workflow transition fires only off a dependency edge).
 
 **Response:** 200 OK
 
@@ -1351,13 +1359,7 @@ Atomically claim an unassigned task. Sets assignee and transitions status to `in
 **Examples:**
 
 ```bash
-# Claim a task
-curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "Authorization: Bearer wft_pat_your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"assignee": "agent-1"}'
-
-# Claim with idempotency key (safe to retry)
+# Claim a task (add the X-Idempotency-Key header to make retries safe)
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
   -H "Authorization: Bearer wft_pat_your-token" \
   -H "X-Idempotency-Key: claim-42-agent-1" \
@@ -1369,7 +1371,17 @@ curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
 - Uses CAS (Compare-And-Swap) with a `version` field for optimistic locking
 - Uses `BEGIN IMMEDIATE` SQLite transactions to acquire write lock early
 - Verified with 20 concurrent agents: exactly 1 success, 19 conflicts, 0 server errors
-- Stale claims auto-released after 30 minutes of inactivity
+- Stale claims auto-released after 30 minutes of inactivity; the sweep emits
+  a `task.claim_released` SSE event so the former holder can react
+
+**Claim renewal (heartbeat):**
+
+A claim call by the **same assignee** on a task they already hold `in_progress`
+is a renewal, not a conflict: it refreshes `claimed_at` (restarting the 30-minute
+TTL window) and returns 200 with the refreshed task. A different assignee still
+receives 409. `GET /tasks/:id` surfaces `claim_ttl_minutes` and
+`claim_remaining_seconds` (computed at read time, present only while a claim is
+active) so holders know when to renew.
 
 ## Event Stream Endpoint
 
@@ -1398,7 +1410,8 @@ Subscribe to real-time task and project change notifications via Server-Sent Eve
 | task.updated | Task fields modified |
 | task.deleted | Task deleted |
 | task.status_changed | Task status transition |
-| task.claimed | Task claimed by agent |
+| task.claimed | Task claimed by agent (also emitted on a same-assignee claim renewal) |
+| task.claim_released | Stale claim auto-released by the TTL sweep; `data` carries `previous_assignee`, `expired_claimed_at`, `released_at` |
 | project.created | New project created |
 | project.updated | Project modified |
 | project.deleted | Project deleted |

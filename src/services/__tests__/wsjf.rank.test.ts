@@ -10,12 +10,15 @@ import { DependencyService } from '../dependency.service.js';
 import {
   rankFrontier,
   computeWsjf,
+  priorityFallbackScore,
   PROPAGATION_GAMMA,
   PROPAGATION_CAP,
   type RankDeps,
   type RankedTask,
 } from '../wsjf.service.js';
 import type { TaskPriority, WsjfWriteDTO } from '../../types/task.js';
+import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
+import { TaskService } from '../task.service.js';
 
 // ---------------------------------------------------------------------------
 // Task #629 (WSJF 1.9) — acceptance tests for `rankFrontier` + propagation.
@@ -254,5 +257,129 @@ describe('rankFrontier (WSJF 1.9)', () => {
 
     const frontier = await rankFrontier(projectId, 'frontier', deps);
     expect(frontier.map((r) => r.taskId)).toContain(dependent);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #994 — VERIFICATION: an AUTO-SIZED, size-only task created through
+// TaskService.createTask stays UNSCORED for ranking and sorts by the priority
+// fallback in rankFrontier output.
+//
+// The sizing-guarantee work (#985–#993) gives a WSJF-less create a deterministic
+// `wsjf_job_size` (auto) while leaving the three Cost-of-Delay columns NULL — a
+// "size-only" task. rankFrontier's `hasComponents` requires ALL FOUR components,
+// so such a task is NOT scored: it must show `scored:false`, a null base WSJF /
+// components, and an `effectiveWsjf` equal to the priority fallback (urgent 9 /
+// high 6 / medium 3 / low 1) — NOT a fabricated ratio derived from its jobSize.
+//
+// Tasks are created THROUGH TaskService.createTask (real in-memory DB + the
+// audit wiring production boots with), never hand-inserted, so this proves the
+// end-to-end auto-size-on-create → unscored-in-ranking behaviour.
+// ---------------------------------------------------------------------------
+describe('auto-sized size-only tasks stay unscored in ranking (task #994)', () => {
+  let db: Database.Database;
+  let projectRepo: ProjectRepository;
+  let taskRepo: TaskRepository;
+  let depRepo: DependencyRepository;
+  let taskService: TaskService;
+  let deps: RankDeps;
+  let projectId: number;
+
+  beforeEach(async () => {
+    db = initDatabase(':memory:');
+    await runMigrations(db);
+    projectRepo = new ProjectRepository(db);
+    taskRepo = new TaskRepository(db);
+    depRepo = new DependencyRepository(db);
+    const wsjfHistoryRepo = new WsjfHistoryRepository(db);
+    // Audit hook wired so createTask takes the real auto-size-on-create path.
+    taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
+    deps = {
+      topology: new TopologyService(taskRepo, depRepo),
+      dependency: new DependencyService(depRepo, taskRepo),
+      tasks: taskRepo,
+    };
+    projectId = projectRepo.create({ name: 'Auto-size Rank Project' }).id;
+  });
+
+  /** Create a WSJF-less task through the service → auto-sized, size-only. */
+  function autoTask(priority: TaskPriority, estimatedMinutes?: number): number {
+    return taskService.createTask({
+      title: `auto ${priority}`,
+      project_id: projectId,
+      priority,
+      created_by: 'test-agent',
+      ...(estimatedMinutes === undefined ? {} : { estimated_minutes: estimatedMinutes }),
+    }).id;
+  }
+
+  it('a size-only auto task has no WSJF score and uses its priority fallback', async () => {
+    // estimated_minutes=600 → tier 8; the task is auto-sized (jobSize set) but
+    // the three CoD components stay NULL → unscored for ranking.
+    const id = autoTask('high', 600);
+
+    const persisted = taskRepo.findById(id)!;
+    expect(persisted.wsjf_job_size).toBe(8); // auto-sized
+    expect(persisted.wsjf_value).toBeNull();
+    expect(persisted.wsjf_time_criticality).toBeNull();
+    expect(persisted.wsjf_risk_opportunity).toBeNull();
+
+    const ranked = await rankFrontier(projectId, 'all', deps);
+    const r = ranked.find((x) => x.taskId === id)!;
+
+    expect(r.scored).toBe(false);
+    expect(r.baseWsjf).toBeNull();
+    expect(r.components).toBeNull();
+    expect(r.propagation).toEqual([]);
+    // effectiveWsjf is the priority fallback, NOT a ratio derived from jobSize.
+    expect(r.effectiveWsjf).toBe(priorityFallbackScore('high'));
+    expect(r.effectiveWsjf).toBe(6);
+  });
+
+  it('auto-sized tasks sort purely by priority fallback (urgent>high>medium>low)', async () => {
+    // Distinct estimated_minutes so the auto jobSizes differ — proving the sort
+    // is driven by priority fallback, NOT by jobSize (a scored ratio would let
+    // a smaller job out-rank a larger one regardless of priority).
+    const low = autoTask('low', 10); // tier 1, fallback 1
+    const medium = autoTask('medium', 1500); // tier 13, fallback 3
+    const high = autoTask('high', 45); // tier 3, fallback 6
+    const urgent = autoTask('urgent', 600); // tier 8, fallback 9
+
+    const ranked = await rankFrontier(projectId, 'all', deps);
+
+    // Every task is unscored and ordered by descending priority fallback.
+    expect(ranked.map((r) => r.taskId)).toEqual([urgent, high, medium, low]);
+    for (const r of ranked) {
+      expect(r.scored).toBe(false);
+      expect(r.components).toBeNull();
+    }
+    expect(ranked.map((r) => r.effectiveWsjf)).toEqual([9, 6, 3, 1]);
+  });
+
+  it('a fully-scored task still out-ranks an auto-sized urgent task by its real ratio', async () => {
+    // Auto-sized urgent → fallback 9.
+    const autoUrgent = autoTask('urgent', 600);
+    // A fully-scored task with a high real ratio: base 21 / jobSize 1 = 21 > 9.
+    const scored = taskService.createTask({
+      title: 'scored',
+      project_id: projectId,
+      priority: 'low',
+      created_by: 'test-agent',
+      wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 8, jobSize: 1 },
+    }).id;
+
+    const ranked = await rankFrontier(projectId, 'all', deps);
+    const rScored = ranked.find((x) => x.taskId === scored)!;
+    const rAuto = ranked.find((x) => x.taskId === autoUrgent)!;
+
+    expect(rScored.scored).toBe(true);
+    expect(rScored.effectiveWsjf).toBeCloseTo(
+      computeWsjf({ value: 8, timeCriticality: 5, riskOpportunity: 8, jobSize: 1 }),
+      10,
+    );
+    expect(rAuto.scored).toBe(false);
+    expect(rAuto.effectiveWsjf).toBe(9);
+    // Real ratio (21) beats the auto urgent fallback (9): scored ranks first.
+    expect(ranked[0].taskId).toBe(scored);
   });
 });

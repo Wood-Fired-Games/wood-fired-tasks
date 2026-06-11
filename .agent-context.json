@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-10T03:21:53.159Z",
+    "generated_at": "2026-06-11T01:16:14.161Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -63,8 +63,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 7000,
-      "actual_lines": 348,
-      "sha256": "8c9da0b6c6fdf16be6941b23fc97fb455f8495ff6cedd9ae6e352790cda34d2e",
+      "actual_lines": 350,
+      "sha256": "66f983c9251760d44eac5c28f8d5582563cb37de3beccf501d835fb50a6b5a1c",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -93,7 +93,7 @@
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
       "actual_lines": 383,
-      "sha256": "b922289e482e184bc4d8b28948cd7e7b9bc8af212fe2aa046b093300a044564f",
+      "sha256": "f286581aaa425304e429d0ecd440ed4973e504e88a718d61ace6c455e96d5874",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -121,8 +121,8 @@
       "status": "present",
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1483,
-      "sha256": "d92c67f81f4b0c50bfd11d1e156f81fd1b34e83212d9c781f7c471a11d0fd3cc"
+      "actual_lines": 1496,
+      "sha256": "e1dacae1a083926b37836ad0934b3d663fc5fc51fa56f9e759b1615e49edd2b2"
     },
     {
       "path": "docs/MCP.md",
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1201,
-      "sha256": "111213fedd9c4d79cfd20b5b5fc879228b323fa6858a6ac7af8b8669e5660553"
+      "actual_lines": 1302,
+      "sha256": "40a569142c7b5e29df173e05ec0f6278e70d82f71c03c19e6491ebf77b0fad74"
     },
     {
       "path": "docs/CLI.md",
@@ -149,8 +149,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 36000,
-      "actual_lines": 1800,
-      "sha256": "a870d2ec652feb283a39f38cf5e85ecd9825ca5660420efa12c6e125582f3674"
+      "actual_lines": 1799,
+      "sha256": "52a45aab786ca384e8469a7632cd4db6badaa3b040044504b01d80195b0d90d7"
     },
     {
       "path": "docs/SETUP.md",
@@ -176,8 +176,8 @@
       "owner_role": "Slack maintainers",
       "status": "present",
       "approx_token_budget": 16000,
-      "actual_lines": 286,
-      "sha256": "48dc5651972498447f5fa49c1453fa0c9baf77d1d98854e07121ccd8fd7e3e57"
+      "actual_lines": 287,
+      "sha256": "9908b3370c1af79d229cc635c772dfa4afda40d2f11c086b73140074e8b0dc99"
     },
     {
       "path": "docs/RELEASE.md",
@@ -292,6 +292,20 @@
       "actual_owner": "Repository maintainers"
     },
     {
+      "path": "docs/automation-recipes/agent-delegated-wsjf-sizing.md",
+      "role": "deep-doc",
+      "purpose": "Automation recipe: delegate a full WSJF classification to an agent when a task is created with an auto-sized job size, using the task.created event, an assignee predicate, and the agent_session_dispatch handler; covers the source.jobSize session-level self-gate, update_task wsjf_submission shape, and idempotency.",
+      "when_to_read": "on-demand",
+      "line_budget": 300,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "approx_token_budget": 6000,
+      "actual_lines": 223,
+      "sha256": "1bbda3776025304f95114962ccdd4cc0bdb1136fa02691845f64fce75a8818dc",
+      "actual_owner": "Repository maintainers"
+    },
+    {
       "path": "docs/ONBOARDING_SMOKE.md",
       "role": "onboarding-smoke",
       "purpose": "Agent onboarding smoke test: seven probe scenarios that prove a fresh agent can navigate the repo from committed context alone.",
@@ -329,8 +343,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1900,
-      "actual_lines": 81,
-      "sha256": "3c52ff48a9544f5884a5c2e64de3d963bdb99dbf5ecc2c9f6fade94d708d04a6",
+      "actual_lines": 93,
+      "sha256": "3717ce400351145caf1dd736e0cebf8a2cc179b3cdcd172203cce2db1dcb3010",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -357,8 +371,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 17500,
-      "actual_lines": 859,
-      "sha256": "d8b85a1d9d860e466460c640e76a8f9c37b478cb23ac182f5ea83afcedd03383"
+      "actual_lines": 860,
+      "sha256": "b92ddacdbdd62faa98ec377b9bf0ffb447f139879556743e5982ca84dd76ac12"
     },
     {
       "path": "SECURITY.md",
@@ -372,7 +386,7 @@
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
       "actual_lines": 262,
-      "sha256": "66cc9a0b9fb057d3a9fb90b65c1853e5dfd714c3c49c182018ea4234a9f7ba73"
+      "sha256": "adfeaab2396eaac1646dc49f29838da6efe7432eaf95a4cf32db202fdedd1333"
     },
     {
       "path": "llms.txt",

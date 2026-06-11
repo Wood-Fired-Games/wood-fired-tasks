@@ -306,4 +306,65 @@ describe('POST /api/v1/tasks/:id/claim', () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  // Task #1003: same-assignee re-claim over REST is a renewal (200), not a 409.
+  it('returns 200 (renewal) when the SAME assignee re-claims a task they hold', async () => {
+    const task = createOpenTask('Renewable Task');
+
+    const first = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/claim`,
+      headers,
+      payload: { assignee: 'agent-1' },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const renewal = await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/claim`,
+      headers,
+      payload: { assignee: 'agent-1' },
+    });
+
+    expect(renewal.statusCode).toBe(200);
+    const body = JSON.parse(renewal.body);
+    expect(body.assignee).toBe('agent-1');
+    expect(body.status).toBe('in_progress');
+    expect(body.version).toBe(JSON.parse(first.body).version + 1);
+  });
+
+  // Task #1003: GET /tasks/:id surfaces the claim TTL + remaining seconds
+  // (proves the additive optional fields survive the response schema).
+  it('GET /tasks/:id surfaces claim_ttl_minutes and claim_remaining_seconds while claimed', async () => {
+    const task = createOpenTask('TTL Visible Over REST');
+
+    await server.inject({
+      method: 'POST',
+      url: `/api/v1/tasks/${task.id}/claim`,
+      headers,
+      payload: { assignee: 'agent-1' },
+    });
+
+    const claimed = await server.inject({
+      method: 'GET',
+      url: `/api/v1/tasks/${task.id}`,
+      headers,
+    });
+    expect(claimed.statusCode).toBe(200);
+    const claimedBody = JSON.parse(claimed.body);
+    expect(claimedBody.claim_ttl_minutes).toBe(30);
+    expect(claimedBody.claim_remaining_seconds).toBeGreaterThan(0);
+    expect(claimedBody.claim_remaining_seconds).toBeLessThanOrEqual(30 * 60);
+
+    // Unclaimed task: the additive fields stay absent.
+    const openTask = createOpenTask('No TTL Fields');
+    const open = await server.inject({
+      method: 'GET',
+      url: `/api/v1/tasks/${openTask.id}`,
+      headers,
+    });
+    const openBody = JSON.parse(open.body);
+    expect(openBody.claim_ttl_minutes).toBeUndefined();
+    expect(openBody.claim_remaining_seconds).toBeUndefined();
+  });
 });

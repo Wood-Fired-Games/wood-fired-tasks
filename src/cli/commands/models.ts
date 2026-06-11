@@ -1,13 +1,15 @@
 import { Command } from 'commander';
 import { listModels } from '../api/client.js';
-import { colorWarn } from '../output/formatters.js';
+import { colorError, colorWarn } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
 import {
+  PIPELINE_ROLES,
   POWER_CATEGORIES,
   ModelPolicySchema,
   type ModelPolicy,
   type ModelRef,
+  type PipelineRole,
   type RolePolicy,
 } from '../../schemas/model-policy.schema.js';
 
@@ -26,9 +28,13 @@ import {
  * validated partial `ModelPolicy` (`ModelPolicySchema.parse`).
  */
 
-/** The three dispatch roles a policy can configure. */
-export const MODEL_ROLES = ['execution', 'validation', 'planning'] as const;
-export type ModelRole = (typeof MODEL_ROLES)[number];
+/**
+ * The three dispatch roles a policy can configure. Derived from the
+ * single-source `PIPELINE_ROLES` (task #929); kept under the CLI-local names
+ * so existing call sites are undisturbed.
+ */
+export const MODEL_ROLES = PIPELINE_ROLES;
+export type ModelRole = PipelineRole;
 
 /**
  * Register the per-role model flags on a Commander command:
@@ -137,6 +143,58 @@ export function mergeModelPolicies(
     merged[role] = rolePolicy;
   }
   return ModelPolicySchema.parse(merged);
+}
+
+/**
+ * Read `--json` off the GLOBAL program options for a set-models subcommand.
+ * The flag is registered on the root program, so subcommands must reach up via
+ * `optsWithGlobals()`. Shared by `project-set-models` / `settings-set-models`.
+ */
+export function resolveSetModelsJsonMode(command: Command): boolean {
+  const globalOpts = command.parent?.optsWithGlobals() || {};
+  return Boolean(globalOpts['json']);
+}
+
+/**
+ * Outcome of {@link parseSetModelsOptions}: either a validated partial policy
+ * ready to merge+persist, or a `stop` sentinel meaning the command already
+ * emitted its message and set `process.exitCode = 1` — the caller just returns.
+ */
+export type ParseSetModelsResult = { stop: true } | { stop: false; policy: ModelPolicy };
+
+/**
+ * Shared set-models preamble for `project-set-models` / `settings-set-models`:
+ *
+ *   1. Assemble + validate a partial policy from the flat option bag
+ *      (`buildModelPolicyFromOptions`). On a validation error, print it and
+ *      set `process.exitCode = 1`, returning `{ stop: true }`.
+ *   2. When no model flags were supplied, warn and set `process.exitCode = 1`,
+ *      returning `{ stop: true }`.
+ *   3. Otherwise return `{ stop: false, policy }`.
+ *
+ * Extracting this keeps the two commands' parse/validate/no-flags behavior and
+ * output byte-identical from one source.
+ */
+export function parseSetModelsOptions(
+  options: Record<string, string | undefined>,
+): ParseSetModelsResult {
+  let policy: ModelPolicy | undefined;
+  try {
+    policy = buildModelPolicyFromOptions(options);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(colorError(`Invalid model policy: ${msg}`));
+    process.exitCode = 1;
+    return { stop: true };
+  }
+
+  if (policy === undefined) {
+    console.log(colorWarn('No model flags specified. Use --help to see available options.'));
+    process.exitCode = 1;
+    return { stop: true };
+  }
+
+  return { stop: false, policy };
 }
 
 // ── `models list` ───────────────────────────────────────────

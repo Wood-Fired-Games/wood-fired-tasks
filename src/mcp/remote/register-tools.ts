@@ -15,6 +15,16 @@ import {
 import { VERSION } from '../../utils/version.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
 import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
+import {
+  LIST_MODELS_TOOL_DEFINITION,
+  RESOLVE_MODEL_TOOL_DEFINITION,
+  GET_MODEL_DEFAULTS_TOOL_DEFINITION,
+  SET_MODEL_DEFAULTS_TOOL_DEFINITION,
+  renderListModelsResult,
+  renderResolveModelResult,
+  renderGetModelDefaultsResult,
+  renderSetModelDefaultsResult,
+} from '../lib/model-tool-definitions.js';
 
 /**
  * Task #768 — parse remote MCP tool arguments through their Zod schema BEFORE
@@ -209,7 +219,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     'update_task',
     {
       description:
-        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags.',
+        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags. ' +
+        "When blocking on other tasks, pass `blocked_by: [taskIds]` WITH `status: 'blocked'` " +
+        'to add the blocking dependency edge(s) and flip the status atomically ' +
+        '(all-or-nothing; an invalid edge rolls the whole call back). ' +
+        '`blocked_by` without `status: "blocked"` is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
         updates: UpdateTaskSchema,
@@ -1077,149 +1091,64 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
   //   set_model_defaults → PUT  /api/v1/settings/model-policy        ({ model_policy })
 
   // Tool: list_models
-  server.registerTool(
-    'list_models',
-    {
-      description:
-        'List Anthropic models available at runtime (from the Models API, with ' +
-        'a static fallback when offline). Returns models[] and a `stale` flag. ' +
-        'Read-only.',
-      inputSchema: z.object({}),
-    },
-    async () => {
-      try {
-        const catalog = await client.listModels();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `${catalog.models.length} models${catalog.stale ? ' (stale fallback)' : ''}`,
-            },
-          ],
-          structuredContent: toStructuredContent(catalog),
-        };
-      } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to list models',
-        );
-      }
-    },
-  );
+  server.registerTool('list_models', LIST_MODELS_TOOL_DEFINITION, async () => {
+    try {
+      const catalog = await client.listModels();
+      return renderListModelsResult(catalog);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to list models',
+      );
+    }
+  });
 
   // Tool: resolve_model
-  server.registerTool(
-    'resolve_model',
-    {
-      description:
-        'Resolve the model for a pipeline role (execution|validation|planning) ' +
-        'for a project, optionally task-scoped for size routing. Returns ' +
-        '{ model } (concrete id), { model: "auto" } (resolve from live catalog ' +
-        'at dispatch), or null (inherit the session model). Read-only.',
-      inputSchema: z.object({
-        project_id: z.number().int().positive(),
-        role: z.enum(['execution', 'validation', 'planning']),
-        task_id: z.number().int().positive().optional(),
-      }),
-    },
-    async (args) => {
-      try {
-        const resolved = await client.resolveModel(args.project_id, args.role, args.task_id);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: resolved == null ? 'inherit (session model)' : resolved.model,
-            },
-          ],
-          // A concrete result round-trips through `toStructuredContent`. The
-          // `null` ("inherit") sentinel OMITS the key — the MCP wire schema
-          // types `structuredContent` as an optional RECORD, so a literal
-          // `null` fails client-side result validation. Mirrors the stdio
-          // tool exactly; absence of structuredContent === inherit.
-          ...(resolved == null ? {} : { structuredContent: toStructuredContent(resolved) }),
-        };
-      } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to resolve model',
-        );
-      }
-    },
-  );
+  server.registerTool('resolve_model', RESOLVE_MODEL_TOOL_DEFINITION, async (args) => {
+    try {
+      const resolved = await client.resolveModel(args.project_id, args.role, args.task_id);
+      return renderResolveModelResult(resolved);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to resolve model',
+      );
+    }
+  });
 
   // Tool: get_model_defaults
-  server.registerTool(
-    'get_model_defaults',
-    {
-      description:
-        'Get the database-wide default ModelPolicy (the global fallback applied ' +
-        'when a project has no policy of its own). Returns { model_policy } ' +
-        '(null when no default is configured). Read-only.',
-      inputSchema: z.object({}),
-    },
-    async () => {
-      try {
-        const policy = await client.getModelDefaults();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: policy == null ? 'no default configured' : 'default model policy set',
-            },
-          ],
-          structuredContent: toStructuredContent({ model_policy: policy }),
-        };
-      } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to get model defaults',
-        );
-      }
-    },
-  );
+  server.registerTool('get_model_defaults', GET_MODEL_DEFAULTS_TOOL_DEFINITION, async () => {
+    try {
+      const policy = await client.getModelDefaults();
+      return renderGetModelDefaultsResult(policy);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to get model defaults',
+      );
+    }
+  });
 
   // Tool: set_model_defaults (MUTATION)
-  server.registerTool(
-    'set_model_defaults',
-    {
-      description:
-        'Set (or, with null, clear) the database-wide default ModelPolicy. The ' +
-        'policy is validated before it is persisted; an invalid shape is ' +
-        'rejected. Returns { model_policy } (the value just stored).',
-      inputSchema: z.object({
-        model_policy: ModelPolicyNullableSchema,
-      }),
-    },
-    async (args) => {
-      // Re-parse the policy before the API call so a malformed shape returns a
-      // clear InvalidParams McpError here (mirroring the other write tools)
-      // rather than relying on the server's 400.
-      const { model_policy } = parseToolArgs(
-        z.object({ model_policy: ModelPolicyNullableSchema }),
-        args,
-        'set_model_defaults',
+  server.registerTool('set_model_defaults', SET_MODEL_DEFAULTS_TOOL_DEFINITION, async (args) => {
+    // Re-parse the policy before the API call so a malformed shape returns a
+    // clear InvalidParams McpError here (mirroring the other write tools)
+    // rather than relying on the server's 400.
+    const { model_policy } = parseToolArgs(
+      z.object({ model_policy: ModelPolicyNullableSchema }),
+      args,
+      'set_model_defaults',
+    );
+    try {
+      const stored = await client.setModelDefaults(model_policy);
+      return renderSetModelDefaultsResult(stored);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to set model defaults',
       );
-      try {
-        const stored = await client.setModelDefaults(model_policy);
-        return {
-          content: [
-            {
-              type: 'text',
-              text:
-                stored == null ? 'default model policy cleared' : 'default model policy updated',
-            },
-          ],
-          structuredContent: toStructuredContent({ model_policy: stored }),
-        };
-      } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          error instanceof Error ? error.message : 'Failed to set model defaults',
-        );
-      }
-    },
-  );
+    }
+  });
 
   // ── WSJF tools (4) ────────────────────────────────────────────────────────
   // Remote parity (WSJF 1.10) with the stdio WSJF tools

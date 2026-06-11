@@ -233,6 +233,10 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // with the new `statusline` command reference and the Bearer-PAT / device-flow
     // auth content; 1800 leaves ~100 lines of headroom. Advisory budget —
     // tighten in a follow-up once the CLI reference is split or trimmed.
+    // #1004 (atomic block-with-dependency) kept the budget at 1800 by
+    // condensing the `tasks update` examples to fit the `--blocked-by` row —
+    // the onboarding-smoke probe (MAX_LINES_PER_PROBE_FILE) hard-caps every
+    // recommended-read doc at 1800, so the advisory budget must not exceed it.
     line_budget: 1800,
     authority: 'authoritative',
     owner_role: 'CLI maintainers',
@@ -343,6 +347,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'deep-doc',
     purpose:
       'Automation recipe: drive a long-lived agent session via the vendor-neutral agent_session_dispatch core handler, covering the session-id round-trip, restart semantics, and idempotency-store interactions, with a validating sample triggers.yaml.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
+    path: 'docs/automation-recipes/agent-delegated-wsjf-sizing.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: delegate a full WSJF classification to an agent when a task is created with an auto-sized job size, using the task.created event, an assignee predicate, and the agent_session_dispatch handler; covers the source.jobSize session-level self-gate, update_task wsjf_submission shape, and idempotency.',
     when_to_read: 'on-demand',
     line_budget: 300,
     authority: 'authoritative',

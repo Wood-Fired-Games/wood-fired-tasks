@@ -118,6 +118,10 @@ const HealthFindingSchema = z.object({
     'stale-time-criticality',
     'high-fallback-ratio',
     'score-churn',
+    'auto-sized-pending',
+    // Task #1004: emitted by check_health (edge-less blocked lint); part of
+    // the shared HealthCheckId union, never produced by the WSJF linter.
+    'blocked-without-edge',
   ]),
   severity: z.enum(['info', 'warning', 'critical']),
   message: z.string(),

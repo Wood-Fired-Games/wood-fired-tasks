@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { TaskEvent, ProjectEvent } from './types.js';
+import { TaskEvent, ProjectEvent, ClaimReleasedEvent } from './types.js';
 
 /**
  * Options for {@link EventBus.subscribe}.
@@ -203,6 +203,7 @@ export class EventBus<Events extends Record<string, unknown>> {
         this.emitter.listenerCount('task.deleted') +
         this.emitter.listenerCount('task.status_changed') +
         this.emitter.listenerCount('task.claimed') +
+        this.emitter.listenerCount('task.claim_released') +
         this.emitter.listenerCount('project.created') +
         this.emitter.listenerCount('project.updated') +
         this.emitter.listenerCount('project.deleted'),
@@ -220,6 +221,7 @@ type AppEvents = {
   'task.deleted': TaskEvent;
   'task.status_changed': TaskEvent;
   'task.claimed': TaskEvent;
+  'task.claim_released': ClaimReleasedEvent;
   'project.created': ProjectEvent;
   'project.updated': ProjectEvent;
   'project.deleted': ProjectEvent;

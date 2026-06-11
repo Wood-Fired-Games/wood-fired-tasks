@@ -225,6 +225,72 @@ describe('update command', () => {
     });
   });
 
+  // Task #1004: atomic block-with-dependency via --blocked-by.
+  it('parses --blocked-by with --status blocked into blocked_by ids', async () => {
+    const { updateTask } = await import('../api/client.js');
+    vi.mocked(updateTask).mockResolvedValue({
+      id: 1,
+      title: 'Task 1',
+      description: null,
+      status: 'blocked',
+      priority: 'medium',
+      project_id: 1,
+      assignee: null,
+      created_by: 'alice',
+      due_date: null,
+      created_at: '2026-02-13T00:00:00Z',
+      updated_at: '2026-02-13T00:00:00Z',
+      tags: [],
+    });
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'update',
+      '1',
+      '-s',
+      'blocked',
+      '--blocked-by',
+      '57, 58',
+    ]);
+
+    expect(updateTask).toHaveBeenCalledWith(1, {
+      status: 'blocked',
+      blocked_by: [57, 58],
+    });
+  });
+
+  it('rejects --blocked-by without --status blocked (narrow semantics)', async () => {
+    const { updateTask } = await import('../api/client.js');
+
+    await program.parseAsync(['node', 'test', 'update', '1', '--blocked-by', '57']);
+
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('--blocked-by is only valid together with --status blocked'),
+    );
+  });
+
+  it('rejects non-numeric --blocked-by ids', async () => {
+    const { updateTask } = await import('../api/client.js');
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'update',
+      '1',
+      '-s',
+      'blocked',
+      '--blocked-by',
+      '57,abc',
+    ]);
+
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid --blocked-by'));
+  });
+
   it('outputs JSON when --json flag set', async () => {
     const { updateTask } = await import('../api/client.js');
     const { jsonOutput } = await import('../output/json-output.js');

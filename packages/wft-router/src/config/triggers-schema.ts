@@ -102,6 +102,14 @@ export const RuleSchema = z
     idempotency_window_s: z.number().int().nonnegative().optional(),
     max_dispatches_per_minute: z.number().int().positive().optional(),
     max_retries: z.number().int().nonnegative().optional(),
+    /**
+     * Cold-start sweep opt-in (task #1005). When true (here or in
+     * `defaults:`), the daemon queries the task-list REST API once on
+     * startup for OPEN tasks matching this rule's `where:` block and — when
+     * any match — synthesizes AT MOST ONE dispatch through the normal
+     * handler path. Default OFF: absent = no startup behavior change.
+     */
+    sweep_on_start: z.boolean().optional(),
   })
   .strict();
 
@@ -116,6 +124,8 @@ export const DefaultsSchema = z
     max_dispatches_per_minute: z.number().int().positive().optional(),
     /** Retry attempts before dead-letter; default 3 per design spec. */
     max_retries: z.number().int().nonnegative().optional(),
+    /** Global cold-start sweep opt-in; per-rule `sweep_on_start` overrides. Default false. */
+    sweep_on_start: z.boolean().optional(),
   })
   .strict();
 

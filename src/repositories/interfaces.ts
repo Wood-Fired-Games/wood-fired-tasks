@@ -11,6 +11,7 @@ import type {
   CreateCommentDTO,
 } from '../types/task.js';
 import type { User, ApiToken, UserUpsertInput } from '../types/identity.js';
+import type { Fib, WsjfSource } from '../types/wsjf.js';
 
 /**
  * Bounded pagination options accepted by every list-style repository call.
@@ -45,6 +46,29 @@ export interface ITaskRepository {
   findById(id: number): (Task & { tags: string[] }) | null;
   findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }>;
   update(id: number, updates: UpdateTaskDTO): Task & { tags: string[] };
+  /**
+   * Guaranteed-task-sizing (#987, design spec §2/§3): SIZE-ONLY write. Sets
+   * `wsjf_job_size` and the `wsjf_source` provenance map (with `jobSize`
+   * stamped `'auto'`) while leaving the three Cost-of-Delay component columns
+   * (`wsjf_value`, `wsjf_time_criticality`, `wsjf_risk_opportunity`) and their
+   * JSON metadata UNTOUCHED — so a fresh task stays unscored for ranking but
+   * becomes routable. This is the column-write half of the no-bypass invariant
+   * (#628); the service layer wraps it together with the `auto_size` history
+   * append in ONE `db.transaction(...)`. NOT reachable from any client schema
+   * (`CreateTaskClientSchema` / `WsjfWriteSchema` reject size-only payloads).
+   */
+  writeAutoJobSize(id: number, jobSize: Fib, source: WsjfSource): Task & { tags: string[] };
+  /**
+   * Guaranteed-task-sizing (#992, design spec §5): the boot-sweep candidate
+   * scan. Returns the `{ id, estimated_minutes }` pairs for every task whose
+   * `wsjf_job_size IS NULL` and whose status is NOT terminal (∉ {done,closed})
+   * — the exact set the idempotent boot sweep backfills via
+   * `TaskService.autoSizeTask`. Returns ONLY the two columns the sweep needs
+   * (id to address the row, estimated_minutes to feed `minutesToTier`) so the
+   * scan stays cheap on a large backlog and never has to inflate full rows.
+   * A second invocation after a successful sweep returns `[]` (idempotence).
+   */
+  findIdsWithNullJobSize(): Array<{ id: number; estimated_minutes: number | null }>;
   delete(id: number): void;
   /**
    * Filter + paginate tasks. `filters.limit`/`filters.offset` ride along on
@@ -71,6 +95,14 @@ export interface ITaskRepository {
     assignee: string,
     assigneeUserId?: number | null,
   ): (Task & { tags: string[] }) | null;
+  /**
+   * Task #1003: claim renewal (heartbeat). Refreshes `claimed_at` (and
+   * `updated_at`) for a task the SAME assignee already holds `in_progress`,
+   * extending the claim-TTL window without changing assignee or status.
+   * Returns the refreshed task, or `null` when the (id, assignee,
+   * in_progress) predicate no longer matches (claim lapsed or stolen).
+   */
+  renewClaim(id: number, assignee: string): (Task & { tags: string[] }) | null;
   findCompletedInRange(filters: CompletionRangeFilters): Array<Task & { tags: string[] }>;
 }
 

@@ -298,16 +298,42 @@ Step 4 once on the splits** to fold the new edges into the edge set.
 candidates in wood-fired-tasks via `wood-fired-tasks:create_task`, then add
 the dependency edges via `wood-fired-tasks:add_dependency`.
 
+> **The server now enforces the submission contract — this skill no longer has
+> to guarantee sizing itself (guaranteed-task-sizing, #985–#993).**
+> `TaskService.createTask` is the single chokepoint every create surface funnels
+> through, and it enforces the contract server-side:
+> - **Decompose submission gate (Prong A).** A `create_task` carrying a
+>   `decomp-*` tag (which Step 8b stamps on EVERY materialized leaf) but **no**
+>   `wsjf_submission` is **rejected** as a 422-class contract violation. The
+>   server will not let a decompose run mint a sizeless task — the old failure
+>   class where a skipped Step 8a silently produced unscored, unroutable leaves.
+>   The error names the offending `decomp-*` tag and tells you to re-run Step 8a.
+> - **Auto-size on create.** A create carrying NEITHER a `wsjf_submission` NOR a
+>   raw `wsjf` object is auto-sized server-side: `wsjf_job_size =
+>   minutesToTier(estimated_minutes)` with `wsjf_source.jobSize = 'auto'`, the
+>   three Cost-of-Delay components left NULL. The task is routable yet honestly
+>   unscored — so you never have to hand-fabricate a Job Size to keep a task
+>   routable.
+>
+> Net effect on this skill: the **only** way to materialize `decomp-*` leaves is
+> WITH a `wsjf_submission` (Step 8a). If you genuinely want to skip WSJF scoring
+> (the opt-out below), materialize **without** the `decomp-*` tag so the
+> auto-size path applies instead of the submission gate.
+
 ### Step 8a — Column-anchored batch WSJF scoring (BEFORE create_task)
 
 > **Opt-out — skip this entire step if WSJF scoring is unwanted.** Batch scoring
 > is opt-in and adds an LLM classification pass over the whole candidate set
 > (extra cost + latency + nondeterminism on every decompose run). To opt out —
 > the user doesn't use WSJF, or the project has no value charter — **materialize
-> in Step 8b WITHOUT a `wsjf_submission` (and without `wsjf_trigger`)**: the
-> tasks are created unscored and ordered by their `priority` field, exactly as
-> before WSJF existed. `/tasks:loop[-dag]` selection falls back to priority+ID
-> unchanged when no task in the project is scored, so nothing downstream breaks.
+> in Step 8b WITHOUT a `wsjf_submission` (and without `wsjf_trigger`), and
+> WITHOUT the `decomp-*` tag** (so the server's submission gate does not fire).
+> The server then auto-sizes each create from `estimated_minutes` (Job Size only,
+> `wsjf_source.jobSize='auto'`, Cost-of-Delay components left NULL): the tasks
+> stay routable but unscored for ranking, ordered by their `priority` field
+> exactly as before WSJF existed. `/tasks:loop[-dag]` selection falls back to
+> priority+ID unchanged when no task in the project is scored, so nothing
+> downstream breaks.
 
 Before you materialize anything, score the **whole surviving candidate batch
 at once, column-anchored** against the parent project's value charter (fetch

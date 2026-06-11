@@ -16,6 +16,7 @@ const TASK_EVENT_TYPES = [
   'task.updated',
   'task.status_changed',
   'task.claimed',
+  'task.claim_released',
   'task.deleted',
 ] as const;
 

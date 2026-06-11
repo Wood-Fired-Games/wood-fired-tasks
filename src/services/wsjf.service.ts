@@ -134,6 +134,34 @@ export function rrFromSeverity(s: SeverityClass): Fib {
   }
 }
 
+/**
+ * Map `estimated_minutes` to a Fibonacci job-size tier — the single source of
+ * truth for every auto-sizing consumer in this decomposition (design spec
+ * `docs/superpowers/specs/2026-06-10-guaranteed-task-sizing-design.md`,
+ * §minutesToTier).
+ *
+ * Canonical bands:
+ *   null / undefined  → 3  (absent-minutes default; modal decomposed-leaf tier)
+ *   <= 15             → 1
+ *   <= 30             → 2
+ *   <= 60             → 3
+ *   <= 240            → 5
+ *   <= 960            → 8
+ *   > 960             → 13
+ *
+ * All returned values are members of {@link FIB} and therefore valid keys in
+ * `FIB_TO_CATEGORY` in `model-policy.service.ts`.
+ */
+export function minutesToTier(minutes: number | null | undefined): Fib {
+  if (minutes == null) return 3;
+  if (minutes <= 15) return 1;
+  if (minutes <= 30) return 2;
+  if (minutes <= 60) return 3;
+  if (minutes <= 240) return 5;
+  if (minutes <= 960) return 8;
+  return 13;
+}
+
 const TYPO_KEYWORDS = ['typo', 'config', 'copy'];
 const HEAVY_KEYWORDS = ['refactor', 'migrate', 'rewrite', 'new subsystem'];
 

@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_METRICS_BIND,
+  GAUGE_NAMES,
   METRIC_NAMES,
   MetricsRegistry,
   startMetricsServer,
@@ -96,6 +97,95 @@ describe('MetricsRegistry.render — Prometheus text exposition', () => {
     expect(line).toBeDefined();
     // name{label="v",label2="v2"} <number>
     expect(line).toMatch(/^wft_router_dispatched_total\{handler="[^"]*",status="[^"]*"\} \d+$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #1002 — deaf-stream gauges + by-kind events split
+// ---------------------------------------------------------------------------
+
+describe('MetricsRegistry — silence gauges + by-kind split (task #1002)', () => {
+  it('renders both gauges with gauge TYPE headers and an injected clock', () => {
+    let now = 5_000_000;
+    const reg = new MetricsRegistry({ now: () => now });
+    const out = reg.render();
+    expect(out).toContain(`# TYPE ${GAUGE_NAMES.lastRealEventAge} gauge`);
+    expect(out).toContain(`# TYPE ${GAUGE_NAMES.processStartTime} gauge`);
+    // With an injected clock, registry construction stands in for process
+    // start: 5_000_000 ms → 5000 s.
+    expect(out).toContain(`\n${GAUGE_NAMES.processStartTime} 5000\n`);
+    // No real event yet → age counts from construction (0 at construction).
+    expect(out).toContain(`\n${GAUGE_NAMES.lastRealEventAge} 0\n`);
+
+    // A silent stretch drives the age gauge up at scrape time.
+    now += 12_500;
+    expect(reg.render()).toContain(`\n${GAUGE_NAMES.lastRealEventAge} 12.5\n`);
+  });
+
+  it('markRealEvent resets the age baseline; silence afterwards raises it again', () => {
+    let now = 0;
+    const reg = new MetricsRegistry({ now: () => now });
+    now = 120_000;
+    expect(reg.lastRealEventAgeSeconds()).toBe(120);
+
+    reg.markRealEvent();
+    expect(reg.lastRealEventAgeSeconds()).toBe(0);
+
+    now += 30_000;
+    expect(reg.lastRealEventAgeSeconds()).toBe(30);
+    expect(reg.render()).toContain(`\n${GAUGE_NAMES.lastRealEventAge} 30\n`);
+  });
+
+  it('default clock derives process_start_time_seconds near the real process start', () => {
+    const reg = new MetricsRegistry();
+    const expected = Date.now() / 1000 - process.uptime();
+    const line = reg
+      .render()
+      .split('\n')
+      .find((l) => l.startsWith(`${GAUGE_NAMES.processStartTime} `));
+    expect(line).toBeDefined();
+    const value = Number(line?.split(' ')[1]);
+    expect(Math.abs(value - expected)).toBeLessThan(5);
+  });
+
+  it('splits events_received by kind with seeded zero series; total stays unlabelled', () => {
+    const reg = new MetricsRegistry();
+    const out0 = reg.render();
+    expect(out0).toContain(`# TYPE ${METRIC_NAMES.eventsByKind} counter`);
+    expect(out0).toContain(`${METRIC_NAMES.eventsByKind}{kind="mappable"} 0`);
+    expect(out0).toContain(`${METRIC_NAMES.eventsByKind}{kind="control"} 0`);
+    expect(out0).toContain(`${METRIC_NAMES.eventsByKind}{kind="unmappable"} 0`);
+
+    reg.incEventsReceived();
+    reg.incEventsByKind('mappable');
+    reg.incEventsReceived();
+    reg.incEventsByKind('control');
+    reg.incEventsReceived();
+    reg.incEventsByKind('control');
+
+    const out = reg.render();
+    // Existing unlabelled total semantics are PRESERVED (sibling-counter
+    // migration choice): total counts every frame, by-kind splits them.
+    expect(out).toContain(`\n${METRIC_NAMES.eventsReceived} 3\n`);
+    expect(out).toContain(`${METRIC_NAMES.eventsByKind}{kind="mappable"} 1`);
+    expect(out).toContain(`${METRIC_NAMES.eventsByKind}{kind="control"} 2`);
+    expect(out).toContain(`${METRIC_NAMES.eventsByKind}{kind="unmappable"} 0`);
+  });
+
+  it('serves the gauge + process start time on GET /metrics', async () => {
+    const reg = new MetricsRegistry();
+    const handle = await startMetricsServer({ port: 0, registry: reg });
+    try {
+      const res = await fetch(`http://127.0.0.1:${handle.address.port}/metrics`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain(`# TYPE ${GAUGE_NAMES.lastRealEventAge} gauge`);
+      expect(body).toContain(`# TYPE ${GAUGE_NAMES.processStartTime} gauge`);
+      expect(body).toMatch(/wft_router_last_real_event_age_seconds \d+(\.\d+)?\n/);
+      expect(body).toMatch(/process_start_time_seconds \d+(\.\d+)?\n/);
+    } finally {
+      await handle.close();
+    }
   });
 });
 

@@ -5097,6 +5097,30 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
             },
             "description": "Default Response",
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "details": {},
+                    "error": {
+                      "type": "string",
+                    },
+                    "message": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "error",
+                    "message",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "Default Response",
+          },
           "404": {
             "content": {
               "application/json": {
@@ -5288,6 +5312,8 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                               "stale-time-criticality",
                               "high-fallback-ratio",
                               "score-churn",
+                              "auto-sized-pending",
+                              "blocked-without-edge",
                             ],
                             "type": "string",
                           },
@@ -7136,6 +7162,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                             "nullable": true,
                             "type": "string",
                           },
+                          "claim_remaining_seconds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                          "claim_ttl_minutes": {
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
                           "claimed_at": {
                             "nullable": true,
                             "type": "string",
@@ -7789,6 +7826,8 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "rescore",
                           "manual",
                           "propagation",
+                          "auto_size",
+                          "boot_sweep",
                         ],
                         "type": "string",
                       },
@@ -7867,6 +7906,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "assignee": {
                       "nullable": true,
                       "type": "string",
+                    },
+                    "claim_remaining_seconds": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "claim_ttl_minutes": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
                     },
                     "claimed_at": {
                       "nullable": true,
@@ -8379,6 +8429,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "nullable": true,
                       "type": "string",
                     },
+                    "claim_remaining_seconds": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "claim_ttl_minutes": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
                     "claimed_at": {
                       "nullable": true,
                       "type": "string",
@@ -8578,6 +8639,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "maxLength": 100,
                     "nullable": true,
                     "type": "string",
+                  },
+                  "blocked_by": {
+                    "items": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "maxItems": 50,
+                    "minItems": 1,
+                    "type": "array",
                   },
                   "description": {
                     "maxLength": 5000,
@@ -9081,6 +9153,8 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "rescore",
                           "manual",
                           "propagation",
+                          "auto_size",
+                          "boot_sweep",
                         ],
                         "type": "string",
                       },
@@ -9154,6 +9228,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "assignee": {
                       "nullable": true,
                       "type": "string",
+                    },
+                    "claim_remaining_seconds": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "claim_ttl_minutes": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
                     },
                     "claimed_at": {
                       "nullable": true,
@@ -9375,6 +9460,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "assignee": {
                       "nullable": true,
                       "type": "string",
+                    },
+                    "claim_remaining_seconds": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "claim_ttl_minutes": {
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer",
                     },
                     "claimed_at": {
                       "nullable": true,
@@ -10513,6 +10609,17 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "assignee": {
                             "nullable": true,
                             "type": "string",
+                          },
+                          "claim_remaining_seconds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
+                          },
+                          "claim_ttl_minutes": {
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer",
                           },
                           "claimed_at": {
                             "nullable": true,

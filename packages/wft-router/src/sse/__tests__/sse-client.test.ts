@@ -23,7 +23,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { authHeader, PAT_PREFIX } from '../auth.js';
-import { createSSEParser } from '../parser.js';
+import { createSSEParser, type SSEEvent } from '../parser.js';
 import {
   computeBackoffMs,
   ExitCode,
@@ -609,6 +609,83 @@ describe('runSSEClient — idle/read timeout guards a half-open socket (regressi
         (w) => w.msg === 'sse_network_error' && String(w.fields?.message).includes('idle timeout'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('runSSEClient — deaf-stream self-heal (task #1002)', () => {
+  /** A live stream that delivers `body` then stays open (no close). */
+  function openStreamResponse(body: string): Response {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        // Deliberately NO controller.close() — mimic a live SSE socket.
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  }
+
+  // One real event then only server keep-alive pings: the deaf-stream shape
+  // from the maxConnectionAge eviction incident — the socket stays healthy
+  // (pings flow, idle timeout never fires) while real delivery is dead.
+  const deafBody =
+    'id: 1\nevent: task.created\ndata: {"x":1}\n\n' +
+    'event: ping\ndata: \n\n' +
+    'event: ping\ndata: \n\n';
+
+  it('resubscribes (resume id preserved) when only pings arrive past staleResubscribeAfterMs', async () => {
+    const ac = new AbortController();
+    const clock = fakeClock(0);
+    const { fetchImpl, calls } = recordingFetch([
+      openStreamResponse(deafBody),
+      sseResponse('id: 2\nevent: task.created\ndata: {"y":2}\n\n'),
+    ]);
+    const logger = spyLogger();
+    const gen = runSSEClient(
+      baseOpts({ fetchImpl, clock, logger, staleResubscribeAfterMs: 30_000 }),
+      ac.signal,
+    );
+
+    const real = await gen.next(); // real event — resets the silence baseline
+    const ping = await gen.next(); // first ping, still inside the threshold
+    clock.setNow(31_000); // 31 s of real-event silence
+    const healed = await gen.next(); // stale fires → resubscribe → conn #2 event
+    ac.abort();
+    await gen.next();
+
+    expect((real.value as SSEEvent).event).toBe('task.created');
+    expect((ping.value as SSEEvent).event).toBe('ping');
+    expect((healed.value as SSEEvent).id).toBe('2');
+    // It re-opened the subscription rather than sitting deaf.
+    expect(calls).toHaveLength(2);
+    // The resume position survives the self-heal so missed events replay.
+    expect(calls[1]?.headers['Last-Event-Id']).toBe('1');
+    const warn = logger.warns.find((w) => w.msg === 'sse_stale_resubscribe');
+    expect(warn).toBeDefined();
+    expect(warn?.fields?.threshold_ms).toBe(30_000);
+    expect(Number(warn?.fields?.silent_for_ms)).toBeGreaterThanOrEqual(30_000);
+  });
+
+  it('is disabled by default: pings alone never force a resubscribe', async () => {
+    const ac = new AbortController();
+    const clock = fakeClock(0);
+    const { fetchImpl, calls } = recordingFetch([openStreamResponse(deafBody)]);
+    const logger = spyLogger();
+    const gen = runSSEClient(baseOpts({ fetchImpl, clock, logger }), ac.signal);
+
+    const first = await gen.next();
+    clock.setNow(10 * 60_000); // 10 min of "silence" — irrelevant when off
+    const second = await gen.next();
+    const third = await gen.next();
+    ac.abort(); // leave the suspended generator parked; no further pull.
+
+    expect((first.value as SSEEvent).event).toBe('task.created');
+    expect((second.value as SSEEvent).event).toBe('ping');
+    expect((third.value as SSEEvent).event).toBe('ping');
+    expect(calls).toHaveLength(1); // never reconnected
+    expect(logger.warns.find((w) => w.msg === 'sse_stale_resubscribe')).toBeUndefined();
   });
 });
 

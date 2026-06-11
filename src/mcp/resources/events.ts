@@ -64,7 +64,8 @@ Authorization: Bearer <pat>
 - \`task.created\` - New task created
 - \`task.updated\` - Task updated
 - \`task.deleted\` - Task deleted
-- \`task.claimed\` - Task claimed by agent (Phase 15)
+- \`task.claimed\` - Task claimed by agent (Phase 15; also emitted on a same-assignee claim renewal)
+- \`task.claim_released\` - Stale claim auto-released by the TTL sweep (carries previous_assignee, expired_claimed_at, released_at)
 - \`task.status_changed\` - Task status transition
 - \`project.created\` - New project created
 - \`project.updated\` - Project updated

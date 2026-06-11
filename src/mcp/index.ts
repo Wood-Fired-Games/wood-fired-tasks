@@ -6,9 +6,6 @@ import { parseApiKeyEntries } from '../config/env.js';
 import { resolveDbPath } from '../config/db-path.js';
 import { precomputeHashedEntries } from '../api/plugins/auth/keys.js';
 import { triggerUpdateCheck } from '../cli/update/check-writer.js';
-import { createModelPolicyService } from '../services/model-policy.service.js';
-import { ProjectRepository } from '../repositories/project.repository.js';
-import { TaskRepository } from '../repositories/task.repository.js';
 
 /**
  * MCP server stdio entry point
@@ -78,25 +75,6 @@ async function main() {
     }),
   );
 
-  // Configurable Task Models Task 11 (#920): construct the model-policy
-  // resolver behind the `resolve_model` tool. Its three lookups are injected:
-  //   - getProjectPolicy ← a project's parsed `model_policy` (ProjectRepository
-  //     inflates the JSON column to a ModelPolicy | null).
-  //   - getGlobalPolicy  ← the database-wide default owned by the settings
-  //     service (the SAME instance the API and `get/set_model_defaults` use).
-  //   - getJobSize       ← a task's WSJF jobSize Fibonacci tier (the
-  //     `wsjf_job_size` column inflated onto the Task by TaskRepository).
-  // The repos are built over the SAME `app.db` handle every other service
-  // shares (db-backed repos are stateless prepared-statement holders), mirroring
-  // how server.ts constructs the WSJF repos.
-  const projectRepo = new ProjectRepository(app.db);
-  const taskRepo = new TaskRepository(app.db);
-  const modelPolicyService = createModelPolicyService({
-    getProjectPolicy: (projectId) => projectRepo.findById(projectId)?.model_policy ?? null,
-    getGlobalPolicy: () => app.settingsService.getModelPolicyDefault(),
-    getJobSize: (taskId) => taskRepo.findById(taskId)?.wsjf_job_size ?? null,
-  });
-
   // Create MCP server with initialized services + boot-time context
   const server = createMcpServer(
     app.taskService,
@@ -107,10 +85,12 @@ async function main() {
     { actorUserId, userRepository: app.userRepository },
     // Wave 4.1 (#318): topology classifier behind the `topology_check` tool.
     app.topologyService,
-    // Configurable Task Models Task 11 (#920): the three services backing the
-    // four model tools (list_models, resolve_model, get/set_model_defaults).
+    // Configurable Task Models Task 11 (#920) / #931: the three services
+    // backing the four model tools (list_models, resolve_model,
+    // get/set_model_defaults). The policy resolver is constructed ONCE in
+    // `createApp` — the SAME instance the REST route consumes.
     app.modelCatalogService,
-    modelPolicyService,
+    app.modelPolicyService,
     app.settingsService,
   );
 
