@@ -51,7 +51,12 @@ export type HealthCheckId =
   | 'job-size-collapsed'
   | 'stale-time-criticality'
   | 'high-fallback-ratio'
-  | 'score-churn';
+  | 'score-churn'
+  | 'auto-sized-pending'
+  // Task #1004: emitted by `check_health` (src/mcp/tools/health-tools.ts), not
+  // the WSJF linter — it shares this findings shape so all health surfaces
+  // speak one language.
+  | 'blocked-without-edge';
 
 /** One linter finding: which check fired, how bad, why, and what to do. */
 export interface HealthFinding {
@@ -85,6 +90,10 @@ export interface WsjfHealthReport {
  *    against an injected `now` so the analyzer stays clock-free.
  *  - `ready` marks a task eligible for the ready frontier (open + not blocked) —
  *    the fallback-ratio check only counts ready tasks.
+ *  - `autoSized` is true when the task has a server-derived job size
+ *    (`wsjf_source.jobSize === 'auto'`) but the Cost-of-Delay components have not
+ *    been classified yet (value / timeCriticality / riskOpportunity are NULL).
+ *    The `auto-sized-pending` check surfaces these tasks as info-level reminders.
  */
 export interface HealthTaskSnapshot {
   taskId: number;
@@ -92,6 +101,8 @@ export interface HealthTaskSnapshot {
   priority: TaskPriority;
   daysUntilDeadline: number | null;
   ready: boolean;
+  /** True when this task is auto-sized (jobSize only) awaiting full classification. */
+  autoSized?: boolean;
 }
 
 /** One historical WSJF score for a task, oldest-first, for the churn check. */
@@ -320,12 +331,44 @@ export function analyzeWsjfHealth(
     }
   }
 
+  // --- Check 7: auto-sized tasks awaiting full CoD classification ----------
+  const autoSizedPending = snapshots.filter((s) => s.autoSized);
+  if (autoSizedPending.length > 0) {
+    findings.push({
+      check: 'auto-sized-pending',
+      severity: 'info',
+      message:
+        `${autoSizedPending.length} task(s) are auto-sized (source=auto) awaiting ` +
+        `full classification. Job Size was set by the server as a routing prior; ` +
+        `the Cost-of-Delay components (Value, Time Criticality, Risk/Opportunity) ` +
+        `have not been classified yet.`,
+      suggestion:
+        'Classify the Cost-of-Delay components for these tasks so they contribute ' +
+        'a real WSJF score to the backlog ranking.',
+      taskIds: autoSizedPending.map((s) => s.taskId),
+    });
+  }
+
   return {
     projectId,
     healthy: findings.length === 0,
     findings,
     scoredTaskCount: scored.length,
   };
+}
+
+/**
+ * True when the task has a server-derived job size (`wsjf_source.jobSize === 'auto'`)
+ * but the Cost-of-Delay numerator columns are still NULL — i.e., only the
+ * size-only auto-write has run; no full classification has followed.
+ */
+function isAutoSizedPending(task: Task): boolean {
+  return (
+    task.wsjf_source?.jobSize === 'auto' &&
+    (task.wsjf_value === null ||
+      task.wsjf_time_criticality === null ||
+      task.wsjf_risk_opportunity === null)
+  );
 }
 
 /** Map a stored Task's INTEGER columns onto a `WsjfComponents` (or null). */
@@ -386,6 +429,7 @@ export class WsjfHealthService {
       priority: t.priority,
       daysUntilDeadline: daysUntil(t.due_date, now),
       ready: !TERMINAL_STATUSES.has(t.status),
+      autoSized: isAutoSizedPending(t),
     }));
 
     const historyByTask = new Map<number, HealthHistoryPoint[]>();

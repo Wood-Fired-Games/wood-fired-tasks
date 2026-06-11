@@ -4,6 +4,7 @@ import { TaskService } from '../task.service.js';
 import { ProjectService } from '../project.service.js';
 import { ValidationError, BusinessError, NotFoundError } from '../errors.js';
 import { eventBus } from '../../events/event-bus.js';
+import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
 import type { App } from '../../index.js';
 
 describe('TaskService', () => {
@@ -156,6 +157,215 @@ describe('TaskService', () => {
         }),
       ).toThrow(ValidationError);
     });
+
+    // Guaranteed-task-sizing (design §1, Prong A): the server-side decompose
+    // contract gate. A `decomp-*` tag without a `wsjf_submission` is rejected
+    // uniformly (stdio MCP, remote MCP, REST all funnel through createTask).
+    describe('decompose contract gate (Prong A)', () => {
+      const validWsjf = () => ({
+        value: 8,
+        timeCriticality: 5,
+        riskOpportunity: 3,
+        jobSize: 2,
+      });
+
+      it('rejects a decomp-* tagged create with no wsjf_submission, naming the tag and wsjf_submission', () => {
+        let thrown: unknown;
+        try {
+          taskService.createTask({
+            title: 'Sizeless decomposed leaf',
+            project_id: testProjectId,
+            created_by: 'decompose',
+            tags: ['decomp-xyz'],
+          });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ValidationError);
+        const ve = thrown as ValidationError;
+        const message = JSON.stringify(ve.fieldErrors);
+        expect(message).toContain('decomp-xyz');
+        expect(message).toContain('wsjf_submission');
+      });
+
+      it('accepts a decomp-* tagged create WITH a valid wsjf_submission', () => {
+        const task = taskService.createTask({
+          title: 'Sized decomposed leaf',
+          project_id: testProjectId,
+          created_by: 'decompose',
+          tags: ['decomp-xyz'],
+          wsjf: validWsjf(),
+        });
+
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.tags).toContain('decomp-xyz');
+        expect(task.wsjf_job_size).toBe(2);
+      });
+
+      it('does NOT reject an untagged WSJF-less create (falls through to auto-sizing)', () => {
+        const task = taskService.createTask({
+          title: 'Quick capture, no tags, no wsjf',
+          project_id: testProjectId,
+          created_by: 'user',
+        });
+
+        expect(task.id).toBeGreaterThan(0);
+      });
+    });
+
+    // Guaranteed-task-sizing (design §4): minutes-vs-jobSize conflict gate for
+    // RAW wsjf writes. estimated_minutes=20 maps to tier 2 (minutesToTier).
+    describe('minutes-vs-jobSize conflict gate (§4)', () => {
+      it('rejects estimated_minutes=20 with raw wsjf.jobSize=8, naming both tier values', () => {
+        let thrown: unknown;
+        try {
+          taskService.createTask({
+            title: 'Conflicting raw size',
+            project_id: testProjectId,
+            created_by: 'user',
+            estimated_minutes: 20,
+            wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 8 },
+          });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ValidationError);
+        const message = JSON.stringify((thrown as ValidationError).fieldErrors);
+        // Names both the minutes-derived tier (2) and the supplied jobSize (8).
+        expect(message).toContain('tier 2');
+        expect(message).toContain('8');
+        expect(message).toContain('20');
+      });
+
+      it('accepts estimated_minutes=20 with raw wsjf.jobSize=2 (same tier)', () => {
+        const task = taskService.createTask({
+          title: 'Consistent raw size',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+        });
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.wsjf_job_size).toBe(2);
+      });
+
+      it('does NOT reject a submission-derived write (source.jobSize=auto) whose tier differs from minutes', () => {
+        // A submission arrives at the service already converted to a WriteDTO by
+        // submissionToWsjfWrite, which stamps an all-`auto` source map. The gate
+        // must exempt it even when the band-chosen jobSize crosses the minutes
+        // tier (estimated_minutes=20 → tier 2, but jobSize=8).
+        const task = taskService.createTask({
+          title: 'Submission-derived high tier',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+          wsjf: {
+            value: 8,
+            timeCriticality: 5,
+            riskOpportunity: 3,
+            jobSize: 8,
+            source: {
+              value: 'auto',
+              timeCriticality: 'auto',
+              riskOpportunity: 'auto',
+              jobSize: 'auto',
+            },
+          },
+        });
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.wsjf_job_size).toBe(8);
+      });
+
+      it('passes a raw wsjf write with NO estimated_minutes (nothing to compare)', () => {
+        const task = taskService.createTask({
+          title: 'Raw size, no minutes',
+          project_id: testProjectId,
+          created_by: 'user',
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 8 },
+        });
+        expect(task.id).toBeGreaterThan(0);
+        expect(task.wsjf_job_size).toBe(8);
+      });
+    });
+
+    // Guaranteed-task-sizing (design §2/§3, #989): auto-size WSJF-less creates.
+    // Every create carrying NEITHER a raw `wsjf` payload NOR a `wsjf_submission`
+    // is auto-sized through the size-only path: tier = minutesToTier(minutes)
+    // (tier-3 residual default when minutes absent), source.jobSize='auto', CoD
+    // components NULL, with an auto_size history row. This makes every new task
+    // immediately routable by ModelPolicy.byCategory.
+    describe('auto-size WSJF-less creates (§2/§3)', () => {
+      it.each([
+        [45, 3],
+        [15, 1],
+        [961, 13],
+      ])('AC1: estimated_minutes=%i with no wsjf stores wsjf_job_size=%i, source.jobSize=auto', (minutes, expectedTier) => {
+        const task = taskService.createTask({
+          title: `Auto-sized ${minutes}m`,
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: minutes,
+        });
+        expect(task.wsjf_job_size).toBe(expectedTier);
+        expect(task.wsjf_source).not.toBeNull();
+        expect(task.wsjf_source!.jobSize).toBe('auto');
+      });
+
+      it('AC2: no estimated_minutes and no wsjf stores wsjf_job_size=3, source.jobSize=auto', () => {
+        const task = taskService.createTask({
+          title: 'Bare quick capture',
+          project_id: testProjectId,
+          created_by: 'user',
+        });
+        expect(task.wsjf_job_size).toBe(3);
+        expect(task.wsjf_source).not.toBeNull();
+        expect(task.wsjf_source!.jobSize).toBe('auto');
+      });
+
+      it('AC3: an auto_size history row exists with CoD components NULL', () => {
+        const task = taskService.createTask({
+          title: 'Bare with history',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 45,
+        });
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const history = historyRepo.findByTaskId(task.id);
+        expect(history).toHaveLength(1);
+        expect(history[0].trigger).toBe('auto_size');
+        expect(history[0].job_size).toBe(3);
+        // Cost-of-Delay components are NULL — no fabricated CoD.
+        expect(history[0].value).toBeNull();
+        expect(history[0].time_criticality).toBeNull();
+        expect(history[0].risk_opportunity).toBeNull();
+        expect(history[0].wsjf_score).toBeNull();
+      });
+
+      it('AC4: a create carrying wsjf is untouched by auto-sizing (no double write)', () => {
+        const task = taskService.createTask({
+          title: 'Fully scored on create',
+          project_id: testProjectId,
+          created_by: 'user',
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+        });
+        // jobSize stays the supplied 2 (NOT overwritten by an auto tier), and the
+        // CoD components persist — this is a real classification, not size-only.
+        // A raw wsjf write supplies no `source`, so `wsjf_source` is NULL: the
+        // task was emphatically NOT auto-sized (an auto write would have stamped
+        // source.jobSize='auto').
+        expect(task.wsjf_job_size).toBe(2);
+        expect(task.wsjf_value).toBe(8);
+        expect(task.wsjf_source).toBeNull();
+
+        // Exactly ONE history row, and it is the create row — NOT an auto_size
+        // follow-up (no double write).
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const history = historyRepo.findByTaskId(task.id);
+        expect(history).toHaveLength(1);
+        expect(history[0].trigger).toBe('create');
+        expect(history.some((h) => h.trigger === 'auto_size')).toBe(false);
+      });
+    });
   });
 
   describe('getTask', () => {
@@ -199,6 +409,45 @@ describe('TaskService', () => {
       const updated = taskService.updateTask(created.id, { title: 'Updated' });
 
       expect(updated.title).toBe('Updated');
+    });
+
+    // Guaranteed-task-sizing (design §4): the conflict gate also guards the
+    // update raw-wsjf path. estimated_minutes=20 → tier 2; raw jobSize=8 conflicts.
+    it('rejects an update carrying estimated_minutes=20 and raw wsjf.jobSize=8 (cross-tier conflict)', () => {
+      const created = taskService.createTask({
+        title: 'To update',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      let thrown: unknown;
+      try {
+        taskService.updateTask(created.id, {
+          estimated_minutes: 20,
+          wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 8 },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ValidationError);
+      const message = JSON.stringify((thrown as ValidationError).fieldErrors);
+      expect(message).toContain('tier 2');
+      expect(message).toContain('8');
+      expect(message).toContain('20');
+    });
+
+    it('accepts an update with estimated_minutes=20 and raw wsjf.jobSize=2 (same tier)', () => {
+      const created = taskService.createTask({
+        title: 'To update consistently',
+        project_id: testProjectId,
+        created_by: 'user',
+      });
+
+      const updated = taskService.updateTask(created.id, {
+        estimated_minutes: 20,
+        wsjf: { value: 8, timeCriticality: 5, riskOpportunity: 3, jobSize: 2 },
+      });
+      expect(updated.wsjf_job_size).toBe(2);
     });
 
     it('changes priority', () => {
@@ -250,6 +499,118 @@ describe('TaskService', () => {
       const updated = taskService.updateTask(created.id, { tags: ['new', 'tags'] });
 
       expect(updated.tags).toEqual(['new', 'tags']);
+    });
+
+    // Guaranteed-task-sizing (#991): updating estimated_minutes recomputes the
+    // AUTO job-size (and appends an auto_size history row) iff the persisted size
+    // is still server-derived (`wsjf_source.jobSize === 'auto'`). A manual size is
+    // never clobbered, and a status-only update writes no new size/history row.
+    describe('auto job-size recompute on estimated_minutes change (#991)', () => {
+      it('AC1: estimated_minutes 20→90 on an auto-sized task rewrites wsjf_job_size 2→5 with a new auto_size history row', () => {
+        // 20 min → tier 2; created with no wsjf → auto-sized.
+        const created = taskService.createTask({
+          title: 'Auto-sized task',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+        });
+        expect(created.wsjf_job_size).toBe(2);
+        expect(created.wsjf_source!.jobSize).toBe('auto');
+
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const beforeRows = historyRepo.findByTaskId(created.id);
+        expect(beforeRows.filter((h) => h.trigger === 'auto_size')).toHaveLength(1);
+
+        // 90 min → tier 5.
+        const updated = taskService.updateTask(created.id, { estimated_minutes: 90 });
+        expect(updated.estimated_minutes).toBe(90);
+        expect(updated.wsjf_job_size).toBe(5);
+        expect(updated.wsjf_source!.jobSize).toBe('auto');
+
+        const afterRows = historyRepo.findByTaskId(created.id);
+        const autoSizeRows = afterRows.filter((h) => h.trigger === 'auto_size');
+        // The create auto_size row PLUS the new update auto_size row.
+        expect(autoSizeRows).toHaveLength(2);
+        const newest = autoSizeRows[autoSizeRows.length - 1];
+        expect(newest.job_size).toBe(5);
+        expect(newest.value).toBeNull();
+        expect(newest.time_criticality).toBeNull();
+        expect(newest.risk_opportunity).toBeNull();
+        expect(newest.wsjf_score).toBeNull();
+      });
+
+      it('AC2: estimated_minutes change on a manual-sized task leaves wsjf_job_size untouched and writes no auto_size row', () => {
+        const created = taskService.createTask({
+          title: 'Manually sized task',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+        });
+
+        // Manually score the task: this stamps wsjf_source.jobSize='manual'.
+        const manualSource = {
+          value: 'manual' as const,
+          timeCriticality: 'manual' as const,
+          riskOpportunity: 'manual' as const,
+          jobSize: 'manual' as const,
+        };
+        const manual = taskService.updateTask(created.id, {
+          wsjf: {
+            value: 8,
+            timeCriticality: 5,
+            riskOpportunity: 3,
+            jobSize: 2,
+            manual: true,
+            source: manualSource,
+          },
+        });
+        expect(manual.wsjf_job_size).toBe(2);
+        expect(manual.wsjf_source!.jobSize).toBe('manual');
+
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const beforeAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+
+        // Change estimated_minutes (90 min would map to tier 5 if auto) — must NOT
+        // touch the manual size.
+        const updated = taskService.updateTask(created.id, { estimated_minutes: 90 });
+        expect(updated.estimated_minutes).toBe(90);
+        expect(updated.wsjf_job_size).toBe(2);
+        expect(updated.wsjf_source!.jobSize).toBe('manual');
+
+        const afterAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+        // No NEW auto_size row was appended by the minutes change.
+        expect(afterAutoSize).toHaveLength(beforeAutoSize.length);
+      });
+
+      it('AC3: an update not touching estimated_minutes (status change) writes no new size and no auto_size row', () => {
+        const created = taskService.createTask({
+          title: 'Status-only update',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+        });
+        expect(created.wsjf_job_size).toBe(2);
+
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const beforeAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+
+        // A pure status transition — estimated_minutes absent.
+        const updated = taskService.updateTask(created.id, { status: 'in_progress' });
+        expect(updated.status).toBe('in_progress');
+        expect(updated.wsjf_job_size).toBe(2);
+        expect(updated.wsjf_source!.jobSize).toBe('auto');
+
+        const afterAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+        expect(afterAutoSize).toHaveLength(beforeAutoSize.length);
+      });
     });
   });
 

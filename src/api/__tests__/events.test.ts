@@ -3,6 +3,7 @@ import { createServer } from '../server.js';
 import type { FastifyInstance } from 'fastify';
 import type Database from '../../db/driver.js';
 import { eventBus } from '../../events/event-bus.js';
+import { ClaimReleaseService } from '../../services/claim-release.service.js';
 import { authHeaders } from './helpers/auth.js';
 
 describe('Events API (SSE)', () => {
@@ -101,6 +102,44 @@ describe('Events API (SSE)', () => {
       // and the wiring is done in server.ts
 
       expect(server.sseManager).toBeDefined();
+    });
+
+    it('relays task.claim_released from the TTL sweep to SSEManager.broadcast (task #1003)', () => {
+      // End-to-end: stale claim → ClaimReleaseService.sweep() → eventBus →
+      // the server.ts subscription → SSEManager.broadcast. Same relay path
+      // as task.status_changed, so the event is SSE-visible at
+      // GET /api/v1/events and filterable via event_types.
+      db.prepare(
+        `INSERT INTO tasks (
+          title, status, priority, project_id, assignee, created_by,
+          claimed_at, created_at, updated_at, version
+        ) VALUES (
+          'Stale SSE Task', 'in_progress', 'medium', 1, 'agent-sse', 'creator',
+          datetime('now', '-31 minutes'), datetime('now', '-60 minutes'),
+          datetime('now', '-31 minutes'), 2
+        )`,
+      ).run();
+
+      const broadcastSpy = vi.spyOn(server.sseManager, 'broadcast');
+      const sweepService = new ClaimReleaseService(db, 30);
+      const released = sweepService.sweep();
+
+      expect(released).toBe(1);
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'task.claim_released',
+          metadata: expect.objectContaining({ source: 'workflow' }),
+          data: expect.objectContaining({
+            previous_assignee: 'agent-sse',
+            expired_claimed_at: expect.any(String),
+            released_at: expect.any(String),
+            status: 'open',
+            assignee: null,
+          }),
+        }),
+      );
+
+      broadcastSpy.mockRestore();
     });
   });
 });

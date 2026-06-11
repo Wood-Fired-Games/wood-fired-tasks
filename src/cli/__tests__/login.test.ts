@@ -318,3 +318,138 @@ describe('tasks login (subprocess)', () => {
     expect(body).toContain(successEnvelope.token);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task #857 — `tasks login --token <pat>` manual-PAT path (parity with setup).
+// The device flow is browser-only and dead-ends on a remote non-https server;
+// login must also accept a PAT, validate it against /api/v1/me, and persist it.
+// ---------------------------------------------------------------------------
+const MANUAL_PAT = 'wft_pat_MANUALLOGIN1234567890';
+// A fake PAT that the local /api/v1/me stub rejects (401), used to exercise the
+// rejected-token path. Bound to a NAMED const rather than passed inline after
+// `--token` so secret scanners don't flag a CLI-option value literal — it is not
+// a real credential (see also the gitleaks fixture allowlist in .gitleaks.toml).
+const WRONG_PAT = 'wft_pat_NOT_A_REAL_TOKEN';
+const ME_IDENTITY = { id: 11, displayName: 'Manual Login User', email: 'manual@example.com' };
+
+describe('tasks login --token (manual PAT, subprocess)', () => {
+  let server: DeviceFlowServer | null = null;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wft-login-pat-test-'));
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.close();
+      server = null;
+    }
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
+  });
+
+  it('--token validates against /api/v1/me and writes the credentials file (no device flow)', async () => {
+    server = await startDeviceFlowServer({
+      // No /token polls should ever happen on the manual path.
+      tokenResponses: [],
+      me: { expectedToken: MANUAL_PAT, identity: ME_IDENTITY },
+    });
+
+    const res = await runLogin(
+      ['--no-browser', '--server', server.baseUrl, '--token', MANUAL_PAT],
+      { XDG_CONFIG_HOME: tmpDir },
+    );
+
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr).toContain('Logged in as Manual Login User');
+    // The device flow was NOT used.
+    expect(server.getRequests().code).toHaveLength(0);
+    expect(server.getRequests().token).toHaveLength(0);
+
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
+    expect(existsSync(credPath)).toBe(true);
+    if (POSIX) {
+      const mode = statSync(credPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
+    const parsed = parse(readFileSync(credPath, 'utf8')) as {
+      active: { token: string; server: string; user_id: number; display_name: string };
+    };
+    expect(parsed.active.token).toBe(MANUAL_PAT);
+    expect(parsed.active.server).toBe(server.baseUrl);
+    expect(parsed.active.user_id).toBe(11);
+    expect(parsed.active.display_name).toBe('Manual Login User');
+  });
+
+  it('--token never leaks the PAT to stdout/stderr', async () => {
+    server = await startDeviceFlowServer({
+      tokenResponses: [],
+      me: { expectedToken: MANUAL_PAT, identity: ME_IDENTITY },
+    });
+
+    const res = await runLogin(
+      ['--no-browser', '--server', server.baseUrl, '--token', MANUAL_PAT],
+      { XDG_CONFIG_HOME: tmpDir },
+    );
+    expect(res.exitCode).toBe(0);
+    const combined = res.stdout + res.stderr;
+    expect(combined).not.toContain(MANUAL_PAT);
+    expect(combined).not.toContain('wft_pat_');
+  });
+
+  it('a rejected PAT (401) exits 1 and writes NO credentials file', async () => {
+    server = await startDeviceFlowServer({
+      tokenResponses: [],
+      me: { expectedToken: MANUAL_PAT, identity: ME_IDENTITY },
+    });
+
+    const res = await runLogin(['--no-browser', '--server', server.baseUrl, '--token', WRONG_PAT], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
+
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toMatch(/rejected|401/);
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
+    expect(existsSync(credPath)).toBe(false);
+  });
+
+  it('--json --token emits {event:logged_in} on stdout', async () => {
+    server = await startDeviceFlowServer({
+      tokenResponses: [],
+      me: { expectedToken: MANUAL_PAT, identity: ME_IDENTITY },
+    });
+
+    const res = await runLogin(
+      ['--json', '--no-browser', '--server', server.baseUrl, '--token', MANUAL_PAT],
+      { XDG_CONFIG_HOME: tmpDir },
+    );
+
+    expect(res.exitCode).toBe(0);
+    const lines = res.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    const last = JSON.parse(lines[lines.length - 1]!) as Record<string, unknown>;
+    expect(last.event).toBe('logged_in');
+    expect((last.user as { displayName: string }).displayName).toBe('Manual Login User');
+  });
+
+  it('a remote plain-http non-localhost server with no --token prints https/PAT guidance and exits 1', async () => {
+    // No server needed: canUseBrowserSso short-circuits before any network call,
+    // and with no PAT and no TTY (CI=1) the manual path fails fast with guidance.
+    const res = await runLogin(['--no-browser', '--server', 'http://10.0.0.5:3000'], {
+      XDG_CONFIG_HOME: tmpDir,
+    });
+
+    expect(res.exitCode).toBe(1);
+    // The user is told why browser SSO can't complete and how to mint a PAT.
+    expect(res.stderr).toMatch(/https/i);
+    expect(res.stderr).toContain('tasks db mint-token');
+    const credPath = path.join(tmpDir, 'wood-fired-tasks', 'credentials');
+    expect(existsSync(credPath)).toBe(false);
+  });
+});

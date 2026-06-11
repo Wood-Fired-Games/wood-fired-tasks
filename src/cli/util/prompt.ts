@@ -49,8 +49,8 @@ function resolveOutput(io?: PromptIO): OutputStream {
 
 /**
  * Read a single line of input from the given stream, resolving when the first
- * newline (`\n`, with an optional preceding `\r`) is seen or the stream ends.
- * The trailing newline is stripped from the returned value.
+ * line terminator (`\n`, `\r`, or `\r\n`) is seen or the stream ends. The
+ * terminator is stripped from the returned value.
  *
  * @param prompt - Message written to the output stream before reading.
  * @param io - Injectable input/output streams (defaults to process streams).
@@ -184,8 +184,15 @@ export async function selectFromMenu<T>(
 
 /**
  * Resolve with the first line emitted by `input`. Accumulates chunks until a
- * newline is seen (stripping a trailing `\r\n` or `\n`); if the stream ends
- * first, resolves with whatever was buffered.
+ * line terminator is seen — `\n`, `\r`, or `\r\n`, all stripped — then resolves;
+ * if the stream ends first, resolves with whatever was buffered.
+ *
+ * Accepting a BARE `\r` is load-bearing for {@link promptSecret} on a real TTY
+ * (task #856): raw mode disables the terminal's CR→LF translation, so the Enter
+ * key delivers `\r` (0x0D) with NO following `\n`. Terminating only on `\n` left
+ * the read hanging forever (the pasted secret buffered, Enter never recognized).
+ * The unit tests never caught it because injected fake streams feed `\n`, which
+ * never exercises raw mode.
  */
 function readLineFrom(input: InputStream): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -213,13 +220,23 @@ function readLineFrom(input: InputStream): Promise<string> {
 
     const onData = (chunk: Buffer | string) => {
       buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-      const nlIdx = buffer.indexOf('\n');
-      if (nlIdx !== -1) {
-        let line = buffer.slice(0, nlIdx);
-        if (line.endsWith('\r')) {
-          line = line.slice(0, -1);
-        }
-        finish(line);
+      // Terminate on the FIRST `\r` or `\n` (#856). A bare `\r` is what raw-mode
+      // Enter sends (no CR→LF translation), so we must not wait for a `\n` that
+      // will never arrive. `slice(0, termIdx)` drops the terminator and — for
+      // `\r\n` — leaves the trailing `\n` in `buffer`, which is discarded since
+      // the line is already settled.
+      const crIdx = buffer.indexOf('\r');
+      const lfIdx = buffer.indexOf('\n');
+      let termIdx = -1;
+      if (crIdx !== -1 && lfIdx !== -1) {
+        termIdx = Math.min(crIdx, lfIdx);
+      } else if (crIdx !== -1) {
+        termIdx = crIdx;
+      } else if (lfIdx !== -1) {
+        termIdx = lfIdx;
+      }
+      if (termIdx !== -1) {
+        finish(buffer.slice(0, termIdx));
       }
     };
 

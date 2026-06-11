@@ -17,6 +17,11 @@
  *                          formatted error list and exits 78 (EX_CONFIG).
  *   --metrics-port <n>     expose Prometheus /metrics (off by default)
  *   --metrics-bind <addr>  metrics bind address (default 127.0.0.1, no auth)
+ *   --stale-resubscribe-after <s>
+ *                          OPT-IN self-heal: re-open the SSE subscription when
+ *                          no real (mappable) event arrived for <s> seconds
+ *                          while control pings kept flowing (or env
+ *                          WFT_ROUTER_STALE_RESUBSCRIBE_AFTER). 0/absent = off.
  *   --version / -V         print version
  *
  * Reserved by the design spec but not yet implemented: --dry-run, --once,
@@ -123,6 +128,11 @@ export interface RunDaemonOptions {
    * `main()` constructs one only when `--metrics-port` is given.
    */
   metrics?: MetricsRegistry;
+  /**
+   * OPT-IN deaf-stream self-heal threshold in MS, threaded to the SSE
+   * client's `staleResubscribeAfterMs` (task #1002). Absent/0 = disabled.
+   */
+  staleResubscribeAfterMs?: number;
 }
 
 /**
@@ -158,6 +168,9 @@ export async function createDaemon(opts: RunDaemonOptions): Promise<WftRouterDae
         apiKey: opts.apiKey,
         ...(opts.eventTypes !== undefined && { eventTypes: opts.eventTypes }),
         ...(opts.fetchImpl !== undefined && { fetchImpl: opts.fetchImpl }),
+        ...(opts.staleResubscribeAfterMs !== undefined && {
+          staleResubscribeAfterMs: opts.staleResubscribeAfterMs,
+        }),
       };
       return runSSEClient(sseOpts, signal);
     });
@@ -263,12 +276,24 @@ async function main(): Promise<void> {
     });
   }
 
+  // OPT-IN deaf-stream self-heal (task #1002): seconds with control pings
+  // flowing but no real event before the SSE client force-resubscribes.
+  // Disabled unless a positive value is given via flag or env.
+  const staleEnvRaw = process.env['WFT_ROUTER_STALE_RESUBSCRIBE_AFTER'];
+  const staleSeconds =
+    readIntFlag(argv, '--stale-resubscribe-after') ??
+    (staleEnvRaw !== undefined && /^\d+$/.test(staleEnvRaw)
+      ? Number.parseInt(staleEnvRaw, 10)
+      : undefined);
+
   try {
     const code = await runDaemon({
       configPath,
       endpoint,
       apiKey,
       ...(metrics !== undefined && { metrics }),
+      ...(staleSeconds !== undefined &&
+        staleSeconds > 0 && { staleResubscribeAfterMs: staleSeconds * 1000 }),
     });
     await metricsServer?.close();
     process.exit(code);

@@ -220,6 +220,50 @@ describe('ClaimReleaseService', () => {
       unsubscribe();
     });
 
+    it('emits task.claim_released with the claim forensic trail (task #1003)', () => {
+      createClaimedTask({ title: 'Released Task', claimedMinutesAgo: 31, assignee: 'agent-x' });
+      const expiredClaimedAt = (
+        db.prepare('SELECT claimed_at FROM tasks WHERE id = 1').get() as {
+          claimed_at: string;
+        }
+      ).claimed_at;
+
+      const events: any[] = [];
+      const unsubscribe = eventBus.subscribe('task.claim_released', (event) => {
+        events.push(event);
+      });
+
+      service.sweep();
+
+      expect(events).toHaveLength(1);
+      expect(events[0].eventType).toBe('task.claim_released');
+      expect(events[0].metadata.source).toBe('workflow');
+      // Full (post-release) task rides along like other task events …
+      expect(events[0].data.id).toBe(1);
+      expect(events[0].data.status).toBe('open');
+      expect(events[0].data.assignee).toBeNull();
+      // … plus the claim forensic trail.
+      expect(events[0].data.previous_assignee).toBe('agent-x');
+      expect(events[0].data.expired_claimed_at).toBe(expiredClaimedAt);
+      expect(events[0].data.released_at).toBe(events[0].timestamp);
+
+      unsubscribe();
+    });
+
+    it('does NOT emit task.claim_released when nothing is stale (task #1003)', () => {
+      createClaimedTask({ title: 'Fresh Claim', claimedMinutesAgo: 5 });
+
+      const events: any[] = [];
+      const unsubscribe = eventBus.subscribe('task.claim_released', (event) => {
+        events.push(event);
+      });
+
+      service.sweep();
+
+      expect(events).toHaveLength(0);
+      unsubscribe();
+    });
+
     it('returns 0 when no stale claims exist', () => {
       createClaimedTask({ title: 'Fresh', claimedMinutesAgo: 5 });
 

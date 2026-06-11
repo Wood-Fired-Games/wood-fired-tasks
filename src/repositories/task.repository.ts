@@ -7,11 +7,13 @@ import type {
   VerificationEvidence,
 } from '../types/task.js';
 import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
+import type { Fib, WsjfSource } from '../types/wsjf.js';
 import type { ITaskRepository, CompletionRangeFilters, PaginationOptions } from './interfaces.js';
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
 import { omitUndefined } from '../utils/omit-undefined.js';
+import { parseJsonColumn } from '../utils/parse-json-column.js';
 
 /**
  * Clamp pagination inputs into the supported repository range.
@@ -88,22 +90,6 @@ function inflateVerificationEvidence<
 }
 
 /**
- * WSJF (#627): defensive JSON parse for the wsjf_* TEXT columns. Mirrors
- * `parseVerificationEvidence` — a non-JSON string surfaces `null` rather than
- * crashing the whole query. Validation against the Zod schema happens at the
- * write boundary; read-side parsing trusts the bytes were validated on the
- * way in.
- */
-function parseWsjfJson<T>(raw: string | null | undefined): T | null {
-  if (raw === null || raw === undefined) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * WSJF (#627): serialize a wsjf_* JSON metadata member for storage. `undefined`
  * (caller omitted it) and explicit `null` both persist as a NULL column;
  * anything else is JSON.stringify'd. Validation already happened at the schema
@@ -133,7 +119,7 @@ function inflateWsjf<T extends Record<string, unknown>>(task: T): T {
   const out: Record<string, unknown> = { ...task };
   for (const col of WSJF_JSON_COLUMNS) {
     const raw = task[col];
-    out[col] = typeof raw === 'string' ? parseWsjfJson(raw) : (raw ?? null);
+    out[col] = typeof raw === 'string' ? parseJsonColumn(raw) : (raw ?? null);
   }
   return out as T;
 }
@@ -141,6 +127,7 @@ function inflateWsjf<T extends Record<string, unknown>>(task: T): T {
 export class TaskRepository implements ITaskRepository {
   private insertTaskStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
+  private findResolverFactsStmt: Database.Statement;
   private deleteStmt: Database.Statement;
   private findTagsByTaskIdStmt: Database.Statement;
   private insertTagStmt: Database.Statement;
@@ -180,6 +167,13 @@ export class TaskRepository implements ITaskRepository {
       `SELECT t.*, p.name as project_name
        FROM tasks t INNER JOIN projects p ON p.id = t.project_id
        WHERE t.id = ?`,
+    );
+    // Task #931 — model-resolver fast path: `resolveModel` only needs the
+    // task's project membership + WSJF jobSize tier, so reading them through
+    // `findById` (projects JOIN + a second tags query + full WSJF/evidence
+    // JSON inflation) was pure hot-path waste. Two INTEGER columns by PK.
+    this.findResolverFactsStmt = db.prepare(
+      'SELECT project_id, wsjf_job_size FROM tasks WHERE id = ?',
     );
     this.deleteStmt = db.prepare('DELETE FROM tasks WHERE id = ?');
     this.findTagsByTaskIdStmt = db.prepare(
@@ -272,6 +266,22 @@ export class TaskRepository implements ITaskRepository {
     const tags = tagRows.map((row) => row.tag);
 
     return normalizeTaskTimestamps(inflateWsjf(inflateVerificationEvidence({ ...task, tags })));
+  }
+
+  /**
+   * Task #931 — the model-resolver's task facts (project membership + WSJF
+   * jobSize tier) via a dedicated prepared two-column PK lookup. Returns the
+   * exact `ResolverTask` shape `ModelPolicyDeps.getTask` needs, or `null`
+   * when no such task exists (the task-#928 existence guard). Value-identical
+   * to reading the same two fields off `findById`, minus the JOIN, the tags
+   * query, and the full row inflation.
+   */
+  findResolverFacts(id: number): { project_id: number; wsjf_job_size: number | null } | null {
+    const row = mapRow<{ project_id: number; wsjf_job_size: number | null }>(
+      this.findResolverFactsStmt,
+      id,
+    );
+    return row == null ? null : { project_id: row.project_id, wsjf_job_size: row.wsjf_job_size };
   }
 
   findAll(pagination?: PaginationOptions): Array<Task & { tags: string[] }> {
@@ -442,6 +452,66 @@ export class TaskRepository implements ITaskRepository {
     }
 
     return result;
+  }
+
+  /**
+   * Guaranteed-task-sizing (#987, design spec §2/§3): the SIZE-ONLY column
+   * write. Sets ONLY `wsjf_job_size` + `wsjf_source` (with `jobSize='auto'`),
+   * deliberately NOT touching `wsjf_value` / `wsjf_time_criticality` /
+   * `wsjf_risk_opportunity` (or their JSON metadata) — they stay NULL on a
+   * fresh task, so the task remains UNSCORED for ranking (`componentsOf`'s
+   * any-null exclusion) while `wsjf_job_size` makes `resolve_model` routing
+   * engage.
+   *
+   * Issues no `BEGIN`/`COMMIT` of its own: the service layer (#628 no-bypass
+   * invariant) calls this from inside ONE `db.transaction(...)` alongside the
+   * `auto_size` history append so the column write and its audit row commit
+   * atomically. Throws if the task id does not exist (parity with `update`).
+   */
+  writeAutoJobSize(id: number, jobSize: Fib, source: WsjfSource): Task & { tags: string[] } {
+    const stmt = this.db.prepare(
+      `UPDATE tasks
+       SET wsjf_job_size = @wsjf_job_size,
+           wsjf_source = @wsjf_source,
+           updated_at = datetime('now')
+       WHERE id = @id`,
+    );
+    const info = stmt.run({
+      id,
+      wsjf_job_size: jobSize,
+      wsjf_source: serializeWsjfMember(source),
+    });
+    if (info.changes === 0) {
+      throw new Error(`Task with id ${id} not found`);
+    }
+    const result = this.findById(id);
+    if (!result) {
+      throw new Error(`Task with id ${id} not found`);
+    }
+    return result;
+  }
+
+  /**
+   * Guaranteed-task-sizing (#992, design spec §5): the boot-sweep candidate
+   * scan. Returns `{ id, estimated_minutes }` for every task with a NULL
+   * `wsjf_job_size` whose status is NOT terminal ({done,closed} excluded —
+   * AC 3 skips them). Selects only the two columns the sweep consumes (id to
+   * address the autoSizeTask write, estimated_minutes for `minutesToTier`) so
+   * a large backlog scan stays cheap and never inflates full rows / tags.
+   * A run after a successful sweep returns `[]` (every row now has a size),
+   * which is the idempotence backbone (AC 2).
+   */
+  findIdsWithNullJobSize(): Array<{ id: number; estimated_minutes: number | null }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, estimated_minutes
+         FROM tasks
+         WHERE wsjf_job_size IS NULL
+           AND status NOT IN ('done', 'closed')
+         ORDER BY id`,
+      )
+      .all() as Array<{ id: number; estimated_minutes: number | null }>;
+    return rows;
   }
 
   delete(id: number): void {
@@ -644,6 +714,27 @@ export class TaskRepository implements ITaskRepository {
 
     // Execute with BEGIN IMMEDIATE to acquire write lock early
     return claimTransaction.immediate();
+  }
+
+  renewClaim(id: number, assignee: string): (Task & { tags: string[] }) | null {
+    // Task #1003: claim renewal (heartbeat). The WHERE predicate is the
+    // renewal contract — only the CURRENT holder of an in_progress claim can
+    // refresh it. Refreshing claimed_at (and updated_at) restarts the
+    // ClaimReleaseService TTL window; version bumps like every other write.
+    const info = this.db
+      .prepare(
+        `UPDATE tasks
+         SET claimed_at = datetime('now'), updated_at = datetime('now'),
+             version = version + 1
+         WHERE id = ? AND assignee = ? AND status = 'in_progress'`,
+      )
+      .run(id, assignee);
+
+    if (info.changes === 0) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 
   findChildren(parentId: number, pagination?: PaginationOptions): Array<Task & { tags: string[] }> {

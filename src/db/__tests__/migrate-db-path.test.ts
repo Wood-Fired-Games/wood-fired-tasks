@@ -36,6 +36,19 @@ afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
+/**
+ * Existence probe that hides the REAL OS app-data DB (`defaultDbPath`) while
+ * delegating to the real `fs.existsSync` for every other path. The legacy-adopt
+ * branch (precedence 2) only fires when the app-data DB is ABSENT; without this
+ * the suite fails on any dev machine where the `tasks` CLI has created
+ * `~/.local/share/wood-fired-tasks/tasks.db` (it passes on clean CI by luck).
+ * Injecting this makes the precedence-2 cases hermetic.
+ */
+function existsHidingAppData(p: string): boolean {
+  if (p === defaultDbPath) return false;
+  return existsSync(p);
+}
+
 /** Seed an (empty) legacy ./data/tasks.db file inside `root`. */
 function seedLegacyDb(root: string): string {
   const dir = join(root, 'data');
@@ -77,13 +90,15 @@ describe('resolveMigrateDbPath (unified-resolver path logic)', () => {
 
   it('adopts the legacy ./data/tasks.db when unset and that file exists (precedence 2)', () => {
     const legacy = seedLegacyDb(tmpRoot);
-    // App-data DB does not exist (CI/dev), so the legacy file is adopted.
-    expect(resolveMigrateDbPath({}, tmpRoot)).toBe(resolve(legacy));
+    // App-data DB hidden, so the legacy file is adopted.
+    expect(resolveMigrateDbPath({}, tmpRoot, existsHidingAppData)).toBe(resolve(legacy));
   });
 
   it('adopts the legacy ./data/tasks.db when DATABASE_PATH is empty (precedence 2)', () => {
     const legacy = seedLegacyDb(tmpRoot);
-    expect(resolveMigrateDbPath({ DATABASE_PATH: '' }, tmpRoot)).toBe(resolve(legacy));
+    expect(resolveMigrateDbPath({ DATABASE_PATH: '' }, tmpRoot, existsHidingAppData)).toBe(
+      resolve(legacy),
+    );
   });
 
   it('falls back to the OS app-data default when unset and no legacy file exists (precedence 3)', () => {
@@ -109,7 +124,7 @@ describe('migrateCli (end-to-end)', () => {
 
   it('migrates the adopted legacy ./data/tasks.db when unset (precedence 2)', async () => {
     seedLegacyDb(tmpRoot);
-    const returned = await migrateCli({}, tmpRoot);
+    const returned = await migrateCli({}, tmpRoot, existsHidingAppData);
 
     const expected = join(tmpRoot, 'data', 'tasks.db');
     expect(returned).toBe(expected);

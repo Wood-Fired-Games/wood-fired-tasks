@@ -22,6 +22,16 @@ export const TaskResponseSchema = z.object({
   updated_at: z.string(),
   version: z.number(),
   claimed_at: z.string().nullable(),
+  /**
+   * Task #1003: claim-TTL visibility. Computed at read time by
+   * `TaskService.getTask` for tasks holding an active claim (in_progress +
+   * assignee + claimed_at); absent otherwise. `claim_remaining_seconds` is
+   * the floor-clamped time until the ClaimReleaseService sweep may
+   * auto-release the claim — renew with a same-assignee `claim` call
+   * before it reaches 0.
+   */
+  claim_ttl_minutes: z.number().int().positive().optional(),
+  claim_remaining_seconds: z.number().int().nonnegative().optional(),
   tags: z.array(z.string()),
   /**
    * Wave 1.3 (task #311): optional free-form acceptance criteria (markdown).

@@ -18,6 +18,12 @@ import type {
   CompletionReportResponse,
 } from '../../cli/api/types.js';
 import type { TopologyReport } from '../../schemas/topology.schema.js';
+import type {
+  ModelPolicy,
+  ModelPolicyNullable,
+  PipelineRole,
+} from '../../schemas/model-policy.schema.js';
+import type { ModelCatalogEntry } from '../../schemas/model-catalog.schema.js';
 import {
   parseTaskResponse,
   parseProjectResponse,
@@ -107,6 +113,26 @@ export interface RescoreResponse {
   results: RescoreTaskResultPayload[];
   errors: { taskId: number; errors: string[] }[];
 }
+
+// ── Configurable Task Models remote-parity payload types (task #926) ──────────
+// Structural projections of the model REST responses. The catalog entry is the
+// shared `ModelCatalogEntry` shape (task #930: declared once in
+// `src/schemas/model-catalog.schema.ts`; the `import type` is erased at build
+// time, so the rest-client stays importable from a minimal stdio subprocess —
+// the same isolation principle as the WSJF payload types above). The resolver
+// output mirrors the service's `ResolvedModel`.
+
+/** The `{ models, stale }` envelope returned by GET /models. */
+export interface ModelCatalogPayload {
+  models: ModelCatalogEntry[];
+  stale: boolean;
+}
+
+/**
+ * The `resolve_model` output VERBATIM: a concrete `{ model }` (or
+ * `{ model: 'auto' }`), or `null` (inherit the session model).
+ */
+export type ResolvedModelPayload = { model: string } | null;
 
 /**
  * Loose envelope-or-bare-array normalizer.
@@ -466,6 +492,63 @@ export class RestClient {
    */
   async getTopology(projectId: number): Promise<TopologyReport> {
     return this.request<TopologyReport>(`/api/v1/projects/${projectId}/topology`);
+  }
+
+  // ── Configurable Task Models operations (task #926) ──────────────────────
+  // Remote parity for the stdio model tools (list_models, resolve_model,
+  // get/set_model_defaults). Each proxies the REST endpoint that exposes the
+  // SAME service the stdio server wires in-process, so the remote proxy tools
+  // are transport-indistinguishable.
+
+  /**
+   * List the runtime-discovered Claude model catalog via `GET /api/v1/models`.
+   * Returns the `{ models, stale }` envelope verbatim — the same shape the
+   * stdio `list_models` tool emits as `structuredContent`.
+   */
+  async listModels(): Promise<ModelCatalogPayload> {
+    return this.request<ModelCatalogPayload>('/api/v1/models');
+  }
+
+  /**
+   * Resolve the model for a pipeline role via
+   * `GET /api/v1/projects/:id/resolve-model?role=...&task_id=...`. Returns the
+   * resolver output VERBATIM (`{ model }` | `{ model: 'auto' }` | `null`) so the
+   * remote `resolve_model` tool matches the stdio tool's structured output.
+   */
+  async resolveModel(
+    projectId: number,
+    role: PipelineRole,
+    taskId?: number,
+  ): Promise<ResolvedModelPayload> {
+    const query = new URLSearchParams({ role });
+    if (taskId != null) {
+      query.set('task_id', String(taskId));
+    }
+    return this.request<ResolvedModelPayload>(
+      `/api/v1/projects/${projectId}/resolve-model?${query.toString()}`,
+    );
+  }
+
+  /**
+   * Read the database-wide model-policy default via
+   * `GET /api/v1/settings/model-policy`. Returns the stored `ModelPolicy`, or
+   * `null` when no default is configured — the same value the stdio
+   * `get_model_defaults` tool surfaces as `{ model_policy }`.
+   */
+  async getModelDefaults(): Promise<ModelPolicyNullable> {
+    return this.request<ModelPolicyNullable>('/api/v1/settings/model-policy');
+  }
+
+  /**
+   * Set (or, with `null`, clear) the database-wide model-policy default via
+   * `PUT /api/v1/settings/model-policy`. Echoes the stored policy back — the
+   * same value the stdio `set_model_defaults` tool surfaces.
+   */
+  async setModelDefaults(policy: ModelPolicy | null): Promise<ModelPolicyNullable> {
+    return this.request<ModelPolicyNullable>('/api/v1/settings/model-policy', {
+      method: 'PUT',
+      body: JSON.stringify(policy),
+    });
   }
 
   // ── WSJF operations ──────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import type { z } from 'zod';
 import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
 import type { ProjectResponseSchema } from '../../api/routes/projects/schemas.js';
 import type { ValueCharter } from '../../types/task.js';
+import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
 
 /**
  * Task response shape, inferred from the server Zod schema.
@@ -57,6 +58,12 @@ export interface UpdateTaskInput {
   tags?: string[];
   /** Wave 1.3 (#311): patch acceptance criteria; null clears, string sets. */
   acceptance_criteria?: string | null;
+  /**
+   * Task #1004: atomic block-with-dependency. Only valid alongside
+   * `status: 'blocked'` — the server adds the blocking edge(s) and sets the
+   * status in one transaction (an invalid edge rolls back the whole call).
+   */
+  blocked_by?: number[];
 }
 
 export interface TaskFilters {
@@ -106,6 +113,14 @@ export interface UpdateProjectInput {
   description?: string | null;
   /** WSJF (Phase 3.1): patch the value charter; `null` clears, absent leaves untouched. */
   value_charter?: ValueCharter | null;
+  /**
+   * Configurable Task Models (Task 12): set the per-project model policy;
+   * `null` clears, absent leaves untouched. NOTE: a non-null value REPLACES
+   * the stored `model_policy` column wholesale via `PUT /projects/:id` —
+   * callers wanting incremental updates must fetch-merge-write (the
+   * `project-set-models` command does this via `mergeModelPolicies`).
+   */
+  model_policy?: ModelPolicy | null;
 }
 
 export interface ApiErrorResponse {

@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createTestApp, type App } from '../../index.js';
 import { createMcpServer } from '../server.js';
+import { createModelPolicyService } from '../../services/model-policy.service.js';
 
 /**
  * Regression test for task #260: detect drift between the actual MCP tool
@@ -54,6 +55,7 @@ const DOMAIN_TO_FILE: Record<string, string> = {
   Topology: 'topology-tools.ts',
   Wait: 'wait-for-unblock-tools.ts',
   WSJF: 'wsjf-tools.ts',
+  Model: 'model-tools.ts',
 };
 
 /** Lines that mention the *remote* MCP server's tool count are intentionally
@@ -158,6 +160,17 @@ describe('MCP tool-count drift regression (task #260)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    // Configurable Task Models Task 11 (#920): pass the three model services so
+    // the four model tools (list_models, resolve_model, get/set_model_defaults)
+    // actually register at runtime — keeping runtime listTools count equal to
+    // the static registerTool count. The catalog + settings services come from
+    // the app; the resolver is built over a fake-but-typed dep bundle (this test
+    // never invokes the tools, only counts them).
+    const modelPolicyService = createModelPolicyService({
+      getProject: () => ({ model_policy: null }),
+      getGlobalPolicy: () => null,
+      getTask: () => null,
+    });
     const server = createMcpServer(
       app.taskService,
       app.projectService,
@@ -166,6 +179,9 @@ describe('MCP tool-count drift regression (task #260)', () => {
       app.db,
       undefined,
       app.topologyService,
+      app.modelCatalogService,
+      modelPolicyService,
+      app.settingsService,
     );
     [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -214,6 +230,23 @@ describe('MCP tool-count drift regression (task #260)', () => {
       mismatches,
       `Public-doc tool-count drift detected (source of truth = ${actualToolCount} tools):\n${mismatches.join('\n')}`,
     ).toEqual([]);
+  });
+
+  it('DOMAIN_TO_FILE covers every src/mcp/tools/*-tools.ts file (completeness)', () => {
+    // DOMAIN_TO_FILE must stay a map (the doc-heading domain names cannot be
+    // derived from filenames), so guard it with a completeness assert instead:
+    // a NEW *-tools.ts registration file that is not added to the map — and
+    // therefore not cross-checked against a docs/MCP.md heading — fails here.
+    const filesOnDisk = readdirSync(TOOLS_DIR)
+      .filter((f) => f.endsWith('-tools.ts'))
+      .sort();
+    const filesInMap = Object.values(DOMAIN_TO_FILE).sort();
+    expect(
+      filesInMap,
+      'DOMAIN_TO_FILE is out of sync with src/mcp/tools/*-tools.ts. ' +
+        'Add the new registration file (with its docs/MCP.md domain heading) to ' +
+        'DOMAIN_TO_FILE in tool-count-drift.test.ts, or remove the stale entry.',
+    ).toEqual(filesOnDisk);
   });
 
   it('per-domain counts in docs/MCP.md match per-file registerTool counts', () => {

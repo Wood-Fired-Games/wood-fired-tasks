@@ -10,7 +10,7 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 27 tools for task, project, comment, dependency, reporting, health, topology, WSJF, and wait operations
+- 31 tools for task, project, comment, dependency, reporting, health, topology, WSJF, model, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 12 pre-built skill files for common workflows
@@ -346,7 +346,7 @@ The remote server carries every tool the local server does. `completion_report` 
 
 ## Tools Reference
 
-The MCP server exposes 27 tools organized by domain:
+The MCP server exposes 31 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -375,7 +375,7 @@ The MCP server exposes 27 tools organized by domain:
 | `wsjf_ranking` | WSJF | Rank a project's tasks by propagation-adjusted WSJF; `scope="frontier"` (default) excludes blocked/not-ready, `scope="all"` ranks every task; returns base vs effective WSJF with the downstream Cost-of-Delay propagation breakdown. |
 | `wsjf_history` | WSJF | Return a task's append-only WSJF score-history timeline (oldest-first), each entry annotated with a `deltas` map of per-component from→to changes vs the previous entry. |
 | `rescore_project` | WSJF | (MUTATION) Deterministically rescore a project's already-scored tasks against the current value charter; skips locked components, writes one history row per changed task. |
-| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn. |
+| `wsjf_health` | WSJF | Lint a project's WSJF state for degeneracies/pitfalls (non-blocking): near-identical scores, missing CoD `1` anchor, collapsed Job Size, stale Time Criticality, high fallback ratio, score-churn, auto-sized-pending. |
 | `wait_for_unblock` | Task | Long-poll (block) until a task transitions `blocked` -> `open`, then return the fresh projection. On both servers: local resolves over the in-process bus, remote over the SSE stream. |
 
 ### Task Tools (9 tools)
@@ -402,6 +402,42 @@ Create a new task in a project.
 ```
 
 **Usage:** When Claude Code needs to create a new task, bug report, or work item.
+
+**Guaranteed task sizing (guaranteed-task-sizing, #985–#993).** Every task is
+created routable — it always carries a Job Size so `resolve_model` can pick a
+power category — without ever fabricating a Cost-of-Delay numerator. Three
+server-side behaviors enforce this on **every** create surface (stdio MCP,
+remote MCP, REST), because they all funnel through `TaskService.createTask`:
+
+- **Decompose submission gate (design §1, Prong A).** A create that carries a
+  `decomp-*` tag (the marker the decompose skill stamps on every materialized
+  leaf) but **no** `wsjf_submission` is rejected as a 422-class contract
+  violation. Carrying a `decomp-*` tag without a submission means the decompose
+  skill skipped its Step 8 sizing and would mint a sizeless task — the exact
+  failure class that produced the 114 sizeless legacy tasks and silently
+  degraded model routing. The error names the offending tag and instructs the
+  caller to re-run decompose Step 8 to produce a `wsjf_submission`.
+- **Auto-sizing of WSJF-less creates (design §2/§3, #989).** A create carrying
+  NEITHER a raw `wsjf` payload NOR a `wsjf_submission` is auto-sized through a
+  server-internal, SIZE-ONLY write: `wsjf_job_size = minutesToTier(estimated_minutes)`
+  and `wsjf_source.jobSize = 'auto'` (all six `source` slots `'auto'`), while
+  the three Cost-of-Delay component columns stay NULL. The task becomes
+  routable yet stays honestly **unscored** for WSJF ranking (no fabricated
+  value / time-criticality / risk). The size-only column write and its
+  append-only `auto_size` history row commit in ONE transaction.
+- **Minutes-vs-jobSize conflict gate (design §4).** When a create carries BOTH
+  `estimated_minutes` AND a raw `wsjf` payload bearing a `jobSize`, the create
+  is rejected iff `minutesToTier(estimated_minutes)` lands on a **different**
+  tier than `wsjf.jobSize`. "Conflict" means a different tier after mapping (45
+  vs 60 min both map to tier 3 and do NOT error), never different raw numbers.
+  The gate deliberately exempts submission-derived / auto-sized writes
+  (`wsjf_source.jobSize === 'auto'`): a classification legitimately pairs a
+  short `estimated_minutes` with a band-chosen high tier and outranks the
+  minutes prior.
+
+`minutesToTier` is the single deterministic minutes→Fibonacci-tier map:
+`null`/absent → 3, ≤ 15 → 1, ≤ 30 → 2, ≤ 60 → 3, ≤ 240 → 5, ≤ 960 → 8,
+> 960 → 13.
 
 #### get_task
 
@@ -435,10 +471,39 @@ Update an existing task by ID.
     "estimated_minutes": "number (optional, 0-10080)",
     "assignee": "string (optional, max 100 chars)",
     "due_date": "string (optional, ISO8601 format)",
-    "tags": ["array of strings (optional)"]
+    "tags": ["array of strings (optional)"],
+    "blocked_by": ["array of task IDs (optional, 1-50; ONLY valid with status: 'blocked')"]
   }
 }
 ```
+
+**Atomic block-with-dependency (task #1004):** when blocking a task on other
+task(s) — e.g. a bounce-style flow that files a defect task and parks the
+original behind it — pass `blocked_by: [taskIds]` together with
+`status: "blocked"`. The server adds one `blocker → task` dependency edge per
+id AND flips the status in ONE transaction: an invalid edge (nonexistent
+blocker, self-reference, cycle) rolls back the entire call, so a blocked
+status can never land without its edge. Edges that already exist are skipped
+(idempotent re-block). `blocked_by` without `status: "blocked"` is rejected.
+This matters because the `blocked → open` auto-unblock only fires off a
+dependency edge — a blocked task with no edge is a dead end that
+`check_health` flags as a `blocked-without-edge` warning.
+
+**Auto job-size recompute on minutes change (guaranteed-task-sizing, #991).**
+When an `update_task` changes `estimated_minutes` AND the task's persisted
+`wsjf_source.jobSize` is still `'auto'`, the server recomputes the Job Size via
+`minutesToTier(estimated_minutes)` through the same SIZE-ONLY write path as
+create (writing a `wsjf_job_size` column update + an append-only `auto_size`
+history row in ONE transaction). This fires ONLY when BOTH hold: (1) the update
+carries a `estimated_minutes` value that is present AND **different** from the
+row's prior value (a status-only or same-minutes update is a no-op), and (2)
+the row's existing `wsjf_source.jobSize === 'auto'`. A **manual** size
+(`wsjf_source.jobSize === 'manual'`) or a fully classification-scored row
+(`jobSize !== 'auto'`) is NEVER clobbered — the recompute only ever touches
+server-derived sizes. The same minutes-vs-jobSize conflict gate as create also
+applies to the update raw-`wsjf` path (reject when `minutesToTier(estimated_minutes)`
+disagrees with a supplied raw `wsjf.jobSize`; submission-derived writes with
+`wsjf_source.jobSize === 'auto'` are exempt).
 
 **Usage:** When Claude Code needs to modify task fields, change status, update assignee, or adjust priority.
 
@@ -497,6 +562,8 @@ Atomically claim an unassigned task, setting assignee and transitioning status t
 ```
 
 **Usage:** When Claude Code needs to claim a task for an agent. Returns the updated task on success. Returns a 409-equivalent error if the task is already claimed or not in a claimable state. Multiple agents can race to claim; exactly one wins.
+
+**Renewal (heartbeat, task #1003):** calling `claim_task` with the **same** `assignee` on a task that assignee already holds `in_progress` is a renewal, not a conflict — it refreshes `claimed_at` (restarting the 30-minute claim TTL) and returns the refreshed task. A different assignee still gets the 409-equivalent error. While a claim is active, `get_task` surfaces `claim_ttl_minutes` and `claim_remaining_seconds` (computed at read time) so holders know when to renew; when the TTL lapses the sweep auto-releases the claim and emits a `task.claim_released` event.
 
 #### list_subtasks
 
@@ -762,6 +829,19 @@ Check service health status, database connectivity, and version information.
 {}
 ```
 
+**Findings (task #1004):** the healthy response's `structuredContent` carries a
+`findings` array of severity-tagged lint findings in the shared
+`{ check, severity, message, suggestion, taskIds }` shape (same style as
+`wsjf_health`). Currently one check is implemented:
+
+- `blocked-without-edge` (severity `warning`) — tasks in status `blocked` with
+  ZERO blocking dependency edges. These can never auto-unblock (the
+  `blocked → open` workflow transition only fires off an edge); fix with
+  `dep-add` / `add_dependency`, or re-block atomically via `update_task` with
+  `status: "blocked"` + `blocked_by: [taskIds]`.
+
+An empty `findings` array means no lint fired.
+
 **Usage:** When Claude Code needs to verify the MCP server and database are functioning correctly.
 
 ### Topology Tools (1 tool)
@@ -874,6 +954,26 @@ Return a task's append-only WSJF score-history timeline (oldest-first). Each ent
 
 **Returns:** A chronological (oldest-first) array of score-history entries, each with the four components, `wsjf_score`, `prev_wsjf_score`, the `deltas` map, the `trigger`, actor/charter/rescore-run provenance, and the stored classifications/features/evidence.
 
+**`trigger` enum.** Each history row records WHY it was written. The closed set
+of triggers is:
+
+| Trigger | Written when |
+| --- | --- |
+| `create` | A new task is created carrying a full WSJF score. |
+| `update` | A generic `update_task` re-scores the task. |
+| `decompose` | A decompose-materialized leaf is scored from its `wsjf_submission`. |
+| `single_create` | A single (non-decompose) `create_task` carries a score. |
+| `rescore` | `rescore_project` re-runs the deterministic gate against the current charter. |
+| `manual` | A manual override (`wsjf.manual === true`) on create or update. |
+| `propagation` | A score change propagated from a related task. |
+| `auto_size` | A SIZE-ONLY auto write (guaranteed-task-sizing): `wsjf_job_size` set from `minutesToTier`, all three Cost-of-Delay components NULL, `wsjf_score` NULL. Emitted by the auto-size-on-create (#989) and minutes-change recompute (#991) paths. |
+| `boot_sweep` | A SIZE-ONLY auto write produced by the server's startup backfill sweep (#992), which sizes any pre-existing sizeless tasks. Same shape as `auto_size` — only the trigger differs, so the sweep's writes are filterable in the history. |
+
+`auto_size` and `boot_sweep` rows carry `jobSize` only: their `value`,
+`timeCriticality`, `riskOpportunity`, and `wsjf_score` are all `null` (there is
+no full WSJF without the Cost-of-Delay numerator), and their `source` map is
+all-`'auto'`.
+
 **Usage:** When Claude Code needs the provenance trail behind a task's current WSJF score — e.g. to explain a rescore, audit a manual override, or replay a score under a prior charter version.
 
 #### rescore_project
@@ -894,7 +994,7 @@ Return a task's append-only WSJF score-history timeline (oldest-first). Each ent
 
 #### wsjf_health
 
-Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The six severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, and `score-churn` (only possible because the score-history table exists). Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
+Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and advisory** — findings never block the loop or trigger an auto-rescore. Empty findings ⇔ healthy. The seven severity-tagged checks are `degenerate-spread` (near-identical component sets), `cod-no-anchor` (a Cost-of-Delay column with no `1` anchor), `job-size-collapsed`, `stale-time-criticality` (past a deadline), `high-fallback-ratio`, `score-churn` (only possible because the score-history table exists), and `auto-sized-pending` (guaranteed-task-sizing #993; severity `info`) — tasks that are auto-sized (`wsjf_source.jobSize === 'auto'`) with their three Cost-of-Delay components still NULL, i.e. the size-only auto-write has run but no full classification has followed. The `auto-sized-pending` finding is an informational reminder to classify the Cost-of-Delay components so the task contributes a real WSJF score; it never blocks. Proxies `GET /api/v1/projects/:id/wsjf-health` on the remote server.
 
 **Input Schema:**
 
@@ -907,6 +1007,64 @@ Lint a project's WSJF state for degeneracies and pitfalls. **Non-blocking and ad
 **Returns:** A severity-tagged findings report (empty when healthy).
 
 **Usage:** Surfaced at loop start (`/tasks:loop` §2g, `/tasks:loop-dag` §2h) and post-rescore to catch the classic WSJF anti-patterns before they corrupt the ordering.
+
+### Model Tools (4 tools)
+
+The four model tools surface the **Configurable Task Models** layer: runtime Claude-model discovery and the two-layer per-slot model-policy resolver, plus get/set of the database-wide default policy. They register on **both** servers: locally only when their backing services (model catalog, model-policy resolver, settings) are wired — which the production boot (`src/mcp/server.ts`) always does — and remotely (#926) as REST proxies with byte-identical input/output schemas (`list_models` → `GET /api/v1/models`, `resolve_model` → `GET /api/v1/projects/:id/resolve-model`, `get_model_defaults`/`set_model_defaults` → `GET|PUT /api/v1/settings/model-policy`). `list_models` and `get_model_defaults` are read-only; `resolve_model` is a pure read over the resolver; `set_model_defaults` writes the global default.
+
+#### list_models
+
+List Anthropic models available at runtime, sourced from the Models API with a static fallback when offline (or when `ANTHROPIC_API_KEY` is absent). Returns `models[]` plus a `stale` flag (`true` when serving the fallback). Read-only; never throws.
+
+**Input Schema:**
+
+```json
+{}
+```
+
+**Returns:** `{ models, stale }` — the catalog verbatim.
+
+#### resolve_model
+
+Resolve the model for a pipeline role (`execution|validation|planning`) for a project, optionally task-scoped so WSJF jobSize routes by power-category. Returns `{ model }` (a concrete id), `{ model: "auto" }` (resolve from the live catalog at dispatch), or `null` (inherit the session model). Read-only.
+
+**Input Schema:**
+
+```json
+{
+  "project_id": "number (required, positive integer)",
+  "role": "execution|validation|planning (required)",
+  "task_id": "number (optional, positive integer)"
+}
+```
+
+**Returns:** The resolver output verbatim — `{ model }`, `{ model: "auto" }`, or `null`.
+
+#### get_model_defaults
+
+Get the database-wide default `ModelPolicy` (the global fallback applied when a project configures no policy of its own). Returns `{ model_policy }` (`null` when no default is configured). Read-only.
+
+**Input Schema:**
+
+```json
+{}
+```
+
+**Returns:** `{ model_policy }` — the global default policy, or `null`.
+
+#### set_model_defaults
+
+Set (or, with `null`, clear) the database-wide default `ModelPolicy`. The policy is validated before it is persisted; an invalid shape is rejected and nothing is written. Returns `{ model_policy }` (the value just stored).
+
+**Input Schema:**
+
+```json
+{
+  "model_policy": "ModelPolicy | null (required)"
+}
+```
+
+**Returns:** `{ model_policy }` — the value just stored.
 
 ## Resources Reference
 
@@ -940,7 +1098,8 @@ The resource description and the server's emitted events MUST stay in sync. The 
 | `task.updated` | Task field(s) updated |
 | `task.deleted` | Task deleted |
 | `task.status_changed` | Task status transitioned |
-| `task.claimed` | Task atomically claimed by an agent via `claim_task` |
+| `task.claimed` | Task atomically claimed by an agent via `claim_task` (also emitted on a same-assignee claim renewal) |
+| `task.claim_released` | Stale claim auto-released by the TTL sweep; `data` carries `previous_assignee`, `expired_claimed_at`, `released_at` |
 | `project.created` | New project created |
 | `project.updated` | Project updated |
 | `project.deleted` | Project deleted |
@@ -1134,7 +1293,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:new-project`
-- Explore the 27 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 31 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Charter a project with `/tasks:new-project`, then rank the backlog by economic value with the WSJF tools (`wsjf_ranking`, `wsjf_health`) instead of a hand-set priority enum
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host

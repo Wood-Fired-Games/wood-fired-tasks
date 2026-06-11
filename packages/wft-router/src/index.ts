@@ -31,12 +31,15 @@ export type {
 // Prometheus metrics surface.
 export {
   DEFAULT_METRICS_BIND,
+  GAUGE_NAMES,
   METRIC_NAMES,
   MetricsRegistry,
   startMetricsServer,
 } from './metrics.js';
 export type {
   DispatchStatus,
+  EventKind,
+  MetricsRegistryOptions,
   MetricsServerHandle,
   StartMetricsServerOptions,
 } from './metrics.js';

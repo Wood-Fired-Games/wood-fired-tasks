@@ -12,6 +12,9 @@ import { projectListCommand } from '../commands/project-list.js';
 import { projectShowCommand } from '../commands/project-show.js';
 import { projectUpdateCommand } from '../commands/project-update.js';
 import { projectDeleteCommand } from '../commands/project-delete.js';
+import { projectSetModelsCommand } from '../commands/project-set-models.js';
+import { settingsSetModelsCommand } from '../commands/settings-set-models.js';
+import { modelsCommand } from '../commands/models.js';
 import { depAddCommand } from '../commands/dep-add.js';
 import { depRemoveCommand } from '../commands/dep-remove.js';
 import { depListCommand } from '../commands/dep-list.js';
@@ -76,6 +79,11 @@ program.addCommand(projectListCommand);
 program.addCommand(projectShowCommand);
 program.addCommand(projectUpdateCommand);
 program.addCommand(projectDeleteCommand);
+program.addCommand(projectSetModelsCommand);
+
+// Register model / settings commands (Configurable Task Models, Task 12)
+program.addCommand(modelsCommand);
+program.addCommand(settingsSetModelsCommand);
 
 // Register dependency commands
 program.addCommand(depAddCommand);

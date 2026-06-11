@@ -279,6 +279,62 @@ describe('MCP Task Tools', () => {
         expect(result.content[0].text).toContain('9999');
       }
     });
+
+    // Task #1004: atomic block-with-dependency through the stdio transport —
+    // the strict UpdateTaskClientSchema must accept `blocked_by` and the
+    // handler must thread it to the service unchanged.
+    it('blocks a task and adds the dependency edge atomically via blocked_by', async () => {
+      const victim = app.taskService.createTask({
+        title: 'Victim',
+        project_id: testProjectId,
+        created_by: 'test-agent',
+      });
+      const blocker = app.taskService.createTask({
+        title: 'Defect',
+        project_id: testProjectId,
+        created_by: 'test-agent',
+      });
+
+      const result = (await client.callTool({
+        name: 'update_task',
+        arguments: {
+          id: victim.id,
+          updates: { status: 'blocked', blocked_by: [blocker.id] },
+        },
+      })) as ToolResult;
+
+      expect(result.isError).toBeFalsy();
+      const task = result.structuredContent as { status: string };
+      expect(task.status).toBe('blocked');
+      expect(app.dependencyService.getBlockers(victim.id).map((d) => d.task_id)).toEqual([
+        blocker.id,
+      ]);
+    });
+
+    it('rejects blocked_by without status: blocked (narrow semantics)', async () => {
+      const victim = app.taskService.createTask({
+        title: 'Victim',
+        project_id: testProjectId,
+        created_by: 'test-agent',
+      });
+      const blocker = app.taskService.createTask({
+        title: 'Defect',
+        project_id: testProjectId,
+        created_by: 'test-agent',
+      });
+
+      const result = (await client.callTool({
+        name: 'update_task',
+        arguments: {
+          id: victim.id,
+          updates: { blocked_by: [blocker.id] },
+        },
+      })) as ToolResult;
+
+      expect(result.isError).toBe(true);
+      expect(app.taskService.getTask(victim.id).status).toBe('open');
+      expect(app.dependencyService.getBlockers(victim.id)).toEqual([]);
+    });
   });
 
   describe('list_tasks tool', () => {

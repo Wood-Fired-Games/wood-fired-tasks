@@ -106,17 +106,28 @@ wood-fired-tasks setup \
   --token  wft_pat_…this-machine…
 ```
 
-This writes a **`wood-fired-tasks-remote`** entry to `~/.claude.json` (distinct
-from the local `wood-fired-tasks` entry — the two coexist) whose `env` carries
-`WFT_API_URL` (the base URL) and `WFT_API_KEY` (the PAT). That entry spawns the
-remote stdio bridge (`dist/mcp/remote/index.js`), which proxies every MCP tool
-call to the REST API over HTTP, so every machine sees one backlog.
+This writes a **URL-only `wood-fired-tasks-remote`** entry to `~/.claude.json`
+(distinct from the local `wood-fired-tasks` entry — the two coexist) whose `env`
+carries **only** `WFT_API_URL` (the base URL). The PAT is **never** embedded in
+`~/.claude.json` (#810). That entry spawns the remote stdio bridge
+(`dist/mcp/remote/index.js`), which proxies every MCP tool call to the REST API
+over HTTP, so every machine sees one backlog.
 
-The PAT is also **cached under your OS config dir** (`remote-token`, mode `0600`
-on POSIX) — operator configuration, never the data dir where the SQLite DB
-lives. `--remote` without `--token` is an error: a token is required so
-`WFT_API_KEY` can be set on the entry. Mint a per-machine PAT with
-`tasks db mint-token` (see [Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents))
+When you pass `--token <pat>`, setup **validates it against `GET /api/v1/me`** and
+**persists it to the CLI credentials file** (`~/.config/wood-fired-tasks/credentials`,
+mode `0600` on POSIX) — the *same* file `tasks login` writes. The remote bridge
+then resolves its bearer token from that credentials file at runtime. There is no
+separate PAT "cache" file (the old `remote-token` cache was removed in #858 —
+nothing read it, so `setup --remote --token` reported success while leaving both
+the CLI and the bridge unauthenticated).
+
+`--token` is **optional**: omit it and `setup --remote <url>` runs the interactive
+onboarding — the OIDC **device flow** when the server supports browser login
+(https / localhost), otherwise a **manual-PAT** prompt. Supply `--token` (or set
+`WFT_API_KEY` for non-TTY/CI callers) for the non-interactive direct path, which
+skips the OIDC probe but still performs the `/api/v1/me` validation round-trip.
+Mint a per-machine PAT with `tasks db mint-token` (see
+[Bootstrap a PAT without a browser](#6-bootstrap-a-pat-without-a-browser-servers-ci-headless-agents))
 and revoke it independently to cut off a single client. For the full
 Windows/Linux/macOS fleet recipe, see
 [Multi-OS client fleet](#multi-os-client-fleet-one-shared-on-prem-server).
@@ -147,8 +158,13 @@ unless `--port` overrides it. The unauthenticated `GET /health` route returns
 wood-fired-tasks self-update
 ```
 
-This runs `npm i -g wood-fired-tasks@latest` and exits with npm's exit code. It
-**never escalates**: on an EACCES (root-owned global prefix) it prints the
+This runs `npm i -g wood-fired-tasks@latest`, then re-syncs the bundled
+skills into `~/.claude/commands/tasks/` and the subagent definitions into
+`~/.claude/agents/` — the same idempotent copy `setup` performs, so a release
+that adds or changes a skill is fully picked up by `self-update` alone (no
+`setup` re-run needed). If the install succeeds but the skills sync fails, it
+says so and exits non-zero; re-run `wood-fired-tasks setup` to retry the sync.
+It **never escalates**: on an EACCES (root-owned global prefix) it prints the
 writable-prefix remediation (the same `~/.npm-global` fix as `--fix-npm-prefix`)
 and exits non-zero rather than suggesting sudo. The database schema needs no
 special handling — it migrates automatically the next time `serve` (or the
@@ -332,6 +348,14 @@ OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
 # Optional — defaults to "openid email profile". The server requires at
 # minimum "openid email" to map the OIDC subject to a local user row.
 OIDC_SCOPES=openid email profile
+
+# Optional — defaults to "wft-cli". The RFC 8628 device-flow client_id the
+# `tasks` CLI sends during `tasks setup` → Remote. DISTINCT from OIDC_CLIENT_ID
+# (the IdP's OAuth client id for the browser SSO leg): the device flow uses a
+# logical client id the CLI and server agree on. Leave unset on both sides to
+# use the default — the stock CLI then authenticates out of the box. Override
+# only if you also set OIDC_DEVICE_CLIENT_ID to a matching value on the client.
+OIDC_DEVICE_CLIENT_ID=wft-cli
 ```
 
 ### 3. Generate the session cookie secret
@@ -1303,7 +1327,7 @@ Tests include:
 
 - Service layer unit tests (TaskService, ProjectService, DependencyService, CommentService)
 - API route integration tests (all REST routes, including the WSJF task/project endpoints under `/api/v1/tasks/:id/wsjf`, `/score-history`, and `/api/v1/projects/:id/wsjf-ranking`, `/wsjf-health`, `/rescore`, `/charter-history`, `/rescore-runs`)
-- MCP tool tests (all 27 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage)
+- MCP tool tests (all 31 tools, including the four WSJF tools `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` with stdio↔remote parity coverage, and the four Model tools `list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults`)
 - WSJF scoring/ranking tests (deterministic `validateScoreSubmission` gate, blocker-propagated `rankFrontier`, `wsjf-rescore` transaction, and the `wsjf-health` degeneracy linter)
 - CLI command tests (including `wsjf-history`, `wsjf-set`, `charter-history`)
 - Event system tests (EventBus, SSEManager, events API)
@@ -1365,6 +1389,12 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 |----------|----------|---------|-------------|
 | `RATE_LIMIT_MAX` | no | `1000` | Maximum requests per window (global, via `@fastify/rate-limit`). `/health` is allow-listed. |
 | `RATE_LIMIT_TIME_WINDOW` | no | `1 minute` | Window string accepted by `@fastify/rate-limit`. |
+
+### Model catalog (read directly in `src/index.ts`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | no | — | Anthropic API key for the model-catalog service's runtime model discovery (`GET https://api.anthropic.com/v1/models`), which backs `GET /api/v1/models` and the `list_models`/`resolve_model` MCP tools. When unset (or the Models API is unreachable) the catalog serves a static fallback with `stale: true` — the Configurable Task Models feature keeps working, just against the bundled model list. The key is only ever sent to the Anthropic API; it is never echoed in responses or logs. |
 
 ### CLI (read by `src/cli/config/env.ts` and individual commands)
 

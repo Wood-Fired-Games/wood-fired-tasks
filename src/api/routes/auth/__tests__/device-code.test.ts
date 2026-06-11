@@ -17,7 +17,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import deviceCodeRoute from '../device-code.js';
+import deviceCodeRoute, { resolveVerificationOrigin } from '../device-code.js';
 import { findByDeviceCode, _resetForTests } from '../../../../services/device-flow-store.js';
 
 const EXPECTED_CLIENT_ID = 'cli-test-client.example.com';
@@ -73,23 +73,44 @@ describe('POST /auth/device/code', () => {
     await app.close();
   });
 
-  it('happy path: returns RFC 8628 envelope with all six fields', async () => {
+  it('happy path: returns RFC 8628 envelope; verification_uri uses the request Host (#834)', async () => {
     const r = await app.inject({
       method: 'POST',
       url: '/auth/device/code',
-      headers: { 'content-type': 'application/json' },
+      // #834: the client connected over the LAN, not localhost.
+      headers: { 'content-type': 'application/json', host: '192.168.69.69:3000' },
       payload: { client_id: EXPECTED_CLIENT_ID, hostname: 'laptop' },
     });
     expect(r.statusCode).toBe(200);
     const body = r.json() as Record<string, unknown>;
     expect(body.device_code).toBeTypeOf('string');
     expect(body.user_code).toMatch(/^[A-HJ-KM-NP-Z2-9]{8}$/);
-    expect(body.verification_uri).toBe(`${ORIGIN}/auth/device`);
+    // Built from the address the client reached (Host), NOT the configured
+    // localhost ORIGIN — so a remote/LAN client gets a routable URL.
+    expect(body.verification_uri).toBe('http://192.168.69.69:3000/auth/device');
     expect(body.verification_uri_complete).toBe(
-      `${ORIGIN}/auth/device?user_code=${body.user_code as string}`,
+      `http://192.168.69.69:3000/auth/device?user_code=${body.user_code as string}`,
     );
     expect(body.expires_in).toBe(600);
     expect(body.interval).toBe(5);
+  });
+
+  it('#834: honors X-Forwarded-Host/Proto from a trusted reverse proxy', async () => {
+    const r = await app.inject({
+      method: 'POST',
+      url: '/auth/device/code',
+      headers: {
+        'content-type': 'application/json',
+        host: 'internal-backend:3000',
+        'x-forwarded-host': 'tasks.example.com',
+        'x-forwarded-proto': 'https',
+      },
+      payload: { client_id: EXPECTED_CLIENT_ID },
+    });
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as Record<string, unknown>;
+    // Public host + scheme win over the internal Host.
+    expect(body.verification_uri).toBe('https://tasks.example.com/auth/device');
   });
 
   it('missing client_id → 400 invalid_request', async () => {
@@ -160,5 +181,58 @@ describe('POST /auth/device/code', () => {
     const allLogText = JSON.stringify(logs);
     expect(allLogText).not.toContain(body.device_code);
     expect(allLogText).not.toContain(body.user_code);
+  });
+});
+
+describe('resolveVerificationOrigin (#834)', () => {
+  const FALLBACK = 'http://localhost:3000';
+
+  it('uses the Host header (scheme defaults to the request protocol)', () => {
+    expect(
+      resolveVerificationOrigin(
+        { headers: { host: '192.168.69.69:3000' }, protocol: 'http' },
+        FALLBACK,
+      ),
+    ).toBe('http://192.168.69.69:3000');
+  });
+
+  it('prefers X-Forwarded-Host and X-Forwarded-Proto over Host/protocol', () => {
+    expect(
+      resolveVerificationOrigin(
+        {
+          headers: {
+            host: 'internal:3000',
+            'x-forwarded-host': 'tasks.example.com',
+            'x-forwarded-proto': 'https',
+          },
+          protocol: 'http',
+        },
+        FALLBACK,
+      ),
+    ).toBe('https://tasks.example.com');
+  });
+
+  it('takes the FIRST value of a comma-joined forwarded header', () => {
+    expect(
+      resolveVerificationOrigin(
+        {
+          headers: {
+            'x-forwarded-host': 'edge.example.com, internal',
+            'x-forwarded-proto': 'https, http',
+          },
+        },
+        FALLBACK,
+      ),
+    ).toBe('https://edge.example.com');
+  });
+
+  it('falls back to the configured origin when there is no Host header', () => {
+    expect(resolveVerificationOrigin({ headers: {} }, FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('defaults the scheme to http when neither forwarded-proto nor protocol is present', () => {
+    expect(resolveVerificationOrigin({ headers: { host: 'box.local:3000' } }, FALLBACK)).toBe(
+      'http://box.local:3000',
+    );
   });
 });

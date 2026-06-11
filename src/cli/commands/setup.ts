@@ -5,14 +5,34 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { mergeClaudeJson, type ClaudeMcpServerEntry } from '../../setup/claude-json.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
-import { configDir as defaultConfigDir } from '../../config/paths.js';
 import { resolvePathHint } from '../util/path-hint.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
-import { selectFromMenu, promptSecret, type PromptIO } from '../util/prompt.js';
+import { selectFromMenu, promptLine, type PromptIO } from '../util/prompt.js';
 import { shouldPrompt } from '../prompts/interactive.js';
 import { getServiceBackend } from './service.js';
 import { runDeviceLogin } from './login.js';
-import { writeCredentials } from '../auth/credentials.js';
+import {
+  canUseBrowserSso,
+  browserSsoGuidance,
+  persistManualPat,
+  resolveManualPatToken,
+  type ManualPatIdentity,
+  type ManualPatPersist,
+  type ManualPatPersistResult,
+} from '../auth/manual-pat.js';
+
+// Re-export the shared manual-PAT primitives (moved to ../auth/manual-pat.ts in
+// #857/#858 so `tasks login` can reuse them) from their historical import site
+// so existing callers/tests that import them from `commands/setup.js` keep
+// working.
+export {
+  canUseBrowserSso,
+  browserSsoGuidance,
+  persistManualPat,
+  type ManualPatIdentity,
+  type ManualPatPersist,
+  type ManualPatPersistResult,
+};
 
 /**
  * `tasks setup` (task #737).
@@ -90,54 +110,6 @@ export function buildRemoteMcpEntry(apiUrl: string): ClaudeMcpServerEntry {
 /** Default destination for copied skills. */
 export function commandsDestDir(home: string = os.homedir()): string {
   return path.join(home, '.claude', 'commands', 'tasks');
-}
-
-/**
- * Absolute path of the cached PAT file under the OS CONFIG dir (task #738).
- *
- * The PAT is operator configuration — NOT persistent application state — so it
- * lives under `configDir` (env-paths, OS-correct), NEVER the data dir where the
- * SQLite DB lives. `configDir` is injectable so tests can sandbox it into a
- * temp directory.
- */
-export function patCachePath(configDir: string = defaultConfigDir): string {
-  return path.join(configDir, 'remote-token');
-}
-
-export interface CachePatResult {
-  /** Absolute path the PAT was written to. */
-  path: string;
-  /** True when the file content changed this run (idempotency signal). */
-  changed: boolean;
-}
-
-/**
- * Cache the remote PAT to a file under the CONFIG dir, idempotently. On POSIX
- * the file is created/tightened to 0600 (owner read/write only) so the secret
- * is not world-readable; on Windows the mode arg is a best-effort no-op (NTFS
- * ACLs already restrict the per-user config dir).
- */
-export function cachePat(token: string, configDir: string = defaultConfigDir): CachePatResult {
-  const filePath = patCachePath(configDir);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-  const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
-  const changed = existing !== token;
-
-  if (changed) {
-    fs.writeFileSync(filePath, token, { encoding: 'utf8', mode: 0o600 });
-  }
-  // Tighten perms on POSIX even when bytes were unchanged (defensive). chmod is
-  // a best-effort no-op semantically on Windows; guard so it never throws.
-  if (process.platform !== 'win32') {
-    try {
-      fs.chmodSync(filePath, 0o600);
-    } catch {
-      /* best-effort: never block setup on a chmod failure */
-    }
-  }
-
-  return { path: filePath, changed };
 }
 
 export interface CopySkillsResult {
@@ -546,17 +518,20 @@ export interface RunSetupOptions {
   npmRunner?: (cmd: string, args: string[]) => void;
   log?: (line: string) => void;
   /**
-   * Remote REST API base URL (task #738). When set, the REMOTE bridge entry
-   * (`wood-fired-tasks-remote`) is written instead of the local one, carrying
-   * `WFT_API_URL` / `WFT_API_KEY`.
+   * Remote REST API base URL (task #738). Routes `tasks setup` to the remote
+   * onboarding path (probe → device-flow / manual-PAT) via
+   * {@link runSetupInteractive}; the URL-only `wood-fired-tasks-remote` bridge
+   * entry is written by {@link writeRemoteMcpEntryOnly}. NOT consumed by
+   * {@link runSetup}, which is the LOCAL install only.
    */
   remote?: string;
-  /** Remote PAT (task #738). Cached under the CONFIG dir; never the data dir. */
-  token?: string;
   /**
-   * Override the OS CONFIG dir (testing). Defaults to the real `configDir`.
-   * Only the PAT cache is directed here — skills/claude.json follow `home`.
+   * Remote PAT (`--token <pat>`). Validated against `GET /api/v1/me` and
+   * persisted to the credentials file via {@link persistManualPat} (#858); it is
+   * NEVER written into claude.json. NOT consumed by {@link runSetup}.
    */
+  token?: string;
+  /** Override the OS CONFIG dir (testing). Reserved for callers that need it. */
   configDir?: string;
 }
 
@@ -570,13 +545,16 @@ export interface RunSetupResult {
   skills: CopySkillsResult;
   agents: CopyAgentsResult;
   npmPrefix?: FixNpmPrefixResult;
-  /** Set when a PAT was cached (i.e. `remote` + `token` provided). */
-  patCache?: CachePatResult;
 }
 
 /**
- * Pure-ish setup action. Resolves all paths from `home` so tests can sandbox
- * with a temp HOME and never touch the real ~/.claude.json or ~/.claude/.
+ * Pure-ish LOCAL setup action. Resolves all paths from `home` so tests can
+ * sandbox with a temp HOME and never touch the real ~/.claude.json or ~/.claude/.
+ *
+ * Remote onboarding is NOT handled here — it requires an async server round-trip
+ * to validate + persist a credential (#858). {@link runSetupInteractive} routes
+ * `--remote` to {@link runRemoteOnboarding} / the manual-PAT path, which write
+ * the URL-only bridge entry via {@link writeRemoteMcpEntryOnly}.
  */
 export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
   const home = options.home ?? os.homedir();
@@ -584,57 +562,17 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
 
   const claudeJsonPath = path.join(home, '.claude.json');
 
-  // Task #738/#810: when a remote URL is supplied, write the URL-only REMOTE
-  // bridge entry (carrying WFT_API_URL only) under 'wood-fired-tasks-remote'
-  // instead of the local stdio entry, and cache the PAT separately. A token is
-  // required so a usable remote credential exists; it is NEVER persisted into
-  // claude.json (the bridge resolves it from the cache at runtime).
-  const isRemote = typeof options.remote === 'string' && options.remote.length > 0;
-  let patCache: CachePatResult | undefined;
-  let serverName: string;
-  let merge: ReturnType<typeof mergeClaudeJson>;
-
-  if (isRemote) {
-    const apiUrl = options.remote as string;
-    const token = options.token;
-    if (typeof token !== 'string' || token.length === 0) {
-      throw new Error(
-        '--remote requires --token <pat> so the remote PAT can be cached for ' +
-          'the bridge to use at runtime.',
-      );
-    }
-    serverName = REMOTE_SERVER_NAME;
-    merge = mergeClaudeJson({
-      filePath: claudeJsonPath,
-      serverName: REMOTE_SERVER_NAME,
-      entry: buildRemoteMcpEntry(apiUrl),
-    });
-    log(
-      !merge.unchanged
-        ? `Installed remote MCP server '${REMOTE_SERVER_NAME}' into ${claudeJsonPath}`
-        : `Remote MCP server '${REMOTE_SERVER_NAME}' already present in ${claudeJsonPath}`,
-    );
-
-    // Cache the PAT under the CONFIG dir (NOT the data dir).
-    patCache = cachePat(token, options.configDir);
-    log(
-      patCache.changed
-        ? `Cached remote PAT at ${patCache.path}`
-        : `Remote PAT already cached at ${patCache.path}`,
-    );
-  } else {
-    serverName = SERVER_NAME;
-    merge = mergeClaudeJson({
-      filePath: claudeJsonPath,
-      serverName: SERVER_NAME,
-      entry: buildLocalMcpEntry(),
-    });
-    log(
-      !merge.unchanged
-        ? `Installed local MCP server '${SERVER_NAME}' into ${claudeJsonPath}`
-        : `Local MCP server '${SERVER_NAME}' already present in ${claudeJsonPath}`,
-    );
-  }
+  const serverName = SERVER_NAME;
+  const merge = mergeClaudeJson({
+    filePath: claudeJsonPath,
+    serverName: SERVER_NAME,
+    entry: buildLocalMcpEntry(),
+  });
+  log(
+    !merge.unchanged
+      ? `Installed local MCP server '${SERVER_NAME}' into ${claudeJsonPath}`
+      : `Local MCP server '${SERVER_NAME}' already present in ${claudeJsonPath}`,
+  );
 
   // Task #752: ~/.claude.json can carry the local-credentials PAT and the
   // remote WFT_API_KEY env, so tighten it to owner-only (0600) on POSIX after
@@ -688,11 +626,10 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     claudeJsonPath,
     claudeJsonChanged: !merge.unchanged,
     serverName,
-    remote: isRemote,
+    remote: false,
     skills,
     agents,
     ...(npmPrefix !== undefined && { npmPrefix }),
-    ...(patCache !== undefined && { patCache }),
   };
 }
 
@@ -700,12 +637,12 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
  * Write ONLY the URL-only remote MCP bridge entry into ~/.claude.json (and copy
  * skills/agents), WITHOUT requiring or caching a PAT (task #808).
  *
- * This is the device-flow counterpart to {@link runSetup}'s remote branch:
- * after {@link runDeviceLogin} (#806) has self-provisioned the PAT and persisted
- * it via the credentials writer, there is no token to embed or double-cache —
+ * This is the shared remote-entry writer for BOTH onboarding paths: after
+ * {@link runDeviceLogin} (#806) or the manual-PAT path has provisioned the PAT
+ * and persisted it via the credentials writer, there is no token to embed —
  * the claude.json entry must be URL-only (#810). So this helper mirrors
- * runSetup's claude.json/skills/agents work but deliberately OMITS the
- * `--token`-required guard and the `cachePat` step.
+ * runSetup's claude.json/skills/agents work but writes the REMOTE bridge entry
+ * and persists NO token of its own (the credentials file is the sole owner).
  *
  * The written entry is exactly `buildRemoteMcpEntry(apiUrl)`: a stdio bridge
  * carrying only `WFT_API_URL`. The bridge resolves its bearer token at runtime
@@ -777,9 +714,11 @@ export function writeRemoteMcpEntryOnly(options: RunSetupOptions = {}): RunSetup
 export type SetupMode = 'local' | 'service' | 'remote';
 
 /**
- * Coarse OIDC subsystem state reported by `GET /health/detailed` (task #357).
- * Mirrors the server's `oidc.state` enum so the remote-setup branch selector
- * (#807) can route deterministically.
+ * Coarse OIDC subsystem state used by the remote-setup branch selector (#807)
+ * to route deterministically. Derived by {@link probeOidcState} from the public
+ * `/auth/login` endpoint (`ready` = redirects to IdP, `disabled` = 501 stub).
+ * `degraded` is retained for back-compat but is no longer emitted by the probe
+ * (an unhealthy OIDC surfaces as an inconclusive status → manual-PAT fallback).
  */
 export type OidcState = 'ready' | 'disabled' | 'degraded';
 
@@ -792,10 +731,12 @@ export type OidcState = 'ready' | 'disabled' | 'degraded';
 export type RemoteOnboardingMethod = 'device-flow' | 'manual-pat';
 
 /**
- * Result of probing `GET /health/detailed` for the OIDC state.
- *  - `{ ok: true, oidc }` — the probe returned 2xx and an `oidc.state`.
- *  - `{ ok: false, reason }` — network error / non-2xx / unparseable body.
- *    The `reason` is surfaced to the user before falling back to manual PAT.
+ * Result of probing the server for whether browser/device-flow login is
+ * available.
+ *  - `{ ok: true, oidc }` — the probe got a conclusive answer (`ready` =
+ *    device-flow available, `disabled` = no OIDC → manual PAT).
+ *  - `{ ok: false, reason }` — network error / inconclusive status. The
+ *    `reason` is surfaced to the user before falling back to manual PAT.
  */
 export type OidcProbeResult = { ok: true; oidc: OidcState } | { ok: false; reason: string };
 
@@ -803,41 +744,50 @@ export type OidcProbeResult = { ok: true; oidc: OidcState } | { ok: false; reaso
 export type OidcProbe = (baseUrl: string) => Promise<OidcProbeResult>;
 
 /**
- * Default OIDC probe: `GET <baseUrl>/health/detailed` and read `oidc.state`.
+ * Default OIDC probe: `GET <baseUrl>/auth/login` (the browser-login entry
+ * point) and read OIDC availability from the HTTP status.
  *
- * `/health/detailed` is auth-protected on the server (Bearer PAT), but the only
- * field we need — `oidc.state` — is returned in the JSON body regardless of the
- * auth-derived status code as long as the route renders. We treat ANY non-2xx
- * or unparseable/missing `oidc.state` as a probe failure and fall back to the
- * manual-PAT escape hatch (the route may not even exist on an older server).
+ * Why NOT `/health/detailed` (the original #807 target): v2.0's identity
+ * cutover put `/health/detailed` behind Bearer-PAT auth, so an unauthenticated
+ * probe — which is the ONLY kind possible during onboarding, before any PAT
+ * exists — gets a hard `401 {"error":"UNAUTHORIZED"}` with NO `oidc.state` in
+ * the body. That made this probe always fail and `setup --remote` always fall
+ * back to manual-PAT entry, defeating the automated device-flow login
+ * (wood-fired-tasks #831).
+ *
+ * `/auth/login` is PUBLIC (`skipAuth: true`) and an unambiguous signal:
+ *   - OIDC ready    → `302` redirect to the IdP authorize URL.
+ *   - OIDC disabled → the disabled-stub returns `501`.
+ * We do NOT follow the redirect (`redirect: 'manual'`) — only its status
+ * matters. Any other/unreachable status is inconclusive → manual-PAT fallback.
  * Bounded by a 5s timeout so a half-open server can't hang `setup --remote`.
  */
 export async function probeOidcState(baseUrl: string): Promise<OidcProbeResult> {
-  const probeUrl = new URL('/health/detailed', baseUrl).toString();
+  const probeUrl = new URL('/auth/login', baseUrl).toString();
   let response: Response;
   try {
-    response = await fetch(probeUrl, { method: 'GET', signal: AbortSignal.timeout(5000) });
+    response = await fetch(probeUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(5000),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, reason: `could not reach ${probeUrl}: ${message}` };
   }
 
-  if (!response.ok) {
-    return { ok: false, reason: `${probeUrl} returned HTTP ${response.status}` };
+  // 3xx → /auth/login is redirecting to the IdP → device-flow is available.
+  // (`redirect: 'manual'` surfaces the real 3xx status rather than following
+  // it; some runtimes report an opaque-redirect as status 0 with type
+  // 'opaqueredirect', which we also treat as a redirect.)
+  if ((response.status >= 300 && response.status < 400) || response.type === 'opaqueredirect') {
+    return { ok: true, oidc: 'ready' };
   }
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return { ok: false, reason: `${probeUrl} returned a non-JSON body` };
+  // 501 → the OIDC-disabled stub → no browser login; use a manual PAT.
+  if (response.status === 501) {
+    return { ok: true, oidc: 'disabled' };
   }
-
-  const oidc = (body as { oidc?: { state?: unknown } } | null)?.oidc?.state;
-  if (oidc === 'ready' || oidc === 'disabled' || oidc === 'degraded') {
-    return { ok: true, oidc };
-  }
-  return { ok: false, reason: `${probeUrl} did not report an oidc.state` };
+  return { ok: false, reason: `${probeUrl} returned HTTP ${response.status}` };
 }
 
 /**
@@ -853,109 +803,15 @@ export function selectRemoteOnboardingMethod(probe: OidcProbeResult): RemoteOnbo
   return probe.oidc === 'ready' ? 'device-flow' : 'manual-pat';
 }
 
-/**
- * The minimal identity envelope `GET /api/v1/me` returns (task #809). Mirrors
- * the fields {@link writeCredentials} needs so a manually-pasted PAT lands in
- * the SAME credentials file the device flow writes — the bridge then resolves
- * its bearer token from there at runtime (URL-only claude.json entry, #810).
- */
-export interface ManualPatIdentity {
-  id: number;
-  displayName: string;
-  email: string | null;
-  /** Best-effort token rowid; defaults to 1 when the server omits it. */
-  tokenId?: number;
-}
-
-/**
- * Outcome of persisting a manually-supplied PAT (task #809).
- *  - `{ ok: true, identity }`  — the PAT validated and credentials were written.
- *  - `{ ok: false, reason }`   — the PAT was rejected / unreachable; `reason`
- *    is surfaced to the user and NOTHING is persisted.
- */
-export type ManualPatPersistResult =
-  | { ok: true; identity: ManualPatIdentity }
-  | { ok: false; reason: string };
-
-/** Injectable manual-PAT persistence seam so tests drive it without a server. */
-export type ManualPatPersist = (baseUrl: string, token: string) => Promise<ManualPatPersistResult>;
-
-/**
- * Default manual-PAT persistence (task #809).
- *
- * Validate the pasted PAT against `GET <baseUrl>/api/v1/me` (the same identity
- * envelope `tasks whoami` reads), then persist it through {@link writeCredentials}
- * — the SAME credentials writer {@link runDeviceLogin} uses. This is the only
- * place the manual PAT lands; the claude.json entry stays URL-only (#810) and
- * the bridge resolves the bearer token from this credentials file at runtime,
- * so the secret is never embedded in claude.json.
- *
- * A non-2xx / network failure returns `{ ok: false, reason }` and writes
- * NOTHING — the caller reports the reason and exits without a half-configured
- * install.
- */
-export async function persistManualPat(
-  baseUrl: string,
-  token: string,
-): Promise<ManualPatPersistResult> {
-  const meUrl = new URL('/api/v1/me', baseUrl).toString();
-  let response: Response;
-  try {
-    response = await fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, reason: `could not reach ${meUrl}: ${message}` };
-  }
-
-  if (response.status === 401) {
-    return { ok: false, reason: 'the personal access token was rejected (HTTP 401)' };
-  }
-  if (!response.ok) {
-    return { ok: false, reason: `${meUrl} returned HTTP ${response.status}` };
-  }
-
-  let body: { id?: unknown; displayName?: unknown; email?: unknown } | null;
-  try {
-    body = (await response.json()) as typeof body;
-  } catch {
-    return { ok: false, reason: `${meUrl} returned a non-JSON body` };
-  }
-
-  if (body === null || typeof body.id !== 'number' || typeof body.displayName !== 'string') {
-    return { ok: false, reason: `${meUrl} did not return a usable identity` };
-  }
-  const email = typeof body.email === 'string' ? body.email : null;
-  const identity: ManualPatIdentity = { id: body.id, displayName: body.displayName, email };
-
-  // Persist through the SAME credentials writer the device flow uses. The
-  // server's /me envelope does not carry the token rowid, so default token_id
-  // to 1 (a positive int, satisfying the credentials schema); `whoami`'s
-  // best-effort token enrichment degrades gracefully when it can't match it.
-  try {
-    writeCredentials({
-      active: {
-        token,
-        token_id: 1,
-        server: baseUrl,
-        user_id: identity.id,
-        display_name: identity.displayName,
-        email: identity.email,
-        logged_in_at: new Date().toISOString(),
-      },
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, reason: `failed to write credentials file: ${message}` };
-  }
-
-  return { ok: true, identity };
-}
+// `canUseBrowserSso` and `persistManualPat` (and their types) moved to
+// ../auth/manual-pat.ts (#857/#858) so `tasks login` can reuse them; they are
+// re-exported from this module's import block above for back-compat.
 
 export interface RunSetupInteractiveOptions extends RunSetupOptions {
   /**
    * Injectable OIDC-state probe for the `--remote` path (#807). Defaults to
-   * {@link probeOidcState} (a real `GET /health/detailed`). Tests stub this to
-   * drive the ready / disabled / degraded / probe-failure branches.
+   * {@link probeOidcState} (a real `GET /auth/login`, public). Tests stub this
+   * to drive the ready / disabled / probe-failure branches.
    */
   oidcProbe?: OidcProbe;
   /**
@@ -964,6 +820,14 @@ export interface RunSetupInteractiveOptions extends RunSetupOptions {
    * here without standing up a full device-flow server.
    */
   deviceLogin?: typeof runDeviceLogin;
+  /**
+   * Injectable browser opener forwarded to the device-flow login (replaces the
+   * former no-browser env bandaid). Defaults to undefined, so production
+   * uses the real {@link openBrowser}. Tests that drive the REAL device flow
+   * (without stubbing {@link deviceLogin}) pass a stub here so the suite never
+   * spawns a real browser on a DISPLAY-set desktop.
+   */
+  opener?: (url: string) => boolean;
   /**
    * Injectable manual-PAT persistence seam (#809). Defaults to
    * {@link persistManualPat} (validate the PAT against `GET /api/v1/me`, then
@@ -1097,21 +961,46 @@ export async function runSetupInteractive(
     return { mode: 'service' };
   }
 
-  // Remote: an explicit `--token` is the NON-INTERACTIVE direct path
-  // (automation / CI): write the URL-only remote bridge entry (WFT_API_URL only,
-  // per the #810 contract — the PAT is NEVER persisted into claude.json) and
-  // cache the PAT separately, with NO OIDC probe and NO server round-trip, so it
-  // succeeds even when the server is unreachable. Only a TOKENLESS `--remote`
-  // runs the probe-driven device-flow / manual-PAT onboarding
-  // (runRemoteOnboarding), which is for the interactive operator who has no PAT
-  // yet. Require `remote` too so a programmatic caller passing {mode:'remote',
-  // token} without a URL can't get a LOCAL install mislabeled as remote.
+  // Remote: an explicit `--token` is the NON-INTERACTIVE direct manual-PAT path
+  // (automation / CI). It validates the PAT against /api/v1/me, persists it to
+  // the credentials file (the single source of truth the CLI + bridge read), and
+  // writes the URL-only remote bridge entry (WFT_API_URL only — the PAT is NEVER
+  // persisted into claude.json, #810), skipping only the OIDC probe. A TOKENLESS
+  // `--remote` runs the probe-driven device-flow / manual-PAT onboarding
+  // (runRemoteOnboarding), for the interactive operator who has no PAT yet.
+  // Require `remote` too so a programmatic caller passing {mode:'remote', token}
+  // without a URL can't get a LOCAL install mislabeled as remote.
   if (mode === 'remote') {
     const hasToken = typeof options.token === 'string' && options.token.length > 0;
-    const hasRemote = typeof options.remote === 'string' && options.remote.length > 0;
+    let hasRemote = typeof options.remote === 'string' && options.remote.length > 0;
+
+    // Picking "Remote" from the interactive menu sets `mode` but NEVER the base
+    // URL — only the `--remote <url>` flag populates `options.remote`. Without
+    // this prompt the menu selection falls straight into runRemoteOnboarding,
+    // which throws 'remote onboarding requires a --remote <url> base URL.'.
+    // Prompt for it here so the menu path is usable; guarded by isInteractive()
+    // so a non-TTY / programmatic caller never hangs waiting on stdin.
+    if (!hasRemote && isInteractive()) {
+      const url = (
+        await promptLine('Remote server base URL (e.g. http://host:3000): ', options.promptIO)
+      ).trim();
+      if (url.length > 0) {
+        options = { ...options, remote: url };
+        hasRemote = true;
+      }
+    }
+
+    // #858: an explicit `--token` is the NON-INTERACTIVE direct manual-PAT path
+    // (automation / CI). It MUST persist a usable credential — validate the PAT
+    // against /api/v1/me and writeCredentials via completeManualPatOnboarding,
+    // then write the URL-only bridge entry — exactly like the interactive
+    // manual-PAT path. (The old code routed here to runSetup, which only cached
+    // the PAT to an ORPHANED file that nothing reads, leaving both the CLI and
+    // the MCP bridge unauthenticated despite reporting success.) Skips the OIDC
+    // probe — we already have a PAT — but the /api/v1/me validation round-trip is
+    // required to learn the identity the credentials file needs.
     if (hasToken && hasRemote) {
-      const setup = runSetup(options);
-      return { mode: 'remote', oidc: null, method: 'manual-pat', ok: true, setup };
+      return completeManualPatOnboarding(options, options.remote as string, null);
     }
     return runRemoteOnboarding(options);
   }
@@ -1184,70 +1073,114 @@ export async function runRemoteOnboarding(
   }
 
   // 3. Branch on the selected method.
-  const method = selectRemoteOnboardingMethod(probeResult);
+  let method = selectRemoteOnboardingMethod(probeResult);
   const oidc = probeResult.ok ? probeResult.oidc : null;
+
+  // #835: even when the server reports OIDC ready, browser login can only
+  // COMPLETE over https (or localhost) — Google rejects non-https OAuth
+  // redirect URIs everywhere else. Catch a plain-http non-localhost URL here
+  // and tell the user plainly, then route to manual-PAT entry (with on-host
+  // mint instructions) rather than opening a verification URL that dead-ends at
+  // the IdP callback.
+  if (method === 'device-flow' && !canUseBrowserSso(baseUrl)) {
+    for (const line of browserSsoGuidance(baseUrl)) log(line);
+    method = 'manual-pat';
+  }
 
   if (method === 'device-flow') {
     // Self-provision a PAT via the OIDC device flow (#806). runDeviceLogin owns
     // the entire RFC 8628 exchange AND persists the minted PAT via the
     // credentials writer (writeCredentials) — there is NO host token-mint path
-    // here. On failure it has already emitted its own error output; we just
-    // propagate ok:false without writing anything.
-    const result = await deviceLogin({
-      baseUrl,
-      clientId: process.env['OIDC_CLIENT_ID'] ?? 'wft-cli',
-      hostname: os.hostname(),
-      openBrowser: true,
-      isJson: false,
-    });
-    if (!result.ok) {
-      return { mode: 'remote', oidc, method, ok: false };
+    // here.
+    //
+    // client_id (#833): send the DEVICE-flow client id (`OIDC_DEVICE_CLIENT_ID`,
+    // default `'wft-cli'`), NOT the IdP's `OIDC_CLIENT_ID`. The server validates
+    // it against its own `OIDC_DEVICE_CLIENT_ID` (also defaulting to `'wft-cli'`),
+    // so the stock CLI matches a stock server out of the box.
+    let deviceOk = false;
+    try {
+      const result = await deviceLogin({
+        baseUrl,
+        clientId: process.env['OIDC_DEVICE_CLIENT_ID'] ?? 'wft-cli',
+        hostname: os.hostname(),
+        openBrowser: true,
+        ...(options.opener !== undefined && { opener: options.opener }),
+        isJson: false,
+      });
+      deviceOk = result.ok;
+      if (!deviceOk) {
+        log('Browser/device login did not complete; falling back to manual PAT entry.');
+      }
+    } catch (err) {
+      // #833: device/code can hard-reject (e.g. a client_id mismatch →
+      // `invalid_client`) or the network can fail. Don't crash setup — degrade
+      // to manual personal-access-token entry so onboarding can still finish.
+      const message = err instanceof Error ? err.message : String(err);
+      log(`Browser/device login could not start (${message}).`);
+      log('Falling back to manual personal-access-token entry.');
     }
 
-    // Device login succeeded and the PAT is already persisted in the
-    // credentials file. Now write the URL-only remote MCP entry (#810) into
-    // ~/.claude.json. The entry carries ONLY WFT_API_URL — the bridge resolves
-    // its bearer token at runtime from the credentials file the device flow
-    // just wrote, so NO token is ever embedded in claude.json and NO PAT is
-    // double-cached here.
-    const setup = writeRemoteMcpEntryOnly({ ...options, remote: baseUrl });
-    return { mode: 'remote', oidc, method, ok: true, setup };
+    if (deviceOk) {
+      // Device login succeeded and the PAT is already persisted in the
+      // credentials file. Now write the URL-only remote MCP entry (#810) into
+      // ~/.claude.json. The entry carries ONLY WFT_API_URL — the bridge resolves
+      // its bearer token at runtime from the credentials file the device flow
+      // just wrote, so NO token is ever embedded in claude.json and NO PAT is
+      // double-cached here.
+      const setup = writeRemoteMcpEntryOnly({ ...options, remote: baseUrl });
+      return { mode: 'remote', oidc, method, ok: true, setup };
+    }
+
+    // Device flow unavailable/aborted → fall through to the manual-PAT path
+    // (records the method actually used so the result reflects reality).
+    method = 'manual-pat';
   }
 
-  // method === 'manual-pat' (task #809): obtain a PAT, validate it, and persist
-  // it through the SAME credentials writer the device flow uses
-  // (writeCredentials), then write the URL-only claude.json entry via the
-  // shared writeRemoteMcpEntryOnly helper (#808/#810) — identical entry shape to
-  // the device-flow path; only the PAT source differs.
-  //
-  // PAT precedence:
-  //   1. `--token <pat>`            (explicit flag; wins).
-  //   2. interactive promptSecret   (a TTY pastes the PAT, never echoed).
-  //   3. env `WFT_API_KEY`          (DOCUMENTED non-TTY fallback — the same env
-  //      the remote bridge reads at runtime; lets CI / non-TTY callers supply
-  //      the PAT without a prompt instead of hanging).
-  // On a non-TTY with none of the above, fail clearly (no hang).
-  let token = options.token;
-  if (
-    (typeof token !== 'string' || token.length === 0) &&
-    (options.isInteractive ?? shouldPrompt)()
-  ) {
-    token = await promptSecret('Paste a personal access token: ', options.promptIO);
-  }
-  if (typeof token !== 'string' || token.length === 0) {
-    // Non-TTY (or empty prompt) fallback: read the PAT from the documented
-    // WFT_API_KEY env var rather than hanging on a prompt that has no TTY.
-    const envToken = process.env['WFT_API_KEY'];
-    if (typeof envToken === 'string' && envToken.length > 0) {
-      token = envToken;
-    }
-  }
-  if (typeof token !== 'string' || token.length === 0) {
+  return completeManualPatOnboarding(options, baseUrl, oidc);
+}
+
+/**
+ * Shared manual-PAT onboarding tail (#858/#857): obtain a PAT, validate it
+ * against `GET /api/v1/me`, persist it through {@link persistManualPat} (the
+ * SAME credentials writer the device flow uses), then write the URL-only
+ * claude.json bridge entry via {@link writeRemoteMcpEntryOnly} (#808/#810). The
+ * claude.json entry is identical regardless of how the PAT was obtained — only
+ * the PAT source differs.
+ *
+ * This is invoked from TWO places, so the logic can't drift (the root cause of
+ * #858, where the non-interactive `--remote --token` path took a DIFFERENT,
+ * credential-less route):
+ *   1. {@link runRemoteOnboarding}'s manual-PAT branch (probe said no browser
+ *      login, or device flow failed/aborted).
+ *   2. {@link runSetupInteractive}'s non-interactive `--remote --token` path.
+ *
+ * PAT precedence (via {@link resolveManualPatToken}):
+ *   1. `--token <pat>`           (explicit flag; wins).
+ *   2. interactive promptSecret  (a TTY pastes the PAT, never echoed).
+ *   3. env `WFT_API_KEY`         (DOCUMENTED non-TTY fallback — the same env the
+ *      remote bridge reads at runtime; lets CI / non-TTY callers supply the PAT
+ *      without a prompt instead of hanging).
+ * On a non-TTY with none of the above, fail clearly (no hang) and write NOTHING.
+ */
+async function completeManualPatOnboarding(
+  options: RunSetupInteractiveOptions,
+  baseUrl: string,
+  oidc: OidcState | null,
+): Promise<RunSetupRemoteResult> {
+  const log = options.log ?? ((line: string) => console.log(line));
+
+  const token = await resolveManualPatToken({
+    ...(options.token !== undefined && { token: options.token }),
+    ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
+    ...(options.isInteractive !== undefined && { isInteractive: options.isInteractive }),
+    envVar: 'WFT_API_KEY',
+  });
+  if (token === undefined) {
     log(
       'No personal access token supplied. Re-run with --token <pat> ' +
         'or set the WFT_API_KEY environment variable to finish remote setup.',
     );
-    return { mode: 'remote', oidc, method, ok: false };
+    return { mode: 'remote', oidc, method: 'manual-pat', ok: false };
   }
 
   // Validate the PAT and persist it via writeCredentials (the device-flow
@@ -1257,7 +1190,7 @@ export async function runRemoteOnboarding(
   const persisted = await persist(baseUrl, token);
   if (!persisted.ok) {
     log(`Could not store the personal access token: ${persisted.reason}.`);
-    return { mode: 'remote', oidc, method, ok: false };
+    return { mode: 'remote', oidc, method: 'manual-pat', ok: false };
   }
   log(`Stored credentials for ${persisted.identity.displayName}.`);
 
@@ -1268,7 +1201,7 @@ export async function runRemoteOnboarding(
   return {
     mode: 'remote',
     oidc,
-    method,
+    method: 'manual-pat',
     ok: true,
     setup,
     manualPatIdentity: persisted.identity,
@@ -1291,7 +1224,7 @@ export const setupCommand = new Command('setup')
   )
   .option(
     '--token <pat>',
-    'Personal access token for `--remote`. When supplied, setup writes the URL-only remote MCP entry (WFT_API_URL; the PAT is never stored in claude.json) and caches the PAT separately — no OIDC probe, no server round-trip — so it works offline/non-interactively. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
+    'Personal access token for `--remote`. When supplied, setup validates it against the server, persists it to the credentials file (the PAT is never stored in claude.json), and writes the URL-only remote MCP entry (WFT_API_URL) — skipping the OIDC probe. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
   )
   .action(
     (opts: {

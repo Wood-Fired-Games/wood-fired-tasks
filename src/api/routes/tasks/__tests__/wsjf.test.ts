@@ -158,15 +158,21 @@ describe('task WSJF REST surface', () => {
     expect(body.task_id).toBe(taskId);
     expect(body.total).toBe(body.history.length);
     expect(body.history.length).toBeGreaterThanOrEqual(2);
-    // Every row is a manual write; chronological (changed_at non-decreasing).
-    for (const row of body.history) {
+    // Guaranteed-task-sizing (#989): the seed task is auto-sized on create, so
+    // the timeline opens with one `auto_size` row before the manual writes. Every
+    // SUBSEQUENT row is a manual write.
+    expect(body.history[0].trigger).toBe('auto_size');
+    const manualRows = body.history.filter((r: { trigger: string }) => r.trigger === 'manual');
+    expect(manualRows.length).toBeGreaterThanOrEqual(2);
+    for (const row of manualRows) {
       expect(row.trigger).toBe('manual');
     }
+    // Chronological (changed_at non-decreasing) across the whole timeline.
     const times = body.history.map((r: { changed_at: string }) => r.changed_at);
     const sorted = [...times].sort();
     expect(times).toEqual(sorted);
-    // First write set value=8; the timeline preserves it.
-    expect(body.history[0].value).toBe(8);
+    // First manual write set value=8; the timeline preserves it.
+    expect(manualRows[0].value).toBe(8);
   });
 
   it('GET /:id/wsjf returns 404 for a missing task', async () => {

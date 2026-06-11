@@ -233,6 +233,10 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // with the new `statusline` command reference and the Bearer-PAT / device-flow
     // auth content; 1800 leaves ~100 lines of headroom. Advisory budget —
     // tighten in a follow-up once the CLI reference is split or trimmed.
+    // #1004 (atomic block-with-dependency) kept the budget at 1800 by
+    // condensing the `tasks update` examples to fit the `--blocked-by` row —
+    // the onboarding-smoke probe (MAX_LINES_PER_PROBE_FILE) hard-caps every
+    // recommended-read doc at 1800, so the advisory budget must not exceed it.
     line_budget: 1800,
     authority: 'authoritative',
     owner_role: 'CLI maintainers',
@@ -350,6 +354,17 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     status: 'present',
   },
   {
+    path: 'docs/automation-recipes/agent-delegated-wsjf-sizing.md',
+    role: 'deep-doc',
+    purpose:
+      'Automation recipe: delegate a full WSJF classification to an agent when a task is created with an auto-sized job size, using the task.created event, an assignee predicate, and the agent_session_dispatch handler; covers the source.jobSize session-level self-gate, update_task wsjf_submission shape, and idempotency.',
+    when_to_read: 'on-demand',
+    line_budget: 300,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+  },
+  {
     path: 'docs/ONBOARDING_SMOKE.md',
     role: 'onboarding-smoke',
     purpose:
@@ -397,7 +412,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'project-front-door',
     purpose: 'Product-level overview, install, quickstart.',
     when_to_read: 'reference',
-    line_budget: 850,
+    // 850 → 875: Configurable Task Models added the Model Tools (4) domain
+    // table to the MCP summary (the doc sat at 848/850 before it).
+    line_budget: 875,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',

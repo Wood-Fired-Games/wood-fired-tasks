@@ -1,0 +1,167 @@
+/**
+ * Task 8 (project "Configurable Task Models") — model-catalog.service.
+ *
+ * Runtime discovery of the available Claude model catalog via the Anthropic
+ * Models API (`GET https://api.anthropic.com/v1/models`), with an in-process
+ * TTL cache and a graceful static fallback.
+ *
+ * Degrade contract (§9/§13.1 of the design): this service NEVER throws from
+ * `list()` or `refresh()`. When there is no API key, the HTTP response is not
+ * OK, or the network call rejects, it returns `STATIC_FALLBACK_MODELS` with
+ * `stale: true`. A successful live fetch returns the parsed catalog with
+ * `stale: false`.
+ *
+ * All side-effecting dependencies (`fetchImpl`, `now`, `ttlMs`, `apiKey`,
+ * `baseUrl`) are injectable so the unit tests can run hermetically with a fake
+ * clock and a fake fetch — no real network access.
+ */
+
+import type { ModelCatalogEntry } from '../schemas/model-catalog.schema.js';
+
+/**
+ * A single discovered model (task #930: the shape is declared ONCE in
+ * `src/schemas/model-catalog.schema.ts`; re-exported here so catalog
+ * consumers keep importing it from the service that produces it).
+ */
+export type { ModelCatalogEntry };
+
+/** The result of a catalog lookup. `stale` is true when served from fallback. */
+export interface ModelCatalog {
+  models: ModelCatalogEntry[];
+  stale: boolean;
+}
+
+/**
+ * The family power ladder, descending by power (task #929 — PR #55 review
+ * follow-up). Previously prose-only in `skills/tasks/loop-shared.md` §R; this
+ * is now THE code constant: `familyOf` token matching, `resolveAuto` ladder
+ * fallback, and the static fallback catalog ordering all derive from it.
+ */
+export const FAMILY_LADDER = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+export type ModelFamily = (typeof FAMILY_LADDER)[number];
+
+/**
+ * Static, hand-maintained fallback catalog. Used whenever live discovery is
+ * unavailable (no key / non-OK response / network error). Ordered newest-power
+ * first (the {@link FAMILY_LADDER} order) to mirror the family power ladder.
+ */
+export const STATIC_FALLBACK_MODELS: ModelCatalogEntry[] = [
+  {
+    id: 'claude-fable-5',
+    display_name: 'Claude Fable 5',
+    family: 'fable',
+    created_at: '2026-05-01T00:00:00Z',
+  },
+  {
+    id: 'claude-opus-4-8',
+    display_name: 'Claude Opus 4.8',
+    family: 'opus',
+    created_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    display_name: 'Claude Sonnet 4.6',
+    family: 'sonnet',
+    created_at: '2025-09-01T00:00:00Z',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    display_name: 'Claude Haiku 4.5',
+    family: 'haiku',
+    created_at: '2025-10-01T00:00:00Z',
+  },
+];
+
+/**
+ * Infer a model's family from its id. Prefers a known {@link FAMILY_LADDER}
+ * token appearing anywhere in the id — so prefixed ids (e.g.
+ * `us.anthropic.claude-fable-5-...`) resolve correctly; otherwise falls back
+ * to the second hyphen-delimited segment (e.g. `claude-<family>-...`), and
+ * finally to `'unknown'` so the field is always a non-empty string.
+ *
+ * Task #929 fix: the token list previously omitted `fable` (it worked only via
+ * the `split('-')[1]` fallback, which breaks on prefixed ids); it now derives
+ * from {@link FAMILY_LADDER} so the ladder and the matcher cannot drift.
+ */
+export const familyOf = (id: string): string =>
+  FAMILY_LADDER.find((f) => id.includes(f)) ?? id.split('-')[1] ?? 'unknown';
+
+/** Injectable dependencies for {@link createModelCatalogService}. */
+export interface CatalogDeps {
+  /** Anthropic API key. When undefined, the service serves the static fallback. */
+  apiKey: string | undefined;
+  /** Fetch implementation. Defaults to the global `fetch`. */
+  fetchImpl?: typeof fetch;
+  /** Monotonic clock in ms. Defaults to `Date.now`. */
+  now?: () => number;
+  /** Cache time-to-live in ms. Defaults to 10 minutes. */
+  ttlMs?: number;
+  /** Models API endpoint. Defaults to the public Anthropic Models API. */
+  baseUrl?: string;
+}
+
+/** Shape of the `/v1/models` response body we consume (defensively typed). */
+interface ModelsApiResponse {
+  data?: Array<{ id: string; display_name?: string; created_at?: string }>;
+}
+
+/**
+ * Create a model-catalog service instance with the supplied dependencies.
+ *
+ * @returns An object exposing `list()` (TTL-cached) and `refresh()` (busts the
+ *   cache then re-lists). Neither method ever throws.
+ */
+export function createModelCatalogService(deps: CatalogDeps) {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const now = deps.now ?? (() => Date.now());
+  const ttlMs = deps.ttlMs ?? 10 * 60 * 1000;
+  const baseUrl = deps.baseUrl ?? 'https://api.anthropic.com/v1/models';
+
+  let cache: { at: number; value: ModelCatalog } | null = null;
+
+  const fallback = (): ModelCatalog => ({ models: STATIC_FALLBACK_MODELS, stale: true });
+
+  async function fetchLive(): Promise<ModelCatalog> {
+    if (!deps.apiKey) return fallback();
+    try {
+      const res = await fetchImpl(baseUrl, {
+        headers: {
+          'x-api-key': deps.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+      });
+      if (!res.ok) return fallback();
+      const body = (await res.json()) as ModelsApiResponse;
+      const models = (body.data ?? []).map(
+        (m): ModelCatalogEntry => ({
+          id: m.id,
+          display_name: m.display_name ?? m.id,
+          family: familyOf(m.id),
+          created_at: m.created_at ?? '',
+        }),
+      );
+      return { models, stale: false };
+    } catch {
+      // Network error, malformed JSON, etc. — degrade, never throw.
+      return fallback();
+    }
+  }
+
+  return {
+    /** Return the catalog, served from cache when within the TTL window. */
+    async list(): Promise<ModelCatalog> {
+      if (cache && now() - cache.at < ttlMs) return cache.value;
+      const value = await fetchLive();
+      cache = { at: now(), value };
+      return value;
+    },
+    /** Bust the cache and re-fetch the catalog. */
+    async refresh(): Promise<ModelCatalog> {
+      cache = null;
+      return this.list();
+    },
+  };
+}
+
+/** Public type of a constructed model-catalog service. */
+export type ModelCatalogService = ReturnType<typeof createModelCatalogService>;

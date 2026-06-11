@@ -58,6 +58,10 @@ The core task/project/comment/dependency CRUD surface:
 | DELETE | `/api/v1/projects/:id` | `routes/projects/index.ts` | Delete project by id. | Yes |
 | GET | `/api/v1/projects/:id/topology` | `routes/projects/topology.ts` | Topology classification (FLAT/DAG/DAG_CYCLIC). | Yes |
 | GET | `/api/v1/projects/:id/dependency-graph` | `routes/projects/dependency-graph.ts` | Dependency-graph tree view (#342). | Yes |
+| GET | `/api/v1/projects/:id/resolve-model` | `routes/projects/resolve-model.ts` | Configurable Task Models (#926): resolve the model for a pipeline role (`{ model }` or `null`). | Yes |
+| GET | `/api/v1/models` | `routes/models/index.ts` | Configurable Task Models (#922): runtime Claude model catalog (`{ models, stale }`). | Yes |
+| GET | `/api/v1/settings/model-policy` | `routes/settings/model-policy.ts` | Configurable Task Models (#922): read the DB-wide model-policy default. | Yes |
+| PUT | `/api/v1/settings/model-policy` | `routes/settings/model-policy.ts` | Configurable Task Models (#922): set/clear the DB-wide model-policy default. | Yes |
 | GET | `/api/v1/projects/:id/charter-history` | `routes/projects/wsjf.ts` | WSJF 4.5 (#645): chronological value-charter snapshots. | Yes |
 | GET | `/api/v1/projects/:id/rescore-runs` | `routes/projects/wsjf.ts` | WSJF 4.5 (#645): chronological rescore runs. | Yes |
 | GET | `/api/v1/tasks/:id/wsjf` | `routes/tasks/wsjf.ts` | WSJF 4.5 (#645): read persisted WSJF components/evidence/locks. | Yes |
@@ -106,16 +110,18 @@ sets are mutually exclusive at runtime.
 and `dependency-graph` rows above live in their own sibling files and are
 counted in the full-surface total below.
 
-**Full surface — Total: 52 route handlers; up to 45 reachable in any single
+**Full surface — Total: 59 route handlers; up to 52 reachable in any single
 running instance.** Counted by
 `/(fastify|server|app)\.(get|post|put|patch|delete)\(/g` across
 `src/api/routes/` (excluding `__tests__`). The 7 OIDC-disabled stub handlers
 are mutually exclusive with the 8 live `/auth/*` routes, so a given instance
-serves 52 − 7 = 45. WSJF 4.5 (#645) added 5 verb registrations (2 in
-`routes/projects/wsjf.ts`, 3 in `routes/tasks/wsjf.ts`). (The POST
-`/api/v1/me/tokens` route is registered via `fastify.route` rather than a verb
-method, so it is *not* part of the 52 verb count; the table lists it for
-completeness.)
+serves 59 − 7 = 52. WSJF 4.5 (#645) added 5 verb registrations (2 in
+`routes/projects/wsjf.ts`, 3 in `routes/tasks/wsjf.ts`); Configurable Task
+Models added 4 (1 in `routes/models/index.ts`, 2 in
+`routes/settings/model-policy.ts`, 1 in `routes/projects/resolve-model.ts`).
+(The POST `/api/v1/me/tokens` route is registered via `fastify.route` rather
+than a verb method, so it is *not* part of the 59 verb count; the table lists
+it for completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
 `/docs` when `npm run dev` runs (production opt-in via
@@ -156,16 +162,19 @@ so REST and MCP cannot drift on validation.
 | `tools/topology-tools.ts` | `topology_check` | read | Wave 4.1 (#318): classify a project as FLAT/DAG/DAG_CYCLIC. |
 | `tools/wait-for-unblock-tools.ts` | `wait_for_unblock` | read | Task #455: in-process long-poll until a task transitions blocked->open. |
 | `tools/wsjf-tools.ts` | `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` | read (×3) / write (rescore) | WSJF 1.10: propagation-adjusted ranking, score-history timeline, deterministic project rescore, degeneracy linter. |
+| `tools/model-tools.ts` | `list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults` | read (×3) / write (set) | Configurable Task Models: runtime model catalog, per-role policy resolution, get/set of the DB-wide default policy. |
 
-**Total: 27 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
-topology, 1 wait, 4 WSJF). 14 are read-only; 13 mutate state. Counted by `grep
-registerTool` across the eight files above. The remote server registers all
-**27 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
+**Total: 31 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
+topology, 1 wait, 4 WSJF, 4 model). 17 are read-only; 14 mutate state. Counted
+by `grep registerTool` across the nine files above. The remote server registers
+all **31 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
 classifier reaches the same `TopologyService` over REST
 (`GET /api/v1/projects/:id/topology`) rather than via a direct in-process
 call, and the four WSJF tools proxy `GET /api/v1/projects/:id/wsjf-ranking`,
 `GET /api/v1/tasks/:id/score-history`, `GET /api/v1/projects/:id/wsjf-health`,
-and `POST /api/v1/projects/:id/rescore` (WSJF 1.10). `wait_for_unblock` is
+and `POST /api/v1/projects/:id/rescore` (WSJF 1.10), and the four model tools
+proxy `GET /api/v1/models`, `GET /api/v1/projects/:id/resolve-model`, and
+`GET|PUT /api/v1/settings/model-policy` (#926). `wait_for_unblock` is
 hosted on **both** servers (#481) — the local variant resolves the
 `blocked->open` transition off the in-process EventBus, while the remote
 variant resolves it off the SSE event stream (`GET /api/v1/events`,
@@ -196,6 +205,9 @@ call.
 | project | `project-show` | `commands/project-show.ts` | Show project details. |
 | project | `project-update` | `commands/project-update.ts` | Update a project. |
 | project | `project-delete` | `commands/project-delete.ts` | Delete a project. |
+| project | `project-set-models` | `commands/project-set-models.ts` | Configurable Task Models (Task 12): set a project's model policy from per-role/per-category flags; persists via `PUT /projects/:id`. |
+| models | `models list` | `commands/models.ts` | Configurable Task Models (Task 12): list the runtime-discovered Claude model catalog (`GET /models`); marks a `(stale)` fallback. |
+| settings | `settings-set-models` | `commands/settings-set-models.ts` | Configurable Task Models (Task 12): set the database-wide default model policy (`PUT /settings/model-policy`). |
 | dependency | `dep-add` | `commands/dep-add.ts` | Declare a dependency. |
 | dependency | `dep-list` | `commands/dep-list.ts` | List dependencies. |
 | dependency | `dep-remove` | `commands/dep-remove.ts` | Remove a dependency. |
@@ -227,7 +239,7 @@ call.
 | statusline | `statusline` | `commands/statusline.ts` | v2.0 status line (#597): reads Claude Code's status-line JSON from stdin, renders the linked-project open/done counts + the update-available hint from a TTL cache; degrades silently (exit 0) when unlinked/offline. |
 | statusline | `link-project` | `commands/link-project.ts` | v2.0 status line (#595): links the current directory to a project by writing the repo-local `.wft/project` marker the statusline resolver reads. |
 
-**Total: 42 commands wired into Commander** (counted by
+**Total: 45 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine
@@ -257,7 +269,7 @@ Source: `src/services/`.
 | `project.service.ts` | `createProject`, `getProject`, `listProjectsPaginated`, `updateProject`, `deleteProject` | `project.created`, `project.updated`, `project.deleted` |
 | `comment.service.ts` | `addComment`, `getCommentsPaginated`, `deleteComment` | (none — task events cover audit) |
 | `dependency.service.ts` | `addDependency`, `removeDependency`, `getBlockedBy`, `getBlockers` | (none) |
-| `claim-release.service.ts` | `releaseClaim` | `task.updated` (on auto-release) |
+| `claim-release.service.ts` | `releaseClaim` | `task.updated` + `task.claim_released` (on auto-release) |
 | `idempotency.service.ts` | `get`, `set`, `cleanup` | n/a |
 | `slack.service.ts` | `start`, `stop`, `isEnabled`, `getApp` | n/a (consumes events, does not emit) |
 | `workflow-engine.ts` | `start`, `stop` | re-emits `task.updated`/`status_changed` on cascade |
@@ -351,8 +363,8 @@ schema and the three return envelopes are byte-identical either way.
 **Parity rule:** any new MCP tool MUST land in both servers in the same PR.
 The drift-detection test enforces the local count; the remote registration
 count is asserted by the `register-tools` unit test's expected-tools list
-(now 27, matching the 27-tool local total — 4 of which are the WSJF tools and
-1 is `wait_for_unblock`).
+(now 31, matching the 31-tool local total — 4 of which are the WSJF tools, 4
+the model tools, and 1 is `wait_for_unblock`).
 
 ## Pointers
 

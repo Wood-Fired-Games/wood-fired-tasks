@@ -11,7 +11,264 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-_No changes yet._
+## [v2.2.0] - 2026-06-11
+
+### Added
+- **Guaranteed task sizing.** Every task now carries a server-derived job size
+  so the Configurable-Task-Models `resolve_model` size routing (shipped in
+  v2.1.0) engages on the live backlog, while each task stays honestly
+  *unscored* for WSJF ranking: a deterministic `minutesToTier` mapping,
+  `auto_size` / `boot_sweep` history triggers, a server-internal size-only
+  write path, a `decomp-*` submission-contract gate, auto-sizing of WSJF-less
+  creates, a minutes-vs-jobSize conflict gate, recompute on `update_task` when
+  `estimated_minutes` changes (manual sizes are never clobbered), an idempotent
+  **boot sweep** that backfills NULL job sizes on every server start, and a
+  `wsjf_health` auto-sized-pending finding.
+- **`wft list --status all`** explicit sentinel and a `statusFilter` echo in
+  `--json` output (task #1006). The default `wft list` view already returns
+  every status — open, in_progress, blocked, done, and closed — and the
+  `--help` text now states this plainly so machine consumers don't read a
+  status transition (e.g. open → blocked) as a deleted task. `--status all`
+  is accepted as a self-documenting way to ask for "every status", and the
+  JSON envelope's `metadata.statusFilter` names the effective filter
+  (`all` or the requested status). The default view is unchanged.
+
+### Changed
+- **Configurable Task Models hardening** (PR-#55 review follow-ups, #928–#933):
+  `resolve_model` parity hardening for missing-project and foreign/nonexistent
+  `task_id`; single-sourced `PIPELINE_ROLES` / `FAMILY_LADDER` /
+  `DEFAULT_MODEL_MAP` with a code-level `resolveAuto`; the `modelPolicyService`
+  is now wired once in `createApp` with a memoized global policy and a prepared
+  resolver lookup; the model-catalog wire shape, model-tool definitions, and
+  JSON-column parser are single-sourced.
+- **wft-router**: real-event age gauge, start time, by-kind split, debug
+  pings, and stale-subscription resubscribe; plus an opt-in cold-start sweep
+  that dispatches pre-existing open backlogs so a freshly started router does
+  not miss work created while it was down.
+
+### Fixed
+- **SSE**: close the stream on every server-initiated eviction and align the
+  buffer TTL with the connection age window, so long-lived clients no longer
+  silently go deaf at the eviction boundary (#1001).
+- **Claims**: same-assignee renewal, a `task.claim_released` event, and TTL
+  visibility — long-running workers no longer lose their claim without a signal
+  (#1003).
+- **Atomic block-with-dependency** via `update_task blocked_by`: a `blocked`
+  status without a blocking edge is rejected rather than becoming a dead end
+  (#1004).
+- **Non-interactive `tasks create` / `tasks comment-add` default attribution to
+  the logged-in identity** (task #1007). Scripted runs no longer fail with
+  "Missing required field: created-by" (or `author`) when `--created-by` /
+  `--author` is omitted but credentials are present — the value defaults to the
+  credentials display name (email fallback), the same identity `tasks whoami`
+  reports. The original error is preserved only when no identity can be resolved
+  (no credentials file).
+- **wft-router**: spell the NUL label-separator as a `\u0000` escape rather than
+  a raw byte.
+
+## [v2.1.1] - 2026-06-09
+
+### Fixed
+- **`tasks self-update` now re-syncs bundled skills/agents into `~/.claude`**
+  (PR #57, task #934). The command previously only ran
+  `npm i -g wood-fired-tasks@latest`, so a release that added or changed a
+  skill (first hit: v2.1.0's `/tasks:set-models`) left self-updaters with
+  stale `~/.claude/commands/tasks/` while reporting success — violating the
+  README's "keep it up to date" contract. After a clean install, self-update
+  now runs the same idempotent `copySkills()`/`copyAgents()` sync `tasks
+  setup` uses, reports what it refreshed, and exits non-zero with a
+  `tasks setup` remediation hint if the sync itself fails. A contract test
+  pins the default sync to setup's own implementation so the update and
+  onboarding paths cannot drift.
+
+## [v2.1.0] - 2026-06-09
+
+### Added
+- **Configurable Task Models** (PR #55, project 39 — 17 tasks). Route the
+  `/tasks:loop` worker (`execution`), verifier (`validation`), and planning
+  agents — decompose / audit / integration-auditor (`planning`) — to different
+  Anthropic models via a per-project + database-default `model_policy`.
+  - **Policy model:** six power categories (`minimal…maximum`, a 1:1 relabel of
+    the WSJF jobSize Fibonacci tiers) plus an `auto` sentinel; per-role
+    `byCategory` routing with a uniform `byCategory → constant → default →
+    null` slot walk, two-layer per-slot merge (`project ?? global`). Migration
+    016 adds `projects.model_policy` and the `app_settings` singleton.
+  - **Runtime model catalog:** live discovery via the Anthropic Models API
+    (set the optional `ANTHROPIC_API_KEY`) with a static fallback marked
+    `stale: true` — the read path never throws.
+  - **MCP:** four new tools — `list_models`, `resolve_model`,
+    `get_model_defaults`, `set_model_defaults` — on **both** the stdio and
+    remote servers (tool count 27 → 31).
+  - **REST:** `GET /models`, `GET|PUT /settings/model-policy`,
+    `GET /projects/:id/resolve-model`, and `model_policy` on project
+    create/update/get.
+  - **CLI:** `tasks models list`, `tasks project-set-models <id>`, and
+    `tasks settings-set-models` — the set-models commands fetch-merge-write
+    client-side, so incremental invocations never destroy earlier role config.
+  - **Skills:** a `/tasks:set-models` interview (one four-stage checklist
+    question per role, fixed option order, catalog-only options) and a
+    canonical, telemetry-grounded **Default Model Map** in `loop-shared.md` §R
+    that makes `auto` resolution deterministic (execution
+    sonnet/sonnet/opus/fable across the category ladder, validation
+    haiku/sonnet/opus/opus, planning opus). Optional
+    `--execution-model` / `--validation-model` / `--planning-model` run-arg
+    overrides ride LOOP-RUN frontmatter for replay provenance.
+
+### Fixed
+- **Test suite no longer launches the developer's real browser.**
+  `setup.remote.test.ts` drove the device flow with `openBrowser: true`, so
+  every `npm test` on a DISPLAY-set desktop spawned `xdg-open` at a mock
+  server. `runDeviceLogin` now takes an injectable `opener` seam (defaulting to
+  the real `openBrowser`); tests inject a stub instead of relying on a global
+  env flag that, if leaked, would silently disable browser login for real users.
+- **Documentation counts drift.** README / `docs/INTERFACES.md` / `docs/MCP.md`
+  had stale tool (27 vs 31), route (52/45 vs 59/52), and CLI command (42 vs 45)
+  counts, plus a stale "model tools are stdio-only" claim from before remote
+  parity landed; the `interfaces-counts` drift guard now covers the model-tools
+  file so the next addition cannot dodge it.
+
+### Security
+- No security-relevant changes. The new `/models`, `/settings/model-policy`,
+  and `resolve-model` routes inherit the standard `/api/v1` auth chain; the
+  optional `ANTHROPIC_API_KEY` is only ever sent to the Anthropic Models API
+  and is never echoed in responses or logs.
+
+## [v2.0.6] - 2026-06-08
+
+### Added
+- **`tasks login --token <pat>` — a manual-PAT login path.** `tasks login` was
+  device-flow only and **dead-ended on a remote non-`https` server**: the OAuth
+  device flow can't complete where Google rejects the non-`https` redirect URI,
+  and there was no way to supply a PAT instead. `login` now accepts `--token`
+  (validated against `GET /api/v1/me`, then persisted to the credentials file)
+  and, like `tasks setup`, applies the `canUseBrowserSso` gate — on a plain-`http`
+  non-localhost server it prints the `https`-required / how-to-mint-a-PAT
+  guidance and (on a TTY) prompts for one instead of launching a flow that can't
+  finish. The shared manual-PAT logic now lives in one module so `login` and
+  `setup` can't drift. (#857)
+
+### Fixed
+- **`tasks setup --remote --token <pat>` now actually authenticates you.** The
+  non-interactive `--token` path wrote the PAT to an **orphaned cache file that
+  no code reads** and never to the credentials file, so it reported success while
+  leaving *both* the CLI ("Not authenticated. Run: tasks login") and the remote
+  MCP bridge unauthenticated — the likely root cause of "remote MCP shows 0
+  projects" reports. The path now validates the PAT against `GET /api/v1/me` and
+  persists it to the credentials file (the same writer the device flow uses); the
+  bridge resolves its bearer token from there at runtime. The dead `remote-token`
+  cache (`cachePat`/`patCachePath`) was removed — the credentials file is the
+  single source of truth. (#858)
+- **The interactive "Paste a personal access token:" prompt no longer hangs on a
+  real terminal.** `promptSecret` enables TTY raw mode to suppress echo, which
+  disables CR→LF translation, so the Enter key delivers a bare `\r` (0x0D) — but
+  the line reader only terminated on `\n`, so the read blocked forever (pasted
+  PAT buffered, Enter never recognized). Hit on Windows PowerShell during
+  `tasks setup --remote` manual-PAT entry; platform-independent. The reader now
+  treats `\r`, `\n`, or `\r\n` as the line terminator. (#856)
+
+### Security
+- The `--remote --token` PAT is now stored only in the `0600` credentials file
+  and is still **never** embedded in `~/.claude.json` (the remote MCP entry stays
+  URL-only, #810). The removed `remote-token` cache eliminates a second on-disk
+  copy of the secret.
+
+## [v2.0.5] - 2026-06-08
+
+### Changed
+- **`tasks setup` → Remote now tells you the truth about what a server needs for
+  browser login.** When the server reports OIDC ready but you entered a
+  **plain-http, non-localhost URL**, browser/device login via Google SSO can
+  never complete — identity providers reject non-`https` OAuth redirect URIs
+  except for `localhost`. Previously setup would launch the device flow anyway
+  and the verification page dead-ended at the IdP callback ("unable to connect").
+  Setup now detects this up front and explains it: it tells you to either re-run
+  with an **https** URL (front the server with a TLS reverse proxy / real domain
+  so Google SSO completes) or **paste a personal access token**, and prints the
+  exact on-host command to mint one (`tasks db mint-token --user <email-or-id>`),
+  then drops straight into manual-PAT entry. `https` and `http://localhost`
+  servers are unaffected and complete browser login as before. New exported
+  helper `canUseBrowserSso()`.
+
+## [v2.0.4] - 2026-06-08
+
+### Fixed
+- **Device-flow `verification_uri` now points at the address the client actually
+  connected to, not `localhost`.** `POST /auth/device/code` built the URL the
+  user opens in a browser from a STATIC configured origin (`OIDC_REDIRECT_URI`'s
+  origin), which is typically `http://localhost:3000`. A CLI that reached the
+  server over the LAN (e.g. `http://192.168.x.x:3000`) was told to open a
+  `localhost` URL pointing at its OWN machine — a dead end. The origin is now
+  derived per-request from the `Host` header (honoring `X-Forwarded-Host` /
+  `X-Forwarded-Proto` from a trusted reverse proxy), falling back to the
+  configured origin only when no `Host` is present. This is not a
+  host-header-injection vector: the `verification_uri` is returned only to the
+  same client that made the request. (Note: a Google-backed server whose OAuth
+  callback is `http://localhost` still can't complete the *browser login* leg
+  for a remote client — Google forbids non-`localhost` `http` redirect URIs — so
+  remote clients should use `tasks setup --remote <url> --token <pat>` or an
+  HTTPS domain. This fix makes the verification URL correct for properly
+  routable servers.)
+
+## [v2.0.3] - 2026-06-08
+
+### Fixed
+- **`tasks setup` device-flow login no longer fails with `invalid_client` on
+  servers backed by a real IdP.** The RFC 8628 device-flow `client_id` was
+  validated against `OIDC_CLIENT_ID` — the *IdP's* OAuth client id used for the
+  browser SSO leg — while the CLI sends a logical `'wft-cli'`. On any server
+  using e.g. Google, those never matched, so `POST /auth/device/code` returned
+  `400 invalid_client` and setup crashed. The device-flow client id is now a
+  **separate** setting, `OIDC_DEVICE_CLIENT_ID` (defaults to `'wft-cli'` on both
+  server and CLI), decoupled from `OIDC_CLIENT_ID` and not part of the
+  all-or-nothing OIDC group — so the stock CLI authenticates against a stock
+  server with no configuration. Operators who customize it set the same value
+  on both sides.
+- **Remote onboarding degrades gracefully when the device flow can't start.**
+  A failed/throwing `POST /auth/device/code` (e.g. `invalid_client`, or a
+  network error) previously aborted `tasks setup` with a raw stack-trace-style
+  error. It now logs the reason and falls back to manual personal-access-token
+  entry, so onboarding can still complete.
+
+### Changed
+- New optional env var **`OIDC_DEVICE_CLIENT_ID`** (default `'wft-cli'`),
+  documented in `docs/SETUP.md`. No action required for existing deployments
+  using the default CLI.
+
+## [v2.0.2] - 2026-06-08
+
+### Fixed
+- **`tasks setup` remote onboarding now reaches the automated device-flow login
+  instead of always falling back to manual PAT entry.** The onboarding probe
+  read the server's OIDC state from `GET /health/detailed`, but v2.0's identity
+  cutover put that endpoint behind Bearer-PAT auth — so an unauthenticated probe
+  (the only kind possible *before* you have a token) always got `401`, the OIDC
+  state was "undeterminable", and setup fell back to asking you to paste a
+  personal access token. The probe now targets the **public** `GET /auth/login`
+  endpoint (`redirect: 'manual'`): a `3xx` redirect to the IdP means browser
+  login is available (`ready`), a `501` means OIDC is disabled (`manual-pat`).
+  Verified against a live OIDC-ready server: the probe now resolves `ready`
+  where it previously 401'd, so the device-flow browser login launches as
+  intended.
+
+## [v2.0.1] - 2026-06-08
+
+### Fixed
+- **`tasks setup` interactive "Remote" selection no longer crashes.** Choosing
+  option **3) Remote** from the interactive setup menu threw
+  `remote onboarding requires a --remote <url> base URL.` because the menu set
+  the mode but never captured the server URL — only the `--remote <url>` flag
+  did. The interactive remote path now prompts for the base URL when it is not
+  supplied as a flag, guarded by a TTY check so non-interactive/CI callers still
+  fail fast with the same clear message instead of hanging on stdin.
+- **DB-path legacy-adopt tests are now hermetic.** `migrate-db-path.test.ts` and
+  `config-path-e2e.test.ts` exercise the "adopt `./data/tasks.db` when the OS
+  app-data DB is absent" precedence, but probed the real filesystem and so
+  failed on any dev machine where the `tasks` CLI had already created
+  `~/.local/share/wood-fired-tasks/tasks.db` (they passed on clean CI by luck).
+  `resolveMigrateDbPath`/`migrateCli` now forward the resolver's existing
+  injectable `exists` seam (default `fs.existsSync`, no behavior change), and the
+  tests inject a probe that hides the app-data DB — making the precedence-2
+  cases deterministic regardless of the developer's local state.
 
 ## [v2.0.0] - 2026-06-07
 
@@ -626,7 +883,9 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.1...HEAD
+[v2.1.1]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.0...v2.1.1
+[v2.1.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.0.6...v2.1.0
 [v2.0.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.18.2...v2.0.0
 [v1.15]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.14...v1.15
 [v1.14]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.13...v1.14

@@ -19,11 +19,12 @@ import {
   VerificationEvidence,
 } from '../types/task.js';
 import { omitUndefined } from '../utils/omit-undefined.js';
-import type { WsjfComponents } from '../types/wsjf.js';
+import type { WsjfComponents, WsjfSource } from '../types/wsjf.js';
 import {
   computeWsjf,
   validateManualScore,
   derivePropagatedValuePrior,
+  minutesToTier,
   type PropagatedValuePrior,
 } from './wsjf.service.js';
 import {
@@ -35,8 +36,10 @@ import {
   type VerificationEvidence as VerificationEvidenceInput,
 } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
+import type { DependencyService } from './dependency.service.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
+import { DEFAULT_CLAIM_TTL_MINUTES } from './claim-release.service.js';
 import { validateVerificationEvidence } from './evidence-validation.js';
 import type Database from '../db/driver.js';
 
@@ -50,6 +53,49 @@ const FTS_SYNTAX_ERROR_MESSAGE =
 
 function ftsValidationError(): ValidationError {
   return new ValidationError({ search: [FTS_SYNTAX_ERROR_MESSAGE] });
+}
+
+/**
+ * Task #1003: parse a task timestamp into epoch millis. The repository
+ * normalizes `updated_at` to ISO 8601 (`...T...Z`), but `claimed_at` may
+ * still carry SQLite's raw `YYYY-MM-DD HH:MM:SS` (UTC) shape — naive
+ * `new Date(...)` would parse that as LOCAL time, skewing the remaining-TTL
+ * math by the host's UTC offset. Returns null on unparseable input.
+ */
+function parseUtcTimestamp(value: string): number | null {
+  const sqliteShape = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
+  const iso = sqliteShape ? `${sqliteShape[1]}T${sqliteShape[2]}.000Z` : value;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Task #1003: claim-TTL visibility on the single-task read path. For a task
+ * holding an active claim, attach `claim_ttl_minutes` (the
+ * ClaimReleaseService sweep timeout) and `claim_remaining_seconds` — the
+ * floor-clamped seconds until the claim becomes ELIGIBLE for auto-release.
+ * Measured from the LATER of `claimed_at` / `updated_at`, mirroring the
+ * sweep's staleness predicate (both must exceed the TTL, so any activity or
+ * a same-assignee re-claim restarts the window). Unclaimed tasks pass
+ * through untouched — the fields stay absent (additive, optional).
+ */
+function withClaimTtl<T extends Task>(task: T): T {
+  if (task.status !== 'in_progress' || task.assignee === null || task.claimed_at === null) {
+    return task;
+  }
+  const claimedMs = parseUtcTimestamp(task.claimed_at);
+  const updatedMs = parseUtcTimestamp(task.updated_at);
+  if (claimedMs === null || updatedMs === null) {
+    return task;
+  }
+  const windowStartMs = Math.max(claimedMs, updatedMs);
+  const expiresAtMs = windowStartMs + DEFAULT_CLAIM_TTL_MINUTES * 60 * 1000;
+  const remainingSeconds = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+  return {
+    ...task,
+    claim_ttl_minutes: DEFAULT_CLAIM_TTL_MINUTES,
+    claim_remaining_seconds: remainingSeconds,
+  };
 }
 
 /**
@@ -157,12 +203,19 @@ export class TaskService {
    *   {@link wsjfAuditEnabled}.
    * @param wsjfHistoryRepo WSJF (#628): append-only history writer, paired with
    *   `db`. Must wrap the SAME connection as `taskRepo`.
+   * @param dependencyService Task #1004: edge writer + validator for the atomic
+   *   block-with-dependency path (`updateTask` with `blocked_by`). Optional for
+   *   back-compat with the many shorter constructions; the `blocked_by` path
+   *   requires BOTH this and `db` (one transaction spans the edge adds and the
+   *   status write) and throws a clear BusinessError when either is missing.
+   *   Must wrap the SAME connection as `taskRepo` (production wiring does).
    */
   constructor(
     private readonly taskRepo: ITaskRepository,
     private readonly projectRepo: IProjectRepository,
     private readonly db?: Database.Database,
     private readonly wsjfHistoryRepo?: IWsjfHistoryRepository,
+    private readonly dependencyService?: DependencyService,
   ) {}
 
   /**
@@ -257,6 +310,139 @@ export class TaskService {
   }
 
   /**
+   * Guaranteed-task-sizing (#987, design spec §2/§3) — the SERVER-INTERNAL,
+   * SIZE-ONLY WSJF write path. Sets `wsjf_job_size` + `wsjf_source.jobSize='auto'`
+   * (all five other `source` slots also `'auto'`) while leaving the three
+   * Cost-of-Delay component columns NULL, so the task becomes routable for
+   * `resolve_model` yet stays honestly UNSCORED for WSJF ranking (no fabricated
+   * value / time-criticality / risk).
+   *
+   * The column write and its append-only `auto_size` history row commit in ONE
+   * `db.transaction(...)` — the #628 no-bypass invariant. The history row records
+   * `jobSize` with the three CoD components NULL and `wsjfScore=null` (there is
+   * no full WSJF without the numerator), `trigger='auto_size'` (or the caller's
+   * override, e.g. `'boot_sweep'` for the §5 backfill).
+   *
+   * This method is NOT reachable from `CreateTaskClientSchema` / `WsjfWriteSchema`
+   * input — those reject a size-only payload (all four components required). It
+   * is intentionally a server-only entry point: the downstream auto-size-on-create
+   * (#989), update recompute (#991), boot sweep (#992), and health finding (#993)
+   * tasks all call THIS helper rather than smuggling a half-scored payload through
+   * the client gates.
+   *
+   * When the audit hook is NOT wired (a 2-arg `TaskService` construction with no
+   * `db` / history repo) the size still persists via the repository, but no
+   * history row is appended — back-compat parity with the create/update paths.
+   *
+   * @param args.taskId    the task to size.
+   * @param args.jobSize   the Fibonacci tier (the caller maps `estimated_minutes`
+   *                        via {@link minutesToTier} from `wsjf.service`).
+   * @param args.trigger   history trigger; defaults to `'auto_size'`. Boot-sweep
+   *                        callers (#992) pass `'boot_sweep'`.
+   * @param args.actorType / args.actorId  optional provenance for the audit row.
+   * @returns the updated task row (with tags).
+   */
+  autoSizeTask(args: {
+    taskId: number;
+    jobSize: Fib;
+    trigger?: WsjfHistoryTrigger;
+    actorType?: string | null;
+    actorId?: string | null;
+  }): Task & { tags: string[] } {
+    const existing = this.taskRepo.findById(args.taskId);
+    if (!existing) {
+      throw new NotFoundError('Task', args.taskId);
+    }
+    // Provenance: a size-only auto write stamps EVERY `source` slot 'auto'. The
+    // three CoD components are NULL, so their provenance is moot, but the map's
+    // shape (Record<WsjfComponentKey, ...>) requires all four keys; 'auto' is
+    // the honest value (server-derived, no human input).
+    const source: WsjfSource = {
+      value: 'auto',
+      timeCriticality: 'auto',
+      riskOpportunity: 'auto',
+      jobSize: 'auto',
+    };
+    const trigger: WsjfHistoryTrigger = args.trigger ?? 'auto_size';
+
+    if (this.wsjfAuditEnabled()) {
+      // prev_wsjf_score is the task's WSJF BEFORE this write — null whenever the
+      // task is not fully scored (the normal case for an auto-size target), and
+      // the real ratio if a classified score somehow precedes the auto write.
+      const prevWsjfScore = this.currentWsjfScore(existing);
+      return this.db!.transaction(() => {
+        const updated = this.taskRepo.writeAutoJobSize(args.taskId, args.jobSize, source);
+        // Size-only history row: CoD components NULL, jobSize set, no full score.
+        this.wsjfHistoryRepo!.append({
+          taskId: updated.id,
+          projectId: updated.project_id,
+          trigger,
+          value: null,
+          timeCriticality: null,
+          riskOpportunity: null,
+          jobSize: args.jobSize,
+          wsjfScore: null,
+          prevWsjfScore,
+          source,
+          actorType: args.actorType ?? null,
+          actorId: args.actorId ?? null,
+        });
+        return updated;
+      })();
+    }
+    return this.taskRepo.writeAutoJobSize(args.taskId, args.jobSize, source);
+  }
+
+  /**
+   * Guaranteed-task-sizing (design §4): minutes-vs-jobSize conflict gate for
+   * RAW wsjf writes. When a create/update carries BOTH an `estimated_minutes`
+   * and a raw `wsjf` payload bearing a jobSize, reject iff
+   * `minutesToTier(estimated_minutes)` lands on a DIFFERENT tier than
+   * `wsjf.jobSize` — naming both values. "Conflict" means a different tier
+   * after mapping (45 vs 60 min both map to tier 3 and must NOT error), never
+   * different raw numbers.
+   *
+   * The gate deliberately does NOT apply to `wsjf_submission` classifications.
+   * Those arrive at this service already converted to a WriteDTO by
+   * `submissionToWsjfWrite` (src/mcp/tools/task-tools.ts), which stamps an
+   * all-`'auto'` `source` map (`source.jobSize === 'auto'`) — the only
+   * service-visible signal distinguishing a submission/auto-sized write from a
+   * raw/manual/pre-computed one. A classification is evidence-backed judgment
+   * (already validated by the `jobSizeBand` clamp) and legitimately pairs a
+   * short `estimated_minutes` with a band-chosen high tier, so it outranks the
+   * minutes prior. A raw write (no `source`, or `source.jobSize !== 'auto'`)
+   * is the manual/pre-computed path the gate guards.
+   *
+   * No-op when `estimated_minutes` is absent (nothing to compare) or when no
+   * raw `wsjf` jobSize is present.
+   *
+   * @param estimatedMinutes the create/update `estimated_minutes` (or absent).
+   * @param wsjf             the normalized WSJF WriteDTO for this write (or null).
+   */
+  private assertMinutesTierConsistency(
+    estimatedMinutes: number | null | undefined,
+    wsjf: WsjfWriteDTO | null | undefined,
+  ): void {
+    // Nothing to compare without both a minutes estimate and a raw jobSize.
+    if (estimatedMinutes === undefined || estimatedMinutes === null) return;
+    if (wsjf === undefined || wsjf === null) return;
+    // Exempt submission-derived / auto-sized writes: their jobSize is an
+    // evidence-backed (or server-computed) judgment, marked `source.jobSize='auto'`.
+    if (wsjf.source?.jobSize === 'auto') return;
+    const minutesTier = minutesToTier(estimatedMinutes);
+    if (minutesTier !== wsjf.jobSize) {
+      throw new ValidationError({
+        wsjf: [
+          `estimated_minutes ${estimatedMinutes} maps to job-size tier ${minutesTier}, ` +
+            `but the supplied wsjf.jobSize is ${wsjf.jobSize}. These disagree: ` +
+            `either correct estimated_minutes so minutesToTier matches the tier, ` +
+            `or set wsjf.jobSize to ${minutesTier}.`,
+        ],
+      });
+    }
+  }
+
+  /**
    * Create a new task with validation
    * Tasks always start with status 'open' regardless of input
    */
@@ -273,6 +459,29 @@ export class TaskService {
         fieldErrors[field].push(err.message);
       });
       throw new ValidationError(fieldErrors);
+    }
+
+    // Guaranteed-task-sizing (design §1, Prong A): server-side decompose
+    // contract gate. A `decomp-*` tag is the marker the decompose skill stamps
+    // on every materialized leaf; carrying it without a `wsjf_submission` means
+    // the skill skipped Step 8 sizing and would mint a sizeless task — the exact
+    // failure class that produced the 114 sizeless Tiny Worlds tasks and silently
+    // degraded model routing. Reject it as a contract violation (422-class) on
+    // EVERY surface (stdio MCP, remote MCP, REST) because they all funnel through
+    // here. The MCP/REST layers convert `wsjf_submission` → the `wsjf` WriteDTO
+    // before reaching the service, so a non-null `wsjf` payload IS the evidence
+    // that a submission was made; its absence is the violation. The error names
+    // the offending tag and instructs the caller to re-run decompose Step 8 with
+    // a `wsjf_submission` (mirrors the WFT_STRICT_EVIDENCE teaching-rejection).
+    const decompTag = result.data.tags.find((tag) => tag.startsWith('decomp-'));
+    if (decompTag !== undefined && (result.data.wsjf === undefined || result.data.wsjf === null)) {
+      throw new ValidationError({
+        wsjf_submission: [
+          `Task carries the decompose tag '${decompTag}' but no 'wsjf_submission'. ` +
+            `Decompose-materialized tasks MUST be sized: re-run decompose Step 8 to ` +
+            `produce a 'wsjf_submission' for this task before creating it.`,
+        ],
+      });
     }
 
     // Verify project exists
@@ -323,6 +532,10 @@ export class TaskService {
       ...normalizeWsjfWrite(parsedWsjf),
     };
     const wsjf = (createDto.wsjf ?? null) as WsjfWriteDTO | null;
+    // Guaranteed-task-sizing (design §4): reject a raw wsjf write whose jobSize
+    // disagrees (after minutesToTier mapping) with estimated_minutes. Exempts
+    // submission-derived writes (source.jobSize === 'auto').
+    this.assertMinutesTierConsistency(result.data.estimated_minutes, wsjf);
     // WSJF (#643): a manual override on create runs the same manual gate as
     // update_task (enum + shared contradiction rule, no classification needed)
     // and audits with `trigger='manual'`; an auto create keeps `trigger='create'`.
@@ -358,6 +571,27 @@ export class TaskService {
       })();
     } else {
       task = this.taskRepo.create(createDto, result.data.tags);
+    }
+
+    // Guaranteed-task-sizing (design §2/§3, #989): the core guarantee — every
+    // new task is immediately routable by `ModelPolicy.byCategory`. A create
+    // carrying NEITHER a raw `wsjf` payload NOR a `wsjf_submission` (both arrive
+    // at the service as a non-null `wsjf` WriteDTO — the MCP/REST layers convert
+    // `wsjf_submission` → `wsjf` before reaching here, and the Prong-A gate above
+    // already rejected the decompose-tag-without-submission case) is auto-sized
+    // through the SIZE-ONLY {@link autoSizeTask} path (#987): tier =
+    // `minutesToTier(estimated_minutes)`, which deterministically returns the
+    // §3 tier-3 residual default when `estimated_minutes` is absent. This writes
+    // `wsjf_job_size` + `wsjf_source.jobSize='auto'` (CoD components stay NULL)
+    // plus an `auto_size` history row in ONE transaction — an immediate
+    // size-only follow-up to the insert, NOT a half-scored payload smuggled
+    // through the client gates. We re-read through the helper so the
+    // `task.created` event below carries the sized row, not the sizeless insert.
+    if (wsjf === null) {
+      task = this.autoSizeTask({
+        taskId: task.id,
+        jobSize: minutesToTier(result.data.estimated_minutes),
+      });
     }
 
     // Emit task.created event after successful database operation
@@ -396,13 +630,20 @@ export class TaskService {
 
   /**
    * Get task by ID
+   *
+   * Task #1003: for tasks holding an active claim (`in_progress` + assignee
+   * + claimed_at), the response additionally carries `claim_ttl_minutes` and
+   * `claim_remaining_seconds` (computed at read time, never stored) so
+   * `get_task` consumers can see when the ClaimReleaseService sweep will
+   * auto-release the claim — and renew (same-assignee `claim_task`) before
+   * it does.
    */
   getTask(id: number): Task & { tags: string[] } {
     const task = this.taskRepo.findById(id);
     if (!task) {
       throw new NotFoundError('Task', id);
     }
-    return task;
+    return withClaimTtl(task);
   }
 
   /**
@@ -490,6 +731,22 @@ export class TaskService {
         fieldErrors[field].push(err.message);
       });
       throw new ValidationError(fieldErrors);
+    }
+
+    // Task #1004: narrow semantics — `blocked_by` is ONLY meaningful as part of
+    // an atomic block-with-dependency. Supplying it without `status: 'blocked'`
+    // is a validation error rather than a silent edge-add, so the affordance
+    // cannot be half-used (the failure class it exists to kill is a blocked
+    // status without an edge; the inverse — edges added under a non-blocked
+    // status — would be a different, unintended operation).
+    if (result.data.blocked_by !== undefined && result.data.status !== 'blocked') {
+      throw new ValidationError({
+        blocked_by: [
+          "blocked_by is only valid together with status: 'blocked'. " +
+            'To add dependency edges without blocking, use the dependency surface ' +
+            '(add_dependency / dep-add) instead.',
+        ],
+      });
     }
 
     // Fetch existing task
@@ -580,6 +837,9 @@ export class TaskService {
     const {
       wsjf: parsedWsjfUpdate,
       verification_evidence: parsedEvidenceUpdate,
+      // Task #1004: blocked_by is NOT a task column — it drives the atomic
+      // edge-add below and must not leak into the repository patch.
+      blocked_by: parsedBlockedBy,
       ...updateRest
     } = result.data;
     const updatesForRepo: UpdateTaskDTO = {
@@ -607,6 +867,11 @@ export class TaskService {
     // `existing` row we already loaded above. Clearing the score (`wsjf: null`)
     // is not a component-value write, so it appends no history row.
     const wsjfUpdate = result.data.wsjf as WsjfWriteDTO | null | undefined;
+    // Guaranteed-task-sizing (design §4): same minutes-vs-jobSize conflict gate
+    // on the update raw-wsjf path. Compares the update's own `estimated_minutes`
+    // against a raw `wsjf.jobSize`; exempts submission-derived writes
+    // (source.jobSize === 'auto').
+    this.assertMinutesTierConsistency(result.data.estimated_minutes, wsjfUpdate);
     // WSJF (#643): a manual override (`wsjf.manual === true`) skips the
     // classification/evidence requirement but MUST still pass the manual gate —
     // enum membership + the SHARED contradiction rule (jobSize=1 ∧ value=13 →
@@ -625,22 +890,89 @@ export class TaskService {
       }
     }
     const wsjfTrigger: WsjfHistoryTrigger = wsjfUpdate?.manual === true ? 'manual' : 'update';
+    const performWrite = (): Task & { tags: string[] } => {
+      if (wsjfUpdate !== undefined && wsjfUpdate !== null && this.wsjfAuditEnabled()) {
+        const prevWsjfScore = this.currentWsjfScore(existing);
+        return this.db!.transaction(() => {
+          const updated = this.taskRepo.update(id, updatesForRepo);
+          this.appendWsjfHistory({
+            taskId: updated.id,
+            projectId: updated.project_id,
+            trigger: wsjfTrigger,
+            wsjf: wsjfUpdate,
+            prevWsjfScore,
+          });
+          return updated;
+        })();
+      }
+      return this.taskRepo.update(id, updatesForRepo);
+    };
     let updatedTask: Task & { tags: string[] };
-    if (wsjfUpdate !== undefined && wsjfUpdate !== null && this.wsjfAuditEnabled()) {
-      const prevWsjfScore = this.currentWsjfScore(existing);
-      updatedTask = this.db!.transaction(() => {
-        const updated = this.taskRepo.update(id, updatesForRepo);
-        this.appendWsjfHistory({
-          taskId: updated.id,
-          projectId: updated.project_id,
-          trigger: wsjfTrigger,
-          wsjf: wsjfUpdate,
-          prevWsjfScore,
-        });
-        return updated;
+    if (parsedBlockedBy !== undefined) {
+      // Task #1004: atomic block-with-dependency. The dependency edges and the
+      // status write commit in ONE transaction — all-or-nothing. Any invalid
+      // edge (nonexistent blocker → NotFoundError, self-reference →
+      // ValidationError, cycle → BusinessError) throws inside the transaction
+      // and rolls back EVERYTHING, so a blocked status can never land without
+      // its edge and no partial edge set can land without the status.
+      //
+      // Validation is the DependencyService's — `addDependency` runs the
+      // existence / self / cycle checks per edge (no duplicated cycle logic
+      // here). Edges that already exist are skipped (idempotent re-block, e.g.
+      // appending a second blocker to an already-blocked task).
+      if (!this.dependencyService || !this.db) {
+        throw new BusinessError(
+          'blocked_by requires the transactional wiring (db + DependencyService) ' +
+            'that production boot supplies. This TaskService was constructed without it.',
+        );
+      }
+      const blockerIds = [...new Set(parsedBlockedBy)];
+      updatedTask = this.db.transaction(() => {
+        const alreadyBlocking = new Set(
+          this.dependencyService!.getBlockers(id).map((d) => d.task_id),
+        );
+        for (const blockerId of blockerIds) {
+          if (alreadyBlocking.has(blockerId)) continue;
+          this.dependencyService!.addDependency({ task_id: blockerId, blocks_task_id: id });
+        }
+        return performWrite();
       })();
     } else {
-      updatedTask = this.taskRepo.update(id, updatesForRepo);
+      updatedTask = performWrite();
+    }
+
+    // Guaranteed-task-sizing (#991): recompute the AUTO job-size when an update
+    // changes `estimated_minutes` and the persisted size is still auto-derived.
+    //
+    // Fires ONLY when BOTH hold:
+    //  (1) the update carries a NEW `estimated_minutes` value (present AND
+    //      different from the row's prior `estimated_minutes` — a status-only or
+    //      same-minutes update is a no-op), AND
+    //  (2) the row's existing `wsjf_source.jobSize === 'auto'` — i.e. the size is
+    //      still the server-derived default, never a manual override or a
+    //      classification-derived score.
+    //
+    // We read the auto-ness off the `existing` row (its `wsjf_source` is already
+    // inflated to a typed `WsjfSource` by the repository, so no hand-parsing) and
+    // route through the SIZE-ONLY {@link autoSizeTask} helper so the new
+    // `wsjf_job_size` + its append-only `auto_size` history row commit in ONE
+    // transaction (the #628 no-bypass invariant). The repo `update` inside
+    // `performWrite` above has already persisted the new `estimated_minutes`
+    // column, so this size write strictly follows the minutes write and reflects
+    // the NEW minutes. Re-reading through the helper means `updatedTask` (and the
+    // event below) carries the resized row.
+    //
+    // A manual size (`wsjf_source.jobSize === 'manual'`) or a fully
+    // classification-scored row (jobSize !== 'auto') is NEVER clobbered.
+    const minutesChanged =
+      result.data.estimated_minutes !== undefined &&
+      result.data.estimated_minutes !== existing.estimated_minutes;
+    if (minutesChanged && existing.wsjf_source?.jobSize === 'auto') {
+      updatedTask = this.autoSizeTask({
+        taskId: id,
+        jobSize: minutesToTier(result.data.estimated_minutes),
+        trigger: 'auto_size',
+      });
     }
 
     // Emit task.updated event after successful database operation
@@ -747,6 +1079,32 @@ export class TaskService {
     const existing = this.taskRepo.findById(taskId);
     if (!existing) {
       throw new NotFoundError('Task', taskId);
+    }
+
+    // Task #1003: claim RENEWAL (heartbeat). A claim_task call by the SAME
+    // assignee on a task they already hold in_progress refreshes claimed_at
+    // — extending the ClaimReleaseService TTL window — and returns success
+    // instead of the already-claimed conflict. A DIFFERENT assignee still
+    // falls through to the existing 409-equivalent errors below. This keeps
+    // the renewal affordance on the existing tool surface (stdio MCP,
+    // remote MCP, REST, CLI all flow through this method) without adding a
+    // new MCP tool.
+    if (existing.status === 'in_progress' && existing.assignee === assignee) {
+      const renewed = this.taskRepo.renewClaim(taskId, assignee);
+      if (!renewed) {
+        // Raced: the claim lapsed (sweep released it) or changed hands
+        // between our read and the renewal UPDATE.
+        throw new BusinessError(
+          `Task ${taskId} claim could not be renewed (claim changed concurrently)`,
+        );
+      }
+      eventBus.emit('task.claimed', {
+        eventType: 'task.claimed',
+        timestamp: new Date().toISOString(),
+        data: renewed,
+        metadata: { source },
+      });
+      return renewed;
     }
 
     // Validate task is in claimable state

@@ -17,6 +17,9 @@ import { DependencyService } from '../services/dependency.service.js';
 import { DependencyGraphService } from '../services/dependency-graph.service.js';
 import { TopologyService } from '../services/topology.service.js';
 import { CommentService } from '../services/comment.service.js';
+import { SettingsService } from '../services/settings.service.js';
+import { ModelCatalogService } from '../services/model-catalog.service.js';
+import type { ModelPolicyService } from '../services/model-policy.service.js';
 import { SSEManager } from '../events/sse-manager.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { ClaimReleaseService } from '../services/claim-release.service.js';
@@ -31,6 +34,8 @@ import projectRoutes from './routes/projects/index.js';
 import dependencyRoutes from './routes/dependencies/index.js';
 import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
+import modelsRoutes from './routes/models/index.js';
+import modelPolicyRoutes from './routes/settings/model-policy.js';
 import meRoutes from './routes/me/index.js';
 import webRoutes from './routes/web/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
@@ -65,6 +70,12 @@ declare module 'fastify' {
     dependencyGraphService: DependencyGraphService;
     topologyService: TopologyService;
     commentService: CommentService;
+    /** Configurable Task Models (Task 13): backs GET|PUT /settings/model-policy. */
+    settingsService: SettingsService;
+    /** Configurable Task Models (Task 13): backs GET /models. */
+    modelCatalogService: ModelCatalogService;
+    /** Configurable Task Models (Task #926): backs GET /projects/:id/resolve-model. */
+    modelPolicyService: ModelPolicyService;
     idempotencyService: IdempotencyService;
     db: Database.Database;
     sseManager: SSEManager;
@@ -133,6 +144,15 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   server.decorate('dependencyGraphService', app.dependencyGraphService);
   server.decorate('topologyService', app.topologyService);
   server.decorate('commentService', app.commentService);
+  // Configurable Task Models (Task 13): the settings + model-catalog services
+  // back the /settings/model-policy and /models routes respectively.
+  server.decorate('settingsService', app.settingsService);
+  server.decorate('modelCatalogService', app.modelCatalogService);
+  // Configurable Task Models (Task #926 / #931): the model-policy resolver
+  // behind GET /projects/:id/resolve-model. Constructed ONCE in `createApp`
+  // (same instance the stdio MCP server wires behind its `resolve_model`
+  // tool) — see src/index.ts for the dep wiring.
+  server.decorate('modelPolicyService', app.modelPolicyService);
   server.decorate('db', app.db);
   // Task #357: expose OIDC boot state to /health/detailed so a degraded
   // discovery is a queryable signal, not just a one-time boot log line.
@@ -186,6 +206,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     eventBus.subscribe('task.deleted', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('task.status_changed', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('task.claimed', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('task.claim_released', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.created', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event)),
@@ -433,6 +454,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         );
       }
       const clientId = config.OIDC_CLIENT_ID as string;
+      // #833: the device-flow `client_id` is a SEPARATE logical identifier the
+      // CLI sends (default `'wft-cli'`), NOT the IdP's OAuth client id. Using
+      // OIDC_CLIENT_ID here rejected the stock CLI with `invalid_client` on any
+      // real-IdP server. Always defaulted, so device flow works out of the box.
+      const deviceClientId = config.OIDC_DEVICE_CLIENT_ID;
       await server.register(authRoutes, {
         prefix: '/auth',
         oidcConfig: app.oidcConfig,
@@ -484,9 +510,9 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         await scope.register(authPlugin);
         await scope.register(deviceCodeRoute, {
           origin,
-          expectedClientId: clientId,
+          expectedClientId: deviceClientId,
         });
-        await scope.register(deviceTokenRoute, { expectedClientId: clientId });
+        await scope.register(deviceTokenRoute, { expectedClientId: deviceClientId });
         await scope.register(deviceHtmlRoute, { origin });
       });
     } else {
@@ -536,6 +562,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
         // Register events route
         await api.register(eventsRoute, { prefix: '/events' });
+
+        // Configurable Task Models (Task 13): the model catalog + the
+        // database-wide model-policy default.
+        await api.register(modelsRoutes, { prefix: '/models' });
+        await api.register(modelPolicyRoutes, { prefix: '/settings' });
 
         // Phase 28 Plan 28-05: per-caller resources. All routes inside
         // meRoutes carry `config: { sessionOnly: true }` so the auth-chain

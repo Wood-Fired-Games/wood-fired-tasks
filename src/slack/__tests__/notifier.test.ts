@@ -150,23 +150,25 @@ describe('SlackNotifier', () => {
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
   describe('Lifecycle', () => {
-    it('start() subscribes to 5 task event types', () => {
+    it('start() subscribes to 6 task event types', () => {
       notifier.start();
 
-      expect(subscribedHandlers).toHaveLength(5);
+      // Task #1003 added task.claim_released (TTL sweep auto-release).
+      expect(subscribedHandlers).toHaveLength(6);
       const eventNames = subscribedHandlers.map((h) => h.event);
       expect(eventNames).toEqual([
         'task.created',
         'task.updated',
         'task.status_changed',
         'task.claimed',
+        'task.claim_released',
         'task.deleted',
       ]);
     });
 
     it('stop() calls all unsubscribe functions', () => {
       notifier.start();
-      expect(mockUnsubscribeFns).toHaveLength(5);
+      expect(mockUnsubscribeFns).toHaveLength(6);
 
       notifier.stop();
 

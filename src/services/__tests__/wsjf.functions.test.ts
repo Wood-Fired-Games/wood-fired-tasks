@@ -9,6 +9,7 @@ import {
   ubvFromThemeAlignment,
   computeWsjf,
   priorityFallbackScore,
+  minutesToTier,
   PROPAGATION_GAMMA,
   PROPAGATION_CAP,
 } from '../wsjf.service.js';
@@ -187,6 +188,43 @@ describe('wsjf deterministic functions (task #622)', () => {
       ['low', 1],
     ])('priorityFallbackScore(%s) === %i', (input, expected) => {
       expect(priorityFallbackScore(input)).toBe(expected);
+    });
+  });
+
+  describe('minutesToTier (task #985)', () => {
+    it('absent (null) → 3', () => {
+      expect(minutesToTier(null)).toBe(3);
+    });
+
+    it('absent (undefined) → 3', () => {
+      expect(minutesToTier(undefined)).toBe(3);
+    });
+
+    it.each<[number, Fib]>([
+      // boundary: <= 15 → 1
+      [15, 1],
+      [16, 2],
+      // boundary: <= 30 → 2
+      [30, 2],
+      [31, 3],
+      // boundary: <= 60 → 3
+      [60, 3],
+      [61, 5],
+      // boundary: <= 240 → 5
+      [240, 5],
+      [241, 8],
+      // boundary: <= 960 → 8
+      [960, 8],
+      [961, 13],
+    ])('minutesToTier(%i) === %i', (minutes, expected) => {
+      expect(minutesToTier(minutes)).toBe(expected);
+    });
+
+    it('all returned values are members of the FIB set', () => {
+      const inputs = [null, undefined, 0, 15, 16, 30, 31, 60, 61, 240, 241, 960, 961, 9999];
+      for (const m of inputs) {
+        expect(FIB).toContain(minutesToTier(m));
+      }
     });
   });
 

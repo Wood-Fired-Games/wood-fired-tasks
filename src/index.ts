@@ -13,11 +13,22 @@ import { WsjfHistoryRepository } from './repositories/wsjf-history.repository.js
 import { ProjectCharterHistoryRepository } from './repositories/project-charter-history.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
+import { backfillJobSizes } from './services/job-size-backfill.js';
 import { DependencyService } from './services/dependency.service.js';
 import { CommentService } from './services/comment.service.js';
 import { TopologyService } from './services/topology.service.js';
 import { DependencyGraphService } from './services/dependency-graph.service.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
+import { createSettingsRepository } from './repositories/settings.repository.js';
+import { createSettingsService, type SettingsService } from './services/settings.service.js';
+import {
+  createModelCatalogService,
+  type ModelCatalogService,
+} from './services/model-catalog.service.js';
+import {
+  createModelPolicyService,
+  type ModelPolicyService,
+} from './services/model-policy.service.js';
 import { eventBus } from './events/event-bus.js';
 import { type OidcConfig } from './services/oidc-client.js';
 import { discoverOidcWithRetry } from './services/oidc-boot.js';
@@ -64,6 +75,29 @@ export interface App {
    * composes the requested shape in-memory.
    */
   dependencyGraphService: DependencyGraphService;
+  /**
+   * Configurable Task Models (Task 13): the database-wide model-policy default
+   * owner (task #916). Backs GET|PUT /api/v1/settings/model-policy and the
+   * `get/set_model_defaults` MCP tools.
+   */
+  settingsService: SettingsService;
+  /**
+   * Configurable Task Models (Task 13): runtime Claude-model-catalog discovery
+   * with a TTL cache + static fallback (task #917). Backs GET /api/v1/models
+   * and the `list_models` MCP tool. Never throws — degrades to the static
+   * fallback (`stale: true`) when ANTHROPIC_API_KEY is absent / the Models API
+   * is unreachable.
+   */
+  modelCatalogService: ModelCatalogService;
+  /**
+   * Configurable Task Models (task #931): the jobSize→category bijection +
+   * two-layer per-slot model resolver. Constructed ONCE here (like
+   * settingsService / modelCatalogService) and consumed by BOTH transports —
+   * the REST route (`GET /projects/:id/resolve-model` via the Fastify
+   * decoration) and the stdio MCP `resolve_model` tool — instead of each
+   * hand-wiring an identical dep bundle over fresh repositories.
+   */
+  modelPolicyService: ModelPolicyService;
   /**
    * Identity-foundation repositories (Phase 27) decorated onto the Fastify
    * instance by `createServer` so the Phase 28 auth chain at
@@ -248,8 +282,31 @@ export async function createApp(dbPath?: string): Promise<App> {
     charterHistory: charterHistoryRepo,
     db,
   });
-  const taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
+  // Task #1004: DependencyService is constructed BEFORE TaskService so the
+  // atomic block-with-dependency path (`update_task` with `blocked_by`) can be
+  // injected — the edge adds and the status write share `db` and commit in one
+  // transaction.
   const dependencyService = new DependencyService(dependencyRepo, taskRepo);
+  const taskService = new TaskService(
+    taskRepo,
+    projectRepo,
+    db,
+    wsjfHistoryRepo,
+    dependencyService,
+  );
+
+  // Guaranteed-task-sizing (#992, design spec §5): idempotent boot sweep.
+  // The earliest point both `taskService` (the size-only `autoSizeTask`
+  // writer + its wired `boot_sweep` audit hook) and `taskRepo` (the
+  // NULL-size candidate scan) exist — this is the boot-step the spec wires
+  // "immediately after seedIdentities" (line ~157), deferred only to here
+  // because the sweep needs the service. Backfills `wsjf_job_size` for every
+  // non-done/non-closed task left sizeless by the migration era so
+  // `resolve_model`'s `byCategory` routing engages on the live backlog. ONE
+  // db.transaction per row (in `autoSizeTask`), so a mid-sweep failure on one
+  // row leaves previously committed rows intact; idempotent on re-boot.
+  backfillJobSizes(taskService, taskRepo);
+
   const commentService = new CommentService(commentRepo, taskRepo);
   const topologyService = new TopologyService(taskRepo, dependencyRepo);
   // N6: pass the better-sqlite3 handle so the bulk reads (count + paginated
@@ -263,6 +320,35 @@ export async function createApp(dbPath?: string): Promise<App> {
     projectRepo,
     db,
   );
+
+  // Configurable Task Models (Task 13). The settings service owns the
+  // database-wide model-policy default over the `app_settings` singleton row;
+  // the model-catalog service discovers the live Claude model catalog. The
+  // catalog's `apiKey` is read from ANTHROPIC_API_KEY — when absent (e.g. CI /
+  // tests) the service serves the static fallback with `stale: true` and never
+  // throws, so no env wiring is required for the route to function.
+  const settingsService = createSettingsService(createSettingsRepository(db));
+  const modelCatalogService = createModelCatalogService({
+    apiKey: process.env['ANTHROPIC_API_KEY'],
+  });
+
+  // Configurable Task Models (task #931): the model-policy resolver, wired
+  // ONCE for every transport. Its three lookups are injected over the same
+  // repositories every other service shares:
+  //   - getProject       ← ONE shared project fetch: `null` = no such project
+  //     (the task-#928 existence guard → NotFoundError), otherwise the row's
+  //     parsed `model_policy`. Replaces the former projectExists +
+  //     getProjectPolicy pair that fetched + inflated the same row twice.
+  //   - getGlobalPolicy  ← the SAME settings service backing get/set defaults
+  //     (memoized read — see settings.service.ts, task #931).
+  //   - getTask          ← the dedicated two-column resolver-facts lookup
+  //     (project membership + WSJF jobSize tier; `null` when the task does
+  //     not exist — task #928 validation) instead of full findById inflation.
+  const modelPolicyService = createModelPolicyService({
+    getProject: (projectId) => projectRepo.findById(projectId),
+    getGlobalPolicy: () => settingsService.getModelPolicyDefault(),
+    getTask: (taskId) => taskRepo.findResolverFacts(taskId),
+  });
 
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
@@ -308,6 +394,9 @@ export async function createApp(dbPath?: string): Promise<App> {
     commentService,
     topologyService,
     dependencyGraphService,
+    settingsService,
+    modelCatalogService,
+    modelPolicyService,
     userRepository,
     apiTokenRepository,
     workflowEngine,

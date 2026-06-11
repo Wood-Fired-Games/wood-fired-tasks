@@ -48,8 +48,9 @@ The CLI requires these environment variables to connect to the API server:
 
 [IMPORTANT] Authentication uses a Personal Access Token (PAT) sent as
 `Authorization: Bearer <pat>`. For interactive use prefer
-[`tasks login`](#tasks-login) (OIDC device flow; caches a PAT to the credentials
-file, which takes precedence over `API_KEY`). For scripting/CI, set `API_KEY` to
+[`tasks login`](#tasks-login) (OIDC device flow, or `--token <pat>` for a manual
+PAT on non-`https` servers; writes a PAT to the credentials file, which takes
+precedence over `API_KEY`). For scripting/CI, set `API_KEY` to
 a `wft_pat_…` value or pass `--token wft_pat_…`. Mint a PAT via the web UI (`/me`),
 `tasks login`, or `tasks db mint-token` (headless bootstrap).
 
@@ -92,7 +93,7 @@ tasks create \
 |--------|-------|------|-------------|
 | --title | -t | string | Task title (required) |
 | --project | -p | number | Project ID (required) |
-| --created-by | -c | string | Creator name (required) |
+| --created-by | -c | string | Creator name. Required only when no identity can be resolved — when a credentials file is present (`tasks whoami` succeeds), this defaults to the logged-in identity (display name, email fallback) so scripted `--no-input` creates need not hardcode it. An explicit `--created-by` always wins. |
 | --description | -d | string | Task description |
 | --priority | | string | Priority: low, medium, high, urgent (default: medium) |
 | --assignee | -a | string | Assignee name |
@@ -149,7 +150,7 @@ tasks list
 # Filter by project
 tasks list --project 1
 
-# Filter by status
+# Filter by status (or `--status all` for every status, explicitly)
 tasks list --status open
 
 # Filter by assignee
@@ -170,7 +171,7 @@ tasks list --project 1 --status in_progress --assignee bob
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
 | --project | -p | number | Filter by project ID |
-| --status | -s | string | Filter by status (open, in_progress, done, closed, blocked) |
+| --status | -s | string | Filter by status (`open`, `in_progress`, `done`, `closed`, `blocked`, or `all`). **Default: no filter — every status is shown, incl. `blocked` and `closed`** (so a script never mistakes an open→blocked transition for a deleted task); pass `all` to request every status explicitly. In `--json` mode `metadata.statusFilter` echoes the effective filter. |
 | --assignee | -a | string | Filter by assignee name |
 | --search | | string | Search in title and description |
 | --tags | | string | Filter by tags (comma-separated) |
@@ -274,18 +275,16 @@ Update a task. All options are optional (partial update).
 **Examples:**
 
 ```bash
-# Update status
+# Update status / assignee / priority
 tasks update 42 --status done
-
-# Update assignee and priority
 tasks update 42 --assignee bob --priority urgent
 
 # Update multiple fields
-tasks update 42 \
-  --status in_progress \
-  --description "Updated description" \
-  --due "2026-03-01T00:00:00Z" \
-  --tags "backend,api,urgent"
+tasks update 42 --status in_progress --description "Updated description" \
+  --due "2026-03-01T00:00:00Z" --tags "backend,api,urgent"
+
+# Block atomically on other tasks (edge + status in one transaction)
+tasks update 42 --status blocked --blocked-by 57,58
 ```
 
 **Options:**
@@ -299,6 +298,7 @@ tasks update 42 \
 | --assignee | string | Update assignee name |
 | --due | string | Update due date (ISO8601 format) |
 | --tags | string | Update tags (comma-separated, replaces all tags) |
+| --blocked-by | string | Blocking task IDs (comma-separated). Only valid with `--status blocked`: adds the blocking dependency edge(s) and sets the status atomically (task #1004) — the task auto-unblocks when the blockers close |
 
 **Output:**
 
@@ -444,6 +444,80 @@ tasks project-delete 1
 ```
 Are you sure you want to delete project #1? (y/N): y
 Project #1 deleted successfully
+```
+
+## Model Commands
+
+The **Configurable Task Models** layer lets you route each pipeline role
+(`execution` for `/tasks:loop` & `/tasks:loop-dag` workers, `validation` for
+verifiers, `planning` for `/tasks:decompose` / `/tasks:audit` /
+integration-auditor dispatches) at a chosen Claude model — globally or
+per-project. Model refs are a runtime-discovered catalog model id or the
+`auto` sentinel (resolve the best live model at dispatch). The six power
+categories are `minimal`, `light`, `moderate`, `strong`, `heavy`, `maximum`.
+
+> The easiest way to author a policy interactively is the
+> [`/tasks:set-models`](#configurable-models) skill, which interviews you and
+> calls these commands for you. The commands below are the non-interactive
+> surface.
+
+### tasks models list
+
+List the runtime-discovered Claude model catalog (sourced from the Models API,
+with a static fallback when offline or when `ANTHROPIC_API_KEY` is unset). Each
+row is `<id>  <display_name>  [<family>]`; a `(stale)` suffix and a warning
+line indicate the static fallback was served.
+
+**Example:**
+
+```bash
+tasks models list
+tasks --json models list   # { models, stale } for scripting
+```
+
+### tasks project-set-models <id>
+
+Set a single project's model policy. The per-role flags assemble a partial
+`ModelPolicy` that is validated, **merged client-side over the currently
+stored policy** (fetch-merge-write — the server's `PUT /projects/:id` replaces
+the column wholesale), and persisted. Incremental invocations are therefore
+non-destructive: adding validation routing later does not erase earlier
+execution flags. Flag shapes:
+
+- `--<role>-<category> <model|auto>` — route a role's power category (e.g.
+  `--execution-heavy claude-opus-4-1` or `--validation-light auto`).
+- `--<role>-default <model|auto>` — the role's fallback when no category route
+  matches.
+- `--planning-constant <model|auto>` — a single constant model for **every**
+  planning dispatch (the planning role's simplest, most common setting — used
+  because decompose/audit/integration-auditor have no per-task power category
+  to size-route against).
+
+Where `<role>` ∈ `execution | validation | planning`.
+
+**Example:**
+
+```bash
+# Heavy execution work → Opus; everything else inherits the global default.
+tasks project-set-models 7 --execution-heavy claude-opus-4-1 --execution-default auto
+
+# Pin all planning dispatches for project 7 to a cheaper model.
+tasks project-set-models 7 --planning-constant claude-haiku-4
+```
+
+### tasks settings-set-models
+
+Set the **database-wide default** model policy (`PUT /settings/model-policy`).
+Identical flag surface and the same client-side fetch-merge-write semantics as
+`project-set-models` (minus the `<id>` argument). A
+project with no `model_policy` of its own inherits this default; an
+unconfigured default means dispatches inherit the orchestrator's session model
+(the backward-compatible behaviour).
+
+**Example:**
+
+```bash
+tasks settings-set-models --planning-constant auto --validation-default auto
 ```
 
 ## Dependency Commands
@@ -660,7 +734,7 @@ tasks comment-add 42 \
 
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
-| --author | -a | string | Comment author (required, max 100 chars) |
+| --author | -a | string | Comment author (max 100 chars). Required only when no identity can be resolved — with a credentials file present it defaults to the logged-in identity (display name, email fallback), like `tasks create --created-by`. An explicit `--author` always wins. |
 | --content | -c | string | Comment content (required, max 5000 chars) |
 
 **Output:**
@@ -848,12 +922,19 @@ These commands manage the local credentials file used for Bearer (PAT) authentic
 
 ### tasks login
 
-Authenticate with the WFT server via the OAuth device flow. Requests a device code, surfaces a verification URL and user code, best-effort opens a browser, then polls until you approve. On success the minted Personal Access Token is written to the credentials file. The PAT value itself is never printed.
+Authenticate with the WFT server and write a Personal Access Token to the credentials file. The PAT value itself is never printed (stdout or stderr). Two paths:
+
+- **Device flow (default).** Requests a device code, surfaces a verification URL and user code, best-effort opens a browser, then polls until you approve. Used when browser login can complete against the server — that is, an `https` URL or `http://localhost` / `127.0.0.1`.
+- **Manual PAT.** Triggered when you pass `--token <pat>`, *or* automatically when browser login can't complete against the target server (a plain-`http` non-localhost URL — identity providers like Google reject non-`https` OAuth redirect URIs, so the device flow would dead-end). The PAT is validated against `GET /api/v1/me` and persisted to the credentials file. When no `--token` is given on such a server, `login` prints the same `https`-required / how-to-mint-a-PAT guidance `tasks setup` shows, then (on a TTY) prompts you to paste one.
+
+This makes `tasks login` reach parity with `tasks setup --remote`: a remote non-`https` server is no longer a dead end. Both commands share the manual-PAT logic (`canUseBrowserSso` gate + `persistManualPat`), so they can't drift.
+
+> Note: the login-command `--token <pat>` flag (which **persists** a credential) is distinct from the global `--token` flag (which sets a per-invocation Bearer header for outbound API calls and does **not** persist anything). `tasks login --token …` and `tasks --token … login` both reach the manual-PAT persistence path.
 
 **Examples:**
 
 ```bash
-# Standard interactive login
+# Standard interactive device-flow login (https / localhost server)
 tasks login
 
 # Don't auto-open a browser (print the URL only)
@@ -861,23 +942,28 @@ tasks login --no-browser
 
 # Override the server for this login (stored in the credentials file)
 tasks login --server https://tasks.example.com
+
+# Manual PAT — required for a remote plain-http / LAN-IP server where
+# Google SSO can't complete. Validated against /api/v1/me, then persisted.
+tasks login --server http://tasks.example.local:3000 --token wft_pat_…
 ```
 
 **Options:**
 
 | Option | Type | Description |
 |--------|------|-------------|
+| --token | string | Authenticate with a Personal Access Token instead of the device flow (required for remote non-`https` servers). Validated against `GET /api/v1/me`, then stored in the credentials file. |
 | --token-name | string | Name for the minted PAT (advisory in v1.6; reserved for v1.7 explicit naming) |
 | --no-browser | flag | Skip auto-opening the verification URL in a browser |
 | --server | string | Override `API_BASE_URL` for this invocation (persisted to the credentials file) |
 
 **Output:**
 
-In text mode, login chrome (verification URL, user code, progress) is written to **stderr**, so `tasks login && tasks list` keeps stdout clean. On success it prints `Logged in as <displayName>`. With `--json`, a sequence of newline-separated JSON event envelopes is written to stdout (`{event:"pending"}`, optional `{event:"slow_down"}`, then `{event:"logged_in"}` or `{event:"failed"}`).
+In text mode, login chrome (verification URL, user code, progress, or the manual-PAT guidance) is written to **stderr**, so `tasks login && tasks list` keeps stdout clean. On success it prints `Logged in as <displayName>`. With `--json`, a sequence of newline-separated JSON event envelopes is written to stdout — device flow: `{event:"pending"}`, optional `{event:"slow_down"}`, then `{event:"logged_in"}` or `{event:"failed"}`; manual PAT: a single `{event:"logged_in"}` or `{event:"failed"}`.
 
 **Exit codes:**
 
-Returns `0` on a successful login. Returns `1` on an invalid server URL, a failed device-code request, a terminal polling error, or a credentials-write failure.
+Returns `0` on a successful login. Returns `1` on an invalid server URL, a failed device-code request, a terminal polling error, a rejected/unreachable PAT, no PAT supplied on a non-`https` server, or a credentials-write failure.
 
 ### tasks logout
 
@@ -1390,6 +1476,27 @@ the config flag disables it):
   file. Setting it to a falsy value (`0`/`false`/empty) forces the feature on.
 
 When the feature is disabled, `tasks statusline` never appends the update hint.
+
+## Configurable models
+
+The CLI's [Model Commands](#model-commands) (`models list`,
+`project-set-models`, `settings-set-models`) are the low-level surface for the
+**Configurable Task Models** layer. They map onto the MCP model tools
+(`list_models` / `resolve_model` / `get_model_defaults` / `set_model_defaults`
+— see [MCP.md](MCP.md#model-tools-4-tools)) and the model routes in
+[API.md](API.md#models--model-policy-endpoints) (`GET /models`,
+`GET|PUT /settings/model-policy`, `GET /projects/:id/resolve-model`, plus
+`model_policy` on the project routes).
+
+For day-to-day use, prefer the **`/tasks:set-models`** skill — an adaptive
+interview that discovers the live model catalog, asks which roles/categories
+you want to pin, and writes the policy for you via the commands above (project
+scope or global default). The loop skills then resolve each dispatch's model
+through `resolve_model` per
+[loop-shared.md §R](../skills/tasks/loop-shared.md): workers run the
+`execution` role, verifiers the `validation` role, and
+`/tasks:decompose` / `/tasks:audit` / the integration-auditor run the
+`planning` role.
 
 ## Database Administration Commands
 

@@ -463,15 +463,16 @@ describe('tasks setup — modes (task #805)', () => {
     }
   });
 
-  it('--remote runs the Remote path without prompting', async () => {
+  it('--remote --token runs the Remote path without prompting and PERSISTS the credential (#858)', async () => {
     await withTempHomeAsync(async (home) => {
       const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-cfg-'));
       try {
         let prompted = false;
-        // An explicit --remote + --token is the NON-INTERACTIVE direct path: it
-        // writes the URL-only remote entry + caches the PAT with NO OIDC probe
-        // and NO server round-trip. Inject the probe/persist seams as spies so
-        // we can prove the direct path BYPASSES them entirely (works offline).
+        // An explicit --remote + --token is the NON-INTERACTIVE direct manual-PAT
+        // path. It SKIPS the OIDC probe (we already have a PAT) but MUST still
+        // validate + persist the credential — the #858 bug was that it persisted
+        // nothing, writing an orphaned cache instead. Inject the persist seam to
+        // prove the credential write happens; the probe must stay untouched.
         const probeSpy = vi.fn(async () => ({ ok: true, oidc: 'disabled' as const }));
         const persistSpy = vi.fn(async () => ({
           ok: true as const,
@@ -497,19 +498,25 @@ describe('tasks setup — modes (task #805)', () => {
         });
 
         // The mode menu was never consulted (mode was explicit), and the direct
-        // --token path never probed OIDC nor hit /api/v1/me.
+        // --token path skips the OIDC probe...
         expect(prompted).toBe(false);
         expect(probeSpy).not.toHaveBeenCalled();
-        expect(persistSpy).not.toHaveBeenCalled();
+        // ...but it DOES validate + persist the PAT (the fix).
+        expect(persistSpy).toHaveBeenCalledWith('http://tasks.example.local:3000', FAKE_PAT);
         expect(result.mode).toBe('remote');
         if (result.mode === 'remote') {
           expect(result.method).toBe('manual-pat');
           expect(result.ok).toBe(true);
+          expect(result.manualPatIdentity).toEqual({
+            id: 1,
+            displayName: 'Test User',
+            email: null,
+          });
           expect(result.setup?.remote).toBe(true);
           const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
           const remoteEntry = doc.mcpServers['wood-fired-tasks-remote'];
           expect(remoteEntry).toBeDefined();
-          // #810: the PAT is cached separately, never persisted into claude.json.
+          // #810: the PAT is in the credentials file, never in claude.json.
           expect(remoteEntry.env?.WFT_API_KEY).toBeUndefined();
         }
       } finally {

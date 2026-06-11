@@ -103,15 +103,18 @@ describe('WSJF manual override + locks + provenance (#643)', () => {
     expect(row.wsjf_locked).toEqual(allLocks({ value: true, jobSize: true }));
     expect(row.wsjf_source).toEqual(allManualSource());
 
-    // History: exactly one row, trigger='manual', carries lock + source.
+    // History: the bare create now auto-sizes (#989), so the timeline carries a
+    // preceding `auto_size` row; the manual override appends EXACTLY ONE row,
+    // trigger='manual', carrying lock + source. Filter to the manual rows to
+    // assert the manual write in isolation.
     const history = historyRepo.findByTaskId(created.id);
-    expect(history).toHaveLength(1);
-    expect(history[0].trigger).toBe('manual');
-    expect(history[0].source).toEqual(allManualSource());
-    expect(history[0].locked).toEqual(allLocks({ value: true, jobSize: true }));
+    const manualRows = history.filter((h) => h.trigger === 'manual');
+    expect(manualRows).toHaveLength(1);
+    expect(manualRows[0].source).toEqual(allManualSource());
+    expect(manualRows[0].locked).toEqual(allLocks({ value: true, jobSize: true }));
     // No classification/evidence was supplied on the manual path.
-    expect(history[0].classifications).toBeNull();
-    expect(history[0].evidence).toBeNull();
+    expect(manualRows[0].classifications).toBeNull();
+    expect(manualRows[0].evidence).toBeNull();
   });
 
   it('AC2a: a subsequent rescore respects locked components (locked value survives, unlocked component changes)', () => {
@@ -169,10 +172,14 @@ describe('WSJF manual override + locks + provenance (#643)', () => {
       }),
     ).toThrow(ValidationError);
 
-    // Nothing was persisted and no history row was written.
+    // The rejected manual write persisted nothing: the CoD components stay NULL
+    // and NO manual history row was appended. (The bare create auto-sizes (#989),
+    // so the timeline carries an `auto_size` row — filter it out to assert the
+    // manual path wrote nothing.)
     const row = taskRepo.findById(created.id)!;
     expect(row.wsjf_value).toBeNull();
-    expect(historyRepo.countByTaskId(created.id)).toBe(0);
+    const manualRows = historyRepo.findByTaskId(created.id).filter((h) => h.trigger === 'manual');
+    expect(manualRows).toHaveLength(0);
 
     // The manual gate reuses #626's contradiction rule verbatim.
     const direct = validateManualScore({

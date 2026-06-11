@@ -85,6 +85,13 @@ async function main() {
     { actorUserId, userRepository: app.userRepository },
     // Wave 4.1 (#318): topology classifier behind the `topology_check` tool.
     app.topologyService,
+    // Configurable Task Models Task 11 (#920) / #931: the three services
+    // backing the four model tools (list_models, resolve_model,
+    // get/set_model_defaults). The policy resolver is constructed ONCE in
+    // `createApp` — the SAME instance the REST route consumes.
+    app.modelCatalogService,
+    app.modelPolicyService,
+    app.settingsService,
   );
 
   // Create stdio transport

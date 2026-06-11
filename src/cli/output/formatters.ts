@@ -283,6 +283,19 @@ export function formatProjectDetail(project: ProjectResponse): string {
   lines.push(`${bold('Created:')}      ${new Date(project.created_at).toLocaleString()}`);
   lines.push(`${bold('Updated:')}      ${new Date(project.updated_at).toLocaleString()}`);
 
+  // Configurable Task Models (Task 12): show the per-project model policy when
+  // configured. Pretty-printed JSON, indented under the label. `null`/absent
+  // means the project inherits the global default — show a dash.
+  if (project.model_policy) {
+    const json = JSON.stringify(project.model_policy, null, 2)
+      .split('\n')
+      .map((line, i) => (i === 0 ? line : `              ${line}`))
+      .join('\n');
+    lines.push(`${bold('Model Policy:')} ${json}`);
+  } else {
+    lines.push(`${bold('Model Policy:')} - (inherits global default)`);
+  }
+
   return lines.join('\n');
 }
 

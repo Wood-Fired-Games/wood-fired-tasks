@@ -1,9 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../../index.js';
 import { createMcpServer } from '../server.js';
+import { createServer } from '../../api/server.js';
+import { RestClient } from '../remote/rest-client.js';
+import { seedAuth } from '../../api/__tests__/helpers/auth.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { App } from '../../index.js';
+import type { Task } from '../../types/task.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -275,6 +280,89 @@ describe('E2E Regression: Full Task Lifecycle', () => {
     expect(getProjectResult.isError).toBeFalsy();
   });
 
+  // ── Guaranteed-task-sizing gates over the stdio MCP surface (#995) ─────────
+  // These prove the createTask gates (decompose contract, auto-size) behave
+  // through the live stdio MCP transport — not just at the service layer. The
+  // matching REST + remote-proxy assertions live in the suites below; the
+  // cross-surface error-class parity is the point of task #995.
+
+  it('stdio create_task with a decomp-* tag and no wsjf_submission is rejected (decompose gate)', async () => {
+    const createProjectResult = (await client.callTool({
+      name: 'create_project',
+      arguments: { name: 'Decomp Gate Project (stdio)' },
+    })) as ToolResult;
+    const projectId = (createProjectResult.structuredContent as { id: number }).id;
+
+    const result = (await client.callTool({
+      name: 'create_task',
+      arguments: {
+        title: 'Sizeless decompose leaf',
+        project_id: projectId,
+        created_by: 'decompose-skill',
+        // The decompose skill stamps every materialized leaf with a `decomp-*`
+        // tag. Carrying it WITHOUT a `wsjf_submission` is the contract
+        // violation the §1 Prong-A gate rejects (the failure class that minted
+        // 114 sizeless tasks). No `wsjf` / `wsjf_submission` supplied.
+        tags: ['decomp-batch-42'],
+      },
+    })) as ToolResult;
+
+    // The MCP surface collapses the ValidationError to a generic
+    // `MCP error -32602: Validation failed` text (the instructive
+    // `fieldErrors.wsjf_submission` message rides in the JSON-RPC error `data`,
+    // which the SDK client does not fold into `content[0].text`). The verbatim
+    // instructive text is asserted on the REST surface, which DOES surface
+    // `details.wsjf_submission`, in the REST suite below.
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe('text');
+    if (result.content[0].type === 'text') {
+      expect(result.content[0].text).toContain('MCP error');
+      expect(result.content[0].text).toContain('Validation failed');
+    }
+
+    // The gate is a hard reject — no sizeless task was persisted.
+    const tasks = app.taskService.listTasks({ project_id: projectId });
+    expect(tasks).toHaveLength(0);
+  });
+
+  it('stdio create_task without WSJF is auto-sized; get_task shows wsjf_job_size with source auto', async () => {
+    const createProjectResult = (await client.callTool({
+      name: 'create_project',
+      arguments: { name: 'Auto-Size Project (stdio)' },
+    })) as ToolResult;
+    const projectId = (createProjectResult.structuredContent as { id: number }).id;
+
+    // No `wsjf` / `wsjf_submission`. `estimated_minutes: 20` maps via
+    // minutesToTier (>15, <=30) to tier 2.
+    const createResult = (await client.callTool({
+      name: 'create_task',
+      arguments: {
+        title: 'Plain WSJF-less task',
+        project_id: projectId,
+        created_by: 'tester',
+        estimated_minutes: 20,
+      },
+    })) as ToolResult;
+    expect(createResult.isError).toBeFalsy();
+    const taskId = (createResult.structuredContent as { id: number }).id;
+
+    const getResult = (await client.callTool({
+      name: 'get_task',
+      arguments: { id: taskId },
+    })) as ToolResult;
+    expect(getResult.isError).toBeFalsy();
+    const taskData = getResult.structuredContent as {
+      wsjf_job_size: number | null;
+      wsjf_source: { jobSize?: string } | null;
+      wsjf_value: number | null;
+    };
+    // Auto-sized: job size set to the minutes-derived tier with source 'auto',
+    // while the three Cost-of-Delay components stay NULL (honestly unscored).
+    expect(taskData.wsjf_job_size).toBe(2);
+    expect(taskData.wsjf_source?.jobSize).toBe('auto');
+    expect(taskData.wsjf_value).toBeNull();
+  });
+
   it('handles errors gracefully across tool boundaries', async () => {
     // Create project and task for testing
     const createProjectResult = (await client.callTool({
@@ -334,6 +422,145 @@ describe('E2E Regression: Full Task Lifecycle', () => {
     expect(updateResult.isError).toBe(true);
     expect(updateResult.content[0].text).toBeTruthy();
     expect(updateResult.content[0].text).toContain('MCP error');
+  });
+});
+
+describe('E2E Regression: guaranteed-task-sizing gates across REST + remote MCP (#995)', () => {
+  let server: FastifyInstance;
+  let restApp: App;
+  let token: string;
+  let baseUrl: string;
+  let remoteClient: RestClient;
+  let projectId: number;
+
+  beforeAll(async () => {
+    // Real Fastify server on an ephemeral loopback port — the exact pipe both
+    // the REST surface (server.inject) and the remote MCP proxy (RestClient →
+    // fetch) traverse in production. seedAuth mints a real PAT; RestClient
+    // always authenticates via `Authorization: Bearer`.
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    restApp = result.app;
+    baseUrl = await server.listen({ port: 0, host: '127.0.0.1' });
+    token = seedAuth(restApp.db).token;
+    remoteClient = new RestClient(baseUrl, token);
+    projectId = restApp.projectService.createProject({ name: 'Sizing Gates Project' }).id;
+  }, 30_000);
+
+  afterAll(async () => {
+    await server.close();
+    restApp.dispose();
+  });
+
+  /** POST /api/v1/tasks over the live REST surface as the seeded user. */
+  function postTask(payload: Record<string, unknown>) {
+    return server.inject({
+      method: 'POST',
+      url: '/api/v1/tasks',
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+  }
+
+  it('REST POST /api/v1/tasks with a decomp-* tag is rejected with the instructive decompose-gate error', async () => {
+    const res = await postTask({
+      title: 'Sizeless decompose leaf (REST)',
+      project_id: projectId,
+      created_by: 'decompose-skill',
+      tags: ['decomp-batch-99'],
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      error: string;
+      message: string;
+      details: { wsjf_submission?: string[] };
+    };
+    // Same error CLASS as the stdio surface (ValidationError) — here it surfaces
+    // as the VALIDATION_ERROR envelope with the verbatim instructive message
+    // under `details.wsjf_submission`. This is the cross-surface parity #995
+    // proves: identical gate, identical error class, on REST and stdio.
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toBe('Validation failed');
+    expect(body.details.wsjf_submission).toBeDefined();
+    expect(body.details.wsjf_submission?.[0]).toContain("decompose tag 'decomp-batch-99'");
+    expect(body.details.wsjf_submission?.[0]).toContain("no 'wsjf_submission'");
+    expect(body.details.wsjf_submission?.[0]).toContain('re-run decompose Step 8');
+  });
+
+  it('plain REST create auto-sizes the task (wsjf_job_size set, source auto)', async () => {
+    // `estimated_minutes: 20` → minutesToTier tier 2.
+    const res = await postTask({
+      title: 'Plain WSJF-less task (REST)',
+      project_id: projectId,
+      created_by: 'tester',
+      estimated_minutes: 20,
+    });
+    expect(res.statusCode).toBe(201);
+    const created = res.json() as { id: number };
+
+    // NOTE (cross-surface finding): the REST TaskResponse contract
+    // (TaskResponseSchema, src/api/routes/tasks/schemas.ts) deliberately OMITS
+    // every `wsjf_*` column, so the auto-sized job size is not observable on the
+    // REST/remote response body. The auto-size BEHAVIOUR still occurs — asserted
+    // here against the authoritative service row (which the stdio get_task
+    // surface DOES expose, covered in the MCP suite above).
+    const sized = restApp.taskService.getTask(created.id) as Task & {
+      wsjf_job_size: number | null;
+      wsjf_source: { jobSize?: string } | null;
+      wsjf_value: number | null;
+    };
+    expect(sized.wsjf_job_size).toBe(2);
+    expect(sized.wsjf_source?.jobSize).toBe('auto');
+    expect(sized.wsjf_value).toBeNull();
+  });
+
+  it('REST raw-wsjf tier-conflict payload is rejected (conflict gate)', async () => {
+    // estimated_minutes 10 → minutesToTier tier 1, but a RAW wsjf.jobSize of 8
+    // (no source.jobSize='auto', i.e. not submission-derived) disagrees → reject.
+    const res = await postTask({
+      title: 'Conflicting raw wsjf (REST)',
+      project_id: projectId,
+      created_by: 'tester',
+      estimated_minutes: 10,
+      wsjf: { value: 5, timeCriticality: 3, riskOpportunity: 2, jobSize: 8 },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      error: string;
+      message: string;
+      details: { wsjf?: string[] };
+    };
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.details.wsjf).toBeDefined();
+    expect(body.details.wsjf?.[0]).toContain('estimated_minutes 10 maps to job-size tier 1');
+    expect(body.details.wsjf?.[0]).toContain('the supplied wsjf.jobSize is 8');
+  });
+
+  it('REST conflict gate exempts submission-derived (auto-source) writes', async () => {
+    // A submission-derived write stamps source.jobSize='auto'; the gate must
+    // NOT fire even though estimated_minutes (10 → tier 1) disagrees with the
+    // band-chosen jobSize (8). Proves the gate guards only RAW/manual writes.
+    const res = await postTask({
+      title: 'Submission-derived high tier (REST)',
+      project_id: projectId,
+      created_by: 'tester',
+      estimated_minutes: 10,
+      wsjf: {
+        value: 5,
+        timeCriticality: 3,
+        riskOpportunity: 2,
+        jobSize: 8,
+        source: {
+          value: 'auto',
+          timeCriticality: 'auto',
+          riskOpportunity: 'auto',
+          jobSize: 'auto',
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
   });
 });
 
@@ -406,7 +633,7 @@ describe('Skill File Validation', () => {
     }
   });
 
-  it('skill file count matches expected (15 invocable files)', () => {
+  it('skill file count matches expected (17 invocable files)', () => {
     // Update this count when adding or removing a skill file in
     // `skills/tasks/`. The README ("N Claude Code skill files") and
     // docs/MCP.md ("N pre-built skill files") references should be
@@ -448,6 +675,10 @@ describe('Skill File Validation', () => {
     // Task #796 (Phase 4) added `update.md` as an INVOCABLE self-update
     // command (runs `tasks self-update`; action target of the status-line
     // update hint), bumping the invocable count 15 → 16.
+    //
+    // Task #923 (Configurable Task Models, Task 14) added `set-models.md`
+    // as an INVOCABLE adaptive model-policy interview command, bumping the
+    // invocable count 16 → 17.
     const NON_INVOCABLE_DOCS = new Set(['loop-shared.md', 'wsjf-rubric.md']);
     const skillFiles = fs
       .readdirSync(SKILLS_DIR)
@@ -455,7 +686,7 @@ describe('Skill File Validation', () => {
       .filter((f) => !f.startsWith('_'))
       .filter((f) => !NON_INVOCABLE_DOCS.has(f));
 
-    expect(skillFiles).toHaveLength(16);
+    expect(skillFiles).toHaveLength(17);
   });
 
   it('each skill file has workflow steps', () => {

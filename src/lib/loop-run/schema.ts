@@ -71,6 +71,22 @@ export const LoopRunFrontmatterSchema = z.object({
    * schema tests. Emissions WITHOUT this field still parse.
    */
   gate_decision: z.enum(['allowed', 'auto_ordered', 'overridden', 'blocked']).optional(),
+  /**
+   * Configurable task models (project "Configurable Task Models", task #924) —
+   * provenance for the per-role model overrides a run forced via the
+   * `--execution-model` / `--validation-model` / `--planning-model` run-arg
+   * flags (see `skills/tasks/loop-shared.md` §R "Model resolution"). Each field
+   * records the concrete model ref (or the literal `auto`) the run pinned for
+   * that pipeline role's dispatches; absent fields mean the run used per-project
+   * `resolve_model` resolution for that role rather than a forced override.
+   *
+   * Optional + omitted-when-unset (NOT `.nullable()`): a run with no override
+   * for a role emits NOTHING for that key, preserving backward compatibility
+   * with every pre-#924 LOOP-RUN.md emission (which never carried these keys).
+   */
+  execution_model: z.string().min(1).optional(),
+  validation_model: z.string().min(1).optional(),
+  planning_model: z.string().min(1).optional(),
 });
 
 export type LoopRunFrontmatter = z.infer<typeof LoopRunFrontmatterSchema>;

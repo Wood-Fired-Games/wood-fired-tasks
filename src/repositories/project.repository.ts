@@ -1,40 +1,42 @@
 import type Database from '../db/driver.js';
-import type { Project, CreateProjectDTO, ValueCharter } from '../types/task.js';
+import { ModelPolicySchema } from '../schemas/model-policy.schema.js';
+import type { Project, CreateProjectDTO, ValueCharter, ModelPolicy } from '../types/task.js';
 import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
 import type { IProjectRepository, PaginationOptions } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
+import { parseJsonColumn } from '../utils/parse-json-column.js';
 
 /**
- * WSJF (Phase 3.1): parse the JSON-string `value_charter` column into a
- * typed object so callers see a structured value (matching the Project type)
- * instead of having to JSON.parse themselves. Mirrors
- * `parseVerificationEvidence` in task.repository.ts.
- *
- * Defensive: a non-JSON string (corruption / hand-edit) surfaces as `null`
- * rather than crashing the query. Shape validation is enforced by
- * `ValueCharterSchema` on write — read-side parsing trusts the stored bytes.
+ * In-place transform converting the raw TEXT columns `value_charter` and
+ * `model_policy` (string-or-null) into the parsed `ValueCharter | null` /
+ * `ModelPolicy | null` shapes upstream consumers expect (via the shared
+ * `parseJsonColumn`). `value_charter` trusts the stored bytes
+ * (`ValueCharterSchema` validates on write); `model_policy` ALSO validates on
+ * read: `ModelPolicySchema` is `.strict()` and project RESPONSE schemas embed
+ * it, so an unvalidated stored shape (corruption, hand-edit, forward-version
+ * row written by a newer build) would reach fastify-type-provider-zod's
+ * response serializer and turn `GET /projects` into a 500 for every project
+ * over one bad row. Degrading to `null` reads as "no policy → inherit".
+ * Returns a new object so the original row is not mutated.
  */
-function parseValueCharter(raw: string | null | undefined): ValueCharter | null {
-  if (raw === null || raw === undefined) return null;
-  try {
-    return JSON.parse(raw) as ValueCharter;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * In-place transform converting the raw TEXT column `value_charter`
- * (string-or-null) into the parsed `ValueCharter | null` shape upstream
- * consumers expect. Returns a new object so the original row is not mutated.
- */
-function inflateValueCharter<T extends { value_charter?: string | ValueCharter | null }>(
-  project: T,
-): T & { value_charter: ValueCharter | null } {
-  const raw = project.value_charter;
-  const parsed = typeof raw === 'string' ? parseValueCharter(raw) : (raw ?? null);
-  return { ...project, value_charter: parsed };
+function inflateValueCharter<
+  T extends {
+    value_charter?: string | ValueCharter | null;
+    model_policy?: string | ModelPolicy | null;
+  },
+>(project: T): T & { value_charter: ValueCharter | null; model_policy: ModelPolicy | null } {
+  const rawCharter = project.value_charter;
+  const parsedCharter =
+    typeof rawCharter === 'string'
+      ? parseJsonColumn<ValueCharter>(rawCharter)
+      : (rawCharter ?? null);
+  const rawPolicy = project.model_policy;
+  const parsedPolicy =
+    typeof rawPolicy === 'string'
+      ? parseJsonColumn(rawPolicy, ModelPolicySchema)
+      : (rawPolicy ?? null);
+  return { ...project, value_charter: parsedCharter, model_policy: parsedPolicy };
 }
 
 /**
@@ -68,7 +70,7 @@ export class ProjectRepository implements IProjectRepository {
   constructor(private db: Database.Database) {
     // Prepare all statements for reuse
     this.insertStmt = db.prepare(
-      'INSERT INTO projects (name, description, value_charter) VALUES (@name, @description, @value_charter)',
+      'INSERT INTO projects (name, description, value_charter, model_policy) VALUES (@name, @description, @value_charter, @model_policy)',
     );
     this.findByIdStmt = db.prepare('SELECT * FROM projects WHERE id = ?');
     this.findByNameStmt = db.prepare('SELECT * FROM projects WHERE name = ?');
@@ -82,6 +84,7 @@ export class ProjectRepository implements IProjectRepository {
       name: dto.name,
       description: dto.description ?? null,
       value_charter: dto.value_charter == null ? null : JSON.stringify(dto.value_charter),
+      model_policy: dto.model_policy == null ? null : JSON.stringify(dto.model_policy),
     });
     const project = this.findById(info.lastInsertRowid as number);
     if (!project) {
@@ -92,8 +95,9 @@ export class ProjectRepository implements IProjectRepository {
 
   findById(id: number): Project | null {
     const row = mapRow<
-      Omit<Project, 'value_charter'> & {
+      Omit<Project, 'value_charter' | 'model_policy'> & {
         value_charter: string | null;
+        model_policy: string | null;
       }
     >(this.findByIdStmt, id);
     return row ? inflateValueCharter(row) : null;
@@ -101,11 +105,12 @@ export class ProjectRepository implements IProjectRepository {
 
   findAll(pagination?: PaginationOptions): Project[] {
     const { limit, offset } = resolvePagination(pagination);
-    const rows = mapRows<Omit<Project, 'value_charter'> & { value_charter: string | null }>(
-      this.findAllStmt,
-      limit,
-      offset,
-    );
+    const rows = mapRows<
+      Omit<Project, 'value_charter' | 'model_policy'> & {
+        value_charter: string | null;
+        model_policy: string | null;
+      }
+    >(this.findAllStmt, limit, offset);
     return rows.map(inflateValueCharter);
   }
 
@@ -118,8 +123,9 @@ export class ProjectRepository implements IProjectRepository {
 
   findByName(name: string): Project | null {
     const row = mapRow<
-      Omit<Project, 'value_charter'> & {
+      Omit<Project, 'value_charter' | 'model_policy'> & {
         value_charter: string | null;
+        model_policy: string | null;
       }
     >(this.findByNameStmt, name);
     return row ? inflateValueCharter(row) : null;
@@ -145,6 +151,14 @@ export class ProjectRepository implements IProjectRepository {
       fields.push('value_charter = @value_charter');
       params['value_charter'] =
         updates.value_charter === null ? null : JSON.stringify(updates.value_charter);
+    }
+    // Configurable Task Models: patch model_policy. `undefined` (key absent)
+    // leaves the column untouched; explicit `null` clears it; an object is
+    // serialized to JSON. Mirrors the value_charter patch above.
+    if (updates.model_policy !== undefined) {
+      fields.push('model_policy = @model_policy');
+      params['model_policy'] =
+        updates.model_policy === null ? null : JSON.stringify(updates.model_policy);
     }
 
     // Always update the updated_at timestamp

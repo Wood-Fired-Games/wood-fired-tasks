@@ -95,8 +95,10 @@ Treat these as off-limits unless your task explicitly requires touching them.
 ## Task-orchestration skills (`/tasks:*`)
 
 This repo ships agent skills under `skills/tasks/` that automate the
-plan→execute→audit loop over a wood-fired-tasks project. They install to
-`~/.claude/commands/tasks/` via `install.sh`. The orchestration set:
+plan→execute→audit loop over a wood-fired-tasks project. They are copied to
+`~/.claude/commands/tasks/` by `wood-fired-tasks setup` (the published-npm
+install path; the old root `install.sh` is a deprecated shim that just delegates
+to `setup`). The orchestration set:
 
 | Skill | Status | One-line purpose |
 |---|---|---|

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toStructuredContent } from '../lib/structured-content.js';
 import { ProjectService } from '../../services/project.service.js';
 import { CreateProjectSchema, ValueCharterNullableSchema } from '../../schemas/project.schema.js';
+import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
@@ -144,14 +145,17 @@ export function registerProjectTools(server: McpServer, projectService: ProjectS
     {
       description:
         'Update an existing project by ID. Can update name, description, ' +
-        'and/or the WSJF `value_charter` (pass null to clear it). A malformed ' +
-        'charter (e.g. a non-Fibonacci theme weight) is rejected.',
+        'the WSJF `value_charter` (pass null to clear it), and/or the ' +
+        '`model_policy` (per-project model routing; pass null to clear it). A ' +
+        'malformed charter (e.g. a non-Fibonacci theme weight) or model_policy ' +
+        'is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
         updates: z.object({
           name: z.string().min(1).max(200).optional(),
           description: z.string().max(5000).optional().nullable(),
           value_charter: ValueCharterNullableSchema.optional(),
+          model_policy: ModelPolicyNullableSchema.optional(),
         }),
       }),
     },

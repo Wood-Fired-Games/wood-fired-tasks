@@ -237,4 +237,138 @@ describe('TaskService - claimTask', () => {
       expect(['agent-1', 'agent-2']).toContain(claimedTask.assignee);
     });
   });
+
+  // Task #1003: claim renewal (heartbeat) — a same-assignee re-claim of a
+  // task already held in_progress refreshes claimed_at (extending the TTL)
+  // instead of throwing the already-claimed conflict.
+  describe('claim renewal (same-assignee re-claim, task #1003)', () => {
+    /** Backdate the claim window via SQL so a refresh is observable. */
+    function backdateClaim(taskId: number, minutes: number): void {
+      app.db
+        .prepare(
+          `UPDATE tasks
+           SET claimed_at = datetime('now', ?), updated_at = datetime('now', ?)
+           WHERE id = ?`,
+        )
+        .run(`-${minutes} minutes`, `-${minutes} minutes`, taskId);
+    }
+
+    it('same-assignee re-claim succeeds and refreshes claimed_at', () => {
+      const task = taskService.createTask({
+        title: 'Renewal Task',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+
+      const claimed = taskService.claimTask(task.id, 'agent-1');
+      backdateClaim(task.id, 10);
+      const stale = taskService.getTask(task.id);
+
+      const renewed = taskService.claimTask(task.id, 'agent-1');
+
+      expect(renewed.assignee).toBe('agent-1');
+      expect(renewed.status).toBe('in_progress');
+      expect(renewed.claimed_at).toBeTruthy();
+      // claimed_at moved forward off the backdated value.
+      expect(renewed.claimed_at).not.toBe(stale.claimed_at);
+      // Renewal is a write like any other: version bumps.
+      expect(renewed.version).toBe(claimed.version + 1);
+    });
+
+    it('re-claim by a DIFFERENT assignee still throws BusinessError', () => {
+      const task = taskService.createTask({
+        title: 'Held Task',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+
+      taskService.claimTask(task.id, 'agent-1');
+
+      expect(() => taskService.claimTask(task.id, 'agent-2')).toThrow(BusinessError);
+
+      // Holder unchanged.
+      const after = taskService.getTask(task.id);
+      expect(after.assignee).toBe('agent-1');
+      expect(after.status).toBe('in_progress');
+    });
+
+    it('renewal emits task.claimed with the refreshed task', () => {
+      const task = taskService.createTask({
+        title: 'Renewal Event Task',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      taskService.claimTask(task.id, 'agent-1');
+
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+      const renewed = taskService.claimTask(task.id, 'agent-1');
+
+      expect(emitSpy).toHaveBeenCalledWith('task.claimed', {
+        eventType: 'task.claimed',
+        timestamp: expect.any(String),
+        data: renewed,
+        metadata: { source: 'user' },
+      });
+
+      emitSpy.mockRestore();
+    });
+  });
+
+  // Task #1003: claim-TTL visibility — getTask surfaces claim_ttl_minutes +
+  // claim_remaining_seconds (read-time computed) while a claim is active.
+  describe('getTask claim-TTL visibility (task #1003)', () => {
+    it('surfaces claim_ttl_minutes and claim_remaining_seconds on a claimed task', () => {
+      const task = taskService.createTask({
+        title: 'TTL Visible Task',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      taskService.claimTask(task.id, 'agent-1');
+
+      const fetched = taskService.getTask(task.id);
+      expect(fetched.claim_ttl_minutes).toBe(30);
+      expect(fetched.claim_remaining_seconds).toBeGreaterThan(0);
+      expect(fetched.claim_remaining_seconds).toBeLessThanOrEqual(30 * 60);
+    });
+
+    it('omits the TTL fields on an unclaimed task', () => {
+      const task = taskService.createTask({
+        title: 'Unclaimed Task',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+
+      const fetched = taskService.getTask(task.id);
+      expect(fetched.claim_ttl_minutes).toBeUndefined();
+      expect(fetched.claim_remaining_seconds).toBeUndefined();
+    });
+
+    it('remaining seconds shrink with claim age and reset on renewal', () => {
+      const task = taskService.createTask({
+        title: 'TTL Countdown Task',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      taskService.claimTask(task.id, 'agent-1');
+
+      // Age the claim window to 29 of the 30 minutes → ~60s remaining.
+      app.db
+        .prepare(
+          `UPDATE tasks
+           SET claimed_at = datetime('now', '-29 minutes'),
+               updated_at = datetime('now', '-29 minutes')
+           WHERE id = ?`,
+        )
+        .run(task.id);
+
+      const aged = taskService.getTask(task.id);
+      expect(aged.claim_remaining_seconds).toBeGreaterThanOrEqual(0);
+      expect(aged.claim_remaining_seconds).toBeLessThanOrEqual(120);
+
+      // A same-assignee renewal restarts the window.
+      taskService.claimTask(task.id, 'agent-1');
+      const renewed = taskService.getTask(task.id);
+      expect(renewed.claim_remaining_seconds).toBeGreaterThan(25 * 60);
+    });
+  });
 });

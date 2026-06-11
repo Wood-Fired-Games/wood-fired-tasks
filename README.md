@@ -15,8 +15,8 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 **Key capabilities:**
 
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
-- MCP server with 27 tools for native agent integration (local SQLite or remote HTTP modes) + cross-platform installers (Linux/macOS and Windows)
-- REST API with 52 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 45 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 42 commands
+- MCP server with 31 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
+- REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 45 commands
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
@@ -62,25 +62,58 @@ Coding agents (Claude Code, Cursor, Gemini, Codex, and others) should start with
 2. [docs/AGENT_CONTEXT.md](docs/AGENT_CONTEXT.md) — the vendor-neutral context contract.
 3. [.agent-context.json](.agent-context.json) — machine-readable manifest of canonical files and their budgets.
 
-Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are adapters and MUST NOT carry unique facts — see `docs/AGENT_CONTEXT.md` §6.
+A root [`llms.txt`](llms.txt) (the emerging agent-discovery convention) also
+points here, and both it and the curated agent docs ship inside the npm tarball.
+Vendor-specific files (`CLAUDE.md`, `.cursor/`, `.gemini/`, `.codex/`) are
+adapters and MUST NOT carry unique facts — see `docs/AGENT_CONTEXT.md` §6.
 
-## Quick Start
+## Install & run modes
 
-Install from npm — **no git clone, no build, no admin rights.** The global
-install ships the server, the `tasks` CLI, the MCP bridge, and the `/tasks:*`
-skills together; `setup` wires them into Claude Code and `serve` runs the API.
+**One install, no git clone, no build, no admin rights.** Installing from npm
+ships the API server, the `tasks` CLI, the MCP bridge, the `wft-router`
+automation daemon, and the `/tasks:*` skills together — the *same* install backs
+every way you might run it.
 
 ```bash
-# 1. Install the CLI globally (never needs sudo — see the admin-free note below)
-npm i -g wood-fired-tasks
+npm i -g wood-fired-tasks      # never needs sudo — see the admin-free note below
+```
 
-# 2. Wire it into Claude Code: merges the local stdio MCP server into
-#    ~/.claude.json and copies the /tasks:* skills + subagents — idempotent,
-#    no manual JSON editing.
+This puts three identical CLI entry points on your PATH — `wood-fired-tasks`,
+`tasks`, and the short alias `wft` — plus `wft-router`. Requires **Node ≥ 22**;
+works on Linux, macOS, and Windows. (There is no `curl | bash` bootstrap and the
+old `install.sh` / `install.ps1` git-clone scripts are retired — npm is the one
+supported install path.)
+
+### Pick how to run it
+
+The install is the same everywhere; what differs is *where the database and API
+server live*. Pick the row that matches your environment:
+
+| Run mode | Use it when | After installing, run | Guide |
+|----------|-------------|-----------------------|-------|
+| **Solo / local** | You want a tracker on your own machine, backed by a local SQLite DB. | `wood-fired-tasks setup` → `wood-fired-tasks serve` | [Local setup](docs/SETUP.md#frictionless-install-npm--no-clone) |
+| **Background service** | Keep the local API running across logout/reboot (user-scoped, admin-free). | `wood-fired-tasks service install` | [Background service](docs/SETUP.md#background-service-keep-the-server-running) |
+| **Remote client** | A shared server already exists — point this machine at it. | `wood-fired-tasks setup --remote <url> --token wft_pat_…`  *(or `tasks login`)* | [Setup modes](docs/SETUP.md#setup-modes) |
+| **Self-hosted server** | Stand up the shared API for a team to point at. | `deploy/install.sh` on the host | [Self-hosting & upgrades](docs/SETUP.md#self-hosting-and-upgrades) |
+| **Multi-OS fleet** | Many Windows/Linux/macOS machines on one shared backlog. | self-host once, then `setup --remote` per client | [Multi-OS fleet](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server) |
+
+> **New here? Start with Solo / local** — three commands and the `/tasks:*`
+> workflow is live in Claude Code. Nothing is wasted if you move to a shared
+> server later: the modes coexist (a Local stdio entry and a Remote bridge entry
+> can both live in `~/.claude.json` at once).
+
+### Solo / local — fastest start
+
+After `npm i -g wood-fired-tasks` (above), two commands wire it into Claude Code
+and run the server:
+
+```bash
+# Merge the local stdio MCP server into ~/.claude.json and copy the /tasks:*
+# skills + subagents — idempotent, no manual JSON editing.
 wood-fired-tasks setup
 
-# 3. Run the API server. Migrates the OS app-data DB on start and listens on
-#    127.0.0.1:3000 (set HOST=0.0.0.0 to expose on the LAN).
+# Run the API. Migrates the OS app-data DB on start; listens on 127.0.0.1:3000
+# (set HOST=0.0.0.0 to expose on the LAN).
 wood-fired-tasks serve
 ```
 
@@ -110,18 +143,16 @@ user scope.
 
 ```bash
 wood-fired-tasks service install   # Linux: user-scoped systemd unit (admin-free)
-wood-fired-tasks self-update       # npm i -g wood-fired-tasks@latest (no sudo)
+wood-fired-tasks self-update       # npm i -g @latest + re-sync skills (no sudo)
 ```
 
-**Point at a shared remote server** instead of running it locally:
-
-```bash
-wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…
-```
-
-This writes a `wood-fired-tasks-remote` MCP entry (proxying every tool to the
-REST API) and caches the PAT under your OS config dir. For a full
-Windows/Linux/macOS fleet on one on-prem server, see
+**Point at a shared remote server** (the *Remote client* mode above) with
+`wood-fired-tasks setup --remote https://tasks.example.com --token wft_pat_…`: it
+writes a URL-only `wood-fired-tasks-remote` MCP entry (proxying every tool to the
+REST API) and persists the validated PAT to the CLI credentials file — the same
+file `tasks login` writes; the bridge reads its bearer token from there at
+runtime, never from `~/.claude.json`. Omit `--token` for the interactive
+device-flow / manual-PAT onboarding. Full fleet recipe:
 [Multi-OS client fleet](docs/SETUP.md#multi-os-client-fleet-one-shared-on-prem-server).
 
 Browse the bundled guides from anywhere with `wood-fired-tasks docs list` /
@@ -281,7 +312,7 @@ flowchart TB
 | Interface | Access Method | Transport | Auth |
 |-----------|--------------|-----------|------|
 | REST API | HTTP endpoints | Port 3000 (configurable) | PAT (`Authorization: Bearer`) or OIDC session cookie |
-| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | `API_KEY` env var (holds a PAT, sent as `Authorization: Bearer`) |
+| CLI | `tasks` command | HTTP to API server (most cmds); direct SQLite for offline ops (`backup`, `doctor`, `stats`, `db-check`, `completed`) | Credentials file from `tasks login` / `setup --remote --token` (preferred); else `API_KEY` env or `--token` flag — each a PAT sent as `Authorization: Bearer` |
 | MCP Server | stdio JSON-RPC (local) or HTTP (remote variant) | MCP client integration | None for stdio (local access); Bearer PAT for remote |
 | Slack subprocess | Slack Socket Mode | WebSocket to Slack | Slack signing secret + bot token |
 
@@ -423,7 +454,7 @@ The OIDC/session/PAT surface backing the auth model lives partly outside the tas
 
 A device-authorization flow under `/auth/device*` (`GET /auth/device`, `POST /auth/device/code`, `POST /auth/device/token`, `POST /auth/device/verify`) supports headless PAT minting. When OIDC is **not** configured, the `/auth/*` and `/auth/device/*` routes are replaced by disabled-stub handlers (HTTP 501), so they exist in both modes but only one set is live per instance. When `SESSION_COOKIE_SECRET` is set, top-level HTML web routes (`GET /login`, `GET /me`, `GET /me/tokens`, `POST /me/tokens/:id/revoke`) are also served for the browser sign-in UI.
 
-This brings the full registered surface to **52 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **45** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
+This brings the full registered surface to **59 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **52** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
 
 For detailed API documentation including request/response schemas, see [docs/API.md](docs/API.md).
 
@@ -431,11 +462,12 @@ For detailed API documentation including request/response schemas, see [docs/API
 
 The `tasks` command provides terminal access to all task operations.
 
-Every `tasks <command>` example below is shorthand for `npm run cli -- <command>`
-(everything after `--` is forwarded verbatim). Running `npm link` once from the
-project root is **optional** — it installs a global `tasks` command so the
-examples work verbatim from any directory. See [docs/CLI.md](docs/CLI.md) for the
-full reference.
+If you installed from npm (`npm i -g wood-fired-tasks`), the `tasks`, `wft`, and
+`wood-fired-tasks` commands are already on your PATH and every `tasks <command>`
+example below works verbatim. Working from a clone instead? Use
+`npm run cli -- <command>` (everything after `--` is forwarded verbatim), or run
+`npm link` once from the project root to install a global `tasks`. See
+[docs/CLI.md](docs/CLI.md) for the full reference.
 
 **Global Flags:**
 - `--json` - Output in machine-readable JSON format
@@ -505,7 +537,7 @@ full reference.
 
 | Command | Description |
 |---------|-------------|
-| tasks login | OIDC sign-in; caches a PAT to the local credentials file |
+| tasks login | OIDC device-flow sign-in, or `--token <pat>` for a manual PAT (required for remote non-`https` servers); writes a PAT to the local credentials file |
 | tasks logout | Revoke the active PAT and clear the local credentials |
 | tasks whoami | Show the currently authenticated identity |
 
@@ -528,7 +560,7 @@ For detailed CLI documentation including all options and examples, see [docs/CLI
 
 ## MCP Tools Summary
 
-The MCP server exposes 27 tools and 1 resource for Claude Code integration — Task (9), Project (5), Comment (3), Dependency (3), Health (1), Topology (1), Wait (1), and WSJF (4). A second entry point (`npm run mcp:remote`) exposes the REST-backed tool surface (also 27 tools at full parity; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
+The MCP server exposes 31 tools and 1 resource for Claude Code integration — Task (9), Project (5), Comment (3), Dependency (3), Health (1), Topology (1), Wait (1), WSJF (4), and Model (4). A second entry point (`npm run mcp:remote`) exposes the same 31 tools REST-backed (the four Model tools proxy `GET /models`, `GET /projects/:id/resolve-model`, and `GET|PUT /settings/model-policy`; `wait_for_unblock` resolves over the SSE event stream rather than the in-process EventBus) for clients running on a different host than the bugs API — see [docs/MCP.md#remote-mcp-server](docs/MCP.md#remote-mcp-server).
 
 ### Task Tools (9)
 
@@ -597,6 +629,15 @@ The MCP server exposes 27 tools and 1 resource for Claude Code integration — T
 | rescore_project | (Mutation) Deterministically rescore a project's scored tasks against the current value charter; skips locked components; returns evaluated/changed/skipped-locked counts |
 | wsjf_health | Non-blocking degeneracy/pitfall linter for a project's WSJF state (empty findings ⇔ healthy) |
 
+### Model Tools (4)
+
+| Tool | Description |
+|------|-------------|
+| list_models | Runtime-discovered Claude model catalog (Anthropic Models API, TTL-cached); `stale: true` when serving the static fallback |
+| resolve_model | Resolve the model for a pipeline role (`execution` \| `validation` \| `planning`) for a project, optionally task-scoped for jobSize→category routing; returns `{ model }` or `null` (inherit the session model) |
+| get_model_defaults | Read the database-wide default `ModelPolicy` (`null` when unset) |
+| set_model_defaults | (Mutation) Set or clear the database-wide default `ModelPolicy` |
+
 ### Resources (1)
 
 | URI | Description |
@@ -617,7 +658,8 @@ Wood Fired Tasks streams real-time task and project change notifications via Ser
 | task.updated | Task fields modified |
 | task.deleted | Task deleted |
 | task.status_changed | Task status transition |
-| task.claimed | Task claimed by agent |
+| task.claimed | Task claimed by agent (also emitted on a same-assignee claim renewal) |
+| task.claim_released | Stale claim auto-released by the TTL sweep (carries `previous_assignee`, `expired_claimed_at`, `released_at`) |
 | project.created | New project created |
 | project.updated | Project modified |
 | project.deleted | Project deleted |
@@ -729,66 +771,39 @@ variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#envi
 ### Key Commands
 
 ```bash
-# Development mode with hot reload
-npm run dev
-
-# Run tests (~2600+ tests)
-npm test
-
-# Watch mode for tests
-npm run test:watch
-
-# Build TypeScript
-npm run build
-
-# Run CLI in development (without building)
-npm run cli -- <command>
-
-# Run MCP server in development
-npm run mcp:dev
+npm run dev              # REST API, hot reload      npm run build   # typecheck + compile
+npm test                 # full suite (~3,700+)      npm run mcp:dev # MCP server (stdio)
+npm run cli -- <command> # run the CLI in-tree       npm run lint    # biome check
 ```
+
+The canonical command table (focused tests, migrations, quality gate) lives in
+[AGENTS.md → Essential commands](AGENTS.md#essential-commands).
 
 ### Database
 
-SQLite with better-sqlite3 driver, WAL mode, and automatic migrations via Umzug. Fifteen migration files in `src/db/migrations/`:
-
-1. `001-initial-schema.ts` — projects, tasks, task_tags (plus the tasks_fts FTS5 virtual table and sync triggers)
-2. `002-task-hierarchy-and-dependencies.ts` — adds `parent_task_id` to tasks and creates the `task_dependencies` table
-3. `003-comments-and-estimates.ts` — creates the `task_comments` table and adds `estimated_minutes` to tasks
-4. `004-claim-protocol.ts` — version field, claimed_at, idempotency_keys table
-5. `005-backlogged-status.ts` — adds `backlogged` to the status CHECK constraint (rebuilds tasks table; preserves FTS triggers)
-6. `006-slack-channel-subscriptions.ts` — `slack_channel_subscriptions` table for the Slack notifier
-7. `007-completed-at.ts` — `completed_at` column on tasks (set on transition into `done`, backfilled from `updated_at`)
-8. `008-identity-tables.ts` — `users` and `api_tokens` tables (OIDC/PAT identity)
-9. `009-parallel-fk-columns.ts` — parallel `*_user_id` FK columns alongside the legacy TEXT identity columns
-10. `010-identity-uniqueness-indexes.ts` — uniqueness indexes on user identity (oidc_sub, email)
-11. `011-acceptance-criteria.ts` — `acceptance_criteria` column on tasks
-12. `012-verification-evidence.ts` — `verification_evidence` column on tasks (verifier verdict + checks)
-13. `013-wsjf-fields.ts` — adds the per-task WSJF columns: four Fibonacci-constrained component columns (`wsjf_value`, `wsjf_time_criticality`, `wsjf_risk_opportunity`, `wsjf_job_size`) plus five JSON metadata columns (`wsjf_evidence`, `wsjf_locked`, `wsjf_source`, `wsjf_classifications`, `wsjf_features`); all-four-or-none invariant enforced at the DTO boundary
-14. `014-value-charter.ts` — adds the nullable `value_charter` JSON column on `projects` (the per-project Business-Value reference frame)
-15. `015-wsjf-audit.ts` — creates the three append-only audit tables: `wsjf_rescore_run`, `wsjf_score_history` (one immutable row per score write), and `project_charter_history` (full charter snapshot per interview version)
+SQLite with the better-sqlite3 driver, WAL mode, and automatic forward
+migrations via Umzug. The 15 migration files in `src/db/migrations/` are the
+canonical, self-documenting schema history — from `001-initial-schema` (projects,
+tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance
+criteria + verification evidence (`011`–`012`), and the WSJF columns, value
+charter, and append-only audit tables (`013`–`015`). Read the files directly for
+exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how they fit
+together.
 
 ### Testing
 
-~2600+ tests covering:
-- Service layer unit tests
-- API route integration tests (all endpoints)
-- MCP tool tests (all tools)
-- CLI command tests
-- Event system tests (EventBus, SSEManager, events API)
-- Claim protocol tests (including 20-agent concurrency)
-- Workflow engine tests (auto-complete, auto-unblock, cascade depth)
-- Skill file validation tests
+~3,700+ vitest tests span the service layer, every API route, every MCP tool,
+the CLI, the event system (EventBus/SSEManager), the claim protocol (including
+20-agent concurrency), the workflow engine (auto-complete/auto-unblock/cascade
+depth), and skill-file validation. Run `npm test`; see
+[docs/WORKFLOWS.md](docs/WORKFLOWS.md) for focused-run recipes.
 
 ### Code Quality Roadmap
 
-The current TypeScript service quality baseline and the prioritized
-uplift roadmap (lint/format gate, stricter compiler flags, architecture
-guardrails, migration safety, CI/release automation) live in
-[docs/CODE_QUALITY_ROADMAP.md](docs/CODE_QUALITY_ROADMAP.md). It is the
-source of truth for the `Code Quality Uplift Roadmap` project tracked
-in the bugs database and should be linked from future PR/release
-quality checklist work.
+The TypeScript quality baseline and the prioritized uplift roadmap (lint/format
+gate, stricter compiler flags, architecture guardrails, migration safety,
+CI/release automation) live in
+[docs/CODE_QUALITY_ROADMAP.md](docs/CODE_QUALITY_ROADMAP.md).
 
 ## Integrations
 
@@ -810,7 +825,7 @@ slash-command reference, channel subscription model, error handling.
 ### Claude Code (MCP)
 
 The shipped MCP server registers as a stdio MCP target in `~/.claude.json`
-and exposes 27 tools plus the `/tasks:*` skill files. See
+and exposes 31 tools plus the `/tasks:*` skill files. See
 [docs/MCP.md](docs/MCP.md) and the "Claude Code Integration" section in
 [docs/SETUP.md](docs/SETUP.md#claude-code-integration).
 
@@ -834,12 +849,11 @@ guarantee.
 
 ## Release Verification
 
-Before publishing to npm, run `npm run pack:check` (alias for
-`npm pack --dry-run`) and inspect the printed file list. Confirm that
-`dist/` JS + `.d.ts` files, `LICENSE`, `README.md`, `CHANGELOG.md`, and
-`SECURITY.md` are present, and that `src/`, `.env*`, `data/*.db`,
-`.planning/`, and test files are **absent**. The package uses an explicit
-`files` allowlist in `package.json` — adjust it there if the output drifts.
+Before publishing, `npm run pack:check` (`npm pack --dry-run`) prints the tarball
+file list — confirm `dist/` + `.d.ts`, `LICENSE`, `README.md`, `CHANGELOG.md`,
+`SECURITY.md` are present and `src/`, `.env*`, `data/*.db`, `.planning/`, and
+tests are absent. The `files` allowlist in `package.json` controls this. Full
+release procedure: [docs/RELEASE.md](docs/RELEASE.md).
 
 ## License
 

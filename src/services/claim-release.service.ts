@@ -3,6 +3,18 @@ import { eventBus } from '../events/event-bus.js';
 import type { Task } from '../types/task.js';
 
 /**
+ * Default claim TTL in minutes. A claimed `in_progress` task with no
+ * activity (no `updated_at` change AND no `claimed_at` refresh) for this
+ * long is auto-released back to `open` by the sweep.
+ *
+ * Task #1003: exported so the task read path (TaskService.getTask) can
+ * surface the TTL + remaining seconds to `get_task` consumers, and so the
+ * holder knows the renewal cadence (re-claim with the same assignee before
+ * this window elapses to extend the claim).
+ */
+export const DEFAULT_CLAIM_TTL_MINUTES = 30;
+
+/**
  * ClaimReleaseService - auto-releases stale task claims after a configurable timeout.
  *
  * Tasks that have been claimed but show no activity (no updated_at changes)
@@ -14,7 +26,7 @@ export class ClaimReleaseService {
 
   constructor(
     private db: Database.Database,
-    private timeoutMinutes: number = 30,
+    private timeoutMinutes: number = DEFAULT_CLAIM_TTL_MINUTES,
   ) {}
 
   /**
@@ -74,10 +86,28 @@ export class ClaimReleaseService {
         if (task) {
           const { tags_csv, ...taskData } = task;
           const tags = tags_csv ? tags_csv.split(',').sort() : [];
+          const releasedAt = new Date().toISOString();
           eventBus.emit('task.updated', {
             eventType: 'task.updated',
-            timestamp: new Date().toISOString(),
+            timestamp: releasedAt,
             data: { ...taskData, tags },
+            metadata: { source: 'workflow' },
+          });
+          // Task #1003: dedicated TTL-expiry event so the former holder and
+          // wft-router rules can distinguish "my claim lapsed" from a generic
+          // update. SSE-visible via the same eventBus → SSEManager relay as
+          // task.status_changed (see src/api/server.ts) and filterable with
+          // `event_types=task.claim_released`.
+          eventBus.emit('task.claim_released', {
+            eventType: 'task.claim_released',
+            timestamp: releasedAt,
+            data: {
+              ...taskData,
+              tags,
+              previous_assignee: claim.assignee,
+              expired_claimed_at: claim.claimed_at,
+              released_at: releasedAt,
+            },
             metadata: { source: 'workflow' },
           });
         }

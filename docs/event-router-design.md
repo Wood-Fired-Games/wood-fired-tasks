@@ -160,6 +160,7 @@ defaults:                  # applied to every rule unless overridden
   idempotency_window_s: 3600
   max_dispatches_per_minute: 60
   max_retries: 3
+  sweep_on_start: false    # opt-in cold-start sweep (see §"Cold-start sweep")
 
 rules:
   - name: engine-epic-closed-kicks-platform
@@ -440,6 +441,36 @@ a documented gap signal on reconnect, the router logs `WARN
 cursor_gap=...` and resumes from the head of the stream; operators
 backfill via the post-v1 `wft-router replay --since <ts>` subcommand.
 
+### Cold-start sweep (`sweep_on_start`)
+
+Live rules only fire on events; an OPEN backlog that predates the
+wiring — or arrived while the router was down (resume is bounded by the
+SSE retention window) — never kicks anyone. **Opt-in** fix: set
+`sweep_on_start: true` on a rule (or under `defaults:`; default `false`,
+zero behavior change when absent) and the daemon runs a ONE-SHOT sweep on
+startup: it queries `GET /api/v1/tasks?status=open` (narrowed by
+`project`/`assignee` where the predicate allows), evaluates the rule's
+full `where:` block against each row with the live predicate evaluator,
+and — when any match — synthesizes **at most one** dispatch per rule
+through the normal pipeline (debounce → rate-limit → handler →
+idempotency claim).
+
+Sweep identity: `event_id = sweep:<rule_name>:<bucket>` with
+`bucket = floor(now_ms / (idempotency_window_s × 1000))`. The store's
+primary key `(rule_name, event_id)` then guarantees a second restart in
+the same bucket is SUPPRESSED at claim time (zero kicks), while a later
+start (bucket rolled) may kick again — i.e. at most one sweep dispatch
+per rule per window-length bucket; buckets are absolute, so a restart
+that straddles a bucket boundary may kick before a full window elapses.
+
+The synthesized payload carries `metadata.to` = the task's status (an
+open task is treated "as if it just arrived at open", so
+`to_status: open` wake rules match); `metadata.from` / `source` are
+absent, so history-probing predicates fail closed and never
+sweep-dispatch. A sweep transport failure logs
+`wft_router_sweep_failed` and is isolated per rule — it never blocks
+the live SSE pipeline.
+
 ### Backoff + reachability
 
 Exponential with jitter, max 60 s. Daemon exits 4 if the endpoint is
@@ -488,11 +519,22 @@ backlog.
   explicitly set; no built-in auth (the operator's reverse proxy owns
   that). Counters (all carry the `wft_router_` prefix in the exposition
   output, e.g. `wft_router_dispatched_total`): `events_received_total`,
-  `matched_rules_total`, `dispatched_total` (labelled `{handler,status}`),
-  `handler_errors_total` (labelled `{handler}`), `rate_limit_dropped_total`
-  (labelled `{rule}`), `permanently_failed_total` (labelled `{rule}`).
+  `events_received_by_kind_total` (labelled `{kind}` ∈ mappable / control /
+  unmappable — control = server keep-alive pings, which prove the socket
+  is alive but NOT that delivery works), `matched_rules_total`,
+  `dispatched_total` (labelled `{handler,status}`), `handler_errors_total`
+  (labelled `{handler}`), `rate_limit_dropped_total` (labelled `{rule}`),
+  `permanently_failed_total` (labelled `{rule}`). Gauges:
+  `wft_router_last_real_event_age_seconds` (seconds since the last
+  MAPPABLE domain event; alert on it to catch a deaf-but-pinging stream)
+  and `process_start_time_seconds` (standard Prometheus process-start
+  convention, so operators can tell a fresh process's small counters from
+  stale history). Opt-in self-heal: `--stale-resubscribe-after <s>` (or
+  `WFT_ROUTER_STALE_RESUBSCRIBE_AFTER`) re-opens the SSE subscription —
+  resume id preserved — when no real event arrived for `<s>` seconds
+  while control pings kept flowing; 0/absent = disabled.
   Histograms (handler latency, debounce coalescing) are DEFERRED — the
-  counters above are what the `/metrics` endpoint currently exposes.
+  series above are what the `/metrics` endpoint currently exposes.
 
 ### Config validation
 

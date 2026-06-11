@@ -56,7 +56,18 @@ export class SSEManager {
 
   constructor(
     private readonly maxBufferSize = 100,
-    private readonly bufferTtlMs = 5 * 60 * 1000, // 5 minutes
+    // task #1001: bufferTtlMs MUST be >= maxConnectionAgeMs. When a
+    // connection is aged out (closeConnection → stream FIN), the client
+    // reconnects with `Last-Event-Id` and expects the buffer to still hold
+    // every event it could have missed during its previous connection's
+    // lifetime. The old default (5 min) was SMALLER than the 10-min age
+    // window, so a quiet client whose last event predated the TTL hit a
+    // replay gap on every forced reconnect. The defaults are the production
+    // values (server.ts passes `undefined` for both), so aligning here
+    // aligns prod. Residual gap risk: maxBufferSize (100 events) can still
+    // truncate under high event rate regardless of TTL — that case is
+    // covered by the explicit `replay-gap` control event (task #206).
+    private readonly bufferTtlMs = 10 * 60 * 1000, // 10 minutes — keep >= maxConnectionAgeMs
     private readonly heartbeatIntervalMs = 30000, // 30 seconds
     private readonly maxConnectionAgeMs = 10 * 60 * 1000, // 10 minutes
     // task #185: per-key, per-IP and global concurrent connection caps.
@@ -129,8 +140,50 @@ export class SSEManager {
     reply.raw.on('error', () => this.removeConnection(connectionId));
   }
 
+  /**
+   * Remove a connection from the broadcast map WITHOUT touching the socket.
+   *
+   * task #1001: this is only safe when the peer socket is already gone — it
+   * is the cleanup callback for the raw `close`/`error` events registered in
+   * `addConnection`. Every server-initiated eviction (age-out, send failure,
+   * heartbeat failure, shutdown) MUST go through `closeConnection` instead,
+   * which ends the stream so the client observes a FIN and reconnects.
+   */
   removeConnection(connectionId: string): void {
     this.connections.delete(connectionId);
+  }
+
+  /**
+   * task #1001: server-initiated eviction. Removes the connection from the
+   * broadcast map AND closes the underlying stream so the client sees the
+   * connection end and its reconnect logic fires (EventSource-style clients
+   * reconnect with `Last-Event-Id` and resume via `replayEvents`).
+   *
+   * Before this fix, the age-out path in the heartbeat sweep called
+   * `removeConnection` only — the map entry vanished but the TCP socket
+   * stayed open with no events, no pings and no FIN, so clients went
+   * silently deaf after maxConnectionAgeMs (reproduced 3x in the Tiny
+   * Worlds orchestration pilot, 2026-06-10).
+   */
+  private closeConnection(connectionId: string): void {
+    const conn = this.connections.get(connectionId);
+    this.connections.delete(connectionId);
+    if (!conn) return;
+    try {
+      // Prefer the SSE plugin's close (runs its cleanup + ends the raw
+      // response). `reply.sse` can be absent at runtime (the events route
+      // guards on it), and unit-test mocks may omit either surface — fall
+      // back to ending the raw response directly.
+      if (conn.reply.sse && typeof conn.reply.sse.close === 'function') {
+        conn.reply.sse.close();
+      } else if (typeof conn.reply.raw?.end === 'function') {
+        conn.reply.raw.end();
+      }
+    } catch {
+      // The peer socket may already be destroyed (close racing a network
+      // error). Safe to swallow: the map entry is gone and the raw
+      // `close`/`error` handlers have done (or will do) their cleanup.
+    }
   }
 
   broadcast(event: EventPayload<unknown>): void {
@@ -183,8 +236,12 @@ export class SSEManager {
         this.totalEventsSent++;
       })
       .catch(() => {
-        // Connection likely closed, remove it
-        this.removeConnection(conn.id);
+        // Send failed — the peer socket usually errored already (the raw
+        // `error` handler runs cleanup), but close defensively so a failure
+        // that did NOT originate from the socket still ends the stream
+        // instead of leaving the peer attached to a deregistered connection.
+        // `closeConnection` is idempotent vs. an already-dead socket.
+        this.closeConnection(conn.id);
       });
   }
 
@@ -216,7 +273,8 @@ export class SSEManager {
             }),
           })
           .catch(() => {
-            this.removeConnection(connectionId);
+            // Same rationale as sendEvent: close, don't just deregister.
+            this.closeConnection(connectionId);
           });
       }
     }
@@ -243,28 +301,50 @@ export class SSEManager {
   }
 
   private startHeartbeat(): void {
-    this.heartbeatInterval = setInterval(() => {
-      const now = Date.now();
+    this.heartbeatInterval = setInterval(() => this.heartbeatSweep(), this.heartbeatIntervalMs);
+  }
 
-      for (const conn of this.connections.values()) {
-        // Send heartbeat ping (fire-and-forget)
-        conn.reply.sse.send({ event: 'ping', data: '' }).catch(() => {
-          // Connection closed, remove it
-          this.removeConnection(conn.id);
-        });
+  /**
+   * One heartbeat tick: ping every live connection and evict connections
+   * past maxConnectionAgeMs. Extracted from the setInterval callback so
+   * integration tests can drive a sweep deterministically without faking
+   * 30s of wall-clock time against a real listening socket (task #1001).
+   */
+  private heartbeatSweep(): void {
+    const now = Date.now();
 
-        // Enforce max connection age
-        const age = now - conn.createdAt.getTime();
-        if (age > this.maxConnectionAgeMs) {
-          this.removeConnection(conn.id);
-        }
+    for (const conn of this.connections.values()) {
+      // Enforce max connection age FIRST. task #1001: this must CLOSE the
+      // stream, not just drop the map entry — otherwise the client keeps an
+      // open TCP connection receiving no events, no pings and no FIN, and
+      // its reconnect logic never fires. Closing makes the client reconnect
+      // with `Last-Event-Id` and resume via the replay buffer (whose TTL is
+      // aligned to this window — see the constructor note on bufferTtlMs).
+      const age = now - conn.createdAt.getTime();
+      if (age > this.maxConnectionAgeMs) {
+        this.closeConnection(conn.id);
+        continue; // No point pinging a stream we just ended.
       }
-    }, this.heartbeatIntervalMs);
+
+      // Send heartbeat ping (fire-and-forget)
+      conn.reply.sse.send({ event: 'ping', data: '' }).catch(() => {
+        // Ping failed — close defensively (idempotent vs. dead socket),
+        // same rationale as sendEvent.
+        this.closeConnection(conn.id);
+      });
+    }
   }
 
   shutdown(): void {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
+    }
+    // task #1001: close every stream instead of just clearing the map —
+    // clearing alone left peers attached to a server that would never send
+    // them another byte. (In practice Fastify's own close tears sockets
+    // down too; this makes the manager correct independent of that.)
+    for (const connectionId of [...this.connections.keys()]) {
+      this.closeConnection(connectionId);
     }
     this.connections.clear();
     this.eventBuffer = [];

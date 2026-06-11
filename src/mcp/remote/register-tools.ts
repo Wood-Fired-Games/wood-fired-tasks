@@ -14,6 +14,17 @@ import {
 } from '../../schemas/task.schema.js';
 import { VERSION } from '../../utils/version.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
+import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
+import {
+  LIST_MODELS_TOOL_DEFINITION,
+  RESOLVE_MODEL_TOOL_DEFINITION,
+  GET_MODEL_DEFAULTS_TOOL_DEFINITION,
+  SET_MODEL_DEFAULTS_TOOL_DEFINITION,
+  renderListModelsResult,
+  renderResolveModelResult,
+  renderGetModelDefaultsResult,
+  renderSetModelDefaultsResult,
+} from '../lib/model-tool-definitions.js';
 
 /**
  * Task #768 — parse remote MCP tool arguments through their Zod schema BEFORE
@@ -72,7 +83,7 @@ const WAIT_DEFAULT_TIMEOUT_SECONDS = 300;
 const WAIT_MAX_TIMEOUT_SECONDS = 1800;
 
 /**
- * Register all 27 MCP tools backed by REST API calls via RestClient.
+ * Register all 31 MCP tools backed by REST API calls via RestClient.
  *
  * Tool names, descriptions, and input schemas match the local MCP server exactly.
  * Each handler proxies the request to the REST API and formats the MCP response.
@@ -84,6 +95,12 @@ const WAIT_MAX_TIMEOUT_SECONDS = 1800;
  *   3 comment tools
  *   1 health tool
  *   1 topology tool (topology_check) — backed by GET /api/v1/projects/:id/topology
+ *   4 model tools (task #926) — full remote parity (stdio ⊆ remote) with the
+ *       stdio model tools (src/mcp/tools/model-tools.ts):
+ *       list_models        → GET /api/v1/models
+ *       resolve_model      → GET /api/v1/projects/:id/resolve-model (NEW route)
+ *       get_model_defaults → GET /api/v1/settings/model-policy
+ *       set_model_defaults → PUT /api/v1/settings/model-policy
  *   1 wait tool (wait_for_unblock) — backed by the SSE stream GET /api/v1/events
  *   4 WSJF tools (WSJF 1.10) — full remote parity with the stdio WSJF tools:
  *       wsjf_ranking   → GET  /api/v1/projects/:id/wsjf-ranking
@@ -202,7 +219,11 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
     'update_task',
     {
       description:
-        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags.',
+        'Update an existing task by ID. Can update title, description, status, priority, assignee, due_date, and tags. ' +
+        "When blocking on other tasks, pass `blocked_by: [taskIds]` WITH `status: 'blocked'` " +
+        'to add the blocking dependency edge(s) and flip the status atomically ' +
+        '(all-or-nothing; an invalid edge rolls the whole call back). ' +
+        '`blocked_by` without `status: "blocked"` is rejected.',
       inputSchema: z.object({
         id: z.number().int().positive(),
         updates: UpdateTaskSchema,
@@ -1057,6 +1078,77 @@ export function registerRemoteTools(server: McpServer, client: RestClient): void
       }
     },
   );
+
+  // ── Model tools (4) ───────────────────────────────────────────────────────
+  // Configurable Task Models (task #926) — full remote parity (stdio ⊆ remote)
+  // with the four stdio model tools (src/mcp/tools/model-tools.ts). Each proxies
+  // the REST endpoint that exposes the SAME service the stdio server wires
+  // in-process, and returns the SAME structuredContent shape so callers cannot
+  // tell which transport they're on:
+  //   list_models        → GET  /api/v1/models                       ({ models, stale })
+  //   resolve_model      → GET  /api/v1/projects/:id/resolve-model   ({ model } | { model:'auto' } | null)
+  //   get_model_defaults → GET  /api/v1/settings/model-policy        ({ model_policy })
+  //   set_model_defaults → PUT  /api/v1/settings/model-policy        ({ model_policy })
+
+  // Tool: list_models
+  server.registerTool('list_models', LIST_MODELS_TOOL_DEFINITION, async () => {
+    try {
+      const catalog = await client.listModels();
+      return renderListModelsResult(catalog);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to list models',
+      );
+    }
+  });
+
+  // Tool: resolve_model
+  server.registerTool('resolve_model', RESOLVE_MODEL_TOOL_DEFINITION, async (args) => {
+    try {
+      const resolved = await client.resolveModel(args.project_id, args.role, args.task_id);
+      return renderResolveModelResult(resolved);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to resolve model',
+      );
+    }
+  });
+
+  // Tool: get_model_defaults
+  server.registerTool('get_model_defaults', GET_MODEL_DEFAULTS_TOOL_DEFINITION, async () => {
+    try {
+      const policy = await client.getModelDefaults();
+      return renderGetModelDefaultsResult(policy);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to get model defaults',
+      );
+    }
+  });
+
+  // Tool: set_model_defaults (MUTATION)
+  server.registerTool('set_model_defaults', SET_MODEL_DEFAULTS_TOOL_DEFINITION, async (args) => {
+    // Re-parse the policy before the API call so a malformed shape returns a
+    // clear InvalidParams McpError here (mirroring the other write tools)
+    // rather than relying on the server's 400.
+    const { model_policy } = parseToolArgs(
+      z.object({ model_policy: ModelPolicyNullableSchema }),
+      args,
+      'set_model_defaults',
+    );
+    try {
+      const stored = await client.setModelDefaults(model_policy);
+      return renderSetModelDefaultsResult(stored);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        error instanceof Error ? error.message : 'Failed to set model defaults',
+      );
+    }
+  });
 
   // ── WSJF tools (4) ────────────────────────────────────────────────────────
   // Remote parity (WSJF 1.10) with the stdio WSJF tools

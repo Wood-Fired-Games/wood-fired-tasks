@@ -163,11 +163,11 @@ describe('skill enum-value consistency (#347)', () => {
     expect(missingFlag).toEqual([]);
   });
 
-  it('discovers all 19 shipped skill files (sanity: install.sh source set)', () => {
-    expect(allSkillFiles.length).toBe(19);
+  it('discovers all 20 shipped skill files (sanity: install.sh source set)', () => {
+    expect(allSkillFiles.length).toBe(20);
   });
 
-  it('partitions into 16 invocable + 3 non-invocable by actual flag value', () => {
+  it('partitions into 17 invocable + 3 non-invocable by actual flag value', () => {
     // decompose.md flipped from gated→invocable when its runtime landed,
     // so the invocable bucket is 15. The non-invocable bucket is 3:
     // _enums.md, loop-shared.md, and wsjf-rubric.md (the WSJF 2.1
@@ -177,7 +177,10 @@ describe('skill enum-value consistency (#347)', () => {
     // Task #796 (Phase 4) added the invocable self-update command
     // update.md (action target of the status-line update hint),
     // bumping the invocable bucket 15 → 16.
-    expect(invocableByFlag.length).toBe(16);
+    // Task #923 (Configurable Task Models, Task 14) added the invocable
+    // adaptive model-interview command set-models.md, bumping the
+    // invocable bucket 16 → 17.
+    expect(invocableByFlag.length).toBe(17);
     expect(nonInvocableByFlag.length).toBe(3);
   });
 

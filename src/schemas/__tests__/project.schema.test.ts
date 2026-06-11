@@ -4,6 +4,8 @@ import {
   ValueThemeSchema,
   ValueCharterSchema,
   ValueCharterNullableSchema,
+  CreateProjectSchema,
+  UpdateProjectSchema,
 } from '../project.schema.js';
 
 describe('project.schema — ValueCharter', () => {
@@ -108,5 +110,30 @@ describe('project schema parity (task.schema barrel ≡ project.schema source)',
         },
       }).success,
     ).toBe(false);
+  });
+});
+
+/**
+ * Configurable Task Models (task #911): `model_policy` rides onto the project
+ * create/update DTOs the same way `value_charter` does —
+ * `ModelPolicyNullableSchema.optional()`. An object is preserved on parse,
+ * explicit `null` round-trips as `null` (clear), and absence is `undefined`.
+ */
+describe('project.schema — model_policy DTO wiring', () => {
+  it('accepts model_policy on update', () => {
+    const parsed = UpdateProjectSchema.parse({ model_policy: { execution: { default: 'auto' } } });
+    expect(parsed.model_policy).toEqual({ execution: { default: 'auto' } });
+  });
+
+  it('accepts explicit null model_policy (clear)', () => {
+    expect(UpdateProjectSchema.parse({ model_policy: null }).model_policy).toBeNull();
+  });
+
+  it('accepts model_policy on create and preserves the field', () => {
+    const parsed = CreateProjectSchema.parse({
+      name: 'p',
+      model_policy: { execution: { default: 'auto' } },
+    });
+    expect(parsed.model_policy).toEqual({ execution: { default: 'auto' } });
   });
 });

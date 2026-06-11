@@ -204,7 +204,8 @@ Create a new project.
 {
   "name": "string (required, max 100 chars)",
   "description": "string (optional, max 1000 chars)",
-  "value_charter": "ValueCharter object (optional) — see Value charter below"
+  "value_charter": "ValueCharter object (optional) — see Value charter below",
+  "model_policy": "ModelPolicy | null (optional) — per-project model routing; see Models & model-policy Endpoints"
 }
 ```
 
@@ -231,6 +232,8 @@ curl -X POST http://localhost:3000/api/v1/projects \
 ```
 
 [NOTE] `value_charter` is the per-project reference frame for WSJF Business-Value scoring (see [WSJF Endpoints](#wsjf-endpoints)). It is optional and defaults to `null`; projects with no charter behave exactly as before, sorting by `priority` then age. The field shape is documented under [Value charter](#value-charter).
+
+[NOTE] `model_policy` is the optional per-project model-routing policy for the **Configurable Task Models** layer. It is accepted on create/update, returned on every project response, and `null` when unset (the global default from `GET /settings/model-policy` applies instead). See [Models & model-policy Endpoints](#models--model-policy-endpoints) for the shape and the resolver route.
 
 ### GET /api/v1/projects
 
@@ -307,9 +310,12 @@ Update a project. All fields are optional (partial update).
 {
   "name": "string (optional, max 100 chars)",
   "description": "string (optional, max 1000 chars)",
-  "value_charter": "ValueCharter object (optional) — see Value charter below"
+  "value_charter": "ValueCharter object (optional) — see Value charter below",
+  "model_policy": "ModelPolicy | null (optional) — per-project model routing; see Models & model-policy Endpoints"
 }
 ```
+
+The CLI `tasks project-set-models <id>` command merges a partial `model_policy` through this route.
 
 **Response:** 200 OK
 
@@ -380,6 +386,32 @@ Classify a project as `FLAT` (parallelizable, `/tasks:loop`), `DAG` (wave-by-wav
 curl http://localhost:3000/api/v1/projects/1/topology \
   -H "Authorization: Bearer wft_pat_your-token"
 ```
+
+### GET /api/v1/projects/:id/resolve-model
+
+Resolve the model for a pipeline role. Delegates to `ModelPolicyService.resolveModel(projectId, role, taskId?)` (project policy ?? global default, per-slot merge, jobSize→category routing when `task_id` is supplied). The body IS the resolver output **verbatim** — identical to the stdio/remote `resolve_model` MCP tool: `{ "model": "<id>" }`, `{ "model": "auto" }`, or a bare `null` (inherit). Read-only. Query: `role` (required, `execution|validation|planning`); `task_id` (optional positive int → routes by the task's WSJF power category). **Response:** 200 OK — the resolver output; 404 — project does not exist.
+
+## Models & model-policy Endpoints
+
+The **Configurable Task Models** layer exposes runtime model discovery and the database-wide default `ModelPolicy` over REST so the remote MCP proxy, the dashboard, and the [`/tasks:set-models`](#configurable-models) interview can read/write policy without a stdio MCP connection. Per-project policy rides on the project routes (`model_policy`); the global default lives here; resolution is `GET /projects/:id/resolve-model` above.
+
+A `ModelPolicy` is a per-role (`execution | validation | planning`) object; each role may carry `byCategory` (one of the six power categories `minimal | light | moderate | strong | heavy | maximum` → a model ref), a `default` ref, and — for `planning` — a single `constant` ref. A model ref is a catalog model id or the `auto` sentinel.
+
+### GET /api/v1/models
+
+List the runtime-discovered Claude model catalog (Anthropic Models API, TTL-cached, static fallback when offline / no `ANTHROPIC_API_KEY`). Body is `{ models, stale }` — identical to the stdio `list_models` MCP tool; `stale: true` means the static fallback was served. NEVER throws; always 200.
+
+```json
+{ "models": [ { "id": "claude-opus-4-1", "display_name": "Claude Opus 4.1", "family": "opus", "created_at": "2025-08-05" } ], "stale": false }
+```
+
+### GET /api/v1/settings/model-policy
+
+Get the database-wide model-policy default (`app_settings.model_policy_default`). **Response:** 200 OK — the stored `ModelPolicy`, or `null` when no default is configured.
+
+### PUT /api/v1/settings/model-policy
+
+Set (or, with a `null` body, clear) the database-wide model-policy default. Body is a `ModelPolicy` (or `null`); an invalid shape is rejected with **400** at the boundary. The 200 body echoes the persisted policy back.
 
 ## Task Endpoints
 
@@ -580,9 +612,17 @@ Update a task. All fields are optional (partial update).
   "estimated_minutes": "number (optional, 0-10080)",
   "assignee": "string (optional, max 100 chars)",
   "due_date": "string (optional, ISO8601 format)",
-  "tags": ["array of strings (optional, max 20 tags, each max 50 chars)"]
+  "tags": ["array of strings (optional, max 20 tags, each max 50 chars)"],
+  "blocked_by": ["array of task IDs (optional, 1-50; ONLY valid with status: 'blocked')"]
 }
 ```
+
+[NOTE] **Atomic block-with-dependency (task #1004):** pass `blocked_by: [taskIds]`
+with `status: "blocked"` to add the blocking dependency edge(s) and flip the status
+in ONE transaction (all-or-nothing — a nonexistent blocker, self-reference, or cycle
+rolls the whole call back; already-existing edges are skipped). `blocked_by` without
+`status: "blocked"` is rejected. Without an edge a blocked task never auto-unblocks
+(the `blocked -> open` workflow transition fires only off a dependency edge).
 
 **Response:** 200 OK
 
@@ -1319,13 +1359,7 @@ Atomically claim an unassigned task. Sets assignee and transitions status to `in
 **Examples:**
 
 ```bash
-# Claim a task
-curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
-  -H "Authorization: Bearer wft_pat_your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"assignee": "agent-1"}'
-
-# Claim with idempotency key (safe to retry)
+# Claim a task (add the X-Idempotency-Key header to make retries safe)
 curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
   -H "Authorization: Bearer wft_pat_your-token" \
   -H "X-Idempotency-Key: claim-42-agent-1" \
@@ -1337,7 +1371,17 @@ curl -X POST http://localhost:3000/api/v1/tasks/42/claim \
 - Uses CAS (Compare-And-Swap) with a `version` field for optimistic locking
 - Uses `BEGIN IMMEDIATE` SQLite transactions to acquire write lock early
 - Verified with 20 concurrent agents: exactly 1 success, 19 conflicts, 0 server errors
-- Stale claims auto-released after 30 minutes of inactivity
+- Stale claims auto-released after 30 minutes of inactivity; the sweep emits
+  a `task.claim_released` SSE event so the former holder can react
+
+**Claim renewal (heartbeat):**
+
+A claim call by the **same assignee** on a task they already hold `in_progress`
+is a renewal, not a conflict: it refreshes `claimed_at` (restarting the 30-minute
+TTL window) and returns 200 with the refreshed task. A different assignee still
+receives 409. `GET /tasks/:id` surfaces `claim_ttl_minutes` and
+`claim_remaining_seconds` (computed at read time, present only while a claim is
+active) so holders know when to renew.
 
 ## Event Stream Endpoint
 
@@ -1366,7 +1410,8 @@ Subscribe to real-time task and project change notifications via Server-Sent Eve
 | task.updated | Task fields modified |
 | task.deleted | Task deleted |
 | task.status_changed | Task status transition |
-| task.claimed | Task claimed by agent |
+| task.claimed | Task claimed by agent (also emitted on a same-assignee claim renewal) |
+| task.claim_released | Stale claim auto-released by the TTL sweep; `data` carries `previous_assignee`, `expired_claimed_at`, `released_at` |
 | project.created | New project created |
 | project.updated | Project modified |
 | project.deleted | Project deleted |
