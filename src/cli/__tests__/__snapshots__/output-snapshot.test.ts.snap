@@ -162,7 +162,8 @@ exports[`CLI output snapshots > list > JSON mode emits a parseable envelope 1`] 
     }
   ],
   "metadata": {
-    "count": 3
+    "count": 3,
+    "statusFilter": "all"
   }
 }
 "
@@ -206,7 +207,8 @@ exports[`CLI output snapshots > my-work (list --assignee) > JSON mode emits filt
     }
   ],
   "metadata": {
-    "count": 1
+    "count": 1,
+    "statusFilter": "all"
   }
 }
 "
@@ -285,7 +287,8 @@ exports[`CLI output snapshots > search (list --search) > JSON mode emits matchin
     }
   ],
   "metadata": {
-    "count": 1
+    "count": 1,
+    "statusFilter": "all"
   }
 }
 "

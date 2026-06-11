@@ -11,7 +11,15 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+- **`wft list --status all`** explicit sentinel and a `statusFilter` echo in
+  `--json` output (task #1006). The default `wft list` view already returns
+  every status — open, in_progress, blocked, done, and closed — and the
+  `--help` text now states this plainly so machine consumers don't read a
+  status transition (e.g. open → blocked) as a deleted task. `--status all`
+  is accepted as a self-documenting way to ask for "every status", and the
+  JSON envelope's `metadata.statusFilter` names the effective filter
+  (`all` or the requested status). The default view is unchanged.
 
 ## [v2.1.1] - 2026-06-09
 

@@ -307,7 +307,7 @@ describe('list command', () => {
     // Global options like --json go before subcommand name
     await program.parseAsync(['node', 'test', '--json', 'list']);
 
-    expect(jsonOutput).toHaveBeenCalledWith(mockTasks, { count: 2 });
+    expect(jsonOutput).toHaveBeenCalledWith(mockTasks, { count: 2, statusFilter: 'all' });
     // Should NOT show task count message in JSON mode
     expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('task(s) found'));
   });
@@ -344,11 +344,108 @@ describe('list command', () => {
     // Verify the data structure passed to jsonOutput is valid
     const callArgs = vi.mocked(jsonOutput).mock.calls[0];
     expect(callArgs[0]).toEqual(mockTasks);
-    expect(callArgs[1]).toEqual({ count: 1 });
+    expect(callArgs[1]).toEqual({ count: 1, statusFilter: 'all' });
 
     // Verify it would be parseable as JSON
     expect(() =>
       JSON.stringify({ success: true, data: callArgs[0], metadata: callArgs[1] }),
     ).not.toThrow();
+  });
+
+  it('--status all sends no status filter to the API (returns every status incl. blocked + closed)', async () => {
+    const { listTasks } = await import('../api/client.js');
+    const blockedAndClosed = [
+      {
+        id: 1,
+        title: 'Blocked task',
+        description: null,
+        status: 'blocked' as const,
+        priority: 'high' as const,
+        project_id: 1,
+        assignee: null,
+        created_by: 'alice',
+        due_date: null,
+        created_at: '2026-02-13T00:00:00Z',
+        updated_at: '2026-02-13T00:00:00Z',
+        tags: [],
+      },
+      {
+        id: 2,
+        title: 'Closed task',
+        description: null,
+        status: 'closed' as const,
+        priority: 'low' as const,
+        project_id: 1,
+        assignee: null,
+        created_by: 'alice',
+        due_date: null,
+        created_at: '2026-02-13T00:00:00Z',
+        updated_at: '2026-02-13T00:00:00Z',
+        tags: [],
+      },
+    ];
+    vi.mocked(listTasks).mockResolvedValue(blockedAndClosed);
+
+    await program.parseAsync(['node', 'test', 'list', '--status', 'all']);
+
+    // `all` must NOT be forwarded as ?status=all — it means "no status filter",
+    // which is what surfaces blocked + closed rows.
+    expect(listTasks).toHaveBeenCalledWith(undefined);
+    const returned = vi.mocked(listTasks).mock.results[0]!.value as Promise<
+      typeof blockedAndClosed
+    >;
+    const rows = await returned;
+    expect(rows.map((t) => t.status)).toEqual(['blocked', 'closed']);
+  });
+
+  it('accepts --status all as a valid value (does not error)', async () => {
+    const { listTasks } = await import('../api/client.js');
+    vi.mocked(listTasks).mockResolvedValue([]);
+
+    await program.parseAsync(['node', 'test', 'list', '--status', 'all']);
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('default view (no --status) sends no status filter — blocked + closed are not hidden', async () => {
+    const { listTasks } = await import('../api/client.js');
+    vi.mocked(listTasks).mockResolvedValue([]);
+
+    await program.parseAsync(['node', 'test', 'list']);
+
+    // Omitting --status forwards no status param, so the server returns all
+    // statuses including blocked + closed.
+    expect(listTasks).toHaveBeenCalledWith(undefined);
+  });
+
+  it('--json echoes statusFilter=all for the default view', async () => {
+    const { listTasks } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+    vi.mocked(listTasks).mockResolvedValue([]);
+
+    await program.parseAsync(['node', 'test', '--json', 'list']);
+
+    expect(jsonOutput).toHaveBeenCalledWith([], { count: 0, statusFilter: 'all' });
+  });
+
+  it('--json echoes statusFilter=all for --status all', async () => {
+    const { listTasks } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+    vi.mocked(listTasks).mockResolvedValue([]);
+
+    await program.parseAsync(['node', 'test', '--json', 'list', '--status', 'all']);
+
+    expect(jsonOutput).toHaveBeenCalledWith([], { count: 0, statusFilter: 'all' });
+  });
+
+  it('--json echoes the narrowed status filter when one is requested', async () => {
+    const { listTasks } = await import('../api/client.js');
+    const { jsonOutput } = await import('../output/json-output.js');
+    vi.mocked(listTasks).mockResolvedValue([]);
+
+    await program.parseAsync(['node', 'test', '--json', 'list', '--status', 'blocked']);
+
+    expect(jsonOutput).toHaveBeenCalledWith([], { count: 0, statusFilter: 'blocked' });
   });
 });
