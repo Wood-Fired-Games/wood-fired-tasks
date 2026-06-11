@@ -500,6 +500,118 @@ describe('TaskService', () => {
 
       expect(updated.tags).toEqual(['new', 'tags']);
     });
+
+    // Guaranteed-task-sizing (#991): updating estimated_minutes recomputes the
+    // AUTO job-size (and appends an auto_size history row) iff the persisted size
+    // is still server-derived (`wsjf_source.jobSize === 'auto'`). A manual size is
+    // never clobbered, and a status-only update writes no new size/history row.
+    describe('auto job-size recompute on estimated_minutes change (#991)', () => {
+      it('AC1: estimated_minutes 20→90 on an auto-sized task rewrites wsjf_job_size 2→5 with a new auto_size history row', () => {
+        // 20 min → tier 2; created with no wsjf → auto-sized.
+        const created = taskService.createTask({
+          title: 'Auto-sized task',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+        });
+        expect(created.wsjf_job_size).toBe(2);
+        expect(created.wsjf_source!.jobSize).toBe('auto');
+
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const beforeRows = historyRepo.findByTaskId(created.id);
+        expect(beforeRows.filter((h) => h.trigger === 'auto_size')).toHaveLength(1);
+
+        // 90 min → tier 5.
+        const updated = taskService.updateTask(created.id, { estimated_minutes: 90 });
+        expect(updated.estimated_minutes).toBe(90);
+        expect(updated.wsjf_job_size).toBe(5);
+        expect(updated.wsjf_source!.jobSize).toBe('auto');
+
+        const afterRows = historyRepo.findByTaskId(created.id);
+        const autoSizeRows = afterRows.filter((h) => h.trigger === 'auto_size');
+        // The create auto_size row PLUS the new update auto_size row.
+        expect(autoSizeRows).toHaveLength(2);
+        const newest = autoSizeRows[autoSizeRows.length - 1];
+        expect(newest.job_size).toBe(5);
+        expect(newest.value).toBeNull();
+        expect(newest.time_criticality).toBeNull();
+        expect(newest.risk_opportunity).toBeNull();
+        expect(newest.wsjf_score).toBeNull();
+      });
+
+      it('AC2: estimated_minutes change on a manual-sized task leaves wsjf_job_size untouched and writes no auto_size row', () => {
+        const created = taskService.createTask({
+          title: 'Manually sized task',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+        });
+
+        // Manually score the task: this stamps wsjf_source.jobSize='manual'.
+        const manualSource = {
+          value: 'manual' as const,
+          timeCriticality: 'manual' as const,
+          riskOpportunity: 'manual' as const,
+          jobSize: 'manual' as const,
+        };
+        const manual = taskService.updateTask(created.id, {
+          wsjf: {
+            value: 8,
+            timeCriticality: 5,
+            riskOpportunity: 3,
+            jobSize: 2,
+            manual: true,
+            source: manualSource,
+          },
+        });
+        expect(manual.wsjf_job_size).toBe(2);
+        expect(manual.wsjf_source!.jobSize).toBe('manual');
+
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const beforeAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+
+        // Change estimated_minutes (90 min would map to tier 5 if auto) — must NOT
+        // touch the manual size.
+        const updated = taskService.updateTask(created.id, { estimated_minutes: 90 });
+        expect(updated.estimated_minutes).toBe(90);
+        expect(updated.wsjf_job_size).toBe(2);
+        expect(updated.wsjf_source!.jobSize).toBe('manual');
+
+        const afterAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+        // No NEW auto_size row was appended by the minutes change.
+        expect(afterAutoSize).toHaveLength(beforeAutoSize.length);
+      });
+
+      it('AC3: an update not touching estimated_minutes (status change) writes no new size and no auto_size row', () => {
+        const created = taskService.createTask({
+          title: 'Status-only update',
+          project_id: testProjectId,
+          created_by: 'user',
+          estimated_minutes: 20,
+        });
+        expect(created.wsjf_job_size).toBe(2);
+
+        const historyRepo = new WsjfHistoryRepository(app.db);
+        const beforeAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+
+        // A pure status transition — estimated_minutes absent.
+        const updated = taskService.updateTask(created.id, { status: 'in_progress' });
+        expect(updated.status).toBe('in_progress');
+        expect(updated.wsjf_job_size).toBe(2);
+        expect(updated.wsjf_source!.jobSize).toBe('auto');
+
+        const afterAutoSize = historyRepo
+          .findByTaskId(created.id)
+          .filter((h) => h.trigger === 'auto_size');
+        expect(afterAutoSize).toHaveLength(beforeAutoSize.length);
+      });
+    });
   });
 
   describe('status lifecycle', () => {

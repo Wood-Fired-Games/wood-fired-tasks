@@ -941,6 +941,40 @@ export class TaskService {
       updatedTask = performWrite();
     }
 
+    // Guaranteed-task-sizing (#991): recompute the AUTO job-size when an update
+    // changes `estimated_minutes` and the persisted size is still auto-derived.
+    //
+    // Fires ONLY when BOTH hold:
+    //  (1) the update carries a NEW `estimated_minutes` value (present AND
+    //      different from the row's prior `estimated_minutes` — a status-only or
+    //      same-minutes update is a no-op), AND
+    //  (2) the row's existing `wsjf_source.jobSize === 'auto'` — i.e. the size is
+    //      still the server-derived default, never a manual override or a
+    //      classification-derived score.
+    //
+    // We read the auto-ness off the `existing` row (its `wsjf_source` is already
+    // inflated to a typed `WsjfSource` by the repository, so no hand-parsing) and
+    // route through the SIZE-ONLY {@link autoSizeTask} helper so the new
+    // `wsjf_job_size` + its append-only `auto_size` history row commit in ONE
+    // transaction (the #628 no-bypass invariant). The repo `update` inside
+    // `performWrite` above has already persisted the new `estimated_minutes`
+    // column, so this size write strictly follows the minutes write and reflects
+    // the NEW minutes. Re-reading through the helper means `updatedTask` (and the
+    // event below) carries the resized row.
+    //
+    // A manual size (`wsjf_source.jobSize === 'manual'`) or a fully
+    // classification-scored row (jobSize !== 'auto') is NEVER clobbered.
+    const minutesChanged =
+      result.data.estimated_minutes !== undefined &&
+      result.data.estimated_minutes !== existing.estimated_minutes;
+    if (minutesChanged && existing.wsjf_source?.jobSize === 'auto') {
+      updatedTask = this.autoSizeTask({
+        taskId: id,
+        jobSize: minutesToTier(result.data.estimated_minutes),
+        trigger: 'auto_size',
+      });
+    }
+
     // Emit task.updated event after successful database operation
     eventBus.emit('task.updated', {
       eventType: 'task.updated',
