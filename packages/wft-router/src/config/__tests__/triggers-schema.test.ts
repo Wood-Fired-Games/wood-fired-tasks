@@ -102,6 +102,26 @@ describe('TriggersConfigSchema — valid configs', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts the periodic re-sweep knob per-rule and in defaults (task #1035)', () => {
+    const config = {
+      version: 1,
+      defaults: { sweep_interval_s: 45 },
+      rules: [
+        {
+          name: 'periodic-rule',
+          on: 'task.created',
+          where: { project: 5 },
+          do: 'agent_session_dispatch',
+          with: { adapter: 'session-adapter' },
+          sweep_on_start: true,
+          sweep_interval_s: 30,
+        },
+      ],
+    };
+    const result = TriggersConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
   it('accepts a config with no defaults block', () => {
     const config = {
       version: 1,
@@ -262,6 +282,26 @@ describe('TriggersConfigSchema — invalid configs (shape)', () => {
     };
     const result = TriggersConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-positive or non-integer sweep_interval_s (task #1035)', () => {
+    for (const bad of [0, -30, 1.5]) {
+      const config = {
+        version: 1,
+        rules: [
+          {
+            name: 'r',
+            on: 'task.created',
+            where: {},
+            do: 'webhook_post',
+            with: {},
+            sweep_interval_s: bad,
+          },
+        ],
+      };
+      const result = TriggersConfigSchema.safeParse(config);
+      expect(result.success).toBe(false);
+    }
   });
 
   it('rejects an unknown status on the status enum', () => {

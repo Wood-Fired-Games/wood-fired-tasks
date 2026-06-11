@@ -102,6 +102,43 @@ export type HandlerRegistry = Record<TriggersRule['do'], Handler>;
  */
 export type SSESourceFactory = (signal: AbortSignal) => AsyncGenerator<SSEEvent, ExitCode>;
 
+/** Opaque handle returned by an {@link IntervalScheduler}'s `set`. */
+export type IntervalHandle = unknown;
+
+/**
+ * Minimal interval-scheduler seam (task #1035). The periodic re-sweep timer
+ * fires through this rather than calling `setInterval` directly, so tests can
+ * inject a fake that captures the callback and drive it deterministically
+ * alongside the injected `now` clock (the sweep's bucket identity is derived
+ * from `now`, so the two must advance together under test control). Production
+ * defaults to {@link DEFAULT_INTERVAL_SCHEDULER} (real `setInterval`, unref'd
+ * so the timer never independently holds the event loop open).
+ */
+export interface IntervalScheduler {
+  /** Schedule `cb` to run every `ms`; return an opaque cancel handle. */
+  set(cb: () => void, ms: number): IntervalHandle;
+  /** Cancel a previously scheduled interval. */
+  clear(handle: IntervalHandle): void;
+}
+
+/**
+ * Production interval scheduler: real `setInterval`/`clearInterval`. The
+ * timer is `unref`'d so it never keeps the process alive on its own — the SSE
+ * consume loop owns process liveness; the periodic sweep is a passenger.
+ */
+export const DEFAULT_INTERVAL_SCHEDULER: IntervalScheduler = {
+  set(cb: () => void, ms: number): IntervalHandle {
+    const handle = setInterval(cb, ms);
+    if (typeof handle.unref === 'function') {
+      handle.unref();
+    }
+    return handle;
+  },
+  clear(handle: IntervalHandle): void {
+    clearInterval(handle as ReturnType<typeof setInterval>);
+  },
+};
+
 /** Minimal structured-logger surface the daemon needs (pino-compatible). */
 export interface DaemonLogger extends HandlerLogger {
   info(obj: Record<string, unknown>, msg?: string): void;
@@ -147,6 +184,13 @@ export interface DaemonDeps {
   env?: NodeJS.ProcessEnv;
   /** Injected clock for debounce/rate-limit math in tests. Default: Date.now. */
   now?: () => number;
+  /**
+   * Injected interval scheduler for the periodic re-sweep timer (task #1035).
+   * Default: {@link DEFAULT_INTERVAL_SCHEDULER} (real, unref'd `setInterval`).
+   * Tests inject a fake that captures the tick callback so the periodic sweep
+   * can be driven deterministically together with the injected `now`.
+   */
+  intervalScheduler?: IntervalScheduler;
   /**
    * Optional Prometheus metrics registry. ADDITIVE (task #434): when present,
    * the daemon increments it at the pipeline points it already tracks (events
@@ -314,6 +358,8 @@ export class WftRouterDaemon {
   private readonly metrics?: MetricsRegistry;
   /** Injected clock (shared with debounce/rate-limit; drives sweep buckets). */
   private readonly now: () => number;
+  /** Injected interval scheduler for the periodic re-sweep timer (task #1035). */
+  private readonly intervalScheduler: IntervalScheduler;
 
   private phase: DaemonPhase = 'idle';
   private readonly abortController = new AbortController();
@@ -329,6 +375,8 @@ export class WftRouterDaemon {
   private exitCode: ExitCode = ExitCode.CleanShutdown;
   /** The one-shot cold-start sweep (task #1005); null when no rule opted in. */
   private sweepPromise: Promise<void> | null = null;
+  /** Live periodic re-sweep timer handles (task #1035); cleared in `stop()`. */
+  private readonly intervalHandles: IntervalHandle[] = [];
 
   constructor(deps: DaemonDeps) {
     this.config = deps.config;
@@ -356,6 +404,7 @@ export class WftRouterDaemon {
 
     const now = deps.now ?? Date.now;
     this.now = now;
+    this.intervalScheduler = deps.intervalScheduler ?? DEFAULT_INTERVAL_SCHEDULER;
     this.rateLimiter =
       deps.rateLimiter ??
       new RateLimiter({
@@ -405,6 +454,20 @@ export class WftRouterDaemon {
       this.sweepPromise = this.runStartupSweep(sweepRules);
       this.track(this.sweepPromise);
     }
+
+    // Periodic re-sweep (task #1035): OPT-IN timed re-run of the SAME sweep
+    // for rules with a positive `sweep_interval_s` (per-rule or via
+    // `defaults:`). Independent of `sweep_on_start` — a rule may opt into the
+    // periodic path alone. Each opted-in rule gets its OWN timer so one rule's
+    // sweep failure can never stall another's (per-rule error isolation,
+    // AC #4). Absent / non-positive interval = no timer (zero behavior change,
+    // AC #3). Cleared in `stop()`.
+    for (const rule of this.config.rules) {
+      const intervalS = rule.sweep_interval_s ?? this.config.defaults?.sweep_interval_s ?? 0;
+      if (intervalS > 0) {
+        this.startPeriodicSweep(rule, intervalS * 1000);
+      }
+    }
   }
 
   /**
@@ -416,6 +479,17 @@ export class WftRouterDaemon {
     if (this.sweepPromise !== null) {
       await this.sweepPromise;
     }
+  }
+
+  /**
+   * Await every currently in-flight dispatch fan-out + sweep tick (task
+   * #1035). Exposed so tests driving the periodic timer can deterministically
+   * observe a tick's sweep settling without calling `stop()` (which would
+   * tear the timer down). Snapshots the set so work scheduled AFTER the call
+   * does not extend the wait.
+   */
+  async settle(): Promise<void> {
+    await Promise.allSettled(Array.from(this.inFlight));
   }
 
   /**
@@ -439,8 +513,14 @@ export class WftRouterDaemon {
     }
 
     this.phase = 'stopping';
-    // 1. Stop reading new SSE events immediately.
+    // 1. Stop reading new SSE events immediately, and cancel the periodic
+    //    re-sweep timers so no new tick fires during drain (task #1035). Any
+    //    tick already in flight is awaited at step 4 via `inFlight`.
     this.abortController.abort();
+    for (const handle of this.intervalHandles) {
+      this.intervalScheduler.clear(handle);
+    }
+    this.intervalHandles.length = 0;
     // 2. Flush debounced buckets so their trailing-edge dispatch fires now
     //    rather than waiting the full window on the way down.
     await this.debouncer.flushAll();
@@ -538,6 +618,32 @@ export class WftRouterDaemon {
         );
       }
     }
+  }
+
+  /**
+   * Periodic re-sweep (task #1035): schedule a timer that re-runs THIS rule's
+   * sweep every `intervalMs`. The tick runs `sweepRule` — the exact same
+   * query → predicate → at-most-one-dispatch path the cold-start sweep uses —
+   * so the deterministic `sweep:<rule>:<bucket>` identity + idempotency claim
+   * cap it at one kick per window (AC #1/#2). A tick error is isolated: it
+   * logs a WARN and the timer keeps firing (AC #4). Each tick's in-flight
+   * work is `track`ed so `stop()` drains it (AC #5).
+   */
+  private startPeriodicSweep(rule: TriggersRule, intervalMs: number): void {
+    const handle = this.intervalScheduler.set(() => {
+      // A tick that fires mid-shutdown (timer not yet cleared) is a no-op.
+      if (this.phase !== 'running') {
+        return;
+      }
+      const tick = this.sweepRule(rule).catch((err: unknown) => {
+        this.logger.warn(
+          { rule_name: rule.name, error: err instanceof Error ? err.message : String(err) },
+          'wft_router_periodic_sweep_failed',
+        );
+      });
+      this.track(tick);
+    }, intervalMs);
+    this.intervalHandles.push(handle);
   }
 
   /** Sweep ONE rule: query, predicate-match, then dispatch at most once. */

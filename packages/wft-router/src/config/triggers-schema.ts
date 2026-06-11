@@ -110,6 +110,16 @@ export const RuleSchema = z
      * handler path. Default OFF: absent = no startup behavior change.
      */
     sweep_on_start: z.boolean().optional(),
+    /**
+     * Periodic re-sweep interval in seconds (task #1035). When set (here or
+     * in `defaults:`), the daemon re-runs the SAME sweep this rule's
+     * `sweep_on_start` path uses, every `sweep_interval_s` seconds, with NO
+     * router restart and NO new SSE event — closing the steady-state gap
+     * where a session goes idle while the router is healthy. Bucket
+     * idempotency (`sweep:<rule>:<floor(now / idempotency_window)>`) caps it
+     * at one kick per window. Default OFF: absent (or 0) = no timer.
+     */
+    sweep_interval_s: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -126,6 +136,8 @@ export const DefaultsSchema = z
     max_retries: z.number().int().nonnegative().optional(),
     /** Global cold-start sweep opt-in; per-rule `sweep_on_start` overrides. Default false. */
     sweep_on_start: z.boolean().optional(),
+    /** Global periodic re-sweep interval (s); per-rule `sweep_interval_s` overrides. Default off. */
+    sweep_interval_s: z.number().int().positive().optional(),
   })
   .strict();
 

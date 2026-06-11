@@ -68,6 +68,8 @@ wake their targets. Dedup: `sweep:<rule>:<floor(now / idempotency_window)>`,
 so a restart within the same window dispatches nothing. See
 [docs/event-router-design.md §Cold-start sweep](../../docs/event-router-design.md).
 
+**Periodic re-sweep** (opt-in, default off): `sweep_interval_s: <seconds>` (per rule or under `defaults:`) re-runs that sweep on a timer — no restart, no SSE event — re-kicking sessions that went idle mid-run; same per-window dedup.
+
 - **Recipes** (full walkthroughs): [docs/automation-recipes/](https://github.com/Wood-Fired-Games/wood-fired-tasks/tree/main/docs/automation-recipes)
   - [claude-routines.md](../../docs/automation-recipes/claude-routines.md) — dispatch a routine on task close
   - [persistent-agent-sessions.md](../../docs/automation-recipes/persistent-agent-sessions.md) — drive a long-lived agent session

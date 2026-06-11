@@ -161,6 +161,7 @@ defaults:                  # applied to every rule unless overridden
   max_dispatches_per_minute: 60
   max_retries: 3
   sweep_on_start: false    # opt-in cold-start sweep (see §"Cold-start sweep")
+  sweep_interval_s: 0      # opt-in periodic re-sweep; 0/absent = off (see §"Periodic re-sweep")
 
 rules:
   - name: engine-epic-closed-kicks-platform
@@ -470,6 +471,31 @@ absent, so history-probing predicates fail closed and never
 sweep-dispatch. A sweep transport failure logs
 `wft_router_sweep_failed` and is isolated per rule — it never blocks
 the live SSE pipeline.
+
+### Periodic re-sweep (`sweep_interval_s`)
+
+`sweep_on_start` only fires on a genuine router (re)start. A session that
+goes idle WHILE the router is healthy — after a `/clear`, or a missed kick
+— is otherwise not re-swept until the next restart. **Opt-in** fix: set
+`sweep_interval_s: <seconds>` on a rule (or under `defaults:`; default
+off, `0`/absent = no timer) and the daemon re-runs the SAME sweep that
+rule's cold-start path uses, every `sweep_interval_s` seconds, with NO
+router restart and NO new SSE event.
+
+It reuses the identical machinery: each tick runs `sweepRule` →
+`dispatchRule` (debounce → rate-limit → handler → idempotency claim) and
+mints the SAME `sweep:<rule_name>:<bucket>` identity, so bucket
+idempotency caps it at **one kick per idempotency-window bucket** — a tick
+inside an already-kicked bucket is suppressed at claim time; a tick after
+the bucket rolls kicks again. The interval is independent of
+`sweep_on_start` (a rule may opt into the periodic path alone). Each
+opted-in rule gets its OWN timer, so a tick failure is isolated: it logs
+`wft_router_periodic_sweep_failed` (WARN) and the timer keeps firing —
+one rule's failure never stalls another's. The timers are cleared on
+`stop()` before the in-flight drain. The sweep's bucket math reads the
+daemon's injected clock, so the timer is driven by an injectable scheduler
+seam (real `setInterval`, unref'd, in production; a deterministic fake
+under test).
 
 ### Backoff + reachability
 
