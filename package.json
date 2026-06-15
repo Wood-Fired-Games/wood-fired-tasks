@@ -122,7 +122,7 @@
     "@fastify/cookie": "^11.0.2",
     "@fastify/formbody": "^8.0.2",
     "@fastify/helmet": "^13.0.2",
-    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/rate-limit": "^11.0.0",
     "@fastify/secure-session": "^8.3.0",
     "@fastify/sse": "^0.4.0",
     "@fastify/swagger": "^9.7.0",
