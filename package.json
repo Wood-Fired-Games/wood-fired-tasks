@@ -150,7 +150,7 @@
     "qs": "^6.15.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.16",
+    "@biomejs/biome": "2.5.0",
     "@fast-check/vitest": "^0.4.1",
     "@slack/types": "^2.20.0",
     "@slack/web-api": "^7.15.2",
