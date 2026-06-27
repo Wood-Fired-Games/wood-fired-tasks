@@ -199,3 +199,43 @@ describe('formatProjectDetail', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Slack mrkdwn escaping — user-controlled fields (issue #74)
+// ---------------------------------------------------------------------------
+
+describe('Slack mrkdwn escaping', () => {
+  it('escapes a malicious project name in formatProjectList', () => {
+    const blocks = formatProjectList([makeProject({ name: '<!channel>' })]);
+    const section = blocks[1] as { text: { text: string } };
+    expect(section.text.text).toContain('&lt;!channel&gt;');
+    expect(section.text.text).not.toContain('<!channel>');
+  });
+
+  it('escapes a malicious project description in formatProjectList', () => {
+    const blocks = formatProjectList([makeProject({ description: '<https://evil|x>' })]);
+    const section = blocks[1] as { text: { text: string } };
+    expect(section.text.text).toContain('&lt;https://evil|x&gt;');
+  });
+
+  it('escapes a malicious project name in formatProjectDetail header', () => {
+    const blocks = formatProjectDetail(makeProject({ name: '<@U1>' }));
+    const header = blocks[0] as { text: { text: string } };
+    expect(header.text.text).toBe('&lt;@U1&gt;');
+  });
+
+  it('escapes a malicious project description in formatProjectDetail', () => {
+    const blocks = formatProjectDetail(makeProject({ description: 'a & <b>' }));
+    const fieldsSection = blocks[1] as { fields: Array<{ text: string }> };
+    const descField = fieldsSection.fields.find((f) => f.text.includes('*Description*'));
+    expect(descField?.text).toContain('a &amp; &lt;b&gt;');
+  });
+
+  it('does NOT escape the system-owned numeric id field', () => {
+    const blocks = formatProjectDetail(makeProject({ id: 7 }));
+    const fieldsSection = blocks[1] as { fields: Array<{ text: string }> };
+    const idField = fieldsSection.fields.find((f) => f.text.includes('*ID*'));
+    expect(idField?.text).toContain('#7');
+    expect(idField?.text).not.toContain('&amp;');
+  });
+});

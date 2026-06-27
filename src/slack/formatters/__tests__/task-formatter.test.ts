@@ -405,4 +405,88 @@ describe('formatTaskNotification', () => {
     const section = blocks[0] as SectionBlock;
     expect(section.text?.text).not.toContain('_Project');
   });
+
+  // BROADCAST PATH — highest priority. Subscribed channels receive these.
+  it('escapes a malicious task title (broadcast injection) in notification text', () => {
+    const event = makeTaskEvent({ data: makeTask({ title: '<!channel> pwn' }) });
+    const blocks = formatTaskNotification(event);
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).toContain('&lt;!channel&gt; pwn');
+    expect(section.text?.text).not.toContain('<!channel>');
+  });
+
+  it('escapes a malicious projectName in notification text', () => {
+    const event = makeTaskEvent();
+    const blocks = formatTaskNotification(event, '<https://evil|Click>');
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).toContain('&lt;https://evil|Click&gt;');
+    expect(section.text?.text).not.toContain('<https://evil|');
+  });
+
+  it('escapes a malicious assignee in notification text', () => {
+    const event = makeTaskEvent({ data: makeTask({ assignee: '<@U999>' }) });
+    const blocks = formatTaskNotification(event);
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).toContain('@&lt;@U999&gt;');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slack mrkdwn escaping — user-controlled fields (issue #74)
+// ---------------------------------------------------------------------------
+
+describe('Slack mrkdwn escaping', () => {
+  it('escapes a malicious title in formatTaskList', () => {
+    const blocks = formatTaskList([makeTask({ title: '<!here> grab attention' })]);
+    const section = blocks[1] as SectionBlock;
+    expect(section.text?.text).toContain('&lt;!here&gt; grab attention');
+    expect(section.text?.text).not.toContain('<!here>');
+  });
+
+  it('escapes a malicious title in formatTaskDetail header', () => {
+    const blocks = formatTaskDetail(makeTask({ title: '<!channel>' }));
+    const header = blocks[0] as HeaderBlock;
+    expect(header.text.text).toBe('&lt;!channel&gt;');
+  });
+
+  it('escapes a malicious description in formatTaskDetail', () => {
+    const blocks = formatTaskDetail(makeTask({ description: '<https://evil|link>' }));
+    const descSection = blocks[3] as SectionBlock;
+    expect(descSection.text?.text).toBe('&lt;https://evil|link&gt;');
+  });
+
+  it('escapes malicious assignee, created_by, and tags fields', () => {
+    const blocks = formatTaskDetail(
+      makeTask({ assignee: '<@U1>', created_by: 'a&b', tags: ['<x>', 'y'] }),
+    );
+    const section = blocks[1] as SectionBlock;
+    const assignee = section.fields?.find((f) => f.text.includes('*Assignee*'));
+    const createdBy = section.fields?.find((f) => f.text.includes('*Created by*'));
+    const tags = section.fields?.find((f) => f.text.includes('*Tags*'));
+    expect(assignee?.text).toContain('&lt;@U1&gt;');
+    expect(createdBy?.text).toContain('a&amp;b');
+    expect(tags?.text).toContain('&lt;x&gt;, y');
+  });
+
+  it('does NOT escape system-owned status/priority enum or numeric ids', () => {
+    const blocks = formatTaskDetail(
+      makeTask({ status: 'in_progress', priority: 'urgent', project_id: 7 }),
+    );
+    const section = blocks[1] as SectionBlock;
+    const status = section.fields?.find((f) => f.text.includes('*Status*'));
+    const priority = section.fields?.find((f) => f.text.includes('*Priority*'));
+    const project = section.fields?.find((f) => f.text.includes('*Project*'));
+    expect(status?.text).toContain('in_progress');
+    expect(priority?.text).toContain('🔴 urgent');
+    expect(project?.text).toContain('#7');
+    // No accidental entity-encoding of system fields.
+    expect(status?.text).not.toContain('&amp;');
+    expect(priority?.text).not.toContain('&amp;');
+  });
+
+  it('does NOT escape the system-owned EVENT_LABELS in notifications', () => {
+    const blocks = formatTaskNotification(makeTaskEvent({ eventType: 'task.status_changed' }));
+    const section = blocks[0] as SectionBlock;
+    expect(section.text?.text).toContain('*Status changed*');
+  });
 });

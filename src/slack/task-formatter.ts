@@ -8,6 +8,7 @@ import type {
 } from '@slack/types';
 import type { Task } from '../types/task.js';
 import type { TaskEvent } from '../events/types.js';
+import { escapeSlackMrkdwn } from './mrkdwn.js';
 
 // ---------------------------------------------------------------------------
 // Lookup maps — exported so project-formatter.ts can reuse them (Plan 02)
@@ -74,13 +75,13 @@ export function formatTaskList(tasks: Array<Task & { tags: string[] }>): KnownBl
   for (const task of displayTasks) {
     const emoji = STATUS_EMOJI[task.status] ?? '❓';
     const priority = PRIORITY_INDICATOR[task.priority] ?? task.priority;
-    const assignee = task.assignee ? `@${task.assignee}` : '_unassigned_';
+    const assignee = task.assignee ? `@${escapeSlackMrkdwn(task.assignee)}` : '_unassigned_';
 
     const section: SectionBlock = {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${emoji} *#${task.id} ${task.title}*\n${priority} · ${assignee}`,
+        text: `${emoji} *#${task.id} ${escapeSlackMrkdwn(task.title)}*\n${priority} · ${assignee}`,
       },
     };
     blocks.push(section);
@@ -118,7 +119,7 @@ export function formatTaskDetail(task: Task & { tags: string[] }): KnownBlock[] 
 
   const header: HeaderBlock = {
     type: 'header',
-    text: { type: 'plain_text', text: title, emoji: true },
+    text: { type: 'plain_text', text: escapeSlackMrkdwn(title), emoji: true },
   };
   blocks.push(header);
 
@@ -126,14 +127,14 @@ export function formatTaskDetail(task: Task & { tags: string[] }): KnownBlock[] 
   const fields: MrkdwnElement[] = [
     { type: 'mrkdwn', text: `*Status*\n${STATUS_EMOJI[task.status] ?? '❓'} ${task.status}` },
     { type: 'mrkdwn', text: `*Priority*\n${PRIORITY_INDICATOR[task.priority] ?? task.priority}` },
-    { type: 'mrkdwn', text: `*Assignee*\n${task.assignee ?? '_unassigned_'}` },
-    { type: 'mrkdwn', text: `*Due Date*\n${task.due_date ?? '_none_'}` },
+    { type: 'mrkdwn', text: `*Assignee*\n${escapeSlackMrkdwn(task.assignee) || '_unassigned_'}` },
+    { type: 'mrkdwn', text: `*Due Date*\n${escapeSlackMrkdwn(task.due_date) || '_none_'}` },
     { type: 'mrkdwn', text: `*Project*\n#${task.project_id}` },
-    { type: 'mrkdwn', text: `*Created by*\n${task.created_by}` },
+    { type: 'mrkdwn', text: `*Created by*\n${escapeSlackMrkdwn(task.created_by)}` },
   ];
 
   if (task.tags.length > 0) {
-    fields.push({ type: 'mrkdwn', text: `*Tags*\n${task.tags.join(', ')}` });
+    fields.push({ type: 'mrkdwn', text: `*Tags*\n${escapeSlackMrkdwn(task.tags.join(', '))}` });
   }
 
   const fieldsSection: SectionBlock = { type: 'section', fields };
@@ -146,7 +147,7 @@ export function formatTaskDetail(task: Task & { tags: string[] }): KnownBlock[] 
 
     const descSection: SectionBlock = {
       type: 'section',
-      text: { type: 'mrkdwn', text: task.description.slice(0, 3000) },
+      text: { type: 'mrkdwn', text: escapeSlackMrkdwn(task.description.slice(0, 3000)) },
     };
     blocks.push(descSection);
   }
@@ -169,13 +170,13 @@ export function formatTaskNotification(event: TaskEvent, projectName?: string): 
   const emoji = STATUS_EMOJI[task.status] ?? '❓';
   const actor = metadata.actor ?? 'system';
   const label = EVENT_LABELS[eventType] ?? eventType;
-  const assignee = task.assignee ? `@${task.assignee}` : '_unassigned_';
+  const assignee = task.assignee ? `@${escapeSlackMrkdwn(task.assignee)}` : '_unassigned_';
   const priority = PRIORITY_INDICATOR[task.priority] ?? task.priority;
 
   const text = [
     `*${label}* by ${actor}`,
-    `${emoji} *#${task.id} ${task.title}*`,
-    ...(projectName ? [`_${projectName}_`] : []),
+    `${emoji} *#${task.id} ${escapeSlackMrkdwn(task.title)}*`,
+    ...(projectName ? [`_${escapeSlackMrkdwn(projectName)}_`] : []),
     `${priority} · ${assignee}`,
     `\`/tasks show ${task.id}\``,
   ].join('\n');

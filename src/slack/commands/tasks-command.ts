@@ -10,6 +10,7 @@ import type { SlackChannelSubscriptionRepository } from '../repositories/channel
 import { NotFoundError, ValidationError, BusinessError } from '../../services/errors.js';
 import { formatTaskList, formatTaskDetail } from '../task-formatter.js';
 import { formatProjectList, formatProjectDetail } from '../formatters/project-formatter.js';
+import { escapeSlackMrkdwn } from '../mrkdwn.js';
 import { ALLOWED_EVENT_TYPES, isAllowedEventType } from '../../events/types.js';
 
 /**
@@ -311,7 +312,10 @@ async function handleShow(respond: RespondFn, services: Services, args: string[]
     for (const comment of displayComments) {
       allBlocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: `*${comment.author}*: ${comment.content}` },
+        text: {
+          type: 'mrkdwn',
+          text: `*${escapeSlackMrkdwn(comment.author)}*: ${escapeSlackMrkdwn(comment.content)}`,
+        },
       } as KnownBlock);
     }
 
@@ -394,7 +398,7 @@ async function handleCreate(
   });
 
   const blocks = formatTaskDetail(task);
-  await respondBlocks(respond, blocks, `Task created: ${task.title}`);
+  await respondBlocks(respond, blocks, `Task created: ${escapeSlackMrkdwn(task.title)}`);
 }
 
 /**
@@ -567,7 +571,7 @@ async function handleProjectCreate(
     description: flags['description'] || null,
   });
   const blocks = formatProjectDetail(project);
-  await respondBlocks(respond, blocks, `Project created: ${project.name}`);
+  await respondBlocks(respond, blocks, `Project created: ${escapeSlackMrkdwn(project.name)}`);
 }
 
 /**
@@ -819,7 +823,7 @@ async function handleCommentList(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${comment.author}* (${comment.created_at})\n${comment.content}`,
+        text: `*${escapeSlackMrkdwn(comment.author)}* (${comment.created_at})\n${escapeSlackMrkdwn(comment.content)}`,
       },
     } as KnownBlock);
   }
@@ -921,7 +925,7 @@ async function handleSubtaskCreate(
     created_by_user_id: actorUserId,
   });
   const blocks = formatTaskDetail(task);
-  await respondBlocks(respond, blocks, `Subtask created: ${task.title}`);
+  await respondBlocks(respond, blocks, `Subtask created: ${escapeSlackMrkdwn(task.title)}`);
 }
 
 /**
@@ -1104,11 +1108,11 @@ async function handleSubscribe(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `:bell: Subscribed this channel to *${project.name}* events: ${eventTypes.map((e) => '`' + e + '`').join(', ')}`,
+          text: `:bell: Subscribed this channel to *${escapeSlackMrkdwn(project.name)}* events: ${eventTypes.map((e) => '`' + e + '`').join(', ')}`,
         },
       } as KnownBlock,
     ],
-    `Subscribed to ${project.name} events`,
+    `Subscribed to ${escapeSlackMrkdwn(project.name)} events`,
   );
 }
 

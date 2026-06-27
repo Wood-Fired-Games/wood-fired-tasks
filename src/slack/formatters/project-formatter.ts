@@ -1,5 +1,6 @@
 import type { KnownBlock, SectionBlock, HeaderBlock, DividerBlock } from '@slack/types';
 import type { Project } from '../../types/task.js';
+import { escapeSlackMrkdwn } from '../mrkdwn.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,14 +46,14 @@ export function formatProjectList(projects: Project[]): KnownBlock[] {
     const project = projects[i];
     if (project === undefined) continue;
     const descPreview = project.description
-      ? truncate(project.description, 100)
+      ? escapeSlackMrkdwn(truncate(project.description, 100))
       : '_no description_';
 
     const section: SectionBlock = {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*#${project.id} ${project.name}*\n${descPreview}`,
+        text: `*#${project.id} ${escapeSlackMrkdwn(project.name)}*\n${descPreview}`,
       },
     };
     blocks.push(section);
@@ -86,12 +87,14 @@ export function formatProjectDetail(project: Project): KnownBlock[] {
     type: 'header',
     text: {
       type: 'plain_text',
-      text: nameText,
+      text: escapeSlackMrkdwn(nameText),
       emoji: true,
     },
   };
 
-  const descText = project.description ? truncate(project.description, 200) : '_none_';
+  const descText = project.description
+    ? escapeSlackMrkdwn(truncate(project.description, 200))
+    : '_none_';
 
   const fieldsSection: SectionBlock = {
     type: 'section',
