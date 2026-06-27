@@ -391,6 +391,17 @@ visiting `/auth/login`; otherwise the session cookie is dropped and login
 silently loops back to the login page. In `development`/`test` the cookie
 is non-`secure`, so plain `http://localhost` works.
 
+### 3a. Device-flow verification origin & trust boundary
+
+The RFC 8628 **device flow** returns a `verification_uri` derived **per-request**
+from the address the client connected to (`Host` / `X-Forwarded-{Host,Proto}`;
+see `resolveVerificationOrigin`) so a LAN/remote client gets a routable URL not
+`localhost`. It is **not** host-header injection — the URI is returned only to
+the requesting client, so a spoofed `Host` only misdirects the spoofer; the
+server trusts its front-proxy to set `X-Forwarded-*` honestly. To pin the
+boundary, set `DEVICE_FLOW_TRUSTED_HOSTS` (comma-separated hostname allowlist):
+a `Host` not on it falls back to the `OIDC_REDIRECT_URI` origin; unset = all.
+
 ### 4. (Optional) `LEGACY_AUTH_SUNSET_DATE`
 
 [NOTE] The legacy `X-API-Key` auth path has been **removed** — the server now
@@ -1379,6 +1390,7 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-credential (PAT) cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
 | `SSE_MAX_CONNECTIONS_PER_IP` | no | `8` | Per-IP cap on concurrent SSE connections. |
 | `SSE_MAX_CONNECTIONS` | no | `200` | Global cap on concurrent SSE connections. |
+| `DEVICE_FLOW_TRUSTED_HOSTS` | no | — (all hosts honored) | Optional comma-separated allowlist of hostnames the device-flow `verification_uri` may be built from (`host` or `host:port`; port ignored in match). When set, a request whose `Host`/`X-Forwarded-Host` is not on the list falls back to the configured origin. See [§3a](#3a-device-flow-verification-origin--trust-boundary). |
 | `SLACK_BOT_TOKEN` | conditional | — | Slack bot token (`xoxb-…`). Required if any Slack var is set; refused alone (see [`docs/SLACK.md`](SLACK.md)). |
 | `SLACK_APP_TOKEN` | conditional | — | Slack app-level token (`xapp-…`) for Socket Mode. Must be set together with `SLACK_BOT_TOKEN` or neither. |
 | `SLACK_SIGNING_SECRET` | conditional | — | Slack request signing secret. Required when running Slack in HTTP mode; harmless in Socket Mode. |

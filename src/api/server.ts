@@ -511,6 +511,9 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         await scope.register(deviceCodeRoute, {
           origin,
           expectedClientId: deviceClientId,
+          // Issue #68 (finding 2) — optional operator allowlist pinning which
+          // hostnames the per-request verification origin may be derived from.
+          trustedHosts: config.DEVICE_FLOW_TRUSTED_HOSTS,
         });
         await scope.register(deviceTokenRoute, { expectedClientId: deviceClientId });
         await scope.register(deviceHtmlRoute, { origin });

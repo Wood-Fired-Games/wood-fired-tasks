@@ -121,6 +121,28 @@ export const configSchema = z
     // on any server backed by a real IdP. Defaulted so it works with the
     // stock CLI and is NOT part of the all-or-nothing OIDC group.
     OIDC_DEVICE_CLIENT_ID: z.string().min(1).default('wft-cli'),
+    // Issue #68 (finding 2) — optional allowlist of hostnames the device-flow
+    // verification origin may be built from. The `verification_uri` the CLI
+    // prints is derived per-request from the `Host` / `X-Forwarded-Host` header
+    // (see resolveVerificationOrigin) so a LAN/remote client gets a routable
+    // URL instead of `localhost`. That is not a host-header-INJECTION vector
+    // (the URL is returned only to the requesting client), but an operator who
+    // wants to pin the trust boundary can set this to a comma-separated list of
+    // hostnames (`host` or `host:port` accepted; the port is ignored in the
+    // match). When set, a request whose Host is NOT in the list falls back to
+    // the configured origin instead of being echoed. When UNSET (default),
+    // behavior is unchanged — every Host is honored (backward compatible).
+    DEVICE_FLOW_TRUSTED_HOSTS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        (s ?? '')
+          .split(',')
+          .map((h) => h.trim().toLowerCase())
+          // Normalize `host:port` → `host`; the allowlist matches on hostname.
+          .map((h) => (h.includes(':') ? (h.split(':')[0] ?? h) : h))
+          .filter((h) => h.length > 0),
+      ),
     // WR-03 fix — `post_logout_redirect_uri` for RP-initiated logout.
     // Optional: when absent, the wiring at src/api/server.ts derives a
     // default from OIDC_REDIRECT_URI's origin (+ `/auth/login`). Sourcing

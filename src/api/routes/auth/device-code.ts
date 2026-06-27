@@ -45,6 +45,16 @@ export interface DeviceCodeRouteOptions {
    * one OIDC_CLIENT_ID; we reject anything else).
    */
   expectedClientId: string;
+  /**
+   * Issue #68 (finding 2) — optional allowlist of hostnames the per-request
+   * verification origin may be built from (sourced from
+   * `env.DEVICE_FLOW_TRUSTED_HOSTS`). When non-empty, a request whose
+   * `Host` / `X-Forwarded-Host` is not in the list is ignored and the
+   * verification URI falls back to the configured {@link origin}. When
+   * empty/undefined (default) every Host is honored — backward compatible.
+   * Hostnames only (no port); the resolver strips any `:port` before matching.
+   */
+  trustedHosts?: readonly string[];
 }
 
 /** First value of a possibly comma-joined / array-valued HTTP header. */
@@ -70,15 +80,28 @@ function firstHeaderValue(v: string | string[] | undefined): string | undefined 
  * is returned ONLY to the same client that sent the request, so a spoofed Host
  * merely misdirects the spoofer. Falls back to `fallback` (the configured
  * origin) when no Host header is present at all.
+ *
+ * Issue #68 (finding 2) — an operator who wants to pin the trust boundary may
+ * pass `trustedHosts` (from `env.DEVICE_FLOW_TRUSTED_HOSTS`). When that list is
+ * non-empty, a Host whose hostname is NOT on it is refused and we fall back to
+ * the configured `fallback` origin rather than echoing an arbitrary header.
+ * When the list is empty/omitted the behavior is unchanged (every Host honored).
  */
 export function resolveVerificationOrigin(
   request: { headers: Record<string, string | string[] | undefined>; protocol?: string },
   fallback: string,
+  trustedHosts: readonly string[] = [],
 ): string {
   const host =
     firstHeaderValue(request.headers['x-forwarded-host']) ??
     firstHeaderValue(request.headers['host']);
   if (!host) return fallback;
+  // When an allowlist is configured, the Host's hostname (sans :port) must be
+  // on it; otherwise refuse the header and use the configured origin.
+  if (trustedHosts.length > 0) {
+    const hostname = (host.split(':')[0] ?? host).toLowerCase();
+    if (!trustedHosts.includes(hostname)) return fallback;
+  }
   const scheme =
     firstHeaderValue(request.headers['x-forwarded-proto']) ??
     (request.protocol && request.protocol.length > 0 ? request.protocol : 'http');
@@ -133,7 +156,7 @@ const deviceCodeRoute: FastifyPluginAsync<DeviceCodeRouteOptions> = async (fasti
     // #834: build the verification URL from the address the CLIENT connected to
     // (request Host / X-Forwarded-*), not the static configured origin, so a
     // remote/LAN client gets a URL it can actually open instead of localhost.
-    const origin = resolveVerificationOrigin(request, opts.origin);
+    const origin = resolveVerificationOrigin(request, opts.origin, opts.trustedHosts ?? []);
 
     return reply.code(200).send({
       device_code: session.deviceCode,
