@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-27T21:46:04.903Z",
+    "generated_at": "2026-06-27T22:09:51.636Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -92,8 +92,8 @@
       "status": "present",
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
-      "actual_lines": 383,
-      "sha256": "f286581aaa425304e429d0ecd440ed4973e504e88a718d61ace6c455e96d5874",
+      "actual_lines": 390,
+      "sha256": "8667ea04e506aae1ea6883340f77f4c88515d6f6c3860b07dc7bb6abe9fd9be7",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -386,7 +386,7 @@
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
       "actual_lines": 262,
-      "sha256": "adfeaab2396eaac1646dc49f29838da6efe7432eaf95a4cf32db202fdedd1333"
+      "sha256": "7dceddb46986c77294998dcf0077a16c4a82e458455299f1b0f29cfa0c0a0b85"
     },
     {
       "path": "llms.txt",
