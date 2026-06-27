@@ -618,7 +618,15 @@ What the router adds to the host's attack surface:
   a CI workflow file. Anyone who can edit it can run any handler with
   any handler-scoped token. The spec does not attempt to sandbox the
   config — it documents the requirement that the file be protected by
-  filesystem permissions (mode `0600`, owned by the router user).
+  filesystem permissions (mode `0600`, owned by the router user). On POSIX
+  this is **enforced at startup**: the loader resolves the path through
+  `realpath` and stats the real file, rejecting it if ANY group/other
+  permission bit is set (`mode & 0o077`, so `0640`/`0644`/`0660`/`0666`
+  all fail) or if the file is not owned by the router uid. A symlink whose
+  real target is too-permissive is rejected for the target it resolves to.
+  On Windows (`process.getuid` undefined) mode/uid bits are unreliable, so
+  the check is skipped and correct file permissions remain a deployment
+  requirement.
 
 ## Security model
 
@@ -635,7 +643,11 @@ above are the operational shape. Stated as a small set of guarantees:
   scrubbed env so they cannot reach tokens from other rules.
 - **`triggers.yaml` is security-sensitive trust input.** Documented
   explicitly: edit access is equivalent to ability to run any handler
-  with any wired token. File mode `0600` enforced at startup.
+  with any wired token. File mode `0600` + router-user ownership are
+  enforced at startup on POSIX (any group/other bit, or a foreign owner,
+  aborts boot via the config-error path; symlinks are resolved to the real
+  file first). Windows skips the check — there permissions are a
+  deployment requirement.
 - **Plaintext-PAT-over-the-internet is impossible.** TLS posture above
   enforces this at startup, not at runtime.
 - **Allowlist parity with the existing surface.** The router's zod schema

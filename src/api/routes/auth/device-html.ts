@@ -38,6 +38,7 @@ import { renderDevicePage, renderDeviceApprovedPage } from '../../../web/pages/d
 import { getOrCreateCsrfToken, verifyCsrfToken } from './csrf.js';
 import { requireUser } from '../../plugins/auth.js';
 import { generateToken } from '../../../services/pat-hash.js';
+import { config } from '../../../config/env.js';
 
 export interface DeviceHtmlRouteOptions {
   /**
@@ -133,135 +134,176 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
   //   4. Success → approve() then renderDeviceApprovedPage(). Logger emits
   //      `event: device_flow_approved` with the userId — user_code is
   //      DELIBERATELY OMITTED from the log payload (Threat T-30-02-06).
-  fastify.post('/auth/device/verify', { config: { sessionOnly: true } }, async (request, reply) => {
-    const body = (request.body ?? {}) as VerifyBody;
-
-    // 1. CSRF gate.
-    if (!verifyCsrfToken(request, body._csrf)) {
-      // Re-render with a CSRF error message; status 403 so clients (and
-      // tests) can detect the mismatch without parsing HTML.
-      const csrfToken = getOrCreateCsrfToken(request);
-      const html = renderDevicePage({
-        csrfToken,
-        prefilledUserCode: null,
-        errorMessage: 'Session expired. Refresh the page and try again.',
-      });
-      return replyHtml(reply, 403, html);
-    }
-
-    // 2. Format gate — defense in depth on top of the HTML `pattern`
-    //    attribute (which is purely client-side and easily bypassed).
-    const rawUserCode = body.user_code;
-    const userCode =
-      typeof rawUserCode === 'string' && USER_CODE_RE.test(rawUserCode) ? rawUserCode : null;
-    if (userCode === null) {
-      const csrfToken = getOrCreateCsrfToken(request);
-      const html = renderDevicePage({
-        csrfToken,
-        prefilledUserCode: null,
-        errorMessage: 'That code is not in the expected format.',
-      });
-      return replyHtml(reply, 400, html);
-    }
-
-    // 3. Lookup + expiry gate.
-    const session = findByUserCode(userCode);
-    const now = Date.now();
-    const expired =
-      session === undefined || session.status === 'expired' || now > session.expiresAt;
-    // Plan 30-04 will treat status==='approved' (with a different userId)
-    // as a no-op too; for this plan the approve() helper's own idempotency
-    // is the source of truth.
-    if (expired || session.status === 'denied') {
-      const csrfToken = getOrCreateCsrfToken(request);
-      const html = renderDevicePage({
-        csrfToken,
-        prefilledUserCode: null,
-        errorMessage: 'That code has expired. Please run `tasks login` again.',
-      });
-      return replyHtml(reply, 400, html);
-    }
-
-    // 4. Approve. requireUser() narrows request.user — the chain's
-    //    sessionOnly gate has already proved session auth at this point.
-    const user = requireUser(request);
-    approve(userCode, user.id);
-
-    // Audit log — userId only. user_code MUST NOT appear (Threat T-30-02-06).
-    request.log.info(
-      {
-        event: 'device_flow_approved',
-        userId: user.id,
+  // Issue #75 — tighter per-route rate limit (auth surface hardening).
+  fastify.post(
+    '/auth/device/verify',
+    {
+      config: {
+        sessionOnly: true,
+        rateLimit: {
+          max: config.RATE_LIMIT_AUTH_MAX,
+          timeWindow: config.RATE_LIMIT_AUTH_TIME_WINDOW,
+        },
       },
-      'device flow approved',
-    );
+    },
+    async (request, reply) => {
+      const body = (request.body ?? {}) as VerifyBody;
 
-    // 5. (Plan 30-04 Task 2) Mint a PAT for the CLI to consume on its
-    //    next /auth/device/token poll. The session is now in 'approved'
-    //    state, so the lookup here is guaranteed; we re-fetch only to
-    //    read the (already sanitized) hostname captured at create time.
-    //
-    //    The mint is wrapped in a try/catch so a transient DB outage
-    //    surfaces a user-actionable error page rather than a generic
-    //    500. The session stays in 'approved' (mintedToken === null)
-    //    so a retry via the polling endpoint would still see
-    //    `authorization_pending` until the device-code TTL expires —
-    //    no replay window opens.
-    const approvedSession = findByUserCode(userCode);
-    // The store guarantees this lookup is non-null at this point
-    // (approve() returned successfully, no concurrent remove()). The
-    // narrow is a type-system requirement, not a runtime expectation.
-    if (!approvedSession) {
-      throw new Error('device-flow: session vanished between approve() and mint');
-    }
-    const name = tokenName(approvedSession.hostname ?? 'unknown');
-    try {
-      const { token, prefix, suffix, hash } = generateToken();
-      const row = fastify.apiTokenRepository.insert({
-        userId: user.id,
-        name,
-        prefix,
-        suffix,
-        hash,
-        scopes: JSON.stringify([]),
-        expiresAt: null,
-      });
-      // WR-01 (Phase 30 review) — `recordMintedToken` returns `false`
-      // when the session is no longer in 'approved' state (e.g. a
-      // concurrent `remove()` raced, or the cleanup tick fired between
-      // approve() and here). better-sqlite3 is synchronous so this
-      // race is structurally unreachable today, but the contract is
-      // fragile and silent failure would leave an orphan PAT row in
-      // the DB that the CLI never receives. If the stash fails, REVOKE
-      // the just-minted PAT and render the recoverable-error page so
-      // the user can retry without leaking an unreachable token.
-      const stashed = recordMintedToken(userCode, {
-        tokenId: row.id,
-        token,
-      });
-      if (!stashed) {
-        // Best-effort revoke — if THIS fails too, log + carry on; the
-        // outer catch will render the same error page.
-        try {
-          fastify.apiTokenRepository.revoke(row.id, user.id);
-        } catch (revokeErr) {
-          request.log.error(
+      // 1. CSRF gate.
+      if (!verifyCsrfToken(request, body._csrf)) {
+        // Re-render with a CSRF error message; status 403 so clients (and
+        // tests) can detect the mismatch without parsing HTML.
+        const csrfToken = getOrCreateCsrfToken(request);
+        const html = renderDevicePage({
+          csrfToken,
+          prefilledUserCode: null,
+          errorMessage: 'Session expired. Refresh the page and try again.',
+        });
+        return replyHtml(reply, 403, html);
+      }
+
+      // 2. Format gate — defense in depth on top of the HTML `pattern`
+      //    attribute (which is purely client-side and easily bypassed).
+      const rawUserCode = body.user_code;
+      const userCode =
+        typeof rawUserCode === 'string' && USER_CODE_RE.test(rawUserCode) ? rawUserCode : null;
+      if (userCode === null) {
+        const csrfToken = getOrCreateCsrfToken(request);
+        const html = renderDevicePage({
+          csrfToken,
+          prefilledUserCode: null,
+          errorMessage: 'That code is not in the expected format.',
+        });
+        return replyHtml(reply, 400, html);
+      }
+
+      // 3. Lookup + expiry gate.
+      const session = findByUserCode(userCode);
+      const now = Date.now();
+      const expired =
+        session === undefined || session.status === 'expired' || now > session.expiresAt;
+      // Plan 30-04 will treat status==='approved' (with a different userId)
+      // as a no-op too; for this plan the approve() helper's own idempotency
+      // is the source of truth.
+      if (expired || session.status === 'denied') {
+        const csrfToken = getOrCreateCsrfToken(request);
+        const html = renderDevicePage({
+          csrfToken,
+          prefilledUserCode: null,
+          errorMessage: 'That code has expired. Please run `tasks login` again.',
+        });
+        return replyHtml(reply, 400, html);
+      }
+
+      // 4. Approve. requireUser() narrows request.user — the chain's
+      //    sessionOnly gate has already proved session auth at this point.
+      const user = requireUser(request);
+      approve(userCode, user.id);
+
+      // Audit log — userId only. user_code MUST NOT appear (Threat T-30-02-06).
+      request.log.info(
+        {
+          event: 'device_flow_approved',
+          userId: user.id,
+        },
+        'device flow approved',
+      );
+
+      // 5. (Plan 30-04 Task 2) Mint a PAT for the CLI to consume on its
+      //    next /auth/device/token poll. The session is now in 'approved'
+      //    state, so the lookup here is guaranteed; we re-fetch only to
+      //    read the (already sanitized) hostname captured at create time.
+      //
+      //    The mint is wrapped in a try/catch so a transient DB outage
+      //    surfaces a user-actionable error page rather than a generic
+      //    500. The session stays in 'approved' (mintedToken === null)
+      //    so a retry via the polling endpoint would still see
+      //    `authorization_pending` until the device-code TTL expires —
+      //    no replay window opens.
+      const approvedSession = findByUserCode(userCode);
+      // The store guarantees this lookup is non-null at this point
+      // (approve() returned successfully, no concurrent remove()). The
+      // narrow is a type-system requirement, not a runtime expectation.
+      if (!approvedSession) {
+        throw new Error('device-flow: session vanished between approve() and mint');
+      }
+      const name = tokenName(approvedSession.hostname ?? 'unknown');
+      try {
+        const { token, prefix, suffix, hash } = generateToken();
+        const row = fastify.apiTokenRepository.insert({
+          userId: user.id,
+          name,
+          prefix,
+          suffix,
+          hash,
+          scopes: JSON.stringify([]),
+          expiresAt: null,
+        });
+        // WR-01 (Phase 30 review) — `recordMintedToken` returns `false`
+        // when the session is no longer in 'approved' state (e.g. a
+        // concurrent `remove()` raced, or the cleanup tick fired between
+        // approve() and here). better-sqlite3 is synchronous so this
+        // race is structurally unreachable today, but the contract is
+        // fragile and silent failure would leave an orphan PAT row in
+        // the DB that the CLI never receives. If the stash fails, REVOKE
+        // the just-minted PAT and render the recoverable-error page so
+        // the user can retry without leaking an unreachable token.
+        const stashed = recordMintedToken(userCode, {
+          tokenId: row.id,
+          token,
+        });
+        if (!stashed) {
+          // Best-effort revoke — if THIS fails too, log + carry on; the
+          // outer catch will render the same error page.
+          try {
+            fastify.apiTokenRepository.revoke(row.id, user.id);
+          } catch (revokeErr) {
+            request.log.error(
+              {
+                err: revokeErr,
+                event: 'pat_orphan_revoke_failed',
+                userId: user.id,
+                tokenId: row.id,
+              },
+              'failed to revoke orphan PAT after recordMintedToken returned false',
+            );
+          }
+          request.log.warn(
             {
-              err: revokeErr,
-              event: 'pat_orphan_revoke_failed',
+              event: 'device_flow_mint_stash_failed',
               userId: user.id,
               tokenId: row.id,
             },
-            'failed to revoke orphan PAT after recordMintedToken returned false',
+            'recordMintedToken returned false — session not in approved state; orphan PAT revoked',
           );
+          const csrfToken = getOrCreateCsrfToken(request);
+          const html = renderDevicePage({
+            csrfToken,
+            prefilledUserCode: null,
+            errorMessage: 'Could not complete sign-in. Please try again.',
+          });
+          return replyHtml(reply, 500, html);
         }
-        request.log.warn(
+        // Audit log — userId + tokenId only. token, hash, user_code, and
+        // name are intentionally OMITTED (Threats T-30-04-02 / T-30-02-06).
+        request.log.info(
           {
-            event: 'device_flow_mint_stash_failed',
+            event: 'pat_minted',
+            via: 'device_flow',
             userId: user.id,
             tokenId: row.id,
           },
-          'recordMintedToken returned false — session not in approved state; orphan PAT revoked',
+          'pat minted via device flow',
+        );
+      } catch (err) {
+        // The PAT didn't land — log + render a recoverable error page.
+        // The session remains 'approved' (no mintedToken), so the CLI
+        // polling endpoint continues returning `authorization_pending`
+        // until the device-code TTL elapses (graceful degradation per
+        // Threat T-30-04-05 disposition).
+        request.log.error(
+          { err, event: 'pat_mint_failed', userId: user.id },
+          'pat mint failed during device flow',
         );
         const csrfToken = getOrCreateCsrfToken(request);
         const html = renderDevicePage({
@@ -271,39 +313,11 @@ const deviceHtmlRoute: FastifyPluginAsync<DeviceHtmlRouteOptions> = async (fasti
         });
         return replyHtml(reply, 500, html);
       }
-      // Audit log — userId + tokenId only. token, hash, user_code, and
-      // name are intentionally OMITTED (Threats T-30-04-02 / T-30-02-06).
-      request.log.info(
-        {
-          event: 'pat_minted',
-          via: 'device_flow',
-          userId: user.id,
-          tokenId: row.id,
-        },
-        'pat minted via device flow',
-      );
-    } catch (err) {
-      // The PAT didn't land — log + render a recoverable error page.
-      // The session remains 'approved' (no mintedToken), so the CLI
-      // polling endpoint continues returning `authorization_pending`
-      // until the device-code TTL elapses (graceful degradation per
-      // Threat T-30-04-05 disposition).
-      request.log.error(
-        { err, event: 'pat_mint_failed', userId: user.id },
-        'pat mint failed during device flow',
-      );
-      const csrfToken = getOrCreateCsrfToken(request);
-      const html = renderDevicePage({
-        csrfToken,
-        prefilledUserCode: null,
-        errorMessage: 'Could not complete sign-in. Please try again.',
-      });
-      return replyHtml(reply, 500, html);
-    }
 
-    const successHtml = renderDeviceApprovedPage();
-    return replyHtml(reply, 200, successHtml);
-  });
+      const successHtml = renderDeviceApprovedPage();
+      return replyHtml(reply, 200, successHtml);
+    },
+  );
 };
 
 /**

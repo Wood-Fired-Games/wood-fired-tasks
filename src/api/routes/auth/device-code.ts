@@ -26,6 +26,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { createSession } from '../../../services/device-flow-store.js';
+import { config } from '../../../config/env.js';
 
 export interface DeviceCodeRouteOptions {
   /**
@@ -120,53 +121,66 @@ const BodySchema = z.object({
 });
 
 const deviceCodeRoute: FastifyPluginAsync<DeviceCodeRouteOptions> = async (fastify, opts) => {
-  fastify.post('/auth/device/code', { config: { skipAuth: true } }, async (request, reply) => {
-    // Manual Zod parse so the error envelope matches RFC 8628 verbatim
-    // (`{error: 'invalid_request'}`) — Fastify's default 400 carries the
-    // `statusCode/error/message` triplet which is not what RFC 8628 wants.
-    const parsed = BodySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send({
-        error: 'invalid_request',
-        error_description: 'client_id is required',
-      });
-    }
-    const { client_id, hostname } = parsed.data;
+  // Issue #75 — tighter per-route rate limit (auth surface hardening).
+  fastify.post(
+    '/auth/device/code',
+    {
+      config: {
+        skipAuth: true,
+        rateLimit: {
+          max: config.RATE_LIMIT_AUTH_MAX,
+          timeWindow: config.RATE_LIMIT_AUTH_TIME_WINDOW,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Manual Zod parse so the error envelope matches RFC 8628 verbatim
+      // (`{error: 'invalid_request'}`) — Fastify's default 400 carries the
+      // `statusCode/error/message` triplet which is not what RFC 8628 wants.
+      const parsed = BodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'invalid_request',
+          error_description: 'client_id is required',
+        });
+      }
+      const { client_id, hostname } = parsed.data;
 
-    if (client_id !== opts.expectedClientId) {
-      return reply.code(400).send({ error: 'invalid_client' });
-    }
+      if (client_id !== opts.expectedClientId) {
+        return reply.code(400).send({ error: 'invalid_client' });
+      }
 
-    const session = createSession({
-      clientId: client_id,
-      hostname: hostname ?? null,
-    });
-
-    // Audit log — no secrets. `event` is the canonical correlation key
-    // pluggable into the analytics DB downstream.
-    request.log.info(
-      {
-        event: 'device_flow_started',
+      const session = createSession({
         clientId: client_id,
         hostname: hostname ?? null,
-      },
-      'device flow started',
-    );
+      });
 
-    // #834: build the verification URL from the address the CLIENT connected to
-    // (request Host / X-Forwarded-*), not the static configured origin, so a
-    // remote/LAN client gets a URL it can actually open instead of localhost.
-    const origin = resolveVerificationOrigin(request, opts.origin, opts.trustedHosts ?? []);
+      // Audit log — no secrets. `event` is the canonical correlation key
+      // pluggable into the analytics DB downstream.
+      request.log.info(
+        {
+          event: 'device_flow_started',
+          clientId: client_id,
+          hostname: hostname ?? null,
+        },
+        'device flow started',
+      );
 
-    return reply.code(200).send({
-      device_code: session.deviceCode,
-      user_code: session.userCode,
-      verification_uri: `${origin}/auth/device`,
-      verification_uri_complete: `${origin}/auth/device?user_code=${session.userCode}`,
-      expires_in: 600 as const,
-      interval: 5 as const,
-    });
-  });
+      // #834: build the verification URL from the address the CLIENT connected to
+      // (request Host / X-Forwarded-*), not the static configured origin, so a
+      // remote/LAN client gets a URL it can actually open instead of localhost.
+      const origin = resolveVerificationOrigin(request, opts.origin, opts.trustedHosts ?? []);
+
+      return reply.code(200).send({
+        device_code: session.deviceCode,
+        user_code: session.userCode,
+        verification_uri: `${origin}/auth/device`,
+        verification_uri_complete: `${origin}/auth/device?user_code=${session.userCode}`,
+        expires_in: 600 as const,
+        interval: 5 as const,
+      });
+    },
+  );
 };
 
 export default deviceCodeRoute;

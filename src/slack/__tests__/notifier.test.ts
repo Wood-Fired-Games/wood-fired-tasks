@@ -244,6 +244,25 @@ describe('SlackNotifier', () => {
       expect(formatTaskNotification).toHaveBeenCalledWith(expect.anything(), 'Project #7');
     });
 
+    it('passes the RAW project name to the formatter (escaping is the formatter choke point, no double-escape)', async () => {
+      vi.mocked(subscriptionRepo.findSubscribedChannels).mockReturnValue(['C001']);
+      vi.mocked(projectService.getProject).mockReturnValue({
+        id: 1,
+        name: '<!channel>',
+        description: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      });
+      notifier.start();
+
+      triggerEvent('task.created', makeTaskEvent());
+      await vi.runAllTimersAsync();
+
+      // Notifier must NOT pre-escape — it hands the raw name to formatTaskNotification,
+      // which is the single layer that escapes. Pre-escaping here would double-encode.
+      expect(formatTaskNotification).toHaveBeenCalledWith(expect.anything(), '<!channel>');
+    });
+
     it('includes task title in fallback text', async () => {
       vi.mocked(subscriptionRepo.findSubscribedChannels).mockReturnValue(['C001']);
       notifier.start();

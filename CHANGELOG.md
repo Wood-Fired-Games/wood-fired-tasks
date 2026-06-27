@@ -11,6 +11,46 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v2.3.0] - 2026-06-27
+
+Security-hardening release remediating issues #74, #72, and #75 (reported by the
+Stafficy agent). All changes are backward compatible — defaults reproduce prior
+behavior.
+
+### Added
+- **Proxy-aware rate limiting** (#75). New `TRUST_PROXY` env var (default **off**;
+  accepts `true`, an integer hop count, or a comma-separated IP/CIDR allowlist)
+  wired into the Fastify factory so `request.ip` derives from `X-Forwarded-For`
+  only when a proxy is trusted. The rate limiter gains an explicit `keyGenerator`
+  that keys on the authenticated principal when present, else `request.ip`.
+- **Per-route auth/device rate limits** (#75). `/auth/login`, `/auth/callback`,
+  `/auth/device/code`, and `/auth/device/verify` get a tighter budget
+  (`RATE_LIMIT_AUTH_MAX`, default 10); `/auth/device/token` gets a looser one for
+  CLI polling (`RATE_LIMIT_DEVICE_TOKEN_MAX`, default 30). `RATE_LIMIT_MAX` and
+  `RATE_LIMIT_TIME_WINDOW` are now part of the validated `src/config/env.ts`
+  schema instead of raw `process.env` reads.
+
+### Security
+- **Slack mrkdwn injection** (#74). User-controlled task/project/comment text
+  (titles, descriptions, names, comment author + body, assignee, tags) is now
+  escaped via a new `escapeSlackMrkdwn` helper before being placed in Slack
+  mrkdwn — including the broadcast notification path. Prevents injected Slack
+  mentions (`<!channel>`) and spoofed links from appearing in trusted-looking
+  notifications. System-owned fields (ids, status/priority enums) are unaffected.
+- **`triggers.yaml` trust boundary enforced** (#72, wft-router). The router now
+  rejects its `triggers.yaml` at startup if it is group/other-accessible
+  (`mode & 0o077`) or, on POSIX, not owned by the router user — the path is
+  realpath-resolved so a benign symlink to an attacker-writable target is also
+  rejected. Closes the gap where `docs/event-router-design.md` documented `0600`
+  enforcement that did not exist. Windows skips the check (documented deployment
+  requirement). Since `triggers.yaml` can run `shell_exec` and arbitrary webhook
+  egress, this restores the documented edit-equals-code-execution trust boundary.
+- **Rate-limit hardening for auth routes** (#75). Sensitive auth/device endpoints
+  no longer share the broad global budget, narrowing brute-force and
+  user-code-enumeration surface; proxy-aware keying prevents all clients behind a
+  reverse proxy from collapsing into one bucket (accidental DoS / uneven
+  protection).
+
 ## [v2.2.0] - 2026-06-11
 
 ### Added

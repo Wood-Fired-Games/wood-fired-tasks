@@ -103,6 +103,46 @@ export const configSchema = z
     SSE_MAX_CONNECTIONS_PER_KEY: z.string().min(1).default('4').transform(Number),
     SSE_MAX_CONNECTIONS_PER_IP: z.string().min(1).default('8').transform(Number),
     SSE_MAX_CONNECTIONS: z.string().min(1).default('200').transform(Number),
+    // Issue #75 — global + per-route rate-limit budgets. RATE_LIMIT_MAX /
+    // RATE_LIMIT_TIME_WINDOW back the global @fastify/rate-limit registration
+    // (moved here from raw process.env reads in server.ts). Defaults reproduce
+    // the prior effective behavior exactly: 1000 requests / 1 minute, no proxy
+    // trust. The AUTH_* / DEVICE_TOKEN_* knobs tighten the five sensitive
+    // auth/device routes below the global budget (per-route config.rateLimit).
+    RATE_LIMIT_MAX: z.string().min(1).default('1000').transform(Number),
+    RATE_LIMIT_TIME_WINDOW: z.string().min(1).default('1 minute'),
+    // Tighter budget for the sensitive auth/device routes (login, callback,
+    // device/code, device/verify). Brute-force + DoS hardening.
+    RATE_LIMIT_AUTH_MAX: z.string().min(1).default('10').transform(Number),
+    RATE_LIMIT_AUTH_TIME_WINDOW: z.string().min(1).default('1 minute'),
+    // device/token is polled by the CLI every `interval` seconds, so it gets
+    // a looser budget than the other auth routes (still well below global).
+    RATE_LIMIT_DEVICE_TOKEN_MAX: z.string().min(1).default('30').transform(Number),
+    // Issue #75 — proxy-aware client identity for rate limiting. Controls
+    // Fastify's `trustProxy` factory option, which is what makes
+    // `request.ip` resolve from `X-Forwarded-For`. DEFAULT OFF (false) so the
+    // loopback-bind default never trusts forwarded headers — a spoofed
+    // X-Forwarded-For cannot move a client's rate-limit bucket. Operators
+    // behind a reverse proxy (the documented deployment) opt in. Accepted:
+    //   - unset / 'false'          → false  (do NOT trust forwarded headers)
+    //   - 'true'                   → true   (trust all — proxy is the only hop)
+    //   - integer hop count ('1')  → number (trust N proxy hops)
+    //   - 'ip,cidr,…'              → string[] (trust only these proxy IPs/CIDRs)
+    TRUST_PROXY: z
+      .string()
+      .optional()
+      .transform((raw): boolean | number | string[] => {
+        const s = (raw ?? '').trim();
+        if (s === '' || s.toLowerCase() === 'false') return false;
+        if (s.toLowerCase() === 'true') return true;
+        // Pure integer → hop count. (Reject negatives/decimals → fall through.)
+        if (/^\d+$/.test(s)) return Number(s);
+        // Otherwise treat as a comma-separated IP/CIDR allowlist.
+        return s
+          .split(',')
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+      }),
     // Phase 29: OIDC browser flow + session cookie configuration.
     // All four OIDC_* vars are all-or-nothing (see refine below). When unset,
     // OIDC routes return 501 and the session strategy returns null — PAT +

@@ -320,7 +320,14 @@ filters. MCP list tools wrap the same envelope under a domain key
 
 Global rate limit (`@fastify/rate-limit`) applies to every REST route except
 `/health*`; defaults are 1000 req/min, tunable via `RATE_LIMIT_MAX` and
-`RATE_LIMIT_TIME_WINDOW`. Response shape on breach:
+`RATE_LIMIT_TIME_WINDOW`. Sensitive auth/device routes (`/auth/login`,
+`/auth/callback`, `/auth/device/code`, `/auth/device/verify`,
+`/auth/device/token`) carry tighter per-route budgets (`RATE_LIMIT_AUTH_MAX`,
+default 10; `RATE_LIMIT_DEVICE_TOKEN_MAX`, default 30). Client identity is
+keyed on the authenticated principal when present, else `request.ip`; behind a
+reverse proxy set `TRUST_PROXY` (default off) so `request.ip` derives from
+`X-Forwarded-For` — with it off, a spoofed forwarded header cannot change a
+client's bucket. Response shape on breach:
 `{ error: 'TOO_MANY_REQUESTS', message }` with HTTP 429.
 
 ## Error handling cheatsheet

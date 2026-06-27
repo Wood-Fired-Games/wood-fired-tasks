@@ -469,6 +469,25 @@ describe('registerTasksCommand', () => {
       expect(hasCommentContent).toBe(true);
     });
 
+    it('escapes malicious comment author and content (mrkdwn injection)', async () => {
+      const comments = [makeMockComment({ id: 1, author: '<@U999>', content: '<!channel> ping' })];
+      vi.mocked(services.commentService.getComments).mockResolvedValue(comments);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('show 42');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
+      const commentBlock = respondArg.blocks.find((b) =>
+        b.text?.text?.includes('&lt;!channel&gt;'),
+      );
+      expect(commentBlock).toBeDefined();
+      expect(commentBlock?.text?.text).toContain('&lt;@U999&gt;');
+      expect(commentBlock?.text?.text).not.toContain('<!channel>');
+    });
+
     it('adds "X more comments" footer when more than 5 comments', async () => {
       const comments = Array.from({ length: 7 }, (_, i) =>
         makeMockComment({ id: i + 1, content: `Comment ${i + 1}` }),
@@ -1058,6 +1077,22 @@ describe('registerTasksCommand', () => {
         b.text?.text?.includes('Great work!'),
       );
       expect(hasCommentContent).toBe(true);
+    });
+
+    it('escapes malicious comment author and content in comment-list', async () => {
+      const comments = [makeMockComment({ id: 1, author: 'a&b', content: '<https://evil|x>' })];
+      vi.mocked(services.commentService.getComments).mockResolvedValue(comments);
+
+      const handler = getHandler(app);
+      const args = makeHandlerArgs('comment-list 42');
+      await handler(args);
+
+      const respondArg = args.respond.mock.calls[0]![0] as {
+        blocks: Array<{ text?: { text: string } }>;
+      };
+      const commentBlock = respondArg.blocks.find((b) => b.text?.text?.includes('a&amp;b'));
+      expect(commentBlock).toBeDefined();
+      expect(commentBlock?.text?.text).toContain('&lt;https://evil|x&gt;');
     });
 
     it('responds with _No comments._ when task has no comments', async () => {

@@ -96,6 +96,14 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
 
   // Create Fastify instance with logger
   const server = Fastify({
+    // Issue #75 — proxy-aware client identity. `trustProxy` makes
+    // `request.ip` resolve from `X-Forwarded-For` (consistent with the
+    // device-flow origin trust in §3a). DEFAULT OFF (config.TRUST_PROXY ===
+    // false) so a spoofed X-Forwarded-For cannot move a client's rate-limit
+    // bucket on the loopback-bind default; operators behind a reverse proxy
+    // opt in via TRUST_PROXY. Accepts boolean | number (hop count) | string[]
+    // (IP/CIDR allowlist) — see src/config/env.ts.
+    trustProxy: config.TRUST_PROXY,
     // Timeout configurations to prevent hung requests
     connectionTimeout: config.CONNECTION_TIMEOUT, // Socket inactivity timeout (2 min)
     requestTimeout: config.REQUEST_TIMEOUT, // Maximum time for entire request (1 min)
@@ -312,9 +320,28 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // avoid disrupting the existing test suite, which exercises many
     // server.inject calls from 127.0.0.1; operators tune via env.
     await server.register(rateLimit, {
-      max: Number(process.env['RATE_LIMIT_MAX'] ?? 1000),
-      timeWindow: process.env['RATE_LIMIT_TIME_WINDOW'] ?? '1 minute',
+      // Issue #75 — global budget now sourced from the validated config
+      // (src/config/env.ts), not raw process.env. Defaults reproduce the
+      // prior effective behavior exactly: 1000 requests / 1 minute.
+      max: config.RATE_LIMIT_MAX,
+      timeWindow: config.RATE_LIMIT_TIME_WINDOW,
       allowList: (req) => req.url === '/health' || req.url.startsWith('/health/'),
+      // Issue #75 — proxy-aware keying. Prefer the authenticated principal
+      // (PAT token id, else user id) so a single proxy IP does not collapse
+      // every authenticated client into one bucket; fall back to
+      // `request.ip`, which Fastify resolves from X-Forwarded-For ONLY when
+      // `trustProxy` is set (default OFF). The KEY GUARANTEE: with trustProxy
+      // OFF a spoofed X-Forwarded-For cannot change `request.ip`, so it
+      // cannot move the bucket. The rate-limit plugin is registered above the
+      // auth scope, so `request.tokenId` / `request.user` may be undefined on
+      // routes outside that scope — guard both.
+      keyGenerator: (req) => {
+        const tokenId = req.tokenId;
+        if (typeof tokenId === 'number') return `tok:${tokenId}`;
+        const user = req.user;
+        if (user && typeof user.id === 'number') return `usr:${user.id}`;
+        return `ip:${req.ip}`;
+      },
       // The error returned here is thrown by @fastify/rate-limit; the project's
       // custom errorHandler reads `statusCode` and `code` to shape the JSON
       // response. We attach both so the response surfaces as

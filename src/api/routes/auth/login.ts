@@ -29,6 +29,7 @@ import {
   randomPKCECodeVerifier,
   randomState,
 } from '../../../services/oidc-client.js';
+import { config } from '../../../config/env.js';
 import type { AuthRoutesOptions } from './index.js';
 
 /**
@@ -71,57 +72,72 @@ interface LoginQuery {
 }
 
 const loginRoute: FastifyPluginAsync<AuthRoutesOptions> = async (fastify, opts) => {
-  fastify.get('/login', { config: { skipAuth: true } }, async (request, reply) => {
-    // Already signed in — short-circuit to /me (the documented home
-    // page for authenticated users). Skip the IdP roundtrip entirely.
-    if (request.session.get('user')) {
-      return reply.header('Cache-Control', 'no-store').redirect('/me', 302);
-    }
+  // Issue #75 — tighter per-route rate limit than the global budget
+  // (brute-force / DoS hardening on the sensitive auth surface). Env-tunable
+  // via RATE_LIMIT_AUTH_MAX / RATE_LIMIT_AUTH_TIME_WINDOW.
+  fastify.get(
+    '/login',
+    {
+      config: {
+        skipAuth: true,
+        rateLimit: {
+          max: config.RATE_LIMIT_AUTH_MAX,
+          timeWindow: config.RATE_LIMIT_AUTH_TIME_WINDOW,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Already signed in — short-circuit to /me (the documented home
+      // page for authenticated users). Skip the IdP roundtrip entirely.
+      if (request.session.get('user')) {
+        return reply.header('Cache-Control', 'no-store').redirect('/me', 302);
+      }
 
-    // Phase 30 Plan 02 — device-flow allowlist takes priority. If the
-    // candidate starts with `/auth/device`, it MUST match DEVICE_NEXT_RE
-    // exactly; otherwise we drop to `/me` rather than passing through
-    // to NEXT_PATH_RE (which would happily accept e.g.
-    // `/auth/devicehttp://attacker.com` because it has one leading slash).
-    // The anchored regex is the open-redirect mitigation
-    // (Threat T-30-02-01); the device-prefix gate ensures malformed
-    // device-shaped paths can never slip into the original sanitizer.
-    const nextRaw = (request.query as LoginQuery).next;
-    let redirectAfterLogin: string;
-    if (typeof nextRaw !== 'string') {
-      redirectAfterLogin = '/me';
-    } else if (nextRaw.startsWith('/auth/device')) {
-      redirectAfterLogin = DEVICE_NEXT_RE.test(nextRaw) ? nextRaw : '/me';
-    } else if (NEXT_PATH_RE.test(nextRaw)) {
-      redirectAfterLogin = nextRaw;
-    } else {
-      redirectAfterLogin = '/me';
-    }
+      // Phase 30 Plan 02 — device-flow allowlist takes priority. If the
+      // candidate starts with `/auth/device`, it MUST match DEVICE_NEXT_RE
+      // exactly; otherwise we drop to `/me` rather than passing through
+      // to NEXT_PATH_RE (which would happily accept e.g.
+      // `/auth/devicehttp://attacker.com` because it has one leading slash).
+      // The anchored regex is the open-redirect mitigation
+      // (Threat T-30-02-01); the device-prefix gate ensures malformed
+      // device-shaped paths can never slip into the original sanitizer.
+      const nextRaw = (request.query as LoginQuery).next;
+      let redirectAfterLogin: string;
+      if (typeof nextRaw !== 'string') {
+        redirectAfterLogin = '/me';
+      } else if (nextRaw.startsWith('/auth/device')) {
+        redirectAfterLogin = DEVICE_NEXT_RE.test(nextRaw) ? nextRaw : '/me';
+      } else if (NEXT_PATH_RE.test(nextRaw)) {
+        redirectAfterLogin = nextRaw;
+      } else {
+        redirectAfterLogin = '/me';
+      }
 
-    // PKCE + CSRF nonces. The verifier stays server-side (encrypted
-    // cookie); only the SHA-256 challenge is sent to the IdP.
-    const pkceVerifier = randomPKCECodeVerifier();
-    const pkceCodeChallenge = await calculatePKCECodeChallenge(pkceVerifier);
-    const state = randomState();
-    const nonce = randomNonce();
+      // PKCE + CSRF nonces. The verifier stays server-side (encrypted
+      // cookie); only the SHA-256 challenge is sent to the IdP.
+      const pkceVerifier = randomPKCECodeVerifier();
+      const pkceCodeChallenge = await calculatePKCECodeChallenge(pkceVerifier);
+      const state = randomState();
+      const nonce = randomNonce();
 
-    request.session.set('oidc.handshake', {
-      pkceVerifier,
-      state,
-      nonce,
-      redirectAfterLogin,
-    });
+      request.session.set('oidc.handshake', {
+        pkceVerifier,
+        state,
+        nonce,
+        redirectAfterLogin,
+      });
 
-    const url = buildAuthorizationUrl(opts.oidcConfig, {
-      pkceCodeChallenge,
-      state,
-      nonce,
-      redirectUri: opts.redirectUri,
-      scopes: opts.scopes,
-    });
+      const url = buildAuthorizationUrl(opts.oidcConfig, {
+        pkceCodeChallenge,
+        state,
+        nonce,
+        redirectUri: opts.redirectUri,
+        scopes: opts.scopes,
+      });
 
-    return reply.header('Cache-Control', 'no-store').redirect(url.toString(), 302);
-  });
+      return reply.header('Cache-Control', 'no-store').redirect(url.toString(), 302);
+    },
+  );
 };
 
 export default loginRoute;

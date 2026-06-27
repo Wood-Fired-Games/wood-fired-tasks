@@ -398,50 +398,40 @@ from the address the client connected to (`Host` / `X-Forwarded-{Host,Proto}`;
 see `resolveVerificationOrigin`) so a LAN/remote client gets a routable URL not
 `localhost`. It is **not** host-header injection — the URI is returned only to
 the requesting client, so a spoofed `Host` only misdirects the spoofer; the
-server trusts its front-proxy to set `X-Forwarded-*` honestly. To pin the
-boundary, set `DEVICE_FLOW_TRUSTED_HOSTS` (comma-separated hostname allowlist):
-a `Host` not on it falls back to the `OIDC_REDIRECT_URI` origin; unset = all.
+server trusts its front-proxy to set `X-Forwarded-*` honestly (the same trust
+`TRUST_PROXY` extends to rate-limit client identity). To pin the boundary, set
+`DEVICE_FLOW_TRUSTED_HOSTS` (comma-separated hostname allowlist): a `Host` not on
+it falls back to the `OIDC_REDIRECT_URI` origin; unset = all.
 
 ### 4. (Optional) `LEGACY_AUTH_SUNSET_DATE`
 
-[NOTE] The legacy `X-API-Key` auth path has been **removed** — the server now
-rejects that header with 401, so the `Deprecation`/`Sunset` headers it used to
-stamp no longer apply. The `LEGACY_AUTH_SUNSET_DATE` env var is still parsed for
-backward compatibility but has no runtime effect; new deployments can omit it.
-
-```bash
-# Still accepted (YYYY-MM-DD) but inert — retained for backward compatibility.
-LEGACY_AUTH_SUNSET_DATE=2026-12-31
-```
+[NOTE] The legacy `X-API-Key` auth path has been **removed** (rejected with 401),
+so this var is now inert — still parsed (`YYYY-MM-DD`) for backward
+compatibility but with no runtime effect. New deployments can omit it.
 
 ### 5. Verify the OIDC flow
 
 1. Restart the server (`npm run dev` locally).
 2. In a browser, visit `http://localhost:3000/auth/login`.
-3. You should be redirected to Google, complete consent, and land on
-   `/me`. The `/me` page shows your email, display name, and a list of
-   your PATs.
-4. From `/me` you can mint a new PAT (the value is shown **once**, copy
-   it then) or revoke an existing one.
+3. Complete Google consent and land on `/me` (shows your email, display
+   name, and PATs).
+4. From `/me` mint a new PAT (value shown **once**, copy it then) or revoke one.
 
 ### 6. Bootstrap a PAT without a browser (servers, CI, headless agents)
 
-For deployments where no browser is available, mint the first PAT
-directly against the SQLite database:
+For deployments where no browser is available, mint the first PAT directly
+against the SQLite database (`--user` = numeric id, email, or legacy
+display_name; `--name` = required label):
 
 ```bash
-# Adds a row to api_tokens for the named user.
-# --user accepts a numeric id, email (case-insensitive), or legacy display_name.
-# --name is a required human-readable label for the token.
 node dist/cli/bin/tasks.js db mint-token --user you@example.com --name my-laptop
 ```
 
 The command prints the raw PAT to stdout once. Use it as the
-`Authorization: Bearer wft_pat_<…>` value on subsequent requests, or as
-the `WFT_API_KEY` env var in MCP and CLI clients (the REST client switches
-to `Authorization: Bearer …` automatically when the value starts with
-`wft_pat_`). See [`SECURITY.md`](../SECURITY.md) →
-**Authentication Architecture** for the full chain.
+`Authorization: Bearer wft_pat_<…>` value on subsequent requests, or as the
+`WFT_API_KEY` env var in MCP/CLI clients (the REST client auto-switches to
+`Authorization: Bearer …` for `wft_pat_` values). See [`SECURITY.md`](../SECURITY.md)
+→ **Authentication Architecture** for the full chain.
 
 [WARNING] **PATs have NO default expiry.** The `api_tokens.expires_at`
 column is nullable (migration `008-identity-tables.ts`) and is written
@@ -1395,12 +1385,22 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `SLACK_APP_TOKEN` | conditional | — | Slack app-level token (`xapp-…`) for Socket Mode. Must be set together with `SLACK_BOT_TOKEN` or neither. |
 | `SLACK_SIGNING_SECRET` | conditional | — | Slack request signing secret. Required when running Slack in HTTP mode; harmless in Socket Mode. |
 
-### Rate limiting (read directly in `src/api/server.ts`)
+### Rate limiting (validated in `src/config/env.ts`)
+
+The global limiter keys on the authenticated principal (PAT token id, else user
+id), falling back to `request.ip`; the five sensitive auth/device routes get a
+tighter per-route budget. `TRUST_PROXY` (default off — see [§3a](#3a-device-flow-verification-origin--trust-boundary))
+makes `request.ip` resolve from `X-Forwarded-For`; off, a spoofed header cannot
+move a bucket; behind a proxy, enable it or all clients share one IP bucket.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `RATE_LIMIT_MAX` | no | `1000` | Maximum requests per window (global, via `@fastify/rate-limit`). `/health` is allow-listed. |
-| `RATE_LIMIT_TIME_WINDOW` | no | `1 minute` | Window string accepted by `@fastify/rate-limit`. |
+| `RATE_LIMIT_MAX` | no | `1000` | Global max requests/window. `/health` is allow-listed. |
+| `RATE_LIMIT_TIME_WINDOW` | no | `1 minute` | Global window string. |
+| `RATE_LIMIT_AUTH_MAX` | no | `10` | Per-route max for login, callback, device/code, device/verify. |
+| `RATE_LIMIT_AUTH_TIME_WINDOW` | no | `1 minute` | Window for the per-route auth limits (incl. device/token). |
+| `RATE_LIMIT_DEVICE_TOKEN_MAX` | no | `30` | Per-route max for `/auth/device/token` (CLI polls it — looser). |
+| `TRUST_PROXY` | no | `false` | `false`/unset = ignore forwarded headers; `true` = trust all hops; integer = trust N hops; `ip,cidr,…` = trust only those proxy IPs/CIDRs. |
 
 ### Model catalog (read directly in `src/index.ts`)
 
