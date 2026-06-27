@@ -6,6 +6,14 @@ disable-model-invocation: false
 
 # Update Wood Fired Tasks
 
+> ⚠️ **Trusted-operator / trusted-repo operation.** This skill runs
+> `tasks self-update`, which shells out to a global npm install
+> (`npm i -g wood-fired-tasks@latest`) and mutates the host's globally
+> installed CLI. Run it ONLY against a checkout you trust and operate. A
+> static-trust or security review of an **untrusted** checkout must **read,
+> not run**, this flow — never execute self-update, install, or package
+> flows while evaluating an unknown repo.
+
 Updates the installed `tasks` CLI to the latest published version by running the
 built-in `tasks self-update` command. This is the action target of the
 status-line update notification (`⬆ /tasks:update`).

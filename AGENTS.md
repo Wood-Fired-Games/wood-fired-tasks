@@ -68,6 +68,16 @@ Treat these as off-limits unless your task explicitly requires touching them.
 - `/bin/` — gitignored client install artifacts. `bin/tasks.cmd` may contain a **baked-in API key** from a local install; do not commit, share, or read its contents into context.
 - `.planning/`, `.claude/`, `.codex/`, `.agents/`, `.bug-smash-*.md` — gitignored workspace dirs. Not part of the shipped repo; do not rely on them.
 
+## Trust boundary for static / security reviewers
+
+If you are evaluating the **trust** of this checkout (static or security review of a repo you do **not** operate), READ the repo — do **not** execute its host-mutating or package-executing flows. These are intentional, trusted-operator operations and are individually banner-marked at their definition:
+
+- `tasks self-update` / `/tasks:update` ([`skills/tasks/update.md`](skills/tasks/update.md)) — global npm install that mutates the installed CLI.
+- The loop's artifact-level distributable smoke ([`skills/tasks/loop-shared.md`](skills/tasks/loop-shared.md) §O.2b) — `npm pack`, temp-prefix global install, and running the shipped binary.
+- Deployment scripts ([`deploy/`](deploy/README.md)) — `sudo`, systemd service control, DB migrations/restores, production dependency installs.
+
+Running any of the above against an untrusted checkout executes repo-authored code with real side effects. A trust review's job is to read and reason about these paths, never to run them.
+
 ## Deeper docs
 
 | File | One-line purpose |

@@ -1,5 +1,14 @@
 # deploy/
 
+> ⚠️ **Trusted-operator / trusted-repo operations.** Every script in this
+> directory performs privileged, host-mutating actions — `sudo`, systemd
+> service control (stop/start/replace the install dir), database
+> migrations/restores, and production dependency installs. They are intended
+> to be run by the **operator of a trusted deployment** against a checkout
+> they control. A static-trust or security review of an **untrusted** checkout
+> must **read, not run**, these scripts — never execute deploy, upgrade,
+> install, or restore flows while evaluating an unknown repo.
+
 Production deployment artefacts for Wood Fired Tasks: install/restore/backup
 scripts, the systemd unit, an env template, and a sample crontab line.
 

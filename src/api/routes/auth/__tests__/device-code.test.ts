@@ -235,4 +235,59 @@ describe('resolveVerificationOrigin (#834)', () => {
       'http://box.local:3000',
     );
   });
+
+  // Issue #68 (finding 2) — optional operator allowlist.
+  describe('trustedHosts allowlist (#68)', () => {
+    it('honors a Host whose hostname is on the allowlist (port ignored in match)', () => {
+      expect(
+        resolveVerificationOrigin(
+          { headers: { host: 'tasks.example.com:3000' }, protocol: 'https' },
+          FALLBACK,
+          ['tasks.example.com'],
+        ),
+      ).toBe('https://tasks.example.com:3000');
+    });
+
+    it('falls back to the configured origin when the Host is NOT on the allowlist', () => {
+      expect(
+        resolveVerificationOrigin(
+          { headers: { host: 'evil.example.com' }, protocol: 'https' },
+          FALLBACK,
+          ['tasks.example.com'],
+        ),
+      ).toBe(FALLBACK);
+    });
+
+    it('applies the allowlist to X-Forwarded-Host too', () => {
+      expect(
+        resolveVerificationOrigin(
+          {
+            headers: { 'x-forwarded-host': 'spoofed.example.com', 'x-forwarded-proto': 'https' },
+          },
+          FALLBACK,
+          ['tasks.example.com'],
+        ),
+      ).toBe(FALLBACK);
+    });
+
+    it('matches case-insensitively', () => {
+      expect(
+        resolveVerificationOrigin(
+          { headers: { host: 'Tasks.Example.COM' }, protocol: 'https' },
+          FALLBACK,
+          ['tasks.example.com'],
+        ),
+      ).toBe('https://Tasks.Example.COM');
+    });
+
+    it('honors every Host when the allowlist is empty (backward compatible default)', () => {
+      expect(
+        resolveVerificationOrigin(
+          { headers: { host: 'anything.example.com' }, protocol: 'https' },
+          FALLBACK,
+          [],
+        ),
+      ).toBe('https://anything.example.com');
+    });
+  });
 });
