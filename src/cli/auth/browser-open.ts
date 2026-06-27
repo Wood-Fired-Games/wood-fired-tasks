@@ -21,7 +21,12 @@
 import { spawn } from 'node:child_process';
 
 /**
- * WR-03 (Phase 30 review) — validate the URL shape BEFORE handing it to
+ * WR-03 (Phase 30 review) — STATUS: MITIGATED. This function IS the active
+ * mitigation; `openBrowser` calls it before any spawn. The injection shape
+ * described below is historical context explaining WHY the gate exists, not an
+ * open vulnerability.
+ *
+ * Validate the URL shape BEFORE handing it to
  * a child process. The Windows leg invokes `cmd.exe /c start "" <url>`;
  * even with `shell: false`, libuv's WinAPI quoting of the args array can
  * be perturbed by a URL containing embedded double quotes or trailing
@@ -70,9 +75,17 @@ function isSafeBrowserUrl(url: string): boolean {
 }
 
 export function openBrowser(url: string): boolean {
-  // WR-03 (Phase 30 review) — validate the URL BEFORE selecting the
-  // platform spawn args. A malformed/suspicious URL → false so the caller
-  // falls back to printing the URL for the user to paste manually.
+  // WR-03 (Phase 30 review) — ACTIVE injection gate. Validate the URL BEFORE
+  // selecting the platform spawn args, so EVERY platform branch below (incl.
+  // the Windows `cmd /c start` path) only ever receives an http(s) URL that
+  // round-trips through the URL parser unchanged. A malformed/suspicious URL →
+  // false here, before any spawn, so the caller falls back to printing the URL
+  // for the user to paste manually.
+  //
+  // NOTE for reviewers: the historical `verification_uri_complete` cmd-injection
+  // shape described in isSafeBrowserUrl's doc block is MITIGATED by this gate —
+  // it is documented for context, not an open hole. See the regression test
+  // `__tests__/browser-open.test.ts` ("Windows cmd-injection attempt").
   if (!isSafeBrowserUrl(url)) {
     return false;
   }
@@ -86,6 +99,10 @@ export function openBrowser(url: string): boolean {
       args = [url];
       break;
     case 'win32':
+      // SAFE: `url` already passed the WR-03 isSafeBrowserUrl gate above, so it
+      // is a parser-canonical http(s) URL with no embedded quotes/backslashes
+      // that could escape libuv's WinAPI arg quoting — `cmd /c start` cannot be
+      // tricked into running metacharacters here. (We still pass shell:false.)
       // The empty `""` is the title argument for `cmd /c start` — without it,
       // `start` interprets the first quoted arg as the window title and never
       // opens the URL.
