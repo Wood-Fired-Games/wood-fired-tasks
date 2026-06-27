@@ -696,6 +696,14 @@ For MCP tools **NEWLY ADDED during this run**, exercise them through the **remot
 
 ### (2b) Artifact-level distributable smoke — the SHIPPED artifact, exercised from OUTSIDE the repo
 
+> ⚠️ **Trusted-operator / trusted-repo operation.** The smoke below packs the
+> repo (`npm pack`), installs the tarball into a temp prefix
+> (`npm i -g --prefix …`), and **executes the shipped binary**. These steps
+> mutate global state and run repo-authored code. Run them ONLY against a
+> checkout you trust and operate. A static-trust or security review of an
+> **untrusted** checkout must **read, not run**, this section — never pack,
+> install, or execute the artifact while evaluating an unknown repo.
+
 **Why this exists (load-bearing).** Per-task verifiers grade against the SOURCE tree, so a capability can be 100% PASS-verified in-repo while the **shipped artifact** (the packed tarball / globally-installed bin) is broken — e.g. an asset resolved from a path that exists in source but is not in the published `files`, a postinstall that references an unshipped file, or a CLI option dropped by a framework bug. These failures are cwd- and packaging-sensitive: they pass in-repo and fail only once installed and run from elsewhere. This smoke closes that gap by exercising the real artifact from a cwd OUTSIDE the repo.
 
 **Trigger (unconditional when the repo ships a distributable).** This smoke runs whenever the target repo ships a distributable — it is NOT gated on a particular task having existed in the run. Detect a distributable generically from `package.json`: it declares a `bin` and/or a `files` allow-list and/or a `prepublishOnly` script, OR it defines a `smoke:global`-style global-install smoke script. If none of these signals is present, the repo ships no distributable and this audit is N/A (skip, not RED).
