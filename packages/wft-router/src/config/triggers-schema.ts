@@ -34,6 +34,7 @@
  * guardrails".)
  */
 
+import { lstatSync, realpathSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
@@ -267,6 +268,62 @@ export type LoadAndValidateResult =
   | { ok: false; errors: string[] };
 
 /**
+ * Enforce the documented `triggers.yaml` trust posture at startup: the file
+ * that drives shell_exec / webhook_post / create_task / agent dispatch MUST be
+ * owner-only (mode `0600`) and owned by the router user, because edit access is
+ * equivalent to arbitrary code execution as the router. See
+ * docs/event-router-design.md §"`triggers.yaml` trust posture".
+ *
+ * Mirrors the stat/owner/symlink hardening already used by
+ * `handlers/agent-session-dispatch.ts:resolveAdapter`, applied to a SINGLE file:
+ *   - The path is resolved through {@link realpathSync} and the REAL file is
+ *     stat'd, so a symlink cannot point at a 0600 file while the link target is
+ *     attacker-writable.
+ *   - Mode is rejected if ANY group/other bit is set — `(mode & 0o077) !== 0`.
+ *     This is the strict `0600` reading promised by the design doc, so
+ *     0640/0644/0660/0666 all fail while 0600 passes.
+ *   - Owner is rejected (POSIX only) when `process.getuid()` is defined and the
+ *     real file's `uid` differs. `getuid` is undefined on Windows, where mode
+ *     and uid bits are not meaningful — there, enforcement is skipped and file
+ *     permissions are a deployment requirement.
+ *
+ * Returns `null` when the file passes (or the platform is non-POSIX); otherwise
+ * a single `  - <file>: <message>` error string in the established result shape.
+ */
+function checkTriggersFilePermissions(filePath: string): string | null {
+  const routerUid = process.getuid?.();
+  // Non-POSIX (Windows): mode/uid bits are unreliable. Skip enforcement — file
+  // permissions are a documented deployment requirement on that platform.
+  if (routerUid === undefined) {
+    return null;
+  }
+
+  let st: ReturnType<typeof statSync>;
+  try {
+    // Resolve symlinks so the bytes actually read are the ones we vet. lstat
+    // first to surface a dangling-symlink/missing-target clearly.
+    lstatSync(filePath);
+    const realPath = realpathSync(filePath);
+    st = statSync(realPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return `  - ${filePath}: cannot stat for permission check: ${message}`;
+  }
+
+  if ((st.mode & 0o077) !== 0) {
+    return `  - ${filePath}: insecure permissions (mode ${(st.mode & 0o777)
+      .toString(8)
+      .padStart(4, '0')}); must be mode 0600 / not accessible to group or other`;
+  }
+
+  if (st.uid !== routerUid) {
+    return `  - ${filePath}: not owned by the router user (file uid ${st.uid}, router uid ${routerUid})`;
+  }
+
+  return null;
+}
+
+/**
  * Read a `triggers.yaml` file from disk, parse it, run the zod schema, and
  * then run the templating-safety pass. On success returns the typed config;
  * on failure returns a flat list of `  - <path>: <message>` strings formatted
@@ -280,6 +337,14 @@ export async function loadAndValidateTriggers(filePath: string): Promise<LoadAnd
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, errors: [`  - <file>: cannot read ${filePath}: ${message}`] };
+  }
+
+  // Trust gate: the file just read must be owner-only and owned by the router
+  // user (POSIX). Reject before parsing so an attacker-writable config never
+  // reaches the handler dispatch surface. See checkTriggersFilePermissions.
+  const permError = checkTriggersFilePermissions(filePath);
+  if (permError !== null) {
+    return { ok: false, errors: [permError] };
   }
 
   let parsed: unknown;

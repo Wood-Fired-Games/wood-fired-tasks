@@ -12,7 +12,7 @@
  * provider, AI vendor, chat platform, or CI tool.
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -485,6 +485,11 @@ describe('loadAndValidateTriggers — end-to-end against temp files', () => {
       ].join('\n'),
       'utf8',
     );
+    // On POSIX the startup trust gate requires mode 0600; writeFile honours the
+    // umask (typically 0644), so set the secure mode explicitly.
+    if (process.getuid !== undefined) {
+      await chmod(path, 0o600);
+    }
     const result = await loadAndValidateTriggers(path);
     expect(result.ok).toBe(true);
   });
@@ -506,6 +511,9 @@ describe('loadAndValidateTriggers — end-to-end against temp files', () => {
       ].join('\n'),
       'utf8',
     );
+    if (process.getuid !== undefined) {
+      await chmod(path, 0o600);
+    }
     const result = await loadAndValidateTriggers(path);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -531,6 +539,9 @@ describe('loadAndValidateTriggers — end-to-end against temp files', () => {
       ].join('\n'),
       'utf8',
     );
+    if (process.getuid !== undefined) {
+      await chmod(path, 0o600);
+    }
     const result = await loadAndValidateTriggers(path);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -559,7 +570,121 @@ describe('loadAndValidateTriggers — end-to-end against temp files', () => {
   it('returns ok=false for malformed YAML', async () => {
     const path = join(tmpRoot, 'malformed.yaml');
     await writeFile(path, 'version: 1\nrules:\n  - name: r\n  bad-indent\n', 'utf8');
+    if (process.getuid !== undefined) {
+      await chmod(path, 0o600);
+    }
     const result = await loadAndValidateTriggers(path);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('loadAndValidateTriggers — file-permission trust gate (§triggers.yaml trust posture)', () => {
+  let tmpRoot: string;
+
+  // The mode/owner gate is POSIX-only (process.getuid undefined on Windows);
+  // skip the whole suite on a non-POSIX runner so it stays green everywhere.
+  const posix = typeof process.getuid === 'function';
+
+  const VALID_YAML = [
+    'version: 1',
+    'rules:',
+    '  - name: secure-rule',
+    '    on: task.created',
+    '    where:',
+    '      project: demo-project',
+    '    do: webhook_post',
+    '    with:',
+    '      url: "https://example.invalid/hook"',
+    '',
+  ].join('\n');
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), 'wft-router-triggers-perm-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it.runIf(posix)('accepts a 0600 file owned by the process uid', async () => {
+    const path = join(tmpRoot, 'secure.yaml');
+    await writeFile(path, VALID_YAML, 'utf8');
+    await chmod(path, 0o600);
+    const result = await loadAndValidateTriggers(path);
+    expect(result.ok).toBe(true);
+  });
+
+  it.runIf(posix)('rejects a group-writable (0660) file', async () => {
+    const path = join(tmpRoot, 'group-writable.yaml');
+    await writeFile(path, VALID_YAML, 'utf8');
+    await chmod(path, 0o660);
+    const result = await loadAndValidateTriggers(path);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]).toContain('mode 0600');
+      expect(result.errors[0]).toContain('group or other');
+    }
+  });
+
+  it.runIf(posix)('rejects a world-writable (0666) file', async () => {
+    const path = join(tmpRoot, 'world-writable.yaml');
+    await writeFile(path, VALID_YAML, 'utf8');
+    await chmod(path, 0o666);
+    const result = await loadAndValidateTriggers(path);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]).toContain('mode 0600');
+    }
+  });
+
+  it.runIf(posix)('rejects a world-readable (0644) file per 0600 strictness', async () => {
+    const path = join(tmpRoot, 'world-readable.yaml');
+    await writeFile(path, VALID_YAML, 'utf8');
+    await chmod(path, 0o644);
+    const result = await loadAndValidateTriggers(path);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]).toContain('mode 0600');
+    }
+  });
+
+  it.runIf(posix)('accepts a symlink whose real target is a 0600 owned file', async () => {
+    const realPath = join(tmpRoot, 'real-secure.yaml');
+    const linkPath = join(tmpRoot, 'link-secure.yaml');
+    await writeFile(realPath, VALID_YAML, 'utf8');
+    await chmod(realPath, 0o600);
+    await symlink(realPath, linkPath);
+    const result = await loadAndValidateTriggers(linkPath);
+    expect(result.ok).toBe(true);
+  });
+
+  it.runIf(posix)('rejects a symlink whose real target is too-permissive (0666)', async () => {
+    const realPath = join(tmpRoot, 'real-open.yaml');
+    const linkPath = join(tmpRoot, 'link-open.yaml');
+    await writeFile(realPath, VALID_YAML, 'utf8');
+    // The link itself is 0600 (lchmod is a no-op for the target), but the
+    // realpath-resolved target is world-writable — must be rejected.
+    await chmod(realPath, 0o666);
+    await symlink(realPath, linkPath);
+    const result = await loadAndValidateTriggers(linkPath);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]).toContain('mode 0600');
+    }
+  });
+
+  it.runIf(posix)('emits a clear error message naming the file and the requirement', async () => {
+    const path = join(tmpRoot, 'noisy.yaml');
+    await writeFile(path, VALID_YAML, 'utf8');
+    await chmod(path, 0o640);
+    const result = await loadAndValidateTriggers(path);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain(path);
+      expect(result.errors[0]).toContain('insecure permissions');
+      expect(result.errors[0]).toContain('mode 0600');
+      expect(result.errors[0].startsWith('  - ')).toBe(true);
+    }
   });
 });

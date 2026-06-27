@@ -24,7 +24,7 @@
  * Debouncer, and the SSE source is a hand-rolled generator.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -498,6 +498,11 @@ describe('createDaemon / runDaemon — no-flag boot (AC #4)', () => {
       ].join('\n'),
       'utf8',
     );
+    // POSIX startup trust gate requires triggers.yaml be mode 0600; writeFileSync
+    // honours the umask (typically 0644), so set the secure mode explicitly.
+    if (process.getuid !== undefined) {
+      chmodSync(configPath, 0o600);
+    }
   });
 
   afterEach(() => {
