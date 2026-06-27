@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-27T19:57:38.781Z",
+    "generated_at": "2026-06-27T21:46:04.903Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -164,7 +164,7 @@
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 1500,
-      "sha256": "9f6844655c012af32f75be40bc1fcfea62d31f8891f3a2ccca5735d474b2a296"
+      "sha256": "d2b606f40ea3332de6992d8f86f626fd45000784a667a311158055e648e5859b"
     },
     {
       "path": "docs/SLACK.md",
