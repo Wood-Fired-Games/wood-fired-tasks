@@ -206,3 +206,19 @@ describe('/tasks:loop-dag skill — DAG executor contract (#341)', () => {
     expect(skill).not.toMatch(/\/gsd-autonomous/);
   });
 });
+
+describe('NOT_VERIFIED handling consistency (2026-07 quality plan T2)', () => {
+  const dagText = readFileSync(
+    resolve(__dirname, '../../../../../skills/tasks/loop-dag.md'),
+    'utf8',
+  );
+
+  it('§6c no longer maps a verifier-emitted NOT_VERIFIED to status=blocked', () => {
+    expect(dagText).not.toMatch(/\*\*NOT_VERIFIED\*\* \| `update_task → status=blocked`/);
+  });
+
+  it('§6c distinguishes verifier-emitted from dispatch-failure NOT_VERIFIED', () => {
+    expect(dagText).toMatch(/NOT_VERIFIED \(verifier-emitted\)/);
+    expect(dagText).toMatch(/NOT_VERIFIED \(dispatch failure/);
+  });
+});
