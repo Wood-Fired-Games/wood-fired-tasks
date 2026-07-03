@@ -164,6 +164,12 @@ do NOT re-invent the verifier. The `VerifierInputs` envelope:
 }
 ```
 
+`base_sha` and `additional_observations` are deliberately **omitted** from the
+audit envelope: audit grades an already-integrated historical tree, so there
+is no expected worktree base to assert, and the original run's orchestrator
+observations are not reproducible inputs — the audit is a pure function of
+(LOOP-RUN.md, tasks-database, current tree).
+
 **Default to `subagent_type: "general-purpose"` with the verifier prompt
 embedded in the brief** — the named `tasks-verifier` subagent type is
 only registered for sessions started after the user ran `install.sh`, and

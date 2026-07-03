@@ -27,7 +27,9 @@ The orchestrator hands you a JSON object:
   "acceptance_criteria": "<markdown>",
   "worker_subagent_session_id": "<opaque>",
   "commit_shas": ["<sha>", "..."],
-  "file_changes": ["path/to/file", "..."]
+  "file_changes": ["path/to/file", "..."],
+  "base_sha": "<expected integration-branch tip SHA — optional; present for worktree-isolated workers>",
+  "additional_observations": ["<orchestrator-observed evidence — optional>", "..."]
 }
 ```
 
@@ -144,6 +146,7 @@ Frontmatter `tools:` line declares what you can call:
 - `git log` (any read-only invocation)
 - `git diff` (any read-only invocation)
 - `git show` (any read-only invocation)
+- `git rev-parse`, `git merge-base --is-ancestor` (read-only)
 - `npm test`
 - `npm run lint`
 - `npm run build`
@@ -177,6 +180,15 @@ touched the files the criteria reference. Don't run `npm test` unless a
 criterion specifically references a test.
 
 ## Workflow
+
+0. **Base-integrity check (when `base_sha` is present).** Run
+   `git rev-parse HEAD`; if it does not equal `base_sha`, run
+   `git merge-base --is-ancestor <base_sha> HEAD`. If HEAD is neither equal
+   to nor a descendant of `base_sha`, STOP and emit
+   `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base integrity",
+   "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: base mismatch —
+   HEAD <sha> is not a descendant of base_sha <sha>"}]}`. A tree cut from a
+   stale base invalidates every downstream check (loop-shared.md §B).
 
 1. **Parse acceptance_criteria** into a list of discrete criteria (one
    bullet, one numbered item, or one sentence per criterion).
