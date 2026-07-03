@@ -261,8 +261,7 @@ wood-fired-tasks:get_dependencies with task_id=<id>
 Read the task description carefully. Extract:
 
 - **Acceptance criteria** (often a list under "Acceptance criteria:" in the description).
-- **Linked docs** — any references to roadmap sections, ADRs, line ranges.
-- **Constraints** mentioned in the description ("avoid unrelated refactors", "warning-free", "don't bulk-reformat", etc.).
+- **Linked docs** — roadmap sections, ADRs, line ranges — and **constraints** from the description ("avoid unrelated refactors", "warning-free", "don't bulk-reformat", etc.).
 
 ### Step 3 — Plan the validation depth and pre-scan scope
 
@@ -276,13 +275,10 @@ Using the matrix from Section 2b, decide what validation the orchestrator will r
 
 This is the load-bearing step. **Do not implement the fix yourself**, no matter how small it looks. Even tiny tasks should go through a subagent so that:
 
-- Your context stays predictable (one summary per task, not 50 tool calls per task).
-- Each iteration is independently auditable.
+- Your context stays predictable (one summary per task, not 50 tool calls per task), and each iteration is independently auditable.
 - The orchestrator remains the single source of truth for what passed/failed.
 
-Use the `Agent` tool with the Claude Code platform's default `general-purpose` subagent type. This skill deliberately does NOT pin the orchestrator to any third-party agent plugin — briefs are the load-bearing part, not the agent type, and depending on an external plugin would couple the skill's behaviour to a tool that may not be installed on every host. For read-only investigation steps where no edits are needed, the platform's `Explore` subagent type is the right choice.
-
-If the user has installed third-party stack-specialist agents (e.g. a .NET-focused plugin) and wants the orchestrator to prefer them on matching stacks, the user should configure that routing themselves — the skill stays vendor-neutral by default.
+Use the `Agent` tool with the platform's default `general-purpose` subagent type (briefs are the load-bearing part, not the agent type; `Explore` for read-only investigation). The skill stays vendor-neutral — users who prefer third-party stack-specialist agents configure that routing themselves.
 
 **Brief template body lives in [loop-shared.md §A](loop-shared.md#a-worker-brief-template).** Adapt the template to the task; keep the structure (Acceptance criteria, Repository conventions, Test filter cheat sheet, Hard constraints, Validation steps, Reporting back). For tasks flagged in §2a as targeting a sibling repo, populate the "Working dir / Cross-repo context" subsection per the canonical rules in §2a. **Resolve the dispatch model first:** before this worker `Agent` call, resolve the `execution`-role model (or apply `--execution-model`) and set `model:` accordingly — see [loop-shared.md §R](loop-shared.md#r-model-resolution).
 
