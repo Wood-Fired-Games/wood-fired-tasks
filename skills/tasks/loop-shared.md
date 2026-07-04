@@ -239,6 +239,7 @@ const verifierInputs = {
   commit_shas: <string[]>,               // from Step 6's `git rev-parse HEAD` / commit hash
   file_changes: <string[]>,              // from Step 6's `git diff --name-only <prev>..HEAD`
   base_sha: <string>,                    // expected integration-branch tip the work must sit on
+  additional_observations: <string[]>,  // ALWAYS present — see below; [] only if Step 5 was skipped
 };
 ```
 
@@ -251,6 +252,16 @@ const verifierInputs = {
 **Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
 
 **Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration-branch tip and instruct the verifier, as its FIRST check, to assert the worktree's `git rev-parse HEAD` equals `base_sha` (or is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If HEAD does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
+
+**Always populate `additional_observations` with the orchestrator's Step-5 validation results.** One entry per independently re-run command, quoted from
+tool results that already returned (§L): e.g.
+`"orchestrator Step 5: npm run build → exit 0"`,
+`"orchestrator Step 5: npm test → exit 0, 2493 passed / 0 failed (flake filter: <flags>)"`.
+The verifier may CITE these as evidence for its synthetic
+"No regressions in pre-existing tests" check instead of re-running the full
+suite inside its own 30-call budget. Scope-narrowing SCOPE: entries (below)
+are appended to the same array. Do not put anything in this array you did not
+observe from a returned tool result.
 
 **Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
 

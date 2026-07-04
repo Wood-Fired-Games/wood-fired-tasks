@@ -176,8 +176,11 @@ the criterion `SKIP` + `UNCHECKABLE:` instead.
 Exceeding either bound → the orchestrator stops you and treats the run as
 `verdict: "PARTIAL"`. Avoid this by planning your evidence-gathering up
 front: one `git show --stat <sha>` typically tells you whether the worker
-touched the files the criteria reference. Don't run `npm test` unless a
-criterion specifically references a test.
+touched the files the criteria reference. Don't run `npm test` yourself when
+`additional_observations` already carries the orchestrator's test re-run
+result — cite that entry instead. Run the suite yourself ONLY when a
+criterion specifically references a test AND no orchestrator-run validation
+results were supplied.
 
 ## Workflow
 
@@ -210,9 +213,11 @@ criterion specifically references a test.
   committed only whitespace / comment changes. → `FAIL` per criterion.
 - **Partial worker** — satisfied some criteria, missed others. → mix of
   `PASS` + `FAIL`/`SKIP` checks → `verdict: "PARTIAL"`.
-- **Collateral damage** — criteria satisfied, but `npm test` exits
-  non-zero on unrelated tests. Add a synthetic check `"No regressions in
-  pre-existing tests"` → `FAIL` with the failing test name.
+- **Collateral damage** — criteria satisfied, but the test suite regressed.
+  Add a synthetic check `"No regressions in pre-existing tests"`: cite the
+  orchestrator-run validation results from `additional_observations` when
+  present (PASS on exit 0 / matching pass counts; FAIL quoting the failing
+  entry); fall back to running the suite yourself only per the Bounds rule.
 - **Cargo cult** — criteria reference a path the worker never touched.
   Mark the criterion `FAIL` with `git show --stat` evidence showing the
   path is absent.

@@ -117,3 +117,26 @@ describe('base_sha envelope propagation (2026-07 quality plan T3)', () => {
     expect(auditText).toMatch(/base_sha.*omitted/is);
   });
 });
+
+describe('additional_observations always-on (2026-07 quality plan T4)', () => {
+  const sharedText = readFileSync(
+    resolve(__dirname, '../../../../../skills/tasks/loop-shared.md'),
+    'utf8',
+  );
+  const verifierText = readFileSync(
+    resolve(__dirname, '../../../../../skills/agents/tasks-verifier.md'),
+    'utf8',
+  );
+
+  it('§B envelope interface declares additional_observations', () => {
+    expect(sharedText).toMatch(/additional_observations: <string\[\]>/);
+  });
+
+  it('§B requires orchestrator Step-5 validation results in observations', () => {
+    expect(sharedText).toMatch(/Step-5 validation results/);
+  });
+
+  it('verifier cites orchestrator observations for the regression check', () => {
+    expect(verifierText).toMatch(/orchestrator-run validation results/i);
+  });
+});
