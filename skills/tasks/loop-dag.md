@@ -210,6 +210,20 @@ Reuse the §10b–§10e contract from `loop.md` verbatim, with the scope narrowe
 - §10d dispatch one `integration-auditor` subagent per overlap. **Resolve the dispatch model first:** the integration-auditor is a **planning-role** dispatch — before each `integration-auditor` `Agent` call, resolve the `planning`-role model via `resolve_model { project_id, role: 'planning' }` (**`task_id` OMITTED** so the `planning` `constant`/`default` governs; the per-overlap audit grades many tasks' diffs, not one) and set `model:` accordingly (or apply `--planning-model`), per [loop-shared.md §R](loop-shared.md#r-model-resolution). Resolve once and reuse across this wave's per-overlap auditors.
 - §10e branch on the rolled-up verdict. **The BROKEN-revert protocol is identical** — flip the affected tasks back to `in_progress`, preserve PASS evidence, append `integration_concern` notes, and re-emit LOOP-RUN.md.
 
+**Post-integration validation (MANDATORY, per wave).** After every PASS
+task's patch has been applied and committed to the integration tree (§3d /
+loop-shared.md §Q) and BEFORE the overlap audit's verdict is rolled up, run
+the project's `<build>` + `<test>` (with the §2c flake filter) on the
+**INTEGRATED tree** — not in any worktree. Worker-side green is NOT
+sufficient: worktree runs can silently no-op (e.g. linters that ignore
+`.claude/**`), and no worker ever validated the COMBINED wave diff. Compare
+failing FQNs against the §2c baseline; any new failure is handled as a §10e
+BROKEN integration — bisect the wave's per-task commits
+(`git stash`-free: re-run the failing test at each of the wave's commits) to
+attribute, flip the offending task(s) back to `in_progress` with an
+`integration_concern` note, and re-emit LOOP-RUN.md. Do NOT recompute the
+next frontier on a red integrated tree.
+
 **Empty-overlap suppression**: if the wave's dispatch set has only one worker, OR if no file overlap exists across the wave's workers, no per-wave integration-audit artifact is emitted (mirrors `loop.md` §10b's empty-overlap suppression rule — keep `.planning/loops/` scannable).
 
 **Per-wave drift/meta guard trigger.** After the overlap audit, if this wave's **union diff** touches CLI/docs/skills paths — illustrative globs `src/cli/**`, `program.addCommand`, `docs/**`, `README.md`, `skills/**` — run the repo's drift/meta guard tests (or full `npm test` as the fallback) BEFORE recomputing the next frontier. A RED drift guard is handled like a §10e BROKEN integration (revert/flag + LOOP-RUN.md note), never silently deferred to §4. See [loop-shared.md §P](loop-shared.md#p-per-wave-driftmeta-guard-trigger) for locating guards generically + the BROKEN-handling contract.

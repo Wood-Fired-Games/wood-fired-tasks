@@ -221,4 +221,9 @@ describe('NOT_VERIFIED handling consistency (2026-07 quality plan T2)', () => {
     expect(dagText).toMatch(/NOT_VERIFIED \(verifier-emitted\)/);
     expect(dagText).toMatch(/NOT_VERIFIED \(dispatch failure/);
   });
+
+  it('§3f mandates build+test on the integrated tree per wave (2026-07 quality plan T11)', () => {
+    expect(dagText).toMatch(/Post-integration validation \(MANDATORY, per wave\)/);
+    expect(dagText).toMatch(/INTEGRATED tree/);
+  });
 });
