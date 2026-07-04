@@ -45,6 +45,8 @@ This is the most important section. Skipping any sub-step here causes the entire
 
 ### 2a. Read the project's domain spec doc(s)
 
+**Decomposition handoff:** if open tasks carry a `decomp-<uuid>` tag, first apply [loop-shared.md §T](loop-shared.md#t-decomposition-artifact-reuse-executor-side-handoff) to reuse the decompose run's recon + per-candidate context.
+
 Look for one or more spec docs that the tasks reference:
 
 - A doc named in the project's description (e.g. `docs/CODE_QUALITY_ROADMAP.md`).

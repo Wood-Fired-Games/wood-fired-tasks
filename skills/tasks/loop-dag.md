@@ -44,6 +44,8 @@ Reuse `loop.md` §1 Resolve Project ID verbatim. Same `wood-fired-tasks:list_pro
 
 Reuse `loop.md` §2a–§2e verbatim — these sub-steps are about understanding the repo, validation commands, baseline tests, cross-repo scope detection, and epic-vs-bug sizing. None of them are flat-vs-DAG specific. The only sub-step this skill replaces is `loop.md` §2f (topology pre-flight gate), redefined below for the DAG-only contract.
 
+Additionally apply [loop-shared.md §T](loop-shared.md#t-decomposition-artifact-reuse-executor-side-handoff) when open tasks carry a `decomp-<uuid>` tag — the decompose artifact's edge reasons (`predicted file overlap: <path>`) feed §3b worker-brief hard constraints.
+
 ### 2f. Topology pre-flight gate (DAG-only contract)
 
 Before computing the first frontier and BEFORE dispatching any worker, the orchestrator MUST call the `topology_check` MCP tool with `{project_id}` and branch on the returned `topology` field. Unlike `/tasks:loop` (which auto-orders DAGs via Kahn's algorithm and runs them sequentially), `/tasks:loop-dag` REFUSES non-DAG topologies — they have a different correct executor.

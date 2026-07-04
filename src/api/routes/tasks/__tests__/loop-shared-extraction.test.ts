@@ -169,4 +169,14 @@ describe('loop-shared.md extraction gate (#346)', () => {
     const text = readFileSync(LOOP_PATH, 'utf8');
     expect(text).toMatch(/Per-AC evidence map/);
   });
+
+  it('loop-shared.md contains §T decomposition artifact reuse (2026-07 quality plan T10)', () => {
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/^##\s+§T\.\s+Decomposition artifact reuse/m);
+  });
+
+  it('both executors point at §T', () => {
+    expect(readFileSync(LOOP_PATH, 'utf8')).toMatch(/§T/);
+    expect(readFileSync(LOOP_DAG_PATH, 'utf8')).toMatch(/§T/);
+  });
 });

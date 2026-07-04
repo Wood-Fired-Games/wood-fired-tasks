@@ -899,3 +899,35 @@ This mirrors §N's kill-safe posture (git state is the source of truth; the oper
 When an override is set for a role, skip `resolve_model` for that role and pass the override `ref` as `model:` directly (the dispatch-time fallback above still applies if the harness rejects it). `<ref>` accepts a concrete model id or `auto` (resolve via `list_models` as above).
 
 **Anti-fabrication note (§L).** The resolved model id is read VERBATIM from the `resolve_model` / `list_models` result that ALREADY RETURNED in a prior turn — never composed, guessed, or quoted in the same turn as the resolving call. If you have not yet seen the resolver's returned output, you do not yet have the model id; wait for it before dispatching. Consistent with [§L](#l-anti-fabrication--evidence-integrity-canon).
+
+---
+
+## §T. Decomposition artifact reuse (executor-side handoff)
+
+**Called from:** `loop.md` §2a, `loop-dag.md` §2.
+
+If any open task in the target project carries a `decomp-<uuid>` tag, a
+`/tasks:decompose` run produced this backlog and its artifact almost
+certainly still exists locally. Before doing §2a discovery from scratch:
+
+1. Extract the decomposition id from the tag; glob
+   `.planning/decompositions/*-<project_id>.md` and pick the file whose
+   frontmatter `decomposition_id` matches (skip silently if none — the
+   artifact is per-machine and may be absent).
+2. Reuse `## Recon Summary` as the seed for §2a's repo understanding — verify
+   it is still current (spot-check 2–3 cited paths still exist) rather than
+   re-deriving from zero.
+3. When briefing a worker for task `<id>`, locate the matching
+   `## Candidates` block (via the artifact's `(draft_id → task_id)` mapping)
+   and carry its `description` rationale + `target_files` into the brief's
+   "Relevant domain context" and "Required deliverables" sections. The
+   planner's context is strictly better than a from-scratch re-derivation.
+4. The `## Dependency Edges` reasons (including `predicted file overlap:
+   <path>`) tell the loop-dag orchestrator WHICH files motivated
+   serialization — quote the reason in both affected workers' briefs as a
+   hard constraint ("`<path>` is shared with task #<other>; keep your edit
+   additive/minimal there").
+
+The artifact is advisory input — the tasks database remains the source of
+truth for status, ACs, and edges. Never treat a stale artifact as overriding
+live task state.
