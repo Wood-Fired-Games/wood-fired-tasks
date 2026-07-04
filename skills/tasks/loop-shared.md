@@ -183,6 +183,15 @@ Return a tight summary (under 400 words). The first two subsections (**Baseline 
 - Failing FQNs: `none` OR bulleted list.
 - Skipped / ignored: `<count>`
 
+**Per-AC evidence map** — one line per acceptance criterion, in the order the
+brief listed them. Each line names the criterion (first ~8 words) and points
+at concrete evidence a read-only verifier can re-check:
+
+- AC1 "<first words of criterion>…" → `path/file.ts:123` | `<command> → exit 0, <headline>` | `git <ref>` | NOT MET: <reason> | BLOCKED: <reason>
+
+Every AC MUST appear exactly once. "NOT MET" / "BLOCKED" lines are honest and
+expected when applicable — never omit an AC to hide a gap.
+
 Then the standard fields:
 - Tooling / version chosen (if a choice was made).
 - Files created or modified (full paths).

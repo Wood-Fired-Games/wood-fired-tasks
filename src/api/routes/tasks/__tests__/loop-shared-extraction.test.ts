@@ -159,4 +159,14 @@ describe('loop-shared.md extraction gate (#346)', () => {
     const text = readFileSync(LOOP_PATH, 'utf8');
     expect(text).not.toMatch(/§A\]\(\.?\/?loop-shared\.md#l-anti-fabrication/);
   });
+
+  it('§A Reporting back requires a Per-AC evidence map (2026-07 quality plan T7)', () => {
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/\*\*Per-AC evidence map\*\*/);
+  });
+
+  it('loop.md Step 5 rejects reports missing the Per-AC evidence map', () => {
+    const text = readFileSync(LOOP_PATH, 'utf8');
+    expect(text).toMatch(/Per-AC evidence map/);
+  });
 });
