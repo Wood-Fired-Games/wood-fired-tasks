@@ -139,5 +139,7 @@ export const CandidateTaskSchema = z.object({
   acceptance_criteria: z.array(z.string().min(1)).min(1),
   suspected_edges: z.array(SuspectedEdgeSchema),
   estimated_minutes: z.number().int().min(1).max(90),
+  /** Repo-relative paths the task is expected to touch; suffix " (new)" for files to be created. Hints for overlap prediction (Step 4b) — not enforced downstream. */
+  target_files: z.array(z.string().min(1).max(300)).max(8).optional(),
 });
 export type CandidateTask = z.infer<typeof CandidateTaskSchema>;
