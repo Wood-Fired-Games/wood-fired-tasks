@@ -179,4 +179,20 @@ describe('loop-shared.md extraction gate (#346)', () => {
     expect(readFileSync(LOOP_PATH, 'utf8')).toMatch(/§T/);
     expect(readFileSync(LOOP_DAG_PATH, 'utf8')).toMatch(/§T/);
   });
+
+  it('loop-shared.md contains §S execution ledger (2026-07 quality plan T13)', () => {
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/^##\s+§S\.\s+Execution ledger/m);
+  });
+
+  it('all four orchestrator skills point at §S', () => {
+    for (const rel of [
+      'skills/tasks/loop.md',
+      'skills/tasks/loop-dag.md',
+      'skills/tasks/decompose.md',
+      'skills/tasks/audit.md',
+    ]) {
+      expect(readFileSync(resolve(REPO_ROOT, rel), 'utf8')).toMatch(/§S/);
+    }
+  });
 });

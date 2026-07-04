@@ -58,6 +58,8 @@ step seems to need one of these, you have misread the design — stop and
 re-read §5 Guardrail 1. `create_task` and `add_dependency` are the ONLY
 mutating tools, and ONLY in Step 8 (skipped under `--dry-run`).
 
+**Execution ledger:** before the first MCP call, mirror this skill's step list into the harness todo list per [loop-shared.md §S](loop-shared.md#s-execution-ledger-mandatory-step-tracking).
+
 ### Planning-role model resolution (resolve ONCE, before any dispatch)
 
 Every subagent this skill dispatches — the Step-2 recon Explore agent, the

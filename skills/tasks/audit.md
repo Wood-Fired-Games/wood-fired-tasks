@@ -35,6 +35,8 @@ On `InputValidationError`, load via `ToolSearch`
 and retry. (`resolve_model` / `list_models` resolve the `planning`-role
 verifier-dispatch model below — both are read-only.)
 
+**Execution ledger:** before the first MCP call, mirror this skill's step list into the harness todo list per [loop-shared.md §S](loop-shared.md#s-execution-ledger-mandatory-step-tracking).
+
 **Allowed MCP tool surface is the READ-ONLY set ONLY:**
 
 - `get_task` — read a closed task's `acceptance_criteria`, `description`, title.

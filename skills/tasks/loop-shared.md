@@ -902,6 +902,39 @@ When an override is set for a role, skip `resolve_model` for that role and pass 
 
 ---
 
+## §S. Execution ledger (mandatory step tracking)
+
+**Called from:** the Preflight of `loop.md`, `loop-dag.md`, `decompose.md`,
+`audit.md`.
+
+Long prose contracts get steps silently skipped — especially by smaller
+models. At run start, BEFORE the first MCP call, mirror the invoking skill's
+numbered step list into the harness todo list (load the trio per §K, then one
+`TaskCreate` per ledger row). Canonical ledgers:
+
+- **loop:** `2a discovery · 2b commands · 2c baseline · 2f topology gate ·
+  2g wsjf-health · [per task: 1 pick · 2 claim+read · 3 plan · 4 dispatch ·
+  5 verify · 6 commit · 7 verifier · 8 close · 9 emit] · 10·0 §O gate ·
+  10 integration audit`
+- **loop-dag:** `2f gate · 2g feasibility · 2h wsjf-health · 2a–2e discovery ·
+  [per wave: 3a frontier · 3b dispatch · 3c await · 3d verify ·
+  3d-post integrated-tree validation · 3e summary · 3f audit] · §O gate ·
+  4 final audit · 5f emit · 5g teardown`
+- **decompose:** `1 capture+guardrail4 · 2 recon · 3 candidates · 3b AC lint ·
+  4 independence · 4b overlap check · 5 topology · 6 coverage · 7 sizing ·
+  8a scoring · 8b create · 8c riders · 8d spec audit · 9 emit`
+- **audit:** `1 resolve · 2 enumerate · cap guard · 3 dispatch · 4 score ·
+  5 rollup · 6 emit`
+
+Flip each row `in_progress` when its step starts and `completed` when its
+exit condition is met. A row you cannot honestly flip to `completed` is a
+step you may NOT skip — either execute it, or record WHY it is N/A for this
+run in the run artifact (gate refusal, empty overlap set, no distributable,
+etc.) and flip it then. At emit time, an unfinished ledger row is a defect in
+the run — surface it in the artifact rather than deleting the row.
+
+---
+
 ## §T. Decomposition artifact reuse (executor-side handoff)
 
 **Called from:** `loop.md` §2a, `loop-dag.md` §2.
