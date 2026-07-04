@@ -154,4 +154,9 @@ describe('loop-shared.md extraction gate (#346)', () => {
     // of every clause into loop-shared.md.
     expect(countLines(LOOP_DAG_PATH)).toBeLessThanOrEqual(500);
   });
+
+  it('loop.md never labels the §L anchor as §A (2026-07 quality plan T5)', () => {
+    const text = readFileSync(LOOP_PATH, 'utf8');
+    expect(text).not.toMatch(/§A\]\(\.?\/?loop-shared\.md#l-anti-fabrication/);
+  });
 });
