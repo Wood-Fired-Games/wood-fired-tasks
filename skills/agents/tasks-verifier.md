@@ -151,6 +151,7 @@ Frontmatter `tools:` line declares what you can call:
 - `npm run lint`
 - `npm run build`
 - `vitest run --reporter=basic`
+- `npm run -s validate:evidence` — self-validate your OWN output JSON via stdin before emitting (read-only; validates against `VerificationEvidenceSchema`).
 - `cat`, `head`, `tail`, `wc -l`
 - `find`, `ls`
 - `sqlite3 <db> '<SELECT-only query>'` — SELECT only.
@@ -204,8 +205,12 @@ results were supplied.
      → collect evidence and mark `PASS` or `FAIL`.
    - If no → `SKIP` with `UNCHECKABLE: <reason>` prefix.
 4. **Roll up** per the deterministic table above.
-5. **Emit the JSON output** as your final message. Final message MUST be
-   parseable JSON — no fence, no preamble, no trailing prose.
+5. **Self-validate, then emit.** Pipe your candidate JSON through
+   `npm run -s validate:evidence` (heredoc stdin). On `OK`, emit that exact
+   JSON as your final message — no fence, no preamble, no trailing prose. On
+   `INVALID`, fix the listed issues and re-validate (at most twice) before
+   emitting. If the validator script is unavailable in this repo
+   (`missing script`), fall back to the self-check rules above and emit.
 
 ## Failure modes you MUST catch
 

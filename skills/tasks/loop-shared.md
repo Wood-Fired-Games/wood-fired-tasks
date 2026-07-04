@@ -460,6 +460,8 @@ Per-runner filter syntax for excluding ONE test by FQN (the orchestrator selects
 
 The verifier model frequently emits semantically-correct findings inside a schema-violating envelope. The `VerificationEvidenceSchema` is `.strict()` (extra keys rejected) and pins specific field names, so several emission patterns parse-fail despite the underlying judgment being sound. Silently dropping a verifier's real findings is forbidden — the orchestrator MUST attempt repair via `SendMessage` to the SAME verifier session (which §7b mandates was dispatched with a `name:`) before falling through to `NOT_VERIFIED`. The session retains its tool-call evidence and check decisions, so a tight diagnostic flips the shape without re-doing the work.
 
+(With the verifier's `npm run -s validate:evidence` self-check in place these patterns should be rare; the repair protocol below remains the backstop.)
+
 Known parse-failure patterns and the diagnostic to send (one per failure class):
 
 1. **`status: "PARTIAL"` on a per-check entry** — enum violation. The schema's `checks[i].status` is `PASS | FAIL | SKIP` only; `PARTIAL` is a top-level `verdict` value only. Diagnostic: `"you emitted status: \"PARTIAL\" on check N — that's invalid (enum is PASS|FAIL|SKIP). Re-emit with status: \"SKIP\" and evidence_url_or_text starting UNCHECKABLE: <reason>, then recompute the top-level verdict per the rollup table."`
