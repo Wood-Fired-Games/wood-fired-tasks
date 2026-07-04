@@ -120,6 +120,8 @@ read-only from the tasks database:
 - `file_changes` — the path list the worker reported as modified.
 - `worker_subagent_session_id` — from the LOOP-RUN.md `## Tasks Closed`
   row (opaque handle, passed through to the verifier).
+- `loop_verdict` — the task's verdict from the LOOP-RUN.md `## Tasks Closed`
+  row (PASS / FAIL / PARTIAL / NOT_VERIFIED), carried into the AuditTaskEntry.
 
 **No-criteria escape hatch.** If a task has neither an
 `acceptance_criteria` column value nor any reconstructable bullets in
@@ -133,19 +135,27 @@ short-circuit it to the escape hatch.
 
 Compute `estimated_usd = task_count × 0.30 USD`, where `task_count` is the
 number of tasks that would be dispatched to a verifier (the §6
-per-verifier budget). **If `estimated_usd > 5 USD`, HALT before dispatching
-any verifier:**
+per-verifier budget).
 
-- Dispatch **zero** verifiers.
-- Emit a **partial** AUDIT.md (Step 6) with `cost_cap_hit: true`,
-  `total_usd: 0`, and the per-task table marked not-yet-graded.
-- `integration_verdict` rolls up to `PARTIAL` (zero tasks scored — see
-  §3 Step 5).
-- Report the halt to the user and stop.
+**If `estimated_usd > 5 USD`, grade as many tasks as fit under the cap
+instead of halting at zero.** Compute `budget_count = floor(5 / 0.30) = 16`.
+Prioritize which tasks get a verifier — highest-signal first:
 
-Example: a 20-task run is `20 × 0.30 USD = 6.00 USD > 5 USD` → halt with
-`cost_cap_hit: true`, `total_usd: 0`, zero verifiers dispatched. A
-15-task run is `15 × 0.30 USD = 4.50 USD ≤ 5 USD` → proceed.
+1. Tasks whose LOOP-RUN.md verdict was NOT `PASS` (FAIL / PARTIAL /
+   NOT_VERIFIED) — drift here is most likely.
+2. Then PASS tasks by descending `file_changes` count (bigger diffs, bigger
+   risk).
+3. Then the rest by ascending task id.
+
+Dispatch verifiers for the first `budget_count` tasks only. Every remaining
+task is scored `PARTIAL` with `cost_cap_deferred: true` and NO verifier
+dispatched. Set frontmatter `cost_cap_hit: true`. The integration verdict
+roll-up treats deferred tasks as `PARTIAL` (never `COVERED` — ungraded is
+not certified).
+
+Example: a 20-task run grades the 16 highest-signal tasks and defers 4 with
+`cost_cap_deferred: true`. A 15-task run is `15 × 0.30 USD = 4.50 USD ≤ 5 USD`
+→ grade all.
 
 ## Step 3 — Dispatch one `tasks-verifier` per task
 
@@ -282,17 +292,23 @@ construction.
 **Body sections (in order — design §4):**
 
 1. **`## Per-Task Audit`** — one row per task: `task_id`, `title`,
-   `score`, raw `verifier_verdict`, check count, the first FAIL/SKIP
-   evidence line (truncated to 200 chars), and a stable link back to the
-   task in the tasks database.
+   `score`, `loop_verdict`, raw `verifier_verdict`, check count, the first
+   FAIL/SKIP evidence line (truncated to 200 chars), and a stable link back
+   to the task in the tasks database.
 2. **`## Integration Verdict`** — the §3 Step 5 roll-up plus a
    one-paragraph rationale citing the contributing tasks (e.g. "MISSING
    because task #N had no commits referencing the file in AC #2").
-3. **`## Cost Breakdown`** — one row per dispatched verifier (`task_id`,
+3. **`## Verdict Drift`** — one bullet per task whose audit score DISAGREES
+   with its loop verdict (e.g. loop said PASS, audit scored MISSING):
+   `#<task_id> — loop:<verdict> → audit:<score> — <first failing evidence
+   line>`. Sentinel `_No drift: audit agrees with every loop verdict._` when
+   empty. Drift rows are the audit's primary output — they are where grade
+   inflation or environment skew shows up.
+4. **`## Cost Breakdown`** — one row per dispatched verifier (`task_id`,
    tokens, cache-discounted USD, wall seconds), an orchestrator-overhead
-   row, and a TOTAL. (Cost-cap-hit runs show zero verifier rows and a
-   `0` total.)
-4. **`## Replay Instructions`** — the exact
+   row, and a TOTAL. (Cost-cap-deferred tasks show no verifier row; spend
+   stays ≤ 5 USD.)
+5. **`## Replay Instructions`** — the exact
    `/tasks:audit --loop-run <path>` invocation that reproduces this
    artifact (`audit_id` is fresh per invocation; the LOOP-RUN.md path +
    tasks-database state fully determine the audit).
@@ -314,10 +330,12 @@ Do not weaken those tests without simultaneously updating
    any other mutating MCP tool — see Preflight). Read-only against the
    tasks database, symmetric to the verifier contract. The audit must be a pure
    function of (LOOP-RUN.md, tasks-database snapshot at audit time).
-3. **MUST refuse to start if estimated cost > 5 USD.** Compute
+3. **MUST hard-bound verifier spend at ≤ 5 USD.** Compute
    `estimated_usd = task_count × 0.30 USD` after Step 1 and before Step 3;
-   on overage, halt and emit a partial AUDIT.md with `cost_cap_hit: true`
-   and `total_usd: 0`, dispatching zero verifiers.
+   on overage, grade only the `budget_count = 16` highest-signal tasks (the
+   cost-cap section's prioritization), defer the rest with
+   `cost_cap_deferred: true`, and set `cost_cap_hit: true`. The cap bounds
+   spend — it no longer zeroes the run.
 4. **MUST reconstruct `acceptance_criteria` from the task description
    when the tasks database column is NULL.** Historical loops pre-date Wave 1.3;
    a NULL column must NOT cause the audit to skip that task. Fall back to

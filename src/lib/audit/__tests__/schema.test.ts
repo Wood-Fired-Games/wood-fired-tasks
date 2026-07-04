@@ -199,6 +199,15 @@ describe('AuditTaskEntrySchema', () => {
     expect(AuditTaskEntrySchema.safeParse(VALID_TASK_ENTRY).success).toBe(true);
   });
 
+  it('accepts loop_verdict and cost_cap_deferred', () => {
+    const entry = {
+      ...VALID_TASK_ENTRY,
+      loop_verdict: 'PASS',
+      cost_cap_deferred: true,
+    };
+    expect(AuditTaskEntrySchema.safeParse(entry).success).toBe(true);
+  });
+
   it('rejects an invalid score value', () => {
     expect(
       AuditTaskEntrySchema.safeParse({

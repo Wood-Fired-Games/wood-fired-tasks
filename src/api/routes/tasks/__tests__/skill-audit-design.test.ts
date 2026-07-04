@@ -136,9 +136,13 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
     ).toBe(true);
   });
 
-  it('guardrail 3 documented (refuse if estimated cost > $5)', () => {
-    const hasRefusal = /MUST refuse to start if the estimated cost exceeds \$5/.test(design);
-    expect(hasRefusal).toBe(true);
+  it('guardrail 3 documented (hard-bound verifier spend at ≤ $5, grade-up-to-cap)', () => {
+    // Updated 2026-07 (T12): the cap no longer zeroes the run — it grades a
+    // prioritized subset (budget_count) and defers the rest.
+    const hasCap = /MUST hard-bound verifier spend at ≤ \$5/.test(design);
+    expect(hasCap).toBe(true);
+    expect(design).toMatch(/budget_count/);
+    expect(design).toMatch(/cost_cap_deferred/);
   });
 
   it('guardrail 4 documented (reconstruct acceptance_criteria from description when NULL)', () => {
@@ -236,5 +240,17 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
 
   it('skill file links to src/lib/audit/schema.ts as the zod schema', () => {
     expect(skill.includes('src/lib/audit/schema.ts')).toBe(true);
+  });
+
+  describe('grade-up-to-cap + verdict drift (2026-07 quality plan T12)', () => {
+    it('cost cap grades a prioritized subset instead of zero', () => {
+      expect(skill).toMatch(/grade as many tasks as fit under the cap/i);
+      expect(skill).toMatch(/cost_cap_deferred/);
+    });
+
+    it('AUDIT.md carries loop_verdict and a Verdict Drift section', () => {
+      expect(skill).toMatch(/loop_verdict/);
+      expect(skill).toMatch(/## Verdict Drift/);
+    });
   });
 });

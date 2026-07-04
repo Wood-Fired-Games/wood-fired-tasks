@@ -230,7 +230,7 @@ path is **not committed** — `.planning/` is in the repo's `.gitignore`
 | `missing_count`   | int ≥ 0     | Tasks scored `MISSING`.                                                     |
 | `integration_verdict` | enum    | `COVERED` \| `PARTIAL` \| `MISSING` (per §3 Step 5 roll-up).                |
 | `total_usd`       | number ≥ 0  | Cost across orchestrator + every verifier dispatch (cache-discounted).      |
-| `cost_cap_hit`    | bool        | `true` iff the $5 hard cap halted the run before dispatch.                  |
+| `cost_cap_hit`    | bool        | `true` iff the $5 cap deferred ≥ 1 task (grade-up-to-cap; spend held ≤ $5). |
 
 The invariant `covered_count + partial_count + missing_count == total_tasks`
 is **not** enforced by the schema (same posture as `LoopRunFrontmatterSchema`'s
@@ -242,16 +242,21 @@ pipeline (not by `.refine()` on the schema itself).
 Body sections (in order):
 
 1. **`## Per-Task Audit`** — one row per task: `task_id`, `title`,
-   `score`, `verifier_verdict` (raw), check count, the first FAIL/SKIP
-   evidence line (truncated to 200 chars), and a stable link back to
-   the task in the bugs DB.
+   `score`, `loop_verdict`, `verifier_verdict` (raw), check count, the
+   first FAIL/SKIP evidence line (truncated to 200 chars), and a stable
+   link back to the task in the bugs DB.
 2. **`## Integration Verdict`** — the roll-up from §3 Step 5 plus a
    one-paragraph rationale citing the contributing tasks (e.g. "MISSING
    because task #N had no commits referencing the file in AC #2").
-3. **`## Cost Breakdown`** — one row per dispatched verifier
+3. **`## Verdict Drift`** — one bullet per task whose audit `score`
+   disagrees with its `loop_verdict` (`#<id> — loop:<verdict> →
+   audit:<score> — <evidence>`); sentinel when empty. Drift is the audit's
+   primary signal — where grade inflation or environment skew surfaces.
+4. **`## Cost Breakdown`** — one row per dispatched verifier
    (`task_id`, tokens, cache-discounted USD, wall seconds) plus an
-   orchestrator-overhead row and a total.
-4. **`## Replay Instructions`** — the exact `/tasks:audit --loop-run
+   orchestrator-overhead row and a total. Cost-cap-deferred tasks show no
+   verifier row; spend stays ≤ $5.
+5. **`## Replay Instructions`** — the exact `/tasks:audit --loop-run
    <path>` invocation that reproduces this artifact (`audit_id` is
    fresh per invocation; the LOOP-RUN.md path + bugs-DB state are the
    inputs that fully determine the audit).
@@ -302,22 +307,24 @@ The skill **MUST NOT call wood-fired-tasks `update_task` or
 
 ### Guardrail 3 — $5 hard cost cap
 
-The skill **MUST refuse to start if the estimated cost exceeds $5**.
+The skill **MUST hard-bound verifier spend at ≤ $5** — grading a prioritized
+subset rather than zeroing the run.
 
 - **Why.** Cost runaway on retroactive audits is a real risk — a
   historical 50-task loop would push past $15 at the per-verifier
   budget in §6. The acceptance criterion explicitly names "≤ $5 per
   audited loop run" as a bounded budget; the hard cap exists to make
-  that bound load-bearing rather than aspirational.
+  that bound load-bearing rather than aspirational. Halting at zero,
+  however, threw away all audit signal on exactly the biggest runs — so
+  the cap now bounds spend without zeroing coverage.
 - **Enforcement mechanism.** After Step 1 (resolve LOOP-RUN.md) but
   before Step 3 (dispatch verifiers), the orchestrator computes
   `estimated_usd = task_count × $0.30` (the per-verifier budget from §6).
-  If `estimated_usd > $5`, the orchestrator halts and records
-  `cost_cap_hit: true` in a partial AUDIT.md, dispatching zero
-  verifiers. Static test gate: §7 fixture "$5 cost cap" supplies a
-  20-task synthetic LOOP-RUN.md (`20 × $0.30 = $6.00 > $5`) and
-  asserts the run halts with `cost_cap_hit: true` and `total_usd: 0`
-  (no verifier dispatched).
+  If `estimated_usd > $5`, it grades only the `budget_count = floor(5 /
+  0.30) = 16` highest-signal tasks (non-PASS loop verdicts first, then
+  PASS by descending file-change count, then ascending id), defers the
+  rest with `cost_cap_deferred: true` scored `PARTIAL`, and sets
+  `cost_cap_hit: true`. Spend stays ≤ $5; the run is no longer zeroed.
 
 ### Guardrail 4 — acceptance-criteria reconstruction for historical loops
 
