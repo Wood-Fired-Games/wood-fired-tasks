@@ -549,4 +549,10 @@ describe('Step 3 planner grounding + Step 3b AC lint (2026-07 quality plan T8)',
     expect(skillText).toMatch(/file:line/);
     expect(skillText).toMatch(/hand-replay/);
   });
+
+  it('Step 4b predicted file-overlap check exists (2026-07 quality plan T9)', () => {
+    expect(skillText).toMatch(/## Step 4b — Predicted file-overlap check/);
+    expect(skillText).toMatch(/target_files/);
+    expect(skillText).toMatch(/ORDERED/);
+  });
 });

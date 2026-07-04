@@ -160,6 +160,19 @@ orchestrator aggregates the verdicts into a dependency edge set.
 as `ORDERED` or `MUTUALLY_EXCLUSIVE`, the orchestrator halts and asks
 the user whether the goal needs re-scoping before proceeding.
 
+### Step 4b — Predicted file-overlap check
+
+Before the topology decision, the orchestrator computes the pairwise
+intersection of the candidates' `target_files`. For every pair whose Step-4
+verdict was `INDEPENDENT` yet shares a file, it either adds an `ORDERED` edge
+(registry-shaped files — registrars, barrel exports, docs/count tables whose
+edits are additive) so executors serialize the touch, or asks the independence
+critic ONE follow-up to re-verdict the pair. Edges added here feed Step 5's
+`topology_check` exactly like Step-4 edges and are recorded in §6 with reason
+`predicted file overlap: <path>`. File collisions between parallel workers are
+the direct cause of downstream RISKY/BROKEN integration verdicts; this check
+adds no new subagent dispatches beyond the bounded critic follow-up.
+
 ### Step 5 — Topology decision
 
 Apply the Wave 4.1 classifier — the existing `topology_check` MCP tool
@@ -422,7 +435,9 @@ Body sections (in order):
 5. `## Candidates` — one block per candidate: `draft_id`, `task_id`,
    `title`, `description`, `acceptance_criteria`, rationale linking
    back to the success criteria it covers.
-6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason).
+6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason). The
+   reason vocabulary includes the independence critic's `ORDERED` verdicts and
+   Step-4b `predicted file overlap: <path>` edges.
 7. `## Cost Breakdown` — orchestrator + per-subagent cost rows.
 8. `## Spec-Coverage Audit` — the Step 8d verdict (present only when `--spec`
    was supplied): the spec surfaces checked (components, acceptance-criteria,

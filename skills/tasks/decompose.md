@@ -267,6 +267,30 @@ needs human-authored phase structure first. On halt, write a partial
 artifact with `aborted_reason: high_interdependence` and STOP — do not
 proceed to Step 5.
 
+## Step 4b — Predicted file-overlap check (orchestrator, no dispatch)
+
+File collisions between parallel workers are the direct cause of downstream
+RISKY/BROKEN integration-audit verdicts. Before the topology decision,
+compute the pairwise intersection of the candidates' `target_files` (ignore
+` (new)`-suffixed entries with distinct paths; a SHARED new path counts).
+For every pair with a non-empty intersection whose Step-4 verdict was
+`INDEPENDENT`:
+
+- If the shared file is a **registry-shaped** file (a registrar, barrel
+  export, docs/count table — a file whose edits are additive lines), add an
+  `ORDERED` edge in either direction (pick the lower `draft_id` first) so the
+  executors serialize the touch instead of parallelizing a merge conflict.
+- Otherwise, ask the Step-4 independence critic ONE targeted follow-up
+  (SendMessage to `decompose-critic-independence`): "drafts <a> and <b> both
+  declare `<path>` in target_files — re-verdict this pair given the shared
+  file." Apply the returned verdict (`ORDERED` edge, or merge on
+  `MUTUALLY_EXCLUSIVE`).
+
+Edges added here feed Step 5's `topology_check` exactly like Step-4 edges and
+are recorded in the artifact body §6 with reason `predicted file overlap:
+<path>`. This check adds NO new subagent dispatches beyond the bounded
+critic follow-up.
+
 ## Step 5 — Topology decision
 
 Call the `topology_check` MCP tool on the Step-4 edge set (Wave 4.1 / #318
