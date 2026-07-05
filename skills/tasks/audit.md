@@ -304,8 +304,12 @@ construction.
    with its loop verdict (e.g. loop said PASS, audit scored MISSING):
    `#<task_id> — loop:<verdict> → audit:<score> — <first failing evidence
    line>`. Sentinel `_No drift: audit agrees with every loop verdict._` when
-   empty. Drift rows are the audit's primary output — they are where grade
-   inflation or environment skew shows up.
+   empty. **Exclude entries with `cost_cap_deferred: true`** — their PARTIAL
+   is a budget artifact, not a grading disagreement, and a capped run would
+   otherwise drown real drift in spurious `PASS → PARTIAL` rows. List them
+   instead on one closing line: `_Deferred, ungraded (cost cap): #a, #b, …_`
+   (omit the line when none). Drift rows are the audit's primary output —
+   they are where grade inflation or environment skew shows up.
 4. **`## Cost Breakdown`** — one row per dispatched verifier (`task_id`,
    tokens, cache-discounted USD, wall seconds), an orchestrator-overhead
    row, and a TOTAL. (Cost-cap-deferred tasks show no verifier row; spend

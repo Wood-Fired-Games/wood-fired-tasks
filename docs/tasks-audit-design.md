@@ -250,7 +250,12 @@ Body sections (in order):
    because task #N had no commits referencing the file in AC #2").
 3. **`## Verdict Drift`** — one bullet per task whose audit `score`
    disagrees with its `loop_verdict` (`#<id> — loop:<verdict> →
-   audit:<score> — <evidence>`); sentinel when empty. Drift is the audit's
+   audit:<score> — <evidence>`); sentinel when empty. `cost_cap_deferred`
+   entries are excluded (budget artifact, not disagreement) and listed on a
+   separate `_Deferred, ungraded (cost cap): …_` line instead — otherwise a
+   capped run's force-PARTIAL deferrals (mostly loop-PASS by construction of
+   the prioritization) would flood drift with spurious `PASS → PARTIAL`
+   rows. Drift is the audit's
    primary signal — where grade inflation or environment skew surfaces.
 4. **`## Cost Breakdown`** — one row per dispatched verifier
    (`task_id`, tokens, cache-discounted USD, wall seconds) plus an

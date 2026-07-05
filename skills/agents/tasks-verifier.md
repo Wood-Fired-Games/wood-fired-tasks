@@ -209,8 +209,14 @@ results were supplied.
    `npm run -s validate:evidence` (heredoc stdin). On `OK`, emit that exact
    JSON as your final message — no fence, no preamble, no trailing prose. On
    `INVALID`, fix the listed issues and re-validate (at most twice) before
-   emitting. If the validator script is unavailable in this repo
-   (`missing script`), fall back to the self-check rules above and emit.
+   emitting. **Unavailability detection:** key on output shape, NOT npm's
+   error text — `npm run -s` suppresses npm's own `Missing script` message
+   entirely, so a repo without the script produces a bare exit 1 with zero
+   output. If the command exits non-zero WITHOUT printing an
+   `INVALID VerificationEvidence:` line (missing script, missing
+   `node_modules`, tsx/Node failure), treat the validator as unavailable:
+   fall back to the self-check rules above and emit. Do NOT spend your
+   re-validate attempts on a validator that is not answering.
 
 ## Failure modes you MUST catch
 
