@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-06-27T22:09:51.636Z",
+    "generated_at": "2026-07-05T11:58:14.208Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -253,14 +253,14 @@
       "role": "deep-doc",
       "purpose": "Wave 5 (#320) /tasks:decompose design spec: contract, 9-step methodology, four guardrails, DECOMPOSITION.md artifact schema, verification-fixture sketches, cost budget, and the Step 8d terminal spec-coverage audit (#818). /tasks:decompose is OPERATIONAL — the runtime ships at skills/tasks/decompose.md; this doc is the design-of-record.",
       "when_to_read": "on-demand",
-      "line_budget": 560,
+      "line_budget": 580,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
-      "notes": "Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. Budget raised 500→560 by #818 to accommodate the documented Step 8d terminal spec-coverage audit; tighten in a follow-up if/when content peels out into adjacent files.",
-      "approx_token_budget": 11200,
-      "actual_lines": 533,
-      "sha256": "0b8352a7ea8343ad19300f00e198eaed5ecf29468ef0ee81b7fc77eb6b224d36",
+      "notes": "Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. Budget raised 500→560 by #818 (Step 8d terminal spec-coverage audit), then 560→580 by the 2026-07 quality plan (T8 Step 3b AC-checkability lint + T9 Step 4b predicted file-overlap check); tighten in a follow-up if/when content peels out into adjacent files.",
+      "approx_token_budget": 11600,
+      "actual_lines": 567,
+      "sha256": "d9c3b8befd36f8fe89a8216c7c7e41cf892bc9fcd401b5ab1d029337ba12e6b6",
       "actual_owner": "Repository maintainers"
     },
     {

@@ -535,3 +535,24 @@ describe('/tasks:decompose DESIGN gate (#320)', () => {
     });
   });
 });
+
+describe('Step 3 planner grounding + Step 3b AC lint (2026-07 quality plan T8)', () => {
+  const skillText = readFileSync(SKILL_PATH, 'utf8');
+
+  it('planner brief requires target_files drawn from recon', () => {
+    expect(skillText).toMatch(/`target_files`/);
+    expect(skillText).toMatch(/present in the recon summary/i);
+  });
+
+  it('Step 3b AC checkability lint exists with the evidence classes', () => {
+    expect(skillText).toMatch(/## Step 3b — AC checkability lint/);
+    expect(skillText).toMatch(/file:line/);
+    expect(skillText).toMatch(/hand-replay/);
+  });
+
+  it('Step 4b predicted file-overlap check exists (2026-07 quality plan T9)', () => {
+    expect(skillText).toMatch(/## Step 4b — Predicted file-overlap check/);
+    expect(skillText).toMatch(/target_files/);
+    expect(skillText).toMatch(/ORDERED/);
+  });
+});

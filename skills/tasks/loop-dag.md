@@ -19,6 +19,8 @@ This skill is the **DAG-shaped sibling** of [`skills/tasks/loop.md`](./loop.md).
 
 **Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop-dag`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the per-worker brief / claim / comment sections below (and reused from `loop.md` / `loop-shared.md`) — this block is the canonical pointer.
 
+**Execution ledger:** before the first MCP call, mirror this skill's step list into the harness todo list per [loop-shared.md §S](loop-shared.md#s-execution-ledger-mandatory-step-tracking).
+
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__wsjf_health,mcp__wood-fired-tasks__resolve_model,mcp__wood-fired-tasks__list_models`) and retry. (`wsjf_ranking` is consumed by §3a's WSJF-ordered frontier sort; `wsjf_health` by §2h's loop-start health surfacing; `resolve_model` / `list_models` by the §3b / §3d dispatch-model resolution per [loop-shared.md §R](loop-shared.md#r-model-resolution).)
 
 ---
@@ -43,6 +45,8 @@ Reuse `loop.md` §1 Resolve Project ID verbatim. Same `wood-fired-tasks:list_pro
 ## 2. Pre-Loop Discovery (run ONCE, before any wave is dispatched)
 
 Reuse `loop.md` §2a–§2e verbatim — these sub-steps are about understanding the repo, validation commands, baseline tests, cross-repo scope detection, and epic-vs-bug sizing. None of them are flat-vs-DAG specific. The only sub-step this skill replaces is `loop.md` §2f (topology pre-flight gate), redefined below for the DAG-only contract.
+
+Additionally apply [loop-shared.md §T](loop-shared.md#t-decomposition-artifact-reuse-executor-side-handoff) when open tasks carry a `decomp-<uuid>` tag — the decompose artifact's edge reasons (`predicted file overlap: <path>`) feed §3b worker-brief hard constraints.
 
 ### 2f. Topology pre-flight gate (DAG-only contract)
 
@@ -181,7 +185,7 @@ Re-read `loop.md` §Step 7 in full — the verifier dispatch shape (§7a build e
 - `verdict: "PASS"` → commit the worker's changes if not already committed (mirrors `loop.md` §Step 6 — Commit + push). Because loop-dag workers run in ISOLATED worktrees (§3b), their changes must be applied to the integration tree ONE task at a time — `git show --stat <commit>` to confirm each commit holds only that task's files before the next apply; never batch dependent `git apply --index` calls. Full mechanics (shared-file slice recipe + kill-safe re-slice): [`loop-shared.md` §Q](./loop-shared.md#q-worktree-patch-integration-mechanics-loop-dag-run-end--per-wave). Then call `wood-fired-tasks:update_task with updates={ "status": "done", "verification_evidence": <full evidence> }`. Add the close-out comment per `loop.md` §Step 8 template.
 - `verdict: "FAIL"` → call `wood-fired-tasks:add_comment` with the failed-checks bullet list, then `wood-fired-tasks:update_task with updates={ "status": "blocked", "verification_evidence": <full evidence> }`. **If the failure produced a follow-up/defect task** (bounce-style: the fix is tracked as its own task), include `"blocked_by": [<defectTaskId>]` in the SAME `update_task` call — the blocking edge and the status flip commit atomically and the task auto-unblocks when the defect closes; a status-only block followed by a separate `add_dependency` is FORBIDDEN (a skipped/failed second call strands the task forever — `check_health` flags these as `blocked-without-edge`). **Downstream tasks (those whose `blocked_by` includes this task) MUST stay `open` and untouched — they will simply never appear on a future frontier** because their `blocked_by` is no longer satisfied. The orchestrator MUST NOT silently re-attempt the failed task within the same loop run. The §3a stalled-tasks check at the end will surface the downstream stall.
 - `verdict: "PARTIAL"` → call `wood-fired-tasks:add_comment` listing the UNCHECKABLE criteria, then `wood-fired-tasks:update_task with updates={ "verification_evidence": <full evidence> }` only — status stays `in_progress`. Same load-bearing rule as FAIL: downstream tasks stay open and will not appear on the next frontier (PARTIAL is not the same as `done`/`closed`; `blocked_by` is not satisfied).
-- `verdict: "NOT_VERIFIED"` → same handling as `loop.md` §7d NOT_VERIFIED branch. Same downstream-stays-open rule applies.
+- `verdict: "NOT_VERIFIED"` (verifier-emitted) → same handling as `loop.md` §7d NOT_VERIFIED branch (status stays `in_progress`). Same downstream-stays-open rule applies. (A §3c dispatch-failure NOT_VERIFIED is the OTHER case — that path → `blocked`, per the §6c table.)
 
 **Verifier=FAIL is a hard stop for the dependency chain.** The whole reason `/tasks:loop-dag` enforces wave-by-wave frontier recomputation is so a failure surfaces immediately and downstream work is NEVER attempted on top of a broken foundation. This is the dependency-respecting contract the task topology gate (#318) exists to guarantee.
 
@@ -207,6 +211,20 @@ Reuse the §10b–§10e contract from `loop.md` verbatim, with the scope narrowe
 - §10c emit `.planning/loops/<UTC-timestamp>-<project_id>-wave<wave_index>-integration.md` (note the `-wave<wave_index>-` suffix — distinguishes per-wave artifacts from `/tasks:loop`'s one-per-run artifact).
 - §10d dispatch one `integration-auditor` subagent per overlap. **Resolve the dispatch model first:** the integration-auditor is a **planning-role** dispatch — before each `integration-auditor` `Agent` call, resolve the `planning`-role model via `resolve_model { project_id, role: 'planning' }` (**`task_id` OMITTED** so the `planning` `constant`/`default` governs; the per-overlap audit grades many tasks' diffs, not one) and set `model:` accordingly (or apply `--planning-model`), per [loop-shared.md §R](loop-shared.md#r-model-resolution). Resolve once and reuse across this wave's per-overlap auditors.
 - §10e branch on the rolled-up verdict. **The BROKEN-revert protocol is identical** — flip the affected tasks back to `in_progress`, preserve PASS evidence, append `integration_concern` notes, and re-emit LOOP-RUN.md.
+
+**Post-integration validation (MANDATORY, per wave).** After every PASS
+task's patch has been applied and committed to the integration tree (§3d /
+loop-shared.md §Q) and BEFORE the overlap audit's verdict is rolled up, run
+the project's `<build>` + `<test>` (with the §2c flake filter) on the
+**INTEGRATED tree** — not in any worktree. Worker-side green is NOT
+sufficient: worktree runs can silently no-op (e.g. linters that ignore
+`.claude/**`), and no worker ever validated the COMBINED wave diff. Compare
+failing FQNs against the §2c baseline; any new failure is handled as a §10e
+BROKEN integration — bisect the wave's per-task commits
+(`git stash`-free: re-run the failing test at each of the wave's commits) to
+attribute, flip the offending task(s) back to `in_progress` with an
+`integration_concern` note, and re-emit LOOP-RUN.md. Do NOT recompute the
+next frontier on a red integrated tree.
 
 **Empty-overlap suppression**: if the wave's dispatch set has only one worker, OR if no file overlap exists across the wave's workers, no per-wave integration-audit artifact is emitted (mirrors `loop.md` §10b's empty-overlap suppression rule — keep `.planning/loops/` scannable).
 
@@ -392,7 +410,8 @@ Envelope construction + `acceptance_criteria` resolution order + scope-narrowing
 | **PASS** | `update_task → status=done`, write evidence | `git add` + `git commit` + `git push` | Downstream becomes frontier-eligible. |
 | **FAIL** | `update_task → status=blocked`, write evidence | none | Downstream stays open, never frontier-eligible this run. |
 | **PARTIAL** | `update_task` (status stays `in_progress`), write evidence | none | Downstream stays open. PARTIAL ≠ satisfaction. |
-| **NOT_VERIFIED** | `update_task → status=blocked`, write synthesized evidence | none | Same as FAIL. |
+| **NOT_VERIFIED (verifier-emitted)** | `update_task` (status stays `in_progress`), write evidence + comment | none | Downstream stays open. Same as `loop.md` §7d — backfill ACs and re-queue. |
+| **NOT_VERIFIED (dispatch failure — §3c crash/timeout/parse-fail)** | `update_task → status=blocked`, write synthesized evidence | none | Same as FAIL for THIS run. |
 
 Full PASS commit-message template, close-out comment shape, and declared-scope carve-out: see `loop.md` §Step 6 / §Step 8 / §7d and **[loop-shared.md §E](loop-shared.md#e-declared-scope-narrowing-carve-out)** + **[loop-shared.md §I](loop-shared.md#i-step-8-close-out-comment-template)**. **Generator/critic separation (load-bearing):** orchestrator MUST NOT grade the worker's output; UPGRADES (FAIL→PASS, etc.) MUST come from a freshly re-dispatched `tasks-verifier`.
 

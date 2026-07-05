@@ -131,6 +131,10 @@ export const AuditTaskEntrySchema = z.object({
   check_count: z.number().int().nonnegative(),
   first_failing_evidence: z.string().max(200).optional(),
   no_acceptance_criteria: z.boolean().optional(),
+  /** The verdict the original loop run recorded for this task (from LOOP-RUN.md ## Tasks Closed). Drift vs `score` is the audit's key signal. */
+  loop_verdict: VerifierVerdictSchema.optional(),
+  /** True when the 5 USD cap stopped grading before this task's verifier dispatched. */
+  cost_cap_deferred: z.boolean().optional(),
 });
 export type AuditTaskEntry = z.infer<typeof AuditTaskEntrySchema>;
 

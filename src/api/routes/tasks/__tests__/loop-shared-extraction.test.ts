@@ -154,4 +154,45 @@ describe('loop-shared.md extraction gate (#346)', () => {
     // of every clause into loop-shared.md.
     expect(countLines(LOOP_DAG_PATH)).toBeLessThanOrEqual(500);
   });
+
+  it('loop.md never labels the §L anchor as §A (2026-07 quality plan T5)', () => {
+    const text = readFileSync(LOOP_PATH, 'utf8');
+    expect(text).not.toMatch(/§A\]\(\.?\/?loop-shared\.md#l-anti-fabrication/);
+  });
+
+  it('§A Reporting back requires a Per-AC evidence map (2026-07 quality plan T7)', () => {
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/\*\*Per-AC evidence map\*\*/);
+  });
+
+  it('loop.md Step 5 rejects reports missing the Per-AC evidence map', () => {
+    const text = readFileSync(LOOP_PATH, 'utf8');
+    expect(text).toMatch(/Per-AC evidence map/);
+  });
+
+  it('loop-shared.md contains §T decomposition artifact reuse (2026-07 quality plan T10)', () => {
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/^##\s+§T\.\s+Decomposition artifact reuse/m);
+  });
+
+  it('both executors point at §T', () => {
+    expect(readFileSync(LOOP_PATH, 'utf8')).toMatch(/§T/);
+    expect(readFileSync(LOOP_DAG_PATH, 'utf8')).toMatch(/§T/);
+  });
+
+  it('loop-shared.md contains §S execution ledger (2026-07 quality plan T13)', () => {
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/^##\s+§S\.\s+Execution ledger/m);
+  });
+
+  it('all four orchestrator skills point at §S', () => {
+    for (const rel of [
+      'skills/tasks/loop.md',
+      'skills/tasks/loop-dag.md',
+      'skills/tasks/decompose.md',
+      'skills/tasks/audit.md',
+    ]) {
+      expect(readFileSync(resolve(REPO_ROOT, rel), 'utf8')).toMatch(/§S/);
+    }
+  });
 });

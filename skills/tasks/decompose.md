@@ -58,6 +58,8 @@ step seems to need one of these, you have misread the design — stop and
 re-read §5 Guardrail 1. `create_task` and `add_dependency` are the ONLY
 mutating tools, and ONLY in Step 8 (skipped under `--dry-run`).
 
+**Execution ledger:** before the first MCP call, mirror this skill's step list into the harness todo list per [loop-shared.md §S](loop-shared.md#s-execution-ledger-mandatory-step-tracking).
+
 ### Planning-role model resolution (resolve ONCE, before any dispatch)
 
 Every subagent this skill dispatches — the Step-2 recon Explore agent, the
@@ -205,6 +207,9 @@ Preflight** ([loop-shared.md §R](loop-shared.md#r-model-resolution)).
 >   inter-draft dependency you notice while authoring (hints for Step 4,
 >   not authoritative).
 > - `estimated_minutes` — integer in [1, 90].
+> - `target_files` — 1–8 repo-relative paths this task is expected to touch,
+>   drawn ONLY from paths present in the recon summary; suffix ` (new)` for
+>   files the task creates. Omit only if the task is purely investigative.
 > Prefer independent leaf tasks. Only assert an edge when one draft truly
 > cannot start until another completes. Return ONLY the JSON array.
 
@@ -213,6 +218,33 @@ Validate the returned array against `CandidateTaskSchema`.
 single task instead of decomposing, and STOP.
 **> 25 candidates** ⇒ the goal is too broad; ask whether to split the goal
 first, and STOP.
+
+## Step 3b — AC checkability lint (orchestrator, no dispatch)
+
+Before the Step-4 independence check, lint every candidate's
+`acceptance_criteria` for **worker-checkability**: each AC must be satisfiable
+as one of the read-only verifier's evidence classes — a `file:line` existence
+or content assertion, an allowlisted command + exit code / headline number, or
+a git-history assertion. Two rejection classes:
+
+1. **Human-in-the-loop phrasing** — any AC or description containing the
+   `loop-dag.md` §2g indicator phrases (`hand-replay`, `manually inspect`,
+   `observe the orchestrator`, `by observing`, `live cross-context`,
+   `hand-driven verification`) or equivalent intent.
+2. **Unfalsifiable phrasing** — ACs with no observable referent ("works
+   correctly", "is robust", "handles errors well") and no named file, command,
+   or test.
+
+For each violation, re-prompt the planner ONCE (SendMessage to
+`decompose-planner`) to rewrite the offending AC into a checkable form. If a
+rewrite is impossible (the criterion genuinely needs a human), DROP the
+candidate and record it in the artifact body §5 with marker `(dropped:
+unworkable AC)` so the user can hand-author it. This is the §2g feasibility
+gate moved upstream — `loop-dag.md` §2g remains the execution-time backstop.
+
+Also verify each candidate's `target_files` entries (minus ` (new)` suffixes)
+appear in the recon summary; strip any path that does not and note the strip
+in the artifact body §5.
 
 ## Step 4 — Independence check
 
@@ -236,6 +268,30 @@ decomposition — the goal is an epic / roadmap / multi-phase migration that
 needs human-authored phase structure first. On halt, write a partial
 artifact with `aborted_reason: high_interdependence` and STOP — do not
 proceed to Step 5.
+
+## Step 4b — Predicted file-overlap check (orchestrator, no dispatch)
+
+File collisions between parallel workers are the direct cause of downstream
+RISKY/BROKEN integration-audit verdicts. Before the topology decision,
+compute the pairwise intersection of the candidates' `target_files` (ignore
+` (new)`-suffixed entries with distinct paths; a SHARED new path counts).
+For every pair with a non-empty intersection whose Step-4 verdict was
+`INDEPENDENT`:
+
+- If the shared file is a **registry-shaped** file (a registrar, barrel
+  export, docs/count table — a file whose edits are additive lines), add an
+  `ORDERED` edge in either direction (pick the lower `draft_id` first) so the
+  executors serialize the touch instead of parallelizing a merge conflict.
+- Otherwise, ask the Step-4 independence critic ONE targeted follow-up
+  (SendMessage to `decompose-critic-independence`): "drafts <a> and <b> both
+  declare `<path>` in target_files — re-verdict this pair given the shared
+  file." Apply the returned verdict (`ORDERED` edge, or merge on
+  `MUTUALLY_EXCLUSIVE`).
+
+Edges added here feed Step 5's `topology_check` exactly like Step-4 edges and
+are recorded in the artifact body §6 with reason `predicted file overlap:
+<path>`. This check adds NO new subagent dispatches beyond the bounded
+critic follow-up.
 
 ## Step 5 — Topology decision
 

@@ -364,4 +364,20 @@ describe('CandidateTaskSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts optional target_files (≤ 8 repo-relative paths)', () => {
+    const candidate = {
+      ...VALID_CANDIDATE,
+      target_files: ['src/a.ts', 'docs/b.md (new)'],
+    };
+    expect(CandidateTaskSchema.safeParse(candidate).success).toBe(true);
+  });
+
+  it('rejects more than 8 target_files', () => {
+    const candidate = {
+      ...VALID_CANDIDATE,
+      target_files: Array.from({ length: 9 }, (_, i) => `src/f${i}.ts`),
+    };
+    expect(CandidateTaskSchema.safeParse(candidate).success).toBe(false);
+  });
 });

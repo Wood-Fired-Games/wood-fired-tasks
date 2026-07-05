@@ -124,12 +124,31 @@ the next step does NOT re-read source files.
 
 Dispatch a **planner** subagent with the goal + success criteria + recon
 summary. It emits **8–25 candidate drafts**, each with `title`,
-`description` (2–3 sentences), `acceptance_criteria` (≥ 1 bullet), and
+`description` (2–3 sentences), `acceptance_criteria` (≥ 1 bullet),
 `suspected_edges` (any inter-draft dependency the planner notices while
-authoring). Schema: `CandidateTaskSchema` in
-`src/lib/decompose/schema.ts`. Under 8 candidates ⇒ goal is too small;
-ask the user whether to file a single task instead. Over 25 ⇒ goal is
-too broad; ask whether to split first.
+authoring), and an optional `target_files` (1–8 repo-relative paths the
+draft is expected to touch, drawn ONLY from paths present in the recon
+summary; suffix ` (new)` for files it creates). Schema:
+`CandidateTaskSchema` in `src/lib/decompose/schema.ts`. Under 8 candidates
+⇒ goal is too small; ask the user whether to file a single task instead.
+Over 25 ⇒ goal is too broad; ask whether to split first.
+
+### Step 3b — AC checkability lint (orchestrator, no dispatch)
+
+Before Step 4, the orchestrator lints every candidate's `acceptance_criteria`
+for **worker-checkability**: each AC must reduce to one of the read-only
+verifier's evidence classes — a `file:line` existence/content assertion, an
+allowlisted command + exit code / headline number, or a git-history
+assertion. Two rejection classes: (1) **human-in-the-loop phrasing** (the
+`loop-dag.md` §2g indicator phrases — `hand-replay`, `manually inspect`,
+`observe the orchestrator`, `by observing`, `live cross-context`,
+`hand-driven verification`) and (2) **unfalsifiable phrasing** (no observable
+referent and no named file/command/test). Each violation re-prompts the
+planner ONCE to rewrite the AC; an un-rewritable candidate is DROPPED and
+recorded in §5 with `(dropped: unworkable AC)`. This is the §2g feasibility
+gate moved upstream — §2g remains the execution-time backstop. The
+orchestrator also strips any `target_files` path absent from the recon
+summary, noting the strip in §5.
 
 ### Step 4 — Independence check
 
@@ -140,6 +159,19 @@ orchestrator aggregates the verdicts into a dependency edge set.
 **Guardrail 3 (§5) fires here:** if ≥ 30% of candidate pairs come back
 as `ORDERED` or `MUTUALLY_EXCLUSIVE`, the orchestrator halts and asks
 the user whether the goal needs re-scoping before proceeding.
+
+### Step 4b — Predicted file-overlap check
+
+Before the topology decision, the orchestrator computes the pairwise
+intersection of the candidates' `target_files`. For every pair whose Step-4
+verdict was `INDEPENDENT` yet shares a file, it either adds an `ORDERED` edge
+(registry-shaped files — registrars, barrel exports, docs/count tables whose
+edits are additive) so executors serialize the touch, or asks the independence
+critic ONE follow-up to re-verdict the pair. Edges added here feed Step 5's
+`topology_check` exactly like Step-4 edges and are recorded in §6 with reason
+`predicted file overlap: <path>`. File collisions between parallel workers are
+the direct cause of downstream RISKY/BROKEN integration verdicts; this check
+adds no new subagent dispatches beyond the bounded critic follow-up.
 
 ### Step 5 — Topology decision
 
@@ -403,7 +435,9 @@ Body sections (in order):
 5. `## Candidates` — one block per candidate: `draft_id`, `task_id`,
    `title`, `description`, `acceptance_criteria`, rationale linking
    back to the success criteria it covers.
-6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason).
+6. `## Dependency Edges` — table of (from_task_id, to_task_id, reason). The
+   reason vocabulary includes the independence critic's `ORDERED` verdicts and
+   Step-4b `predicted file overlap: <path>` edges.
 7. `## Cost Breakdown` — orchestrator + per-subagent cost rows.
 8. `## Spec-Coverage Audit` — the Step 8d verdict (present only when `--spec`
    was supplied): the spec surfaces checked (components, acceptance-criteria,

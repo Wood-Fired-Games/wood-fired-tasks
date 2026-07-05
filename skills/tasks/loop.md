@@ -17,6 +17,8 @@ The loop is project-agnostic. Validation commands (`build`, `test`, `smoke`) and
 
 **Resolve a real identity** before any `assignee` (on `claim_task`) or `author` (on `add_comment`) field — do NOT pass the literal `"user"` (that destroys cross-machine audit attribution). In priority order: (1) `git config user.email`, (2) `$USER`, (3) `claude-<model>-<purpose>` (e.g. `claude-opus-4.7-loop`). Pick once at top of invocation and capture as `$ASSIGNEE` (used for both `assignee` and `author` throughout this run). Detailed enforcement rules already embedded in the worker-brief / claim / comment sections below — this block is the canonical pointer.
 
+**Execution ledger:** before the first MCP call, mirror this skill's step list into the harness todo list per [loop-shared.md §S](loop-shared.md#s-execution-ledger-mandatory-step-tracking).
+
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__wsjf_health,mcp__wood-fired-tasks__resolve_model,mcp__wood-fired-tasks__list_models`) and retry. (`wsjf_ranking` is consumed by Step 1's WSJF-ordered selection; `wsjf_health` by §2g's loop-start health surfacing; `resolve_model` / `list_models` by the Step 4 / §7b dispatch-model resolution per [loop-shared.md §R](loop-shared.md#r-model-resolution).)
 
 ---
@@ -44,6 +46,8 @@ Call `wood-fired-tasks:list_projects`, match the argument (by ID if numeric/`#`-
 This is the most important section. Skipping any sub-step here causes the entire loop to misbehave.
 
 ### 2a. Read the project's domain spec doc(s)
+
+**Decomposition handoff:** if open tasks carry a `decomp-<uuid>` tag, first apply [loop-shared.md §T](loop-shared.md#t-decomposition-artifact-reuse-executor-side-handoff) to reuse the decompose run's recon + per-candidate context.
 
 Look for one or more spec docs that the tasks reference:
 
@@ -261,8 +265,7 @@ wood-fired-tasks:get_dependencies with task_id=<id>
 Read the task description carefully. Extract:
 
 - **Acceptance criteria** (often a list under "Acceptance criteria:" in the description).
-- **Linked docs** — any references to roadmap sections, ADRs, line ranges.
-- **Constraints** mentioned in the description ("avoid unrelated refactors", "warning-free", "don't bulk-reformat", etc.).
+- **Linked docs** — roadmap sections, ADRs, line ranges — and **constraints** from the description ("avoid unrelated refactors", "warning-free", "don't bulk-reformat", etc.).
 
 ### Step 3 — Plan the validation depth and pre-scan scope
 
@@ -276,13 +279,10 @@ Using the matrix from Section 2b, decide what validation the orchestrator will r
 
 This is the load-bearing step. **Do not implement the fix yourself**, no matter how small it looks. Even tiny tasks should go through a subagent so that:
 
-- Your context stays predictable (one summary per task, not 50 tool calls per task).
-- Each iteration is independently auditable.
+- Your context stays predictable (one summary per task, not 50 tool calls per task), and each iteration is independently auditable.
 - The orchestrator remains the single source of truth for what passed/failed.
 
-Use the `Agent` tool with the Claude Code platform's default `general-purpose` subagent type. This skill deliberately does NOT pin the orchestrator to any third-party agent plugin — briefs are the load-bearing part, not the agent type, and depending on an external plugin would couple the skill's behaviour to a tool that may not be installed on every host. For read-only investigation steps where no edits are needed, the platform's `Explore` subagent type is the right choice.
-
-If the user has installed third-party stack-specialist agents (e.g. a .NET-focused plugin) and wants the orchestrator to prefer them on matching stacks, the user should configure that routing themselves — the skill stays vendor-neutral by default.
+Use the `Agent` tool with the platform's default `general-purpose` subagent type (briefs are the load-bearing part, not the agent type; `Explore` for read-only investigation). The skill stays vendor-neutral — users who prefer third-party stack-specialist agents configure that routing themselves.
 
 **Brief template body lives in [loop-shared.md §A](loop-shared.md#a-worker-brief-template).** Adapt the template to the task; keep the structure (Acceptance criteria, Repository conventions, Test filter cheat sheet, Hard constraints, Validation steps, Reporting back). For tasks flagged in §2a as targeting a sibling repo, populate the "Working dir / Cross-repo context" subsection per the canonical rules in §2a. **Resolve the dispatch model first:** before this worker `Agent` call, resolve the `execution`-role model (or apply `--execution-model`) and set `model:` accordingly — see [loop-shared.md §R](loop-shared.md#r-model-resolution).
 
@@ -292,7 +292,7 @@ The brief's decision rules (pick A-vs-B yourself, pass excerpts not whole docs, 
 
 When the subagent returns its summary:
 
-1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it.
+1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it. Also confirm the report contains the §A **Per-AC evidence map** with every AC present; a report missing it (or missing an AC line) is a brief deviation — re-brief per item #5 before any validation runs.
 2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted). **Watch specifically for silent-pass gates**: a new CI job, npm script, or assertion that passes trivially (no-op, always-true condition, doesn't actually run the underlying tool). A gate that doesn't exercise the real check is worse than no gate — it gives false confidence forever. If you see one, re-brief and remove it (don't accept the compromise just because validation passed).
 3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Prefer `bash-summarize` *if it's available* (optional — see the note in §2c) for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings, and for everything if the wrapper isn't installed. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. When `bash-summarize` is in use, the `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines. **Regression-delta computation (load-bearing — no stash dance required).** The subagent's "Reporting back" block now contains two FQN sets: **Baseline (pre-edit)** and **Post-edit**. Compute `regressions_introduced_by_this_change = post_edit_failures - baseline_failures` (set difference on the FQN strings, applied AFTER the §2c `.flaky-tests.json` exclusion filter both sets were captured under). If the delta is empty, the subagent's work is clean (modulo any new tests added in this change — those count separately). If the delta is non-empty, those FQNs are real regressions introduced by this change and trigger the re-brief loop in item #5 below — the orchestrator does NOT need to stash the working tree and re-baseline to determine pre-existing-vs-new, because the subagent already captured the pre-edit set before touching code. If the subagent's report is missing either FQN block (or the two blocks were captured under different exclusion flags), treat that as a brief-deviation per Step 5's error-handling clause and re-brief.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
@@ -323,7 +323,7 @@ git push
 
 If push fails because the branch has no upstream, run `git push --set-upstream origin <branch>` once. If push fails for any other reason (auth, conflict), note it in the task comment as a manual follow-up and continue to the next task — don't block the loop.
 
-**Anti-fabrication + one-state-mutation-per-turn (load-bearing — applies to this step and Steps 7–8).** Every evidence value (SHA, row count, exit code, verdict) MUST be copied verbatim from a tool result that ALREADY RETURNED in a prior turn — never composed, predicted, or quoted in the same turn as the call that produces it. So perform at most ONE state-producing action per turn and let it return before citing its result: never batch a `git commit` with the `update_task` / `add_comment` that cites its SHA, nor a query with the comment that cites its output. Full rule + motivating incident: [`loop-shared.md` §A](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
+**Anti-fabrication + one-state-mutation-per-turn (load-bearing — applies to this step and Steps 7–8).** Every evidence value (SHA, row count, exit code, verdict) MUST be copied verbatim from a tool result that ALREADY RETURNED in a prior turn — never composed, predicted, or quoted in the same turn as the call that produces it. So perform at most ONE state-producing action per turn and let it return before citing its result: never batch a `git commit` with the `update_task` / `add_comment` that cites its SHA, nor a query with the comment that cites its output. Full rule + motivating incident: [`loop-shared.md` §L](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
 
 If the Step 5 carve-out fired and the orchestrator took an inline post-correction, Step 8's close-out comment MUST include a separate **"Orchestrator post-correction:"** bullet listing the file(s) changed and a one-line rationale, so the audit trail survives.
 
@@ -331,7 +331,7 @@ If the Step 5 carve-out fired and the orchestrator took an inline post-correctio
 
 The orchestrator MUST dispatch a separate `tasks-verifier` subagent to grade the work BEFORE closing the bugs task. This is non-negotiable — see the "Generator/critic separation" callout under Important Rules. The verifier reads the acceptance criteria, inspects the commits + diff the worker produced, and emits a structured PASS/FAIL/PARTIAL verdict. Full input/output contract: [`docs/verifier-contract.md`](../../docs/verifier-contract.md).
 
-**The orchestrator MUST NOT author `verification_evidence` for its own work.** The `verifier_session_id` MUST be the id of a SEPARATELY DISPATCHED `tasks-verifier` — never the orchestrator's own session, nor a literal like `"orchestrator"` / `"self"` / `"main-loop"`. Synthesizing an evidence object yourself (outside the documented `NOT_VERIFIED` escape hatch in §7c) is fabrication. Canon: [`loop-shared.md` §A](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
+**The orchestrator MUST NOT author `verification_evidence` for its own work.** The `verifier_session_id` MUST be the id of a SEPARATELY DISPATCHED `tasks-verifier` — never the orchestrator's own session, nor a literal like `"orchestrator"` / `"self"` / `"main-loop"`. Synthesizing an evidence object yourself (outside the documented `NOT_VERIFIED` escape hatch in §7c) is fabrication. Canon: [`loop-shared.md` §L](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
 
 **Even a worker who reports "no changes needed" still triggers verifier dispatch** with `commit_shas: []` and `file_changes: []`. The contract treats an empty `commit_shas` as a strong negative signal — the verifier will mark file-referencing criteria FAIL unless they are truly observable without a diff (e.g. a doc-only "confirm X is documented at path Y" criterion that the verifier can satisfy by Read alone).
 
@@ -695,4 +695,4 @@ Defensive halt. Emit a comment in the tasks project's top-level discussion (`add
 - **Don't create new tasks during the loop.** Note discoveries in comments on related tasks; the user promotes them later — EXCEPT the §O terminal-gate remediation-task carve-out ([loop-shared.md §O](loop-shared.md#o-terminal-completeness-gate-drainedone-invariant--reachability-audit)): a RED terminal invariant/reachability audit MUST materialize a remediation task and surface it in `## Coverage Gaps`.
 - **Be honest about manual steps.** If smoke/UAT/deploy was skipped, say so in the comment.
 - **Stop when the budget is hit** (default 3 tasks) and check in with the user — don't silently keep going. **Stop when the backlog is empty:** announce completion and exit; no polling.
-- **Anti-fabrication (load-bearing).** Every evidence value (SHA, row count, exit code, verdict) is quoted from a tool result that already returned in a prior turn — never composed in the same turn as the producing call (Step 6); and the orchestrator never authors its own `verification_evidence` — the verdict comes from a separately dispatched `tasks-verifier` (Step 7). Full rule, honest-scope statement, and the 2026-05-31 motivating incident: [`loop-shared.md` §A](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
+- **Anti-fabrication (load-bearing).** Every evidence value (SHA, row count, exit code, verdict) is quoted from a tool result that already returned in a prior turn — never composed in the same turn as the producing call (Step 6); and the orchestrator never authors its own `verification_evidence` — the verdict comes from a separately dispatched `tasks-verifier` (Step 7). Full rule, honest-scope statement, and the 2026-05-31 motivating incident: [`loop-shared.md` §L](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).

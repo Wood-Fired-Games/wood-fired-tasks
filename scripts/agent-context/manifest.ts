@@ -324,12 +324,12 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     purpose:
       'Wave 5 (#320) /tasks:decompose design spec: contract, 9-step methodology, four guardrails, DECOMPOSITION.md artifact schema, verification-fixture sketches, cost budget, and the Step 8d terminal spec-coverage audit (#818). /tasks:decompose is OPERATIONAL — the runtime ships at skills/tasks/decompose.md; this doc is the design-of-record.',
     when_to_read: 'on-demand',
-    line_budget: 560,
+    line_budget: 580,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
     notes:
-      'Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. Budget raised 500→560 by #818 to accommodate the documented Step 8d terminal spec-coverage audit; tighten in a follow-up if/when content peels out into adjacent files.',
+      'Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. Budget raised 500→560 by #818 (Step 8d terminal spec-coverage audit), then 560→580 by the 2026-07 quality plan (T8 Step 3b AC-checkability lint + T9 Step 4b predicted file-overlap check); tighten in a follow-up if/when content peels out into adjacent files.',
   },
   {
     path: 'docs/automation-recipes/claude-routines.md',

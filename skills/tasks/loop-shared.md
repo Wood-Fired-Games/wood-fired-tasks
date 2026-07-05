@@ -183,6 +183,15 @@ Return a tight summary (under 400 words). The first two subsections (**Baseline 
 - Failing FQNs: `none` OR bulleted list.
 - Skipped / ignored: `<count>`
 
+**Per-AC evidence map** — one line per acceptance criterion, in the order the
+brief listed them. Each line names the criterion (first ~8 words) and points
+at concrete evidence a read-only verifier can re-check:
+
+- AC1 "<first words of criterion>…" → `path/file.ts:123` | `<command> → exit 0, <headline>` | `git <ref>` | NOT MET: <reason> | BLOCKED: <reason>
+
+Every AC MUST appear exactly once. "NOT MET" / "BLOCKED" lines are honest and
+expected when applicable — never omit an AC to hide a gap.
+
 Then the standard fields:
 - Tooling / version chosen (if a choice was made).
 - Files created or modified (full paths).
@@ -239,6 +248,7 @@ const verifierInputs = {
   commit_shas: <string[]>,               // from Step 6's `git rev-parse HEAD` / commit hash
   file_changes: <string[]>,              // from Step 6's `git diff --name-only <prev>..HEAD`
   base_sha: <string>,                    // expected integration-branch tip the work must sit on
+  additional_observations: <string[]>,  // ALWAYS present — see below; [] only if Step 5 was skipped
 };
 ```
 
@@ -251,6 +261,16 @@ const verifierInputs = {
 **Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
 
 **Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration-branch tip and instruct the verifier, as its FIRST check, to assert the worktree's `git rev-parse HEAD` equals `base_sha` (or is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If HEAD does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
+
+**Always populate `additional_observations` with the orchestrator's Step-5 validation results.** One entry per independently re-run command, quoted from
+tool results that already returned (§L): e.g.
+`"orchestrator Step 5: npm run build → exit 0"`,
+`"orchestrator Step 5: npm test → exit 0, 2493 passed / 0 failed (flake filter: <flags>)"`.
+The verifier may CITE these as evidence for its synthetic
+"No regressions in pre-existing tests" check instead of re-running the full
+suite inside its own 30-call budget. Scope-narrowing SCOPE: entries (below)
+are appended to the same array. Do not put anything in this array you did not
+observe from a returned tool result.
 
 **Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
 
@@ -448,6 +468,8 @@ Per-runner filter syntax for excluding ONE test by FQN (the orchestrator selects
 **Called from:** `loop.md` §7c (Parse + validate the verifier's output), `loop-dag.md` §3d (Verify each worker via tasks-verifier — same parse + repair contract).
 
 The verifier model frequently emits semantically-correct findings inside a schema-violating envelope. The `VerificationEvidenceSchema` is `.strict()` (extra keys rejected) and pins specific field names, so several emission patterns parse-fail despite the underlying judgment being sound. Silently dropping a verifier's real findings is forbidden — the orchestrator MUST attempt repair via `SendMessage` to the SAME verifier session (which §7b mandates was dispatched with a `name:`) before falling through to `NOT_VERIFIED`. The session retains its tool-call evidence and check decisions, so a tight diagnostic flips the shape without re-doing the work.
+
+(With the verifier's `npm run -s validate:evidence` self-check in place these patterns should be rare; the repair protocol below remains the backstop.)
 
 Known parse-failure patterns and the diagnostic to send (one per failure class):
 
@@ -877,3 +899,68 @@ This mirrors §N's kill-safe posture (git state is the source of truth; the oper
 When an override is set for a role, skip `resolve_model` for that role and pass the override `ref` as `model:` directly (the dispatch-time fallback above still applies if the harness rejects it). `<ref>` accepts a concrete model id or `auto` (resolve via `list_models` as above).
 
 **Anti-fabrication note (§L).** The resolved model id is read VERBATIM from the `resolve_model` / `list_models` result that ALREADY RETURNED in a prior turn — never composed, guessed, or quoted in the same turn as the resolving call. If you have not yet seen the resolver's returned output, you do not yet have the model id; wait for it before dispatching. Consistent with [§L](#l-anti-fabrication--evidence-integrity-canon).
+
+---
+
+## §S. Execution ledger (mandatory step tracking)
+
+**Called from:** the Preflight of `loop.md`, `loop-dag.md`, `decompose.md`,
+`audit.md`.
+
+Long prose contracts get steps silently skipped — especially by smaller
+models. At run start, BEFORE the first MCP call, mirror the invoking skill's
+numbered step list into the harness todo list (load the trio per §K, then one
+`TaskCreate` per ledger row). Canonical ledgers:
+
+- **loop:** `2a discovery · 2b commands · 2c baseline · 2f topology gate ·
+  2g wsjf-health · [per task: 1 pick · 2 claim+read · 3 plan · 4 dispatch ·
+  5 verify · 6 commit · 7 verifier · 8 close · 9 emit] · 10·0 §O gate ·
+  10 integration audit`
+- **loop-dag:** `2f gate · 2g feasibility · 2h wsjf-health · 2a–2e discovery ·
+  [per wave: 3a frontier · 3b dispatch · 3c await · 3d verify ·
+  3d-post integrated-tree validation · 3e summary · 3f audit] · §O gate ·
+  4 final audit · 5f emit · 5g teardown`
+- **decompose:** `1 capture+guardrail4 · 2 recon · 3 candidates · 3b AC lint ·
+  4 independence · 4b overlap check · 5 topology · 6 coverage · 7 sizing ·
+  8a scoring · 8b create · 8c riders · 8d spec audit · 9 emit`
+- **audit:** `1 resolve · 2 enumerate · cap guard · 3 dispatch · 4 score ·
+  5 rollup · 6 emit`
+
+Flip each row `in_progress` when its step starts and `completed` when its
+exit condition is met. A row you cannot honestly flip to `completed` is a
+step you may NOT skip — either execute it, or record WHY it is N/A for this
+run in the run artifact (gate refusal, empty overlap set, no distributable,
+etc.) and flip it then. At emit time, an unfinished ledger row is a defect in
+the run — surface it in the artifact rather than deleting the row.
+
+---
+
+## §T. Decomposition artifact reuse (executor-side handoff)
+
+**Called from:** `loop.md` §2a, `loop-dag.md` §2.
+
+If any open task in the target project carries a `decomp-<uuid>` tag, a
+`/tasks:decompose` run produced this backlog and its artifact almost
+certainly still exists locally. Before doing §2a discovery from scratch:
+
+1. Extract the decomposition id from the tag; glob
+   `.planning/decompositions/*-<project_id>.md` and pick the file whose
+   frontmatter `decomposition_id` matches (skip silently if none — the
+   artifact is per-machine and may be absent).
+2. Reuse `## Recon Summary` as the seed for §2a's repo understanding — verify
+   it is still current (spot-check 2–3 cited paths still exist) rather than
+   re-deriving from zero.
+3. When briefing a worker for task `<id>`, locate the matching
+   `## Candidates` block (via the artifact's `(draft_id → task_id)` mapping)
+   and carry its `description` rationale + `target_files` into the brief's
+   "Relevant domain context" and "Required deliverables" sections. The
+   planner's context is strictly better than a from-scratch re-derivation.
+4. The `## Dependency Edges` reasons (including `predicted file overlap:
+   <path>`) tell the loop-dag orchestrator WHICH files motivated
+   serialization — quote the reason in both affected workers' briefs as a
+   hard constraint ("`<path>` is shared with task #<other>; keep your edit
+   additive/minimal there").
+
+The artifact is advisory input — the tasks database remains the source of
+truth for status, ACs, and edges. Never treat a stale artifact as overriding
+live task state.
