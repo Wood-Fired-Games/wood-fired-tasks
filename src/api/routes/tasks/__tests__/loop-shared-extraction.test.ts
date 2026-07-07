@@ -185,14 +185,20 @@ describe('loop-shared.md extraction gate (#346)', () => {
     expect(text).toMatch(/^##\s+§S\.\s+Execution ledger/m);
   });
 
-  it('all four orchestrator skills point at §S', () => {
+  it('all four orchestrator skills point at §S anchor link (not just bare §S label)', () => {
+    // AC2: bare "§S" is insufficient — a section can keep the label while
+    // reverting the pointer from the full anchor to free text.  Require
+    // the concrete link `loop-shared.md#s-execution-ledger` so a regression
+    // that drops the anchor is caught even if the §S label survives.
     for (const rel of [
       'skills/tasks/loop.md',
       'skills/tasks/loop-dag.md',
       'skills/tasks/decompose.md',
       'skills/tasks/audit.md',
     ]) {
-      expect(readFileSync(resolve(REPO_ROOT, rel), 'utf8')).toMatch(/§S/);
+      expect(readFileSync(resolve(REPO_ROOT, rel), 'utf8')).toMatch(
+        /loop-shared\.md#s-execution-ledger/,
+      );
     }
   });
 });

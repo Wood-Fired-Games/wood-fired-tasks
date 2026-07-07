@@ -222,6 +222,24 @@ describe('NOT_VERIFIED handling consistency (2026-07 quality plan T2)', () => {
     expect(dagText).toMatch(/NOT_VERIFIED \(dispatch failure/);
   });
 
+  it('§6c verifier-emitted NOT_VERIFIED row keeps status in_progress (not blocked)', () => {
+    // AC1: the split introduced in the 2026-07 quality plan means a
+    // verifier-emitted NOT_VERIFIED must NOT flip the task to blocked —
+    // only a §3c dispatch-failure does that. Pinning the EXACT cell text
+    // prevents a silent revert to the pre-split "all NOT_VERIFIED → blocked"
+    // behaviour.
+    expect(dagText).toMatch(/NOT_VERIFIED \(verifier-emitted\).*status stays `in_progress`/s);
+  });
+
+  it('§6c dispatch-failure NOT_VERIFIED row maps to status=blocked', () => {
+    // AC1 (second row): the dispatch-failure branch is the ONLY path that
+    // legitimately flips status to blocked on a NOT_VERIFIED outcome.
+    // Old wording (pre-split) incorrectly collapsed both rows into blocked.
+    expect(dagText).toMatch(
+      /NOT_VERIFIED \(dispatch failure[^)]*\).*update_task → status=blocked/s,
+    );
+  });
+
   it('§3f mandates build+test on the integrated tree per wave (2026-07 quality plan T11)', () => {
     expect(dagText).toMatch(/Post-integration validation \(MANDATORY, per wave\)/);
     expect(dagText).toMatch(/INTEGRATED tree/);

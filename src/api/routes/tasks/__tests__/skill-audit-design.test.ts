@@ -252,5 +252,21 @@ describe('/tasks:audit DESIGN gate (#323)', () => {
       expect(skill).toMatch(/loop_verdict/);
       expect(skill).toMatch(/## Verdict Drift/);
     });
+
+    it('deferred tasks are scored PARTIAL with cost_cap_deferred:true and no verifier dispatched (AC3)', () => {
+      // AC3: pin the three-part deferred-task disposition as a unit so no
+      // single part can be silently removed while the other two survive.
+      // The skill text must assert all three simultaneously:
+      //   (1) score is PARTIAL, not COVERED or MISSING
+      //   (2) cost_cap_deferred: true is set on the entry
+      //   (3) NO verifier is dispatched for these tasks
+      // "ungraded is not certified" (may be split across two lines in the
+      // skill file) is the load-bearing rationale that prevents a shortcut
+      // from promoting deferred tasks to COVERED.
+      expect(skill).toMatch(/PARTIAL.*cost_cap_deferred: true.*NO verifier/s);
+      // The rationale phrase spans a line-break in the skill file — use `s`
+      // flag so `.` matches newlines.
+      expect(skill).toMatch(/ungraded is\s+not certified/s);
+    });
   });
 });
