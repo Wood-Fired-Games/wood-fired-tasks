@@ -27,6 +27,7 @@ const REPO_ROOT = resolve(__dirname, '../../../../..');
 const LOOP_PATH = resolve(REPO_ROOT, 'skills/tasks/loop.md');
 const LOOP_DAG_PATH = resolve(REPO_ROOT, 'skills/tasks/loop-dag.md');
 const LOOP_SHARED_PATH = resolve(REPO_ROOT, 'skills/tasks/loop-shared.md');
+const TASKS_VERIFIER_PATH = resolve(REPO_ROOT, 'skills/agents/tasks-verifier.md');
 
 function countLines(path: string): number {
   return readFileSync(path, 'utf8').split('\n').length;
@@ -185,14 +186,62 @@ describe('loop-shared.md extraction gate (#346)', () => {
     expect(text).toMatch(/^##\s+§S\.\s+Execution ledger/m);
   });
 
-  it('all four orchestrator skills point at §S', () => {
+  it('all four orchestrator skills point at §S anchor link (not just bare §S label)', () => {
+    // AC2: bare "§S" is insufficient — a section can keep the label while
+    // reverting the pointer from the full anchor to free text.  Require
+    // the concrete link `loop-shared.md#s-execution-ledger` so a regression
+    // that drops the anchor is caught even if the §S label survives.
     for (const rel of [
       'skills/tasks/loop.md',
       'skills/tasks/loop-dag.md',
       'skills/tasks/decompose.md',
       'skills/tasks/audit.md',
     ]) {
-      expect(readFileSync(resolve(REPO_ROOT, rel), 'utf8')).toMatch(/§S/);
+      expect(readFileSync(resolve(REPO_ROOT, rel), 'utf8')).toMatch(
+        /loop-shared\.md#s-execution-ledger/,
+      );
     }
+  });
+
+  it('loop-shared.md §S names a concrete ## Ledger Defects section (2026-07 quality plan T13)', () => {
+    // AC2: §S must name a concrete artifact section so enforcement does not
+    // rely on the model volunteering a confession. Detects regression if the
+    // section heading is silently removed from §S.
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).toMatch(/## Ledger Defects/);
+    expect(text).toMatch(/_No ledger defects: every ledger row completed\._/);
+  });
+
+  it('tasks-verifier.md step 5 records a synthetic check when self-validation is unavailable or exhausted (2026-07 quality plan T13)', () => {
+    // AC1: when the fallback fires (validator unavailable) or two re-validates
+    // are exhausted, the verifier must record it as a synthetic check so the
+    // orchestrator knows the gate never ran. Detects regression if this
+    // instruction is silently dropped from step 5.
+    const text = readFileSync(TASKS_VERIFIER_PATH, 'utf8');
+    expect(text).toMatch(/add a synthetic check/);
+    expect(text).toMatch(/"name": "self-validation"/);
+    expect(text).toMatch(/UNCHECKABLE: self-validation unavailable/);
+    expect(text).toMatch(/UNCHECKABLE: self-validation exhausted after/);
+  });
+
+  it('loop-shared.md §B no longer instructs verifier to surface unplanned-fixes in additional_observations (2026-07 quality plan T13)', () => {
+    // AC3: additional_observations is an orchestrator→verifier INPUT field;
+    // the old wording told the verifier to write there (invalid). Now it must
+    // surface the assessment as a dedicated check instead.
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    expect(text).not.toMatch(/Surface the assessment in `additional_observations`/);
+    // The replacement instruction must be present.
+    expect(text).toMatch(/Surface the assessment as a dedicated check/);
+    expect(text).toMatch(/"unplanned fixes assessment"/);
+  });
+
+  it('tasks-verifier.md step 0 distinguishes exit 1 from exit 128 (2026-07 quality plan T13)', () => {
+    // AC4: exit 1 means "not a descendant"; exit 128 means "unknown object /
+    // shallow clone". Both emit NOT_VERIFIED but with different evidence text.
+    const text = readFileSync(TASKS_VERIFIER_PATH, 'utf8');
+    expect(text).toMatch(/Exit 1.*not an ancestor/s);
+    expect(text).toMatch(/Exit 128.*shallow/s);
+    expect(text).toMatch(/is not a descendant of base_sha/);
+    expect(text).toMatch(/unknown in this clone — cannot assert ancestry/);
   });
 });

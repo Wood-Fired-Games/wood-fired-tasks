@@ -187,12 +187,19 @@ results were supplied.
 
 0. **Base-integrity check (when `base_sha` is present).** Run
    `git rev-parse HEAD`; if it does not equal `base_sha`, run
-   `git merge-base --is-ancestor <base_sha> HEAD`. If HEAD is neither equal
-   to nor a descendant of `base_sha`, STOP and emit
-   `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base integrity",
-   "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: base mismatch —
-   HEAD <sha> is not a descendant of base_sha <sha>"}]}`. A tree cut from a
-   stale base invalidates every downstream check (loop-shared.md §B).
+   `git merge-base --is-ancestor <base_sha> HEAD`. Two distinct failure
+   shapes — emit different evidence for each, but BOTH still emit
+   `NOT_VERIFIED` (fail closed):
+   - **Exit 1** (object known, not an ancestor): STOP and emit
+     `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base integrity",
+     "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: base mismatch —
+     HEAD <sha> is not a descendant of base_sha <sha>"}]}`.
+   - **Exit 128** (unknown object — shallow/partial clone): STOP and emit
+     `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base integrity",
+     "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: base_sha <sha>
+     unknown in this clone — cannot assert ancestry (shallow/partial clone)"}]}`.
+   A tree cut from a stale base invalidates every downstream check
+   (loop-shared.md §B).
 
 1. **Parse acceptance_criteria** into a list of discrete criteria (one
    bullet, one numbered item, or one sentence per criterion).
@@ -215,8 +222,19 @@ results were supplied.
    output. If the command exits non-zero WITHOUT printing an
    `INVALID VerificationEvidence:` line (missing script, missing
    `node_modules`, tsx/Node failure), treat the validator as unavailable:
-   fall back to the self-check rules above and emit. Do NOT spend your
-   re-validate attempts on a validator that is not answering.
+   fall back to the self-check rules above and **add a synthetic check** to
+   the checks array before emitting:
+   `{"name": "self-validation", "status": "SKIP",
+   "evidence_url_or_text": "UNCHECKABLE: self-validation unavailable —
+   bare exit 1, no INVALID line"}`.
+   Similarly, if two re-validate attempts are exhausted without reaching `OK`,
+   **add a synthetic check** before emitting the last-known candidate:
+   `{"name": "self-validation", "status": "SKIP",
+   "evidence_url_or_text": "UNCHECKABLE: self-validation exhausted after
+   2 re-validates — <last error>"}`.
+   Do NOT spend your re-validate attempts on a validator that is not
+   answering. On the OK path (self-validation ran green), do NOT add this
+   synthetic check.
 
 ## Failure modes you MUST catch
 
