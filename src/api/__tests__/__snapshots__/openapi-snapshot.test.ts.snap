@@ -8715,6 +8715,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "properties": {
                       "checks": {
                         "items": {
+                          "additionalProperties": false,
                           "properties": {
                             "evidence_url_or_text": {
                               "maxLength": 2000,

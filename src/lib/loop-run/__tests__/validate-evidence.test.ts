@@ -40,6 +40,36 @@ describe('validateEvidence', () => {
     expect(r.ok).toBe(false);
   });
 
+  it('rejects extra top-level key with Unrecognized key error (AC1)', () => {
+    const r = validateEvidence(
+      JSON.stringify({
+        verdict: 'PASS',
+        checks: [{ name: 'build', status: 'PASS', evidence_url_or_text: 'green' }],
+        task_id: 42,
+      }),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.join('\n')).toMatch(/Unrecognized key/i);
+  });
+
+  it('rejects extra per-check key with an error naming the field (AC3)', () => {
+    const r = validateEvidence(
+      JSON.stringify({
+        verdict: 'PASS',
+        checks: [
+          {
+            name: 'build',
+            status: 'PASS',
+            evidence_url_or_text: 'green',
+            confidence: 'high',
+          },
+        ],
+      }),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.join('\n')).toMatch(/confidence/);
+  });
+
   it('rejects non-JSON input without throwing', () => {
     const r = validateEvidence('```json\n{"verdict":"PASS"}\n```');
     expect(r.ok).toBe(false);
