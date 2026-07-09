@@ -11,6 +11,67 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [v2.4.0] - 2026-07-09
+
+Quality release for the `/tasks:*` skill pipeline (decompose → loop → loop-dag →
+audit → tasks-verifier → integration-auditor). Raises the accuracy, verifiability,
+and consistency of the pipeline's output across any model in any role. All changes
+are backward compatible — no REST, MCP, or CLI surface changed.
+
+### Added
+- **§S execution ledger** — mandatory per-step tracking mirrored into the harness
+  todo list across all four orchestrators (loop, loop-dag, decompose, audit), so a
+  skipped step is a visible defect rather than a silent omission.
+- **§T decomposition artifact reuse** — executors reuse a `/tasks:decompose` run's
+  `## Recon Summary`, `## Candidates`, and `## Dependency Edges` to seed worker
+  briefs instead of re-deriving context from scratch.
+- **Per-AC evidence map in worker reports** — every acceptance criterion maps to
+  concrete, re-checkable evidence (`path:line`, command exit, git ref), and no AC may
+  be omitted to hide a gap.
+- **Verifier self-validation CLI** — `npm run -s validate:evidence` validates a
+  verifier's emitted JSON against the authoritative `VerificationEvidenceSchema`
+  before it is written back; unavailability is detected by output shape, not npm's
+  suppressed `Missing script` text.
+- **Audit grade-up-to-cap + Verdict Drift** — the `/tasks:audit` cost cap grades the
+  highest-signal subset under the $5 ceiling (`budget_count = 16`) instead of halting
+  at zero, and a `## Verdict Drift` section surfaces audit-vs-loop disagreements
+  (cost-cap-deferred tasks excluded to avoid spurious `PASS → PARTIAL` rows).
+- **Decompose grounding + checks** — candidate tasks carry `target_files` hints, a
+  Step 3b AC-checkability lint, and a Step 4b predicted-file-overlap check that feeds
+  the topology's dependency edges.
+- **loop-dag mandatory per-wave build+test on the integrated tree** — each wave is
+  validated on the integrated worktree before the next frontier is computed.
+- **Verdict-enum unification + cross-field guards** — `VerifierVerdictSchema` is
+  derived from the single-source `VERIFICATION_VERDICTS`, and a `superRefine` rejects
+  contradictory audit entries (`cost_cap_deferred`/`no_acceptance_criteria` with a
+  populated `verifier_verdict`).
+
+### Fixed
+- **Validator-unavailable detection** — the verifier fallback now keys on output
+  shape (non-zero exit without an `INVALID VerificationEvidence:` line), fixing the
+  case where `npm run -s` suppressed the marker in foreign repos.
+- **Per-check `.strict()`** on `VerificationEvidence` items — unknown per-check keys
+  are now rejected, matching the §G repair-protocol contract.
+- **Hermetic disk stats in doctor tests** — a `doctorDiskDefaults.statfs` injection
+  seam stops a nearly-full host disk from flipping unrelated exit-code assertions.
+- **§6c NOT_VERIFIED split** — verifier-emitted NOT_VERIFIED stays `in_progress`
+  while dispatch-failure NOT_VERIFIED goes to `blocked`, removing the prior
+  contradiction.
+- **§A→§L anti-fabrication cross-references** corrected in `loop.md`.
+- **Always-on `additional_observations`** carries the orchestrator's Step-5 results
+  the verifier cites instead of re-running the suite; the input-vs-output naming
+  collision was resolved (assessment now emitted as a dedicated check).
+- **`base_sha` base-integrity check** documented in the verifier contract, with the
+  exit-1 (not a descendant) vs exit-128 (base unknown in a shallow clone) distinction.
+- **Design-gate tests** now pin mandated actions (not just section labels), and §S
+  names a concrete `## Ledger Defects` artifact anchor.
+
+### Security
+- Bumped dev-only transitive dependencies via `overrides` — `undici` → 7.28.0,
+  `esbuild` → 0.28.1, `@babel/core` → 7.29.6 — clearing 8 Dependabot alerts (2 high,
+  2 medium, 4 low). The production dependency tree was already clean
+  (`npm audit --omit=dev` reported 0), so no runtime surface was affected.
+
 ## [v2.3.0] - 2026-06-27
 
 Security-hardening release remediating issues #74, #72, and #75 (reported by the

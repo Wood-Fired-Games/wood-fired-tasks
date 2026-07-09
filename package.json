@@ -1,6 +1,6 @@
 {
   "name": "wood-fired-tasks",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Network-wide task tracking system for Wood Fired Games",
   "keywords": [
     "task-tracker",
@@ -148,7 +148,10 @@
     "zod": "^4.3.6"
   },
   "overrides": {
-    "qs": "^6.15.2"
+    "qs": "^6.15.2",
+    "undici": "^7.28.0",
+    "esbuild": "^0.28.1",
+    "@babel/core": "^7.29.6"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.2",
