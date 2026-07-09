@@ -93,11 +93,13 @@ export const VerificationEvidenceSchema = z
     verdict: z.enum(VERIFICATION_VERDICTS),
     checks: z
       .array(
-        z.object({
-          name: z.string().min(1).max(200),
-          status: z.enum(VERIFICATION_CHECK_STATUSES),
-          evidence_url_or_text: z.string().max(2000),
-        }),
+        z
+          .object({
+            name: z.string().min(1).max(200),
+            status: z.enum(VERIFICATION_CHECK_STATUSES),
+            evidence_url_or_text: z.string().max(2000),
+          })
+          .strict(),
       )
       .max(50)
       .optional(),

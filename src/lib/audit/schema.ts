@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { VERIFICATION_VERDICTS } from '../../schemas/task.schema.js';
+
 /**
  * Zod schemas for the `/tasks:audit` skill (Wave 7.1 / wood-fired-tasks
  * task #323).
@@ -73,8 +75,12 @@ export type IntegrationVerdict = z.infer<typeof IntegrationVerdictSchema>;
  * `AuditTaskEntry` so the AUDIT.md `## Per-Task Audit` body can show
  * both the raw verifier verdict AND the audit score derived from it
  * (useful when reviewing why a `NOT_VERIFIED` rolled up to `PARTIAL`).
+ *
+ * Derived from `VERIFICATION_VERDICTS` in `src/schemas/task.schema.ts`
+ * (single source of truth). Any change to the task-schema enum
+ * automatically propagates here — drift is impossible by construction.
  */
-export const VerifierVerdictSchema = z.enum(['PASS', 'FAIL', 'PARTIAL', 'NOT_VERIFIED']);
+export const VerifierVerdictSchema = z.enum(VERIFICATION_VERDICTS);
 export type VerifierVerdict = z.infer<typeof VerifierVerdictSchema>;
 
 /**
@@ -123,19 +129,38 @@ export type AuditRunFrontmatter = z.infer<typeof AuditRunFrontmatterSchema>;
  * reconstruct bullets from the description — the verifier was NOT
  * dispatched, and `score` is `PARTIAL` by definition.
  */
-export const AuditTaskEntrySchema = z.object({
-  task_id: z.number().int().positive(),
-  title: z.string().min(1),
-  score: AuditScoreSchema,
-  verifier_verdict: VerifierVerdictSchema.optional(),
-  check_count: z.number().int().nonnegative(),
-  first_failing_evidence: z.string().max(200).optional(),
-  no_acceptance_criteria: z.boolean().optional(),
-  /** The verdict the original loop run recorded for this task (from LOOP-RUN.md ## Tasks Closed). Drift vs `score` is the audit's key signal. */
-  loop_verdict: VerifierVerdictSchema.optional(),
-  /** True when the 5 USD cap stopped grading before this task's verifier dispatched. */
-  cost_cap_deferred: z.boolean().optional(),
-});
+export const AuditTaskEntrySchema = z
+  .object({
+    task_id: z.number().int().positive(),
+    title: z.string().min(1),
+    score: AuditScoreSchema,
+    verifier_verdict: VerifierVerdictSchema.optional(),
+    check_count: z.number().int().nonnegative(),
+    first_failing_evidence: z.string().max(200).optional(),
+    no_acceptance_criteria: z.boolean().optional(),
+    /** The verdict the original loop run recorded for this task (from LOOP-RUN.md ## Tasks Closed). Drift vs `score` is the audit's key signal. */
+    loop_verdict: VerifierVerdictSchema.optional(),
+    /** True when the 5 USD cap stopped grading before this task's verifier dispatched. */
+    cost_cap_deferred: z.boolean().optional(),
+  })
+  .superRefine((entry, ctx) => {
+    if (entry.cost_cap_deferred === true && entry.verifier_verdict !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'cost_cap_deferred:true means no verifier was dispatched — verifier_verdict must be absent',
+        path: ['verifier_verdict'],
+      });
+    }
+    if (entry.no_acceptance_criteria === true && entry.verifier_verdict !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'no_acceptance_criteria:true means no verifier was dispatched — verifier_verdict must be absent',
+        path: ['verifier_verdict'],
+      });
+    }
+  });
 export type AuditTaskEntry = z.infer<typeof AuditTaskEntrySchema>;
 
 /**
