@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { VERIFICATION_VERDICTS } from '../../../schemas/task.schema.js';
 import {
   type AuditRun,
   AuditRunFrontmatterSchema,
@@ -199,9 +200,14 @@ describe('AuditTaskEntrySchema', () => {
     expect(AuditTaskEntrySchema.safeParse(VALID_TASK_ENTRY).success).toBe(true);
   });
 
-  it('accepts loop_verdict and cost_cap_deferred', () => {
+  it('accepts loop_verdict and cost_cap_deferred (without verifier_verdict)', () => {
+    // cost_cap_deferred:true means the verifier was never dispatched —
+    // verifier_verdict must be absent. loop_verdict (from LOOP-RUN.md) is
+    // independent and may still be present.
+    const { verifier_verdict: _dropped, ...entryWithoutVerdict } = VALID_TASK_ENTRY;
     const entry = {
-      ...VALID_TASK_ENTRY,
+      ...entryWithoutVerdict,
+      score: 'PARTIAL' as const,
       loop_verdict: 'PASS',
       cost_cap_deferred: true,
     };
@@ -268,6 +274,74 @@ describe('AuditTaskEntrySchema', () => {
   it('exposes the four verifier-verdict values verbatim from docs/verifier-contract.md', () => {
     const values = VerifierVerdictSchema.options;
     expect(values).toEqual(['PASS', 'FAIL', 'PARTIAL', 'NOT_VERIFIED']);
+  });
+
+  // AC1 — derivation drift-guard: VerifierVerdictSchema is derived from
+  // VERIFICATION_VERDICTS in src/schemas/task.schema.ts (single source of truth).
+  // This test pins the value sets equal so any future divergence fails loudly.
+  it('VerifierVerdictSchema values equal VERIFICATION_VERDICTS from task.schema (single source of truth)', () => {
+    expect([...VerifierVerdictSchema.options].sort()).toEqual([...VERIFICATION_VERDICTS].sort());
+  });
+
+  // AC2 — superRefine exclusion: cost_cap_deferred:true ⇒ verifier_verdict absent
+  it('rejects cost_cap_deferred:true when verifier_verdict is present', () => {
+    const result = AuditTaskEntrySchema.safeParse({
+      ...VALID_TASK_ENTRY,
+      cost_cap_deferred: true,
+      // verifier_verdict: 'PASS' is inherited from VALID_TASK_ENTRY — contradiction
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('verifier_verdict');
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.includes('cost_cap_deferred'))).toBe(true);
+    }
+  });
+
+  // AC2 — superRefine exclusion: no_acceptance_criteria:true ⇒ verifier_verdict absent
+  it('rejects no_acceptance_criteria:true when verifier_verdict is present', () => {
+    const result = AuditTaskEntrySchema.safeParse({
+      ...VALID_TASK_ENTRY,
+      no_acceptance_criteria: true,
+      // verifier_verdict: 'PASS' is inherited from VALID_TASK_ENTRY — contradiction
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('verifier_verdict');
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.includes('no_acceptance_criteria'))).toBe(true);
+    }
+  });
+
+  // AC2 — backward compat: entries with neither flag still parse (with or without verdict)
+  it('accepts entry with neither cost_cap_deferred nor no_acceptance_criteria and a verdict', () => {
+    expect(AuditTaskEntrySchema.safeParse(VALID_TASK_ENTRY).success).toBe(true);
+  });
+
+  it('accepts entry with cost_cap_deferred:true and NO verifier_verdict', () => {
+    const { verifier_verdict: _dropped, ...base } = VALID_TASK_ENTRY;
+    expect(
+      AuditTaskEntrySchema.safeParse({
+        ...base,
+        score: 'PARTIAL' as const,
+        cost_cap_deferred: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts entry with no_acceptance_criteria:true and NO verifier_verdict', () => {
+    expect(
+      AuditTaskEntrySchema.safeParse({
+        task_id: 999,
+        title: 'Legacy task — no AC column, no description bullets',
+        score: 'PARTIAL',
+        check_count: 0,
+        no_acceptance_criteria: true,
+        // verifier_verdict intentionally absent
+      }).success,
+    ).toBe(true);
   });
 });
 
