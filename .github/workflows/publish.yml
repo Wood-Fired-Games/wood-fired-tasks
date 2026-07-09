@@ -39,9 +39,12 @@ jobs:
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
       # OIDC trusted publishing requires npm >= 11.5.1; Node 22 still ships
-      # npm 10.x, so upgrade before publishing.
+      # npm 10.x, so upgrade before publishing. Pin to the 11.x line: npm 12.0.0
+      # ships a broken provenance path (global install drops `sigstore`, so
+      # `npm publish` with provenance fails with MODULE_NOT_FOUND). 11.x has
+      # working OIDC provenance; revisit once 12.x is fixed.
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
       - run: npm ci
       # prepublishOnly gates this: build + test + lint:deps + audit + pack-check.
       # No NODE_AUTH_TOKEN — npm detects the OIDC environment and generates
