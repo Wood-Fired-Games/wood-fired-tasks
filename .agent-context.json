@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-05T11:58:14.208Z",
+    "generated_at": "2026-07-07T12:10:34.965Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {

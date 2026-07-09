@@ -61,6 +61,16 @@ describe('doctor command', () => {
     doctorReachabilityDefaults.probe = probe;
   }
 
+  /**
+   * Override the injectable disk-stats provider so the disk check is hermetic:
+   * the real host disk filling up must not flip these exit-code assertions.
+   * Default injected in beforeEach is a healthy 50%-free disk.
+   */
+  async function setDiskStats(stats: { bavail: number; bsize: number; blocks: number }) {
+    const { doctorDiskDefaults } = await import('../commands/doctor.js');
+    doctorDiskDefaults.statfs = (async () => stats) as typeof doctorDiskDefaults.statfs;
+  }
+
   beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'wft-doctor-'));
     dbPath = join(tmpDir, 'tasks.db');
@@ -92,6 +102,8 @@ describe('doctor command', () => {
     process.exitCode = 0;
     // Default reachability probe: pretend reachable (overridden per-test).
     await setReachabilityProbe(async () => true);
+    // Hermetic disk stats: 50% free (bavail/blocks), 4096-byte blocks.
+    await setDiskStats({ bavail: 50_000, bsize: 4096, blocks: 100_000 });
   });
 
   afterEach(() => {
@@ -164,8 +176,14 @@ describe('doctor command', () => {
   });
 
   it('reports Disk FAIL when DB dir is unreachable', async () => {
-    // Point at a path under a non-existent directory so statfs rejects.
+    // Point at a path under a non-existent directory and make the injected
+    // statfs reject the same way the real one would (hermetic equivalent of
+    // the pre-injection behaviour this test was written against).
     process.env.DATABASE_PATH = '/non/existent/path/tasks.db';
+    const { doctorDiskDefaults } = await import('../commands/doctor.js');
+    doctorDiskDefaults.statfs = (async () => {
+      throw new Error('ENOENT: no such file or directory, statfs');
+    }) as unknown as typeof doctorDiskDefaults.statfs;
     const program = await buildProgram();
     await program.parseAsync(['node', 'tasks', 'doctor']);
     const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');

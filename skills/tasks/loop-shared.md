@@ -274,7 +274,7 @@ observe from a returned tool result.
 
 **Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
 
-**Unplanned-fixes assessment (load-bearing).** If the worker summary contains an `## Unplanned fixes` section (per §A's `## Pre-existing blocking defects` clause) with content other than `none`, the verifier MUST assess each entry for (i) **justification** — was the fix genuinely necessary to satisfy an acceptance criterion, or did it expand scope — and (ii) **non-regression** — the unplanned fix did not break unrelated behaviour (it is covered by the post-edit test run / does not introduce a new failing FQN). Surface the assessment in `additional_observations`; an unjustified or regression-causing unplanned fix is grounds for a FAIL check rather than a silent PASS.
+**Unplanned-fixes assessment (load-bearing).** If the worker summary contains an `## Unplanned fixes` section (per §A's `## Pre-existing blocking defects` clause) with content other than `none`, the verifier MUST assess each entry for (i) **justification** — was the fix genuinely necessary to satisfy an acceptance criterion, or did it expand scope — and (ii) **non-regression** — the unplanned fix did not break unrelated behaviour (it is covered by the post-edit test run / does not introduce a new failing FQN). Surface the assessment as a dedicated check in the emitted JSON (name: `"unplanned fixes assessment"`, status `PASS`/`FAIL`, evidence citing the justification and non-regression conclusions); an unjustified or regression-causing unplanned fix is grounds for `status: "FAIL"` on that check rather than a silent PASS.
 
 **Scope-narrowed envelope for declared design-only / slice-of-epic tasks.** If §2a annotated this task with `scope: design-only` (or any other scope-narrowing label — `slice-of-epic`, etc.), the orchestrator MUST narrow `acceptance_criteria` in the envelope to the **in-scope AC bullets only** (the verbatim list recorded in §2a annotation field (b)). The out-of-scope / deferred bullets from §2a annotation field (c) MUST NOT appear in the envelope's `acceptance_criteria` field — the verifier never sees criteria it cannot honestly grade.
 
@@ -931,7 +931,22 @@ exit condition is met. A row you cannot honestly flip to `completed` is a
 step you may NOT skip — either execute it, or record WHY it is N/A for this
 run in the run artifact (gate refusal, empty overlap set, no distributable,
 etc.) and flip it then. At emit time, an unfinished ledger row is a defect in
-the run — surface it in the artifact rather than deleting the row.
+the run — surface it in a `## Ledger Defects` section of the run artifact
+(LOOP-RUN.md / AUDIT.md), one bullet per unfinished row:
+
+```markdown
+## Ledger Defects
+
+- <step label> — <why unfinished or N/A for this run>
+```
+
+When every ledger row completed, emit the sentinel instead:
+
+```markdown
+## Ledger Defects
+
+_No ledger defects: every ledger row completed._
+```
 
 ---
 

@@ -17,6 +17,14 @@ import { PAT_PREFIX } from '../../services/pat-hash.js';
 
 const statfsAsync = promisify(statfs);
 
+/**
+ * Injectable disk-stats provider (same seam pattern as doctorOidcDefaults /
+ * doctorReachabilityDefaults). Tests override this so the disk check never
+ * reads the real host filesystem — a nearly-full development disk must not
+ * flip unrelated exit-code assertions.
+ */
+export const doctorDiskDefaults: { statfs: typeof statfsAsync } = { statfs: statfsAsync };
+
 const POSIX = process.platform !== 'win32';
 
 /**
@@ -436,7 +444,7 @@ export const doctorCommand = new Command('doctor')
     let diskFreePercent = '0.0';
 
     try {
-      const stats = await statfsAsync(dirname(dbPath));
+      const stats = await doctorDiskDefaults.statfs(dirname(dbPath));
       diskFree = stats.bavail * stats.bsize;
       diskTotal = stats.blocks * stats.bsize;
       diskFreePercent = ((diskFree / diskTotal) * 100).toFixed(1);
