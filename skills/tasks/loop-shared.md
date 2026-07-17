@@ -24,6 +24,8 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 
 ## STEP 0 — Worktree base correction (MANDATORY when dispatched with `isolation: "worktree"`)
 
+**GIT/PLATFORM-WORKTREE ISOLATION ONLY** — skip this entire step unless `tasks scm detect` reported `capabilities.isolation == "platform-worktree"`.
+
 If this brief was dispatched into an isolated git worktree, the harness may have
 cut that worktree from a STALE base (commonly the repo's configured main branch /
 a fixed ref, NOT the orchestrator's current branch tip). The base ref is chosen by
@@ -375,12 +377,14 @@ safe_count: <non-negative integer>
 \`\`\`diff
 <git diff <pre>..HEAD -- <file_path> excerpt restricted to the hunks worker_a touched>
 \`\`\`
+(git backend; under perforce/none derive the equivalent excerpt via `tasks scm changed-files <base>` plus a per-file content comparison)
 
 ### Diff from task #<id_b>
 
 \`\`\`diff
 <git diff <pre>..HEAD -- <file_path> excerpt restricted to the hunks worker_b touched>
 \`\`\`
+(git backend; under perforce/none derive the equivalent excerpt via `tasks scm changed-files <base>` plus a per-file content comparison)
 
 ### Auditor evidence
 
@@ -706,7 +710,7 @@ Additionally run the **skills↔client-package mirror parity check** *when prese
 
 For MCP tools **NEWLY ADDED during this run**, exercise them through the **remote proxy** (`dist/mcp/remote/…`, the path `wft-mcp` → `dist/mcp/remote/index.js` → `src/mcp/remote/register-tools.ts` serves) — **NOT** in-process stdio registration. The retro's shipped smoke failed precisely because it exercised the tool in-process while the remote path was empty.
 
-- **Detect "newly added":** a tool is newly-added if this run's commits touched a tool registrar — files under `src/mcp/tools/` or `src/mcp/register-tools.ts` / `src/mcp/remote/register-tools.ts`. Diff the run's commit range (`git diff --name-only <run_base>..HEAD -- src/mcp/tools src/mcp/register-tools.ts src/mcp/remote/register-tools.ts`) and extract the `registerTool('<name>', …)` names introduced.
+- **Detect "newly added":** a tool is newly-added if this run's commits touched a tool registrar — files under `src/mcp/tools/` or `src/mcp/register-tools.ts` / `src/mcp/remote/register-tools.ts`. Diff the run's commit range (`git diff --name-only <run_base>..HEAD -- src/mcp/tools src/mcp/register-tools.ts src/mcp/remote/register-tools.ts`) and extract the `registerTool('<name>', …)` names introduced (git backend; under perforce/none derive the equivalent via `tasks scm changed-files <base>`, then filter the returned list to these paths).
 - **Smoke via the remote path:** for each newly-added tool name, confirm it is reachable through the remote proxy — it appears in `harvestRemoteToolNames()` (the remote registrar's surface) AND a remote-proxy invocation reaches its backing REST endpoint (not just stdio registration). In-process-only reachability does NOT count.
 
 **If a newly-added tool is unreachable via the remote path → the gate is RED.**
@@ -816,6 +820,8 @@ A failing drift/meta guard in a wave is handled **exactly like a §10e BROKEN in
 Either way the orchestrator records the RED guard's identity (test/script name + symptom) and DOES NOT recompute the next frontier as if the wave were clean.
 
 ## §Q. Worktree-patch integration mechanics (loop-dag run-end / per-wave)
+
+**GIT/PLATFORM-WORKTREE ISOLATION ONLY** — skip this entire step unless `tasks scm detect` reported `capabilities.isolation == "platform-worktree"`.
 
 **Called from:** `loop-dag.md` §3d (PASS branch — committing each worker's changes to the integration branch). `/tasks:loop`'s shared-tree workers commit in place and do NOT need this; loop-dag workers run in ISOLATED worktrees (§3b `isolation: "worktree"`), so their changes live on a `worktree-agent-<id>` branch / tree and MUST be applied to the integration tree by the orchestrator. This section codifies HOW to apply overlapping worktree patches so per-task commit attribution stays clean.
 

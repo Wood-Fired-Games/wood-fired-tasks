@@ -248,4 +248,48 @@ describe('loop-shared.md extraction gate (#346)', () => {
     expect(text).toMatch(/worktree baseline <data\.id> ≠ base_sha/);
     expect(text).toMatch(/cannot assert the worktree baseline/);
   });
+
+  it('loop-shared.md gates raw-git STEP 0 and §Q behind the GIT/PLATFORM-WORKTREE ISOLATION ONLY callout (task #1553)', () => {
+    // The two executable raw-git paths in loop-shared.md — the §A STEP 0
+    // worktree-base guard and §Q worktree-patch integration mechanics — are
+    // reachable from backend-agnostic (pluggable-SCM) orchestration and only
+    // apply under the git/platform-worktree isolation path. Each region MUST
+    // open with the exact gate phrase, pinned verbatim so a regression that
+    // silently drops the gate (or paraphrases it) fails this test.
+    const GATE_PHRASE = 'GIT/PLATFORM-WORKTREE ISOLATION ONLY';
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    const lines = text.split('\n');
+
+    const step0Start = lines.findIndex((line) =>
+      /^## STEP 0 — Worktree base correction/.test(line),
+    );
+    expect(step0Start).toBeGreaterThanOrEqual(0);
+    const step0End = lines.findIndex(
+      (line, i) => i > step0Start && /^## Working dir \/ Cross-repo context/.test(line),
+    );
+    expect(step0End).toBeGreaterThan(step0Start);
+    const step0Region = lines.slice(step0Start, step0End).join('\n');
+    expect(step0Region).toContain(GATE_PHRASE);
+
+    const qStart = lines.findIndex((line) =>
+      /^##\s+§Q\.\s+Worktree-patch integration mechanics/.test(line),
+    );
+    expect(qStart).toBeGreaterThanOrEqual(0);
+    const qEnd = lines.findIndex((line, i) => i > qStart && /^##\s+§R\./.test(line));
+    expect(qEnd).toBeGreaterThan(qStart);
+    const qRegion = lines.slice(qStart, qEnd).join('\n');
+    expect(qRegion).toContain(GATE_PHRASE);
+  });
+
+  it('loop-shared.md qualifies the incidental raw-git reads (§D diff excerpts, §O reachability diff) as git-backend with an scm changed-files fallback (task #1553)', () => {
+    // These reads are read-only evidence gathering, genuinely git-specific
+    // (path-scoped diff excerpts), so they carry an inline qualifier rather
+    // than a full step-skip gate — pin that the qualifier text survives.
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    const qualifierMatches =
+      text.match(/git backend; under perforce\/none derive the equivalent/g) ?? [];
+    // §D has two occurrences (task #<id_a> and #<id_b> diff excerpts), §O has one.
+    expect(qualifierMatches.length).toBeGreaterThanOrEqual(3);
+    expect(text).toMatch(/tasks scm changed-files <base>/);
+  });
 });
