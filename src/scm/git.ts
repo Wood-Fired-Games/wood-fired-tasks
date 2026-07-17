@@ -76,6 +76,21 @@ function failGit(verb: string, res: ExecScmResult, code: ScmErrorCode, hint?: st
 }
 
 /**
+ * Missing-identity git stderr signatures (§6.4): `git commit` refuses to run
+ * without a usable `user.email`/`user.name`, and the exact wording differs
+ * across git versions/platforms — match the known variants.
+ */
+const MISSING_IDENTITY_RE =
+  /please tell me who you are|unable to auto-detect email address|empty ident name/i;
+
+/**
+ * Hook-failure git stderr/stdout signatures (§6.4): a `pre-commit` (or other)
+ * hook that exits non-zero aborts the commit before git even looks at the
+ * tree state, so this is distinct from a genuine dirty-tree failure.
+ */
+const HOOK_FAILURE_RE = /pre-commit hook|hook failed|\.git[/\\]hooks[/\\]/i;
+
+/**
  * Map a `git diff --name-status` status letter to the normative
  * {@link ScmFileChangeType} (§4.1). `A` → added, `D` → deleted; every other
  * letter (`M` modified, `R` renamed, `C` copied, `T` typechange, `U` unmerged)
@@ -203,6 +218,22 @@ export class GitBackend implements ScmBackend {
       const combined = `${res.stdout}\n${res.stderr}`;
       if (/nothing to commit|no changes added|nothing added to commit/i.test(combined)) {
         return { recorded: false, changeId: null, mode: 'commit' };
+      }
+      if (MISSING_IDENTITY_RE.test(combined)) {
+        failGit(
+          'commit',
+          res,
+          'BACKEND_UNAVAILABLE',
+          'Set a committer identity: git config user.email "you@example.com" && git config user.name "Your Name".',
+        );
+      }
+      if (HOOK_FAILURE_RE.test(combined)) {
+        failGit(
+          'commit',
+          res,
+          'BACKEND_UNAVAILABLE',
+          'A git hook (e.g. pre-commit) rejected the commit — inspect and fix the hook in .git/hooks/, or the condition it is checking for.',
+        );
       }
       failGit('commit', res, 'DIRTY_TREE');
     }

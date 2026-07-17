@@ -244,6 +244,121 @@ describe('GitBackend — record + change-id parity (AC2, §5.1)', () => {
   });
 });
 
+describe('GitBackend — record error-code fidelity (§6.4)', () => {
+  /**
+   * Fixture route (documented per task instructions): `execScm` always
+   * inherits the *parent* process env (minus the §6.1 `P4PASSWD` denylist —
+   * see `exec.ts`'s `buildChildEnv`), so the only reliable hermetic way to
+   * force git's identity auto-detection to fail — regardless of what the
+   * host machine's global `~/.gitconfig` or hostname happen to be — is to
+   * combine a repo-local `user.useConfigOnly=true` (git refuses to fall back
+   * to username@hostname auto-detection) with env overrides on `process.env`
+   * that redirect/disable the global and system config for the duration of
+   * the call: `GIT_CONFIG_GLOBAL` → a nonexistent path, `GIT_CONFIG_NOSYSTEM=1`,
+   * and clearing `GIT_AUTHOR_*`/`GIT_COMMITTER_*`/`EMAIL`. Verified manually
+   * against real git 2.43: without this isolation the test would pass or fail
+   * depending on whatever identity happens to be configured on the machine
+   * running it. The overrides are saved and restored in a `finally` so they
+   * never leak into other tests.
+   */
+  it('missing user.email during record yields BACKEND_UNAVAILABLE with a stderr tail and hint', async () => {
+    const repo = makeRepo();
+    execFileSync('git', ['config', '--unset', 'user.email'], { cwd: repo });
+    execFileSync('git', ['config', '--unset', 'user.name'], { cwd: repo });
+    execFileSync('git', ['config', 'user.useConfigOnly', 'true'], { cwd: repo });
+    writeFileSync(join(repo, 'a.txt'), 'x\n');
+    execFileSync('git', ['add', '--', 'a.txt'], { cwd: repo });
+
+    const overrides: Record<string, string | undefined> = {
+      GIT_CONFIG_GLOBAL: join(repo, '.no-such-gitconfig-for-test'),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_EMAIL: undefined,
+      GIT_AUTHOR_NAME: undefined,
+      GIT_COMMITTER_EMAIL: undefined,
+      GIT_COMMITTER_NAME: undefined,
+      EMAIL: undefined,
+    };
+    const saved: Record<string, string | undefined> = {};
+    for (const key of Object.keys(overrides)) saved[key] = process.env[key];
+
+    try {
+      for (const [key, value] of Object.entries(overrides)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+
+      let caught: unknown;
+      try {
+        await backend.record(ctxFor(repo), 'msg');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(ScmError);
+      const scmErr = caught as ScmError;
+      expect(scmErr.code).toBe('BACKEND_UNAVAILABLE');
+      // The git stderr tail is folded into the error message.
+      expect(scmErr.message).toMatch(/please tell me who you are|auto-detect email address/i);
+      expect(scmErr.hint).toBeTruthy();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it('a pre-commit hook failure during record yields BACKEND_UNAVAILABLE', async () => {
+    const repo = makeRepo();
+    // The dev/CI host may set a global `core.hooksPath` override (this repo's
+    // own dev machine does); pin the repo back to its own `.git/hooks` so the
+    // fixture hook below is actually the one git invokes.
+    execFileSync('git', ['config', 'core.hooksPath', '.git/hooks'], { cwd: repo });
+    writeFileSync(
+      join(repo, '.git', 'hooks', 'pre-commit'),
+      '#!/bin/sh\necho "husky - pre-commit hook exited with code 1 (error)" >&2\nexit 1\n',
+      { mode: 0o755 },
+    );
+    writeFileSync(join(repo, 'a.txt'), 'x\n');
+    execFileSync('git', ['add', '--', 'a.txt'], { cwd: repo });
+
+    let caught: unknown;
+    try {
+      await backend.record(ctxFor(repo), 'msg');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ScmError);
+    const scmErr = caught as ScmError;
+    expect(scmErr.code).toBe('BACKEND_UNAVAILABLE');
+    expect(scmErr.message).toMatch(/hook/i);
+  });
+
+  it('an unresolved merge conflict during record yields DIRTY_TREE (residual class only)', async () => {
+    const repo = makeRepo();
+    commitFile(repo, 'a.txt', 'one\n', 'init');
+    execFileSync('git', ['checkout', '-q', '-b', 'branch1'], { cwd: repo });
+    writeFileSync(join(repo, 'a.txt'), 'two\n');
+    execFileSync('git', ['commit', '-q', '-am', 'branch1 change'], { cwd: repo });
+    execFileSync('git', ['checkout', '-q', 'main'], { cwd: repo });
+    writeFileSync(join(repo, 'a.txt'), 'three\n');
+    execFileSync('git', ['commit', '-q', '-am', 'main change'], { cwd: repo });
+    try {
+      execFileSync('git', ['merge', 'branch1'], { cwd: repo });
+    } catch {
+      // Expected: the merge exits non-zero on the (intentional) conflict.
+    }
+
+    let caught: unknown;
+    try {
+      await backend.record(ctxFor(repo), 'msg');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ScmError);
+    expect((caught as ScmError).code).toBe('DIRTY_TREE');
+  });
+});
+
 describe('GitBackend — publish (§4.1)', () => {
   it('no upstream and no origin → ScmError(NO_REMOTE)', async () => {
     const repo = makeRepo();
