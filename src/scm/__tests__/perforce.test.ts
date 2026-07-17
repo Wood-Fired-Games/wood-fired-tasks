@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ExecScmResult } from '../exec.js';
+import type { ExecScmOptions, ExecScmResult } from '../exec.js';
 import { PerforceBackend, isSubmitConflict, parseSubmittedChange } from '../perforce.js';
 import { ScmError, type ScmVerbContext } from '../types.js';
 
@@ -31,18 +31,26 @@ interface Rule {
 /**
  * A router-style mock exec: each call is matched against `rules` in order; the
  * first matching rule's `reply` is merged onto a zero-exit default. Every call's
- * argv is recorded so tests can assert the exact p4 commands invoked.
+ * argv is recorded so tests can assert the exact p4 commands invoked. `optsCalls`
+ * parallels `calls` (same index) so tests can also assert on the exec options —
+ * notably `stdinData`, the change -o | change -i piping vehicle (task #1555).
  */
 function mockExec(rules: Rule[]) {
   const calls: string[][] = [];
-  const exec = async (_binary: string, args: readonly string[]): Promise<ExecScmResult> => {
+  const optsCalls: ExecScmOptions[] = [];
+  const exec = async (
+    _binary: string,
+    args: readonly string[],
+    opts: ExecScmOptions = { cwd: '' },
+  ): Promise<ExecScmResult> => {
     calls.push([...args]);
+    optsCalls.push(opts);
     for (const rule of rules) {
       if (rule.match(args)) return result({ args, ...rule.reply(args) });
     }
     return result({ args });
   };
-  return { exec, calls };
+  return { exec, calls, optsCalls };
 }
 
 /** True when `argv` starts with the given verb tokens (ignoring leading `--field` global opts). */
@@ -183,7 +191,8 @@ describe('PerforceBackend — §4.2 collapse + renumber capture', () => {
   it('stage→record→publish collapses to a SINGLE changelist and captures the renumbered CL', async () => {
     const { exec, calls } = mockExec([
       OK_LOGIN,
-      // Lazy CL creation on first stage → pending CL 123.
+      // Lazy CL creation on first stage → pending CL 123 (change -o | change -i).
+      { match: (a) => isVerb(a, 'change', '-o'), reply: () => ({ stdout: 'Change: new\n' }) },
       { match: (a) => isVerb(a, 'change', '-i'), reply: () => ({ stdout: 'Change 123 created.' }) },
       {
         match: (a) => isVerb(a, 'reconcile'),
@@ -212,10 +221,12 @@ describe('PerforceBackend — §4.2 collapse + renumber capture', () => {
     const submits = calls.filter((c) => isVerb(c, 'submit'));
     expect(submits).toHaveLength(1);
 
-    // Only ONE numbered changelist was ever created (the pending CL, submitted once).
+    // Only ONE numbered changelist was ever created (the pending CL, submitted
+    // once) — the creating `change -o` form-read carries the Description
+    // field and no Change field (fields live on `-o` now, not `-i`, task #1555).
     const created = calls.filter(
       (c) =>
-        isVerb(c, 'change', '-i') &&
+        isVerb(c, 'change', '-o') &&
         c.some((t) => t.startsWith('Description=')) &&
         !c.some((t) => t.startsWith('Change=')),
     );
@@ -266,6 +277,107 @@ describe('PerforceBackend — §4.2 collapse + renumber capture', () => {
     const backend = new PerforceBackend(mockExec([OK_LOGIN]).exec);
     const rec = await backend.record(ctxFor(repo), 'ignored');
     expect(rec).toEqual({ recorded: false, changeId: null, mode: 'noop' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC (task #1555): non-interactive changelist forms via `change -o` captured,
+// piped to `change -i` — `p4 change -i` reads its form from STDIN, and
+// `--field` only rewrites the OUTPUT of a form command (`change -o`), so a
+// bare `--field … change -i` against stdin pinned to 'ignore' cannot work
+// against a real server. Both form-writing helpers must go through
+// `change -o` (capturing stdout) then `change -i` fed that capture via the
+// §6.1 exec wrapper's `stdinData` option.
+// ---------------------------------------------------------------------------
+
+describe('PerforceBackend — non-interactive changelist forms (task #1555)', () => {
+  it('ensureContextChangelist issues `p4 change -o` then `p4 change -i` with the captured form on stdin', async () => {
+    const form = 'Change:\tnew\n\nDescription:\n\twft-scm context task-1541\n';
+    const { exec, calls, optsCalls } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) =>
+          isVerb(a, 'change', '-o') && a.includes('Description=wft-scm context task-1541'),
+        reply: () => ({ stdout: form }),
+      },
+      { match: (a) => isVerb(a, 'change', '-i'), reply: () => ({ stdout: 'Change 123 created.' }) },
+      { match: (a) => isVerb(a, 'reconcile'), reply: () => ({}) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    const staged = await backend.stage(ctx, ['a.txt']);
+    expect(staged.staged).toEqual(['a.txt']);
+
+    const withOpts = calls.map((args, i) => ({ args, opts: optsCalls[i] }));
+
+    // Exactly two `change` invocations: the `-o` form read, then the `-i` write.
+    const formRead = withOpts.find((c) => isVerb(c.args, 'change', '-o'));
+    const formWrite = withOpts.find((c) => isVerb(c.args, 'change', '-i'));
+    expect(formRead).toBeDefined();
+    expect(formWrite).toBeDefined();
+
+    // `-o` carries the `--field Description=…` global option that pre-fills the form.
+    expect(formRead?.args).toEqual([
+      '--field',
+      'Description=wft-scm context task-1541',
+      'change',
+      '-o',
+    ]);
+    // `-i` carries NO `--field` args — it just reads the form from stdin.
+    expect(formWrite?.args).toEqual(['change', '-i']);
+    // The exact captured `-o` stdout is what got piped to `-i` on stdin.
+    expect(formWrite?.opts.stdinData).toBe(form);
+  });
+
+  it('setChangelistDescription issues `p4 change -o` (scoped to the CL) then `p4 change -i` with the captured form on stdin', async () => {
+    const createForm = 'Change:\tnew\n\nDescription:\n\twft-scm context task-1541\n';
+    const updateForm = 'Change:\t123\n\nDescription:\n\ttask #1541: work\n';
+    const { exec, calls, optsCalls } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) => isVerb(a, 'change', '-o') && a.includes('Change=123'),
+        reply: () => ({ stdout: updateForm }),
+      },
+      { match: (a) => isVerb(a, 'change', '-o'), reply: () => ({ stdout: createForm }) },
+      { match: (a) => isVerb(a, 'change', '-i'), reply: () => ({ stdout: 'Change 123 created.' }) },
+      { match: (a) => isVerb(a, 'reconcile'), reply: () => ({}) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    await backend.stage(ctx, ['a.txt']);
+    const rec = await backend.record(ctx, 'task #1541: work');
+    expect(rec).toMatchObject({ recorded: true, mode: 'submit' });
+
+    const changeOCalls = calls
+      .map((args, i) => ({ args, opts: optsCalls[i] }))
+      .filter((c) => isVerb(c.args, 'change', '-o'));
+    const changeICalls = calls
+      .map((args, i) => ({ args, opts: optsCalls[i] }))
+      .filter((c) => isVerb(c.args, 'change', '-i'));
+
+    // Two `-o`/`-i` pairs ran: one to create the CL (ensureContextChangelist),
+    // one to set its description (setChangelistDescription) — both via the
+    // same form-capture-then-pipe path.
+    expect(changeOCalls).toHaveLength(2);
+    expect(changeICalls).toHaveLength(2);
+
+    const descriptionUpdate = changeOCalls.find((c) => c.args.includes('Change=123'));
+    expect(descriptionUpdate?.args).toEqual([
+      '--field',
+      'Change=123',
+      '--field',
+      'Description=task #1541: work',
+      'change',
+      '-o',
+    ]);
+
+    // The `-i` call following the description-update `-o` carries NO `--field`
+    // args and received exactly that `-o` call's captured stdout on stdin.
+    const updateWrite = changeICalls[1];
+    expect(updateWrite?.args).toEqual(['change', '-i']);
+    expect(updateWrite?.opts.stdinData).toBe(updateForm);
   });
 });
 

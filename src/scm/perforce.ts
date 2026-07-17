@@ -238,20 +238,43 @@ export class PerforceBackend implements ScmBackend {
   }
 
   /**
+   * Non-interactive changelist form write (task #1555): `p4 change -i` READS
+   * THE FORM FROM STDIN — `--field` only rewrites the OUTPUT of a form
+   * command (`change -o`), it does not seed `-i`'s input. Since the §6.1 exec
+   * wrapper pins stdin to `'ignore'` by default, a bare `--field … change -i`
+   * cannot work against a real server (it reads an empty/absent form).
+   *
+   * The canonical fix: (1) run `p4 --field <fields…> change -o` and capture
+   * its stdout — the pre-filled changespec form with those fields already
+   * rewritten; (2) pipe that captured form verbatim into `p4 change -i` via
+   * {@link ExecScmOptions.stdinData}. Neither call is ever interactive.
+   */
+  private async writeChangelistForm(
+    ctx: ScmVerbContext,
+    fields: readonly string[],
+  ): Promise<ExecScmResult> {
+    const fieldArgs = fields.flatMap((f) => ['--field', f]);
+    const form = await this.p4(ctx, [...fieldArgs, 'change', '-o']);
+    if (form.code !== 0) throw genericFailure('change -o', form);
+    return this.p4(ctx, ['change', '-i'], { stdinData: form.stdout });
+  }
+
+  /**
    * The context's numbered pending changelist, created lazily on first stage
    * (§4.3 — each `--context` gets its OWN numbered CL so concurrent workers in
    * one client cannot cross-contaminate the default changelist).
    *
-   * Created non-interactively via `p4 --field Description=… change -i`: the
-   * `--field` global option pre-fills the form so `-i` needs no editor and no
-   * stdin content (the §6.1 exec wrapper pins stdin to `ignore`).
+   * Created via the {@link writeChangelistForm} `change -o` | `change -i`
+   * path (task #1555) — the pre-filled form (fresh "new" changespec with the
+   * description already rewritten by `--field`) is captured then piped to
+   * `-i` on stdin.
    */
   private async ensureContextChangelist(ctx: ScmVerbContext): Promise<number> {
     const existing = this.readContextCl(ctx);
     if (existing !== null) return existing;
 
     const description = `wft-scm context ${ctx.context}`;
-    const res = await this.p4(ctx, ['--field', `Description=${description}`, 'change', '-i']);
+    const res = await this.writeChangelistForm(ctx, [`Description=${description}`]);
     if (res.code !== 0) throw genericFailure('create changelist', res);
 
     const cl = parseCreatedChange(res.stdout);
@@ -266,20 +289,17 @@ export class PerforceBackend implements ScmBackend {
     return cl;
   }
 
-  /** Set an existing numbered CL's description non-interactively (form pre-filled via `--field`). */
+  /**
+   * Set an existing numbered CL's description via the same {@link
+   * writeChangelistForm} `change -o` | `change -i` path (task #1555), scoping
+   * the form to the target CL with `Change=<cl>` alongside `Description=…`.
+   */
   private async setChangelistDescription(
     ctx: ScmVerbContext,
     cl: number,
     message: string,
   ): Promise<void> {
-    const res = await this.p4(ctx, [
-      '--field',
-      `Change=${cl}`,
-      '--field',
-      `Description=${message}`,
-      'change',
-      '-i',
-    ]);
+    const res = await this.writeChangelistForm(ctx, [`Change=${cl}`, `Description=${message}`]);
     if (res.code !== 0) throw genericFailure('update changelist description', res);
   }
 

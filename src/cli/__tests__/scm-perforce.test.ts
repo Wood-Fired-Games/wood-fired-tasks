@@ -146,9 +146,11 @@ describe('scm perforce envelope — §4.2 collapse (single changelist)', () => {
 
     // The whole record+publish act collapsed to a SINGLE submit against a SINGLE CL.
     expect(calls.filter((c) => isVerb(c, 'submit'))).toHaveLength(1);
+    // Non-interactive form fields live on the `change -o` capture (task #1555)
+    // — `change -i` just reads that captured form from stdin, no `--field`.
     const createdCls = calls.filter(
       (c) =>
-        isVerb(c, 'change', '-i') &&
+        isVerb(c, 'change', '-o') &&
         c.some((t) => t.startsWith('Description=')) &&
         !c.some((t) => t.startsWith('Change=')),
     );
@@ -388,10 +390,12 @@ describe('scm perforce envelope — concurrent contexts (§4.3 numbered CLs)', (
     expect(betaEnvelope.data.changeId).toBe('p4:660');
     expect(alphaEnvelope.data.changeId).not.toBe(betaEnvelope.data.changeId);
 
-    // Two distinct numbered CLs were created — one per context, not the default CL.
+    // Two distinct numbered CLs were created — one per context, not the default
+    // CL. Non-interactive form fields live on the `change -o` capture (task
+    // #1555) — `change -i` just reads that captured form from stdin.
     const createdCls = calls.filter(
       (c) =>
-        isVerb(c, 'change', '-i') &&
+        isVerb(c, 'change', '-o') &&
         c.some((t) => t.startsWith('Description=')) &&
         !c.some((t) => t.startsWith('Change=')),
     );
