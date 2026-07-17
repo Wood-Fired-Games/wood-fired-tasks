@@ -195,6 +195,47 @@ describe('PerforceBackend — ScmBackend surface', () => {
     const data = await backend.isolate(ctxFor(makeRepo()), 'run-1');
     expect(data).toEqual({ strategy: 'serialized' });
   });
+
+  it('memoizes a successful preflight per repo: two verbs in one process produce exactly one p4 login -s call (task #1561)', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'opened'), reply: () => ({ stdout: '' }) },
+      { match: (a) => isVerb(a, 'status'), reply: () => ({ stdout: '' }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    await backend.status(ctx);
+    await backend.changedFiles(ctx, 'p4:1');
+
+    const loginCalls = calls.filter((c) => isVerb(c, 'login', '-s'));
+    expect(loginCalls).toHaveLength(1);
+  });
+
+  it('re-probes after a failed preflight — a failure is never cached (task #1561)', async () => {
+    let attempt = 0;
+    const { exec, calls } = mockExec([
+      {
+        match: (a) => isVerb(a, 'login', '-s'),
+        reply: () => {
+          attempt += 1;
+          return attempt === 1
+            ? { code: 1, stderr: 'Your session has expired, please login again.' }
+            : { code: 0 };
+        },
+      },
+      { match: (a) => isVerb(a, 'opened'), reply: () => ({ stdout: '' }) },
+      { match: (a) => isVerb(a, 'status'), reply: () => ({ stdout: '' }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    await expect(backend.status(ctx)).rejects.toMatchObject({ code: 'AUTH_EXPIRED' });
+    await backend.changedFiles(ctx, 'p4:1');
+
+    const loginCalls = calls.filter((c) => isVerb(c, 'login', '-s'));
+    expect(loginCalls).toHaveLength(2);
+  });
 });
 
 // ---------------------------------------------------------------------------

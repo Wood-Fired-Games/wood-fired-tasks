@@ -230,6 +230,22 @@ export class PerforceBackend implements ScmBackend {
 
   private readonly exec: ExecScmFn;
 
+  /**
+   * Repo roots for which `p4 login -s` has already succeeded this process
+   * (§4.1 preflight memoization, task #1561). `preflight()` runs before
+   * EVERY verb, which is a server round-trip per call; a CLI process is
+   * short-lived, so memoizing the successful probe per repo root bounds the
+   * staleness by the process lifetime. Only a SUCCESS is cached — a failed
+   * probe must re-probe on the next call, so this is a `Set` of repo roots
+   * that passed, never a generic result cache. Instance-scoped rather than
+   * module-level: the production CLI creates exactly one {@link
+   * PerforceBackend} per process (see {@link perforceBackend}), so an
+   * instance field already satisfies "once per process" without leaking
+   * state across vitest test files — every test in this suite constructs
+   * its own `new PerforceBackend(...)`, so no reset helper is needed.
+   */
+  private readonly preflightOkRepos = new Set<string>();
+
   /** @param exec p4 exec function; defaults to the §6.1 {@link execScm} wrapper. Injected in tests. */
   constructor(exec: ExecScmFn = execScm) {
     this.exec = exec;
@@ -280,8 +296,12 @@ export class PerforceBackend implements ScmBackend {
    * already rejects with.
    */
   private async preflight(ctx: ScmVerbContext): Promise<void> {
+    if (this.preflightOkRepos.has(ctx.repo)) return;
     const res = await this.p4(ctx, ['login', '-s']);
-    if (res.code === 0) return;
+    if (res.code === 0) {
+      this.preflightOkRepos.add(ctx.repo);
+      return;
+    }
     const text = `${res.stdout}\n${res.stderr}`;
     if (
       /connect to server failed|connect|tcp|network|unreachable|refused|no such host/i.test(text)
