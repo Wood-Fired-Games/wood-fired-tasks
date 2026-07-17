@@ -46,6 +46,11 @@ const scmConfigSchema = z
       })
       .partial()
       .strict()
+      .refine((behaviors) => behaviors.branchPerRun !== true, {
+        message:
+          'behaviors.branchPerRun is not yet implemented — v1 rejects it rather than silently no-opping (spec §2.3). Omit it or set it to false.',
+        path: ['branchPerRun'],
+      })
       .optional(),
     ignore: z.array(z.string()).optional(),
   })

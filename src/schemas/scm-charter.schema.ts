@@ -39,7 +39,12 @@ export const ScmBehaviorsSchema = z
     branchPerRun: z.boolean(),
   } satisfies Record<keyof ScmBehaviors, z.ZodBoolean>)
   .partial()
-  .strict();
+  .strict()
+  .refine((behaviors) => behaviors.branchPerRun !== true, {
+    message:
+      'behaviors.branchPerRun is not yet implemented — v1 rejects it rather than silently no-opping (spec §2.3). Omit it or set it to false.',
+    path: ['branchPerRun'],
+  });
 
 /**
  * The project charter's `scm` default: an optional backend hint plus optional

@@ -101,7 +101,7 @@ Clarifications:
 | isolate | on (worktree) | shared-tree-serialized¹ | off (shared) |
 | publish | on | on | off |
 | openReview | off | off | off |
-| branchPerRun | off | off | off |
+| branchPerRun | reserved — rejected in v1 | reserved — rejected in v1 | reserved — rejected in v1 |
 
 ¹ perforce `isolate` needs a temp-client template configured; without it the loop
 runs shared-tree-serialized.

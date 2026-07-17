@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { scmCommand } from '../../cli/commands/scm.js';
+import { ScmCharterSchema } from '../../schemas/scm-charter.schema.js';
 import { loadScmConfig } from '../config.js';
 import { detectBackend, findRepoRoot, resolveBackend } from '../detect.js';
 import { ScmError } from '../types.js';
@@ -249,6 +250,100 @@ describe('scm config loader + backend auto-detect (task #1530)', () => {
       const nested = join(root, 'x', 'y');
       mkdirSync(nested, { recursive: true });
       expect(findRepoRoot(nested)).toBe(root);
+    });
+  });
+
+  describe('branchPerRun rejection (task #1551, hardening spec §2.3 — reserved, not yet implemented)', () => {
+    it('loadScmConfig throws CONFIG_INVALID with a "not yet implemented" message when behaviors.branchPerRun is true', () => {
+      writeScmConfig({ version: 1, backend: 'git', behaviors: { branchPerRun: true } });
+      expect(() => loadScmConfig(root)).toThrow(ScmError);
+      try {
+        loadScmConfig(root);
+        expect.unreachable('loadScmConfig should have thrown');
+      } catch (err) {
+        expect((err as ScmError).code).toBe('CONFIG_INVALID');
+        expect((err as ScmError).message).toMatch(/not yet implemented/);
+      }
+    });
+
+    it('loadScmConfig accepts behaviors.branchPerRun: false unchanged', () => {
+      writeScmConfig({ version: 1, backend: 'git', behaviors: { branchPerRun: false } });
+      expect(loadScmConfig(root)).toEqual({
+        version: 1,
+        backend: 'git',
+        behaviors: { branchPerRun: false },
+      });
+    });
+
+    it('loadScmConfig accepts behaviors with branchPerRun omitted unchanged', () => {
+      writeScmConfig({ version: 1, backend: 'git', behaviors: { commit: true } });
+      expect(loadScmConfig(root)).toEqual({
+        version: 1,
+        backend: 'git',
+        behaviors: { commit: true },
+      });
+    });
+
+    it('ScmCharterSchema (charter path) rejects behaviors.branchPerRun: true with a "not yet implemented" message', () => {
+      const result = ScmCharterSchema.safeParse({
+        backend: 'git',
+        behaviors: { branchPerRun: true },
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toMatch(/not yet implemented/);
+      }
+    });
+
+    it('ScmCharterSchema accepts behaviors.branchPerRun: false unchanged', () => {
+      const result = ScmCharterSchema.safeParse({
+        backend: 'git',
+        behaviors: { branchPerRun: false },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('the CLI --charter-scm path rejects branchPerRun:true as CONFIG_INVALID exit 2 (task #1550 wiring)', async () => {
+      const stdoutChunks: string[] = [];
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk: string | Uint8Array) => {
+          stdoutChunks.push(
+            typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'),
+          );
+          return true;
+        });
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      process.exitCode = 0;
+      try {
+        await scmCommand.parseAsync([
+          'node',
+          'scm',
+          'detect',
+          '--repo',
+          root,
+          '--charter-scm',
+          JSON.stringify({ behaviors: { branchPerRun: true } }),
+        ]);
+      } finally {
+        stdoutSpy.mockRestore();
+        stderrSpy.mockRestore();
+      }
+
+      const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+      process.exitCode = 0;
+
+      const stdout = stdoutChunks.join('');
+      const lines = stdout.split('\n').filter((l) => l.trim().length > 0);
+      expect(lines).toHaveLength(1);
+      const envelope = JSON.parse(lines[0]) as Record<string, unknown>;
+
+      expect(exitCode).toBe(2);
+      expect(envelope.ok).toBe(false);
+      const error = envelope.error as Record<string, unknown>;
+      expect(error.code).toBe('CONFIG_INVALID');
+      expect(String(error.message)).toMatch(/not yet implemented/);
     });
   });
 });
