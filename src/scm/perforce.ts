@@ -596,18 +596,24 @@ export class PerforceBackend implements ScmBackend {
 
   async teardownIsolation(ctx: ScmVerbContext, id: string): Promise<ScmTeardownIsolationData> {
     await this.preflight(ctx);
-    // §4 table: revert the temp client's opened files first, then delete it.
+    // §4 table: discard-all revert of the temp client's opened files first, then
+    // delete it. `revert -a` only reverts opened-but-UNCHANGED files, leaving real
+    // edits open — `p4 client -d` then fails on that client. `revert //...`
+    // discards everything so the client is guaranteed clean before deletion.
     // Best-effort — a missing client or already-reverted files are not errors.
-    await this.p4(ctx, ['revert', '-a']);
+    await this.p4(ctx, ['revert', '//...']);
     await this.p4(ctx, ['client', '-d', `wft-${ctx.context}-${id}`]);
     return { tornDown: true };
   }
 
   async resetHard(ctx: ScmVerbContext, ref: string): Promise<ScmResetHardData> {
     await this.preflight(ctx);
-    // §4 table: perforce reset-hard = `p4 revert -a` + `p4 sync @<cl>`.
+    // §4 table: perforce reset-hard = `p4 revert //...` (discard-all) + `p4 sync
+    // @<cl>`. `revert -a` only reverts opened-but-unchanged files, so a reset-hard
+    // built on it would leave real edits in place — `revert //...` discards all
+    // opened files (edits included) so the sync below lands on a clean tree.
     const cl = ref.replace(/^p4:/, '').trim();
-    const revert = await this.p4(ctx, ['revert', '-a']);
+    const revert = await this.p4(ctx, ['revert', '//...']);
     if (revert.code !== 0) throw genericFailure('revert', revert);
 
     const syncArgs = cl === '' ? ['sync'] : ['sync', `@${cl}`];

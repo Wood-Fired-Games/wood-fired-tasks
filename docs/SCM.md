@@ -130,7 +130,7 @@ One verb per SCM primitive the skills need. Each verb is a pure function of
 | `open-review` | `gh pr create` (missing `gh` → clean skip + warning) | `p4 shelve` + swarm (or clean skip) | no-op |
 | `isolate <id>` | **capability report only** (see below) | provision temp p4 client from template, else report `serialized` | report `shared` |
 | `teardown-isolation <id>` | remove only worktrees recorded in `.tasks/.scm/<context>/` — never sweep `.claude/worktrees/*` wholesale | delete the temp client for `<id>`; revert its opened files first | no-op |
-| `reset-hard <ref>` | `git reset --hard <ref>` | `p4 revert -a` + `p4 sync @<cl>` | **unsupported** — exit 4 (digest-only manifest cannot restore content) |
+| `reset-hard <ref>` | `git reset --hard <ref>` | `p4 revert //...` + `p4 sync @<cl>` | **unsupported** — exit 4 (digest-only manifest cannot restore content) |
 
 **`isolate` is asymmetric by necessity.** For git, isolation is provided by the
 Claude Code platform harness (`isolation:"worktree"` on the Agent call) — a CLI

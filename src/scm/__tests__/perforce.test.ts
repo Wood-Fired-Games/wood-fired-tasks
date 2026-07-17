@@ -689,7 +689,7 @@ describe('PerforceBackend — §3.2 no `--` end-of-options terminator anywhere',
       OK_LOGIN,
       { match: (a) => isVerb(a, 'opened'), reply: () => ({ stdout: '' }) },
       { match: (a) => isVerb(a, 'shelve'), reply: () => ({ stdout: 'Change 1 files shelved.' }) },
-      { match: (a) => isVerb(a, 'revert', '-a'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
       { match: (a) => isVerb(a, 'client', '-d'), reply: () => ({ code: 0 }) },
       { match: (a) => isVerb(a, 'sync'), reply: () => ({ code: 0 }) },
     ]);
@@ -735,20 +735,106 @@ function conflictThenSubmitRulesForSweep(secondSubmit: Partial<ExecScmResult>): 
 }
 
 // ---------------------------------------------------------------------------
-// reset-hard (§4 table) — p4 revert -a + p4 sync @<cl>
+// reset-hard (§4 table) — p4 revert //... (discard-all) + p4 sync @<cl>
+//
+// task #1558: `p4 revert -a` only reverts opened-but-UNCHANGED files, so a
+// reset-hard built on it would leave real edits in place. `revert //...`
+// discards ALL opened files under the depot root (edits included) so the
+// following sync always lands on a clean tree.
 // ---------------------------------------------------------------------------
 
 describe('PerforceBackend — reset-hard', () => {
-  it('reverts then syncs to the requested CL, stripping the p4: prefix', async () => {
+  it('reverts //... then syncs to the requested CL, stripping the p4: prefix', async () => {
     const { exec, calls } = mockExec([
       OK_LOGIN,
-      { match: (a) => isVerb(a, 'revert', '-a'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
       { match: (a) => isVerb(a, 'sync'), reply: () => ({ code: 0 }) },
     ]);
     const backend = new PerforceBackend(exec);
     const data = await backend.resetHard(ctxFor(makeRepo()), 'p4:88');
     expect(data).toEqual({ reset: true });
-    expect(calls.some((c) => isVerb(c, 'revert', '-a'))).toBe(true);
+    expect(calls.some((c) => isVerb(c, 'revert', '//...'))).toBe(true);
     expect(calls.some((c) => c[0] === 'sync' && c[1] === '@88')).toBe(true);
+  });
+
+  it('issues p4 revert //... BEFORE p4 sync @<cl> (AC: discard-all precedes sync)', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'sync'), reply: () => ({ code: 0 }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    await backend.resetHard(ctxFor(makeRepo()), 'p4:88');
+
+    const revertIdx = calls.findIndex((c) => isVerb(c, 'revert', '//...'));
+    const syncIdx = calls.findIndex((c) => isVerb(c, 'sync'));
+    expect(revertIdx).toBeGreaterThanOrEqual(0);
+    expect(syncIdx).toBeGreaterThan(revertIdx);
+  });
+
+  it('with an empty ref, reverts //... then issues a plain sync (no @ suffix)', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'sync'), reply: () => ({ code: 0 }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const data = await backend.resetHard(ctxFor(makeRepo()), '');
+    expect(data).toEqual({ reset: true });
+    expect(calls.some((c) => c[0] === 'sync' && c.length === 1)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// teardown-isolation (§4 table) — p4 revert //... (discard-all) BEFORE
+// `p4 client -d`.
+//
+// task #1558: `p4 revert -a` leaves opened-but-edited files open, and
+// `p4 client -d` then fails on a client with opened files. `revert //...`
+// discards everything so the delete always succeeds.
+// ---------------------------------------------------------------------------
+
+describe('PerforceBackend — teardown-isolation', () => {
+  it('reverts //... then deletes the temp client', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'client', '-d'), reply: () => ({ code: 0 }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const data = await backend.teardownIsolation(ctxFor(makeRepo()), 'iso-1');
+    expect(data).toEqual({ tornDown: true });
+    expect(calls.some((c) => isVerb(c, 'revert', '//...'))).toBe(true);
+    expect(calls.some((c) => isVerb(c, 'client', '-d'))).toBe(true);
+  });
+
+  it('issues p4 revert //... BEFORE p4 client -d (AC: discard-all precedes client delete)', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'client', '-d'), reply: () => ({ code: 0 }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    await backend.teardownIsolation(ctxFor(makeRepo()), 'iso-1');
+
+    const revertIdx = calls.findIndex((c) => isVerb(c, 'revert', '//...'));
+    const clientDeleteIdx = calls.findIndex((c) => isVerb(c, 'client', '-d'));
+    expect(revertIdx).toBeGreaterThanOrEqual(0);
+    expect(clientDeleteIdx).toBeGreaterThan(revertIdx);
+  });
+
+  it('is best-effort — a failing revert on an already-clean client does not block client -d', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) => isVerb(a, 'revert', '//...'),
+        reply: () => ({ code: 1, stderr: 'file(s) not opened on this client.' }),
+      },
+      { match: (a) => isVerb(a, 'client', '-d'), reply: () => ({ code: 0 }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const data = await backend.teardownIsolation(ctxFor(makeRepo()), 'iso-1');
+    expect(data).toEqual({ tornDown: true });
+    expect(calls.some((c) => isVerb(c, 'client', '-d'))).toBe(true);
   });
 });
