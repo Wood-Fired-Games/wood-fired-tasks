@@ -66,7 +66,7 @@ Shape:
   "task_ids": [<id_a>, <id_b>],
   "verdict": "SAFE" | "RISKY" | "BROKEN",
   "rationale": "<one to three sentences, ≤ 500 chars, explaining the verdict>",
-  "evidence": ["<file:line citation or git/diff excerpt>", "..."]
+  "evidence": ["<file:line citation or scm-verb/diff excerpt>", "..."]
 }
 ```
 
@@ -104,7 +104,7 @@ Shape:
 2. `$ <allowlisted command>\n<stdout excerpt>` — command + output snippet.
 3. `diff_a hunk: <excerpt>` or `diff_b hunk: <excerpt>` — quote from the
    input diff hunks.
-4. `git show <sha>:<path>` excerpt, OR `git diff <range> -- <path>` hunk.
+4. `$ tasks scm changed-files <base>` output excerpt (cite from `data.files[].path`) — the changed-file set the two workers touched, where `<base>` is the run's integration baseline id from `tasks scm baseline` (`data.id`).
 
 **FORBIDDEN evidence:** "looks safe", "appears fine", "no obvious conflict",
 any paraphrase that does not cite a file, command, or diff excerpt.
@@ -119,19 +119,24 @@ Frontmatter `tools:` line declares what you can call:
   `list_tasks`, `list_projects` — read-only bugs queries (use sparingly —
   the overlap diff usually has everything you need).
 
-**Bash commands you MAY run:**
+**Bash commands you MAY run** — the read-only `tasks scm` verbs (never raw
+VCS), plus non-mutating shell utilities:
 
-- `git log` (any read-only invocation)
-- `git diff` (any read-only invocation)
-- `git show` (any read-only invocation)
-- `git blame` (any read-only invocation)
+- `tasks scm detect` — resolved backend + capabilities.
+- `tasks scm baseline` — the run's integration baseline id (`data.id`).
+- `tasks scm changed-files <base>` — the changed-file set (`data.files[].path`).
+- `tasks scm change-id` — the change-ids for the overlap's tasks (`data.ids`).
+- `tasks scm status` — working-tree dirtiness (`data.dirty` / `data.entries`).
 - `cat`, `head`, `tail`, `wc -l`
 - `find`, `ls`
 
 **Bash commands you MUST NOT run** (even though `Bash` is in your tools):
 
-- `git commit`, `git push`, `git checkout`, `git reset`, `git rebase`,
-  `git add`, `git stash`, `mv`, `rm`, `chmod`, `chown`.
+- Any **mutating** `tasks scm` verb: `stage`, `record`, `publish`,
+  `open-review`, `isolate`, `teardown-isolation`, `reset-hard`.
+- Any **raw VCS** invocation (`git`/`p4` in any form) — always go through the
+  read-only `tasks scm` verbs above.
+- Raw filesystem mutators: `mv`, `rm`, `chmod`, `chown`.
 - `npm install`, `npm ci`, `npm test`, `npm run build`, `npm run lint`,
   `vitest`, or any other test/build runner. The orchestrator already
   re-ran those after each individual task; the auditor's scope is *composition
