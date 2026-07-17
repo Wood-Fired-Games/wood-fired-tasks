@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -7,6 +7,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createTestApp, type App } from '../../index.js';
 import { createMcpServer } from '../server.js';
 import { createModelPolicyService } from '../../services/model-policy.service.js';
+import { SCM_VERBS } from '../../scm/types.js';
 
 /**
  * Regression test for task #260: detect drift between the actual MCP tool
@@ -36,6 +37,9 @@ import { createModelPolicyService } from '../../services/model-policy.service.js
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(__filename, '../../../../');
 const TOOLS_DIR = join(REPO_ROOT, 'src/mcp/tools');
+const SCM_DIR = join(REPO_ROOT, 'src/scm');
+const SCM_CLI_DISPATCHER = join(REPO_ROOT, 'src/cli/commands/scm.ts');
+const SCM_DOC = join(REPO_ROOT, 'docs/SCM.md');
 
 const PUBLIC_DOCS: ReadonlyArray<string> = [
   'README.md',
@@ -150,6 +154,107 @@ function extractCountClaims(relPath: string, content: string): CountClaim[] {
 
   return claims;
 }
+
+/**
+ * Extract the number of data rows in docs/SCM.md's "Adapter verbs" table
+ * (§ `## Adapter verbs — \`tasks scm <verb>\``). Header and separator rows
+ * are excluded; a data row is any table row whose first cell is a
+ * backtick-quoted verb, e.g. "| `detect` | ... |".
+ */
+function extractScmVerbTableRowCount(content: string): number {
+  const lines = content.split('\n');
+  const headingIdx = lines.findIndex((l) => /^##\s+Adapter verbs/.test(l));
+  if (headingIdx === -1) {
+    throw new Error('docs/SCM.md is missing the "## Adapter verbs" heading.');
+  }
+  let sawHeader = false;
+  let count = 0;
+  for (let i = headingIdx; i < lines.length; i++) {
+    const line = lines[i];
+    if (!sawHeader) {
+      if (/^\|\s*Verb\s*\|/.test(line)) sawHeader = true;
+      continue;
+    }
+    if (/^\|\s*-+\s*\|/.test(line)) continue; // markdown separator row
+    if (/^\|\s*`[^`]+`\s*\|/.test(line)) {
+      count++;
+      continue;
+    }
+    if (count > 0) break; // table ended
+  }
+  return count;
+}
+
+/** Relative-import module basenames (`./foo.js` -> `foo`) referenced by a src/scm/*.ts file. */
+function localScmImports(filePath: string): string[] {
+  const src = readFileSync(filePath, 'utf-8');
+  const names: string[] = [];
+  for (const m of src.matchAll(/from\s+'\.\/([a-zA-Z0-9_-]+)\.js'/g)) {
+    names.push(m[1]);
+  }
+  return names;
+}
+
+/** src/scm module basenames imported (via `../../scm/foo.js`) by the CLI dispatcher. */
+function dispatcherScmImports(): string[] {
+  const src = readFileSync(SCM_CLI_DISPATCHER, 'utf-8');
+  const names: string[] = [];
+  for (const m of src.matchAll(/from\s+'\.\.\/\.\.\/scm\/([a-zA-Z0-9_-]+)\.js'/g)) {
+    names.push(m[1]);
+  }
+  return names;
+}
+
+/**
+ * BFS the import graph starting at src/cli/commands/scm.ts, following
+ * relative imports within src/scm/*.ts, and return the reached module
+ * basenames. A module on disk that is never reached (new file forgotten
+ * during wiring, or dead code) fails the completeness assert below.
+ */
+function reachableScmModulesFromDispatcher(): Set<string> {
+  const reached = new Set<string>();
+  const queue = [...dispatcherScmImports()];
+  while (queue.length > 0) {
+    const name = queue.shift() as string;
+    if (reached.has(name)) continue;
+    reached.add(name);
+    const modPath = join(SCM_DIR, `${name}.ts`);
+    if (!existsSync(modPath)) continue;
+    queue.push(...localScmImports(modPath));
+  }
+  return reached;
+}
+
+describe('SCM surface drift guard (task #1568)', () => {
+  it('docs/SCM.md "Adapter verbs" table row count matches SCM_VERBS.length', () => {
+    const content = readFileSync(SCM_DOC, 'utf-8');
+    const rowCount = extractScmVerbTableRowCount(content);
+    expect(
+      rowCount,
+      `docs/SCM.md's "Adapter verbs" table has ${rowCount} data rows but ` +
+        `SCM_VERBS (src/scm/types.ts) has ${SCM_VERBS.length} entries: ` +
+        `[${SCM_VERBS.join(', ')}]. Keep the table and SCM_VERBS in lockstep.`,
+    ).toBe(SCM_VERBS.length);
+  });
+
+  it('every src/scm/*.ts module (excluding __tests__) is reachable from the CLI dispatcher import graph', () => {
+    // Dynamic directory scan (not a hard-coded file list) so a new module
+    // that isn't wired into the dispatcher's import graph cannot dodge this
+    // guard — the drift class documented in PR #55 / task #1568.
+    const filesOnDisk = readdirSync(SCM_DIR)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+      .map((f) => f.replace(/\.ts$/, ''))
+      .sort();
+    const reached = Array.from(reachableScmModulesFromDispatcher()).sort();
+    expect(
+      reached,
+      `src/scm/*.ts on disk: [${filesOnDisk.join(', ')}]\n` +
+        `reachable from src/cli/commands/scm.ts's import graph: [${reached.join(', ')}]\n` +
+        'A module exists on disk but is not imported (directly or transitively) by the ' +
+        'CLI dispatcher — either wire it in or update this test if it is intentionally unused.',
+    ).toEqual(filesOnDisk);
+  });
+});
 
 describe('MCP tool-count drift regression (task #260)', () => {
   let app: App;
