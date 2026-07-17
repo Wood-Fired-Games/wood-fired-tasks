@@ -217,6 +217,7 @@ Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator o
 - When the brief asks the subagent to add a CI job, tell it explicitly: copy pinned action SHAs from a neighbouring job in the same workflow rather than fetching new ones. Otherwise the subagent may pick `@v4`-style floating refs that violate the project's pinning convention.
 - **Audit-with-budget pattern.** When the acceptance criteria is "ensure X for every Y" (e.g. "every data-semantic migration has a targeted test", "every cast site is localised"), brief the subagent to *audit first, then act within a budget*. Typical budget: 1-2 fixes per iteration. If the audit surfaces 3+ gaps, the subagent adds **one** representative fix as a worked example, lists the remaining gaps in their summary, and the orchestrator records them in the close-out comment as recommended follow-on tasks. This prevents one task closure from ballooning into a sweep and keeps each commit coherent.
 - Always end with "Do NOT commit". The orchestrator must stage and verify before any commit lands.
+- **Identity resolution before filling in assignee/author fields.** Resolve in order: `git config user.email` → `p4 info` User field (perforce repos; read-only, best-effort, never fails the run) → `$USER` → `claude-<model>-<purpose>`. Never pass the literal `"user"`.
 
 ---
 

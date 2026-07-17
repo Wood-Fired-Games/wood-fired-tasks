@@ -292,4 +292,26 @@ describe('loop-shared.md extraction gate (#346)', () => {
     expect(qualifierMatches.length).toBeGreaterThanOrEqual(3);
     expect(text).toMatch(/tasks scm changed-files <base>/);
   });
+
+  it('loop-shared.md §A identity-resolution note lists p4 info User ahead of $USER (task #1562)', () => {
+    // §A's identity-resolution note must insert `p4 info` (perforce User source)
+    // ahead of `$USER` in the resolution chain, matching docs/SCM.md's
+    // documented order (git config user.email → p4 info User → $USER →
+    // claude-<model>-<purpose>). Region-sliced on the §A heading through the
+    // next top-level §-heading (§L) so this only checks the §A slice.
+    const text = readFileSync(LOOP_SHARED_PATH, 'utf8');
+    const lines = text.split('\n');
+
+    const aStart = lines.findIndex((line) => /^##\s+§A\.\s+Worker brief template/.test(line));
+    expect(aStart).toBeGreaterThanOrEqual(0);
+    const aEnd = lines.findIndex((line, i) => i > aStart && /^##\s+§L\./.test(line));
+    expect(aEnd).toBeGreaterThan(aStart);
+    const aRegion = lines.slice(aStart, aEnd).join('\n');
+
+    const p4Index = aRegion.indexOf('p4 info');
+    const userIndex = aRegion.indexOf('$USER');
+    expect(p4Index).toBeGreaterThanOrEqual(0);
+    expect(userIndex).toBeGreaterThanOrEqual(0);
+    expect(p4Index).toBeLessThan(userIndex);
+  });
 });
