@@ -1,4 +1,13 @@
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -105,6 +114,48 @@ describe('none SCM backend (task #1531)', () => {
     const status = await backend.status(ctx());
     expect(status.dirty).toBe(true);
     expect(status.entries).toContainEqual({ path: 'a.txt', state: 'modified' });
+  });
+
+  it('detects a same-size rewrite that keeps the exact baseline mtime (racy-clean)', async () => {
+    // Deterministically reproduce the same-tick, same-size false-negative the
+    // fast path used to miss — independent of filesystem mtime granularity. We
+    // rewrite the file to different bytes of identical length, then rebuild the
+    // manifest so the recorded entry's size+mtime EXACTLY match the file on disk
+    // AND the entry is "racy" (recorded mtimeMs >= capturedAtMs). The fast path's
+    // size+mtime guard then matches exactly, so a pass can ONLY come from
+    // racy-clean re-hashing (recorded.mtimeMs >= capturedAtMs), never a mismatch.
+    const abs = join(root, 'racy.txt');
+    write('racy.txt', 'AAAA\n');
+    const baseline = await backend.baseline(ctx('racy'));
+
+    const manifestPath = join(root, '.tasks', '.scm', 'racy', 'baseline.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      capturedAtMs: number;
+      entries: { path: string; size: number; mtimeMs: number; sha256: string }[];
+    };
+    const entry = manifest.entries.find((e) => e.path === 'racy.txt');
+    if (entry === undefined) {
+      throw new Error('racy.txt missing from manifest');
+    }
+
+    // Rewrite content (same 5 bytes) at a fixed, coarse mtime, then read back the
+    // actual on-disk mtime the filesystem settled on.
+    writeFileSync(abs, 'BBBB\n', 'utf8');
+    expect(statSync(abs).size).toBe(5);
+    utimesSync(abs, 1_000_000, 1_000_000);
+    const onDiskMtimeMs = statSync(abs).mtimeMs;
+
+    // Point the recorded entry at the exact on-disk size+mtime (fast path would
+    // reuse the stale 'AAAA' hash) and mark the whole manifest racy for it.
+    entry.size = 5;
+    entry.mtimeMs = onDiskMtimeMs;
+    manifest.capturedAtMs = onDiskMtimeMs; // recorded.mtimeMs >= capturedAtMs ⇒ racy.
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    const changed = await backend.changedFiles(ctx('racy'), baseline.id);
+    expect(changed.files).toContainEqual({ path: 'racy.txt', change: 'modified' });
+    const status = await backend.status(ctx('racy'));
+    expect(status.dirty).toBe(true);
   });
 
   it('detect reports none defaults with shared isolation', async () => {

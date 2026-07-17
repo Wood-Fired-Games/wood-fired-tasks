@@ -90,6 +90,16 @@ interface NoneManifest {
   /** `none:<sha256-of-canonical-manifest>` (§5.5). */
   id: string;
   context: string;
+  /**
+   * The baseline manifest file's own filesystem mtime — sourced from the SAME
+   * clock/granularity as the entry `mtimeMs` values so the comparison is exact.
+   * Powers git-style **racy-clean** detection: any entry whose recorded
+   * `mtimeMs >= capturedAtMs` shared the manifest's write tick and may be
+   * rewritten in that same tick, so the size+mtime fast path cannot be trusted
+   * for it and it is always re-hashed. Excluded from the identity digest — it is
+   * capture metadata, not content identity.
+   */
+  capturedAtMs: number;
   entries: NoneManifestEntry[];
 }
 
@@ -191,15 +201,23 @@ function toPosixRel(root: string, absPath: string): string {
 /**
  * Walk the tree under `root`, building manifest entries. Excludes the central
  * exclusion list (§4.4), `.tasks/.scm/`, `.git/`, and the configured `ignore`
- * globs. When `prev` supplies a same-path record whose size+mtime match, the
- * old sha256 is reused (fast path — no re-hash); otherwise the file is
- * re-hashed. **Symlinks are never followed** — the link-target string is
- * recorded instead.
+ * globs. When `prev` supplies a same-path record whose size+mtime match AND the
+ * file's mtime is strictly older than `fastPathCutoffMs`, the old sha256 is
+ * reused (fast path — no re-hash); a file whose `mtimeMs >= fastPathCutoffMs` is
+ * "racily clean" (possibly rewritten in the same mtime tick the baseline was
+ * captured) and is always re-hashed even when size+mtime match, so a same-size
+ * same-tick edit is never missed. **Symlinks are never followed** — the
+ * link-target string is recorded instead.
+ *
+ * @param fastPathCutoffMs the baseline's `capturedAtMs`; defaults to
+ *   `+Infinity` (every file eligible for the fast path) — appropriate for a
+ *   fresh `baseline` walk where `prev` is empty and everything is hashed anyway.
  */
 async function buildEntries(
   root: string,
   ignore: readonly string[],
   prev: ReadonlyMap<string, NoneManifestEntry>,
+  fastPathCutoffMs = Number.POSITIVE_INFINITY,
 ): Promise<NoneManifestEntry[]> {
   const entries: NoneManifestEntry[] = [];
 
@@ -238,7 +256,8 @@ async function buildEntries(
       if (
         previous !== undefined &&
         previous.size === stat.size &&
-        previous.mtimeMs === stat.mtimeMs
+        previous.mtimeMs === stat.mtimeMs &&
+        stat.mtimeMs < fastPathCutoffMs
       ) {
         entries.push({ ...previous }); // fast path: reuse recorded sha256.
         continue;
@@ -346,8 +365,28 @@ export class NoneBackend implements ScmBackend {
     const relPath = manifestRelPath(ctx.context);
     const abs = join(ctx.repo, relPath);
     await mkdir(join(ctx.repo, '.tasks', '.scm', ctx.context), { recursive: true });
-    const manifest: NoneManifest = { version: 1, id, context: ctx.context, entries };
-    await writeFile(abs, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    // `capturedAtMs` MUST be sourced from the SAME clock/granularity as the file
+    // mtimeMs values it will be compared against — using `Date.now()` (ms) vs
+    // filesystem mtime (which may round to a coarser or offset tick) let a
+    // same-tick, same-size rewrite slip through the fast path. So write the
+    // manifest first, stat it for its own filesystem mtime (which, being written
+    // AFTER the walk, is >= every entry's mtime), then rewrite with that value
+    // baked in. Any file later modified in the same tick as its recorded mtime
+    // now satisfies `recorded.mtimeMs >= capturedAtMs` and is re-hashed.
+    const write = (capturedAtMs: number): Promise<void> => {
+      const manifest: NoneManifest = {
+        version: 1,
+        id,
+        context: ctx.context,
+        capturedAtMs,
+        entries,
+      };
+      return writeFile(abs, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    };
+    await write(0);
+    const { mtimeMs: capturedAtMs } = await lstat(abs);
+    await write(capturedAtMs);
     return { id, manifestPath: relPath };
   }
 
@@ -362,7 +401,7 @@ export class NoneBackend implements ScmBackend {
     }
     const ignore = resolveIgnore(ctx.repo);
     const prev = new Map(manifest.entries.map((entry) => [entry.path, entry]));
-    const current = await buildEntries(ctx.repo, ignore, prev);
+    const current = await buildEntries(ctx.repo, ignore, prev, manifest.capturedAtMs);
     const changes = diffEntries(manifest.entries, current);
     const entries: ScmStatusEntry[] = changes
       .filter((change) => !isExcluded(change.path))
@@ -381,7 +420,7 @@ export class NoneBackend implements ScmBackend {
     }
     const ignore = resolveIgnore(ctx.repo);
     const prev = new Map(manifest.entries.map((entry) => [entry.path, entry]));
-    const current = await buildEntries(ctx.repo, ignore, prev);
+    const current = await buildEntries(ctx.repo, ignore, prev, manifest.capturedAtMs);
     const changes = diffEntries(manifest.entries, current);
     const { kept } = filterExcluded(changes.map((change) => change.path));
     const keptSet = new Set(kept);
