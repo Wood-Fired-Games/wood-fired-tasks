@@ -11,6 +11,29 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+### Added
+- **Pluggable source control (git / perforce / none).** Source-control actions
+  are no longer git-only. A single adapter CLI — `tasks scm <verb>` — resolves a
+  per-repo backend and dispatches every SCM primitive (`detect`, `baseline`,
+  `status`, `changed-files`, `stage`, `record`, `change-id`, `publish`,
+  `open-review`, `isolate`, `teardown-isolation`, `reset-hard`) through one
+  chokepoint, printing a single-line JSON envelope with stable error codes and a
+  fixed exit-code convention. Backend selection is a committed, repo-local
+  `.tasks/scm.json` (Zod-`.strict()`-validated) with precedence
+  file → project-charter `scm` → auto-detect (`.git` → git, `.p4config` →
+  perforce, else none); an invalid config is a hard error, never a silent
+  fallback. Backends: **git** (byte-for-byte parity, never `git add -A`),
+  **perforce** (commit = submit = publish collapse, per-context numbered
+  changelists, post-submit renumber capture, accept-safe conflict retry-once),
+  and **none** (no VCS ops; a per-context digest manifest under `.tasks/.scm/`
+  drives baseline/diff verification, with empty change-ids a legitimate evidence
+  state). A central exclusion list guards `stage`/`record` across all backends,
+  and cross-repo runs resolve per-repo with isolation capability taken as the MIN
+  across touched repos. Fully opt-in and backward compatible: repos with no
+  `.tasks/scm.json` auto-detect to git and behave exactly as before. See
+  [`docs/SCM.md`](docs/SCM.md) and the design spec at
+  `docs/superpowers/specs/2026-07-16-pluggable-scm-design.md`.
+
 ## [v2.4.0] - 2026-07-09
 
 Quality release for the `/tasks:*` skill pipeline (decompose → loop → loop-dag →

@@ -31,6 +31,7 @@ Pick your intent, read the files in order. Files marked `(reserved)` are slots d
 | Schema / status / enum change | `src/schemas/` → matching `src/services/` or `src/repositories/` → API/MCP/CLI surface that exposes it |
 | Database migration | `src/db/migrations/` → `src/db/migrate.ts` → `src/db/__tests__/` → `docs/ARCHITECTURE.md` |
 | Slack change | `docs/SLACK.md` → `src/slack/` → `slack-app-manifest.yml` |
+| SCM / source-control change | `docs/SCM.md` → `src/scm/` → `src/cli/commands/scm.ts` → `src/scm/__tests__/` |
 | Test-only fix | failing test file → the unit under test → `vitest.config.ts` |
 | Release / docs update | `docs/RELEASE.md` → `CHANGELOG.md` → `package.json` |
 | Deploying your fork to production | `docs/SETUP.md` (Self-hosting and upgrades) → `deploy/install.sh` → `deploy/upgrade.sh` → `docs/RELEASE.md` (Migration expectations) |
@@ -90,6 +91,7 @@ Running any of the above against an untrusted checkout executes repo-authored co
 | [docs/CLI.md](docs/CLI.md) | CLI reference |
 | [docs/SETUP.md](docs/SETUP.md) | Local setup, env, install |
 | [docs/SLACK.md](docs/SLACK.md) | Slack integration reference |
+| [docs/SCM.md](docs/SCM.md) | Pluggable source control (git/perforce/none) — `.tasks/scm.json` config, `tasks scm` verbs, backends |
 | [docs/RELEASE.md](docs/RELEASE.md) | Release process |
 | [docs/CODE_QUALITY_ROADMAP.md](docs/CODE_QUALITY_ROADMAP.md) | Quality roadmap |
 | [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Onboarding smoke test — 7 probe scenarios for fresh agents |
