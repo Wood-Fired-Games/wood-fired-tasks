@@ -19,7 +19,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { SCM_CONFIG_RELPATH, loadScmConfig } from './config.js';
-import type { ScmBackendName } from './types.js';
+import { ScmError, type ScmBackendName } from './types.js';
 
 /**
  * True when `dir` contains a Perforce marker (§3.2(3)): a `.p4config` or `.p4`
@@ -79,14 +79,35 @@ export function findRepoRoot(startDir: string): string {
 /**
  * Auto-detect the backend at `root` from filesystem markers (§3.2(3)):
  * `.git/` present → `git`; a Perforce marker present → `perforce`; otherwise
- * `none`. `git` is checked first so a repo with both markers resolves to git.
+ * `none`.
+ *
+ * When BOTH a `.git` marker and a Perforce marker are present at `root`,
+ * auto-detect is ambiguous and refuses rather than guessing (parent spec
+ * §3.2: "guessing here is how a submit ends up in the wrong system") — it
+ * throws `ScmError('CONFIG_INVALID')` demanding an explicit
+ * `.tasks/scm.json`. This only fires when both markers sit at the SAME
+ * resolved root; a marker found only in an ancestor (e.g. via
+ * {@link findRepoRoot}'s walk-up) never reaches this function.
+ *
+ * @throws {ScmError} `CONFIG_INVALID` when both `.git` and a Perforce marker
+ *   are present at `root`.
  */
 export function detectBackend(root: string): ScmBackendName {
   const dir = resolve(root);
-  if (existsSync(join(dir, '.git'))) {
+  const hasGit = existsSync(join(dir, '.git'));
+  const hasPerforce = hasPerforceMarker(dir);
+
+  if (hasGit && hasPerforce) {
+    throw new ScmError(
+      'CONFIG_INVALID',
+      `Ambiguous SCM markers at ${dir}: both .git and a Perforce marker (.p4config/.p4/$P4CONFIG) are present.`,
+      'Auto-detect refuses to guess. Add an explicit .tasks/scm.json with a concrete "backend" (git|perforce|none).',
+    );
+  }
+  if (hasGit) {
     return 'git';
   }
-  if (hasPerforceMarker(dir)) {
+  if (hasPerforce) {
     return 'perforce';
   }
   return 'none';

@@ -154,8 +154,18 @@ export const scmCommand = new Command('scm')
     const ctx: ScmVerbContext = { repo, context };
 
     // Best-effort backend name for the envelope even if config resolution
-    // throws (CONFIG_INVALID) before a concrete backend is known.
-    let backendName: ScmBackendName = detectBackend(repo);
+    // throws (CONFIG_INVALID) before a concrete backend is known. detectBackend
+    // itself can now throw CONFIG_INVALID (ambiguous dual .git+.p4config
+    // markers, task #1549) — swallow that here so it doesn't escape the
+    // try/catch below, which is what actually maps the error to its §4.1 exit
+    // code; 'none' is an inert placeholder overwritten by the real envelope
+    // once the error is caught.
+    let backendName: ScmBackendName = 'none';
+    try {
+      backendName = detectBackend(repo);
+    } catch {
+      // Real handling happens in the try/catch below via resolveBackend().
+    }
 
     try {
       if (!isKnownVerb(verb)) {

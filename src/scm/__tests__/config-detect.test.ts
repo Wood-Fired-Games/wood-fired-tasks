@@ -1,7 +1,8 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { scmCommand } from '../../cli/commands/scm.js';
 import { loadScmConfig } from '../config.js';
 import { detectBackend, findRepoRoot, resolveBackend } from '../detect.js';
 import { ScmError } from '../types.js';
@@ -42,10 +43,30 @@ describe('scm config loader + backend auto-detect (task #1530)', () => {
       expect(detectBackend(root)).toBe('perforce');
     });
 
-    it('prefers git when both git and perforce markers exist', () => {
+    it('throws CONFIG_INVALID when both .git and .p4config are present at the same root (ambiguous — never guesses, task #1549)', () => {
       writeFileSync(join(root, '.git'), '', 'utf8');
       writeFileSync(join(root, '.p4config'), '', 'utf8');
-      expect(detectBackend(root)).toBe('git');
+      expect(() => detectBackend(root)).toThrow(ScmError);
+      try {
+        detectBackend(root);
+      } catch (err) {
+        expect((err as ScmError).code).toBe('CONFIG_INVALID');
+      }
+    });
+
+    it('ignores a dual-marker ancestor above the resolved root (walk-up stops at the nearest single-marker dir)', () => {
+      // root has BOTH markers — ambiguous if ever reached — but a nested dir
+      // one level down carries its own single git marker. findRepoRoot must
+      // stop at that nested dir, so detectBackend never sees root's ambiguity.
+      writeFileSync(join(root, '.git'), '', 'utf8');
+      writeFileSync(join(root, '.p4config'), '', 'utf8');
+      const nested = join(root, 'nested');
+      mkdirSync(nested, { recursive: true });
+      writeFileSync(join(nested, '.git'), '', 'utf8');
+
+      const resolvedRoot = findRepoRoot(nested);
+      expect(resolvedRoot).toBe(nested);
+      expect(detectBackend(resolvedRoot)).toBe('git');
     });
   });
 
@@ -99,6 +120,70 @@ describe('scm config loader + backend auto-detect (task #1530)', () => {
 
     it('falls through to detection when no config file exists', () => {
       expect(resolveBackend(root)).toEqual({ backend: 'none', source: 'auto' });
+    });
+
+    it('an explicit .tasks/scm.json still wins over an ambiguous dual-marker root', () => {
+      writeFileSync(join(root, '.git'), '', 'utf8');
+      writeFileSync(join(root, '.p4config'), '', 'utf8');
+      writeScmConfig({ version: 1, backend: 'perforce' });
+      expect(resolveBackend(root)).toEqual({ backend: 'perforce', source: 'file' });
+    });
+
+    it('propagates CONFIG_INVALID when resolution falls through to auto-detect on a dual-marker root', () => {
+      writeFileSync(join(root, '.git'), '', 'utf8');
+      writeFileSync(join(root, '.p4config'), '', 'utf8');
+      expect(() => resolveBackend(root)).toThrow(ScmError);
+    });
+  });
+
+  describe('CLI dispatch — dual-marker refusal (task #1549)', () => {
+    /**
+     * Drives the real `scmCommand` in-process (same pattern as
+     * `src/cli/__tests__/scm-command.test.ts`), capturing the printed §4.1
+     * envelope and `process.exitCode`.
+     */
+    async function runScm(
+      ...args: string[]
+    ): Promise<{ exitCode: number; envelope: Record<string, unknown> }> {
+      const stdoutChunks: string[] = [];
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk: string | Uint8Array) => {
+          stdoutChunks.push(
+            typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'),
+          );
+          return true;
+        });
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      process.exitCode = 0;
+      try {
+        await scmCommand.parseAsync(['node', 'scm', ...args]);
+      } finally {
+        stdoutSpy.mockRestore();
+        stderrSpy.mockRestore();
+      }
+
+      const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+      process.exitCode = 0;
+
+      const stdout = stdoutChunks.join('');
+      const lines = stdout.split('\n').filter((l) => l.trim().length > 0);
+      expect(lines).toHaveLength(1);
+      const envelope = JSON.parse(lines[0]) as Record<string, unknown>;
+      return { exitCode, envelope };
+    }
+
+    it('`scm detect` against a dual-marker root yields a CONFIG_INVALID envelope and exit code 2', async () => {
+      writeFileSync(join(root, '.git'), '', 'utf8');
+      writeFileSync(join(root, '.p4config'), '', 'utf8');
+
+      const { exitCode, envelope } = await runScm('detect', '--repo', root);
+
+      expect(exitCode).toBe(2);
+      expect(envelope.ok).toBe(false);
+      const error = envelope.error as Record<string, unknown>;
+      expect(error.code).toBe('CONFIG_INVALID');
     });
   });
 
