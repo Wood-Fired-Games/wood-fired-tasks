@@ -203,4 +203,83 @@ describe('validate-sha.mjs PreToolUse hook', () => {
       rmSync(nonRepo, { recursive: true, force: true });
     }
   });
+
+  // --- pluggable-SCM shape-dispatch (docs/superpowers/specs/2026-07-16- ----
+  // pluggable-scm-design.md §5.1 / §5.3): commit_shas / change-ids carry bare
+  // git SHAs (existing behavior, unchanged), `p4:<cl>` Perforce changelist
+  // ids (accepted by shape, never git-verified), or are empty (none-mode).
+
+  it('allows a commit_shas-style array containing a REAL git SHA (unchanged git behavior)', () => {
+    const { status, stdout } = runHook(
+      {
+        tool_name: 'mcp__wood-fired-tasks__update_task',
+        tool_input: {
+          id: 608,
+          verification_evidence: {
+            verdict: 'PASS',
+            commit_shas: [realSha],
+          },
+        },
+      },
+      repoDir,
+    );
+    expect(status).toBe(0);
+    expect(stdout.trim()).toBe('');
+  });
+
+  it('allows a p4:<cl> change-id without git-verifying it', () => {
+    const { status, stdout } = runHook(
+      {
+        tool_name: 'mcp__wood-fired-tasks__update_task',
+        tool_input: {
+          id: 608,
+          verification_evidence: {
+            verdict: 'PASS',
+            commit_shas: ['p4:999999'],
+          },
+        },
+      },
+      repoDir,
+    );
+    expect(status).toBe(0);
+    expect(stdout.trim()).toBe('');
+  });
+
+  it('still denies a fabricated git SHA even when a valid p4: change-id is also present', () => {
+    const { status, stdout } = runHook(
+      {
+        tool_name: 'mcp__wood-fired-tasks__update_task',
+        tool_input: {
+          id: 608,
+          verification_evidence: {
+            verdict: 'PASS',
+            note: 'p4:12345 plus fabricated deadbeefdeadbeef',
+          },
+        },
+      },
+      repoDir,
+    );
+    expect(status).toBe(0);
+    const decision = JSON.parse(stdout);
+    expect(decision.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(decision.hookSpecificOutput.permissionDecisionReason).toContain('deadbeefdeadbeef');
+  });
+
+  it('allows an empty commit_shas array (none-mode) without any git probe', () => {
+    const { status, stdout } = runHook(
+      {
+        tool_name: 'mcp__wood-fired-tasks__update_task',
+        tool_input: {
+          id: 608,
+          verification_evidence: {
+            verdict: 'NOT_VERIFIED',
+            commit_shas: [],
+          },
+        },
+      },
+      repoDir,
+    );
+    expect(status).toBe(0);
+    expect(stdout.trim()).toBe('');
+  });
 });
