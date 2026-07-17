@@ -639,6 +639,122 @@ describe('perforce — -ztag opened parsing + clientFile→repo-relative mapping
 });
 
 // ---------------------------------------------------------------------------
+// AC (task #1559): status merges `p4 status` (preview reconcile) findings into
+// `p4 -ztag opened`'s, de-duplicated by repo-relative path with opened
+// winning, so unopened local edits (allwrite clients) register as dirty too.
+// ---------------------------------------------------------------------------
+
+describe('perforce — status merges p4 status (preview reconcile) into opened, deduped, repo-relative (task #1559)', () => {
+  it('invokes both `p4 -ztag opened` and `p4 -ztag status`, merging findings de-duplicated by path (opened wins)', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'opened',
+        reply: () => ({
+          stdout: [
+            '... depotFile //depot/proj/src/opened.ts',
+            '... clientFile //myclient/src/opened.ts',
+            '... action edit',
+            '... change 123',
+            '',
+            '... depotFile //depot/proj/src/both.ts',
+            '... clientFile //myclient/src/both.ts',
+            '... action edit',
+            '... change 123',
+            '',
+          ].join('\n'),
+        }),
+      },
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'status',
+        reply: () => ({
+          stdout: [
+            '... depotFile //depot/proj/src/unopened.ts',
+            '... clientFile //myclient/src/unopened.ts',
+            '... action edit',
+            '',
+            // Same path as an already-opened file, but a DIFFERENT action —
+            // opened must win, so this record's 'delete' action is dropped.
+            '... depotFile //depot/proj/src/both.ts',
+            '... clientFile //myclient/src/both.ts',
+            '... action delete',
+            '',
+          ].join('\n'),
+        }),
+      },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    const status = await backend.status(ctx);
+
+    expect(calls.some((c) => c[0] === '-ztag' && c[1] === 'opened')).toBe(true);
+    expect(calls.some((c) => c[0] === '-ztag' && c[1] === 'status')).toBe(true);
+
+    expect(status.dirty).toBe(true);
+    // 3 distinct repo-relative paths — 'both.ts' de-duplicated to opened's action.
+    expect(status.entries).toHaveLength(3);
+    expect(status.entries).toEqual(
+      expect.arrayContaining([
+        { path: 'src/opened.ts', state: 'edit' },
+        { path: 'src/unopened.ts', state: 'edit' },
+        { path: 'src/both.ts', state: 'edit' },
+      ]),
+    );
+  });
+
+  it('reports dirty from an unopened local edit surfaced only by p4 status (allwrite-client case)', async () => {
+    const { exec } = mockExec([
+      OK_LOGIN,
+      { match: (a) => a[0] === '-ztag' && a[1] === 'opened', reply: () => ({ stdout: '' }) },
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'status',
+        reply: () => ({
+          stdout: [
+            '... depotFile //depot/proj/src/dirty.ts',
+            '... clientFile //myclient/src/dirty.ts',
+            '... action edit',
+            '',
+          ].join('\n'),
+        }),
+      },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const status = await backend.status(ctxFor(makeRepo()));
+
+    expect(status.dirty).toBe(true);
+    expect(status.entries).toEqual([{ path: 'src/dirty.ts', state: 'edit' }]);
+  });
+
+  it('treats a non-zero p4 status ("no file(s) to reconcile") clean-tree result as empty, not an error', async () => {
+    const { exec } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'opened',
+        reply: () => ({
+          stdout: [
+            '... depotFile //depot/proj/src/f.ts',
+            '... clientFile //myclient/src/f.ts',
+            '... action edit',
+            '... change 1',
+            '',
+          ].join('\n'),
+        }),
+      },
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'status',
+        reply: () => ({ code: 1, stderr: '//... - no file(s) to reconcile.' }),
+      },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const status = await backend.status(ctxFor(makeRepo()));
+
+    expect(status.dirty).toBe(true);
+    expect(status.entries).toEqual([{ path: 'src/f.ts', state: 'edit' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC (task #1556): p4 does not support `--` as an end-of-options terminator
 // (it is parsed as a filespec and errors) — no argv array the backend builds
 // may ever contain a literal '--' token. Sweep every verb that can carry file
@@ -684,10 +800,11 @@ describe('PerforceBackend — §3.2 no `--` end-of-options terminator anywhere',
     }
   });
 
-  it('changedFiles, openReview, teardownIsolation, and resetHard never emit a `--` token', async () => {
+  it('status, changedFiles, openReview, teardownIsolation, and resetHard never emit a `--` token', async () => {
     const { exec, calls } = mockExec([
       OK_LOGIN,
       { match: (a) => isVerb(a, 'opened'), reply: () => ({ stdout: '' }) },
+      { match: (a) => isVerb(a, 'status'), reply: () => ({ stdout: '' }) },
       { match: (a) => isVerb(a, 'shelve'), reply: () => ({ stdout: 'Change 1 files shelved.' }) },
       { match: (a) => isVerb(a, 'revert', '//...'), reply: () => ({ code: 0 }) },
       { match: (a) => isVerb(a, 'client', '-d'), reply: () => ({ code: 0 }) },
@@ -696,6 +813,7 @@ describe('PerforceBackend — §3.2 no `--` end-of-options terminator anywhere',
     const backend = new PerforceBackend(exec);
     const repo = makeRepo();
 
+    await backend.status(ctxFor(repo));
     await backend.changedFiles(ctxFor(repo), 'p4:6');
     await backend.teardownIsolation(ctxFor(repo), 'iso-1');
     await backend.resetHard(ctxFor(repo), 'p4:88');

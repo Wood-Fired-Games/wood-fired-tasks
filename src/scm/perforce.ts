@@ -413,11 +413,34 @@ export class PerforceBackend implements ScmBackend {
     return { id: `p4:${cl}` };
   }
 
+  /**
+   * §3.5: `opened` alone misses unopened local edits (common in `allwrite`
+   * clients, where files can be edited on disk without `p4 edit` ever
+   * running). Merge `p4 -ztag opened` with a `p4 -ztag status` (preview
+   * reconcile) pass — tagged-output records for `status` carry the same
+   * `clientFile`/`action` shape as `opened` (action values add/edit/delete),
+   * so {@link parseOpened} parses both. Merge is by repo-relative path with
+   * `opened` winning on conflict (it reflects the file's actual open action
+   * over the reconcile preview's inferred one). `p4 status` exits non-zero
+   * (or reports "no file(s) to reconcile") when there is nothing to
+   * reconcile — that is the clean-tree case, not a failure, so a non-zero
+   * exit here is treated as zero findings rather than thrown.
+   */
   async status(ctx: ScmVerbContext): Promise<ScmStatusData> {
     await this.preflight(ctx);
-    const res = await this.p4(ctx, ['-ztag', 'opened']);
-    const resolved = await this.resolveOpenedPaths(ctx, parseOpened(res.stdout));
-    const entries: ScmStatusEntry[] = resolved.map((o) => ({
+
+    const openedRes = await this.p4(ctx, ['-ztag', 'opened']);
+    const opened = await this.resolveOpenedPaths(ctx, parseOpened(openedRes.stdout));
+
+    const statusRes = await this.p4(ctx, ['-ztag', 'status']);
+    const statusFindings =
+      statusRes.code === 0 ? await this.resolveOpenedPaths(ctx, parseOpened(statusRes.stdout)) : [];
+
+    const merged = new Map<string, { path: string; action: string }>();
+    for (const o of opened) merged.set(o.path, o);
+    for (const s of statusFindings) if (!merged.has(s.path)) merged.set(s.path, s);
+
+    const entries: ScmStatusEntry[] = [...merged.values()].map((o) => ({
       path: o.path,
       state: o.action,
     }));
