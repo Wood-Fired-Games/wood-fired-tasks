@@ -18,6 +18,11 @@
     // and is invoked in src/scm/__tests__/exec.test.ts's allowlist coverage. It
     // is an external binary resolved from PATH at runtime, never an npm dependency,
     // so knip's --dependencies binary check must not flag it as unlisted.
-    "gh"
+    "gh",
+    // `p4` (Perforce CLI) is likewise on the SCM exec allowlist and is invoked
+    // by the env-gated real-p4d integration suite's docker helper
+    // (src/scm/__tests__/helpers/p4d-docker.ts) — a PATH-resolved external
+    // binary, never an npm dependency.
+    "p4"
   ]
 }
