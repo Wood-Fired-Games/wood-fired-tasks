@@ -108,6 +108,16 @@ export interface ExecScmOptions {
   maxBufferBytes?: number;
   /** SIGTERM→SIGKILL grace in ms. Defaults to {@link DEFAULT_KILL_GRACE_MS}. */
   killGraceMs?: number;
+  /**
+   * Optional buffer piped to the child's stdin, then the stdin stream is
+   * closed. Scoped for p4 form-piping (`p4 change -o | p4 change -i`, task
+   * #1555) — NOT a general interactive-prompting escape hatch: the write is
+   * finite and stdin closes immediately after, so a command that tries to
+   * prompt for more input past this buffer still hits the timeout instead of
+   * hanging. When omitted, stdin stays `'ignore'` — byte-identical to the
+   * pre-existing behavior (§6.1 non-interactive contract).
+   */
+  stdinData?: string;
 }
 
 /**
@@ -165,8 +175,11 @@ export function execScm(
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: buildChildEnv(),
-      // stdin ignored → a prompting command hits the timeout, never hangs.
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // stdin is 'ignore' unless opts.stdinData is set, in which case it is
+      // 'pipe' so the buffer below can be written and the stream closed. A
+      // prompting command still hits the timeout instead of hanging, since
+      // no further input ever arrives either way.
+      stdio: opts.stdinData === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
       shell: false,
       windowsHide: true,
       // Own process group so a force-kill reaches grandchildren (e.g. a git
@@ -176,6 +189,10 @@ export function execScm(
     };
 
     const child = spawn(binary, [...args], spawnOpts);
+
+    if (opts.stdinData !== undefined) {
+      child.stdin?.end(opts.stdinData);
+    }
 
     /**
      * Signal the child's whole process group when possible so grandchildren

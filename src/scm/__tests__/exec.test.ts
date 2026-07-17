@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,6 +24,18 @@ afterEach(() => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * `git hash-object --stdin` returns the SHA-1 of exactly the bytes it reads
+ * from stdin, computed as `sha1("blob <len>\0<content>")` (git's loose-object
+ * blob framing). Precomputing this over the same buffer we hand to
+ * `execScm`'s `stdinData` gives a verbatim-delivery probe that doesn't
+ * depend on any allowlisted binary other than `git`.
+ */
+function gitBlobSha1(content: Buffer): string {
+  const header = Buffer.from(`blob ${content.length}\0`, 'utf8');
+  return createHash('sha1').update(header).update(content).digest('hex');
+}
 
 describe('execScm — argv safety (§6.1 argv-array only)', () => {
   it('passes a command-substitution filename through literally — no shell evaluation', async () => {
@@ -185,5 +198,65 @@ describe('env hygiene + secret scrubbing (§6.1)', () => {
   it('scrubSecrets masks P4PASSWD values before they leave the wrapper', () => {
     expect(scrubSecrets('fatal: P4PASSWD=hunter2 rejected')).toBe('fatal: P4PASSWD=*** rejected');
     expect(scrubSecrets('P4PASSWD=abc123')).not.toContain('abc123');
+  });
+});
+
+describe('execScm — stdinData option (§3.1 p4 form-piping)', () => {
+  it('delivers stdinData verbatim to the child, including hostile bytes (NUL, newlines, unicode)', async () => {
+    const repo = makeRepo();
+    // NUL bytes, embedded newlines, CRLF, and multi-byte UTF-8 (unicode) —
+    // exactly the kind of payload a p4 form (`p4 change -o | p4 change -i`)
+    // can contain.
+    const hostile = 'line one\nline two\r\n embedded-NUL \nunicode: \u{1F525}\ndone';
+    const buf = Buffer.from(hostile, 'utf8');
+    const expectedSha = gitBlobSha1(buf);
+
+    const res = await execScm('git', ['hash-object', '--stdin'], {
+      cwd: repo,
+      stdinData: hostile,
+    });
+
+    expect(res.code).toBe(0);
+    expect(res.stdout.trim()).toBe(expectedSha);
+  });
+
+  it("leaves stdin as 'ignore' when stdinData is omitted", async () => {
+    const repo = makeRepo();
+    // If stdin were left as an unclosed 'pipe' instead of 'ignore', `git
+    // hash-object --stdin` would block waiting for EOF and this call would
+    // hit the timeout below. Resolving quickly with the well-known empty-blob
+    // SHA proves the child saw an immediate EOF, i.e. stdin is 'ignore'.
+    const res = await execScm('git', ['hash-object', '--stdin'], {
+      cwd: repo,
+      timeoutMs: 2_000,
+    });
+
+    expect(res.code).toBe(0);
+    expect(res.stdout.trim()).toBe('e69de29bb2d1d6434b8b29ae775ad8c2e48c5391');
+  });
+
+  it('preserves timeout semantics (SIGTERM→SIGKILL, ScmError(TIMEOUT)) when stdinData is set', async () => {
+    const repo = makeRepo();
+    const prevEditor = process.env['GIT_EDITOR'];
+    process.env['GIT_EDITOR'] = 'sh -c "sleep 30"';
+    try {
+      const start = Date.now();
+      const promise = execScm('git', ['commit', '--allow-empty'], {
+        cwd: repo,
+        timeoutMs: 300,
+        killGraceMs: 200,
+        stdinData: 'irrelevant form data\n',
+      });
+      await expect(promise).rejects.toBeInstanceOf(ScmError);
+      await promise.catch((err: ScmError) => {
+        expect(err.code).toBe('TIMEOUT');
+      });
+      // Must have fired the timeout, not waited for the 30s sleep — stdinData
+      // being piped-and-closed must not delay or disable the timeout ladder.
+      expect(Date.now() - start).toBeLessThan(5_000);
+    } finally {
+      if (prevEditor === undefined) delete process.env['GIT_EDITOR'];
+      else process.env['GIT_EDITOR'] = prevEditor;
+    }
   });
 });
