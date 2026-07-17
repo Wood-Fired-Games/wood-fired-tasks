@@ -17,6 +17,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
 - MCP server with 31 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
 - REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 45 commands
+- Pluggable source control — a `tasks scm <verb>` adapter over three backends (git, Perforce, or a no-VCS `none` backend), selected per repo via `.tasks/scm.json` (or a project charter `scm` default), so the automation lifecycle runs unchanged across SCM systems
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
@@ -331,7 +332,7 @@ errors twice, and short-circuits permanent errors
 
 | Entity | Key Fields |
 |--------|------------|
-| **projects** | id, name, description, **value_charter** (JSON; per-project WSJF Business-Value reference frame), created_at, updated_at |
+| **projects** | id, name, description, **value_charter** (JSON; per-project WSJF Business-Value reference frame), **scm** (JSON; optional pluggable-SCM default — backend hint + behavior toggles, used only as the auto-detect fallback), created_at, updated_at |
 | **tasks** | id, title, description, status, priority, project_id, parent_task_id, estimated_minutes, assignee, created_by, due_date, version, claimed_at, **completed_at**, **wsjf_value / wsjf_time_criticality / wsjf_risk_opportunity / wsjf_job_size** (Fibonacci components), **wsjf_evidence / wsjf_locked / wsjf_source / wsjf_classifications / wsjf_features** (JSON metadata), created_at, updated_at |
 | **task_tags** | id, task_id, tag |
 | **task_dependencies** | id, task_id, blocks_task_id, created_at |
@@ -526,6 +527,46 @@ example below works verbatim. Working from a clone instead? Use
 | tasks wsjf-history \<id\> | Show a task's append-only WSJF score history (oldest-first) as JSON |
 | tasks wsjf-set \<id\> --value \<fib\> --time-criticality \<fib\> --risk-opportunity \<fib\> --job-size \<fib\> [--lock \<keys\>] | Manual set/lock of a task's four WSJF components (all four required; `<fib>` ∈ 1,2,3,5,8,13; `--lock` takes comma-separated keys from `value,timeCriticality,riskOpportunity,jobSize`) |
 | tasks charter-history \<id\> | Show a project's value-charter history (oldest-first) as JSON |
+
+### Source Control (SCM) Commands
+
+`tasks scm <verb> [args]` runs a single pluggable source-control verb against
+the backend resolved for the target repo, printing exactly one JSON envelope
+(`{ ok, verb, backend, context, data, warnings }` on success; `{ ok:false, …,
+error }` on failure) to stdout and mapping the outcome to a process exit code.
+The verb *logic* lives in three interchangeable backends — **git** (byte-parity
+with native git), **perforce** (changelist-based; change-ids look like
+`p4:<cl>`), and **none** (a no-VCS digest backend for unversioned trees) — so
+the automation lifecycle is identical across SCM systems.
+
+**Backend selection precedence** (highest wins): `.tasks/scm.json` `backend`
+field → the project charter `scm` default (fallback only) → on-disk
+auto-detection (`.git` / `.p4config` markers, else `none`). See
+[docs/SETUP.md](docs/SETUP.md#source-control-scm-configuration) for the config
+file shape.
+
+| Command | Description |
+|---------|-------------|
+| tasks scm detect | Report the resolved backend for the repo |
+| tasks scm baseline | Capture the pre-run baseline the change verbs diff against |
+| tasks scm status | Working-tree change summary |
+| tasks scm changed-files \<base\> | List files changed since `<base>` |
+| tasks scm stage \<files...\> | Stage the given paths |
+| tasks scm record \<message\> | Record (commit) staged changes with `<message>` |
+| tasks scm change-id | Print the current change-id (git SHA / `p4:<cl>` / empty for `none`) |
+| tasks scm publish | Publish recorded changes to the remote (push / submit) |
+| tasks scm open-review | Open a review (PR / shelved changelist) |
+| tasks scm isolate \<id\> | Create an isolated working context (branch/stream) for `<id>` |
+| tasks scm teardown-isolation \<id\> | Tear down the isolation created for `<id>` |
+| tasks scm reset-hard \<ref\> | Hard-reset the working tree to `<ref>` |
+
+**Flags:** `--repo <path>` (default: discovered from cwd) · `--context <key>`
+(scope key namespacing per-run state; default `default`).
+
+**Exit codes:** `0` success · `1` operation failed (push rejected, submit
+conflict) · `2` usage / config error (unknown verb, invalid `.tasks/scm.json`)
+· `3` backend unavailable (p4 server unreachable, `git`/`p4` binary missing) ·
+`4` verb unsupported for this backend/toggle combination · `124` exec timeout.
 
 ### Health
 

@@ -223,6 +223,59 @@ global install. The catalog includes `setup`, `usage-patterns`, `cli`, `api`,
 `mcp`, `navigation`, `interfaces`, `workflows`, `slack`, `reliability`,
 `troubleshooting`, `architecture`, `agent-context`, and `readme`.
 
+## Source Control (SCM) Configuration
+
+The automation lifecycle talks to source control through a **pluggable SCM
+adapter** — the `tasks scm <verb>` CLI (see the
+[SCM command reference](../README.md#source-control-scm-commands)) — so the same
+`/tasks:*` recipes run unchanged over three interchangeable backends:
+
+- **git** — byte-parity with native git (default when a `.git` marker is found).
+- **perforce** — changelist-based; change-ids look like `p4:<cl>`.
+- **none** — a no-VCS digest backend for unversioned trees (no change-ids).
+
+### Which backend a repo uses (precedence)
+
+The effective backend is resolved once per repo, highest source wins:
+
+1. **`.tasks/scm.json`** in the repo root — the authoritative, committed
+   declaration. If the file exists but does not validate, resolution **fails
+   hard** (`CONFIG_INVALID`, exit 2) rather than silently falling through.
+2. **Project charter `scm` default** — the optional `scm` object on the project
+   (set via `update_project`; see [MCP.md](MCP.md#get_project)). A fallback
+   **hint only** — it never overrides an on-disk signal.
+3. **Auto-detection** — on-disk markers (`.git` / Perforce config), else `none`.
+
+### `.tasks/scm.json`
+
+A committed file at the repo root. `version` must be exactly `1`; unknown keys
+are rejected (`.strict()`):
+
+```json
+{
+  "version": 1,
+  "backend": "git",
+  "behaviors": {
+    "commit": true,
+    "isolate": true,
+    "publish": false,
+    "openReview": false,
+    "branchPerRun": false
+  },
+  "ignore": ["build/", "*.tmp"]
+}
+```
+
+- **`version`** (required) — schema version, currently `1`.
+- **`backend`** (required) — one of `"git"`, `"perforce"`, `"none"`, or
+  `"auto"` (defer to auto-detection).
+- **`behaviors`** (optional, sparse) — per-verb toggles; any omitted key falls
+  back to the backend's default.
+- **`ignore`** (optional) — extra path globs excluded from change detection.
+
+With no `.tasks/scm.json` and no charter `scm` default, a repo just auto-detects
+its backend — no configuration is required to get git behavior.
+
 ## Prerequisites
 
 - **Node.js 22 or higher** — matches the CI matrix (`actions/setup-node` with

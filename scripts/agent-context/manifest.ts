@@ -248,7 +248,10 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'deep-doc',
     purpose: 'Local setup, install, environment variables.',
     when_to_read: 'on-demand',
-    line_budget: 1500,
+    // 1500 → 1580: Pluggable SCM (#1544) added the "Source Control (SCM)
+    // Configuration" section (backend precedence + `.tasks/scm.json` shape);
+    // doc grew to 1553.
+    line_budget: 1580,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
@@ -414,7 +417,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     when_to_read: 'reference',
     // 850 → 875: Configurable Task Models added the Model Tools (4) domain
     // table to the MCP summary (the doc sat at 848/850 before it).
-    line_budget: 875,
+    // 875 → 910: Pluggable SCM (#1544) added the SCM capability bullet and the
+    // "Source Control (SCM) Commands" CLI-summary table (doc grew to 901).
+    line_budget: 910,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
