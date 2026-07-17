@@ -3,6 +3,7 @@ import { toStructuredContent } from '../lib/structured-content.js';
 import { ProjectService } from '../../services/project.service.js';
 import { CreateProjectSchema, ValueCharterNullableSchema } from '../../schemas/project.schema.js';
 import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
+import { ScmCharterNullableSchema } from '../../schemas/scm-charter.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
@@ -156,6 +157,7 @@ export function registerProjectTools(server: McpServer, projectService: ProjectS
           description: z.string().max(5000).optional().nullable(),
           value_charter: ValueCharterNullableSchema.optional(),
           model_policy: ModelPolicyNullableSchema.optional(),
+          scm: ScmCharterNullableSchema.optional(),
         }),
       }),
     },

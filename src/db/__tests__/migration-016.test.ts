@@ -119,26 +119,45 @@ describe('migration 016: projects.model_policy + app_settings singleton', () => 
   });
 
   it('up() after down() restores the schema (round-trip)', async () => {
-    const before = db
-      .prepare(
-        `SELECT name, type, sql FROM sqlite_master
-         WHERE name NOT LIKE 'sqlite_%'
-         ORDER BY type, name`,
-      )
-      .all();
+    // Assert on the sorted SET of full projects column definitions — (name,
+    // type, notnull, dflt_value, pk) tuples from PRAGMA table_info — not the
+    // raw CREATE TABLE SQL. down() drops model_policy and up() re-appends it at
+    // the END of the column list, so when a LATER migration (e.g. 017 scm) has
+    // also added a projects column, the physical column ORDER legitimately
+    // changes across the round-trip even though every column is restored.
+    // Sorting by name makes the comparison order-insensitive while still
+    // failing on any type / NOT NULL / DEFAULT / PRIMARY KEY drift that a
+    // name-only set would miss. Mirrors the 014-value-charter round-trip test,
+    // which was hardened the same way when 016 first landed after it. The
+    // app_settings table (dropped + recreated wholesale by down()/up()) is
+    // order-stable, so its raw SQL is still compared verbatim.
+    interface ColumnDef {
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: unknown;
+      pk: number;
+    }
+    const projectColumnDefs = () =>
+      (db.prepare("PRAGMA table_info('projects')").all() as ColumnDef[])
+        .map(({ name, type, notnull, dflt_value, pk }) => ({ name, type, notnull, dflt_value, pk }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    const appSettingsSql = () =>
+      db.prepare("SELECT name, type, sql FROM sqlite_master WHERE name = 'app_settings'").all();
+
+    const beforeCols = projectColumnDefs();
+    const beforeAppSettings = appSettingsSql();
+    expect(beforeCols.map((c) => c.name)).toContain('model_policy');
+    expect(beforeAppSettings).toHaveLength(1);
 
     const { up, down } = await import('../migrations/016-model-policy.js');
     await down(db);
     await up(db);
 
-    const after = db
-      .prepare(
-        `SELECT name, type, sql FROM sqlite_master
-         WHERE name NOT LIKE 'sqlite_%'
-         ORDER BY type, name`,
-      )
-      .all();
-
-    expect(after).toEqual(before);
+    const afterCols = projectColumnDefs();
+    const afterAppSettings = appSettingsSql();
+    expect(afterCols).toEqual(beforeCols);
+    expect(afterCols.map((c) => c.name)).toContain('model_policy');
+    expect(afterAppSettings).toEqual(beforeAppSettings);
   });
 });

@@ -83,8 +83,8 @@ export class ProjectService {
       throw new BusinessError('Project with this name already exists');
     }
 
-    // Create project. `description` / `value_charter` / `model_policy` are
-    // omitted when absent so the optional columns stay untouched; explicit
+    // Create project. `description` / `value_charter` / `model_policy` / `scm`
+    // are omitted when absent so the optional columns stay untouched; explicit
     // `null` is preserved (the absent / null / value three-state convention).
     // `name` stays required.
     const createDto: CreateProjectDTO = {
@@ -95,6 +95,9 @@ export class ProjectService {
       }),
       ...(result.data.model_policy !== undefined && {
         model_policy: result.data.model_policy,
+      }),
+      ...(result.data.scm !== undefined && {
+        scm: result.data.scm,
       }),
     };
     const project = this.projectRepo.create(createDto);

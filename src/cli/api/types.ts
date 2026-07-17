@@ -17,6 +17,7 @@ import type { TaskResponseSchema } from '../../api/routes/tasks/schemas.js';
 import type { ProjectResponseSchema } from '../../api/routes/projects/schemas.js';
 import type { ValueCharter } from '../../types/task.js';
 import type { ModelPolicy } from '../../schemas/model-policy.schema.js';
+import type { ScmCharter } from '../../schemas/scm-charter.schema.js';
 
 /**
  * Task response shape, inferred from the server Zod schema.
@@ -121,6 +122,12 @@ export interface UpdateProjectInput {
    * `project-set-models` command does this via `mergeModelPolicies`).
    */
   model_policy?: ModelPolicy | null;
+  /**
+   * Pluggable SCM (spec §6.3): set the per-project scm charter default; `null`
+   * clears, absent leaves untouched. A non-null value REPLACES the stored `scm`
+   * column wholesale via `PUT /projects/:id`. Mirrors `model_policy` wiring.
+   */
+  scm?: ScmCharter | null;
 }
 
 export interface ApiErrorResponse {
