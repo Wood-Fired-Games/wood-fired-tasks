@@ -26,6 +26,56 @@ compliance, so it does not exist. All three backends are first-class:
 Backend selection is a per-**repo** property (a single tasks-project can span
 multiple repos), so config lives with the repo — not the project or the DB.
 
+## Quickstart
+
+### git
+
+Zero config: do nothing — behavior is unchanged. With no `.tasks/scm.json`,
+auto-detect finds `.git` and resolves the `git` backend (`source: "auto"`).
+
+```
+$ tasks scm detect --repo .
+{"ok":true,"verb":"detect","backend":"git","context":"default","data":{"backend":"git","source":"auto","behaviors":{"commit":true,"isolate":true,"publish":true,"openReview":false,"branchPerRun":false},"capabilities":{"isolation":"platform-worktree"}},"warnings":[]}
+```
+
+### perforce (experimental — pending real-server validation)
+
+Log in once so the non-interactive adapter has a valid ticket — it never
+prompts: `p4 login`. Then opt the repo in with a minimal
+`.tasks/scm.json`:
+
+```json
+{ "version": 1, "backend": "perforce" }
+```
+
+Requires a p4 client **2021.1+** (the adapter's form-edit flow depends on the
+`--field` global option, introduced in that release). In v1, perforce loops
+always run **serialized** — there is no temp-client isolation yet
+(`capabilities.isolation` is unconditionally `"serialized"`); parallel
+orchestrators must not assume per-worker isolation until real-server
+validation (task #1563) graduates this backend out of experimental.
+
+```
+$ tasks scm detect --repo .
+{"ok":true,"verb":"detect","backend":"perforce","context":"default","data":{"backend":"perforce","source":"file","behaviors":{"commit":true,"isolate":false,"publish":true,"openReview":false,"branchPerRun":false},"capabilities":{"isolation":"serialized"}},"warnings":[]}
+```
+
+### none
+
+No `.tasks/scm.json` and no `.git`/`.p4config` marker falls back to `none`
+(`source: "auto"`). Runtime state lives under `.tasks/.scm/<context>/` —
+per-context digest manifests (`baseline.json`) used for baseline/diff
+verification — and is never committed. Tune the `ignore` globs in
+`.tasks/scm.json` if baseline-churn false positives show up (build output,
+scratch files). **No-undo caveat:** `reset-hard` is unsupported (exit 4) —
+a digest-only manifest cannot restore content, so recovery is manual; a
+fuller Recovery section is coming in a follow-on task.
+
+```
+$ tasks scm detect --repo .
+{"ok":true,"verb":"detect","backend":"none","context":"default","data":{"backend":"none","source":"auto","behaviors":{"commit":false,"isolate":false,"publish":false,"openReview":false,"branchPerRun":false},"capabilities":{"isolation":"shared"}},"warnings":[]}
+```
+
 ## Configuration — `.tasks/scm.json`
 
 A committed, repo-local JSON file. The adapter reads it off the filesystem with
@@ -124,7 +174,7 @@ One verb per SCM primitive the skills need. Each verb is a pure function of
 | `status` | `git status --porcelain` | `p4 opened` + `p4 status` | manifest compare |
 | `changed-files <base>` | `git diff --name-only <base>..HEAD` | `p4 opened` / `p4 describe -s` | filesystem diff vs baseline manifest |
 | `stage <files…>` | `git add <files>` (never `-A`/`.`) | `p4 edit`/`add`/`reconcile` into the context's numbered pending CL | no-op |
-| `record -m <msg>` | `git commit -m` | pending/shelved CL, or `p4 submit` if `publish` on | no-op |
+| `record <msg>` | `git commit -m` | pending/shelved CL, or `p4 submit` if `publish` on | no-op |
 | `change-id` | `git rev-parse HEAD` | the context's CL number — **post-renumber if submitted** | empty `ids: []` |
 | `publish` | `git push` (`--set-upstream origin` fallback; no remote → `NO_REMOTE`) | `p4 submit` of the context CL | no-op |
 | `open-review` | `gh pr create` (missing `gh` → clean skip + warning) | `p4 shelve` + swarm (or clean skip) | no-op |

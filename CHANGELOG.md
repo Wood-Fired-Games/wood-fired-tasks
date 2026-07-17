@@ -34,6 +34,16 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   [`docs/SCM.md`](docs/SCM.md) and the design spec at
   `docs/superpowers/specs/2026-07-16-pluggable-scm-design.md`.
 
+### Changed
+- **Pluggable-SCM hardening.** Follow-up robustness pass over the adapter
+  (preflight memoization, none-mode empty-change-id evidence handling,
+  git-parity byte-identical smoke coverage, and skill migrations off raw
+  `git` onto `tasks scm` read verbs). The **perforce backend is experimental
+  — pending real-server validation**: it has been exercised against mocked
+  `p4` output only so far, and graduates out of experimental once the
+  real-p4d integration suite (task #1563) lands. `docs/SCM.md` now has a
+  Quickstart with a worked example per backend.
+
 ## [v2.4.0] - 2026-07-09
 
 Quality release for the `/tasks:*` skill pipeline (decompose → loop → loop-dag →
