@@ -45,6 +45,7 @@ import { docsCommand } from '../commands/docs.js';
 import { serviceCommand } from '../commands/service.js';
 import { statuslineCommand } from '../commands/statusline.js';
 import { linkProjectCommand } from '../commands/link-project.js';
+import { scmCommand } from '../commands/scm.js';
 import { isMain } from '../../utils/is-main.js';
 import { VERSION } from '../../utils/version.js';
 import { warnIfNotEvenLts } from '../../utils/node-version.js';
@@ -171,6 +172,11 @@ program.addCommand(statuslineCommand);
 // Register link-project command (task #598): associate the current
 // working directory with a project.
 program.addCommand(linkProjectCommand);
+
+// Register scm command (task #1536): pluggable source-control dispatcher —
+// `tasks scm <verb>` resolves the backend (git/perforce/none) and prints the
+// §4.1 JSON envelope + exit code.
+program.addCommand(scmCommand);
 
 // Export the configured program so tests can drive `program.parseAsync(...)`
 // against the real registry. The bottom guard mirrors src/db/migrate.ts:133

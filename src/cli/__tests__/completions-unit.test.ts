@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Command } from 'commander';
 import { createCompletionsCommand } from '../commands/completions.js';
+import { scmCommand } from '../commands/scm.js';
 
 describe('createCompletionsCommand', () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -40,6 +41,9 @@ describe('createCompletionsCommand', () => {
       .command('update')
       .description('Update a task')
       .action(() => {});
+    // Register the real `scm` dispatcher (task #1536) so the derived command
+    // list proves `scm` is a completion-visible subcommand.
+    program.addCommand(scmCommand);
     program.addCommand(createCompletionsCommand(program));
   });
 
@@ -56,6 +60,8 @@ describe('createCompletionsCommand', () => {
     expect(out).toContain('_tasks_completions');
     expect(out).toContain('complete -F _tasks_completions tasks');
     expect(out).toMatch(/commands="[^"]*create[^"]*list[^"]*update[^"]*"/);
+    // The pluggable-SCM dispatcher (task #1536) is completion-visible.
+    expect(out).toMatch(/commands="[^"]*\bscm\b[^"]*"/);
   });
 
   it('bash script includes status and priority enum values', async () => {

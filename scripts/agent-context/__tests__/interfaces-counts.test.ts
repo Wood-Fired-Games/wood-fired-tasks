@@ -41,7 +41,7 @@ const REST_ROUTE_FILES = [
 // the single place a legitimate surface change gets recorded.
 const EXPECTED_REST_ROUTE_TOTAL = 22;
 const EXPECTED_MCP_TOOL_TOTAL = 31;
-const EXPECTED_CLI_COMMAND_TOTAL = 45;
+const EXPECTED_CLI_COMMAND_TOTAL = 46;
 
 const MCP_TOOLS_DIR = 'src/mcp/tools';
 
