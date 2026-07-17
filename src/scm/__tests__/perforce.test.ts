@@ -181,20 +181,19 @@ describe('PerforceBackend — ScmBackend surface', () => {
     });
   });
 
-  it('detect reports perforce + serialized isolation when no client template is configured', async () => {
-    const prev = process.env['P4CLIENT_TEMPLATE'];
-    delete process.env['P4CLIENT_TEMPLATE'];
-    try {
-      const backend = new PerforceBackend(mockExec([OK_LOGIN]).exec);
-      const data = await backend.detect(ctxFor(makeRepo()));
-      expect(data.backend).toBe('perforce');
-      expect(data.capabilities.isolation).toBe('serialized');
-      expect(data.behaviors.commit).toBe(true);
-      expect(data.behaviors.publish).toBe(true);
-    } finally {
-      if (prev === undefined) delete process.env['P4CLIENT_TEMPLATE'];
-      else process.env['P4CLIENT_TEMPLATE'] = prev;
-    }
+  it('detect reports perforce + serialized isolation unconditionally (v1, spec §3.6)', async () => {
+    const backend = new PerforceBackend(mockExec([OK_LOGIN]).exec);
+    const data = await backend.detect(ctxFor(makeRepo()));
+    expect(data.backend).toBe('perforce');
+    expect(data.capabilities.isolation).toBe('serialized');
+    expect(data.behaviors.commit).toBe(true);
+    expect(data.behaviors.publish).toBe(true);
+  });
+
+  it('isolate always returns the serialized strategy (v1, spec §3.6 — no unprovisioned p4-client)', async () => {
+    const backend = new PerforceBackend(mockExec([OK_LOGIN]).exec);
+    const data = await backend.isolate(ctxFor(makeRepo()), 'run-1');
+    expect(data).toEqual({ strategy: 'serialized' });
   });
 });
 

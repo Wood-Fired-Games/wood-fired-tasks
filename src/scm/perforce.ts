@@ -68,9 +68,11 @@ export type ExecScmFn = (
 
 /**
  * Per-backend behavior defaults for perforce (spec §3.3): commit on, publish on,
- * everything else off. `isolate` defaults off (shared-tree-serialized) because
- * true p4 isolation requires a temp-client template (§5.2) — surfaced through
- * `detect`'s `capabilities.isolation`, not this toggle.
+ * everything else off. `isolate` defaults off (shared-tree-serialized) — v1
+ * perforce isolation is always shared-tree-serialized (spec §3.6); real
+ * temp-client provisioning is deferred to a future release (task #1563) and
+ * `detect`'s `capabilities.isolation` reports `'serialized'` unconditionally
+ * until then.
  */
 export const PERFORCE_BEHAVIOR_DEFAULTS: ScmBehaviors = {
   commit: true,
@@ -396,12 +398,13 @@ export class PerforceBackend implements ScmBackend {
     // ticket (you can still report which backend a repo uses when offline).
     const resolved = resolveBackend(ctx.repo);
     const behaviors = resolveBehaviors(ctx.repo);
-    const isolation = hasClientTemplate() ? 'p4-client' : 'serialized';
     return {
       backend: 'perforce',
       source: resolved.source,
       behaviors,
-      capabilities: { isolation },
+      // v1: perforce isolation is always shared-tree-serialized (spec §3.6) —
+      // real temp-client provisioning is deferred to task #1563.
+      capabilities: { isolation: 'serialized' },
     };
   }
 
@@ -605,16 +608,14 @@ export class PerforceBackend implements ScmBackend {
     return { opened: true, url: null };
   }
 
-  async isolate(ctx: ScmVerbContext, id: string): Promise<ScmIsolateData> {
+  async isolate(ctx: ScmVerbContext, _id: string): Promise<ScmIsolateData> {
     await this.preflight(ctx);
-    // §5.2: real p4 isolation provisions a temp client from a configured
-    // template; with no template the loop degrades to shared-tree-serialized.
-    if (!hasClientTemplate()) {
-      return { strategy: 'serialized' };
-    }
-    const client = `wft-${ctx.context}-${id}`;
-    const path = join(ctx.repo, '.tasks', '.scm', ctx.context, 'client');
-    return { strategy: 'p4-client', client, path };
+    // v1 (spec §3.6): naming a p4 client here without provisioning it is a
+    // false-isolation hazard — an orchestrator would parallelize on a
+    // shared-tree assumption with no worktree backstop. isolate() always
+    // reports shared-tree-serialized; real temp-client provisioning returns
+    // in a future release gated on the real-p4d suite (task #1563).
+    return { strategy: 'serialized' };
   }
 
   async teardownIsolation(ctx: ScmVerbContext, id: string): Promise<ScmTeardownIsolationData> {
@@ -657,12 +658,6 @@ export const perforceBackend = new PerforceBackend();
 function resolveBehaviors(repo: string): ScmBehaviors {
   const config = loadScmConfig(repo);
   return { ...PERFORCE_BEHAVIOR_DEFAULTS, ...(config?.behaviors ?? {}) };
-}
-
-/** True when a temp-client template is configured (§5.2) → `capabilities.isolation === 'p4-client'`. */
-function hasClientTemplate(): boolean {
-  const template = process.env['P4CLIENT_TEMPLATE'];
-  return template !== undefined && template !== '';
 }
 
 /**
