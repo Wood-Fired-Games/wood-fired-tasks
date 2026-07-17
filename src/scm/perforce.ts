@@ -111,26 +111,86 @@ export function parseLatestChange(out: string): string | null {
   return m?.[1] ?? null;
 }
 
-interface OpenedFile {
-  path: string;
+/** One `p4 -ztag opened` record — the fields this backend cares about (§3.3). */
+export interface OpenedRecord {
+  /** `//depot/...` — depot-syntax path; used only as the `-ztag where` fallback key. */
+  depotFile: string;
+  /** `//<client>/...` — client-syntax path this module maps to repo-relative (§3.3). */
+  clientFile: string;
+  /** e.g. `edit`, `add`, `delete`, `move/add`. */
   action: string;
 }
 
 /**
- * Parse `p4 opened` lines of the form
- * `//depot/path/file#3 - edit change 123 (text)` into `{ path, action }`.
+ * Parse `p4 -ztag opened` tagged output (§3.3): blank-line-separated records
+ * of `... <field> <value>` lines, e.g.
+ * ```
+ * ... depotFile //depot/path/to/file
+ * ... clientFile //myclient/path/to/file
+ * ... action edit
+ * ... change 123
+ * ```
+ * Kept pure + exported so tests can pin the tagged-output shape directly.
+ * Records missing `clientFile` or `action` are dropped (defensive — a
+ * well-formed server always emits both for `opened`).
  */
-export function parseOpened(out: string): OpenedFile[] {
-  const files: OpenedFile[] = [];
-  for (const line of out.split('\n')) {
-    const m = line.match(/^(.+?)#\d+ - (\S+)/);
-    const path = m?.[1];
-    const action = m?.[2];
-    if (path && action) {
-      files.push({ path, action });
+export function parseOpened(out: string): OpenedRecord[] {
+  const records: OpenedRecord[] = [];
+  let depotFile: string | undefined;
+  let clientFile: string | undefined;
+  let action: string | undefined;
+  const flush = () => {
+    if (clientFile && action) {
+      records.push({ depotFile: depotFile ?? '', clientFile, action });
     }
+    depotFile = undefined;
+    clientFile = undefined;
+    action = undefined;
+  };
+  for (const rawLine of out.split('\n')) {
+    const line = rawLine.trimEnd();
+    if (line.trim() === '') {
+      flush();
+      continue;
+    }
+    const m = line.match(/^\.\.\.\s+(\S+)\s+(.*)$/);
+    if (!m) continue;
+    const [, field, value] = m;
+    if (field === 'depotFile') depotFile = value;
+    else if (field === 'clientFile') clientFile = value;
+    else if (field === 'action') action = value;
   }
-  return files;
+  flush();
+  return records;
+}
+
+/**
+ * Map a `clientFile` (`//<client>/rest/of/path`) to a repo-root-relative,
+ * forward-slash path by stripping the two-slash client-name prefix (§3.3
+ * primary strategy — the adapter targets single-client workspaces whose
+ * client root is the repo root). Returns `null` when `clientFile` does not
+ * match the expected `//<client>/...` shape — the ambiguous case {@link
+ * PerforceBackend}'s opened-path resolver falls back to `p4 -ztag where` for.
+ */
+export function clientFileToRepoRelative(clientFile: string): string | null {
+  const m = clientFile.match(/^\/\/[^/]+\/(.+)$/);
+  const rest = m?.[1];
+  return rest ? rest.replace(/\\/g, '/') : null;
+}
+
+/** Parse the local filesystem `path` field from `p4 -ztag where <file>` output (§3.3 fallback). */
+export function parseWherePath(out: string): string | null {
+  const m = out.match(/^\.\.\.\s+path\s+(.*)$/im);
+  return m?.[1]?.trim() ?? null;
+}
+
+/** Relativize an absolute filesystem path against the repo root, forward-slashed. */
+export function toRepoRelative(absPath: string, repo: string): string {
+  const normalizedRepo = repo.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalizedAbs = absPath.replace(/\\/g, '/');
+  return normalizedAbs.startsWith(`${normalizedRepo}/`)
+    ? normalizedAbs.slice(normalizedRepo.length + 1)
+    : normalizedAbs;
 }
 
 /** Map a p4 `opened` action to the wire-contract change type (§4.1). */
@@ -174,6 +234,32 @@ export class PerforceBackend implements ScmBackend {
   }
 
   // --- exec + preflight -----------------------------------------------------
+
+  /**
+   * Resolve each `-ztag opened` record's `clientFile` to a repo-root-relative,
+   * forward-slash path (§3.3). Primary strategy is the pure {@link
+   * clientFileToRepoRelative} client-name-prefix strip; when that returns
+   * `null` (an unrecognized `clientFile` shape), falls back to
+   * `p4 -ztag where <depotFile-or-clientFile>` to obtain the local
+   * filesystem `path` field, then relativizes it against `ctx.repo`.
+   */
+  private async resolveOpenedPaths(
+    ctx: ScmVerbContext,
+    records: readonly OpenedRecord[],
+  ): Promise<{ path: string; action: string }[]> {
+    const out: { path: string; action: string }[] = [];
+    for (const r of records) {
+      let path = clientFileToRepoRelative(r.clientFile);
+      if (path === null) {
+        const target = r.depotFile || r.clientFile;
+        const where = await this.p4(ctx, ['-ztag', 'where', target]);
+        const abs = where.code === 0 ? parseWherePath(where.stdout) : null;
+        path = abs !== null ? toRepoRelative(abs, ctx.repo) : r.clientFile;
+      }
+      out.push({ path, action: r.action });
+    }
+    return out;
+  }
 
   /** Run an allowlisted `p4` command pinned to the repo root (§6.1). */
   private p4(
@@ -329,8 +415,9 @@ export class PerforceBackend implements ScmBackend {
 
   async status(ctx: ScmVerbContext): Promise<ScmStatusData> {
     await this.preflight(ctx);
-    const res = await this.p4(ctx, ['opened']);
-    const entries: ScmStatusEntry[] = parseOpened(res.stdout).map((o) => ({
+    const res = await this.p4(ctx, ['-ztag', 'opened']);
+    const resolved = await this.resolveOpenedPaths(ctx, parseOpened(res.stdout));
+    const entries: ScmStatusEntry[] = resolved.map((o) => ({
       path: o.path,
       state: o.action,
     }));
@@ -340,10 +427,11 @@ export class PerforceBackend implements ScmBackend {
   async changedFiles(ctx: ScmVerbContext, base: string): Promise<ScmChangedFilesData> {
     await this.preflight(ctx);
     const cl = this.readContextCl(ctx);
-    const args = cl !== null ? ['opened', '-c', String(cl)] : ['opened'];
+    const args = cl !== null ? ['-ztag', 'opened', '-c', String(cl)] : ['-ztag', 'opened'];
     const res = await this.p4(ctx, args);
 
-    const changed: ScmChangedFile[] = parseOpened(res.stdout).map((o) => ({
+    const resolved = await this.resolveOpenedPaths(ctx, parseOpened(res.stdout));
+    const changed: ScmChangedFile[] = resolved.map((o) => ({
       path: o.path,
       change: changeTypeForAction(o.action),
     }));

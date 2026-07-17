@@ -3,7 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecScmOptions, ExecScmResult } from '../exec.js';
-import { PerforceBackend, isSubmitConflict, parseSubmittedChange } from '../perforce.js';
+import {
+  PerforceBackend,
+  clientFileToRepoRelative,
+  isSubmitConflict,
+  parseOpened,
+  parseSubmittedChange,
+  parseWherePath,
+  toRepoRelative,
+} from '../perforce.js';
 import { ScmError, type ScmVerbContext } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -53,12 +61,19 @@ function mockExec(rules: Rule[]) {
   return { exec, calls, optsCalls };
 }
 
-/** True when `argv` starts with the given verb tokens (ignoring leading `--field` global opts). */
+/**
+ * True when `argv` starts with the given verb tokens, ignoring leading
+ * `--field X` global-option pairs and a bare `-ztag` global flag (task #1557
+ * — `-ztag` precedes the command word, e.g. `p4 -ztag opened`) so
+ * `isVerb(a, 'opened')` matches regardless of which global options prefix it.
+ */
 function isVerb(args: readonly string[], ...verb: string[]): boolean {
   const positional = args.filter((a, i) => {
     // Drop `--field X` global-option pairs so `p4 --field ... change -i` matches `change`.
     if (a === '--field') return false;
     if (i > 0 && args[i - 1] === '--field') return false;
+    // Drop a bare `-ztag` global flag so `p4 -ztag opened` matches `opened`.
+    if (a === '-ztag') return false;
     return true;
   });
   return verb.every((tok, i) => positional[i] === tok);
@@ -493,9 +508,21 @@ describe('PerforceBackend — §4.4 exclusion invariant', () => {
         match: (a) => isVerb(a, 'opened'),
         reply: () => ({
           stdout: [
-            'src/keep.ts#2 - edit change 7 (text)',
-            'bin/tool#1 - add change 7 (binary)',
-            '.gitignore#3 - edit change 7 (text)',
+            '... depotFile //depot/proj/src/keep.ts',
+            '... clientFile //myclient/src/keep.ts',
+            '... action edit',
+            '... change 7',
+            '',
+            '... depotFile //depot/proj/bin/tool',
+            '... clientFile //myclient/bin/tool',
+            '... action add',
+            '... change 7',
+            '',
+            '... depotFile //depot/proj/.gitignore',
+            '... clientFile //myclient/.gitignore',
+            '... action edit',
+            '... change 7',
+            '',
           ].join('\n'),
         }),
       },
@@ -504,6 +531,110 @@ describe('PerforceBackend — §4.4 exclusion invariant', () => {
     const data = await backend.changedFiles(ctxFor(makeRepo()), 'p4:6');
     expect(data.files.map((f) => f.path)).toEqual(['src/keep.ts']);
     expect(data.files[0]?.change).toBe('modified');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC (task #1557): `p4 -ztag opened` parsing + clientFile→repo-relative
+// mapping, feeding the §4.4 exclusion filter.
+// ---------------------------------------------------------------------------
+
+describe('perforce — -ztag opened parsing + clientFile→repo-relative mapping (task #1557)', () => {
+  it('parseOpened parses tagged-output records', () => {
+    const out = [
+      '... depotFile //depot/proj/src/f.ts',
+      '... clientFile //myclient/src/f.ts',
+      '... action edit',
+      '... change 123',
+      '',
+      '... depotFile //depot/proj/bin/tool',
+      '... clientFile //myclient/bin/tool',
+      '... action add',
+      '... change 123',
+      '',
+    ].join('\n');
+    expect(parseOpened(out)).toEqual([
+      { depotFile: '//depot/proj/src/f.ts', clientFile: '//myclient/src/f.ts', action: 'edit' },
+      { depotFile: '//depot/proj/bin/tool', clientFile: '//myclient/bin/tool', action: 'add' },
+    ]);
+  });
+
+  it('clientFileToRepoRelative strips the client-name prefix; returns null for an unrecognized shape', () => {
+    expect(clientFileToRepoRelative('//myclient/src/f.ts')).toBe('src/f.ts');
+    expect(clientFileToRepoRelative('//myclient/.tasks/.scm/x/changelist.json')).toBe(
+      '.tasks/.scm/x/changelist.json',
+    );
+    expect(clientFileToRepoRelative('not-a-client-path')).toBeNull();
+  });
+
+  it('parseWherePath + toRepoRelative resolve the -ztag where fallback', () => {
+    const out = [
+      '... depotFile //depot/proj/src/f.ts',
+      '... clientFile //myclient/src/f.ts',
+      '... path /home/user/proj/src/f.ts',
+      '',
+    ].join('\n');
+    expect(parseWherePath(out)).toBe('/home/user/proj/src/f.ts');
+    expect(toRepoRelative('/home/user/proj/src/f.ts', '/home/user/proj')).toBe('src/f.ts');
+  });
+
+  it('status and changedFiles invoke `p4 -ztag opened` (global option preceding the verb) and emit repo-relative forward-slash paths from clientFile', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'opened',
+        reply: () => ({
+          stdout: [
+            '... depotFile //depot/proj/src/f.ts',
+            '... clientFile //myclient/src/f.ts',
+            '... action edit',
+            '... change 123',
+            '',
+          ].join('\n'),
+        }),
+      },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    const status = await backend.status(ctx);
+    expect(status.dirty).toBe(true);
+    expect(status.entries).toEqual([{ path: 'src/f.ts', state: 'edit' }]);
+
+    const changed = await backend.changedFiles(ctx, 'p4:1');
+    expect(changed.files).toEqual([{ path: 'src/f.ts', change: 'modified' }]);
+
+    const openedCalls = calls.filter((c) => c[1] === 'opened');
+    expect(openedCalls.length).toBeGreaterThan(0);
+    for (const call of openedCalls) {
+      expect(call[0]).toBe('-ztag');
+    }
+  });
+
+  it('changedFiles excludes a clientFile that maps under .tasks/.scm — the exclusion filter is now effective against repo-relative paths', async () => {
+    const { exec } = mockExec([
+      OK_LOGIN,
+      {
+        match: (a) => a[0] === '-ztag' && a[1] === 'opened',
+        reply: () => ({
+          stdout: [
+            '... depotFile //depot/proj/src/keep.ts',
+            '... clientFile //myclient/src/keep.ts',
+            '... action edit',
+            '... change 5',
+            '',
+            '... depotFile //depot/proj/.tasks/.scm/task-1541/changelist.json',
+            '... clientFile //myclient/.tasks/.scm/task-1541/changelist.json',
+            '... action edit',
+            '... change 5',
+            '',
+          ].join('\n'),
+        }),
+      },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const data = await backend.changedFiles(ctxFor(makeRepo()), 'p4:5');
+    expect(data.files.map((f) => f.path)).toEqual(['src/keep.ts']);
   });
 });
 
