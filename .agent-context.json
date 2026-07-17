@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-17T02:35:16.088Z",
+    "generated_at": "2026-07-17T03:43:54.943Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 128,
-      "sha256": "2dda343a03ae881a45dab9e5e239700e7f02ad9321580afd7ab0a9b996de2b82",
+      "actual_lines": 130,
+      "sha256": "d5577c7b802fe8116f0ef3d0ffdb60ad9eef465aaea681d017d75cebfe1cb9bd",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -135,8 +135,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1302,
-      "sha256": "40a569142c7b5e29df173e05ec0f6278e70d82f71c03c19e6491ebf77b0fad74"
+      "actual_lines": 1328,
+      "sha256": "7e5ad4884573dde0cf54b2b972b3543fe97efe819d20519d8877405723be5d32"
     },
     {
       "path": "docs/CLI.md",
@@ -157,14 +157,14 @@
       "role": "deep-doc",
       "purpose": "Local setup, install, environment variables.",
       "when_to_read": "on-demand",
-      "line_budget": 1500,
+      "line_budget": 1580,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
-      "approx_token_budget": 30000,
-      "actual_lines": 1500,
-      "sha256": "d2b606f40ea3332de6992d8f86f626fd45000784a667a311158055e648e5859b"
+      "approx_token_budget": 31600,
+      "actual_lines": 1553,
+      "sha256": "5c575c280ed190fa23f10165cc58a0e6c1378411d1fcee4128b6d54d5ab290a7"
     },
     {
       "path": "docs/SLACK.md",
@@ -365,14 +365,14 @@
       "role": "project-front-door",
       "purpose": "Product-level overview, install, quickstart.",
       "when_to_read": "reference",
-      "line_budget": 875,
+      "line_budget": 910,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
-      "approx_token_budget": 17500,
-      "actual_lines": 860,
-      "sha256": "b92ddacdbdd62faa98ec377b9bf0ffb447f139879556743e5982ca84dd76ac12"
+      "approx_token_budget": 18200,
+      "actual_lines": 901,
+      "sha256": "07655c53e5350f5bafc815f52b7dcecfb07e375b2df3cd1f8f6eb5d7ec1dbdda"
     },
     {
       "path": "SECURITY.md",
