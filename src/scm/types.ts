@@ -284,6 +284,17 @@ export interface ScmVerbContext {
   repo: string;
   /** Scope key; CLI default is `"default"` (§4). */
   context: string;
+  /**
+   * Mutable non-fatal-warning collector threaded by the CLI dispatcher
+   * (`src/cli/commands/scm.ts`, hardening spec §2.4) for the lifetime of one
+   * verb invocation. A backend method that discovers a non-fatal condition
+   * worth surfacing (e.g. `git.ts`'s `record()` on a detached HEAD) pushes a
+   * message here; the dispatcher copies the accumulated array into the
+   * envelope's `warnings[]` field. Optional — absent when a caller (e.g. a
+   * backend unit test) constructs a bare `{ repo, context }` context, so
+   * methods MUST guard with `ctx.warnings?.push(...)`.
+   */
+  warnings?: string[];
 }
 
 /**

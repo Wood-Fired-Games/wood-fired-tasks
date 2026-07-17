@@ -199,7 +199,13 @@ export const scmCommand = new Command('scm')
     ) => {
       const repo = opts.repo !== undefined ? resolve(opts.repo) : findRepoRoot(process.cwd());
       const context = opts.context;
-      const ctx: ScmVerbContext = { repo, context };
+      // Mutable collector shared by reference with `ctx.warnings` (§2.4):
+      // `resolveBackend`'s charter/marker conflict notice is pushed directly
+      // below; a backend verb (currently only git's `record()`) may push its
+      // own via `ctx.warnings` during `dispatchVerb`. Both land in the same
+      // array, which becomes the success envelope's `warnings[]` verbatim.
+      const warnings: string[] = [];
+      const ctx: ScmVerbContext = { repo, context, warnings };
 
       // Best-effort backend name for the envelope even if config resolution
       // throws (CONFIG_INVALID) before a concrete backend is known. detectBackend
@@ -237,6 +243,9 @@ export const scmCommand = new Command('scm')
         // to detection (§3.1).
         const resolved = resolveBackend(repo, charterScm);
         backendName = resolved.backend;
+        if (resolved.warnings !== undefined) {
+          warnings.push(...resolved.warnings);
+        }
         const backend = backendFor(resolved.backend);
 
         const data = await dispatchVerb(backend, verb, ctx, args);
@@ -246,7 +255,7 @@ export const scmCommand = new Command('scm')
           backend: backend.name,
           context,
           data,
-          warnings: [],
+          warnings,
         });
       } catch (err) {
         const scmErr =

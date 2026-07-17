@@ -208,9 +208,11 @@ export class GitBackend implements ScmBackend {
    * `record -m <msg>` (§4): `git commit -m <message>` with the message carried as
    * a discrete argv entry (never interpolated). Nothing staged → a clean
    * `{ recorded:false, changeId:null }` success (§4.1 exit-0 empty result). On a
-   * detached HEAD the commit still SUCCEEDS (§4.1 git edge case); the
-   * "publish-will-fail" warning is an envelope-layer concern (see
-   * {@link GitBackend.isDetachedHead}).
+   * detached HEAD the commit still SUCCEEDS (§4.1 git edge case); after a
+   * successful commit, {@link GitBackend.isDetachedHead} is checked and — when
+   * detached — a "publish will fail from this state" notice is pushed onto
+   * `ctx.warnings` (hardening spec §2.4) for the CLI dispatcher to surface in
+   * the envelope's `warnings[]`. The `data` shape itself is unaffected.
    */
   async record(ctx: ScmVerbContext, message: string): Promise<ScmRecordData> {
     const res = await execScm('git', ['commit', '-m', message], { cwd: ctx.repo });
@@ -240,6 +242,9 @@ export class GitBackend implements ScmBackend {
     const head = await execScm('git', ['rev-parse', 'HEAD'], { cwd: ctx.repo });
     if (head.code !== 0) {
       failGit('rev-parse HEAD', head, 'BACKEND_UNAVAILABLE');
+    }
+    if (await this.isDetachedHead(ctx)) {
+      ctx.warnings?.push('detached HEAD — publish will fail from this state.');
     }
     return { recorded: true, changeId: head.stdout.trim(), mode: 'commit' };
   }

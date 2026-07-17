@@ -236,6 +236,32 @@ describe('GitBackend — record + change-id parity (AC2, §5.1)', () => {
     expect(data.changeId).toBe(git(repo, 'rev-parse', 'HEAD'));
   });
 
+  it('record on a detached HEAD pushes a detached-HEAD warning onto ctx.warnings (§2.4)', async () => {
+    const repo = makeRepo();
+    commitFile(repo, 'a.txt', 'x\n', 'init');
+    const head = git(repo, 'rev-parse', 'HEAD');
+    execFileSync('git', ['checkout', '-q', head], { cwd: repo }); // detach
+
+    writeFileSync(join(repo, 'b.txt'), 'b\n');
+    const ctx: ScmVerbContext = { repo, context: 'default', warnings: [] };
+    await backend.stage(ctx, ['b.txt']);
+    const data = await backend.record(ctx, 'detached commit');
+    expect(data.recorded).toBe(true);
+    expect(ctx.warnings).toHaveLength(1);
+    expect(ctx.warnings?.[0]).toMatch(/detached HEAD/);
+  });
+
+  it('record on a normal branch does not push a warning', async () => {
+    const repo = makeRepo();
+    commitFile(repo, 'a.txt', 'x\n', 'init');
+    writeFileSync(join(repo, 'b.txt'), 'b\n');
+    const ctx: ScmVerbContext = { repo, context: 'default', warnings: [] };
+    await backend.stage(ctx, ['b.txt']);
+    const data = await backend.record(ctx, 'branch commit');
+    expect(data.recorded).toBe(true);
+    expect(ctx.warnings).toEqual([]);
+  });
+
   it('change-id returns [bare HEAD sha] (§5.1 parity)', async () => {
     const repo = makeRepo();
     const sha = commitFile(repo, 'a.txt', 'x\n', 'init');

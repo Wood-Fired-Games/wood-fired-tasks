@@ -127,6 +127,29 @@ describe('scm CLI dispatcher — git backend', () => {
     expect(data.base).toBe('HEAD');
     expect(data.files).toEqual([]);
   });
+
+  it('record on a detached HEAD → non-empty envelope warnings[] referencing detached HEAD (§2.4)', async () => {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['checkout', '-q', head], { cwd: repo }); // detach
+    writeFileSync(join(repo, 'b.txt'), 'b\n');
+    execFileSync('git', ['add', '--', 'b.txt'], { cwd: repo });
+
+    const { envelope, exitCode } = await runScm(
+      'record',
+      'detached commit',
+      '--repo',
+      repo,
+      '--context',
+      'detached-smoke',
+    );
+    expect(exitCode).toBe(0);
+    expect(envelope.ok).toBe(true);
+    const data = envelope.data as Record<string, unknown>;
+    expect(data.recorded).toBe(true);
+    const warnings = envelope.warnings as string[];
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.some((w) => /detached HEAD/.test(w))).toBe(true);
+  });
 });
 
 describe('scm CLI dispatcher — none backend', () => {
@@ -233,6 +256,23 @@ describe('scm CLI dispatcher — --charter-scm (task #1550)', () => {
     expect(exitCode).toBe(0);
     expect(envelope.ok).toBe(true);
     expect(envelope.backend).toBe('git');
+  });
+
+  it('a charter/marker conflict surfaces a non-empty envelope warnings[] (§2.4)', async () => {
+    const repo = makeGitRepo();
+    const { envelope, exitCode } = await runScm(
+      'detect',
+      '--repo',
+      repo,
+      '--charter-scm',
+      JSON.stringify({ backend: 'perforce' }),
+    );
+    expect(exitCode).toBe(0);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.backend).toBe('git');
+    const warnings = envelope.warnings as string[];
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.some((w) => /perforce/i.test(w) && /git/i.test(w))).toBe(true);
   });
 
   it('malformed --charter-scm JSON → CONFIG_INVALID failure envelope, exit 2', async () => {
