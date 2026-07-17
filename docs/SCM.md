@@ -342,6 +342,43 @@ via a **digest manifest** (not a content snapshot).
 fabrication. Verification leans on `changed-files` (filesystem diff vs the
 baseline manifest) plus the worker's per-AC evidence map.
 
+### Recovery in none-mode
+
+**What reset-hard-unsupported means operationally.** The digest manifest
+records **content identity** (per-file `{ path, size, mtimeMs, sha256 }`), not
+**content** — there is nothing to restore *from*. `tasks scm reset-hard`
+therefore exits `4` (`UNSUPPORTED_VERB`) in none-mode rather than attempting a
+best-effort restore. There is **no automated undo path**: a worker that
+corrupts or deletes files mid-run cannot be rolled back by the SCM layer.
+
+**Mitigations:**
+
+- **Run automated loops against a copy of the tree.** Point `--repo` at a
+  disposable checkout (rsync/cp) rather than a tree you can't afford to lose;
+  discard and re-copy on failure instead of trying to undo in place.
+- **Initialize a throwaway git repo purely as an undo layer.** `git init` in
+  the tree and commit before each run gives you `git reset --hard` as a manual
+  escape hatch, while `.tasks/scm.json` still declares `backend: "none"` — the
+  none-mode manifest walk already excludes `.git/`, so the shadow repo doesn't
+  pollute the digest baseline or change detected-backend behavior.
+- **Restore from backup.** Standard filesystem/VCS-external backups (snapshot,
+  tarball, cloud sync) remain the fallback of last resort when no undo layer
+  was set up in advance.
+
+**What an orchestrator reports on a mid-flight failure.** Recovery is manual
+and the run says so explicitly — the orchestrator never claims silent or
+automatic recovery in none-mode. A failed run surfaces the `UNSUPPORTED_VERB`
+exit code (or the underlying failure) and leaves the tree as-is for the
+operator to inspect and recover by hand.
+
+**Tuning the `ignore` knob to reduce recovery scenarios.** Gitignore-style
+globs in `.tasks/scm.json`'s `ignore` array trim the baseline manifest beyond
+the built-in exclusions (default `node_modules/`, `dist/`, `.git/`, `*.log`).
+Excluding generated/build directories prevents baseline-churn false
+positives — spurious "changed files" from regenerated artifacts that were
+never touched by the task — which in turn reduces the number of situations
+that look like a failure requiring manual recovery in the first place.
+
 ## Verification & isolation notes
 
 - **Evidence envelope generalizes.** `commit_shas` is conceptually
