@@ -473,6 +473,19 @@ describe('PerforceBackend — §4.4 exclusion invariant', () => {
     expect(calls.some((c) => isVerb(c, 'reconcile'))).toBe(false);
   });
 
+  it('stage REJECTS a leading-dash path (CONFIG_INVALID naming the offending path) before opening anything', async () => {
+    const { exec, calls } = mockExec([OK_LOGIN]);
+    const backend = new PerforceBackend(exec);
+    await expect(backend.stage(ctxFor(makeRepo()), ['-rf'])).rejects.toMatchObject({
+      name: 'ScmError',
+      code: 'CONFIG_INVALID',
+      message: expect.stringContaining('-rf'),
+    });
+    // No reconcile ran — the whole call was rejected before any p4 invocation
+    // that could misparse the leading-dash path as a flag.
+    expect(calls.some((c) => isVerb(c, 'reconcile'))).toBe(false);
+  });
+
   it('changed-files silently filters excluded paths', async () => {
     const { exec } = mockExec([
       OK_LOGIN,
@@ -493,6 +506,102 @@ describe('PerforceBackend — §4.4 exclusion invariant', () => {
     expect(data.files[0]?.change).toBe('modified');
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC (task #1556): p4 does not support `--` as an end-of-options terminator
+// (it is parsed as a filespec and errors) — no argv array the backend builds
+// may ever contain a literal '--' token. Sweep every verb that can carry file
+// args (and the full stage→record→publish + conflict-retry paths, which
+// exercise reconcile/change/shelve/submit/sync/resolve/revert) and assert
+// none of the recorded calls contain '--'.
+// ---------------------------------------------------------------------------
+
+describe('PerforceBackend — §3.2 no `--` end-of-options terminator anywhere', () => {
+  it('stage never emits a `--` token in its p4 argv', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'change', '-o'), reply: () => ({ stdout: 'Change: new\n' }) },
+      { match: (a) => isVerb(a, 'change', '-i'), reply: () => ({ stdout: 'Change 123 created.' }) },
+      { match: (a) => isVerb(a, 'reconcile'), reply: () => ({}) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    await backend.stage(ctxFor(makeRepo()), ['src/f.txt', 'src/g.txt']);
+
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call).not.toContain('--');
+    }
+  });
+
+  it('the full stage→record→publish + submit-conflict-retry path never emits a `--` token', async () => {
+    const { exec, calls } = mockExec(
+      conflictThenSubmitRulesForSweep({
+        code: 0,
+        stdout: 'Change 300 renamed change 512 and submitted.',
+      }),
+    );
+    const backend = new PerforceBackend(exec);
+    const ctx = ctxFor(makeRepo());
+
+    await backend.stage(ctx, ['f.txt']);
+    await backend.record(ctx, 'm');
+    await backend.publish(ctx);
+
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call).not.toContain('--');
+    }
+  });
+
+  it('changedFiles, openReview, teardownIsolation, and resetHard never emit a `--` token', async () => {
+    const { exec, calls } = mockExec([
+      OK_LOGIN,
+      { match: (a) => isVerb(a, 'opened'), reply: () => ({ stdout: '' }) },
+      { match: (a) => isVerb(a, 'shelve'), reply: () => ({ stdout: 'Change 1 files shelved.' }) },
+      { match: (a) => isVerb(a, 'revert', '-a'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'client', '-d'), reply: () => ({ code: 0 }) },
+      { match: (a) => isVerb(a, 'sync'), reply: () => ({ code: 0 }) },
+    ]);
+    const backend = new PerforceBackend(exec);
+    const repo = makeRepo();
+
+    await backend.changedFiles(ctxFor(repo), 'p4:6');
+    await backend.teardownIsolation(ctxFor(repo), 'iso-1');
+    await backend.resetHard(ctxFor(repo), 'p4:88');
+
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call).not.toContain('--');
+    }
+  });
+});
+
+/** Same shape as {@link conflictThenSubmitRules} above, duplicated for the sweep test's own describe block. */
+function conflictThenSubmitRulesForSweep(secondSubmit: Partial<ExecScmResult>): Rule[] {
+  let submitCount = 0;
+  return [
+    OK_LOGIN,
+    { match: (a) => isVerb(a, 'change', '-o'), reply: () => ({ stdout: 'Change: new\n' }) },
+    { match: (a) => isVerb(a, 'change', '-i'), reply: () => ({ stdout: 'Change 300 created.' }) },
+    { match: (a) => isVerb(a, 'reconcile'), reply: () => ({}) },
+    { match: (a) => isVerb(a, 'sync'), reply: () => ({ code: 0 }) },
+    { match: (a) => isVerb(a, 'resolve', '-as'), reply: () => ({ code: 0 }) },
+    {
+      match: (a) => isVerb(a, 'submit'),
+      reply: () => {
+        submitCount += 1;
+        if (submitCount === 1) {
+          return {
+            code: 1,
+            stderr:
+              'Submit failed -- fix problems then use p4 submit -c 300.\nout of date files must be resolved or reverted.',
+          };
+        }
+        return secondSubmit;
+      },
+    },
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // reset-hard (§4 table) — p4 revert -a + p4 sync @<cl>

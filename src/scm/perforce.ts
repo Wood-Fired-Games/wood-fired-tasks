@@ -363,11 +363,25 @@ export class PerforceBackend implements ScmBackend {
     const toStage = enforceStageExclusions(files);
     if (toStage.length === 0) return { staged: [] };
 
+    // p4 has no `--` end-of-options terminator (it treats a bare `--` as a
+    // filespec and errors) and offers no positional escape for leading-dash
+    // filenames, so a path beginning with `-` must be rejected up front rather
+    // than passed through to argv, where it would be parsed as a flag.
+    const leadingDash = toStage.find((p) => p.startsWith('-'));
+    if (leadingDash !== undefined) {
+      throw new ScmError(
+        'CONFIG_INVALID',
+        `refusing to stage path "${leadingDash}": perforce has no way to distinguish a leading-dash filename from a flag (p4 does not support "--" as an end-of-options terminator)`,
+        'rename the file so it does not start with "-", or stage it via a different mechanism',
+      );
+    }
+
     const cl = await this.ensureContextChangelist(ctx);
     // `p4 reconcile` opens files for add/edit/delete as appropriate, into the
-    // context's numbered pending CL (never the default CL, §4.3). `--` guards
-    // hostile leading-dash filenames.
-    const res = await this.p4(ctx, ['reconcile', '-c', String(cl), '--', ...toStage]);
+    // context's numbered pending CL (never the default CL, §4.3). No `--`
+    // terminator is used — p4 does not support one (leading-dash paths are
+    // rejected above, before any p4 invocation runs).
+    const res = await this.p4(ctx, ['reconcile', '-c', String(cl), ...toStage]);
     if (res.code !== 0) throw genericFailure('reconcile (stage)', res);
     return { staged: toStage };
   }
