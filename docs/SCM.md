@@ -385,6 +385,10 @@ that look like a failure requiring manual recovery in the first place.
   **`change-ids`**: git SHAs (bare, unchanged wire shape), perforce CLs as
   `p4:<cl>`, or empty for none. `file_changes` comes from `scm changed-files`;
   `base_sha` from `scm baseline`. The wire field name is kept for backward compat.
+- **`change_ids`/`base_id` are the forward names.** `commit_shas` (and
+  `base_sha`) are retained as back-compat **aliases** of `change_ids`
+  (`base_id`) respectively — new consumers should treat `commit_shas` as an
+  alias, not the canonical name.
 - **Anti-fabrication hook is backend-aware**, dispatching on value shape: bare
   hex → git SHA existence check, `p4:<cl>` → changelist existence check, empty
   array → none-mode pass.
