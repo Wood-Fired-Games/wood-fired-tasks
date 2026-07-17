@@ -10,14 +10,20 @@
  *   `.git/` → `git`; `.p4config`/`$P4CONFIG`/`.p4` → `perforce`; else `none`.
  * - {@link resolveBackend}: the resolution precedence — a present
  *   `.tasks/scm.json` with a concrete `backend` OVERRIDES detection; a missing
- *   file or `backend: "auto"` triggers detection. (The project-charter tier of
- *   §3.2 is OUT OF SCOPE here and handled by another task.)
+ *   file or `backend: "auto"` triggers detection; failing that (no config,
+ *   no detectable marker), the project charter's `scm.backend` hint (§3.2
+ *   tier 2, hardening spec §2.2) is used as a default-only fallback
+ *   (`source: 'charter'`). When the charter names a backend a detected
+ *   marker CONTRADICTS, the marker wins and a conflict warning is recorded
+ *   on the result (task #1550).
  *
- * Normative source: `docs/superpowers/specs/2026-07-16-pluggable-scm-design.md` §3.2.
+ * Normative source: `docs/superpowers/specs/2026-07-16-pluggable-scm-design.md` §3.2,
+ * `docs/superpowers/specs/2026-07-17-pluggable-scm-hardening.md` §2.2.
  */
 
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import type { ScmCharter } from '../schemas/scm-charter.schema.js';
 import { SCM_CONFIG_RELPATH, loadScmConfig } from './config.js';
 import { ScmError, type ScmBackendName } from './types.js';
 
@@ -113,32 +119,86 @@ export function detectBackend(root: string): ScmBackendName {
   return 'none';
 }
 
-/** Where a resolved backend came from — the config file or auto-detection. */
-export type ScmBackendSource = 'file' | 'auto';
+/** Where a resolved backend came from — the config file, auto-detection, or the project charter's default-only hint. */
+export type ScmBackendSource = 'file' | 'auto' | 'charter';
 
 export interface ResolvedScmBackend {
   backend: ScmBackendName;
   source: ScmBackendSource;
+  /**
+   * Non-fatal resolution notices — currently just the charter/marker
+   * conflict case (§2.2). Omitted (not an empty array) when there is
+   * nothing to report. Plumbing this into the CLI's `warnings[]` envelope
+   * is a later task (#1552); callers that only need the resolved backend
+   * can ignore this field.
+   */
+  warnings?: string[];
 }
 
 /**
- * Resolve the effective backend for `root` (§3.2 precedence):
+ * Extract a *concrete* backend hint from a project charter's `scm` object
+ * (hardening spec §2.2): `undefined` (no `backend` key) and `'auto'` both
+ * mean "no hint" — a charter can't defer to itself.
+ */
+function charterBackendHint(charterScm: ScmCharter | null | undefined): ScmBackendName | undefined {
+  const backend = charterScm?.backend;
+  if (backend === undefined || backend === 'auto') {
+    return undefined;
+  }
+  return backend;
+}
+
+/**
+ * Resolve the effective backend for `root` (§3.2 precedence, extended by
+ * hardening spec §2.2):
  *
  * 1. A present `.tasks/scm.json` with a concrete `backend`
  *    (`git`/`perforce`/`none`) is authoritative and OVERRIDES detection
  *    (`source: 'file'`).
  * 2. A missing config, or a config with `backend: "auto"`, triggers
- *    {@link detectBackend} (`source: 'auto'`).
+ *    {@link detectBackend}. A detected marker (`git`/`perforce`) wins
+ *    (`source: 'auto'`) — if a concrete `charterScm.backend` hint is also
+ *    supplied and CONTRADICTS the marker, the marker still wins but a
+ *    conflict warning is recorded on the result.
+ * 3. When detection finds no marker (`detectBackend` returns `'none'`) and a
+ *    concrete `charterScm.backend` hint is supplied, that hint is used as a
+ *    default-only fallback (`source: 'charter'`).
+ * 4. Otherwise, `'none'`/`'auto'` (the pre-charter baseline).
  *
  * An invalid config surfaces as the `ScmError('CONFIG_INVALID')` thrown by
  * {@link loadScmConfig} — it never silently falls through to detection.
  *
- * @throws {ScmError} `CONFIG_INVALID` (propagated from {@link loadScmConfig}).
+ * @param charterScm the project charter's `scm` default (already fetched by
+ *   the caller — this function makes no DB round-trip), or `undefined`/`null`
+ *   when the caller has none to offer.
+ * @throws {ScmError} `CONFIG_INVALID` (propagated from {@link loadScmConfig}
+ *   or {@link detectBackend}'s ambiguous dual-marker refusal).
  */
-export function resolveBackend(root: string): ResolvedScmBackend {
+export function resolveBackend(root: string, charterScm?: ScmCharter | null): ResolvedScmBackend {
   const config = loadScmConfig(root);
   if (config !== null && config.backend !== 'auto') {
     return { backend: config.backend, source: 'file' };
   }
-  return { backend: detectBackend(root), source: 'auto' };
+
+  const detected = detectBackend(root);
+  const charterBackend = charterBackendHint(charterScm);
+
+  if (detected !== 'none') {
+    if (charterBackend !== undefined && charterBackend !== detected) {
+      return {
+        backend: detected,
+        source: 'auto',
+        warnings: [
+          `Project charter scm.backend hint ("${charterBackend}") conflicts with the on-disk marker ("${detected}"); the on-disk marker wins.`,
+        ],
+      };
+    }
+    return { backend: detected, source: 'auto' };
+  }
+
+  if (charterBackend !== undefined) {
+    return { backend: charterBackend, source: 'charter' };
+  }
+
+  return { backend: 'none', source: 'auto' };
 }

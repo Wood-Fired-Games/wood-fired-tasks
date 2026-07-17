@@ -205,3 +205,63 @@ describe('scm CLI dispatcher — error mapping', () => {
     expect(error.code).toBe('CONFIG_INVALID');
   });
 });
+
+describe('scm CLI dispatcher — --charter-scm (task #1550)', () => {
+  it('a valid --charter-scm hint resolves the charter backend for a no-marker repo', async () => {
+    const repo = makeNoneRepo();
+    const { envelope, exitCode } = await runScm(
+      'detect',
+      '--repo',
+      repo,
+      '--charter-scm',
+      JSON.stringify({ backend: 'perforce' }),
+    );
+    expect(exitCode).toBe(0);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.backend).toBe('perforce');
+  });
+
+  it('a --charter-scm hint is ignored when an on-disk marker is present (marker wins)', async () => {
+    const repo = makeGitRepo();
+    const { envelope, exitCode } = await runScm(
+      'detect',
+      '--repo',
+      repo,
+      '--charter-scm',
+      JSON.stringify({ backend: 'perforce' }),
+    );
+    expect(exitCode).toBe(0);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.backend).toBe('git');
+  });
+
+  it('malformed --charter-scm JSON → CONFIG_INVALID failure envelope, exit 2', async () => {
+    const repo = makeNoneRepo();
+    const { envelope, exitCode } = await runScm(
+      'detect',
+      '--repo',
+      repo,
+      '--charter-scm',
+      '{ not json',
+    );
+    expect(exitCode).toBe(2);
+    expect(envelope.ok).toBe(false);
+    const error = envelope.error as Record<string, unknown>;
+    expect(error.code).toBe('CONFIG_INVALID');
+  });
+
+  it('a --charter-scm value failing schema validation → CONFIG_INVALID failure envelope, exit 2', async () => {
+    const repo = makeNoneRepo();
+    const { envelope, exitCode } = await runScm(
+      'detect',
+      '--repo',
+      repo,
+      '--charter-scm',
+      JSON.stringify({ backend: 'svn' }),
+    );
+    expect(exitCode).toBe(2);
+    expect(envelope.ok).toBe(false);
+    const error = envelope.error as Record<string, unknown>;
+    expect(error.code).toBe('CONFIG_INVALID');
+  });
+});

@@ -136,6 +136,55 @@ describe('scm config loader + backend auto-detect (task #1530)', () => {
     });
   });
 
+  describe('resolveBackend charter tier (task #1550, hardening spec §2.2)', () => {
+    it('a charter-only resolution (no config, no marker) returns source "charter"', () => {
+      expect(resolveBackend(root, { backend: 'perforce' })).toEqual({
+        backend: 'perforce',
+        source: 'charter',
+      });
+    });
+
+    it('a charter-vs-marker conflict resolves to the marker backend and records a conflict warning', () => {
+      writeFileSync(join(root, '.git'), '', 'utf8');
+      const resolved = resolveBackend(root, { backend: 'perforce' });
+      expect(resolved.backend).toBe('git');
+      expect(resolved.source).toBe('auto');
+      expect(resolved.warnings).toBeDefined();
+      expect(resolved.warnings).toHaveLength(1);
+      expect(resolved.warnings?.[0]).toMatch(/charter/i);
+      expect(resolved.warnings?.[0]).toMatch(/marker/i);
+    });
+
+    it('a charter hint matching the detected marker produces no conflict warning', () => {
+      writeFileSync(join(root, '.git'), '', 'utf8');
+      expect(resolveBackend(root, { backend: 'git' })).toEqual({
+        backend: 'git',
+        source: 'auto',
+      });
+    });
+
+    it('a concrete .tasks/scm.json still wins over a charter hint', () => {
+      writeScmConfig({ version: 1, backend: 'none' });
+      expect(resolveBackend(root, { backend: 'perforce' })).toEqual({
+        backend: 'none',
+        source: 'file',
+      });
+    });
+
+    it('a charter backend of "auto" is treated as no hint', () => {
+      expect(resolveBackend(root, { backend: 'auto' })).toEqual({
+        backend: 'none',
+        source: 'auto',
+      });
+    });
+
+    it('no charter hint + no marker falls through to the pre-charter none/auto baseline', () => {
+      expect(resolveBackend(root)).toEqual({ backend: 'none', source: 'auto' });
+      expect(resolveBackend(root, null)).toEqual({ backend: 'none', source: 'auto' });
+      expect(resolveBackend(root, {})).toEqual({ backend: 'none', source: 'auto' });
+    });
+  });
+
   describe('CLI dispatch — dual-marker refusal (task #1549)', () => {
     /**
      * Drives the real `scmCommand` in-process (same pattern as

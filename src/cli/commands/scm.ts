@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { Command } from 'commander';
+import { ScmCharterSchema, type ScmCharter } from '../../schemas/scm-charter.schema.js';
 import { detectBackend, findRepoRoot, resolveBackend } from '../../scm/detect.js';
 import { gitBackend } from '../../scm/git.js';
 import { noneBackend } from '../../scm/none.js';
@@ -87,6 +88,44 @@ function isKnownVerb(verb: string): boolean {
 }
 
 /**
+ * Parse + validate the `--charter-scm <json>` option (hardening spec §2.2,
+ * task #1550): the orchestrating skill passes the project charter's `scm`
+ * object it already fetched via `get_project` — this CLI never round-trips
+ * to the tasks DB itself. Malformed JSON or a schema violation is a usage
+ * error (`CONFIG_INVALID`, §4.1 exit 2), matching `loadScmConfig`'s handling
+ * of a malformed `.tasks/scm.json`.
+ *
+ * @returns `undefined` when `--charter-scm` was not passed.
+ * @throws {ScmError} `CONFIG_INVALID` on invalid JSON or a schema violation.
+ */
+function parseCharterScmOption(raw: string | undefined): ScmCharter | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ScmError(
+      'CONFIG_INVALID',
+      `--charter-scm is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      'Pass the charter\'s scm object as JSON, e.g. --charter-scm \'{"backend":"perforce"}\'.',
+    );
+  }
+
+  const result = ScmCharterSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new ScmError(
+      'CONFIG_INVALID',
+      `--charter-scm failed schema validation: ${result.error.message}`,
+      'See spec §3.2/§6.3 for the allowed shape: { backend?, behaviors? }.',
+    );
+  }
+  return result.data;
+}
+
+/**
  * Dispatch one verb to `backend`, forwarding the CLI positional args. An
  * unrecognized verb is a usage error (§4.1 exit 2) — NOT `UNSUPPORTED_VERB`,
  * which is reserved for a known verb a backend cannot honor (exit 4).
@@ -147,67 +186,85 @@ export const scmCommand = new Command('scm')
   )
   .option('--repo <path>', 'Repo root (default: discovered from cwd)')
   .option('--context <key>', 'Scope key namespacing per-run state', 'default')
+  .option(
+    '--charter-scm <json>',
+    'Project charter scm hint (JSON), the default-only precedence-2 fallback (spec §3.2/§2.2)',
+  )
   .allowUnknownOption(false)
-  .action(async (verb: string, args: string[], opts: { repo?: string; context: string }) => {
-    const repo = opts.repo !== undefined ? resolve(opts.repo) : findRepoRoot(process.cwd());
-    const context = opts.context;
-    const ctx: ScmVerbContext = { repo, context };
+  .action(
+    async (
+      verb: string,
+      args: string[],
+      opts: { repo?: string; context: string; charterScm?: string },
+    ) => {
+      const repo = opts.repo !== undefined ? resolve(opts.repo) : findRepoRoot(process.cwd());
+      const context = opts.context;
+      const ctx: ScmVerbContext = { repo, context };
 
-    // Best-effort backend name for the envelope even if config resolution
-    // throws (CONFIG_INVALID) before a concrete backend is known. detectBackend
-    // itself can now throw CONFIG_INVALID (ambiguous dual .git+.p4config
-    // markers, task #1549) — swallow that here so it doesn't escape the
-    // try/catch below, which is what actually maps the error to its §4.1 exit
-    // code; 'none' is an inert placeholder overwritten by the real envelope
-    // once the error is caught.
-    let backendName: ScmBackendName = 'none';
-    try {
-      backendName = detectBackend(repo);
-    } catch {
-      // Real handling happens in the try/catch below via resolveBackend().
-    }
-
-    try {
-      if (!isKnownVerb(verb)) {
-        throw new ScmError(
-          'CONFIG_INVALID',
-          `unknown verb: ${verb}`,
-          `Valid verbs: ${SCM_VERBS.join(', ')}`,
-        );
+      // Best-effort backend name for the envelope even if config resolution
+      // throws (CONFIG_INVALID) before a concrete backend is known. detectBackend
+      // itself can now throw CONFIG_INVALID (ambiguous dual .git+.p4config
+      // markers, task #1549) — swallow that here so it doesn't escape the
+      // try/catch below, which is what actually maps the error to its §4.1 exit
+      // code; 'none' is an inert placeholder overwritten by the real envelope
+      // once the error is caught.
+      let backendName: ScmBackendName = 'none';
+      try {
+        backendName = detectBackend(repo);
+      } catch {
+        // Real handling happens in the try/catch below via resolveBackend().
       }
 
-      // resolveBackend loads + validates .tasks/scm.json (config overrides
-      // auto-detect, §3.2) and throws CONFIG_INVALID (exit 2) on a malformed
-      // file rather than silently falling through to detection (§3.1).
-      const resolved = resolveBackend(repo);
-      backendName = resolved.backend;
-      const backend = backendFor(resolved.backend);
+      try {
+        if (!isKnownVerb(verb)) {
+          throw new ScmError(
+            'CONFIG_INVALID',
+            `unknown verb: ${verb}`,
+            `Valid verbs: ${SCM_VERBS.join(', ')}`,
+          );
+        }
 
-      const data = await dispatchVerb(backend, verb, ctx, args);
-      printEnvelope({
-        ok: true,
-        verb,
-        backend: backend.name,
-        context,
-        data,
-        warnings: [],
-      });
-    } catch (err) {
-      const scmErr =
-        err instanceof ScmError
-          ? err
-          : new ScmError('BACKEND_UNAVAILABLE', err instanceof Error ? err.message : String(err));
+        // --charter-scm (task #1550): parsed/validated here so a malformed
+        // value surfaces through the same catch below as any other
+        // CONFIG_INVALID (§4.1 exit 2).
+        const charterScm = parseCharterScmOption(opts.charterScm);
 
-      const error: { code: ScmErrorCode; message: string; hint?: string } = {
-        code: scmErr.code,
-        message: scmErr.message,
-      };
-      if (scmErr.hint !== undefined) {
-        error.hint = scmErr.hint;
+        // resolveBackend loads + validates .tasks/scm.json (config overrides
+        // auto-detect, §3.2), falls through to marker auto-detect, and — only
+        // when neither yields a concrete backend — falls through to the
+        // charter's scm.backend hint (§2.2). It throws CONFIG_INVALID
+        // (exit 2) on a malformed file rather than silently falling through
+        // to detection (§3.1).
+        const resolved = resolveBackend(repo, charterScm);
+        backendName = resolved.backend;
+        const backend = backendFor(resolved.backend);
+
+        const data = await dispatchVerb(backend, verb, ctx, args);
+        printEnvelope({
+          ok: true,
+          verb,
+          backend: backend.name,
+          context,
+          data,
+          warnings: [],
+        });
+      } catch (err) {
+        const scmErr =
+          err instanceof ScmError
+            ? err
+            : new ScmError('BACKEND_UNAVAILABLE', err instanceof Error ? err.message : String(err));
+
+        const error: { code: ScmErrorCode; message: string; hint?: string } = {
+          code: scmErr.code,
+          message: scmErr.message,
+        };
+        if (scmErr.hint !== undefined) {
+          error.hint = scmErr.hint;
+        }
+
+        printEnvelope({ ok: false, verb, backend: backendName, context, error });
+        process.stderr.write(`scm ${verb}: ${scmErr.message}\n`);
+        process.exitCode = exitCodeForError(scmErr.code);
       }
-
-      printEnvelope({ ok: false, verb, backend: backendName, context, error });
-      process.stderr.write(`scm ${verb}: ${scmErr.message}\n`);
-      process.exitCode = exitCodeForError(scmErr.code);
-    }
-  });
+    },
+  );
