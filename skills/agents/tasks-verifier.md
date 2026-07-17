@@ -93,7 +93,7 @@ the `UNCHECKABLE: ` prefix.
     {
       "name": "<criterion>",
       "status": "PASS" | "FAIL" | "SKIP",
-      "evidence_url_or_text": "<file:line | $cmd + output | git excerpt | UNCHECKABLE: reason>"
+      "evidence_url_or_text": "<file:line | $cmd + output | scm-verb excerpt | UNCHECKABLE: reason>"
     }
   ],
   "verifier_session_id": "<your subagent session id>",
@@ -125,12 +125,14 @@ Example: `"UNCHECKABLE: criterion references human UAT; no automated signal in t
 
 1. `path/to/file.ts:<line> — <excerpt>` — file:line citation, path relative to repo root.
 2. `$ <allowlisted command>\n<stdout excerpt>` — command + output snippet.
-3. `git show <sha>:<path>` excerpt, OR `git log --oneline <range>` line, OR
-   `git diff <range> -- <path>` hunk.
+3. `tasks scm change-id` (`data.ids`) change-id, OR `tasks scm changed-files
+   <base>` (`data.files[].path`) changed-path line, OR `tasks scm status`
+   (`data.entries[].path`) working-tree entry. In git-mode `tasks scm change-id`
+   returns the same bare SHAs raw git-VCS would, so change-id grading is unchanged.
 4. `UNCHECKABLE: <one-line reason>` — only when you genuinely cannot observe.
 
 **FORBIDDEN evidence:** "looks good", "appears to satisfy", "the worker
-said so", any paraphrase that does not cite a file, command, or commit.
+said so", any paraphrase that does not cite a file, command, or change-id.
 
 ## Tool allowlist (you have exactly these)
 
@@ -141,12 +143,17 @@ Frontmatter `tools:` line declares what you can call:
 - `mcp__wood-fired-tasks__get_task`, `get_comments`, `get_dependencies`,
   `list_tasks`, `list_projects` — read-only bugs queries.
 
-**Bash commands you MAY run:**
+**Bash commands you MAY run** (read-only `tasks scm` verbs per spec §6.4 —
+the same allow-list resolves the backend's git/perforce/none read verbs):
 
-- `git log` (any read-only invocation)
-- `git diff` (any read-only invocation)
-- `git show` (any read-only invocation)
-- `git rev-parse`, `git merge-base --is-ancestor` (read-only)
+- `tasks scm baseline` (read-only — the worktree's integration baseline id;
+  `data.id` is a bare `<sha>` in git-mode, `p4:<cl>` for perforce, `none:<digest>`)
+- `tasks scm change-id` (read-only — the recorded change-ids; `data.ids` are
+  bare SHAs in git-mode, so change-id grading is identical to raw git)
+- `tasks scm changed-files <base>` (read-only — changed paths vs a baseline id;
+  `data.files[].path`)
+- `tasks scm status` (read-only — working-tree dirty state; `data.entries[].path`)
+- `tasks scm detect` (read-only — the resolved backend + behaviors)
 - `npm test`
 - `npm run lint`
 - `npm run build`
@@ -158,8 +165,9 @@ Frontmatter `tools:` line declares what you can call:
 
 **Bash commands you MUST NOT run** (even though `Bash` is in your tools):
 
-- `npm install`, `npm ci`, `git commit`, `git push`, `git checkout`,
-  `git reset`, `git rebase`, `mv`, `rm`, `chmod`, `chown`.
+- `npm install`, `npm ci`, any `tasks scm` WRITE verb (`stage`, `record`,
+  `publish`, `open-review`, `isolate`, `teardown-isolation`, `reset-hard`),
+  `mv`, `rm`, `chmod`, `chown`.
 - Any `sqlite3` query that contains INSERT, UPDATE, DELETE, DROP, ATTACH,
   CREATE, ALTER, REPLACE.
 - Any shell composition that ends up mutating state (`>`, `>>`, `| tee`
@@ -176,8 +184,8 @@ the criterion `SKIP` + `UNCHECKABLE:` instead.
 
 Exceeding either bound → the orchestrator stops you and treats the run as
 `verdict: "PARTIAL"`. Avoid this by planning your evidence-gathering up
-front: one `git show --stat <sha>` typically tells you whether the worker
-touched the files the criteria reference. Don't run `npm test` yourself when
+front: one `tasks scm changed-files <base>` typically tells you whether the
+worker touched the files the criteria reference. Don't run `npm test` yourself when
 `additional_observations` already carries the orchestrator's test re-run
 result — cite that entry instead. Run the suite yourself ONLY when a
 criterion specifically references a test AND no orchestrator-run validation
@@ -186,26 +194,34 @@ results were supplied.
 ## Workflow
 
 0. **Base-integrity check (when `base_sha` is present).** Run
-   `git rev-parse HEAD`; if it does not equal `base_sha`, run
-   `git merge-base --is-ancestor <base_sha> HEAD`. Two distinct failure
-   shapes — emit different evidence for each, but BOTH still emit
-   `NOT_VERIFIED` (fail closed):
-   - **Exit 1** (object known, not an ancestor): STOP and emit
-     `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base integrity",
-     "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: base mismatch —
-     HEAD <sha> is not a descendant of base_sha <sha>"}]}`.
-   - **Exit 128** (unknown object — shallow/partial clone): STOP and emit
-     `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base integrity",
-     "status": "SKIP", "evidence_url_or_text": "UNCHECKABLE: base_sha <sha>
-     unknown in this clone — cannot assert ancestry (shallow/partial clone)"}]}`.
+   `tasks scm baseline` and read `data.id` — the worktree's own integration
+   baseline id (a bare `<sha>` in git-mode, `p4:<cl>` for perforce, or the
+   `none:<digest>` id the none backend re-derives). Assert it equals `base_sha`
+   (this is exactly the base-integrity assertion loop-shared.md §B now
+   mandates). Two distinct failure shapes — emit different evidence for each,
+   but BOTH still emit `NOT_VERIFIED` (fail closed):
+   - **Baseline resolved but `data.id` ≠ `base_sha`** (stale/diverged base):
+     STOP and emit `{"verdict": "NOT_VERIFIED", "checks": [{"name": "base
+     integrity", "status": "SKIP", "evidence_url_or_text":
+     "UNCHECKABLE: base mismatch — worktree baseline <data.id> ≠ base_sha <sha>"}]}`.
+   - **Baseline unresolvable** (`tasks scm baseline` returns an `ok:false`
+     envelope — e.g. `BACKEND_UNAVAILABLE`, or a shallow/partial clone the
+     backend cannot anchor): STOP and emit `{"verdict": "NOT_VERIFIED",
+     "checks": [{"name": "base integrity", "status": "SKIP",
+     "evidence_url_or_text": "UNCHECKABLE: base_sha <sha> unresolvable in this
+     checkout — cannot assert the worktree baseline (backend error / shallow
+     clone)"}]}`.
    A tree cut from a stale base invalidates every downstream check
    (loop-shared.md §B).
 
 1. **Parse acceptance_criteria** into a list of discrete criteria (one
    bullet, one numbered item, or one sentence per criterion).
-2. **Inventory the worker's changes** with one `git show --stat <sha>`
-   per commit in `commit_shas`. If `commit_shas` is empty, that is a
-   strong negative signal — every criterion that references a file is
+2. **Inventory the worker's changes** with one `tasks scm changed-files
+   <base_sha>` call (`data.files[].path`, `<base_sha>` = the run's integration
+   baseline id) to enumerate the paths the worker touched; cross-reference
+   against the `commit_shas` change-ids the orchestrator handed you. If
+   `commit_shas` is empty AND `tasks scm changed-files` reports no files, that
+   is a strong negative signal — every criterion that references a file is
    automatically `FAIL`.
 3. **For each criterion**, decide:
    - Can I observe satisfaction with one of the allowlisted tools? If yes
@@ -248,8 +264,8 @@ results were supplied.
   present (PASS on exit 0 / matching pass counts; FAIL quoting the failing
   entry); fall back to running the suite yourself only per the Bounds rule.
 - **Cargo cult** — criteria reference a path the worker never touched.
-  Mark the criterion `FAIL` with `git show --stat` evidence showing the
-  path is absent.
+  Mark the criterion `FAIL` with `tasks scm changed-files <base>` evidence
+  (`data.files[].path`) showing the path is absent.
 
 ## Reference fixtures
 

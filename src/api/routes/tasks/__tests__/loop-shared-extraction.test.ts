@@ -235,13 +235,17 @@ describe('loop-shared.md extraction gate (#346)', () => {
     expect(text).toMatch(/"unplanned fixes assessment"/);
   });
 
-  it('tasks-verifier.md step 0 distinguishes exit 1 from exit 128 (2026-07 quality plan T13)', () => {
-    // AC4: exit 1 means "not a descendant"; exit 128 means "unknown object /
-    // shallow clone". Both emit NOT_VERIFIED but with different evidence text.
+  it('tasks-verifier.md step 0 distinguishes baseline mismatch from unresolvable baseline (2026-07 quality plan T13; SCM migration #1538)', () => {
+    // AC4 (post-SCM-migration): step 0 resolves the worktree baseline via
+    // `tasks scm baseline` (data.id), not raw git. Two distinct NOT_VERIFIED
+    // failure shapes remain — (a) baseline resolved but its id diverges from
+    // base_sha, (b) baseline unresolvable (backend error / shallow clone) —
+    // each emitting different evidence text.
     const text = readFileSync(TASKS_VERIFIER_PATH, 'utf8');
-    expect(text).toMatch(/Exit 1.*not an ancestor/s);
-    expect(text).toMatch(/Exit 128.*shallow/s);
-    expect(text).toMatch(/is not a descendant of base_sha/);
-    expect(text).toMatch(/unknown in this clone — cannot assert ancestry/);
+    expect(text).toMatch(/tasks scm baseline/);
+    expect(text).toMatch(/Baseline resolved but/);
+    expect(text).toMatch(/Baseline unresolvable/);
+    expect(text).toMatch(/worktree baseline <data\.id> ≠ base_sha/);
+    expect(text).toMatch(/cannot assert the worktree baseline/);
   });
 });
