@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-18T13:56:06.196Z",
+    "generated_at": "2026-07-18T14:25:35.971Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -35,8 +35,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 8000,
-      "actual_lines": 280,
-      "sha256": "c099d122e892f7f9777a021a1b4b6cd1f88e4681bf84cd3545c3c2e386f53bfb",
+      "actual_lines": 285,
+      "sha256": "5e077a76e7c0a2c8f966591547849fbd330fec05cf2d1cc3e87b17f49ed4ac36",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -106,8 +106,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 6000,
-      "actual_lines": 250,
-      "sha256": "b5bd943e2672edf75cdbd86ce091525d7a67ca591c154afc09378056ea1100be",
+      "actual_lines": 271,
+      "sha256": "fcb89cc3acd17f4d3a7ce4f6d2d3b2f155a7f3665fe628a90bcdc02f24b02974",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 31600,
-      "actual_lines": 1580,
-      "sha256": "0b12e23822397179c90c5ed4caa37a65b96d051278c1b0e0a1f37feb03318e9a"
+      "actual_lines": 1570,
+      "sha256": "be62fe490425ea8df515e07bc22a404f3069e6e944b0505983b117a37fe95fb5"
     },
     {
       "path": "docs/SLACK.md",
