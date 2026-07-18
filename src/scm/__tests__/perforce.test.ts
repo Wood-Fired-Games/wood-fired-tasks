@@ -278,12 +278,13 @@ describe('PerforceBackend — §4.2 collapse + renumber capture', () => {
 
     // Only ONE numbered changelist was ever created (the pending CL, submitted
     // once) — the creating `change -o` form-read carries the Description
-    // field and no Change field (fields live on `-o` now, not `-i`, task #1555).
+    // field and no positional CL argument (that's what distinguishes a
+    // brand-new-CL `-o` from an existing-CL `-o <cl>`, task #1594).
     const created = calls.filter(
       (c) =>
         isVerb(c, 'change', '-o') &&
         c.some((t) => t.startsWith('Description=')) &&
-        !c.some((t) => t.startsWith('Change=')),
+        c[c.length - 1] === '-o',
     );
     expect(created).toHaveLength(1);
 
@@ -385,13 +386,13 @@ describe('PerforceBackend — non-interactive changelist forms (task #1555)', ()
     expect(formWrite?.opts.stdinData).toBe(form);
   });
 
-  it('setChangelistDescription issues `p4 change -o` (scoped to the CL) then `p4 change -i` with the captured form on stdin', async () => {
+  it('setChangelistDescription issues `p4 --field Description=… change -o <cl>` (positional CL) then `p4 change -i` with the captured form on stdin', async () => {
     const createForm = 'Change:\tnew\n\nDescription:\n\twft-scm context task-1541\n';
     const updateForm = 'Change:\t123\n\nDescription:\n\ttask #1541: work\n';
     const { exec, calls, optsCalls } = mockExec([
       OK_LOGIN,
       {
-        match: (a) => isVerb(a, 'change', '-o') && a.includes('Change=123'),
+        match: (a) => isVerb(a, 'change', '-o') && a[a.length - 1] === '123',
         reply: () => ({ stdout: updateForm }),
       },
       { match: (a) => isVerb(a, 'change', '-o'), reply: () => ({ stdout: createForm }) },
@@ -418,14 +419,18 @@ describe('PerforceBackend — non-interactive changelist forms (task #1555)', ()
     expect(changeOCalls).toHaveLength(2);
     expect(changeICalls).toHaveLength(2);
 
-    const descriptionUpdate = changeOCalls.find((c) => c.args.includes('Change=123'));
+    // The description-update `-o` call selects the EXISTING changelist via a
+    // POSITIONAL `123` argument — never a bogus `Change=123` `--field` (task
+    // #1594: `--field` alone doesn't select which CL `-o` generates a form
+    // for, so without the positional arg `-o` emits a brand-new `Status:
+    // new` template that `change -i` then rejects).
+    const descriptionUpdate = changeOCalls.find((c) => c.args[c.args.length - 1] === '123');
     expect(descriptionUpdate?.args).toEqual([
-      '--field',
-      'Change=123',
       '--field',
       'Description=task #1541: work',
       'change',
       '-o',
+      '123',
     ]);
 
     // The `-i` call following the description-update `-o` carries NO `--field`

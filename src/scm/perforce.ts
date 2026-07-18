@@ -356,13 +356,29 @@ export class PerforceBackend implements ScmBackend {
    * its stdout — the pre-filled changespec form with those fields already
    * rewritten; (2) pipe that captured form verbatim into `p4 change -i` via
    * {@link ExecScmOptions.stdinData}. Neither call is ever interactive.
+   *
+   * Updating an EXISTING changelist (task #1594, found by the real-p4d suite
+   * in task #1563): `--field` only rewrites the form `-o` would generate — it
+   * does not select which changelist `-o` generates a form FOR. Without a
+   * positional CL argument, `-o` always emits a brand-new blank template
+   * (`Status: new`), so `--field Change=<cl> … change -o` produces a form
+   * that CLAIMS `Change: <cl>` but carries `Status: new`, which `change -i`
+   * rejects ("Invalid status 'new'"). The fix is to pass the existing CL as
+   * a POSITIONAL argument to `change -o` (`change -o <cl>`) so `-o` actually
+   * selects and emits that changelist's form; `--field` then only needs to
+   * carry the fields being rewritten (e.g. `Description=…`), never `Change=`.
    */
   private async writeChangelistForm(
     ctx: ScmVerbContext,
     fields: readonly string[],
+    existingCl?: number,
   ): Promise<ExecScmResult> {
     const fieldArgs = fields.flatMap((f) => ['--field', f]);
-    const form = await this.p4(ctx, [...fieldArgs, 'change', '-o']);
+    const outArgs =
+      existingCl === undefined
+        ? [...fieldArgs, 'change', '-o']
+        : [...fieldArgs, 'change', '-o', String(existingCl)];
+    const form = await this.p4(ctx, outArgs);
     if (form.code !== 0) throw genericFailure('change -o', form);
     return this.p4(ctx, ['change', '-i'], { stdinData: form.stdout });
   }
@@ -400,14 +416,17 @@ export class PerforceBackend implements ScmBackend {
   /**
    * Set an existing numbered CL's description via the same {@link
    * writeChangelistForm} `change -o` | `change -i` path (task #1555), scoping
-   * the form to the target CL with `Change=<cl>` alongside `Description=…`.
+   * the form to the target CL by passing it as a POSITIONAL argument to
+   * `change -o` (task #1594) — NOT via a `Change=<cl>` `--field`, which does
+   * not select the changelist `-o` generates a form for (see the doc comment
+   * on {@link writeChangelistForm}).
    */
   private async setChangelistDescription(
     ctx: ScmVerbContext,
     cl: number,
     message: string,
   ): Promise<void> {
-    const res = await this.writeChangelistForm(ctx, [`Change=${cl}`, `Description=${message}`]);
+    const res = await this.writeChangelistForm(ctx, [`Description=${message}`], cl);
     if (res.code !== 0) throw genericFailure('update changelist description', res);
   }
 
