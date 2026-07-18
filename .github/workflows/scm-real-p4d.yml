@@ -1,0 +1,64 @@
+name: SCM real-p4d suite (nightly)
+
+# task #1596: the real-p4d docker suite
+# (src/scm/__tests__/perforce-real-p4d.test.ts, gated by WFG_TESTS_REAL_P4=1)
+# is the perforce graduation gate but ran in ZERO CI workflows — it went
+# green once, locally; every other CI run sees it as skipped (see the file's
+# own header comment for the skip semantics). This workflow runs it for
+# real, nightly and on demand.
+#
+# Deliberately schedule + workflow_dispatch ONLY — no pull_request/push
+# trigger. It boots a real dockerized Helix Core server (image pull +
+# container boot takes real wall time) and is NOT part of the 12 required
+# PR checks; it must never become one.
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-p4d:
+    runs-on: ubuntu-latest
+    # Image pull (helix-p4d) + container boot + full verb cycle; generous
+    # headroom over the ~13s measured locally (post-pull) to absorb a cold
+    # Docker Hub pull on a fresh runner.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+
+      # Install the p4 CLI (helix-command-line) as a single pinned, sha256-
+      # verified static binary from Perforce's official CDN — the same
+      # "direct download, checksum-pinned" pattern already used for gitleaks
+      # in secret-scan.yml. Preferred over the Perforce apt repo: no GPG key
+      # management / apt-get update against a third-party index (a second
+      # network round-trip and a common source of CI flakiness), just one
+      # file. The adapter under test spawns `p4` directly off PATH, so
+      # /usr/local/bin (already on PATH on ubuntu-latest) is sufficient.
+      - name: Install p4 CLI (helix-command-line, pinned + sha256-verified)
+        env:
+          P4_VERSION: 'r24.2'
+          P4_SHA256: '5132fc1fc81c1911700924f18375558eec30d0aa7c82e80f8397da0b9f352a86'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/p4 \
+            "https://cdist2.perforce.com/perforce/${P4_VERSION}/bin.linux26x86_64/p4"
+          echo "${P4_SHA256}  /tmp/p4" | sha256sum -c -
+          sudo install -m 0755 /tmp/p4 /usr/local/bin/p4
+          p4 -V
+
+      # ubuntu-latest runners ship Docker; the suite pulls the helix-p4d
+      # image itself (src/scm/__tests__/helpers/p4d-docker.ts) and fails
+      # loudly (not skips) once WFG_TESTS_REAL_P4 is set and both docker and
+      # p4 are on PATH — see the test file's header comment.
+      - name: Run real-p4d suite
+        env:
+          WFG_TESTS_REAL_P4: '1'
+        run: npx vitest run src/scm/__tests__/perforce-real-p4d.test.ts
