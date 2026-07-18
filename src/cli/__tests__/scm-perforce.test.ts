@@ -148,11 +148,15 @@ describe('scm perforce envelope — §4.2 collapse (single changelist)', () => {
     expect(calls.filter((c) => isVerb(c, 'submit'))).toHaveLength(1);
     // Non-interactive form fields live on the `change -o` capture (task #1555)
     // — `change -i` just reads that captured form from stdin, no `--field`.
+    // A CREATE form (brand-new CL) carries no positional CL argument after
+    // `-o`; an UPDATE form (existing CL, task #1594) has one, so trailing
+    // `-o` — not `!Change=` — is what distinguishes the two now that neither
+    // carries a `Change=` field.
     const createdCls = calls.filter(
       (c) =>
         isVerb(c, 'change', '-o') &&
         c.some((t) => t.startsWith('Description=')) &&
-        !c.some((t) => t.startsWith('Change=')),
+        c[c.length - 1] === '-o',
     );
     expect(createdCls).toHaveLength(1);
 
@@ -392,12 +396,13 @@ describe('scm perforce envelope — concurrent contexts (§4.3 numbered CLs)', (
 
     // Two distinct numbered CLs were created — one per context, not the default
     // CL. Non-interactive form fields live on the `change -o` capture (task
-    // #1555) — `change -i` just reads that captured form from stdin.
+    // #1555) — `change -i` just reads that captured form from stdin. A CREATE
+    // form carries no positional CL argument after `-o` (task #1594).
     const createdCls = calls.filter(
       (c) =>
         isVerb(c, 'change', '-o') &&
         c.some((t) => t.startsWith('Description=')) &&
-        !c.some((t) => t.startsWith('Change=')),
+        c[c.length - 1] === '-o',
     );
     expect(createdCls).toHaveLength(2);
   });
