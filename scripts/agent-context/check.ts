@@ -17,6 +17,10 @@
  *      does not contain a markdown link to `AGENTS.md`. Adapters MUST
  *      point at the canonical entry — that is the only thing that makes
  *      them adapters rather than rogue vendor-specific docs.
+ *   7. Any "present" file contains forbidden content per contract section
+ *      4.4: secret/credential-shaped strings, local absolute filesystem
+ *      paths (`/home/...`, `/Users/...`, `C:\...`), or personal
+ *      (non-project) email addresses. See `scanTextForForbiddenContent`.
  *
  * This script reads only files inside the repository (.md sources, the
  * committed .agent-context.json, and the in-process manifest.ts source).
@@ -50,6 +54,122 @@ interface CheckResult {
  * Used by the adapter-link check (see rule 6 in the file header comment).
  */
 const ADAPTER_AGENTS_LINK_RE = /\]\((?:\.\/)?AGENTS\.md(?:#[^)]*)?\)/;
+
+// ---------------------------------------------------------------------------
+// Rule 7: forbidden-content scan (contract section 4.4)
+// ---------------------------------------------------------------------------
+//
+// Scans every "present" agent-facing file (the same file set already
+// covered by rules 1-3 above) for content the contract's section 4.4 says
+// must never appear: secret/credential-shaped strings, local absolute
+// filesystem paths, and personal (non-project) email addresses.
+//
+// Two allowlists exist because the current tracked docs legitimately
+// contain lookalikes used as illustrative examples:
+//   - ALLOWED_EMAIL_DOMAINS: RFC 2606 reserved placeholder domains used
+//     throughout the docs (alice@example.com, you@example.com, ...), plus
+//     the project's own support domain (security@woodfiredgames.com in
+//     SECURITY.md). Any email whose domain is NOT in this set is flagged.
+//   - ALLOWLISTED_ABSOLUTE_PATHS: a small, file-scoped list of the exact
+//     strings the path pattern matches in today's tree, all of which are
+//     documentation placeholders rather than real machine paths. Each
+//     entry is commented with why it's safe. Anything not in this list
+//     still fails the scan.
+//
+// Secret/credential patterns have NO allowlist — a real match is always an
+// error; none of the current tracked docs match them (verified when this
+// rule was added).
+
+const SECRET_PATTERNS: ReadonlyArray<{ name: string; re: RegExp }> = [
+  { name: 'AWS access key ID', re: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
+  { name: 'GitLab personal access token', re: /\bglpat-[A-Za-z0-9_-]{20,}\b/ },
+  { name: 'Slack token', re: /\bxox[baprs]-[A-Za-z0-9-]+\b/ },
+  { name: 'PEM private key block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { name: 'Stripe live secret key', re: /\bsk_live_[0-9a-zA-Z]{20,}\b/ },
+  {
+    name: 'JWT-shaped token',
+    re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+  },
+];
+
+// Matches `/home/<segment>`, `/Users/<segment>`, or a Windows `C:\<segment>`
+// path. Stops at the next `/` (or end of the allowed char class) so a full
+// multi-segment path still yields a short, allowlist-friendly match.
+const ABSOLUTE_PATH_RE =
+  /(?:\/home\/[A-Za-z0-9_.-]+|\/Users\/[A-Za-z0-9_.-]+|[A-Za-z]:\\[A-Za-z0-9_.\\-]+)/g;
+
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+
+// RFC 2606 reserved placeholder domains (used for illustrative examples
+// throughout the docs) plus the project's own support domain. Anything
+// else is treated as a personal/real address and flagged.
+const ALLOWED_EMAIL_DOMAINS = new Set<string>([
+  'example.com',
+  'example.org',
+  'example.net',
+  'woodfiredgames.com',
+]);
+
+// file path -> exact strings the ABSOLUTE_PATH_RE match yields for that
+// file today. Each is a documentation placeholder, not a real local path.
+const ALLOWLISTED_ABSOLUTE_PATHS: Readonly<Record<string, ReadonlySet<string>>> = {
+  // Section 4.4's own bullet illustrates the forbidden-path shapes using
+  // literal ellipsis placeholders — not real paths.
+  'docs/AGENT_CONTEXT.md': new Set(['/home/...', '/Users/...', 'C:' + '\\' + '\\' + '...']),
+  // Example MCP client config using the generic placeholder username
+  // "you" (as in "replace with your own"), not a real developer's machine
+  // path.
+  'docs/MCP.md': new Set(['/home/you']),
+};
+
+/**
+ * Scan one file's text for contract section 4.4 forbidden content. Returns
+ * a list of `"<path>:<line>: <message>"` error strings; empty means clean.
+ * Exported for direct unit testing without touching disk.
+ */
+export function scanTextForForbiddenContent(filePath: string, text: string): string[] {
+  const errors: string[] = [];
+  const lines = text.split('\n');
+  const pathAllowlist = ALLOWLISTED_ABSOLUTE_PATHS[filePath];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const lineNo = i + 1;
+
+    for (const { name, re } of SECRET_PATTERNS) {
+      if (re.test(line)) {
+        errors.push(`${filePath}:${lineNo}: forbidden content — looks like a ${name}.`);
+      }
+    }
+
+    ABSOLUTE_PATH_RE.lastIndex = 0;
+    let pathMatch: RegExpExecArray | null = ABSOLUTE_PATH_RE.exec(line);
+    while (pathMatch !== null) {
+      const matched = pathMatch[0];
+      if (!pathAllowlist?.has(matched)) {
+        errors.push(
+          `${filePath}:${lineNo}: forbidden content — local absolute path "${matched}".`,
+        );
+      }
+      pathMatch = ABSOLUTE_PATH_RE.exec(line);
+    }
+
+    EMAIL_RE.lastIndex = 0;
+    let emailMatch: RegExpExecArray | null = EMAIL_RE.exec(line);
+    while (emailMatch !== null) {
+      const domain = (emailMatch[1] ?? '').toLowerCase();
+      if (!ALLOWED_EMAIL_DOMAINS.has(domain)) {
+        errors.push(
+          `${filePath}:${lineNo}: forbidden content — non-project email address "${emailMatch[0]}".`,
+        );
+      }
+      emailMatch = EMAIL_RE.exec(line);
+    }
+  }
+
+  return errors;
+}
 
 function normalizeForCompare(m: AgentContextManifest): Omit<AgentContextManifest, '_generated'> & {
   _generated: Omit<AgentContextManifest['_generated'], 'generated_at'>;
@@ -108,6 +228,16 @@ export function runChecks(repoRoot: string): CheckResult {
         `Adapter file "${entry.path}" does not link to AGENTS.md — adapters must point to the canonical entry.`,
       );
     }
+  }
+
+  // Rule 7: forbidden-content scan (section 4.4). Runs over every
+  // "present" file — the same set already covered by rules 1-3 above.
+  for (const entry of fresh.files) {
+    if (entry.status !== 'present') continue;
+    const abs = resolve(repoRoot, entry.path);
+    if (!existsSync(abs)) continue; // file-exists already reported above
+    const text = readFileSync(abs, 'utf8');
+    errors.push(...scanTextForForbiddenContent(entry.path, text));
   }
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);
