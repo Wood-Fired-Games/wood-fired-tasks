@@ -875,6 +875,171 @@ export async function reconcileStaleRemoteCredentials(
   return { action: 'kept', credentialsPath, server };
 }
 
+/** Outcome classes of {@link ensureLocalAuthGuidance} (task #1610). */
+export type AuthGuidanceAction =
+  /** A usable loopback credential already exists — nothing was printed. */
+  | 'has-credential'
+  /** No usable loopback credential; guidance was printed and no login ran
+   *  (non-TTY, or an interactive decline). */
+  | 'guidance-only'
+  /** Guidance was printed, the interactive offer was accepted, and the
+   *  device-flow login succeeded (a fresh loopback credential now exists). */
+  | 'logged-in'
+  /** Guidance was printed, the interactive offer was accepted, but the
+   *  device-flow login did not complete. Never blocks/fails setup. */
+  | 'login-failed';
+
+export interface AuthGuidanceResult {
+  action: AuthGuidanceAction;
+  /** The credentials file path that was inspected. */
+  credentialsPath: string;
+  /** The base URL the guidance text / offered login targeted. */
+  baseUrl: string;
+}
+
+export interface EnsureLocalAuthGuidanceOptions {
+  /** Override the credentials file path (testing). Defaults to {@link getCredentialsPath}. */
+  credentialsPath?: string;
+  /** Injectable TTY predicate (defaults to {@link shouldPrompt}). */
+  isInteractive?: () => boolean;
+  /** Injectable logger (testing). */
+  log?: (line: string) => void;
+  /**
+   * Injectable Yes/No consent seam for the "log in now?" offer. Defaults to
+   * {@link confirmLocalLoginOffer}. Tests stub this (mirroring
+   * `confirmStatusline`) to drive the accept/decline branches without
+   * exercising real prompt-stream plumbing.
+   */
+  confirm?: (io?: PromptIO) => Promise<boolean>;
+  /**
+   * Prompt IO forwarded ONLY to the default {@link confirmLocalLoginOffer}
+   * menu. Deliberately NOT the same channel as `runSetupInteractive`'s shared
+   * `promptIO` (which the mode menu / stale-credentials reconcile already
+   * read from in several tests) — sharing it here would make this new offer
+   * try to read a second line from a stream those tests only ever seed with
+   * one, which would hang. Production omits both and gets the real terminal
+   * either way, since each independently defaults to `process.stdin`/`process.stdout`.
+   */
+  promptIO?: PromptIO;
+  /** Injectable device-flow login seam. Defaults to {@link runDeviceLogin}. */
+  deviceLogin?: typeof runDeviceLogin;
+  /** Injectable browser opener forwarded to the device login. */
+  opener?: (url: string) => boolean;
+  /** Override the base URL the guidance/offer targets (testing). */
+  baseUrl?: string;
+}
+
+/** Default Yes/No consent prompt for the post-setup local-login offer. */
+export function confirmLocalLoginOffer(io?: PromptIO): Promise<boolean> {
+  return selectFromMenu<boolean>(
+    {
+      message: 'Log in to the local server now?',
+      options: [
+        { label: 'Yes — run `tasks login` now', value: true },
+        { label: 'No — I will log in later', value: false },
+      ],
+      defaultValue: false,
+    },
+    io,
+  );
+}
+
+/**
+ * Resolve the base URL the post-setup login guidance targets. Deliberately
+ * does NOT consult `credentials.active.server` (unlike `env.ts`'s
+ * `resolveBaseUrl`) — this function runs precisely when there is no usable
+ * credential, and reading the REAL on-disk credentials file here (via the
+ * `env` module's uninjectable default path) would violate the "never touch
+ * the real HOME" testing rule. `API_BASE_URL` is honored so a dev override
+ * still routes the offered login correctly; otherwise the local default.
+ */
+function resolveLocalLoginBaseUrl(override?: string): string {
+  if (override !== undefined && override.length > 0) return override;
+  const fromEnv = process.env['API_BASE_URL'];
+  return fromEnv && fromEnv.length > 0 ? fromEnv : 'http://localhost:3000';
+}
+
+/**
+ * Task #1610 — post-local-setup auth guidance: local setup must not end
+ * silently unauthenticated. After a fresh local install, or a remote→local
+ * conversion that removed stale remote credentials, the CLI can be left with
+ * NO usable credential against the local server — the user's next `tasks
+ * list` 401s with no explanation.
+ *
+ *  - A usable LOOPBACK credential already exists (credentials file whose
+ *    `active.server` is loopback) → no-op, nothing printed.
+ *  - No usable loopback credential, interactive TTY → print guidance naming
+ *    the real working local login command(s), then OFFER to run `tasks
+ *    login`'s device-flow core right there (decline = guidance only; the
+ *    offer NEVER blocks or fails setup either way).
+ *  - No usable loopback credential, non-TTY / `--no-input` → print guidance
+ *    only; NEVER prompt, NEVER run login.
+ *  - Unreadable credentials file (insecure perms / malformed TOML) → treated
+ *    as "no usable credential" here; `reconcileStaleRemoteCredentials`
+ *    already surfaces a loud warning for that exact condition, so this
+ *    function doesn't duplicate it.
+ *
+ * The device flow (not the manual-PAT path) is what the interactive offer
+ * runs, because a local/loopback server is exactly the case
+ * {@link canUseBrowserSso} always green-lights — the same primitive `tasks
+ * login` itself uses when no `--token` is supplied and browser SSO can
+ * complete.
+ */
+export async function ensureLocalAuthGuidance(
+  options: EnsureLocalAuthGuidanceOptions = {},
+): Promise<AuthGuidanceResult> {
+  const credentialsPath = options.credentialsPath ?? getCredentialsPath();
+  const log = options.log ?? ((line: string) => console.log(line));
+  const isInteractive = options.isInteractive ?? shouldPrompt;
+  const baseUrl = resolveLocalLoginBaseUrl(options.baseUrl);
+
+  let creds;
+  try {
+    creds = readCredentials(credentialsPath);
+  } catch {
+    creds = null;
+  }
+
+  if (creds !== null && isLoopbackServerUrl(creds.active.server)) {
+    return { action: 'has-credential', credentialsPath, baseUrl };
+  }
+
+  for (const line of [
+    '',
+    'Not logged in: no credentials found for the local server.',
+    `\`tasks list\` (and other commands) will fail with 401 Unauthorized against ${baseUrl} until you log in.`,
+    'Log in with one of:',
+    '  tasks login                  — browser device-flow login (works against a local/loopback server)',
+    '  tasks login --token <pat>    — paste a personal access token',
+    '    (mint one locally with: tasks db mint-token --user <your-email-or-user-id>)',
+    '',
+  ]) {
+    log(line);
+  }
+
+  if (!isInteractive()) {
+    return { action: 'guidance-only', credentialsPath, baseUrl };
+  }
+
+  const confirm = options.confirm ?? confirmLocalLoginOffer;
+  const consented = await confirm(options.promptIO);
+  if (!consented) {
+    return { action: 'guidance-only', credentialsPath, baseUrl };
+  }
+
+  const deviceLogin = options.deviceLogin ?? runDeviceLogin;
+  const result = await deviceLogin({
+    baseUrl,
+    clientId: process.env['OIDC_CLIENT_ID'] ?? 'wft-cli',
+    hostname: os.hostname(),
+    openBrowser: true,
+    ...(options.opener !== undefined && { opener: options.opener }),
+    isJson: false,
+  });
+
+  return { action: result.ok ? 'logged-in' : 'login-failed', credentialsPath, baseUrl };
+}
+
 export interface BootstrapLocalDbOptions {
   /** Environment map for DB-path resolution (defaults to `process.env`). */
   env?: NodeJS.ProcessEnv;
@@ -1088,9 +1253,17 @@ export interface RunSetupInteractiveOptions extends RunSetupOptions {
    */
   confirmStatusline?: ConfirmStatusline;
   /**
+   * Injectable Yes/No consent seam for the post-setup "log in now?" offer
+   * (task #1610). Defaults to {@link confirmLocalLoginOffer}. Tests stub this
+   * (mirroring `confirmStatusline`) to drive the accept/decline branches
+   * without exercising real prompt-stream plumbing.
+   */
+  confirmLogin?: (io?: PromptIO) => Promise<boolean>;
+  /**
    * Override the credentials file the Local path's stale-remote-credentials
-   * reconcile inspects (testing). Defaults to {@link getCredentialsPath} (which
-   * honours `WFT_CREDENTIALS_PATH` / `XDG_CONFIG_HOME`).
+   * reconcile AND the post-setup auth-guidance check (#1610) inspect
+   * (testing). Defaults to {@link getCredentialsPath} (which honours
+   * `WFT_CREDENTIALS_PATH` / `XDG_CONFIG_HOME`).
    */
   credentialsPath?: string;
   /**
@@ -1134,6 +1307,8 @@ export type RunSetupInteractiveResult =
       staleCredentials: ReconcileRemoteCredentialsResult;
       /** Outcome of the eager local-database bootstrap (conversion contract). */
       db: BootstrapLocalDbResult;
+      /** Outcome of the post-setup local-auth guidance/offer (task #1610). */
+      authGuidance: AuthGuidanceResult;
     })
   | RunSetupServiceResult
   | RunSetupRemoteResult;
@@ -1274,7 +1449,24 @@ export async function runSetupInteractive(
     ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
   });
 
-  return { ...result, mode: 'local', statusline, staleCredentials, db };
+  // Task #1610: local setup must not end silently unauthenticated. If no
+  // usable LOOPBACK credential exists at this point, print guidance naming
+  // the real local login command(s) and (interactive TTY only) offer to run
+  // the login flow right there. NOTE: deliberately does NOT forward the
+  // shared `options.promptIO` — see EnsureLocalAuthGuidanceOptions.promptIO
+  // for why (it would contend with the mode-menu / stale-credentials-reconcile
+  // reads already exercised against that same injected stream in several
+  // tests). Never blocks or fails setup.
+  const authGuidance = await ensureLocalAuthGuidance({
+    ...(options.credentialsPath !== undefined && { credentialsPath: options.credentialsPath }),
+    isInteractive,
+    log,
+    ...(options.confirmLogin !== undefined && { confirm: options.confirmLogin }),
+    ...(options.deviceLogin !== undefined && { deviceLogin: options.deviceLogin }),
+    ...(options.opener !== undefined && { opener: options.opener }),
+  });
+
+  return { ...result, mode: 'local', statusline, staleCredentials, db, authGuidance };
 }
 
 /**

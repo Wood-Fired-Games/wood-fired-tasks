@@ -21,11 +21,14 @@ import {
   isLoopbackServerUrl,
   parseSetupModeFlag,
   resolveSetupModeFromFlags,
+  ensureLocalAuthGuidance,
+  confirmLocalLoginOffer,
   type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
 import { writeCredentials } from '../auth/credentials.js';
+import type { RunDeviceLoginArgs, RunDeviceLoginResult } from '../commands/login.js';
 import Database from '../../db/driver.js';
 
 // The packaged task-skill .md files SHIP under dist/skills/tasks/ (the asset
@@ -1177,6 +1180,326 @@ describe('tasks setup — mode conversion (remote⇄local)', () => {
         expect(result.db.dbPath).toBe(dbPath);
       }
       expect(fs.existsSync(dbPath)).toBe(true);
+    });
+  });
+});
+
+describe('tasks setup — post-setup local-auth guidance (task #1610)', () => {
+  const LOCAL_URL = 'http://127.0.0.1:3000';
+  const REMOTE_URL2 = 'http://tasks.example.local:3000';
+
+  /** Seed a valid 0600 credentials TOML pointing at `server`. */
+  function seedCreds(credFile: string, server: string): void {
+    writeCredentials(
+      {
+        active: {
+          token: FAKE_PAT,
+          token_id: 1,
+          server,
+          user_id: 1,
+          display_name: 'Test User',
+          email: null,
+          logged_in_at: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      credFile,
+    );
+  }
+
+  const fakeSuccess: RunDeviceLoginResult = {
+    ok: true,
+    user: { id: 1, displayName: 'Test User', email: null },
+  };
+
+  describe('ensureLocalAuthGuidance (direct)', () => {
+    it('a usable loopback credential exists → nothing printed, no confirm/login called', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        seedCreds(credentialsPath, LOCAL_URL);
+
+        const lines: string[] = [];
+        let confirmCalled = false;
+        let loginCalled = false;
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: (l) => lines.push(l),
+          isInteractive: () => true,
+          confirm: async () => {
+            confirmCalled = true;
+            return true;
+          },
+          deviceLogin: async (_args: RunDeviceLoginArgs) => {
+            loginCalled = true;
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('has-credential');
+        expect(lines).toEqual([]);
+        expect(confirmCalled).toBe(false);
+        expect(loginCalled).toBe(false);
+      });
+    });
+
+    it('a non-loopback (remote) credential does NOT count as usable → guidance is printed', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        seedCreds(credentialsPath, REMOTE_URL2);
+
+        const lines: string[] = [];
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: (l) => lines.push(l),
+          isInteractive: () => false,
+        });
+
+        expect(result.action).toBe('guidance-only');
+        expect(lines.join('\n')).toContain('tasks login');
+      });
+    });
+
+    it('no credentials file at all → guidance names the real working local login command(s)', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        expect(fs.existsSync(credentialsPath)).toBe(false);
+
+        const lines: string[] = [];
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: (l) => lines.push(l),
+          isInteractive: () => false,
+        });
+
+        expect(result.action).toBe('guidance-only');
+        const joined = lines.join('\n');
+        // Names the ACTUAL commands (verified against src/cli/commands/login.ts
+        // and src/cli/bin/tasks.ts: `tasks login`, `tasks login --token <pat>`,
+        // and `tasks db mint-token` are real, registered commands).
+        expect(joined).toContain('tasks login');
+        expect(joined).toContain('tasks login --token');
+        expect(joined).toContain('tasks db mint-token');
+      });
+    });
+
+    it('non-TTY (--no-input): guidance only — never prompts, never calls login', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        let confirmCalled = false;
+        let loginCalled = false;
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => false,
+          confirm: async () => {
+            confirmCalled = true;
+            return true;
+          },
+          deviceLogin: async (_args: RunDeviceLoginArgs) => {
+            loginCalled = true;
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('guidance-only');
+        expect(confirmCalled).toBe(false);
+        expect(loginCalled).toBe(false);
+      });
+    });
+
+    it('interactive TTY: offers login; DECLINE runs no login (guidance-only)', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        let loginCalled = false;
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => true,
+          confirm: async () => false,
+          deviceLogin: async (_args: RunDeviceLoginArgs) => {
+            loginCalled = true;
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('guidance-only');
+        expect(loginCalled).toBe(false);
+      });
+    });
+
+    it('interactive TTY: offers login; ACCEPT runs the device-flow login', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        const calls: RunDeviceLoginArgs[] = [];
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => true,
+          confirm: async () => true,
+          deviceLogin: async (args: RunDeviceLoginArgs) => {
+            calls.push(args);
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('logged-in');
+        expect(calls).toHaveLength(1);
+        // The offer runs the SAME device-flow primitive `tasks login` uses,
+        // targeted at the local server (loopback default when unset).
+        expect(calls[0]?.baseUrl).toBe('http://localhost:3000');
+        expect(calls[0]?.isJson).toBe(false);
+      });
+    });
+
+    it('interactive TTY: ACCEPT, but the device-flow login fails → login-failed (never throws)', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => true,
+          confirm: async () => true,
+          deviceLogin: async (_args: RunDeviceLoginArgs) => ({ ok: false }),
+        });
+
+        expect(result.action).toBe('login-failed');
+      });
+    });
+
+    it('the default confirm (confirmLocalLoginOffer) renders a Yes/No menu naming `tasks login`', async () => {
+      const { PassThrough } = await import('node:stream');
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+      input.write('2\n'); // choose "No"
+
+      const consented = await confirmLocalLoginOffer({ input, output });
+      expect(consented).toBe(false);
+      expect(outChunks.join('')).toContain('tasks login');
+    });
+
+    it('an unreadable credentials file (insecure perms) is treated as "no usable credential"', async () => {
+      if (process.platform === 'win32') return; // POSIX-mode-only guard
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        seedCreds(credentialsPath, LOCAL_URL);
+        fs.chmodSync(credentialsPath, 0o644); // group/other-readable — insecure
+
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => false,
+        });
+
+        expect(result.action).toBe('guidance-only');
+      });
+    });
+  });
+
+  describe('through runSetupInteractive (local path)', () => {
+    it('fresh local setup, no credential at all → guidance printed, no crash', async () => {
+      await withTempHomeAsync(async (home) => {
+        const lines: string[] = [];
+        const result = await runSetupInteractive({
+          home,
+          log: (l) => lines.push(l),
+          mode: 'local',
+          ...localSandboxOpts(home),
+          isInteractive: () => false,
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.authGuidance.action).toBe('guidance-only');
+        }
+        expect(lines.join('\n')).toContain('tasks login');
+      });
+    });
+
+    it('a usable loopback credential is already present → no guidance text at all', async () => {
+      await withTempHomeAsync(async (home) => {
+        const sandbox = localSandboxOpts(home);
+        seedCreds(sandbox.credentialsPath, LOCAL_URL);
+
+        const lines: string[] = [];
+        const result = await runSetupInteractive({
+          home,
+          log: (l) => lines.push(l),
+          mode: 'local',
+          ...sandbox,
+          isInteractive: () => false,
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.authGuidance.action).toBe('has-credential');
+        }
+        expect(lines.join('\n')).not.toContain('Not logged in');
+        expect(lines.join('\n')).not.toContain('tasks login --token');
+      });
+    });
+
+    it('interactive TTY + confirmLogin decline → guidance only, existing conversion prompt streams are untouched', async () => {
+      const { PassThrough } = await import('node:stream');
+      await withTempHomeAsync(async (home) => {
+        const sandbox = localSandboxOpts(home);
+        // Seed NON-loopback credentials so the stale-remote reconcile ALSO
+        // fires and consumes one line of its own shared promptIO stream —
+        // proving this new offer's confirm seam (confirmLogin) is fully
+        // independent and never contends for that same stream.
+        seedCreds(sandbox.credentialsPath, REMOTE_URL2);
+        const input = new PassThrough();
+        const outChunks: string[] = [];
+        const output = { write: (s: string) => (outChunks.push(s), true) };
+        input.write('n\n'); // decline the stale-remote-credentials removal
+
+        const result = await runSetupInteractive({
+          home,
+          log: () => {},
+          mode: 'local',
+          ...sandbox,
+          isInteractive: () => true,
+          promptIO: { input, output },
+          confirmStatusline: async () => false,
+          confirmLogin: async () => false,
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.staleCredentials.action).toBe('kept');
+          expect(result.authGuidance.action).toBe('guidance-only');
+        }
+      });
+    });
+
+    it('interactive TTY + confirmLogin accept → runs the injected device-flow login and reports logged-in', async () => {
+      await withTempHomeAsync(async (home) => {
+        const sandbox = localSandboxOpts(home);
+        const calls: RunDeviceLoginArgs[] = [];
+
+        const result = await runSetupInteractive({
+          home,
+          log: () => {},
+          mode: 'local',
+          ...sandbox,
+          isInteractive: () => true,
+          confirmStatusline: async () => false,
+          confirmLogin: async () => true,
+          deviceLogin: async (args: RunDeviceLoginArgs) => {
+            calls.push(args);
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.authGuidance.action).toBe('logged-in');
+        }
+        expect(calls).toHaveLength(1);
+      });
     });
   });
 });
