@@ -38,7 +38,7 @@ describe('scanTextForForbiddenContent', () => {
     it('flags a Slack token', () => {
       const errors = scanTextForForbiddenContent(
         'fake.md',
-        'export SLACK_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx\n',
+        `export SLACK_TOKEN=xoxb-${'111111111111'}-${'222222222222'}-${'abcdefghijklmnopqrstuvwx'}\n`,
       );
       expect(errors.some((e) => e.includes('Slack token'))).toBe(true);
     });
