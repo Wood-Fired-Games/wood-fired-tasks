@@ -281,23 +281,13 @@ its backend — no configuration is required to get git behavior.
 
 The npm-only flow above (`npm i -g wood-fired-tasks` → `setup` → `serve`) needs
 **only Node.js + npm** — `setup` merges `~/.claude.json` with native Node JSON
-handling, so `jq`/`curl` are **not** required. The `jq` / `curl` prerequisites
-below apply only to the **clone-based** `install.sh` installer used by the
-development/self-hosting paths.
-
-- **jq** — required by `install.sh` to merge the MCP server entry into
-  `~/.claude.json` safely (raw heredocs would mis-quote the API key on
-  embedded `"`/`\`/newline). Install with:
-  - Debian/Ubuntu: `sudo apt-get install jq`
-  - RHEL/CentOS: `sudo yum install jq`
-  - Fedora: `sudo dnf install jq`
-  - macOS: `brew install jq`
-- **curl** — required by `install.sh` to validate that the API server is
-  reachable at the configured URL (post-install connectivity check). Almost
-  always preinstalled; install with the same package managers if missing.
-
-The Windows installer (`install.ps1`) uses native PowerShell JSON handling
-and `Invoke-WebRequest` instead, so it does not require `jq` or `curl`.
+handling, so `jq`/`curl` are **not** required. The old clone-based `install.sh` /
+`install.ps1` git-clone installers that once required `jq` and `curl` are
+**retired** — both are now deprecation shims that just delegate to
+`wood-fired-tasks setup` and read no such tooling. Self-hosting the server via
+`deploy/install.sh` / `deploy/upgrade.sh` needs Node.js and the `sqlite3` CLI
+(see [Self-hosting and upgrades](#self-hosting-and-upgrades)); it does not need
+`jq` or `curl` either.
 
 ## Secrets
 
