@@ -15,7 +15,7 @@
 - [docs/REPO_MAP.md](docs/REPO_MAP.md): Compact tree + per-directory ownership.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Data flow, mutation flows, auth model.
 - [docs/INTERFACES.md](docs/INTERFACES.md): REST routes / MCP tools / CLI commands (counts verified in CI).
-- [docs/NAVIGATION.md](docs/NAVIGATION.md): 19 change-type recipes.
+- [docs/NAVIGATION.md](docs/NAVIGATION.md): 21 change-type recipes.
 - [docs/WORKFLOWS.md](docs/WORKFLOWS.md): Build, test, lint, dev recipes.
 
 ## Surface reference

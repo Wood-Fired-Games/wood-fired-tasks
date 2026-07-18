@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-18T14:39:51.180Z",
+    "generated_at": "2026-07-18T15:08:35.854Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 142,
-      "sha256": "02de28fc05dc7816816fb50b40f60f338b18945d168997de8efcb7433d7fc6db",
+      "actual_lines": 141,
+      "sha256": "f7410e4dbbd2dd625a3206edc200451113cbfe28d3debaa974163beafec10601",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -445,7 +445,7 @@
       "status": "present",
       "approx_token_budget": 1800,
       "actual_lines": 73,
-      "sha256": "f541cffb4888c275d1a994824abe421bffe93a4f95e5939ca0ffebfda2f75e1e",
+      "sha256": "2798a5679b2491abaa8a84bd5f7bd96788a6cc1ee1c71b754208ef88445ed208",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -486,8 +486,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 18200,
-      "actual_lines": 905,
-      "sha256": "36cbc099984f295c860c0f62a856dd634a9005f03ece56a7c123a4915589628b"
+      "actual_lines": 907,
+      "sha256": "205695ad8d9dab8fcc761720f512463759a7bc29b8a60909333ee190305c29ad"
     },
     {
       "path": "SECURITY.md",
@@ -515,7 +515,7 @@
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
       "actual_lines": 41,
-      "sha256": "182ac56a23c5e3fde2e9472d216b33e459e500d244c3b52f8f434ca2855d148d"
+      "sha256": "2a3c6f6ae2ba3e5512388954115aac498aa92a3d951fa1a302185949fbb6f16d"
     },
     {
       "path": "CLAUDE.md",

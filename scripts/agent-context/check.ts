@@ -27,6 +27,17 @@
  *      `docs/SCM.md` shipped discoverable in only 2 of the repo's five
  *      parallel doc indexes — nothing previously caught a new doc that
  *      skipped the manifest entirely. See `findUntrackedDocs`.
+ *   9. AGENTS.md / llms.txt restate a stale count of docs/NAVIGATION.md's
+ *      change-type recipes (counted by `^### ` headings). Root-cause guard
+ *      for task #1602: NAVIGATION.md grew a 21st recipe (SCM) while
+ *      AGENTS.md still said "18 task shapes" and llms.txt still said "19
+ *      change-type recipes" — nothing caught the two hand-authored counts
+ *      drifting from the doc they describe. See `checkRecipeCountConsistency`.
+ *  10. Any markdown table in AGENTS.md lists the same first-column value
+ *      (typically a doc link) twice. Root-cause guard for task #1602:
+ *      docs/ONBOARDING_SMOKE.md was listed twice in the "Deeper docs" table
+ *      with two different one-line descriptions. See
+ *      `findDuplicateAgentsTableRows`.
  *
  * This script reads only files inside the repository (.md sources, the
  * committed .agent-context.json, and the in-process manifest.ts source).
@@ -346,6 +357,147 @@ export function findUntrackedDocs(
   return errors;
 }
 
+// ---------------------------------------------------------------------------
+// Rule 9: recipe-count consistency — AGENTS.md / llms.txt must restate the
+// current docs/NAVIGATION.md recipe count
+// ---------------------------------------------------------------------------
+//
+// docs/NAVIGATION.md's per-surface "if you want to do X, read these files"
+// recipes are numbered `### N. <title>` headings. AGENTS.md and llms.txt
+// each restate the total in prose ("18 task shapes", "19 change-type
+// recipes") as a cheap orientation hint. Task #1602 found both counts
+// stale after the SCM recipe landed (NAVIGATION.md grew to 21, the two
+// callers still said 18 and 19) — this rule recounts the headings from
+// source and asserts every known claim site agrees with it.
+
+const NAVIGATION_DOC = 'docs/NAVIGATION.md';
+const NAVIGATION_RECIPE_HEADING_RE = /^### /gm;
+
+/**
+ * Count docs/NAVIGATION.md's `### N. <title>` recipe headings directly from
+ * source (never a hand-maintained number) so a new recipe cannot be added
+ * without the count moving too.
+ */
+export function countNavigationRecipes(repoRoot: string): number {
+  const text = readFileSync(resolve(repoRoot, NAVIGATION_DOC), 'utf8');
+  const matches = text.match(NAVIGATION_RECIPE_HEADING_RE);
+  return matches ? matches.length : 0;
+}
+
+interface RecipeCountClaim {
+  file: string;
+  /** Must contain exactly one capture group: the claimed integer. */
+  pattern: RegExp;
+  describe: string;
+}
+
+// One entry per prose site that restates the NAVIGATION.md recipe count.
+// Add a new entry here if another doc starts quoting the count.
+const RECIPE_COUNT_CLAIMS: readonly RecipeCountClaim[] = [
+  { file: 'AGENTS.md', pattern: /\((\d+) task shapes with files/, describe: 'task shapes' },
+  {
+    file: 'llms.txt',
+    pattern: /docs\/NAVIGATION\.md\]\(docs\/NAVIGATION\.md\):\s*(\d+) change-type recipes/,
+    describe: 'change-type recipes',
+  },
+];
+
+/**
+ * Rule 9: every claim site in `RECIPE_COUNT_CLAIMS` must quote the actual
+ * `docs/NAVIGATION.md` recipe count. Returns one error string per
+ * mismatched (or missing) claim; an empty array means every claim agrees
+ * with source.
+ */
+export function checkRecipeCountConsistency(repoRoot: string): string[] {
+  const errors: string[] = [];
+  const actual = countNavigationRecipes(repoRoot);
+
+  for (const claim of RECIPE_COUNT_CLAIMS) {
+    const abs = resolve(repoRoot, claim.file);
+    if (!existsSync(abs)) continue; // file-exists already reported elsewhere
+    const text = readFileSync(abs, 'utf8');
+    const match = claim.pattern.exec(text);
+    if (!match) {
+      errors.push(
+        `${claim.file}: expected a "${claim.describe}" count claim matching ${claim.pattern} ` +
+          `but found none. Restate the current ${NAVIGATION_DOC} recipe count (${actual}).`,
+      );
+      continue;
+    }
+    const claimed = Number(match[1]);
+    if (claimed !== actual) {
+      errors.push(
+        `${claim.file} claims ${claimed} ${claim.describe} but ${NAVIGATION_DOC} has ${actual} ` +
+          `"^### " recipe headings. Update the claim in ${claim.file} (or the recipe count in ` +
+          `${NAVIGATION_DOC}) so they agree.`,
+      );
+    }
+  }
+
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Rule 10: duplicate-row guard for AGENTS.md markdown tables
+// ---------------------------------------------------------------------------
+//
+// Task #1602 found docs/ONBOARDING_SMOKE.md listed twice in AGENTS.md's
+// "Deeper docs" table (once as "Onboarding smoke test — 7 probe scenarios
+// for fresh agents", once as "Repeatable onboarding smoke test (scripted +
+// manual)") — a copy/paste duplicate that survived because nothing checked
+// table rows for repeats. This walks AGENTS.md, treats each contiguous run
+// of `| ... |` lines as one markdown table (row 0 = header, row 1 = the
+// `|---|---|` separator, skipped), and flags any data row whose first cell
+// repeats an earlier row's first cell within the same table.
+
+const MARKDOWN_TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+const MARKDOWN_TABLE_SEPARATOR_RE = /^\s*\|[\s:|-]+\|?\s*$/;
+
+/**
+ * Rule 10: find duplicate first-column values within any single markdown
+ * table in `file` (defaults to AGENTS.md). Returns one error string per
+ * duplicate row found (citing both the duplicate line and the line the
+ * value first appeared on); an empty array means every table is
+ * duplicate-free.
+ */
+export function findDuplicateAgentsTableRows(repoRoot: string, file = 'AGENTS.md'): string[] {
+  const abs = resolve(repoRoot, file);
+  if (!existsSync(abs)) return [];
+  const lines = readFileSync(abs, 'utf8').split('\n');
+  const errors: string[] = [];
+
+  let rowIndexInTable = -1; // -1 = not currently inside a table block
+  let seen = new Map<string, number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (!MARKDOWN_TABLE_ROW_RE.test(line)) {
+      rowIndexInTable = -1;
+      seen = new Map();
+      continue;
+    }
+    rowIndexInTable++;
+    if (rowIndexInTable === 0) continue; // header row
+    if (rowIndexInTable === 1 && MARKDOWN_TABLE_SEPARATOR_RE.test(line)) continue; // separator row
+
+    const cells = line.split('|').slice(1, -1);
+    const key = (cells[0] ?? '').trim();
+    if (!key) continue;
+
+    const firstSeenAt = seen.get(key);
+    if (firstSeenAt !== undefined) {
+      errors.push(
+        `${file}:${i + 1}: duplicate table row "${key}" (first seen at line ${firstSeenAt}). ` +
+          'Dedupe the table.',
+      );
+    } else {
+      seen.set(key, i + 1);
+    }
+  }
+
+  return errors;
+}
+
 function normalizeForCompare(m: AgentContextManifest): Omit<AgentContextManifest, '_generated'> & {
   _generated: Omit<AgentContextManifest['_generated'], 'generated_at'>;
 } {
@@ -418,6 +570,13 @@ export function runChecks(repoRoot: string): CheckResult {
   // Rule 8: manifest completeness — every docs/*.md is tracked or
   // explicitly allowlisted.
   errors.push(...findUntrackedDocs(repoRoot));
+
+  // Rule 9: AGENTS.md / llms.txt recipe-count claims agree with the actual
+  // docs/NAVIGATION.md heading count.
+  errors.push(...checkRecipeCountConsistency(repoRoot));
+
+  // Rule 10: no duplicate first-column rows in any AGENTS.md markdown table.
+  errors.push(...findDuplicateAgentsTableRows(repoRoot));
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);
   if (!existsSync(manifestAbsPath)) {

@@ -48,7 +48,7 @@ Pick your intent, read the files in order. Files marked `(reserved)` are slots d
 | Release / docs update | `docs/RELEASE.md` → `CHANGELOG.md` → `package.json` |
 | Deploying your fork to production | `docs/SETUP.md` (Self-hosting and upgrades) → `deploy/install.sh` → `deploy/upgrade.sh` → `docs/RELEASE.md` (Migration expectations) |
 
-For per-surface change recipes (18 task shapes with files / tests / docs), see [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
+For per-surface change recipes (21 task shapes with files / tests / docs), see [`docs/NAVIGATION.md`](docs/NAVIGATION.md).
 
 ## Essential commands
 
@@ -112,7 +112,6 @@ Running any of the above against an untrusted checkout executes repo-authored co
 | [docs/WORKFLOWS.md](docs/WORKFLOWS.md) | Canonical command recipes (build, test, lint, run) |
 | [docs/INTERFACES.md](docs/INTERFACES.md) | Inventory of REST routes, MCP tools, CLI commands (counts verified by CI) |
 | [docs/NAVIGATION.md](docs/NAVIGATION.md) | Task-oriented "if you want to do X, read these files" index |
-| [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Repeatable onboarding smoke test (scripted + manual) |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Operator recovery runbook: boot failures, wrong/stale DB, safe backup/restore |
 | [.agent-context.json](.agent-context.json) | Machine-readable manifest of the files above |
 

@@ -20,7 +20,7 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
 - MCP server with 31 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
-- REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 45 commands
+- REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI — command count is CI-verified in [docs/INTERFACES.md](docs/INTERFACES.md)
 - Pluggable source control — a `tasks scm <verb>` adapter over three backends (git, Perforce, or a no-VCS `none` backend), selected per repo via `.tasks/scm.json` (or a project charter `scm` default), so the automation lifecycle runs unchanged across SCM systems
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
@@ -827,13 +827,15 @@ The canonical command table (focused tests, migrations, quality gate) lives in
 ### Database
 
 SQLite with the better-sqlite3 driver, WAL mode, and automatic forward
-migrations via Umzug. The 15 migration files in `src/db/migrations/` are the
+migrations via Umzug. The migration files in `src/db/migrations/` (17 as of
+this writing — count them directly, they're the source of truth) are the
 canonical, self-documenting schema history — from `001-initial-schema` (projects,
 tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance
-criteria + verification evidence (`011`–`012`), and the WSJF columns, value
-charter, and append-only audit tables (`013`–`015`). Read the files directly for
-exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how they fit
-together.
+criteria + verification evidence (`011`–`012`), the WSJF columns, value
+charter, and append-only audit tables (`013`–`015`), the model-policy table
+(`016`), and the pluggable-SCM project charter default (`017`). Read the files
+directly for exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how
+they fit together.
 
 ### Testing
 
