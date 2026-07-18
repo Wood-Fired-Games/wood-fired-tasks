@@ -25,6 +25,14 @@ function makeNoneRepo(): string {
   return dir;
 }
 
+/** A temp dir with a `.p4config` marker — resolves to the `perforce` backend. */
+function makePerforceRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'scm-cli-p4-'));
+  writeFileSync(join(dir, '.p4config'), 'P4CLIENT=test\n');
+  dirs.push(dir);
+  return dir;
+}
+
 /** A `git init` temp repo with one commit — resolves to the `git` backend. */
 function makeGitRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'scm-cli-git-'));
@@ -167,6 +175,8 @@ describe('scm CLI dispatcher — none backend', () => {
     const data = envelope.data as Record<string, unknown>;
     expect(data.backend).toBe('none');
     expect((data.capabilities as Record<string, unknown>).isolation).toBe('shared');
+    // none never emits the perforce-experimental notice (task #1597).
+    expect(envelope.warnings).toEqual([]);
   });
 
   it('baseline → writes a manifest, none:<digest> id, exit 0', async () => {
@@ -194,6 +204,35 @@ describe('scm CLI dispatcher — none backend', () => {
   it('honors --context in the envelope', async () => {
     const { envelope } = await runScm('baseline', '--repo', repo, '--context', 'run-7');
     expect(envelope.context).toBe('run-7');
+  });
+});
+
+describe('scm CLI dispatcher — perforce backend experimental warning (task #1597)', () => {
+  it('detect on a perforce-marker repo → exactly one stable, greppable experimental warning', async () => {
+    const repo = makePerforceRepo();
+    const { envelope, exitCode } = await runScm('detect', '--repo', repo);
+    expect(exitCode).toBe(0);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.backend).toBe('perforce');
+    const warnings = envelope.warnings as string[];
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toBe('perforce backend is experimental — see docs/SCM.md');
+    expect(warnings[0]).toContain('docs/SCM.md');
+  });
+
+  it('a --charter-scm perforce hint (no marker) also surfaces exactly one experimental warning', async () => {
+    const repo = makeNoneRepo();
+    const { envelope, exitCode } = await runScm(
+      'detect',
+      '--repo',
+      repo,
+      '--charter-scm',
+      JSON.stringify({ backend: 'perforce' }),
+    );
+    expect(exitCode).toBe(0);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.backend).toBe('perforce');
+    expect(envelope.warnings).toEqual(['perforce backend is experimental — see docs/SCM.md']);
   });
 });
 

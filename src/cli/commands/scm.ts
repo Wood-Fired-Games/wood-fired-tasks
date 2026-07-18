@@ -175,6 +175,14 @@ function printEnvelope(envelope: unknown): void {
   process.stdout.write(`${JSON.stringify(envelope)}\n`);
 }
 
+/**
+ * Stable, greppable experimental-backend notice (task #1597) — pushed into
+ * the envelope's `warnings[]` exactly once whenever the RESOLVED backend is
+ * `perforce`. `git` and `none` never emit this. Keep the wording stable so
+ * it can be grepped for and dropped in one place at graduation.
+ */
+const PERFORCE_EXPERIMENTAL_WARNING = 'perforce backend is experimental — see docs/SCM.md';
+
 export const scmCommand = new Command('scm')
   .description(
     'Run a pluggable source-control verb against the resolved backend (git/perforce/none)',
@@ -245,6 +253,9 @@ export const scmCommand = new Command('scm')
         backendName = resolved.backend;
         if (resolved.warnings !== undefined) {
           warnings.push(...resolved.warnings);
+        }
+        if (resolved.backend === 'perforce') {
+          warnings.push(PERFORCE_EXPERIMENTAL_WARNING);
         }
         const backend = backendFor(resolved.backend);
 
