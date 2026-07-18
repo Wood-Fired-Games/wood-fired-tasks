@@ -23,6 +23,66 @@ describe('convertToMcpError', () => {
     });
   });
 
+  it('names the failing field(s) and remediation detail in the message for a wsjf.jobSize-mismatch style error', () => {
+    const error = new ValidationError({
+      wsjf: [
+        'estimated_minutes 45 maps to job-size tier 2, but the supplied wsjf.jobSize is 3. ' +
+          'These disagree: either correct estimated_minutes so minutesToTier matches the tier, ' +
+          'or set wsjf.jobSize to 2.',
+      ],
+    });
+
+    const result = convertToMcpError(error);
+
+    expect(result).toBeInstanceOf(McpError);
+    expect(result.code).toBe(ErrorCode.InvalidParams);
+    expect(result.message).toContain('Validation failed');
+    expect(result.message).toContain('wsjf:');
+    // Both remediation-relevant values (the minutes-derived tier and the
+    // supplied jobSize) must survive the flattening into the message.
+    expect(result.message).toContain('tier 2');
+    expect(result.message).toContain('wsjf.jobSize is 3');
+    expect(result.data).toEqual({
+      fieldErrors: {
+        wsjf: [
+          'estimated_minutes 45 maps to job-size tier 2, but the supplied wsjf.jobSize is 3. ' +
+            'These disagree: either correct estimated_minutes so minutesToTier matches the tier, ' +
+            'or set wsjf.jobSize to 2.',
+        ],
+      },
+    });
+  });
+
+  it('caps the message to the first 3 fields and shows "(+N more)" for extra fields', () => {
+    const error = new ValidationError({
+      title: ['Title is required'],
+      priority: ['Invalid value'],
+      wsjf: ['jobSize must be between 1 and 5'],
+      estimated_minutes: ['must be a positive number'],
+      tags: ['must be an array of strings'],
+    });
+
+    const result = convertToMcpError(error);
+
+    expect(result.message).toContain('Validation failed');
+    expect(result.message).toContain('title:');
+    expect(result.message).toContain('priority:');
+    expect(result.message).toContain('wsjf:');
+    expect(result.message).not.toContain('estimated_minutes:');
+    expect(result.message).not.toContain('tags:');
+    expect(result.message).toContain('(+2 more)');
+    // All 5 fields still fully present in the structured payload.
+    expect(result.data).toEqual({
+      fieldErrors: {
+        title: ['Title is required'],
+        priority: ['Invalid value'],
+        wsjf: ['jobSize must be between 1 and 5'],
+        estimated_minutes: ['must be a positive number'],
+        tags: ['must be an array of strings'],
+      },
+    });
+  });
+
   it('converts NotFoundError to McpError with InvalidRequest code', () => {
     const error = new NotFoundError('Task', 42);
 
