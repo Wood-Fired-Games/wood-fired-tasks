@@ -236,15 +236,11 @@ adapter** — the `tasks scm <verb>` CLI (see the
 
 ### Which backend a repo uses (precedence)
 
-The effective backend is resolved once per repo, highest source wins:
-
-1. **`.tasks/scm.json`** in the repo root — the authoritative, committed
-   declaration. If the file exists but does not validate, resolution **fails
-   hard** (`CONFIG_INVALID`, exit 2) rather than silently falling through.
-2. **Project charter `scm` default** — the optional `scm` object on the project
-   (set via `update_project`; see [MCP.md](MCP.md#get_project)). A fallback
-   **hint only** — it never overrides an on-disk signal.
-3. **Auto-detection** — on-disk markers (`.git` / Perforce config), else `none`.
+See [docs/SCM.md § Resolution precedence](SCM.md#resolution-precedence) for
+the canonical 4-step order (config file → on-disk marker → charter hint →
+`none`). A `.tasks/scm.json` that exists but fails validation is a **hard
+config error** (`CONFIG_INVALID`, exit 2) — it never silently falls through
+to auto-detection.
 
 ### `.tasks/scm.json`
 

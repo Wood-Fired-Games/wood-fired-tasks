@@ -21,7 +21,7 @@ compliance, so it does not exist. All three backends are first-class:
 |---|---|
 | `git` | Byte-for-byte parity with the prior git-only behavior (`add`/`commit`/`push`/`diff`/`rev-parse`). |
 | `perforce` | p4 semantics — `commit = submit = publish` collapses to a single act; numbered pending changelists per context. |
-| `none` | Perform no version-control operations at all; the task loop still functions via a filesystem digest manifest (baseline/verify by diff). |
+| `none` | Perform no version-control operations at all; the task loop still functions via a filesystem **digest manifest** — a per-file `{ path, size, mtimeMs, sha256 }` fingerprint record, not a content snapshot, used to baseline and verify by diffing two manifests (see [§ none](#none-1) below for the full shape). |
 
 Backend selection is a per-**repo** property (a single tasks-project can span
 multiple repos), so config lives with the repo — not the project or the DB.
@@ -38,7 +38,7 @@ $ tasks scm detect --repo .
 {"ok":true,"verb":"detect","backend":"git","context":"default","data":{"backend":"git","source":"auto","behaviors":{"commit":true,"isolate":true,"publish":true,"openReview":false,"branchPerRun":false},"capabilities":{"isolation":"platform-worktree"}},"warnings":[]}
 ```
 
-### perforce (experimental — pending real-server validation)
+### perforce (experimental)
 
 Log in once so the non-interactive adapter has a valid ticket — it never
 prompts: `p4 login`. Then opt the repo in with a minimal
@@ -52,8 +52,15 @@ Requires a p4 client **2021.1+** (the adapter's form-edit flow depends on the
 `--field` global option, introduced in that release). In v1, perforce loops
 always run **serialized** — there is no temp-client isolation yet
 (`capabilities.isolation` is unconditionally `"serialized"`); parallel
-orchestrators must not assume per-worker isolation until real-server
-validation (task #1563) graduates this backend out of experimental.
+orchestrators must not assume per-worker isolation while this backend is
+experimental.
+
+A real-server integration suite already exists
+(`src/scm/__tests__/perforce-real-p4d.test.ts`) and drives the production
+adapter against a real dockerized `p4d`, gated by `WFG_TESTS_REAL_P4=1` (see
+[below](#wfg_tests_real_p4-real-p4d-suite)). It is not yet wired into CI.
+**Graduation criterion:** the real-p4d suite runs green in CI (not just
+locally on demand) — until then this backend stays labeled experimental.
 
 ```
 $ tasks scm detect --repo .
@@ -68,8 +75,8 @@ per-context digest manifests (`baseline.json`) used for baseline/diff
 verification — and is never committed. Tune the `ignore` globs in
 `.tasks/scm.json` if baseline-churn false positives show up (build output,
 scratch files). **No-undo caveat:** `reset-hard` is unsupported (exit 4) —
-a digest-only manifest cannot restore content, so recovery is manual; a
-fuller Recovery section is coming in a follow-on task.
+a digest-only manifest cannot restore content, so recovery is manual; see
+[§ Recovery in none-mode](#recovery-in-none-mode) below.
 
 ```
 $ tasks scm detect --repo .
@@ -102,9 +109,12 @@ no DB round-trip.
   - `isolate` — isolate parallel workers (git worktree / p4 temp client / shared tree).
   - `publish` — share the change (git push / p4 submit / none no-op).
   - `openReview` — open a review (`gh pr create` / p4 swarm / none no-op).
-  - `branchPerRun` — start each loop run on a fresh branch (git only; ignored elsewhere).
-    Branch name `tasks/run-<run-id>`, created from the current integration tip at
-    run start; `publish` pushes it; the branch is left in place at run end.
+  - `branchPerRun` — **reserved — rejected in v1.** Setting `branchPerRun: true`
+    fails `.tasks/scm.json` schema validation (`CONFIG_INVALID`, exit 2) rather
+    than silently no-opping; omit it or set it to `false`. Design intent for a
+    future version: start each loop run on a fresh branch (git only), named
+    `tasks/run-<run-id>`, created from the current integration tip at run
+    start; `publish` pushes it; the branch is left in place at run end.
 - **`ignore`** (optional, none-backend only) — gitignore-style globs excluded from
   the none-mode baseline manifest, in addition to the built-in exclusions.
   Default: `["node_modules/", "dist/", ".git/", "*.log"]`.
@@ -121,24 +131,28 @@ by any backend.
 
 ### Resolution precedence
 
-1. `.tasks/scm.json` at the repo root (authoritative).
-2. Project charter `scm` field in the tasks DB (default-only fallback; supplies
-   behavior-toggle defaults and a backend hint **only** for repos with no
-   `.tasks/scm.json` and no detectable marker). Surfaced on the `get_project`
-   MCP tool.
-3. **Auto-detect** (also what `backend: "auto"` triggers):
-   - `.git/` present → `git`
-   - `.p4config` / `$P4CONFIG` / `.p4` present → `perforce`
-   - otherwise → `none`
+This is the **single canonical statement** of the resolution order — README
+and SETUP.md link here rather than restating it. The effective backend is
+resolved once per repo by trying these four sources in order; first match
+wins:
+
+1. **`.tasks/scm.json`** at the repo root, with a concrete `backend` (not
+   `"auto"`) — authoritative (`source: "file"`).
+2. **On-disk marker** — `.git/` present → `git`; `.p4config` / `$P4CONFIG` /
+   `.p4` present → `perforce` (`source: "auto"`). Tried when there is no
+   config file, or `backend: "auto"`. A detected marker **beats the charter
+   hint** below: if the charter names a different backend, the marker still
+   wins and the adapter emits a `warnings[]` entry naming the conflict.
+3. **Project charter `scm.backend` hint** in the tasks DB — a default-only
+   fallback used **only** when there is no `.tasks/scm.json` and no on-disk
+   marker (step 2 found nothing). Surfaced on the `get_project` MCP tool.
+4. **`none`** — the final fallback when nothing above applies.
 
 Clarifications:
 
 - **Repo root** is found by walking up from the CLI's cwd to the nearest
   directory containing `.tasks/scm.json`, else the nearest SCM marker. Every verb
   accepts `--repo <path>` to override — required for cross-repo runs.
-- An **on-disk marker always beats the charter.** If the charter names a backend
-  that contradicts a strong marker, the marker wins and the adapter emits a
-  `warnings[]` entry naming the conflict.
 - **Both `.git` and `.p4config` at the same root** → auto-detect refuses (exit 2)
   and demands an explicit `.tasks/scm.json`; guessing here is how a submit lands
   in the wrong system.
@@ -167,9 +181,13 @@ One verb per SCM primitive the skills need. Each verb is a pure function of
   temp-client names. Defaults to `"default"`; **parallel orchestrators MUST pass
   distinct contexts.**
 
+Legend: each row is one verb; the `git`/`perforce`/`none` columns describe
+what that verb does *for that backend* — read left-to-right per row, not as
+alternatives to pick between.
+
 | Verb | git | perforce | none |
 |---|---|---|---|
-| `detect` | resolved backend + source + capabilities | " | " |
+| `detect` | resolved backend + source + capabilities | resolved backend + source + capabilities | resolved backend + source + capabilities |
 | `baseline` | `git rev-parse HEAD` | highest submitted CL visible to the client | manifest digest → `.tasks/.scm/<context>/baseline.json` |
 | `status` | `git status --porcelain` | `p4 opened` + `p4 status` | manifest compare |
 | `changed-files <base>` | `git diff --name-only <base>..HEAD` | `p4 opened` / `p4 describe -s` | filesystem diff vs baseline manifest |
@@ -275,7 +293,9 @@ Edge cases (decided normatively):
 the adapter only reports the `platform-worktree` capability (see `isolate`).
 
 **Evidence shape:** bare git SHAs, unchanged — populate `commit_shas` /
-`change-ids` from `scm change-id` / `scm publish`.
+`change_ids` from `scm change-id` / `scm publish` (see [§ Verification &
+isolation notes](#verification--isolation-notes) for the `change_ids` vs.
+`commit_shas` spelling policy).
 
 ### perforce
 
@@ -316,6 +336,29 @@ announces the downgrade up front).
 
 **Evidence shape:** changelist numbers as `p4:<cl>` (post-renumber).
 
+#### WFG_TESTS_REAL_P4 (real-p4d suite)
+
+`WFG_TESTS_REAL_P4=1` gates
+`src/scm/__tests__/perforce-real-p4d.test.ts` — an integration suite that
+boots a real dockerized Helix Core (`p4d`) server and drives the production
+`PerforceBackend` (real child processes, not the mocked `ExecScmFn` the rest
+of the perforce test suite uses) through a full verb cycle.
+
+- **What it gates:** the whole file, via `describe.skipIf`.
+- **Prerequisites:** `docker` and a `p4` client binary on `PATH`, in addition
+  to the env var.
+- **Silent-skip semantics:** the suite is silently skipped (not failed) when
+  `WFG_TESTS_REAL_P4` is unset (the default — `npm test` never needs Docker
+  or a `p4` binary), or when it's set but `docker`/`p4` is missing from
+  `PATH`.
+- **Loud-failure semantics:** once `WFG_TESTS_REAL_P4` is set AND both
+  binaries are present, a broken environment (image pull failure, readiness
+  timeout, login failure) is a real failure, not a skip — the operator
+  explicitly asked for it.
+- **Run it:** `WFG_TESTS_REAL_P4=1 npx vitest run src/scm/__tests__/perforce-real-p4d.test.ts`.
+- **Not yet CI-enforced** — see [§ perforce (experimental)](#perforce-experimental)
+  for the graduation criterion.
+
 ### none
 
 Perform **no** version-control operations, while the task loop still functions
@@ -338,7 +381,7 @@ via a **digest manifest** (not a content snapshot).
   content. Failure recovery in none mode is **manual**, and the orchestrator says
   so when it happens.
 
-**Evidence shape:** empty `change-ids` — a legitimate verification state, not
+**Evidence shape:** empty `change_ids` — a legitimate verification state, not
 fabrication. Verification leans on `changed-files` (filesystem diff vs the
 baseline manifest) plus the worker's per-AC evidence map.
 
@@ -381,8 +424,14 @@ that look like a failure requiring manual recovery in the first place.
 
 ## Verification & isolation notes
 
+- **Spelling policy (single source of truth):** the evidence field's forward
+  name is `change_ids` (underscore); `commit_shas` is the retained back-compat
+  alias. The CLI *verb* is spelled differently again — `change-id` (hyphen,
+  singular) — because it names an action, not a field; its own JSON output key
+  is `ids` (see the verb table above). Use `change_ids` everywhere this doc
+  refers to the evidence field.
 - **Evidence envelope generalizes.** `commit_shas` is conceptually
-  **`change-ids`**: git SHAs (bare, unchanged wire shape), perforce CLs as
+  **`change_ids`**: git SHAs (bare, unchanged wire shape), perforce CLs as
   `p4:<cl>`, or empty for none. `file_changes` comes from `scm changed-files`;
   `base_sha` from `scm baseline`. The wire field name is kept for backward compat.
 - **`change_ids`/`base_id` are the forward names.** `commit_shas` (and

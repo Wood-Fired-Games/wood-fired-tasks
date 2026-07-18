@@ -47,6 +47,7 @@ only when adding or removing dependencies.
 | Dep cycle / boundary check   | `npm run depcruise`                      | Before commit on cross-module refactors.                                    |
 | Dep graph (DOT)              | `npm run depcruise:graph`                | Visualising module structure; produces `dependency-graph.dot`.              |
 | Mutation tests               | `npm run test:mutation`                  | Periodic quality run. Slow; not a per-commit gate.                          |
+| Real-p4d SCM suite           | `WFG_TESTS_REAL_P4=1 npx vitest run src/scm/__tests__/perforce-real-p4d.test.ts` | Validating the perforce backend against a real dockerized `p4d`; needs `docker` + `p4` on `PATH`. Silently skipped otherwise. See [docs/SCM.md § WFG_TESTS_REAL_P4](SCM.md#wfg_tests_real_p4-real-p4d-suite). |
 | Manifest check               | `npm run agent-context:check`            | After editing any agent-facing doc or the manifest source.                  |
 | Onboarding smoke (scripted)  | `npx vitest run scripts/agent-context/__tests__/onboarding-smoke.test.ts` | After editing any agent-facing doc; see [docs/ONBOARDING_SMOKE.md](ONBOARDING_SMOKE.md). |
 | Manifest regenerate          | `npm run agent-context:gen`              | After flipping a manifest entry from `reserved` to `present`.               |

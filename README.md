@@ -539,9 +539,9 @@ with native git), **perforce** (changelist-based; change-ids look like
 `p4:<cl>`), and **none** (a no-VCS digest backend for unversioned trees) — so
 the automation lifecycle is identical across SCM systems.
 
-**Backend selection precedence** (highest wins): `.tasks/scm.json` `backend`
-field → the project charter `scm` default (fallback only) → on-disk
-auto-detection (`.git` / `.p4config` markers, else `none`). See
+**Backend selection precedence:** see
+[docs/SCM.md § Resolution precedence](docs/SCM.md#resolution-precedence) for
+the canonical 4-step order. See
 [docs/SETUP.md](docs/SETUP.md#source-control-scm-configuration) for the config
 file shape.
 
