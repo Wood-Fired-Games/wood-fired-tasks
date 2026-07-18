@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-18T13:28:24.257Z",
+    "generated_at": "2026-07-18T13:56:06.196Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 130,
-      "sha256": "d5577c7b802fe8116f0ef3d0ffdb60ad9eef465aaea681d017d75cebfe1cb9bd",
+      "actual_lines": 142,
+      "sha256": "02de28fc05dc7816816fb50b40f60f338b18945d168997de8efcb7433d7fc6db",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -49,8 +49,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 152,
-      "sha256": "344a83bb790f67a8779baed6eb4abd4a9a03ce698346b78de73db7ca5340cad4",
+      "actual_lines": 160,
+      "sha256": "86e82dd42a7223bb384f95e2aca502844a62e5f1a55e135b6c0ed5f585496d7a",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -143,14 +143,14 @@
       "role": "deep-doc",
       "purpose": "Authoritative CLI reference for the `tasks` binary.",
       "when_to_read": "on-demand",
-      "line_budget": 1800,
+      "line_budget": 1950,
       "authority": "authoritative",
       "owner_role": "CLI maintainers",
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
-      "approx_token_budget": 36000,
-      "actual_lines": 1799,
-      "sha256": "52a45aab786ca384e8469a7632cd4db6badaa3b040044504b01d80195b0d90d7"
+      "approx_token_budget": 39000,
+      "actual_lines": 1848,
+      "sha256": "bf040488702fa39d1efd88fb05d65d0dfd4ef873eb49067b11c613d8f2c6ade4"
     },
     {
       "path": "docs/SETUP.md",
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 31600,
-      "actual_lines": 1549,
-      "sha256": "815225f04cad095a84a8291506a3df08edab12ac8f38b1cd1dc43576442e8133"
+      "actual_lines": 1580,
+      "sha256": "0b12e23822397179c90c5ed4caa37a65b96d051278c1b0e0a1f37feb03318e9a"
     },
     {
       "path": "docs/SLACK.md",
@@ -178,6 +178,20 @@
       "approx_token_budget": 16000,
       "actual_lines": 287,
       "sha256": "9908b3370c1af79d229cc635c772dfa4afda40d2f11c086b73140074e8b0dc99"
+    },
+    {
+      "path": "docs/SCM.md",
+      "role": "deep-doc",
+      "purpose": "Pluggable source-control (SCM) reference: git/perforce/none backends, `.tasks/scm.json` config + resolution precedence, the `tasks scm <verb>` wire contract (envelope, exit codes, per-verb data shapes), and none-mode recovery guidance. Operator- and agent-facing summary; the design spec is the normative contract.",
+      "when_to_read": "on-demand",
+      "line_budget": 550,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Shipped by the pluggable-SCM feature (task #1544+); this entry (task #1598) is what gives it agent-context freshness/budget enforcement.",
+      "approx_token_budget": 11000,
+      "actual_lines": 458,
+      "sha256": "29b0516f96a1ae39694a502a9f283fcc5e13134bd071b32fe4e17ec238003d8e"
     },
     {
       "path": "docs/RELEASE.md",
@@ -329,8 +343,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1800,
-      "actual_lines": 72,
-      "sha256": "ab4363bd2f7b7f532de550b72697ac9d70e5af4ea40060e833e52ab2ab89cfcc",
+      "actual_lines": 73,
+      "sha256": "f541cffb4888c275d1a994824abe421bffe93a4f95e5939ca0ffebfda2f75e1e",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -371,8 +385,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 18200,
-      "actual_lines": 901,
-      "sha256": "eeb2ea884c32146eeb6a1213c514ffe674312925074d35f0697115a0463460ba"
+      "actual_lines": 905,
+      "sha256": "36cbc099984f295c860c0f62a856dd634a9005f03ece56a7c123a4915589628b"
     },
     {
       "path": "SECURITY.md",
@@ -399,8 +413,8 @@
       "status": "present",
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
-      "actual_lines": 40,
-      "sha256": "2c70b3ee43c3dd07be22f87135bc1d31ddf980b64de7b537f919bb59a4a73e28"
+      "actual_lines": 41,
+      "sha256": "182ac56a23c5e3fde2e9472d216b33e459e500d244c3b52f8f434ca2855d148d"
     },
     {
       "path": "CLAUDE.md",
