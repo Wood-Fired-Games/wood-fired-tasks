@@ -299,17 +299,20 @@ describe('TaskService', () => {
         [45, 3],
         [15, 1],
         [961, 13],
-      ])('AC1: estimated_minutes=%i with no wsjf stores wsjf_job_size=%i, source.jobSize=auto', (minutes, expectedTier) => {
-        const task = taskService.createTask({
-          title: `Auto-sized ${minutes}m`,
-          project_id: testProjectId,
-          created_by: 'user',
-          estimated_minutes: minutes,
-        });
-        expect(task.wsjf_job_size).toBe(expectedTier);
-        expect(task.wsjf_source).not.toBeNull();
-        expect(task.wsjf_source!.jobSize).toBe('auto');
-      });
+      ])(
+        'AC1: estimated_minutes=%i with no wsjf stores wsjf_job_size=%i, source.jobSize=auto',
+        (minutes, expectedTier) => {
+          const task = taskService.createTask({
+            title: `Auto-sized ${minutes}m`,
+            project_id: testProjectId,
+            created_by: 'user',
+            estimated_minutes: minutes,
+          });
+          expect(task.wsjf_job_size).toBe(expectedTier);
+          expect(task.wsjf_source).not.toBeNull();
+          expect(task.wsjf_source!.jobSize).toBe('auto');
+        },
+      );
 
       it('AC2: no estimated_minutes and no wsjf stores wsjf_job_size=3, source.jobSize=auto', () => {
         const task = taskService.createTask({

@@ -59,21 +59,23 @@ describe('WSJF 5.2 (#647) — skills invoke wsjf_health and surface its findings
     expect(skill).toMatch(/mcp__wood-fired-tasks__wsjf_health/);
   });
 
-  it.each([
-    ...SURFACING_SKILLS,
-  ])('%s documents the findings list it prints (severity + message + suggestion)', (file) => {
-    const skill = readSkill(file);
-    expect(skill).toMatch(/findings/);
-    expect(skill).toMatch(/severity/);
-    expect(skill).toMatch(/suggestion/i);
-  });
+  it.each([...SURFACING_SKILLS])(
+    '%s documents the findings list it prints (severity + message + suggestion)',
+    (file) => {
+      const skill = readSkill(file);
+      expect(skill).toMatch(/findings/);
+      expect(skill).toMatch(/severity/);
+      expect(skill).toMatch(/suggestion/i);
+    },
+  );
 
-  it.each([
-    ...SURFACING_SKILLS,
-  ])('%s states the linter is non-blocking / advisory (never blocks the run)', (file) => {
-    const skill = readSkill(file);
-    expect(skill).toMatch(/non-blocking|advisory|never block/i);
-  });
+  it.each([...SURFACING_SKILLS])(
+    '%s states the linter is non-blocking / advisory (never blocks the run)',
+    (file) => {
+      const skill = readSkill(file);
+      expect(skill).toMatch(/non-blocking|advisory|never block/i);
+    },
+  );
 
   it('loop.md surfaces health at loop start (§2g), before Step 1 selection', () => {
     const skill = readSkill('loop.md');
