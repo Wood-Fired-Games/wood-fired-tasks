@@ -155,7 +155,7 @@
     "@babel/core": "^7.29.6"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.2",
+    "@biomejs/biome": "2.5.4",
     "@fast-check/vitest": "^0.4.1",
     "@slack/types": "^2.20.0",
     "@slack/web-api": "^7.15.2",

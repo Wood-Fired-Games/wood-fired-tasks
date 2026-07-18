@@ -470,42 +470,39 @@ describe('size-only auto task routes byCategory at every tier (task #994)', () =
     { minutes: 1500, tier: 13, category: 'maximum' },
   ];
 
-  it.each(
-    TIER_CASES,
-  )('estimated_minutes=$minutes auto-sizes to tier $tier and resolves byCategory exec+val to concrete models', ({
-    minutes,
-    tier,
-    category,
-  }) => {
-    // Create through the public service with NO wsjf payload → auto-sized.
-    const task = taskService.createTask({
-      title: `auto tier ${tier}`,
-      project_id: projectId,
-      created_by: 'test-agent',
-      estimated_minutes: minutes,
-    });
+  it.each(TIER_CASES)(
+    'estimated_minutes=$minutes auto-sizes to tier $tier and resolves byCategory exec+val to concrete models',
+    ({ minutes, tier, category }) => {
+      // Create through the public service with NO wsjf payload → auto-sized.
+      const task = taskService.createTask({
+        title: `auto tier ${tier}`,
+        project_id: projectId,
+        created_by: 'test-agent',
+        estimated_minutes: minutes,
+      });
 
-    // The create auto-sized to the expected tier with a SIZE-ONLY write:
-    // jobSize set, CoD components NULL, source.jobSize='auto'.
-    expect(task.wsjf_job_size).toBe(tier);
-    expect(task.wsjf_value).toBeNull();
-    expect(task.wsjf_time_criticality).toBeNull();
-    expect(task.wsjf_risk_opportunity).toBeNull();
-    expect(task.wsjf_source?.jobSize).toBe('auto');
+      // The create auto-sized to the expected tier with a SIZE-ONLY write:
+      // jobSize set, CoD components NULL, source.jobSize='auto'.
+      expect(task.wsjf_job_size).toBe(tier);
+      expect(task.wsjf_value).toBeNull();
+      expect(task.wsjf_time_criticality).toBeNull();
+      expect(task.wsjf_risk_opportunity).toBeNull();
+      expect(task.wsjf_source?.jobSize).toBe('auto');
 
-    const s = resolver();
-    // The bijection relabels the jobSize tier to its power category.
-    expect(s.categoryForJobSize(task.wsjf_job_size)).toBe(category);
+      const s = resolver();
+      // The bijection relabels the jobSize tier to its power category.
+      expect(s.categoryForJobSize(task.wsjf_job_size)).toBe(category);
 
-    // resolve_model returns a CONCRETE byCategory model — never null/inherit —
-    // for BOTH the execution and validation roles.
-    const exec = s.resolveModel(projectId, 'execution', task.id);
-    const val = s.resolveModel(projectId, 'validation', task.id);
-    expect(exec).toEqual({ model: `exec-${category}` });
-    expect(val).toEqual({ model: `val-${category}` });
-    expect(exec).not.toBeNull();
-    expect(val).not.toBeNull();
-  });
+      // resolve_model returns a CONCRETE byCategory model — never null/inherit —
+      // for BOTH the execution and validation roles.
+      const exec = s.resolveModel(projectId, 'execution', task.id);
+      const val = s.resolveModel(projectId, 'validation', task.id);
+      expect(exec).toEqual({ model: `exec-${category}` });
+      expect(val).toEqual({ model: `val-${category}` });
+      expect(exec).not.toBeNull();
+      expect(val).not.toBeNull();
+    },
+  );
 
   it('all six tiers resolve to six DISTINCT concrete execution models (no tier collapses to inherit)', () => {
     const resolved = TIER_CASES.map(({ minutes, tier }) => {

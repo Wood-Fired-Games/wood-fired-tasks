@@ -176,20 +176,18 @@ describe('IdempotencyStore.complete', () => {
     }
   });
 
-  it.each<DispatchStatus>([
-    'SUCCEEDED',
-    'FAILED',
-    'PERMANENTLY_FAILED',
-    'SUPERSEDED',
-  ])('accepts terminal status %s', (status) => {
-    const store = makeMemoryStore();
-    try {
-      store.claim(claimInput({ event_id: `evt-${status}` }));
-      expect(store.complete('rule-A', `evt-${status}`, status)).toBe(true);
-    } finally {
-      store.close();
-    }
-  });
+  it.each<DispatchStatus>(['SUCCEEDED', 'FAILED', 'PERMANENTLY_FAILED', 'SUPERSEDED'])(
+    'accepts terminal status %s',
+    (status) => {
+      const store = makeMemoryStore();
+      try {
+        store.claim(claimInput({ event_id: `evt-${status}` }));
+        expect(store.complete('rule-A', `evt-${status}`, status)).toBe(true);
+      } finally {
+        store.close();
+      }
+    },
+  );
 });
 
 describe('IdempotencyStore.replayPending (crash recovery)', () => {
