@@ -93,7 +93,7 @@ interface NoneManifest {
   /**
    * The baseline manifest file's own filesystem mtime — sourced from the SAME
    * clock/granularity as the entry `mtimeMs` values so the comparison is exact.
-   * Powers git-style **racy-clean** detection: any entry whose recorded
+   * Powers git-style **racy-clean** detection: every entry whose recorded
    * `mtimeMs >= capturedAtMs` shared the manifest's write tick and may be
    * rewritten in that same tick, so the size+mtime fast path cannot be trusted
    * for it and it is always re-hashed. Excluded from the identity digest — it is
@@ -154,7 +154,7 @@ function matchesIgnoreGlob(relPath: string, pattern: string): boolean {
   const segRe = new RegExp(`^${segToRegex(pat)}$`);
   const parts = relPath.split('/');
   if (dirOnly) {
-    // Directory pattern: any ANCESTOR segment matching means the file is inside
+    // Directory pattern: an ANCESTOR segment matching means the file is inside
     // the ignored dir. (Every part except the last is an ancestor dir.)
     return parts.slice(0, -1).some((p) => segRe.test(p));
   }
