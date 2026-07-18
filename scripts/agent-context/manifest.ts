@@ -58,6 +58,22 @@ const OWNER_LINE_EXEMPT = new Set<string>([
   'docs/SLACK.md',
   'docs/RELEASE.md',
   'docs/CODE_QUALITY_ROADMAP.md',
+  // docs/SCM.md content is owned by a parallel task (not #1598, which only
+  // adds this manifest entry) — exempted rather than editing the doc body to
+  // add an Owner: line out of that task's lane. Follow-up: add the line and
+  // drop this exemption.
+  'docs/SCM.md',
+  // The four docs below were discovered untracked by the manifest-completeness
+  // guard (task #1609) — they were already linked from docs/README.md and/or
+  // docs/NAVIGATION.md (proving the "5 parallel doc indexes drift" bug this
+  // task fixes) but pre-date the Owner:-line convention. Grandfathered like
+  // the other pre-contract deep docs above rather than editing doc bodies
+  // out of this task's narrow guard-adding lane; follow-up: add the line and
+  // drop these exemptions.
+  'docs/BENCHMARK_POLICY.md',
+  'docs/hooks/README.md',
+  'docs/loop-run-schema.md',
+  'docs/QUALITY_COMMANDS.md',
   'CONTRIBUTING.md',
   // Adapter files (authority: 'adapter') intentionally carry no Owner: line.
   // They are thin pointers to the canonical entry (AGENTS.md), not
@@ -236,8 +252,13 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // #1004 (atomic block-with-dependency) kept the budget at 1800 by
     // condensing the `tasks update` examples to fit the `--blocked-by` row —
     // the onboarding-smoke probe (MAX_LINES_PER_PROBE_FILE) hard-caps every
-    // recommended-read doc at 1800, so the advisory budget must not exceed it.
-    line_budget: 1800,
+    // recommended-read doc, so the advisory budget must not exceed it.
+    // 1800 -> 1950 by #1598 (docs/SCM.md discovery pass): added the "Source
+    // Control (SCM) Commands" section documenting `tasks scm <verb>` (verbs,
+    // common flags, envelope shape, exit codes); doc grew to 1848. 1950
+    // leaves ~100 lines of headroom, matching MAX_LINES_PER_PROBE_FILE in
+    // scripts/agent-context/__tests__/onboarding-smoke.test.ts (kept in step).
+    line_budget: 1950,
     authority: 'authoritative',
     owner_role: 'CLI maintainers',
     status: 'present',
@@ -248,7 +269,10 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'deep-doc',
     purpose: 'Local setup, install, environment variables.',
     when_to_read: 'on-demand',
-    line_budget: 1500,
+    // 1500 → 1580: Pluggable SCM (#1544) added the "Source Control (SCM)
+    // Configuration" section (backend precedence + `.tasks/scm.json` shape);
+    // doc grew to 1553.
+    line_budget: 1580,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
@@ -263,6 +287,22 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     authority: 'authoritative',
     owner_role: 'Slack maintainers',
     status: 'present',
+  },
+  {
+    path: 'docs/SCM.md',
+    role: 'deep-doc',
+    purpose:
+      'Pluggable source-control (SCM) reference: git/perforce/none backends, `.tasks/scm.json` config + resolution precedence, the `tasks scm <verb>` wire contract (envelope, exit codes, per-verb data shapes), and none-mode recovery guidance. Operator- and agent-facing summary; the design spec is the normative contract.',
+    when_to_read: 'on-demand',
+    // 458 actual lines at #1598 (this doc's discoverability pass); 550 leaves
+    // ~90 lines of headroom for the still-active hardening work on this
+    // flagship SCM feature.
+    line_budget: 550,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      'Shipped by the pluggable-SCM feature (task #1544+); this entry (task #1598) is what gives it agent-context freshness/budget enforcement.',
   },
   {
     path: 'docs/RELEASE.md',
@@ -332,6 +372,32 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
       'Design spec — single landing doc for the OPERATIONAL /tasks:decompose pipeline. Budget raised 500→560 by #818 (Step 8d terminal spec-coverage audit), then 560→580 by the 2026-07 quality plan (T8 Step 3b AC-checkability lint + T9 Step 4b predicted file-overlap check); tighten in a follow-up if/when content peels out into adjacent files.',
   },
   {
+    path: 'docs/tasks-audit-design.md',
+    role: 'deep-doc',
+    purpose:
+      '/tasks:audit design spec: the retroactive-grader contract, task enumeration from a LOOP-RUN.md, per-task verifier dispatch, and the AUDIT.md artifact schema. skills/tasks/audit.md defers to this doc as its source of truth (same pattern as decompose.md ↔ docs/tasks-decompose-design.md).',
+    when_to_read: 'on-demand',
+    line_budget: 500,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      "Design-of-record for the OPERATIONAL /tasks:audit skill, same class as docs/tasks-decompose-design.md above. Was missing from this manifest before task #1609's manifest-completeness guard surfaced it — genuinely canonical, not a doc that belongs on the allowlist.",
+  },
+  {
+    path: 'docs/loop-run-schema.md',
+    role: 'deep-doc',
+    purpose:
+      'LOOP-RUN.md artifact contract: the frontmatter schema `loop`, `loop-dag`, `decompose`, and `audit` skills (and `src/lib/loop-run/**`) read and write. Companion files: `loop-run-schema.json` (Ajv schema) and `loop-run-reference-example.md` (illustrative fixture).',
+    when_to_read: 'on-demand',
+    line_budget: 320,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      "Widely cross-referenced from skills/tasks/*.md and src/lib/loop-run/** as the canonical contract but was missing from this manifest before task #1609's guard surfaced it.",
+  },
+  {
     path: 'docs/automation-recipes/claude-routines.md',
     role: 'deep-doc',
     purpose:
@@ -363,6 +429,71 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
+  },
+  {
+    path: 'docs/event-router-design.md',
+    role: 'deep-doc',
+    purpose:
+      'Design-of-record for the `wft-router` event-router daemon: SSE subscription → predicate match → handler dispatch. Companion to `packages/wft-router/README.md` (the package/CLI reference), which points here as its design-of-record.',
+    when_to_read: 'on-demand',
+    line_budget: 1000,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      "Referenced by llms.txt and docs/README.md's Automation index — proof it was already discoverable through 2 of the 5 doc indexes while missing from this manifest, exactly the drift class task #1609's guard now catches.",
+  },
+  {
+    path: 'docs/BENCHMARK_POLICY.md',
+    role: 'deep-doc',
+    purpose:
+      'Benchmark & performance-regression policy: which hot paths run under bench, the stable `npm run test:bench` invocation, recorded baselines, and the advisory-not-blocking CI rule.',
+    when_to_read: 'on-demand',
+    line_budget: 160,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      "Listed in docs/README.md's Quality index but was missing from this manifest before task #1609's guard surfaced it.",
+  },
+  {
+    path: 'docs/hooks/README.md',
+    role: 'reference-hook-doc',
+    purpose:
+      'Optional client-side `PreToolUse` reference hook (`validate-sha.mjs`) that blocks evidence containing git SHAs unknown to the local repo. Not loaded, imported, or required by the server or CLI — copy-paste opt-in reference material.',
+    when_to_read: 'on-demand',
+    line_budget: 100,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      "Linked from docs/README.md's Quality index and docs/NAVIGATION.md but was missing from this manifest before task #1609's guard surfaced it.",
+  },
+  {
+    path: 'docs/QUALITY_COMMANDS.md',
+    role: 'deep-doc',
+    purpose:
+      'Practical guide to the local quality commands for contributors and agents: `quality:fast` vs `quality:full`, what each step needs (network/runtime), and how to triage a failure.',
+    when_to_read: 'on-demand',
+    line_budget: 130,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      'Agent-facing operational doc that was not linked from any of the five doc indexes (AGENTS.md, docs/README.md, docs/NAVIGATION.md, llms.txt, .agent-context.json) before task #1609 — the purest instance of the "shipped but untracked" failure mode this task\'s guard targets. Follow-up: link it from docs/README.md\'s Quality section too (out of scope here — no docs-content edits in this task).',
+  },
+  {
+    path: 'docs/USAGE_PATTERNS.md',
+    role: 'operator-playbook',
+    purpose:
+      'Operator playbook: the real plan → decompose → loop lifecycle shapes (branch/PR hygiene, context-clear rituals, the live-verified fallback). Illustrative, not contract.',
+    when_to_read: 'on-demand',
+    line_budget: 350,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      "Listed in docs/README.md's Agents index but was missing from this manifest before task #1609's guard surfaced it.",
   },
   {
     path: 'docs/ONBOARDING_SMOKE.md',
@@ -414,7 +545,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     when_to_read: 'reference',
     // 850 → 875: Configurable Task Models added the Model Tools (4) domain
     // table to the MCP summary (the doc sat at 848/850 before it).
-    line_budget: 875,
+    // 875 → 910: Pluggable SCM (#1544) added the SCM capability bullet and the
+    // "Source Control (SCM) Commands" CLI-summary table (doc grew to 901).
+    line_budget: 910,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',

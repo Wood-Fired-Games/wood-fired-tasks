@@ -15,7 +15,7 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | System one-pager: data flow across API, MCP, CLI, Slack, DB. |
 | [`WORKFLOWS.md`](WORKFLOWS.md) | Canonical build, test, lint, migrate, run, smoke recipes. |
 | [`USAGE_PATTERNS.md`](USAGE_PATTERNS.md) | Operator playbook: the real plan → decompose → loop lifecycle shapes (branch/PR hygiene, context-clear rituals, the live-verified fallback). |
-| [`INTERFACES.md`](INTERFACES.md) | Source-verified index of REST routes, MCP tools (27 stdio + remote), CLI commands — including the WSJF prioritization surface. |
+| [`INTERFACES.md`](INTERFACES.md) | Source-verified index of REST routes, MCP tools (31 stdio + remote), CLI commands — including the WSJF prioritization surface. |
 | [`NAVIGATION.md`](NAVIGATION.md) | Task-oriented index: "if you want to do X, read these files." |
 | [`ONBOARDING_SMOKE.md`](ONBOARDING_SMOKE.md) | Seven onboarding probe scenarios that prove a fresh agent can navigate the repo from committed context alone. |
 
@@ -27,6 +27,7 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 | [`MCP.md`](MCP.md) | MCP server reference (tool schemas, local stdio + remote HTTP modes). |
 | [`CLI.md`](CLI.md) | `tasks` CLI reference (every subcommand, every flag). |
 | [`SLACK.md`](SLACK.md) | Slack integration reference (manifest, scopes, slash-command surface, notifier). |
+| [`SCM.md`](SCM.md) | Pluggable source control (git/perforce/none): `tasks scm <verb>` command group, `.tasks/scm.json` config, wire contract. |
 
 ### Prioritization (WSJF)
 

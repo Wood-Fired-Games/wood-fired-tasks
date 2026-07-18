@@ -20,10 +20,11 @@
 //      Policy & Production Budget").
 //
 // METHODOLOGY / CAVEATS
-//   - Counting is line-grep style (one match per line), matching the
+//   - Counting is line-based (one match per line per category), matching the
 //     reproducible methodology of the wave-1 audit guide (§1.8). It is a
 //     DIRECTIONAL signal, not an AST-precise unsafe-cast inventory: comments
-//     and doc-strings that contain the literal token are counted, and a
+//     and doc-strings are stripped before counting (so `: any` in prose is NOT
+//     a false positive), but string-literal contents are not parsed and a
 //     double-cast (`x as unknown as T`) counts once per pattern per line.
 //   - The baseline is therefore a RATCHET, not a claim of "N genuinely-unsafe
 //     casts". Its only contract is: production counts must not grow without a
@@ -40,10 +41,9 @@
 // No external dependencies — node:fs + node:child_process (ripgrep-free grep)
 // only. The repo is "type":"module" so this is plain ESM.
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { execFileSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');
@@ -70,62 +70,74 @@ function isTestPath(p) {
   return TEST_PATTERNS.some((frag) => p.includes(frag));
 }
 
-/**
- * Return all matching `path:line:...` records for a grep pattern across the
- * scan dirs. Uses grep -rnE; returns [] when grep finds nothing (exit 1).
- */
-function grepLines(grepPattern) {
-  const dirs = SCAN_DIRS.filter((d) => existsSync(join(REPO_ROOT, d)));
-  if (dirs.length === 0) return [];
-  // No shell: execFileSync passes args straight to grep, so the pattern and
-  // paths are never re-parsed by a shell (no injection surface, and ERE
-  // metacharacters in the pattern reach grep verbatim).
-  // -r recursive, -n line numbers, -E extended regex, --include only .ts,
-  // -a treat files as text (a stray non-UTF8 byte in a .ts file must not make
-  // grep emit "binary file matches" and silently drop the per-line count).
-  const args = ['-rnEa', grepPattern, ...dirs, '--include=*.ts'];
-  let out = '';
-  try {
-    out = execFileSync('grep', args, {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-  } catch (err) {
-    // grep exits 1 when there are no matches — that's a legitimate "zero".
-    if (err.status === 1) return [];
-    throw err;
+/** Recursively collect repo-relative `.ts` file paths under the scan dirs. */
+function collectTsFiles() {
+  const files = [];
+  for (const d of SCAN_DIRS) {
+    const abs = join(REPO_ROOT, d);
+    if (!existsSync(abs)) continue;
+    for (const rel of readdirSync(abs, { recursive: true })) {
+      const relStr = typeof rel === 'string' ? rel : rel.toString();
+      if (relStr.endsWith('.ts')) files.push(`${d}/${relStr.split('\\').join('/')}`);
+    }
   }
-  return out.split('\n').filter((l) => l.length > 0);
+  return files;
+}
+
+/**
+ * Blank out comments while preserving line count so escape-hatch tokens that
+ * appear only inside a comment or doc-string are NOT counted (real code tokens
+ * only). Block comments (`/* *\/`, `/** *\/`) and line comments (`// …`) are
+ * replaced with spaces; newlines are kept so reported line numbers stay
+ * accurate. Directional counter — string-literal contents are not parsed, so a
+ * `//` inside a string truncates that line, which can only ever DROP a token
+ * (never invent one), matching this gate's conservative ratchet contract.
+ */
+function stripComments(src) {
+  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  return noBlock
+    .split('\n')
+    .map((line) => line.replace(/\/\/.*$/, ''))
+    .join('\n');
 }
 
 /**
  * Scan the tree and return { prod: {cat:count}, test: {cat:count},
- * prodRefs: {cat:[file:line,...]} } — refs capped for readability.
+ * prodRefs: {cat:[file:line,...]} } — refs capped for readability. Counting is
+ * one match per (comment-stripped) line per category, preserving the original
+ * line-grep methodology minus the comment/doc-string false positives.
  */
 function scan() {
   const prod = {};
   const test = {};
   const prodRefs = {};
   for (const cat of CATEGORIES) {
-    const lines = grepLines(cat.grep);
-    let prodCount = 0;
-    let testCount = 0;
-    const refs = [];
-    for (const line of lines) {
-      // line looks like "src/foo/bar.ts:123:   ...code..."
-      const m = line.match(/^([^:]+):(\d+):/);
-      const path = m ? m[1] : line;
-      if (isTestPath(path)) {
-        testCount += 1;
-      } else {
-        prodCount += 1;
-        if (refs.length < 6) refs.push(`${m ? `${m[1]}:${m[2]}` : path}`);
+    prod[cat.id] = 0;
+    test[cat.id] = 0;
+    prodRefs[cat.id] = [];
+  }
+  const compiled = CATEGORIES.map((cat) => ({ cat, re: new RegExp(cat.grep) }));
+  for (const relPath of collectTsFiles()) {
+    let content;
+    try {
+      content = readFileSync(join(REPO_ROOT, relPath), 'utf8');
+    } catch {
+      continue;
+    }
+    const isTest = isTestPath(relPath);
+    const lines = stripComments(content).split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      for (const { cat, re } of compiled) {
+        if (!re.test(line)) continue;
+        if (isTest) {
+          test[cat.id] += 1;
+        } else {
+          prod[cat.id] += 1;
+          if (prodRefs[cat.id].length < 6) prodRefs[cat.id].push(`${relPath}:${i + 1}`);
+        }
       }
     }
-    prod[cat.id] = prodCount;
-    test[cat.id] = testCount;
-    prodRefs[cat.id] = refs;
   }
   return { prod, test, prodRefs };
 }

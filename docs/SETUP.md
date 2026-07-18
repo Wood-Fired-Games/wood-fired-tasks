@@ -223,6 +223,55 @@ global install. The catalog includes `setup`, `usage-patterns`, `cli`, `api`,
 `mcp`, `navigation`, `interfaces`, `workflows`, `slack`, `reliability`,
 `troubleshooting`, `architecture`, `agent-context`, and `readme`.
 
+## Source Control (SCM) Configuration
+
+The automation lifecycle talks to source control through a **pluggable SCM
+adapter** — the `tasks scm <verb>` CLI (see the
+[SCM command reference](../README.md#source-control-scm-commands)) — so the same
+`/tasks:*` recipes run unchanged over three interchangeable backends:
+
+- **git** — byte-parity with native git (default when a `.git` marker is found).
+- **perforce** — changelist-based; change-ids look like `p4:<cl>`.
+- **none** — a no-VCS digest backend for unversioned trees (no change-ids).
+
+### Which backend a repo uses (precedence)
+
+See [docs/SCM.md § Resolution precedence](SCM.md#resolution-precedence) for
+the canonical 4-step order (config file → on-disk marker → charter hint →
+`none`). A `.tasks/scm.json` that exists but fails validation is a **hard
+config error** (`CONFIG_INVALID`, exit 2) — it never silently falls through
+to auto-detection.
+
+### `.tasks/scm.json`
+
+A committed file at the repo root. `version` must be exactly `1`; unknown keys
+are rejected (`.strict()`):
+
+```json
+{
+  "version": 1,
+  "backend": "git",
+  "behaviors": {
+    "commit": true,
+    "isolate": true,
+    "publish": false,
+    "openReview": false,
+    "branchPerRun": false
+  },
+  "ignore": ["build/", "*.tmp"]
+}
+```
+
+- **`version`** (required) — schema version, currently `1`.
+- **`backend`** (required) — one of `"git"`, `"perforce"`, `"none"`, or
+  `"auto"` (defer to auto-detection).
+- **`behaviors`** (optional, sparse) — per-verb toggles; any omitted key falls
+  back to the backend's default.
+- **`ignore`** (optional) — extra path globs excluded from change detection.
+
+With no `.tasks/scm.json` and no charter `scm` default, a repo just auto-detects
+its backend — no configuration is required to get git behavior.
+
 ## Prerequisites
 
 - **Node.js 22 or higher** — matches the CI matrix (`actions/setup-node` with
@@ -232,23 +281,13 @@ global install. The catalog includes `setup`, `usage-patterns`, `cli`, `api`,
 
 The npm-only flow above (`npm i -g wood-fired-tasks` → `setup` → `serve`) needs
 **only Node.js + npm** — `setup` merges `~/.claude.json` with native Node JSON
-handling, so `jq`/`curl` are **not** required. The `jq` / `curl` prerequisites
-below apply only to the **clone-based** `install.sh` installer used by the
-development/self-hosting paths.
-
-- **jq** — required by `install.sh` to merge the MCP server entry into
-  `~/.claude.json` safely (raw heredocs would mis-quote the API key on
-  embedded `"`/`\`/newline). Install with:
-  - Debian/Ubuntu: `sudo apt-get install jq`
-  - RHEL/CentOS: `sudo yum install jq`
-  - Fedora: `sudo dnf install jq`
-  - macOS: `brew install jq`
-- **curl** — required by `install.sh` to validate that the API server is
-  reachable at the configured URL (post-install connectivity check). Almost
-  always preinstalled; install with the same package managers if missing.
-
-The Windows installer (`install.ps1`) uses native PowerShell JSON handling
-and `Invoke-WebRequest` instead, so it does not require `jq` or `curl`.
+handling, so `jq`/`curl` are **not** required. The old clone-based `install.sh` /
+`install.ps1` git-clone installers that once required `jq` and `curl` are
+**retired** — both are now deprecation shims that just delegate to
+`wood-fired-tasks setup` and read no such tooling. Self-hosting the server via
+`deploy/install.sh` / `deploy/upgrade.sh` needs Node.js and the `sqlite3` CLI
+(see [Self-hosting and upgrades](#self-hosting-and-upgrades)); it does not need
+`jq` or `curl` either.
 
 ## Secrets
 
@@ -1412,10 +1451,41 @@ move a bucket; behind a proxy, enable it or all clients share one IP bucket.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `API_BASE_URL` | no | `http://localhost:3000` | Base URL for the REST API the CLI talks to. |
+| `API_BASE_URL` | no | `http://localhost:3000` | Base URL for the REST API the CLI talks to. See the precedence chain below — this is only the second-highest tier. |
 | `API_KEY` | yes (unless logged in) | — | A PAT (`wft_pat_…`) sent as `Authorization: Bearer <pat>`. A cached PAT from `tasks login` takes precedence; `--token` overrides both. |
 | `DATABASE_PATH` | no | `./data/tasks.db` | Used by the offline CLI commands (`backup`, `doctor`, `stats`, `db-check`, `completed`) that open the SQLite database directly. |
 | `NO_COLOR` | no | unset | When set (any value), suppresses ANSI colors in CLI output. |
+
+#### `API_BASE_URL` precedence (task #1605)
+
+`env.API_BASE_URL` (`src/cli/config/env.ts`) resolves through four tiers,
+highest wins:
+
+1. **An explicit CLI flag override.** No root-level `--base-url`/`--server`
+   flag exists on the `tasks` program today, so this tier is currently a
+   no-op — reserved so a future flag can be wired in ahead of the chain
+   without another precedence redesign.
+2. **`API_BASE_URL` environment variable**, including a checked-out
+   repo-root `.env` — `env.ts` calls `dotenv.config()` at import time, which
+   only fills keys not already present in `process.env`. A real shell
+   export therefore always wins over `.env`, and either way the value is in
+   `process.env` before this tier is read — a `.env`-sourced value and a
+   shell export are indistinguishable, and both count as an **explicit env
+   source** that outranks tier 3. This is deliberate: a checked-out `.env`
+   (e.g. pointing a dev checkout at `http://localhost:3000`) is a conscious
+   override and must not be silently shadowed by whatever server `tasks
+   login` / `tasks setup --remote` last wrote to the credentials file.
+3. **`credentials.active.server`** — the base URL recorded for the
+   currently active login (written by `tasks login` / `tasks setup
+   --remote`, read via `src/cli/auth/credentials.ts`). This tier is what
+   closes a split-brain bug: before it existed, `tasks whoami` (identity,
+   sourced from `credentials.active.server`) and the CLI's data-plane
+   requests (only `API_BASE_URL`/the default) could point at two different
+   servers after a `tasks setup --local`/`--remote` mode conversion. A
+   credentials file with insecure permissions or malformed TOML is treated
+   as absent for URL-resolution purposes — `resolveAuth()` re-reads the
+   same file for the Bearer token and is where that error surfaces loudly.
+4. **The hardcoded default**, `http://localhost:3000`.
 
 ### MCP server (read by `src/mcp/index.ts` and `src/mcp/server.ts`)
 

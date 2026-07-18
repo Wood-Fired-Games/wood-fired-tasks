@@ -22,6 +22,20 @@
 // local repo. It cannot tell whether a real-but-wrong SHA is the *correct* one,
 // and it does not validate any other fabricated evidence (row counts, dollar
 // figures, exit codes, test pass counts). Those remain the reviewer's job.
+//
+// BACKEND-AWARE DISPATCH (docs/superpowers/specs/2026-07-16-pluggable-scm-design.md
+// §4.5 / §5.1 / §5.3): the evidence envelope's `commit_shas` field generalizes
+// to "change-ids" that carry bare git hex SHAs (unchanged, validated as
+// before), Perforce changelist ids as a literal `p4:<digits>` token, or are
+// empty for none-mode. This hook dispatches on shape:
+//   - bare 7-40 char hex run  -> git object existence check (unchanged).
+//   - `p4:<digits>`           -> accepted by shape alone, no probe — there is
+//     no git object to check, and this reference hook does not shell out to
+//     `p4` (a live changelist-existence probe is a documented future
+//     extension, not this hook's job today).
+//   - no candidates of either shape (including an explicitly empty change-id
+//     array) -> allow; §B's escape hatch already treats empty as a
+//     legitimate none-mode state, not fabrication.
 
 import { spawnSync } from 'node:child_process';
 
@@ -43,6 +57,26 @@ const TOOL_FIELDS = {
 // that is NOT embedded inside a longer alphanumeric word (so we don't trip on
 // the hex prefix of a UUID, an API key, or a base-16 chunk of a longer token).
 const SHA_RE = /\b[0-9a-f]{7,40}\b/gi;
+
+// A candidate Perforce changelist change-id: the literal `p4:` prefix
+// immediately followed by one or more decimal digits, as a standalone token
+// (word boundary on both sides so it isn't a substring of a longer word).
+// Perforce change numbers are decimal-only, so this shape never collides
+// with the git hex-SHA pattern above.
+const P4_RE = /\bp4:\d+\b/gi;
+
+/**
+ * Pull standalone `p4:<digits>` tokens out of `text`. Returns a
+ * de-duplicated lowercase list; these are accepted by shape alone (see the
+ * BACKEND-AWARE DISPATCH note at the top of this file) — never probed.
+ */
+function extractP4Ids(text) {
+  const out = new Set();
+  for (const m of text.matchAll(P4_RE)) {
+    out.add(m[0].toLowerCase());
+  }
+  return [...out];
+}
 
 /** Read all of stdin as a string. */
 async function readStdin() {
@@ -158,7 +192,17 @@ async function main() {
     return;
   }
 
-  const candidates = extractCandidates(text);
+  // `p4:<digits>` change-ids are accepted by shape alone (no git object to
+  // check), so strip them from the text before hex-scanning — they must
+  // never re-enter the git-verification path below. This also covers
+  // none-mode's empty change-id array: with no p4: tokens and no hex-SHA
+  // tokens left in the text, `candidates` is empty and we fall straight
+  // through to allow() — §B's escape hatch already treats empty as a
+  // legitimate state, not fabrication.
+  const p4Ids = extractP4Ids(text);
+  const textForShaScan = p4Ids.length > 0 ? text.replace(P4_RE, '') : text;
+
+  const candidates = extractCandidates(textForShaScan);
   if (candidates.length === 0) {
     allow();
     return;

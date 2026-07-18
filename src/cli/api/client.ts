@@ -106,6 +106,11 @@ export function getLastRequestId(): string | undefined {
  * Internal API request helper with authentication, timeout, and error handling.
  */
 async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  // env.API_BASE_URL resolves the precedence chain: explicit CLI flag (none
+  // wired yet) > API_BASE_URL env (incl. repo .env) > credentials.active.server
+  // > http://localhost:3000 default. See resolveBaseUrl() in config/env.ts —
+  // this is what keeps the data plane and `tasks whoami` pointed at the same
+  // server after a `tasks setup --local`/`--remote` mode conversion.
   const url = `${env.API_BASE_URL}${endpoint}`;
 
   // Create abort controller for 10-second timeout

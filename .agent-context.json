@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-07T12:10:34.965Z",
+    "generated_at": "2026-07-18T15:08:35.854Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 128,
-      "sha256": "2dda343a03ae881a45dab9e5e239700e7f02ad9321580afd7ab0a9b996de2b82",
+      "actual_lines": 141,
+      "sha256": "f7410e4dbbd2dd625a3206edc200451113cbfe28d3debaa974163beafec10601",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -35,8 +35,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 8000,
-      "actual_lines": 280,
-      "sha256": "c099d122e892f7f9777a021a1b4b6cd1f88e4681bf84cd3545c3c2e386f53bfb",
+      "actual_lines": 285,
+      "sha256": "5e077a76e7c0a2c8f966591547849fbd330fec05cf2d1cc3e87b17f49ed4ac36",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -49,8 +49,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 152,
-      "sha256": "344a83bb790f67a8779baed6eb4abd4a9a03ce698346b78de73db7ca5340cad4",
+      "actual_lines": 160,
+      "sha256": "86e82dd42a7223bb384f95e2aca502844a62e5f1a55e135b6c0ed5f585496d7a",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -77,8 +77,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 197,
-      "sha256": "93e241305939a772ff0bf2ae3d43c2f8d1dcd9d49b27287230b9e2976ef86d0d",
+      "actual_lines": 198,
+      "sha256": "40cdc5a5f5bf08fade00bd17090c990359d60072efe78806fbd5e2e22ef8206c",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -92,8 +92,8 @@
       "status": "present",
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
-      "actual_lines": 390,
-      "sha256": "8667ea04e506aae1ea6883340f77f4c88515d6f6c3860b07dc7bb6abe9fd9be7",
+      "actual_lines": 391,
+      "sha256": "44b6f4a01d2488916c046b5129c8f782e4c5524e92240407fb12de311c59b286",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -106,8 +106,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 6000,
-      "actual_lines": 250,
-      "sha256": "b5bd943e2672edf75cdbd86ce091525d7a67ca591c154afc09378056ea1100be",
+      "actual_lines": 271,
+      "sha256": "fcb89cc3acd17f4d3a7ce4f6d2d3b2f155a7f3665fe628a90bcdc02f24b02974",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -135,36 +135,36 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 30000,
-      "actual_lines": 1302,
-      "sha256": "40a569142c7b5e29df173e05ec0f6278e70d82f71c03c19e6491ebf77b0fad74"
+      "actual_lines": 1328,
+      "sha256": "7e5ad4884573dde0cf54b2b972b3543fe97efe819d20519d8877405723be5d32"
     },
     {
       "path": "docs/CLI.md",
       "role": "deep-doc",
       "purpose": "Authoritative CLI reference for the `tasks` binary.",
       "when_to_read": "on-demand",
-      "line_budget": 1800,
+      "line_budget": 1950,
       "authority": "authoritative",
       "owner_role": "CLI maintainers",
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
-      "approx_token_budget": 36000,
-      "actual_lines": 1799,
-      "sha256": "52a45aab786ca384e8469a7632cd4db6badaa3b040044504b01d80195b0d90d7"
+      "approx_token_budget": 39000,
+      "actual_lines": 1848,
+      "sha256": "bf040488702fa39d1efd88fb05d65d0dfd4ef873eb49067b11c613d8f2c6ade4"
     },
     {
       "path": "docs/SETUP.md",
       "role": "deep-doc",
       "purpose": "Local setup, install, environment variables.",
       "when_to_read": "on-demand",
-      "line_budget": 1500,
+      "line_budget": 1580,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
-      "approx_token_budget": 30000,
-      "actual_lines": 1500,
-      "sha256": "d2b606f40ea3332de6992d8f86f626fd45000784a667a311158055e648e5859b"
+      "approx_token_budget": 31600,
+      "actual_lines": 1570,
+      "sha256": "be62fe490425ea8df515e07bc22a404f3069e6e944b0505983b117a37fe95fb5"
     },
     {
       "path": "docs/SLACK.md",
@@ -178,6 +178,20 @@
       "approx_token_budget": 16000,
       "actual_lines": 287,
       "sha256": "9908b3370c1af79d229cc635c772dfa4afda40d2f11c086b73140074e8b0dc99"
+    },
+    {
+      "path": "docs/SCM.md",
+      "role": "deep-doc",
+      "purpose": "Pluggable source-control (SCM) reference: git/perforce/none backends, `.tasks/scm.json` config + resolution precedence, the `tasks scm <verb>` wire contract (envelope, exit codes, per-verb data shapes), and none-mode recovery guidance. Operator- and agent-facing summary; the design spec is the normative contract.",
+      "when_to_read": "on-demand",
+      "line_budget": 550,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Shipped by the pluggable-SCM feature (task #1544+); this entry (task #1598) is what gives it agent-context freshness/budget enforcement.",
+      "approx_token_budget": 11000,
+      "actual_lines": 458,
+      "sha256": "29b0516f96a1ae39694a502a9f283fcc5e13134bd071b32fe4e17ec238003d8e"
     },
     {
       "path": "docs/RELEASE.md",
@@ -264,6 +278,35 @@
       "actual_owner": "Repository maintainers"
     },
     {
+      "path": "docs/tasks-audit-design.md",
+      "role": "deep-doc",
+      "purpose": "/tasks:audit design spec: the retroactive-grader contract, task enumeration from a LOOP-RUN.md, per-task verifier dispatch, and the AUDIT.md artifact schema. skills/tasks/audit.md defers to this doc as its source of truth (same pattern as decompose.md ↔ docs/tasks-decompose-design.md).",
+      "when_to_read": "on-demand",
+      "line_budget": 500,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Design-of-record for the OPERATIONAL /tasks:audit skill, same class as docs/tasks-decompose-design.md above. Was missing from this manifest before task #1609's manifest-completeness guard surfaced it — genuinely canonical, not a doc that belongs on the allowlist.",
+      "approx_token_budget": 10000,
+      "actual_lines": 447,
+      "sha256": "2f4762de06cb1106d250ea43402eeead8fd90d7e55923e5c78a969cebe81cab0",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/loop-run-schema.md",
+      "role": "deep-doc",
+      "purpose": "LOOP-RUN.md artifact contract: the frontmatter schema `loop`, `loop-dag`, `decompose`, and `audit` skills (and `src/lib/loop-run/**`) read and write. Companion files: `loop-run-schema.json` (Ajv schema) and `loop-run-reference-example.md` (illustrative fixture).",
+      "when_to_read": "on-demand",
+      "line_budget": 320,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Widely cross-referenced from skills/tasks/*.md and src/lib/loop-run/** as the canonical contract but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 6400,
+      "actual_lines": 297,
+      "sha256": "744139edbc7f7a5bf48d52a89997d02ac6944d94b2dd169d1292d98dca07bae0"
+    },
+    {
       "path": "docs/automation-recipes/claude-routines.md",
       "role": "deep-doc",
       "purpose": "Automation recipe: dispatch a routine on task close via the vendor-neutral agent_session_dispatch + shell_exec core handlers, with a validating sample triggers.yaml and the adapter-contract shape.",
@@ -306,6 +349,78 @@
       "actual_owner": "Repository maintainers"
     },
     {
+      "path": "docs/event-router-design.md",
+      "role": "deep-doc",
+      "purpose": "Design-of-record for the `wft-router` event-router daemon: SSE subscription → predicate match → handler dispatch. Companion to `packages/wft-router/README.md` (the package/CLI reference), which points here as its design-of-record.",
+      "when_to_read": "on-demand",
+      "line_budget": 1000,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Referenced by llms.txt and docs/README.md's Automation index — proof it was already discoverable through 2 of the 5 doc indexes while missing from this manifest, exactly the drift class task #1609's guard now catches.",
+      "approx_token_budget": 20000,
+      "actual_lines": 934,
+      "sha256": "3a5348feffa74c926996a775d69d0ef2c7f83dcd74effecf1c50309a7ca9dedd",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/BENCHMARK_POLICY.md",
+      "role": "deep-doc",
+      "purpose": "Benchmark & performance-regression policy: which hot paths run under bench, the stable `npm run test:bench` invocation, recorded baselines, and the advisory-not-blocking CI rule.",
+      "when_to_read": "on-demand",
+      "line_budget": 160,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Listed in docs/README.md's Quality index but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 3200,
+      "actual_lines": 130,
+      "sha256": "9b4748d9020980a0f1dbfb40975ba238989de4e7f37f839d660a3c8de68ce6f7"
+    },
+    {
+      "path": "docs/hooks/README.md",
+      "role": "reference-hook-doc",
+      "purpose": "Optional client-side `PreToolUse` reference hook (`validate-sha.mjs`) that blocks evidence containing git SHAs unknown to the local repo. Not loaded, imported, or required by the server or CLI — copy-paste opt-in reference material.",
+      "when_to_read": "on-demand",
+      "line_budget": 100,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Linked from docs/README.md's Quality index and docs/NAVIGATION.md but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 2000,
+      "actual_lines": 81,
+      "sha256": "bbab1640b91260a5b8cf050572de5f28a66cf3b206906d8e2e1122564125e1b0"
+    },
+    {
+      "path": "docs/QUALITY_COMMANDS.md",
+      "role": "deep-doc",
+      "purpose": "Practical guide to the local quality commands for contributors and agents: `quality:fast` vs `quality:full`, what each step needs (network/runtime), and how to triage a failure.",
+      "when_to_read": "on-demand",
+      "line_budget": 130,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Agent-facing operational doc that was not linked from any of the five doc indexes (AGENTS.md, docs/README.md, docs/NAVIGATION.md, llms.txt, .agent-context.json) before task #1609 — the purest instance of the \"shipped but untracked\" failure mode this task's guard targets. Follow-up: link it from docs/README.md's Quality section too (out of scope here — no docs-content edits in this task).",
+      "approx_token_budget": 2600,
+      "actual_lines": 108,
+      "sha256": "7b426860fec46187db1c94887f0cb0555adbe26fca6e303f6237ef948d16c698"
+    },
+    {
+      "path": "docs/USAGE_PATTERNS.md",
+      "role": "operator-playbook",
+      "purpose": "Operator playbook: the real plan → decompose → loop lifecycle shapes (branch/PR hygiene, context-clear rituals, the live-verified fallback). Illustrative, not contract.",
+      "when_to_read": "on-demand",
+      "line_budget": 350,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Listed in docs/README.md's Agents index but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 7000,
+      "actual_lines": 322,
+      "sha256": "90dd1e5cd973a900bc2c4edcf0430397df6b3a8093bbb47c8360fe0cc46e4a7e",
+      "actual_owner": "Repository maintainers"
+    },
+    {
       "path": "docs/ONBOARDING_SMOKE.md",
       "role": "onboarding-smoke",
       "purpose": "Agent onboarding smoke test: seven probe scenarios that prove a fresh agent can navigate the repo from committed context alone.",
@@ -329,8 +444,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 1800,
-      "actual_lines": 72,
-      "sha256": "ab4363bd2f7b7f532de550b72697ac9d70e5af4ea40060e833e52ab2ab89cfcc",
+      "actual_lines": 73,
+      "sha256": "2798a5679b2491abaa8a84bd5f7bd96788a6cc1ee1c71b754208ef88445ed208",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -365,14 +480,14 @@
       "role": "project-front-door",
       "purpose": "Product-level overview, install, quickstart.",
       "when_to_read": "reference",
-      "line_budget": 875,
+      "line_budget": 910,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
-      "approx_token_budget": 17500,
-      "actual_lines": 860,
-      "sha256": "b92ddacdbdd62faa98ec377b9bf0ffb447f139879556743e5982ca84dd76ac12"
+      "approx_token_budget": 18200,
+      "actual_lines": 907,
+      "sha256": "205695ad8d9dab8fcc761720f512463759a7bc29b8a60909333ee190305c29ad"
     },
     {
       "path": "SECURITY.md",
@@ -399,8 +514,8 @@
       "status": "present",
       "notes": "Adapter file. Owner line check exempt. Must link to AGENTS.md — enforced by check.ts adapter-link check.",
       "approx_token_budget": 1200,
-      "actual_lines": 40,
-      "sha256": "2c70b3ee43c3dd07be22f87135bc1d31ddf980b64de7b537f919bb59a4a73e28"
+      "actual_lines": 41,
+      "sha256": "2a3c6f6ae2ba3e5512388954115aac498aa92a3d951fa1a302185949fbb6f16d"
     },
     {
       "path": "CLAUDE.md",

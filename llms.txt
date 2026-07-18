@@ -15,7 +15,7 @@
 - [docs/REPO_MAP.md](docs/REPO_MAP.md): Compact tree + per-directory ownership.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Data flow, mutation flows, auth model.
 - [docs/INTERFACES.md](docs/INTERFACES.md): REST routes / MCP tools / CLI commands (counts verified in CI).
-- [docs/NAVIGATION.md](docs/NAVIGATION.md): 19 change-type recipes.
+- [docs/NAVIGATION.md](docs/NAVIGATION.md): 21 change-type recipes.
 - [docs/WORKFLOWS.md](docs/WORKFLOWS.md): Build, test, lint, dev recipes.
 
 ## Surface reference
@@ -24,6 +24,7 @@
 - [docs/MCP.md](docs/MCP.md): MCP tools (incl. `wait_for_unblock` long-poll).
 - [docs/CLI.md](docs/CLI.md): CLI.
 - [docs/SLACK.md](docs/SLACK.md): Slack surface.
+- [docs/SCM.md](docs/SCM.md): Pluggable source control (git/perforce/none) via `tasks scm <verb>`.
 
 ## Automation
 

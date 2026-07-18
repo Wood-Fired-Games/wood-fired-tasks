@@ -238,8 +238,9 @@ call.
 | distribution | `service` | `commands/service.ts` | Frictionless distribution (#740/#741/#742): manage the background service — `install`/`uninstall`/`status`, admin-free by default (Linux systemctl --user, macOS launchd, Windows per-user logon task); `install --system` is the sole elevating path. |
 | statusline | `statusline` | `commands/statusline.ts` | v2.0 status line (#597): reads Claude Code's status-line JSON from stdin, renders the linked-project open/done counts + the update-available hint from a TTL cache; degrades silently (exit 0) when unlinked/offline. |
 | statusline | `link-project` | `commands/link-project.ts` | v2.0 status line (#595): links the current directory to a project by writing the repo-local `.wft/project` marker the statusline resolver reads. |
+| scm | `scm` | `commands/scm.ts` | Pluggable SCM (#1536): `scm <verb>` dispatches a source-control verb (detect/baseline/status/changed-files/stage/record/change-id/publish/open-review/isolate/teardown-isolation/reset-hard) to the resolved backend (git/perforce/none), printing the §4.1 JSON envelope + exit code. |
 
-**Total: 45 commands wired into Commander** (counted by
+**Total: 46 commands wired into Commander** (counted by
 `program.addCommand` calls in `src/cli/bin/tasks.ts`).
 
 Deep reference: [`docs/CLI.md`](CLI.md). Global flags: `--json` (machine
@@ -355,7 +356,7 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. The remote server exposes all **27 REST-backed tools** with
+`src/schemas/`. The remote server exposes all **31 REST-backed tools** with
 identical input validation; behavioural differences are limited to transport
 (stdio vs HTTP) and the auth boundary. `topology_check` (#318) reaches the
 same `TopologyService` over REST — the remote server proxies it to

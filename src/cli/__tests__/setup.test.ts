@@ -8,6 +8,8 @@ import {
   runSetupInteractive,
   fixNpmPrefix,
   buildLocalMcpEntry,
+  buildRemoteMcpEntry,
+  writeRemoteMcpEntryOnly,
   resolveMcpEntryPoint,
   commandsDestDir,
   agentsDestDir,
@@ -16,10 +18,18 @@ import {
   statuslineEmbedSnippet,
   wireStatusline,
   offerStatuslineWiring,
+  isLoopbackServerUrl,
+  parseSetupModeFlag,
+  resolveSetupModeFromFlags,
+  ensureLocalAuthGuidance,
+  confirmLocalLoginOffer,
   type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
+import { writeCredentials } from '../auth/credentials.js';
+import type { RunDeviceLoginArgs, RunDeviceLoginResult } from '../commands/login.js';
+import Database from '../../db/driver.js';
 
 // The packaged task-skill .md files SHIP under dist/skills/tasks/ (the asset
 // resolver's `resolveAssetPath('dist','skills','tasks')`) — that is the only
@@ -307,6 +317,23 @@ async function withTempHomeAsync<T>(fn: (home: string) => Promise<T>): Promise<T
   }
 }
 
+/**
+ * Sandbox seams for the Local path's conversion-contract steps: the
+ * stale-remote-credentials reconcile and the eager DB bootstrap both default to
+ * REAL machine paths (`getCredentialsPath()` / the unified DB resolver), so
+ * every test that drives runSetupInteractive into the Local branch must pin
+ * both under the temp home — never the developer's real ~/.config or app-data.
+ */
+function localSandboxOpts(home: string): {
+  credentialsPath: string;
+  dbEnv: NodeJS.ProcessEnv;
+} {
+  return {
+    credentialsPath: path.join(home, 'wft-credentials'),
+    dbEnv: { DATABASE_PATH: path.join(home, 'wft-sandbox-tasks.db') },
+  };
+}
+
 describe('tasks setup — modes (task #805)', () => {
   it('no args on a simulated TTY presents the Local/Service/Remote menu', async () => {
     await withTempHomeAsync(async (home) => {
@@ -314,6 +341,7 @@ describe('tasks setup — modes (task #805)', () => {
       const result = await runSetupInteractive({
         home,
         log: () => {},
+        ...localSandboxOpts(home),
         // Simulate a TTY so the menu path is taken.
         isInteractive: () => true,
         // Stub the selector but capture that a 3-option menu would be shown,
@@ -376,6 +404,7 @@ describe('tasks setup — modes (task #805)', () => {
         home,
         log: () => {},
         mode: 'local',
+        ...localSandboxOpts(home),
         // A TTY is simulated, but with an EXPLICIT --local mode the MODE menu
         // must never be consulted (selectMode is the real mode-menu seam).
         isInteractive: () => true,
@@ -531,6 +560,7 @@ describe('tasks setup — modes (task #805)', () => {
       const result = await runSetupInteractive({
         home,
         log: () => {},
+        ...localSandboxOpts(home),
         // Non-interactive environment, no explicit mode.
         isInteractive: () => false,
         selectMode: async () => {
@@ -546,6 +576,110 @@ describe('tasks setup — modes (task #805)', () => {
         expect(result.remote).toBe(false);
         const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
         expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+});
+
+describe('tasks setup — --mode local|remote alias (task #1605)', () => {
+  it('parseSetupModeFlag accepts "local" and "remote"', () => {
+    expect(parseSetupModeFlag('local')).toBe('local');
+    expect(parseSetupModeFlag('remote')).toBe('remote');
+  });
+
+  it('parseSetupModeFlag rejects anything else, including "service"', () => {
+    expect(() => parseSetupModeFlag('service')).toThrow(/Invalid --mode value "service"/);
+    expect(() => parseSetupModeFlag('bogus')).toThrow(/Invalid --mode value "bogus"/);
+    expect(() => parseSetupModeFlag('')).toThrow(/Invalid --mode value ""/);
+  });
+
+  it('resolveSetupModeFromFlags: --mode local resolves to local', () => {
+    expect(resolveSetupModeFromFlags({ mode: 'local' })).toBe('local');
+  });
+
+  it('resolveSetupModeFromFlags: --mode remote resolves to remote', () => {
+    expect(resolveSetupModeFromFlags({ mode: 'remote' })).toBe('remote');
+  });
+
+  it('resolveSetupModeFromFlags: no flags at all resolves to undefined (menu/default fallback)', () => {
+    expect(resolveSetupModeFromFlags({})).toBeUndefined();
+  });
+
+  it('resolveSetupModeFromFlags: --mode bogus throws', () => {
+    expect(() => resolveSetupModeFromFlags({ mode: 'bogus' })).toThrow(
+      /Invalid --mode value "bogus"/,
+    );
+  });
+
+  it('resolveSetupModeFromFlags: the specific --remote/--service/--local flags outrank --mode', () => {
+    // A caller (or a stray shell alias) passing both should not be surprising:
+    // the more specific, longer-standing flags win.
+    expect(resolveSetupModeFromFlags({ remote: 'http://x:3000', mode: 'local' })).toBe('remote');
+    expect(resolveSetupModeFromFlags({ service: true, mode: 'remote' })).toBe('service');
+    expect(resolveSetupModeFromFlags({ local: true, mode: 'remote' })).toBe('local');
+  });
+
+  it('--mode local routes through runSetupInteractive exactly like --local (via the resolved mode)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let modePrompted = false;
+      const resolvedMode = resolveSetupModeFromFlags({ mode: 'local' });
+      expect(resolvedMode).toBe('local');
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: resolvedMode,
+        ...localSandboxOpts(home),
+        isInteractive: () => true,
+        selectMode: async () => {
+          modePrompted = true;
+          return 'remote';
+        },
+        confirmStatusline: async () => false,
+      });
+
+      expect(modePrompted).toBe(false);
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+
+  it('--mode remote (with --remote/--token) routes through runSetupInteractive exactly like --remote --token', async () => {
+    await withTempHomeAsync(async (home) => {
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-alias-cfg-'));
+      try {
+        const resolvedMode = resolveSetupModeFromFlags({
+          mode: 'remote',
+          remote: 'http://tasks.example.local:3000',
+        });
+        // The more specific --remote flag wins over --mode, same as running
+        // `--remote <url> --mode remote` together — both agree on 'remote'.
+        expect(resolvedMode).toBe('remote');
+
+        const probeSpy = vi.fn(async () => ({ ok: true, oidc: 'disabled' as const }));
+        const persistSpy = vi.fn(async () => ({
+          ok: true as const,
+          identity: { id: 1, displayName: 'Test User', email: null },
+        }));
+        const result = await runSetupInteractive({
+          home,
+          configDir,
+          log: () => {},
+          mode: resolvedMode,
+          remote: 'http://tasks.example.local:3000',
+          token: FAKE_PAT,
+          oidcProbe: probeSpy,
+          manualPatPersist: persistSpy,
+          isInteractive: () => false,
+        });
+
+        expect(probeSpy).not.toHaveBeenCalled();
+        expect(persistSpy).toHaveBeenCalledWith('http://tasks.example.local:3000', FAKE_PAT);
+        expect(result.mode).toBe('remote');
+      } finally {
+        fs.rmSync(configDir, { recursive: true, force: true });
       }
     });
   });
@@ -713,6 +847,7 @@ describe('tasks setup — statusline wiring (task #798)', () => {
         home,
         log: () => {},
         mode: 'local',
+        ...localSandboxOpts(home),
         isInteractive: () => true,
         confirmStatusline: async () => true,
       });
@@ -723,6 +858,648 @@ describe('tasks setup — statusline wiring (task #798)', () => {
         const doc = JSON.parse(fs.readFileSync(settingsJsonPath(home), 'utf8'));
         expect(doc.statusLine).toEqual(buildStatuslineConfig());
       }
+    });
+  });
+});
+
+describe('tasks setup — mode conversion (remote⇄local)', () => {
+  const REMOTE_URL = 'http://tasks.example.local:3000';
+  const FOREIGN_ENTRY = { type: 'stdio', command: 'x' };
+
+  /** Seed a valid 0600 credentials TOML pointing at `server`. */
+  function seedCredentials(credFile: string, server: string): void {
+    writeCredentials(
+      {
+        active: {
+          token: FAKE_PAT,
+          token_id: 1,
+          server,
+          user_id: 1,
+          display_name: 'Test User',
+          email: null,
+          logged_in_at: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      credFile,
+    );
+  }
+
+  /** Seed ~/.claude.json with a foreign server plus the given wft entries. */
+  function seedClaudeJson(home: string, wftEntries: Record<string, unknown>): string {
+    const claudeJson = path.join(home, '.claude.json');
+    fs.writeFileSync(
+      claudeJson,
+      JSON.stringify(
+        { numStartups: 3, mcpServers: { 'some-other': FOREIGN_ENTRY, ...wftEntries } },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+    return claudeJson;
+  }
+
+  it('remote→local leaves exactly the local entry (foreign keys preserved)', async () => {
+    await withTempHomeAsync(async (home) => {
+      const claudeJson = seedClaudeJson(home, {
+        'wood-fired-tasks-remote': buildRemoteMcpEntry(REMOTE_URL),
+      });
+
+      const lines: string[] = [];
+      const result = await runSetupInteractive({
+        home,
+        log: (l) => lines.push(l),
+        mode: 'local',
+        ...localSandboxOpts(home),
+        isInteractive: () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleEntryRemoved).toBe(true);
+      }
+      const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+      // EXACTLY the local entry remains (plus the preserved foreign key).
+      expect(Object.keys(doc.mcpServers).sort()).toEqual(['some-other', 'wood-fired-tasks']);
+      expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      expect(doc.mcpServers['some-other']).toEqual(FOREIGN_ENTRY);
+      // Non-mcpServers content preserved.
+      expect(doc.numStartups).toBe(3);
+      // The conversion is announced.
+      const joined = lines.join('\n');
+      expect(joined).toContain("Removed remote MCP entry ('wood-fired-tasks-remote')");
+      expect(joined).toContain('install converted to local');
+    });
+  });
+
+  it('local→remote leaves exactly the remote entry (foreign keys preserved)', () => {
+    withTempHome((home) => {
+      const claudeJson = seedClaudeJson(home, { 'wood-fired-tasks': buildLocalMcpEntry() });
+
+      const lines: string[] = [];
+      const result = writeRemoteMcpEntryOnly({
+        home,
+        log: (l) => lines.push(l),
+        remote: REMOTE_URL,
+      });
+
+      expect(result.staleEntryRemoved).toBe(true);
+      const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+      expect(Object.keys(doc.mcpServers).sort()).toEqual(['some-other', 'wood-fired-tasks-remote']);
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
+      expect(doc.mcpServers['some-other']).toEqual(FOREIGN_ENTRY);
+      expect(doc.numStartups).toBe(3);
+      const joined = lines.join('\n');
+      expect(joined).toContain("Removed local MCP entry ('wood-fired-tasks')");
+      expect(joined).toContain('install converted to remote');
+    });
+  });
+
+  it('re-running the same mode is byte-idempotent (no backup churn from the remove)', () => {
+    withTempHome((home) => {
+      const claudeJson = seedClaudeJson(home, {
+        'wood-fired-tasks-remote': buildRemoteMcpEntry(REMOTE_URL),
+      });
+      const bakPath = `${claudeJson}.bak`;
+
+      const first = runSetup({ home, log: () => {} });
+      expect(first.claudeJsonChanged).toBe(true);
+      expect(first.staleEntryRemoved).toBe(true);
+      const bytes = fs.readFileSync(claudeJson, 'utf8');
+      expect(fs.existsSync(bakPath)).toBe(true);
+      const bakBytes = fs.readFileSync(bakPath, 'utf8');
+      const bakMtime = fs.statSync(bakPath).mtimeMs;
+
+      const second = runSetup({ home, log: () => {} });
+      // Second run: merge is unchanged AND the remove is a strict no-op — no
+      // write, no .bak churn, byte-identical file.
+      expect(second.claudeJsonChanged).toBe(false);
+      expect(second.staleEntryRemoved).toBe(false);
+      expect(fs.readFileSync(claudeJson, 'utf8')).toBe(bytes);
+      expect(fs.readFileSync(bakPath, 'utf8')).toBe(bakBytes);
+      expect(fs.statSync(bakPath).mtimeMs).toBe(bakMtime);
+      expect(fs.existsSync(`${claudeJson}.tmp`)).toBe(false);
+    });
+  });
+
+  it('remote→local with non-loopback credentials: interactive accept deletes them', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      seedCredentials(sandbox.credentialsPath, REMOTE_URL);
+
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+      // Bare Enter takes the [Y/n] default: yes.
+      input.write('\n');
+
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        ...sandbox,
+        isInteractive: () => true,
+        promptIO: { input, output },
+        confirmStatusline: async () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('deleted');
+        expect(result.staleCredentials.server).toBe(REMOTE_URL);
+      }
+      expect(outChunks.join('')).toContain(
+        `Remote credentials for ${REMOTE_URL} found — remove them? [Y/n]`,
+      );
+      // The credentials file is gone.
+      expect(fs.existsSync(sandbox.credentialsPath)).toBe(false);
+    });
+  });
+
+  it('remote→local with non-loopback credentials: declining keeps them', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      seedCredentials(sandbox.credentialsPath, REMOTE_URL);
+
+      const input = new PassThrough();
+      input.write('n\n');
+
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        ...sandbox,
+        isInteractive: () => true,
+        promptIO: { input, output: { write: () => true } },
+        confirmStatusline: async () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('kept');
+      }
+      expect(fs.existsSync(sandbox.credentialsPath)).toBe(true);
+    });
+  });
+
+  it('remote→local with non-loopback credentials: --no-input warns and keeps the file', async () => {
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      seedCredentials(sandbox.credentialsPath, REMOTE_URL);
+      const bytesBefore = fs.readFileSync(sandbox.credentialsPath, 'utf8');
+
+      const lines: string[] = [];
+      const result = await runSetupInteractive({
+        home,
+        log: (l) => lines.push(l),
+        mode: 'local',
+        ...sandbox,
+        // --no-input / non-TTY: NEVER delete silently.
+        isInteractive: () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('warned');
+      }
+      // File intact, byte for byte.
+      expect(fs.readFileSync(sandbox.credentialsPath, 'utf8')).toBe(bytesBefore);
+      // The warning names the path, the stale server, and the remedy.
+      const joined = lines.join('\n');
+      expect(joined).toContain('WARNING');
+      expect(joined).toContain(sandbox.credentialsPath);
+      expect(joined).toContain(REMOTE_URL);
+      expect(joined).toContain('tasks logout');
+    });
+  });
+
+  it('remote→local with loopback-server credentials: untouched, no prompt', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      const loopbackUrl = 'http://127.0.0.1:3000';
+      seedCredentials(sandbox.credentialsPath, loopbackUrl);
+
+      // An input stream with NO data: if the reconcile wrongly prompted, the
+      // await would hang and the test would time out.
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        ...sandbox,
+        isInteractive: () => true,
+        promptIO: { input, output },
+        confirmStatusline: async () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('kept-loopback');
+        expect(result.staleCredentials.server).toBe(loopbackUrl);
+      }
+      // No removal prompt was rendered and the file is untouched.
+      expect(outChunks.join('')).not.toContain('remove them?');
+      expect(fs.existsSync(sandbox.credentialsPath)).toBe(true);
+    });
+  });
+
+  it('classifies loopback vs non-loopback server URLs', () => {
+    expect(isLoopbackServerUrl('http://localhost:3000')).toBe(true);
+    expect(isLoopbackServerUrl('http://127.0.0.1:3000')).toBe(true);
+    expect(isLoopbackServerUrl('http://[::1]:3000')).toBe(true);
+    expect(isLoopbackServerUrl('http://tasks.example.local:3000')).toBe(false);
+    expect(isLoopbackServerUrl('https://tasks.example.com')).toBe(false);
+    // Unparseable → treated as non-loopback (stale junk worth surfacing).
+    expect(isLoopbackServerUrl('not a url')).toBe(false);
+  });
+
+  it('local setup creates + migrates the DB at the resolved path, idempotently', async () => {
+    await withTempHomeAsync(async (home) => {
+      const dbPath = path.join(home, 'db', 'tasks.db');
+      const opts = {
+        home,
+        log: () => {},
+        mode: 'local' as const,
+        credentialsPath: path.join(home, 'wft-credentials'),
+        dbEnv: { DATABASE_PATH: dbPath },
+        isInteractive: () => false,
+      };
+
+      const result = await runSetupInteractive(opts);
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.db.ok).toBe(true);
+        expect(result.db.dbPath).toBe(dbPath);
+      }
+      // The DB file exists and the migrations table is populated.
+      expect(fs.existsSync(dbPath)).toBe(true);
+      const db = new Database(dbPath, { readonly: true });
+      const rows = db.prepare('SELECT name FROM _migrations ORDER BY name').all() as {
+        name: string;
+      }[];
+      db.close();
+      expect(rows.length).toBeGreaterThan(0);
+
+      // Idempotent on a second run: same migration set, no failure.
+      const second = await runSetupInteractive(opts);
+      expect(second.mode).toBe('local');
+      if (second.mode === 'local') {
+        expect(second.db.ok).toBe(true);
+        expect(second.db.dbPath).toBe(dbPath);
+      }
+      const db2 = new Database(dbPath, { readonly: true });
+      const rows2 = db2.prepare('SELECT name FROM _migrations ORDER BY name').all() as {
+        name: string;
+      }[];
+      db2.close();
+      expect(rows2).toEqual(rows);
+    });
+  });
+
+  it('honours the deprecated DB_PATH alias for the eager DB bootstrap', async () => {
+    await withTempHomeAsync(async (home) => {
+      const dbPath = path.join(home, 'alias', 'tasks.db');
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        credentialsPath: path.join(home, 'wft-credentials'),
+        dbEnv: { DB_PATH: dbPath },
+        isInteractive: () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.db.ok).toBe(true);
+        expect(result.db.dbPath).toBe(dbPath);
+      }
+      expect(fs.existsSync(dbPath)).toBe(true);
+    });
+  });
+});
+
+describe('tasks setup — post-setup local-auth guidance (task #1610)', () => {
+  const LOCAL_URL = 'http://127.0.0.1:3000';
+  const REMOTE_URL2 = 'http://tasks.example.local:3000';
+
+  /** Seed a valid 0600 credentials TOML pointing at `server`. */
+  function seedCreds(credFile: string, server: string): void {
+    writeCredentials(
+      {
+        active: {
+          token: FAKE_PAT,
+          token_id: 1,
+          server,
+          user_id: 1,
+          display_name: 'Test User',
+          email: null,
+          logged_in_at: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      credFile,
+    );
+  }
+
+  const fakeSuccess: RunDeviceLoginResult = {
+    ok: true,
+    user: { id: 1, displayName: 'Test User', email: null },
+  };
+
+  describe('ensureLocalAuthGuidance (direct)', () => {
+    it('a usable loopback credential exists → nothing printed, no confirm/login called', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        seedCreds(credentialsPath, LOCAL_URL);
+
+        const lines: string[] = [];
+        let confirmCalled = false;
+        let loginCalled = false;
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: (l) => lines.push(l),
+          isInteractive: () => true,
+          confirm: async () => {
+            confirmCalled = true;
+            return true;
+          },
+          deviceLogin: async (_args: RunDeviceLoginArgs) => {
+            loginCalled = true;
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('has-credential');
+        expect(lines).toEqual([]);
+        expect(confirmCalled).toBe(false);
+        expect(loginCalled).toBe(false);
+      });
+    });
+
+    it('a non-loopback (remote) credential does NOT count as usable → guidance is printed', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        seedCreds(credentialsPath, REMOTE_URL2);
+
+        const lines: string[] = [];
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: (l) => lines.push(l),
+          isInteractive: () => false,
+        });
+
+        expect(result.action).toBe('guidance-only');
+        expect(lines.join('\n')).toContain('tasks login');
+      });
+    });
+
+    it('no credentials file at all → guidance names the real working local login command(s)', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        expect(fs.existsSync(credentialsPath)).toBe(false);
+
+        const lines: string[] = [];
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: (l) => lines.push(l),
+          isInteractive: () => false,
+        });
+
+        expect(result.action).toBe('guidance-only');
+        const joined = lines.join('\n');
+        // Names the ACTUAL commands (verified against src/cli/commands/login.ts
+        // and src/cli/bin/tasks.ts: `tasks login`, `tasks login --token <pat>`,
+        // and `tasks db mint-token` are real, registered commands).
+        expect(joined).toContain('tasks login');
+        expect(joined).toContain('tasks login --token');
+        expect(joined).toContain('tasks db mint-token');
+      });
+    });
+
+    it('non-TTY (--no-input): guidance only — never prompts, never calls login', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        let confirmCalled = false;
+        let loginCalled = false;
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => false,
+          confirm: async () => {
+            confirmCalled = true;
+            return true;
+          },
+          deviceLogin: async (_args: RunDeviceLoginArgs) => {
+            loginCalled = true;
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('guidance-only');
+        expect(confirmCalled).toBe(false);
+        expect(loginCalled).toBe(false);
+      });
+    });
+
+    it('interactive TTY: offers login; DECLINE runs no login (guidance-only)', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        let loginCalled = false;
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => true,
+          confirm: async () => false,
+          deviceLogin: async (_args: RunDeviceLoginArgs) => {
+            loginCalled = true;
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('guidance-only');
+        expect(loginCalled).toBe(false);
+      });
+    });
+
+    it('interactive TTY: offers login; ACCEPT runs the device-flow login', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        const calls: RunDeviceLoginArgs[] = [];
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => true,
+          confirm: async () => true,
+          deviceLogin: async (args: RunDeviceLoginArgs) => {
+            calls.push(args);
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.action).toBe('logged-in');
+        expect(calls).toHaveLength(1);
+        // The offer runs the SAME device-flow primitive `tasks login` uses,
+        // targeted at the local server (loopback default when unset).
+        expect(calls[0]?.baseUrl).toBe('http://localhost:3000');
+        expect(calls[0]?.isJson).toBe(false);
+      });
+    });
+
+    it('interactive TTY: ACCEPT, but the device-flow login fails → login-failed (never throws)', async () => {
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => true,
+          confirm: async () => true,
+          deviceLogin: async (_args: RunDeviceLoginArgs) => ({ ok: false }),
+        });
+
+        expect(result.action).toBe('login-failed');
+      });
+    });
+
+    it('the default confirm (confirmLocalLoginOffer) renders a Yes/No menu naming `tasks login`', async () => {
+      const { PassThrough } = await import('node:stream');
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+      input.write('2\n'); // choose "No"
+
+      const consented = await confirmLocalLoginOffer({ input, output });
+      expect(consented).toBe(false);
+      expect(outChunks.join('')).toContain('tasks login');
+    });
+
+    it('an unreadable credentials file (insecure perms) is treated as "no usable credential"', async () => {
+      if (process.platform === 'win32') return; // POSIX-mode-only guard
+      await withTempHomeAsync(async (home) => {
+        const credentialsPath = path.join(home, 'wft-credentials');
+        seedCreds(credentialsPath, LOCAL_URL);
+        fs.chmodSync(credentialsPath, 0o644); // group/other-readable — insecure
+
+        const result = await ensureLocalAuthGuidance({
+          credentialsPath,
+          log: () => {},
+          isInteractive: () => false,
+        });
+
+        expect(result.action).toBe('guidance-only');
+      });
+    });
+  });
+
+  describe('through runSetupInteractive (local path)', () => {
+    it('fresh local setup, no credential at all → guidance printed, no crash', async () => {
+      await withTempHomeAsync(async (home) => {
+        const lines: string[] = [];
+        const result = await runSetupInteractive({
+          home,
+          log: (l) => lines.push(l),
+          mode: 'local',
+          ...localSandboxOpts(home),
+          isInteractive: () => false,
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.authGuidance.action).toBe('guidance-only');
+        }
+        expect(lines.join('\n')).toContain('tasks login');
+      });
+    });
+
+    it('a usable loopback credential is already present → no guidance text at all', async () => {
+      await withTempHomeAsync(async (home) => {
+        const sandbox = localSandboxOpts(home);
+        seedCreds(sandbox.credentialsPath, LOCAL_URL);
+
+        const lines: string[] = [];
+        const result = await runSetupInteractive({
+          home,
+          log: (l) => lines.push(l),
+          mode: 'local',
+          ...sandbox,
+          isInteractive: () => false,
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.authGuidance.action).toBe('has-credential');
+        }
+        expect(lines.join('\n')).not.toContain('Not logged in');
+        expect(lines.join('\n')).not.toContain('tasks login --token');
+      });
+    });
+
+    it('interactive TTY + confirmLogin decline → guidance only, existing conversion prompt streams are untouched', async () => {
+      const { PassThrough } = await import('node:stream');
+      await withTempHomeAsync(async (home) => {
+        const sandbox = localSandboxOpts(home);
+        // Seed NON-loopback credentials so the stale-remote reconcile ALSO
+        // fires and consumes one line of its own shared promptIO stream —
+        // proving this new offer's confirm seam (confirmLogin) is fully
+        // independent and never contends for that same stream.
+        seedCreds(sandbox.credentialsPath, REMOTE_URL2);
+        const input = new PassThrough();
+        const outChunks: string[] = [];
+        const output = { write: (s: string) => (outChunks.push(s), true) };
+        input.write('n\n'); // decline the stale-remote-credentials removal
+
+        const result = await runSetupInteractive({
+          home,
+          log: () => {},
+          mode: 'local',
+          ...sandbox,
+          isInteractive: () => true,
+          promptIO: { input, output },
+          confirmStatusline: async () => false,
+          confirmLogin: async () => false,
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.staleCredentials.action).toBe('kept');
+          expect(result.authGuidance.action).toBe('guidance-only');
+        }
+      });
+    });
+
+    it('interactive TTY + confirmLogin accept → runs the injected device-flow login and reports logged-in', async () => {
+      await withTempHomeAsync(async (home) => {
+        const sandbox = localSandboxOpts(home);
+        const calls: RunDeviceLoginArgs[] = [];
+
+        const result = await runSetupInteractive({
+          home,
+          log: () => {},
+          mode: 'local',
+          ...sandbox,
+          isInteractive: () => true,
+          confirmStatusline: async () => false,
+          confirmLogin: async () => true,
+          deviceLogin: async (args: RunDeviceLoginArgs) => {
+            calls.push(args);
+            return fakeSuccess;
+          },
+        });
+
+        expect(result.mode).toBe('local');
+        if (result.mode === 'local') {
+          expect(result.authGuidance.action).toBe('logged-in');
+        }
+        expect(calls).toHaveLength(1);
+      });
     });
   });
 });

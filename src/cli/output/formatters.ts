@@ -29,7 +29,7 @@ export function isJsonMode(): boolean {
  * @returns true if colors should be used, false otherwise
  */
 export function shouldUseColor(): boolean {
-  // NO_COLOR env var takes precedence (standard: any value = disable)
+  // NO_COLOR env var takes precedence (standard: a set value disables color)
   if (process.env['NO_COLOR'] !== undefined) {
     return false;
   }

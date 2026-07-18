@@ -7,6 +7,17 @@
  *
  * Exit 0 + "OK: ..." when valid; exit 1 + "INVALID VerificationEvidence:" when not.
  * Exit 2 if no piped stdin (TTY detected) or stdin emits an error.
+ *
+ * Perforce / pluggable-SCM note (docs/superpowers/specs/2026-07-16-pluggable-
+ * scm-design.md §5.1): change-ids — bare git SHAs, `p4:<cl>` Perforce
+ * changelist ids, or empty for none-mode — are carried as free strings
+ * (e.g. inside a check's `evidence_url_or_text`) with NO shape constraint in
+ * VerificationEvidenceSchema and NO DB column of their own; this validator
+ * already tolerates any string content there, `p4:`-prefixed or otherwise,
+ * without change. `commit_shas` itself is part of the ephemeral VerifierInputs
+ * envelope handed to the verifier (loop-shared.md §B), not a key of the
+ * persisted `verification_evidence` object this script checks — so it never
+ * reaches (and is never rejected by) this schema.
  */
 import { validateEvidence } from '../src/lib/loop-run/validate-evidence.js';
 

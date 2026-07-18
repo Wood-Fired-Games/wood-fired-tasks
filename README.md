@@ -4,6 +4,10 @@
 [![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+**TL;DR:** A shared, SQLite-backed task tracker for fleets of AI coding agents — MCP, REST, and CLI at full parity, atomic claiming so agents never collide, and `/tasks:*` skills that plan → decompose → execute → audit a backlog.
+
+**→ [Quickstart in 3 commands](#solo--local--fastest-start)**
+
 Wood Fired Tasks is open-source coordination infrastructure for fleets of AI coding agents — the missing primitive between "I have one Claude Code session running" and "I have ten of them working the same backlog without stepping on each other." You point Claude Code (or Cursor, Gemini, Codex) and a `tasks` CLI at one shared, SQLite-backed service — over MCP, REST, or the CLI, all at full feature parity — and every surface reads and writes the same source of truth. The coordination primitives are first-class: atomic task claiming with optimistic locking (20 agents race, exactly one wins), workflow automation that auto-unblocks dependents and auto-completes parents as subtasks finish, and a real-time SSE event stream keeping every agent and dashboard in sync. On top of that, a set of `/tasks:*` skills turn a project-level goal into a decomposed, executable, auditable plan — and an optional economic prioritizer (WSJF) can rank the backlog by value-per-effort so the loops drain the most-unblocking work first. Self-hostable and MIT-licensed; one server can be shared by a whole team across Windows, Linux, and macOS.
 
 **What you actually do with it:**
@@ -16,7 +20,8 @@ Wood Fired Tasks is open-source coordination infrastructure for fleets of AI cod
 
 - `/tasks:*` skill files implementing the plan→decompose→loop→audit lifecycle (ship as Claude Code slash commands; the recipes are vendor-neutral)
 - MCP server with 31 tools for native agent integration (local SQLite or remote HTTP modes) + a single cross-platform npm install (Linux/macOS/Windows)
-- REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI with 45 commands
+- REST API with 59 route handlers across `src/api/routes/` (1 public `/health`; the rest authenticated; a single instance serves up to 52 — OIDC-disabled stubs are mutually exclusive with the live OIDC routes) and a `tasks` CLI — command count is CI-verified in [docs/INTERFACES.md](docs/INTERFACES.md)
+- Pluggable source control — a `tasks scm <verb>` adapter over three backends (git, Perforce, or a no-VCS `none` backend), selected per repo via `.tasks/scm.json` (or a project charter `scm` default), so the automation lifecycle runs unchanged across SCM systems
 - Atomic task claiming with optimistic locking + workflow automation (parent auto-complete, dependency auto-unblock) for multi-agent coordination
 - Real-time Server-Sent Events (SSE) for task/project change notifications
 - SQLite database with WAL mode, FTS5 full-text search, and automatic migrations
@@ -331,7 +336,7 @@ errors twice, and short-circuits permanent errors
 
 | Entity | Key Fields |
 |--------|------------|
-| **projects** | id, name, description, **value_charter** (JSON; per-project WSJF Business-Value reference frame), created_at, updated_at |
+| **projects** | id, name, description, **value_charter** (JSON; per-project WSJF Business-Value reference frame), **scm** (JSON; optional pluggable-SCM default — backend hint + behavior toggles, used only as the auto-detect fallback), created_at, updated_at |
 | **tasks** | id, title, description, status, priority, project_id, parent_task_id, estimated_minutes, assignee, created_by, due_date, version, claimed_at, **completed_at**, **wsjf_value / wsjf_time_criticality / wsjf_risk_opportunity / wsjf_job_size** (Fibonacci components), **wsjf_evidence / wsjf_locked / wsjf_source / wsjf_classifications / wsjf_features** (JSON metadata), created_at, updated_at |
 | **task_tags** | id, task_id, tag |
 | **task_dependencies** | id, task_id, blocks_task_id, created_at |
@@ -526,6 +531,46 @@ example below works verbatim. Working from a clone instead? Use
 | tasks wsjf-history \<id\> | Show a task's append-only WSJF score history (oldest-first) as JSON |
 | tasks wsjf-set \<id\> --value \<fib\> --time-criticality \<fib\> --risk-opportunity \<fib\> --job-size \<fib\> [--lock \<keys\>] | Manual set/lock of a task's four WSJF components (all four required; `<fib>` ∈ 1,2,3,5,8,13; `--lock` takes comma-separated keys from `value,timeCriticality,riskOpportunity,jobSize`) |
 | tasks charter-history \<id\> | Show a project's value-charter history (oldest-first) as JSON |
+
+### Source Control (SCM) Commands
+
+`tasks scm <verb> [args]` runs a single pluggable source-control verb against
+the backend resolved for the target repo, printing exactly one JSON envelope
+(`{ ok, verb, backend, context, data, warnings }` on success; `{ ok:false, …,
+error }` on failure) to stdout and mapping the outcome to a process exit code.
+The verb *logic* lives in three interchangeable backends — **git** (byte-parity
+with native git), **perforce** (changelist-based; change-ids look like
+`p4:<cl>`), and **none** (a no-VCS digest backend for unversioned trees) — so
+the automation lifecycle is identical across SCM systems.
+
+**Backend selection precedence:** see
+[docs/SCM.md § Resolution precedence](docs/SCM.md#resolution-precedence) for
+the canonical 4-step order. See
+[docs/SETUP.md](docs/SETUP.md#source-control-scm-configuration) for the config
+file shape.
+
+| Command | Description |
+|---------|-------------|
+| tasks scm detect | Report the resolved backend for the repo |
+| tasks scm baseline | Capture the pre-run baseline the change verbs diff against |
+| tasks scm status | Working-tree change summary |
+| tasks scm changed-files \<base\> | List files changed since `<base>` |
+| tasks scm stage \<files...\> | Stage the given paths |
+| tasks scm record \<message\> | Record (commit) staged changes with `<message>` |
+| tasks scm change-id | Print the current change-id (git SHA / `p4:<cl>` / empty for `none`) |
+| tasks scm publish | Publish recorded changes to the remote (push / submit) |
+| tasks scm open-review | Open a review (PR / shelved changelist) |
+| tasks scm isolate \<id\> | Create an isolated working context (branch/stream) for `<id>` |
+| tasks scm teardown-isolation \<id\> | Tear down the isolation created for `<id>` |
+| tasks scm reset-hard \<ref\> | Hard-reset the working tree to `<ref>` |
+
+**Flags:** `--repo <path>` (default: discovered from cwd) · `--context <key>`
+(scope key namespacing per-run state; default `default`).
+
+**Exit codes:** `0` success · `1` operation failed (push rejected, submit
+conflict) · `2` usage / config error (unknown verb, invalid `.tasks/scm.json`)
+· `3` backend unavailable (p4 server unreachable, `git`/`p4` binary missing) ·
+`4` verb unsupported for this backend/toggle combination · `124` exec timeout.
 
 ### Health
 
@@ -782,13 +827,15 @@ The canonical command table (focused tests, migrations, quality gate) lives in
 ### Database
 
 SQLite with the better-sqlite3 driver, WAL mode, and automatic forward
-migrations via Umzug. The 15 migration files in `src/db/migrations/` are the
+migrations via Umzug. The migration files in `src/db/migrations/` (17 as of
+this writing — count them directly, they're the source of truth) are the
 canonical, self-documenting schema history — from `001-initial-schema` (projects,
 tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance
-criteria + verification evidence (`011`–`012`), and the WSJF columns, value
-charter, and append-only audit tables (`013`–`015`). Read the files directly for
-exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how they fit
-together.
+criteria + verification evidence (`011`–`012`), the WSJF columns, value
+charter, and append-only audit tables (`013`–`015`), the model-policy table
+(`016`), and the pluggable-SCM project charter default (`017`). Read the files
+directly for exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how
+they fit together.
 
 ### Testing
 

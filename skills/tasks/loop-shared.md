@@ -24,6 +24,8 @@ Working dir is `<repo_root>`. Do NOT commit — the orchestrator will commit aft
 
 ## STEP 0 — Worktree base correction (MANDATORY when dispatched with `isolation: "worktree"`)
 
+**GIT/PLATFORM-WORKTREE ISOLATION ONLY** — skip this entire step unless `tasks scm detect` reported `capabilities.isolation == "platform-worktree"`.
+
 If this brief was dispatched into an isolated git worktree, the harness may have
 cut that worktree from a STALE base (commonly the repo's configured main branch /
 a fixed ref, NOT the orchestrator's current branch tip). The base ref is chosen by
@@ -215,6 +217,7 @@ Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator o
 - When the brief asks the subagent to add a CI job, tell it explicitly: copy pinned action SHAs from a neighbouring job in the same workflow rather than fetching new ones. Otherwise the subagent may pick `@v4`-style floating refs that violate the project's pinning convention.
 - **Audit-with-budget pattern.** When the acceptance criteria is "ensure X for every Y" (e.g. "every data-semantic migration has a targeted test", "every cast site is localised"), brief the subagent to *audit first, then act within a budget*. Typical budget: 1-2 fixes per iteration. If the audit surfaces 3+ gaps, the subagent adds **one** representative fix as a worked example, lists the remaining gaps in their summary, and the orchestrator records them in the close-out comment as recommended follow-on tasks. This prevents one task closure from ballooning into a sweep and keeps each commit coherent.
 - Always end with "Do NOT commit". The orchestrator must stage and verify before any commit lands.
+- **Identity resolution before filling in assignee/author fields.** Resolve in order: `git config user.email` → `p4 info` User field (perforce repos; read-only, best-effort, never fails the run) → `$USER` → `claude-<model>-<purpose>`. Never pass the literal `"user"`.
 
 ---
 
@@ -238,6 +241,8 @@ _Motivating incident (2026-05-31, project 28 via `/tasks:loop-dag`): an orchestr
 
 **Called from:** `loop.md` §7a (Build the `VerifierInputs` envelope), `loop-dag.md` §3d (Verify each worker via `tasks-verifier`) / §6b (VerifierInputs envelope summary).
 
+**Version-skew guard (§6.4 — REQUIRED, applies to this section AND §N).** The evidence values below are captured through `tasks scm <verb>` — NOT raw VCS commands — so the orchestrator MUST run `tasks scm detect` ONCE at run start and confirm the SCM verbs resolve. If `tasks scm detect` reports an unknown command / missing verb (a pre-SCM `tasks` CLI), the run ABORTS at start with an explicit "upgrade the wood-fired-tasks CLI" message. It NEVER falls back to raw-VCS prose to populate this envelope or to tear down isolation (§N).
+
 The orchestrator constructs a single JSON object matching the `VerifierInputs` interface in the contract:
 
 ```ts
@@ -245,9 +250,9 @@ const verifierInputs = {
   task_id: <id>,
   acceptance_criteria: <string>,         // see resolution rules below
   worker_subagent_session_id: <string>,  // opaque handle from the Step 4 Agent call
-  commit_shas: <string[]>,               // from Step 6's `git rev-parse HEAD` / commit hash
-  file_changes: <string[]>,              // from Step 6's `git diff --name-only <prev>..HEAD`
-  base_sha: <string>,                    // expected integration-branch tip the work must sit on
+  commit_shas: <string[]>,               // §5.1: conceptually change-ids — from `tasks scm change-id` (data.ids) / `tasks scm publish` (data.changeId); wire name kept for back-compat
+  file_changes: <string[]>,              // from `tasks scm changed-files <base>` (data.files[].path)
+  base_sha: <string>,                    // expected integration baseline id from `tasks scm baseline` (data.id) the work must sit on
   additional_observations: <string[]>,  // ALWAYS present — see below; [] only if Step 5 was skipped
 };
 ```
@@ -258,9 +263,9 @@ const verifierInputs = {
 2. If that column is NULL/empty, fall back to extracting the "ACCEPTANCE CRITERIA:" / "Acceptance criteria:" block from the task description (existing convention from Step 2).
 3. If neither exists, **skip the verifier dispatch entirely** and proceed straight to Step 8 with `verification_evidence: { verdict: "NOT_VERIFIED", checks: [], verified_at: <iso8601> }` plus a comment noting "no acceptance criteria to grade against — verifier skipped". This is the documented escape hatch.
 
-**Resolving `commit_shas` + `file_changes`**: after Step 6's `git commit`, capture `git rev-parse HEAD` and `git diff --name-only <pre-commit-sha>..HEAD`. If Step 6 produced multiple commits, list them in chronological order. If the worker reported "no changes needed" and Step 6 produced no commit at all, pass empty arrays — do NOT fabricate.
+**Resolving `commit_shas` + `file_changes`** (§5.1 evidence generalization — the field is conceptually **change-ids**, the wire name `commit_shas` is kept for back-compat): after Step 6 records the work through the resolved backend, capture the change-ids from `tasks scm change-id` (`data.ids`) — or from the `tasks scm publish` output (`data.changeId`) when the run publishes — and the changed paths from `tasks scm changed-files <base>` (`data.files[].path`, `<base>` = the run's integration baseline id from `tasks scm baseline`). If Step 6 recorded multiple change-ids, list them in the backend's natural (chronological) order. If the worker reported "no changes needed" and the backend recorded nothing, pass empty arrays — do NOT fabricate. **none-mode empty change-ids is a legitimate state** (there are no commit-shas to report); the §B escape hatch already accepts empty arrays + `NOT_VERIFIED`. **`change_ids`/`base_id` are the forward names** for `commit_shas`/`base_sha` respectively — the latter are back-compat aliases, not the canonical fields, for new consumers.
 
-**Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration-branch tip and instruct the verifier, as its FIRST check, to assert the worktree's `git rev-parse HEAD` equals `base_sha` (or is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If HEAD does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
+**Base-integrity assertion (MANDATORY for worktree-isolated workers).** Populate `base_sha` with the run's integration baseline id from `tasks scm baseline` (`data.id` — a `<sha>` for git, `p4:<cl>` for perforce, or the `none:<digest>` id the verifier re-derives) and instruct the verifier, as its FIRST check, to assert the worktree's current baseline (its own `tasks scm baseline` `data.id`) equals `base_sha` (or, for a linear-history backend, is a descendant of it). A worktree cut from a stale base (see §A STEP 0) silently invalidates every downstream check — reinvented files, reverted registrations, diffs that look clean against the wrong tree. If the current baseline id does not match `base_sha`, the verifier MUST return `verdict: NOT_VERIFIED` (base mismatch) instead of grading a stale tree. This is the read-side backstop to §A's write-side STEP 0 guard and the orchestrator's §3b post-dispatch check.
 
 **Always populate `additional_observations` with the orchestrator's Step-5 validation results.** One entry per independently re-run command, quoted from
 tool results that already returned (§L): e.g.
@@ -272,7 +277,7 @@ suite inside its own 30-call budget. Scope-narrowing SCOPE: entries (below)
 are appended to the same array. Do not put anything in this array you did not
 observe from a returned tool result.
 
-**Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `git rev-parse HEAD` / `git diff --name-only` calls that **returned in an earlier turn** — never from a `git` call batched into the same turn as building the envelope. The envelope is where a fabricated SHA does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
+**Anti-fabrication (load-bearing — every value in this envelope is copied, never composed).** The `commit_shas` / `file_changes` arrays are populated verbatim from the `tasks scm change-id` / `tasks scm changed-files <base>` calls that **returned in an earlier turn** — never from a `tasks scm` call batched into the same turn as building the envelope. The envelope is where a fabricated change-id does the most damage. Full rule + self-grading prohibition: **§L above (CANON)**.
 
 **Unplanned-fixes assessment (load-bearing).** If the worker summary contains an `## Unplanned fixes` section (per §A's `## Pre-existing blocking defects` clause) with content other than `none`, the verifier MUST assess each entry for (i) **justification** — was the fix genuinely necessary to satisfy an acceptance criterion, or did it expand scope — and (ii) **non-regression** — the unplanned fix did not break unrelated behaviour (it is covered by the post-edit test run / does not introduce a new failing FQN). Surface the assessment as a dedicated check in the emitted JSON (name: `"unplanned fixes assessment"`, status `PASS`/`FAIL`, evidence citing the justification and non-regression conclusions); an unjustified or regression-causing unplanned fix is grounds for `status: "FAIL"` on that check rather than a silent PASS.
 
@@ -373,12 +378,14 @@ safe_count: <non-negative integer>
 \`\`\`diff
 <git diff <pre>..HEAD -- <file_path> excerpt restricted to the hunks worker_a touched>
 \`\`\`
+(git backend; under perforce/none derive the equivalent excerpt via `tasks scm changed-files <base>` plus a per-file content comparison)
 
 ### Diff from task #<id_b>
 
 \`\`\`diff
 <git diff <pre>..HEAD -- <file_path> excerpt restricted to the hunks worker_b touched>
 \`\`\`
+(git backend; under perforce/none derive the equivalent excerpt via `tasks scm changed-files <base>` plus a per-file content comparison)
 
 ### Auditor evidence
 
@@ -656,30 +663,23 @@ Column rules:
 
 **Called from:** `loop-dag.md` §5g (terminal step). `/tasks:loop` does NOT call this — see "Not-affected" below.
 
-**Why it exists.** `/tasks:loop-dag` dispatches each wave's workers in parallel, so every worker `Agent` call MUST set `isolation: "worktree"` — otherwise concurrent workers stomp each other in the shared tree (the shared-tree hazard: a worker can `git restore` another's edits even when their declared file sets are disjoint). The harness gives each isolated worker its own `.claude/worktrees/agent-<id>` worktree on a `worktree-agent-<id>` branch, and auto-removes a worktree **only when it is left unchanged**. Every worker edits files, so its worktree is always "changed" and is **never auto-cleaned**; left alone they accumulate across runs (observed: tens of stale worktrees + branches, which also pollute file searches with duplicate copies of every file). §5g reclaims them at run-end.
+**Why it exists.** `/tasks:loop-dag` dispatches each wave's workers in parallel, so every worker `Agent` call MUST set `isolation: "worktree"` — otherwise concurrent workers stomp each other in the shared tree (the shared-tree hazard: a worker can revert another's edits — restoring tracked files to their base state — even when their declared file sets are disjoint). The harness gives each isolated worker its own `.claude/worktrees/agent-<id>` worktree on a `worktree-agent-<id>` branch, and auto-removes a worktree **only when it is left unchanged**. Every worker edits files, so its worktree is always "changed" and is **never auto-cleaned**; left alone they accumulate across runs (observed: tens of stale worktrees + branches, which also pollute file searches with duplicate copies of every file). §5g reclaims them at run-end.
 
 **Ordering.** Runs ONCE per run, AFTER §5f's termination emit, on EVERY termination path (clean drain, `--max-waves` checkpoint, §2f gate refusal, §2g feasibility wipeout, §3a stall, user abort, unexpected error). On paths that dispatched no isolated workers (e.g. `--concurrency 1`, or a pre-dispatch abort) discovery finds nothing and the step is a no-op.
 
 **Procedure:**
 
-1. **Capture the integration base once, at run start.** Record the branch HEAD pointed at when the loop began as `<base>` (usually `main`; on a feature branch it is that branch). This is the branch §3d/§6c integrates PASS results onto. The gate compares against `<base>`, NOT a hardcoded `main`.
+1. **Capture the integration baseline once, at run start.** Record the run's integration baseline id from `tasks scm baseline` (`data.id`) when the loop began as `<base>` (usually the tip of `main`; on a feature branch it is that branch's tip). This is the same `<base>` §B populates into `base_sha` and the target §3d/§6c integrates PASS results onto. The gate compares against `<base>`, NOT a hardcoded `main`.
 
-2. **Enumerate candidates.** Run `git worktree list --porcelain` and select every worktree whose path is under `.claude/worktrees/` AND whose branch matches `worktree-agent-*`. Git discovery is authoritative and kill-safe: it also catches leftovers from prior crashed runs, not just this run's. (You MAY intersect with worktree/branch ids tracked in orchestrator state at dispatch for logging, but git discovery — not tracked state — is the source of truth.)
+2. **Enumerate candidates.** The candidates are the isolation ids the run dispatched with `isolation: "worktree"` (recorded in orchestrator dispatch state as `<id>`), together with any still-present isolation the backend/harness reports for the same `--context`. Each candidate is reclaimed through `tasks scm teardown-isolation <id>` (step 4). Enumeration is kill-safe: a re-run re-discovers still-present leftovers, including those from prior crashed runs, and reclaims only the ones still present.
 
-3. **Integration-safety gate (per candidate branch `B`).** Run `git cherry <base> B` and count lines beginning with `+` (commits on `B` whose patch-id has no equivalent on `<base>`):
-   - **0 `+` lines → SAFE to remove.** Every patch on `B` is already integrated onto `<base>` (patch-id match, so it holds regardless of cherry-pick SHA churn), OR `B` has no commits at all (the common case — workers do NOT commit per §A, so the fix landed on `<base>` via the orchestrator and `B` is empty). Either way nothing is lost.
-   - **≥1 `+` line → RETAIN.** `B` holds work not on `<base>`. **Never delete it.** Add it to the retain set.
-   - This gate is the load-bearing safety property: the teardown can only ever remove fully-integrated leftovers.
+3. **Integration-safety gate (per candidate `<id>`).** Reclamation is gated on full integration. An isolation is SAFE to reclaim only when every change it holds is already integrated onto `<base>` — the common case, because workers do NOT commit per §A, so the fix landed on `<base>` via the orchestrator and the isolation holds no un-integrated change. `tasks scm teardown-isolation <id>` performs this backend-appropriate gate and reclaims ONLY fully-integrated isolation; any isolation still holding un-integrated change is RETAINED, never discarded. This is the load-bearing safety property: the teardown can only ever remove fully-integrated leftovers.
 
-4. **Remove the safe set** (each safe worktree/branch, in order):
-   - `git worktree unlock <path>` — isolation worktrees are locked; `remove` refuses a locked worktree. Ignore a "not locked" error (idempotent).
-   - `git worktree remove --force <path>` — `--force` because the tree is "changed".
-   - `git branch -D worktree-agent-<id>` — capital `-D`: the §3 gate already proved integration, and ordinary `-d` would refuse a branch git still considers "unmerged" after a cherry-pick.
-   Then, once after processing all candidates: `git worktree prune` (clears stale admin entries for any worktree directory removed out-of-band).
+4. **Reclaim the safe set.** For each candidate, run `tasks scm teardown-isolation <id>` (idempotent — a "not isolated / nothing to reclaim" result is success). **Platform-worktree note (§5.2):** worktree isolation is provided by the Claude Code platform harness (`isolation: "worktree"` on the Agent call), which owns worktree creation and therefore the concrete worktree/branch reclamation — unlock the locked isolation, force-remove the "changed" tree, delete the reclaimed branch, prune stale admin entries. A CLI subprocess cannot request or reclaim a platform worktree, so no `tasks scm` verb owns that concrete step; `tasks scm teardown-isolation <id>` is the backend-appropriate delegation point (git-backend → platform-harness worktree reclamation; perforce → temp-client discard; none/off → shared tree, nothing to reclaim).
 
-5. **Record + re-emit.** Put the retain set into the `## Retained Worktrees` LOOP-RUN.md body block (§5d) — one bullet per retained branch with its un-integrated patch count and the `git cherry <base> <branch>` command to inspect — then **re-emit LOOP-RUN.md once more** (the §5b kill-safe rewrite) so the block reflects the post-teardown state. This final write is the run's true terminal action; wrap §5g in the same `try/finally`-equivalent guard as §5f so a teardown exception still leaves a written LOOP-RUN.md.
+5. **Record + re-emit.** Put the retain set into the `## Retained Worktrees` LOOP-RUN.md body block (§5d) — one bullet per retained isolation id with its un-integrated change count and the `tasks scm changed-files <base>` command (run within that isolation) to inspect it — then **re-emit LOOP-RUN.md once more** (the §5b kill-safe rewrite) so the block reflects the post-teardown state. This final write is the run's true terminal action; wrap §5g in the same `try/finally`-equivalent guard as §5f so a teardown exception still leaves a written LOOP-RUN.md.
 
-**Kill-safety / idempotency.** Because discovery is `git worktree list` and removal is gated on `git cherry`, re-running the teardown (or the next loop run) re-discovers and removes only the still-present, fully-integrated leftovers — the second run is a no-op. A teardown killed mid-way leaves a consistent partial state the next run finishes. Mirrors §5b's kill-safe posture.
+**Kill-safety / idempotency.** Because reclamation runs through the idempotent `tasks scm teardown-isolation <id>` (gated on full integration onto `<base>`), re-running the teardown (or the next loop run) reclaims only the still-present, fully-integrated leftovers — the second run is a no-op. A teardown killed mid-way leaves a consistent partial state the next run finishes. Mirrors §5b's kill-safe posture.
 
 **`/tasks:loop` is NOT affected.** `/tasks:loop` (`loop.md`) is sequential — one worker at a time — and dispatches workers WITHOUT `isolation: "worktree"` (they run in the shared main tree; `isolation` and `--concurrency` are loop-dag-only). It therefore creates no per-worker worktrees or `worktree-agent-*` branches and has nothing to tear down. If a future change ever parallelizes `/tasks:loop`, it must adopt worktree isolation AND port this teardown step.
 
@@ -711,7 +711,7 @@ Additionally run the **skills↔client-package mirror parity check** *when prese
 
 For MCP tools **NEWLY ADDED during this run**, exercise them through the **remote proxy** (`dist/mcp/remote/…`, the path `wft-mcp` → `dist/mcp/remote/index.js` → `src/mcp/remote/register-tools.ts` serves) — **NOT** in-process stdio registration. The retro's shipped smoke failed precisely because it exercised the tool in-process while the remote path was empty.
 
-- **Detect "newly added":** a tool is newly-added if this run's commits touched a tool registrar — files under `src/mcp/tools/` or `src/mcp/register-tools.ts` / `src/mcp/remote/register-tools.ts`. Diff the run's commit range (`git diff --name-only <run_base>..HEAD -- src/mcp/tools src/mcp/register-tools.ts src/mcp/remote/register-tools.ts`) and extract the `registerTool('<name>', …)` names introduced.
+- **Detect "newly added":** a tool is newly-added if this run's commits touched a tool registrar — files under `src/mcp/tools/` or `src/mcp/register-tools.ts` / `src/mcp/remote/register-tools.ts`. Diff the run's commit range (`git diff --name-only <run_base>..HEAD -- src/mcp/tools src/mcp/register-tools.ts src/mcp/remote/register-tools.ts`) and extract the `registerTool('<name>', …)` names introduced (git backend; under perforce/none derive the equivalent via `tasks scm changed-files <base>`, then filter the returned list to these paths).
 - **Smoke via the remote path:** for each newly-added tool name, confirm it is reachable through the remote proxy — it appears in `harvestRemoteToolNames()` (the remote registrar's surface) AND a remote-proxy invocation reaches its backing REST endpoint (not just stdio registration). In-process-only reachability does NOT count.
 
 **If a newly-added tool is unreachable via the remote path → the gate is RED.**
@@ -821,6 +821,8 @@ A failing drift/meta guard in a wave is handled **exactly like a §10e BROKEN in
 Either way the orchestrator records the RED guard's identity (test/script name + symptom) and DOES NOT recompute the next frontier as if the wave were clean.
 
 ## §Q. Worktree-patch integration mechanics (loop-dag run-end / per-wave)
+
+**GIT/PLATFORM-WORKTREE ISOLATION ONLY** — skip this entire step unless `tasks scm detect` reported `capabilities.isolation == "platform-worktree"`.
 
 **Called from:** `loop-dag.md` §3d (PASS branch — committing each worker's changes to the integration branch). `/tasks:loop`'s shared-tree workers commit in place and do NOT need this; loop-dag workers run in ISOLATED worktrees (§3b `isolation: "worktree"`), so their changes live on a `worktree-agent-<id>` branch / tree and MUST be applied to the integration tree by the orchestrator. This section codifies HOW to apply overlapping worktree patches so per-task commit attribution stays clean.
 

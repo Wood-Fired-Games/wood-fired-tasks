@@ -1,6 +1,13 @@
 import type Database from '../db/driver.js';
 import { ModelPolicySchema } from '../schemas/model-policy.schema.js';
-import type { Project, CreateProjectDTO, ValueCharter, ModelPolicy } from '../types/task.js';
+import { ScmCharterSchema } from '../schemas/scm-charter.schema.js';
+import type {
+  Project,
+  CreateProjectDTO,
+  ValueCharter,
+  ModelPolicy,
+  ScmCharter,
+} from '../types/task.js';
 import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
 import type { IProjectRepository, PaginationOptions } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
@@ -24,8 +31,15 @@ function inflateValueCharter<
   T extends {
     value_charter?: string | ValueCharter | null;
     model_policy?: string | ModelPolicy | null;
+    scm?: string | ScmCharter | null;
   },
->(project: T): T & { value_charter: ValueCharter | null; model_policy: ModelPolicy | null } {
+>(
+  project: T,
+): T & {
+  value_charter: ValueCharter | null;
+  model_policy: ModelPolicy | null;
+  scm: ScmCharter | null;
+} {
   const rawCharter = project.value_charter;
   const parsedCharter =
     typeof rawCharter === 'string'
@@ -36,7 +50,20 @@ function inflateValueCharter<
     typeof rawPolicy === 'string'
       ? parseJsonColumn(rawPolicy, ModelPolicySchema)
       : (rawPolicy ?? null);
-  return { ...project, value_charter: parsedCharter, model_policy: parsedPolicy };
+  // Pluggable SCM: `scm` validates on read too — `ScmCharterSchema` is
+  // `.strict()` and the project RESPONSE schema embeds it, so an unvalidated
+  // stored shape (corruption, hand-edit, forward-version row) would 500 the
+  // response serializer over one bad row. Degrading to `null` reads as "no scm
+  // default → no precedence-2 fallback". Mirrors `model_policy` above.
+  const rawScm = project.scm;
+  const parsedScm =
+    typeof rawScm === 'string' ? parseJsonColumn(rawScm, ScmCharterSchema) : (rawScm ?? null);
+  return {
+    ...project,
+    value_charter: parsedCharter,
+    model_policy: parsedPolicy,
+    scm: parsedScm,
+  };
 }
 
 /**
@@ -70,7 +97,7 @@ export class ProjectRepository implements IProjectRepository {
   constructor(private db: Database.Database) {
     // Prepare all statements for reuse
     this.insertStmt = db.prepare(
-      'INSERT INTO projects (name, description, value_charter, model_policy) VALUES (@name, @description, @value_charter, @model_policy)',
+      'INSERT INTO projects (name, description, value_charter, model_policy, scm) VALUES (@name, @description, @value_charter, @model_policy, @scm)',
     );
     this.findByIdStmt = db.prepare('SELECT * FROM projects WHERE id = ?');
     this.findByNameStmt = db.prepare('SELECT * FROM projects WHERE name = ?');
@@ -85,6 +112,7 @@ export class ProjectRepository implements IProjectRepository {
       description: dto.description ?? null,
       value_charter: dto.value_charter == null ? null : JSON.stringify(dto.value_charter),
       model_policy: dto.model_policy == null ? null : JSON.stringify(dto.model_policy),
+      scm: dto.scm == null ? null : JSON.stringify(dto.scm),
     });
     const project = this.findById(info.lastInsertRowid as number);
     if (!project) {
@@ -95,9 +123,10 @@ export class ProjectRepository implements IProjectRepository {
 
   findById(id: number): Project | null {
     const row = mapRow<
-      Omit<Project, 'value_charter' | 'model_policy'> & {
+      Omit<Project, 'value_charter' | 'model_policy' | 'scm'> & {
         value_charter: string | null;
         model_policy: string | null;
+        scm: string | null;
       }
     >(this.findByIdStmt, id);
     return row ? inflateValueCharter(row) : null;
@@ -106,9 +135,10 @@ export class ProjectRepository implements IProjectRepository {
   findAll(pagination?: PaginationOptions): Project[] {
     const { limit, offset } = resolvePagination(pagination);
     const rows = mapRows<
-      Omit<Project, 'value_charter' | 'model_policy'> & {
+      Omit<Project, 'value_charter' | 'model_policy' | 'scm'> & {
         value_charter: string | null;
         model_policy: string | null;
+        scm: string | null;
       }
     >(this.findAllStmt, limit, offset);
     return rows.map(inflateValueCharter);
@@ -123,9 +153,10 @@ export class ProjectRepository implements IProjectRepository {
 
   findByName(name: string): Project | null {
     const row = mapRow<
-      Omit<Project, 'value_charter' | 'model_policy'> & {
+      Omit<Project, 'value_charter' | 'model_policy' | 'scm'> & {
         value_charter: string | null;
         model_policy: string | null;
+        scm: string | null;
       }
     >(this.findByNameStmt, name);
     return row ? inflateValueCharter(row) : null;
@@ -159,6 +190,13 @@ export class ProjectRepository implements IProjectRepository {
       fields.push('model_policy = @model_policy');
       params['model_policy'] =
         updates.model_policy === null ? null : JSON.stringify(updates.model_policy);
+    }
+    // Pluggable SCM: patch scm. `undefined` (key absent) leaves the column
+    // untouched; explicit `null` clears it; an object is serialized to JSON.
+    // Mirrors the model_policy patch above.
+    if (updates.scm !== undefined) {
+      fields.push('scm = @scm');
+      params['scm'] = updates.scm === null ? null : JSON.stringify(updates.scm);
     }
 
     // Always update the updated_at timestamp

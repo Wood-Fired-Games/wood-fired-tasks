@@ -1042,6 +1042,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           "name": {
                             "type": "string",
                           },
+                          "scm": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "backend": {
+                                "enum": [
+                                  "git",
+                                  "perforce",
+                                  "none",
+                                  "auto",
+                                ],
+                                "type": "string",
+                              },
+                              "behaviors": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "branchPerRun": {
+                                    "type": "boolean",
+                                  },
+                                  "commit": {
+                                    "type": "boolean",
+                                  },
+                                  "isolate": {
+                                    "type": "boolean",
+                                  },
+                                  "openReview": {
+                                    "type": "boolean",
+                                  },
+                                  "publish": {
+                                    "type": "boolean",
+                                  },
+                                },
+                                "type": "object",
+                              },
+                            },
+                            "type": "object",
+                          },
                           "updated_at": {
                             "type": "string",
                           },
@@ -1621,6 +1658,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "minLength": 1,
                     "type": "string",
                   },
+                  "scm": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "backend": {
+                        "enum": [
+                          "git",
+                          "perforce",
+                          "none",
+                          "auto",
+                        ],
+                        "type": "string",
+                      },
+                      "behaviors": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "branchPerRun": {
+                            "type": "boolean",
+                          },
+                          "commit": {
+                            "type": "boolean",
+                          },
+                          "isolate": {
+                            "type": "boolean",
+                          },
+                          "openReview": {
+                            "type": "boolean",
+                          },
+                          "publish": {
+                            "type": "boolean",
+                          },
+                        },
+                        "type": "object",
+                      },
+                    },
+                    "type": "object",
+                  },
                   "value_charter": {
                     "nullable": true,
                     "properties": {
@@ -2161,6 +2235,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "name": {
                       "type": "string",
+                    },
+                    "scm": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "backend": {
+                          "enum": [
+                            "git",
+                            "perforce",
+                            "none",
+                            "auto",
+                          ],
+                          "type": "string",
+                        },
+                        "behaviors": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branchPerRun": {
+                              "type": "boolean",
+                            },
+                            "commit": {
+                              "type": "boolean",
+                            },
+                            "isolate": {
+                              "type": "boolean",
+                            },
+                            "openReview": {
+                              "type": "boolean",
+                            },
+                            "publish": {
+                              "type": "boolean",
+                            },
+                          },
+                          "type": "object",
+                        },
+                      },
+                      "type": "object",
                     },
                     "updated_at": {
                       "type": "string",
@@ -2770,6 +2881,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "name": {
                       "type": "string",
                     },
+                    "scm": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "backend": {
+                          "enum": [
+                            "git",
+                            "perforce",
+                            "none",
+                            "auto",
+                          ],
+                          "type": "string",
+                        },
+                        "behaviors": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branchPerRun": {
+                              "type": "boolean",
+                            },
+                            "commit": {
+                              "type": "boolean",
+                            },
+                            "isolate": {
+                              "type": "boolean",
+                            },
+                            "openReview": {
+                              "type": "boolean",
+                            },
+                            "publish": {
+                              "type": "boolean",
+                            },
+                          },
+                          "type": "object",
+                        },
+                      },
+                      "type": "object",
+                    },
                     "updated_at": {
                       "type": "string",
                     },
@@ -3335,6 +3483,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "minLength": 1,
                     "type": "string",
                   },
+                  "scm": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "backend": {
+                        "enum": [
+                          "git",
+                          "perforce",
+                          "none",
+                          "auto",
+                        ],
+                        "type": "string",
+                      },
+                      "behaviors": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "branchPerRun": {
+                            "type": "boolean",
+                          },
+                          "commit": {
+                            "type": "boolean",
+                          },
+                          "isolate": {
+                            "type": "boolean",
+                          },
+                          "openReview": {
+                            "type": "boolean",
+                          },
+                          "publish": {
+                            "type": "boolean",
+                          },
+                        },
+                        "type": "object",
+                      },
+                    },
+                    "type": "object",
+                  },
                   "value_charter": {
                     "nullable": true,
                     "properties": {
@@ -3872,6 +4057,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     },
                     "name": {
                       "type": "string",
+                    },
+                    "scm": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "backend": {
+                          "enum": [
+                            "git",
+                            "perforce",
+                            "none",
+                            "auto",
+                          ],
+                          "type": "string",
+                        },
+                        "behaviors": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branchPerRun": {
+                              "type": "boolean",
+                            },
+                            "commit": {
+                              "type": "boolean",
+                            },
+                            "isolate": {
+                              "type": "boolean",
+                            },
+                            "openReview": {
+                              "type": "boolean",
+                            },
+                            "publish": {
+                              "type": "boolean",
+                            },
+                          },
+                          "type": "object",
+                        },
+                      },
+                      "type": "object",
                     },
                     "updated_at": {
                       "type": "string",

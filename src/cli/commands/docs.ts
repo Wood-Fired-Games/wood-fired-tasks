@@ -38,6 +38,7 @@ export const DOCS_CATALOG: Record<string, string> = {
   reliability: 'RELIABILITY.md',
   troubleshooting: 'TROUBLESHOOTING.md',
   architecture: 'ARCHITECTURE.md',
+  scm: 'SCM.md',
   readme: 'README.md',
   'agent-context': 'AGENT_CONTEXT.md',
 };

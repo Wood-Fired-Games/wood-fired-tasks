@@ -11,5 +11,18 @@
     // absent. knip can't follow that indirection statically and false-positives
     // it as unused — it IS a runtime dependency, do NOT remove it.
     "update-notifier"
+  ],
+  "ignoreBinaries": [
+    // `gh` (GitHub CLI) is a spec-mandated member of the SCM exec allowlist
+    // (docs/superpowers/specs/2026-07-16-pluggable-scm-design.md §6.1 — git/p4/gh)
+    // and is invoked in src/scm/__tests__/exec.test.ts's allowlist coverage. It
+    // is an external binary resolved from PATH at runtime, never an npm dependency,
+    // so knip's --dependencies binary check must not flag it as unlisted.
+    "gh",
+    // `p4` (Perforce CLI) is likewise on the SCM exec allowlist and is invoked
+    // by the env-gated real-p4d integration suite's docker helper
+    // (src/scm/__tests__/helpers/p4d-docker.ts) — a PATH-resolved external
+    // binary, never an npm dependency.
+    "p4"
   ]
 }

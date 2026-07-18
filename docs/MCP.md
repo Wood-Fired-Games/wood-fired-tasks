@@ -16,6 +16,15 @@ The MCP server provides:
 - 12 pre-built skill files for common workflows
 - Two server modes: **local** (in-process SQLite) and **remote** (HTTP proxy to a deployed REST API)
 
+> **Note — pluggable source control is a CLI adapter, not an MCP tool.** The
+> `tasks scm <verb>` adapter (git / Perforce / no-VCS `none` backends, selected
+> via `.tasks/scm.json`) is exposed only on the `tasks` CLI — it adds **no** MCP
+> tool, so the server's tool count is unchanged. Its one MCP-visible surface is
+> the project charter's optional **`scm`** default, returned by `get_project` and
+> writable via `update_project` (documented below). See
+> [README.md](../README.md#source-control-scm-commands) for the verb reference and
+> [SETUP.md](SETUP.md#source-control-scm-configuration) for the config file.
+
 ## MCP Server
 
 ### Transport
@@ -679,6 +688,16 @@ Get a project by its ID.
 
 **Usage:** When Claude Code needs to fetch project details.
 
+The returned project carries an optional **`scm`** default (mirrored on the
+local stdio and remote REST servers for parity). It is a JSON object with an
+optional `backend` hint (`"git" | "perforce" | "none" | "auto"`) and optional
+`behaviors` toggles (`commit`, `isolate`, `publish`, `openReview`,
+`branchPerRun`). This is the **precedence-2 fallback** for the pluggable
+`tasks scm` adapter — it supplies a backend default ONLY when a repo has no
+`.tasks/scm.json` and no on-disk marker; it never overrides an on-disk signal.
+See [SETUP.md](SETUP.md#source-control-scm-configuration) and the
+`tasks scm` command reference in [README.md](../README.md#source-control-scm-commands).
+
 #### list_projects
 
 List all projects.
@@ -702,12 +721,19 @@ Update an existing project by ID.
   "id": "number (required, positive integer)",
   "updates": {
     "name": "string (optional, max 100 chars)",
-    "description": "string (optional, max 1000 chars)"
+    "description": "string (optional, max 1000 chars)",
+    "value_charter": "object | null (optional; WSJF reference frame, null clears)",
+    "model_policy": "object | null (optional; per-project model routing, null clears)",
+    "scm": "object | null (optional; pluggable-SCM default — { backend?, behaviors? }, null clears)"
   }
 }
 ```
 
-**Usage:** When Claude Code needs to modify project name or description.
+**Usage:** When Claude Code needs to modify project name or description, or set
+the WSJF `value_charter`, `model_policy`, or the `scm` default. The `scm` object
+takes an optional `backend` hint (`"git" | "perforce" | "none" | "auto"`) and
+optional `behaviors` toggles; pass `null` to clear it. A malformed `scm` value
+(unknown key, non-boolean toggle) is rejected at the boundary.
 
 #### delete_project
 

@@ -11,6 +11,101 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-18
+
+### Added
+- **Pluggable source control (git / perforce / none).** Source-control actions
+  are no longer git-only. A single adapter CLI — `tasks scm <verb>` — resolves a
+  per-repo backend and dispatches every SCM primitive (`detect`, `baseline`,
+  `status`, `changed-files`, `stage`, `record`, `change-id`, `publish`,
+  `open-review`, `isolate`, `teardown-isolation`, `reset-hard`) through one
+  chokepoint, printing a single-line JSON envelope with stable error codes and a
+  fixed exit-code convention. Backend selection is a committed, repo-local
+  `.tasks/scm.json` (Zod-`.strict()`-validated) with precedence
+  file → project-charter `scm` → auto-detect (`.git` → git, `.p4config` →
+  perforce, else none); an invalid config is a hard error, never a silent
+  fallback. Backends: **git** (byte-for-byte parity, never `git add -A`),
+  **perforce** (commit = submit = publish collapse, per-context numbered
+  changelists, post-submit renumber capture, accept-safe conflict retry-once),
+  and **none** (no VCS ops; a per-context digest manifest under `.tasks/.scm/`
+  drives baseline/diff verification, with empty change-ids a legitimate evidence
+  state). A central exclusion list guards `stage`/`record` across all backends,
+  and cross-repo runs resolve per-repo with isolation capability taken as the MIN
+  across touched repos. Fully opt-in and backward compatible: repos with no
+  `.tasks/scm.json` auto-detect to git and behave exactly as before. See
+  [`docs/SCM.md`](docs/SCM.md) and the design spec at
+  `docs/superpowers/specs/2026-07-16-pluggable-scm-design.md`.
+- **Perforce experimental-backend warning surfaced to tooling.** When the
+  resolved backend is perforce, the `tasks scm <verb>` envelope's
+  `warnings[]` now carries a stable `perforce backend is experimental — see
+  docs/SCM.md` string (git/none emit none), so downstream tooling consumers
+  see the label without having to read the docs.
+- **CI: nightly + `workflow_dispatch` real-p4d suite.** A new workflow runs
+  the env-gated real-p4d integration suite
+  (`WFG_TESTS_REAL_P4=1 perforce-real-p4d.test.ts`) against a real `p4d`
+  server on a schedule and on demand — never a required PR check, so it
+  can't block merges — installing `p4` via a sha-pinned Helix Command-Line
+  binary. This is the perforce graduation gate (see below).
+
+### Changed
+- **Pluggable-SCM hardening.** Follow-up robustness pass over the adapter
+  (preflight memoization, none-mode empty-change-id evidence handling,
+  git-parity byte-identical smoke coverage, and skill migrations off raw
+  `git` onto `tasks scm` read verbs). The **perforce backend is
+  experimental** and graduates once the real-p4d integration suite (added
+  to CI above) runs green in CI. `docs/SCM.md` now has a Quickstart with a
+  worked example per backend.
+- **Setup mode-conversion is now a real conversion, not an accretion.**
+  Switching `tasks setup` between `--remote` and `--local` used to leave
+  both modes' MCP entries in `~/.claude.json`, leave the other mode's
+  credentials authenticating the CLI, and never actually create a database
+  for "local" mode. Setup into mode X now removes mode Y's claim on every
+  shared surface: the other mode's `~/.claude.json` server entry is removed
+  atomically, stale non-loopback credentials are reconciled (interactive
+  prompt to delete, loud warning under `--no-input`, never a silent
+  deletion), and `--local` eagerly bootstraps and migrates the local
+  database at the resolved path.
+- **CLI base-URL precedence now honors `credentials.active.server`.** Order
+  is flag > `API_BASE_URL` env (incl. `.env`) > `credentials.active.server`
+  > localhost default, closing the split-brain where `tasks whoami` and the
+  data-plane client could disagree with each other after a mode conversion.
+  `tasks setup --mode local|remote` is now a discoverable alias for the
+  existing switch flags.
+- **Post-conversion local setup guides you to log in.** If a fresh or
+  converted local setup ends with no usable loopback credential, setup now
+  prints next-step login guidance (`tasks login` / `--token` /
+  `mint-token`) instead of leaving the next command to fail with a silent
+  401. Interactive TTY offers to run login immediately; `--no-input` prints
+  guidance only; setup itself never blocks.
+- **MCP validation errors now name the failing field(s).** A validation
+  failure surfaces the failing field name(s) and detail (first 3, 300-char
+  cap, `(+N more)` tag) in the `McpError` message text instead of a bare
+  "Validation failed", fixing opaque errors like the `wsjf.jobSize` mismatch
+  class; `data.fieldErrors` is unchanged for structured consumers.
+- **Doc-drift guards hardened.** The REST-route drift guard now discovers
+  route files recursively under `src/api/routes/` instead of trusting a
+  hard-coded list; a new agent-context manifest-completeness guard (rule 8)
+  walks `docs/**/*.md` and fails when a doc ships untracked by the manifest
+  and its allowlist; new recipe-count/duplicate-row guards (rules 9-10)
+  keep README/AGENTS.md/llms.txt recipe counts and tables from silently
+  rotting; a forbidden-content scan (rule 7) rejects secret shapes,
+  machine-absolute paths, and non-project emails in checked-in docs.
+- **`docs/SCM.md` accuracy + full indexing pass.** Contradictions, stale
+  perforce wording, and the precedence description are fixed; the doc now
+  ships in the npm tarball and is indexed in `DOCS_CATALOG`, `llms.txt`,
+  the docs index, the agent-context manifest, `CLI.md`, and `REPO_MAP`.
+- **Stale hand-counts fixed across README/docs** (migration count,
+  docs/README tool count, AGENTS.md/llms.txt recipe counts), now enforced
+  by the new consistency guards above so they can't silently rot again.
+
+### Upgrade notes
+- **A repo with both `.git` and a Perforce marker now fails closed.** If a
+  repo root has both `.git` and a Perforce marker (including a matching
+  `$P4CONFIG`) and no `.tasks/scm.json`, backend auto-detect now refuses
+  the ambiguity with `CONFIG_INVALID` (exit 2) instead of silently
+  defaulting to git. If this affects you, commit an explicit
+  `.tasks/scm.json` naming the intended backend.
+
 ## [v2.4.0] - 2026-07-09
 
 Quality release for the `/tasks:*` skill pipeline (decompose → loop → loop-dag →

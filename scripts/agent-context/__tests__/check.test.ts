@@ -1,9 +1,15 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { runChecks } from '../check.js';
+import {
+  checkRecipeCountConsistency,
+  countNavigationRecipes,
+  findDuplicateAgentsTableRows,
+  runChecks,
+} from '../check.js';
 import {
   type AgentContextManifest,
   MANIFEST_GROUPS,
@@ -191,5 +197,195 @@ describe('agent-context manifest', () => {
     const { errors } = runChecks(repoRoot);
     const adapterLinkErrors = errors.filter((e) => e.includes('does not link to AGENTS.md'));
     expect(adapterLinkErrors).toEqual([]);
+  });
+});
+
+// --- Rule 9: recipe-count consistency (task #1602) -------------------------
+
+/**
+ * Stand up a throw-away repo root inside the OS temp dir containing exactly
+ * the given files (relative path -> contents). Mirrors links.test.ts's
+ * makeTempRepoWithMd but supports writing several files at once, since the
+ * recipe-count check reads docs/NAVIGATION.md plus AGENTS.md/llms.txt.
+ */
+function makeTempRepoWithFiles(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-ctx-check-'));
+  for (const [relPath, contents] of Object.entries(files)) {
+    const abs = join(dir, relPath);
+    mkdirSync(resolve(abs, '..'), { recursive: true });
+    writeFileSync(abs, contents, 'utf8');
+  }
+  return dir;
+}
+
+describe('countNavigationRecipes + checkRecipeCountConsistency (committed tree)', () => {
+  const repoRoot = findRepoRoot();
+
+  it('counts the committed docs/NAVIGATION.md recipe headings and both claim sites agree', () => {
+    const actual = countNavigationRecipes(repoRoot);
+    expect(actual).toBeGreaterThan(0);
+
+    const agentsText = readFileSync(resolve(repoRoot, 'AGENTS.md'), 'utf8');
+    expect(agentsText).toContain(`(${actual} task shapes with files`);
+
+    const llmsText = readFileSync(resolve(repoRoot, 'llms.txt'), 'utf8');
+    expect(llmsText).toContain(`${actual} change-type recipes`);
+
+    expect(checkRecipeCountConsistency(repoRoot)).toEqual([]);
+  });
+
+  it('the committed tree surfaces no recipe-count errors via runChecks', () => {
+    const { errors } = runChecks(repoRoot);
+    const recipeErrors = errors.filter(
+      (e) => e.includes('task shapes') || e.includes('change-type recipes'),
+    );
+    expect(recipeErrors).toEqual([]);
+  });
+});
+
+describe('checkRecipeCountConsistency (synthetic fixtures)', () => {
+  const navWithThreeRecipes = [
+    '# Navigation',
+    '',
+    '### 1. First recipe',
+    'body',
+    '',
+    '### 2. Second recipe',
+    'body',
+    '',
+    '### 3. Third recipe',
+    'body',
+    '',
+  ].join('\n');
+
+  it('passes when AGENTS.md and llms.txt both quote the actual heading count', () => {
+    const root = makeTempRepoWithFiles({
+      'docs/NAVIGATION.md': navWithThreeRecipes,
+      'AGENTS.md': 'See (3 task shapes with files / tests / docs) for details.',
+      'llms.txt': '- [docs/NAVIGATION.md](docs/NAVIGATION.md): 3 change-type recipes.',
+    });
+
+    expect(countNavigationRecipes(root)).toBe(3);
+    expect(checkRecipeCountConsistency(root)).toEqual([]);
+  });
+
+  it('fails when AGENTS.md quotes a stale count (this is the guard the task requires)', () => {
+    const root = makeTempRepoWithFiles({
+      'docs/NAVIGATION.md': navWithThreeRecipes,
+      'AGENTS.md': 'See (2 task shapes with files / tests / docs) for details.',
+      'llms.txt': '- [docs/NAVIGATION.md](docs/NAVIGATION.md): 3 change-type recipes.',
+    });
+
+    const errors = checkRecipeCountConsistency(root);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('AGENTS.md claims 2 task shapes');
+    expect(errors[0]).toContain('has 3');
+  });
+
+  it('fails when llms.txt quotes a stale count', () => {
+    const root = makeTempRepoWithFiles({
+      'docs/NAVIGATION.md': navWithThreeRecipes,
+      'AGENTS.md': 'See (3 task shapes with files / tests / docs) for details.',
+      'llms.txt': '- [docs/NAVIGATION.md](docs/NAVIGATION.md): 19 change-type recipes.',
+    });
+
+    const errors = checkRecipeCountConsistency(root);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('llms.txt claims 19 change-type recipes');
+    expect(errors[0]).toContain('has 3');
+  });
+
+  it('fails when a claim site is missing the count phrase entirely', () => {
+    const root = makeTempRepoWithFiles({
+      'docs/NAVIGATION.md': navWithThreeRecipes,
+      'AGENTS.md': 'No recipe count mentioned here.',
+      'llms.txt': '- [docs/NAVIGATION.md](docs/NAVIGATION.md): 3 change-type recipes.',
+    });
+
+    const errors = checkRecipeCountConsistency(root);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('AGENTS.md: expected a "task shapes" count claim');
+  });
+});
+
+// --- Rule 10: duplicate-row guard for AGENTS.md tables (task #1602) --------
+
+describe('findDuplicateAgentsTableRows (committed tree)', () => {
+  it('the committed AGENTS.md has no duplicate table rows', () => {
+    const repoRoot = findRepoRoot();
+    expect(findDuplicateAgentsTableRows(repoRoot)).toEqual([]);
+  });
+
+  it('the committed tree surfaces no duplicate-row errors via runChecks', () => {
+    const repoRoot = findRepoRoot();
+    const { errors } = runChecks(repoRoot);
+    const dupErrors = errors.filter((e) => e.includes('duplicate table row'));
+    expect(dupErrors).toEqual([]);
+  });
+});
+
+describe('findDuplicateAgentsTableRows (synthetic fixtures)', () => {
+  it('flags a doc listed twice in the same table (the ONBOARDING_SMOKE.md regression)', () => {
+    const agentsMd = [
+      '# Agents',
+      '',
+      '## Deeper docs',
+      '',
+      '| File | One-line purpose |',
+      '|---|---|',
+      '| [docs/A.md](docs/A.md) | First doc |',
+      '| [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Onboarding smoke test |',
+      '| [docs/B.md](docs/B.md) | Second doc |',
+      '| [docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md) | Repeatable onboarding smoke |',
+      '',
+    ].join('\n');
+    const root = makeTempRepoWithFiles({ 'AGENTS.md': agentsMd });
+
+    const errors = findDuplicateAgentsTableRows(root);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain(
+      'duplicate table row "[docs/ONBOARDING_SMOKE.md](docs/ONBOARDING_SMOKE.md)"',
+    );
+    expect(errors[0]).toContain('first seen at line 8');
+  });
+
+  it('does not flag the same doc appearing once each in two separate tables', () => {
+    const agentsMd = [
+      '# Agents',
+      '',
+      '## Table one',
+      '',
+      '| File | Purpose |',
+      '|---|---|',
+      '| [docs/A.md](docs/A.md) | First doc |',
+      '',
+      '## Table two',
+      '',
+      '| File | Purpose |',
+      '|---|---|',
+      '| [docs/A.md](docs/A.md) | First doc, again in a different table |',
+      '',
+    ].join('\n');
+    const root = makeTempRepoWithFiles({ 'AGENTS.md': agentsMd });
+
+    expect(findDuplicateAgentsTableRows(root)).toEqual([]);
+  });
+
+  it('does not flag a clean table with no repeats', () => {
+    const agentsMd = [
+      '| File | Purpose |',
+      '|---|---|',
+      '| [docs/A.md](docs/A.md) | First doc |',
+      '| [docs/B.md](docs/B.md) | Second doc |',
+      '',
+    ].join('\n');
+    const root = makeTempRepoWithFiles({ 'AGENTS.md': agentsMd });
+
+    expect(findDuplicateAgentsTableRows(root)).toEqual([]);
+  });
+
+  it('returns no errors when AGENTS.md does not exist at the given root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agent-ctx-check-empty-'));
+    expect(findDuplicateAgentsTableRows(root)).toEqual([]);
   });
 });

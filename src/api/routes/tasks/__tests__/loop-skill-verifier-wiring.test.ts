@@ -109,7 +109,9 @@ describe('base_sha envelope propagation (2026-07 quality plan T3)', () => {
   });
 
   it('tasks-verifier.md mandates the base-integrity first check', () => {
-    expect(verifierText).toMatch(/git merge-base --is-ancestor/);
+    // Post-SCM-migration (#1538): base integrity resolves the worktree
+    // baseline via `tasks scm baseline` (data.id) rather than raw git.
+    expect(verifierText).toMatch(/tasks scm baseline/);
     expect(verifierText).toMatch(/NOT_VERIFIED.*base mismatch|base mismatch.*NOT_VERIFIED/is);
   });
 

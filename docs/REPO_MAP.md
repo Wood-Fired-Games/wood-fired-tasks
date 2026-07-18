@@ -83,6 +83,12 @@ than duplicating them.
 - `event-bus.ts`, `sse-manager.ts`, `types.ts`.
 - Tests: `src/events/__tests__/`.
 
+### `src/scm/` — Pluggable source control (SCM) adapter
+- `types.ts` — shared verb/error/exit-code types (`ScmBackend`, `ScmVerbContext`, `ScmError`, `SCM_VERBS`, `SCM_EXIT_CODES`).
+- `detect.ts` — backend resolution (`.tasks/scm.json` → on-disk marker → charter hint → `none`). `config.ts` — `.tasks/scm.json` load/validate (Zod `.strict()`). `exclusions.ts` — central stage/record exclusion list.
+- `git.ts`, `perforce.ts`, `none.ts` — the three backend implementations, dispatched from the CLI at `src/cli/commands/scm.ts`.
+- Tests: `src/scm/__tests__/` (incl. `perforce-real-p4d.test.ts`, an integration suite against a real dockerized `p4d`, env-gated by `WFG_TESTS_REAL_P4=1` and silently skipped without it) plus `exclusions.test.ts` colocated in `src/scm/`. CLI-layer tests: `src/cli/__tests__/scm-command.test.ts`, `scm-perforce.test.ts`. Deeper: [`docs/SCM.md`](SCM.md).
+
 ### Other
 - `src/config/`, `src/types/`, `src/utils/` — cross-cutting helpers.
 - `src/index.ts` — library re-exports.
@@ -96,6 +102,7 @@ than duplicating them.
 | REST route | `src/api/routes/<resource>/` or `routes/<flat>.ts` | `src/api/__tests__/` | [`API.md`](API.md) |
 | MCP tool | `src/mcp/tools/<resource>-tools.ts` | `src/mcp/__tests__/` | [`MCP.md`](MCP.md) |
 | CLI subcommand | `src/cli/commands/<name>.ts` (+ register in `bin/tasks.ts`) | `src/cli/__tests__/` | [`CLI.md`](CLI.md) |
+| SCM verb / backend | `src/scm/{types,detect,config,exclusions,git,none,perforce}.ts` (+ CLI dispatcher `src/cli/commands/scm.ts`) | `src/scm/__tests__/`, `src/cli/__tests__/scm-*.test.ts` | [`SCM.md`](SCM.md) |
 | Service / business logic | `src/services/<name>.service.ts` | `src/services/__tests__/` | [`API.md`](API.md) |
 | Repository / SQL | `src/repositories/<entity>.repository.ts` | `src/repositories/__tests__/` | — |
 | Zod schema | `src/schemas/<entity>.schema.ts` | colocated in `__tests__/` of caller | [`API.md`](API.md) |
@@ -144,6 +151,7 @@ notice and delegate to `wood-fired-tasks setup`.
 | HTTP API surface, auth, OpenAPI | [`docs/API.md`](API.md) |
 | MCP tools and resources | [`docs/MCP.md`](MCP.md) |
 | CLI commands and flags | [`docs/CLI.md`](CLI.md) |
+| Pluggable source control (git/perforce/none) | [`docs/SCM.md`](SCM.md) |
 | Local setup, DB, migrations | [`docs/SETUP.md`](SETUP.md) |
 | Slack app + slash command | [`docs/SLACK.md`](SLACK.md) |
 | Release process | [`docs/RELEASE.md`](RELEASE.md) |

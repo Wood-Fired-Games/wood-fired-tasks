@@ -14,6 +14,11 @@ import type { WsjfHistoryTrigger } from '../repositories/wsjf-history.repository
 // types below and re-export so consumers of `task.ts` see one parsed shape.
 import type { ModelPolicy } from '../schemas/model-policy.schema.js';
 export type { ModelPolicy, ModelRef } from '../schemas/model-policy.schema.js';
+// Pluggable SCM (spec §6.3): the `ScmCharter` shape is owned by the Zod
+// contract in `src/schemas/scm-charter.schema.ts`. Import it for the project
+// field types below and re-export so consumers of `task.ts` see one parsed shape.
+import type { ScmCharter } from '../schemas/scm-charter.schema.js';
+export type { ScmCharter } from '../schemas/scm-charter.schema.js';
 
 // Task status and priority enums
 export const TASK_STATUSES = [
@@ -220,6 +225,17 @@ export interface Project {
    * authoritative validator is `src/schemas/model-policy.schema.ts`.
    */
   model_policy: ModelPolicy | null;
+  /**
+   * Pluggable SCM (spec §6.3): the project's scm charter default — a backend
+   * hint plus behavior-toggle defaults surfaced on `get_project` as the
+   * precedence-2 fallback ONLY (a repo with no `.tasks/scm.json` and no on-disk
+   * marker; §3.2). NULL for rows that pre-date migration 017 OR projects that
+   * never set an scm default. Stored as a JSON string in SQLite (alongside
+   * `value_charter` / `model_policy`); this field is the parsed object as seen
+   * by service / route / MCP / CLI consumers. The authoritative validator is
+   * `src/schemas/scm-charter.schema.ts`.
+   */
+  scm: ScmCharter | null;
 }
 
 export interface TaskTag {
@@ -371,6 +387,13 @@ export interface CreateProjectDTO {
    * column untouched. Mirrors `value_charter` wiring.
    */
   model_policy?: ModelPolicy | null;
+  /**
+   * Pluggable SCM (spec §6.3): optional per-project scm charter default.
+   * `undefined`/absent persists NULL; an object is serialized to JSON by the
+   * repository. On update, explicit `null` clears it; `undefined` leaves the
+   * column untouched. Mirrors `value_charter` / `model_policy` wiring.
+   */
+  scm?: ScmCharter | null;
 }
 
 export interface CreateDependencyDTO {

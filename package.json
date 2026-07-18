@@ -1,6 +1,6 @@
 {
   "name": "wood-fired-tasks",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Network-wide task tracking system for Wood Fired Games",
   "keywords": [
     "task-tracker",
@@ -77,7 +77,8 @@
     "docs/SLACK.md",
     "docs/RELIABILITY.md",
     "docs/TROUBLESHOOTING.md",
-    "docs/ARCHITECTURE.md"
+    "docs/ARCHITECTURE.md",
+    "docs/SCM.md"
   ],
   "engines": {
     "node": ">=22"

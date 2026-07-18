@@ -307,17 +307,20 @@ describe('E2E Regression: Full Task Lifecycle', () => {
       },
     })) as ToolResult;
 
-    // The MCP surface collapses the ValidationError to a generic
-    // `MCP error -32602: Validation failed` text (the instructive
-    // `fieldErrors.wsjf_submission` message rides in the JSON-RPC error `data`,
-    // which the SDK client does not fold into `content[0].text`). The verbatim
-    // instructive text is asserted on the REST surface, which DOES surface
-    // `details.wsjf_submission`, in the REST suite below.
+    // The MCP surface flattens the ValidationError to `MCP error -32602:
+    // Validation failed: <field>: <detail>` — task #1603 folded the first
+    // fieldErrors entries into the message itself so clients that render
+    // only `content[0].text` (not the JSON-RPC error `data`) still see the
+    // instructive detail, not just the useless "Validation failed" stub.
+    // The full unabridged payload is still asserted via `details.wsjf_submission`
+    // on the REST surface in the suite below.
     expect(result.isError).toBe(true);
     expect(result.content[0].type).toBe('text');
     if (result.content[0].type === 'text') {
       expect(result.content[0].text).toContain('MCP error');
       expect(result.content[0].text).toContain('Validation failed');
+      expect(result.content[0].text).toContain('wsjf_submission:');
+      expect(result.content[0].text).toContain("no 'wsjf_submission'");
     }
 
     // The gate is a hard reject — no sizeless task was persisted.

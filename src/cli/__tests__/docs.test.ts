@@ -49,6 +49,7 @@ describe('tasks docs catalog', () => {
     // Catalog maps each name to a .md file in package.json `files`.
     expect(DOCS_CATALOG['usage-patterns']).toBe('USAGE_PATTERNS.md');
     expect(DOCS_CATALOG['cli']).toBe('CLI.md');
+    expect(DOCS_CATALOG['scm']).toBe('SCM.md');
   });
 
   it('lists only guides that exist on disk and points under packageRoot', () => {
@@ -63,6 +64,7 @@ describe('tasks docs catalog', () => {
     expect(byName['usage-patterns'].exists).toBe(true);
     expect(byName['setup'].exists).toBe(true);
     expect(byName['cli'].exists).toBe(true);
+    expect(byName['scm'].exists).toBe(true);
   });
 });
 

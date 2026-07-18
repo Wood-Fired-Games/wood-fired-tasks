@@ -17,6 +17,27 @@
  *      does not contain a markdown link to `AGENTS.md`. Adapters MUST
  *      point at the canonical entry — that is the only thing that makes
  *      them adapters rather than rogue vendor-specific docs.
+ *   7. Any "present" file contains forbidden content per contract section
+ *      4.4: secret/credential-shaped strings, local absolute filesystem
+ *      paths (`/home/...`, `/Users/...`, `C:\...`), or personal
+ *      (non-project) email addresses. See `scanTextForForbiddenContent`.
+ *   8. Any `docs/*.md` file on disk (discovered by a recursive walk, not a
+ *      hard-coded list) is neither a `MANIFEST_SOURCE` entry nor on the
+ *      explicit `DOC_ALLOWLIST` below. Root-cause guard for the finding that
+ *      `docs/SCM.md` shipped discoverable in only 2 of the repo's five
+ *      parallel doc indexes — nothing previously caught a new doc that
+ *      skipped the manifest entirely. See `findUntrackedDocs`.
+ *   9. AGENTS.md / llms.txt restate a stale count of docs/NAVIGATION.md's
+ *      change-type recipes (counted by `^### ` headings). Root-cause guard
+ *      for task #1602: NAVIGATION.md grew a 21st recipe (SCM) while
+ *      AGENTS.md still said "18 task shapes" and llms.txt still said "19
+ *      change-type recipes" — nothing caught the two hand-authored counts
+ *      drifting from the doc they describe. See `checkRecipeCountConsistency`.
+ *  10. Any markdown table in AGENTS.md lists the same first-column value
+ *      (typically a doc link) twice. Root-cause guard for task #1602:
+ *      docs/ONBOARDING_SMOKE.md was listed twice in the "Deeper docs" table
+ *      with two different one-line descriptions. See
+ *      `findDuplicateAgentsTableRows`.
  *
  * This script reads only files inside the repository (.md sources, the
  * committed .agent-context.json, and the in-process manifest.ts source).
@@ -26,12 +47,14 @@
  *   npm run agent-context:check
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
   type AgentContextManifest,
   MANIFEST_PATH,
+  MANIFEST_SOURCE,
+  type ManifestSourceEntry,
   OWNER_LINE_EXEMPT,
   approxTokensForLines,
   buildManifest,
@@ -50,6 +73,430 @@ interface CheckResult {
  * Used by the adapter-link check (see rule 6 in the file header comment).
  */
 const ADAPTER_AGENTS_LINK_RE = /\]\((?:\.\/)?AGENTS\.md(?:#[^)]*)?\)/;
+
+// ---------------------------------------------------------------------------
+// Rule 7: forbidden-content scan (contract section 4.4)
+// ---------------------------------------------------------------------------
+//
+// Scans every "present" agent-facing file (the same file set already
+// covered by rules 1-3 above) for content the contract's section 4.4 says
+// must never appear: secret/credential-shaped strings, local absolute
+// filesystem paths, and personal (non-project) email addresses.
+//
+// Two allowlists exist because the current tracked docs legitimately
+// contain lookalikes used as illustrative examples:
+//   - ALLOWED_EMAIL_DOMAINS: RFC 2606 reserved placeholder domains used
+//     throughout the docs (alice@example.com, you@example.com, ...), plus
+//     the project's own support domain (security@woodfiredgames.com in
+//     SECURITY.md). Any email whose domain is NOT in this set is flagged.
+//   - ALLOWLISTED_ABSOLUTE_PATHS: a small, file-scoped list of the exact
+//     strings the path pattern matches in today's tree, all of which are
+//     documentation placeholders rather than real machine paths. Each
+//     entry is commented with why it's safe. Anything not in this list
+//     still fails the scan.
+//
+// Secret/credential patterns have NO allowlist — a real match is always an
+// error; none of the current tracked docs match them (verified when this
+// rule was added).
+
+const SECRET_PATTERNS: ReadonlyArray<{ name: string; re: RegExp }> = [
+  { name: 'AWS access key ID', re: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
+  { name: 'GitLab personal access token', re: /\bglpat-[A-Za-z0-9_-]{20,}\b/ },
+  { name: 'Slack token', re: /\bxox[baprs]-[A-Za-z0-9-]+\b/ },
+  { name: 'PEM private key block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { name: 'Stripe live secret key', re: /\bsk_live_[0-9a-zA-Z]{20,}\b/ },
+  {
+    name: 'JWT-shaped token',
+    re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+  },
+];
+
+// Matches `/home/<segment>`, `/Users/<segment>`, or a Windows `C:\<segment>`
+// path. Stops at the next `/` (or end of the allowed char class) so a full
+// multi-segment path still yields a short, allowlist-friendly match.
+const ABSOLUTE_PATH_RE =
+  /(?:\/home\/[A-Za-z0-9_.-]+|\/Users\/[A-Za-z0-9_.-]+|[A-Za-z]:\\[A-Za-z0-9_.\\-]+)/g;
+
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+
+// RFC 2606 reserved placeholder domains (used for illustrative examples
+// throughout the docs) plus the project's own support domain. Anything
+// else is treated as a personal/real address and flagged.
+const ALLOWED_EMAIL_DOMAINS = new Set<string>([
+  'example.com',
+  'example.org',
+  'example.net',
+  'woodfiredgames.com',
+]);
+
+// file path -> exact strings the ABSOLUTE_PATH_RE match yields for that
+// file today. Each is a documentation placeholder, not a real local path.
+const ALLOWLISTED_ABSOLUTE_PATHS: Readonly<Record<string, ReadonlySet<string>>> = {
+  // Section 4.4's own bullet illustrates the forbidden-path shapes using
+  // literal ellipsis placeholders — not real paths.
+  'docs/AGENT_CONTEXT.md': new Set(['/home/...', '/Users/...', 'C:' + '\\' + '\\' + '...']),
+  // Example MCP client config using the generic placeholder username
+  // "you" (as in "replace with your own"), not a real developer's machine
+  // path.
+  'docs/MCP.md': new Set(['/home/you']),
+};
+
+/**
+ * Scan one file's text for contract section 4.4 forbidden content. Returns
+ * a list of `"<path>:<line>: <message>"` error strings; empty means clean.
+ * Exported for direct unit testing without touching disk.
+ */
+export function scanTextForForbiddenContent(filePath: string, text: string): string[] {
+  const errors: string[] = [];
+  const lines = text.split('\n');
+  const pathAllowlist = ALLOWLISTED_ABSOLUTE_PATHS[filePath];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const lineNo = i + 1;
+
+    for (const { name, re } of SECRET_PATTERNS) {
+      if (re.test(line)) {
+        errors.push(`${filePath}:${lineNo}: forbidden content — looks like a ${name}.`);
+      }
+    }
+
+    ABSOLUTE_PATH_RE.lastIndex = 0;
+    let pathMatch: RegExpExecArray | null = ABSOLUTE_PATH_RE.exec(line);
+    while (pathMatch !== null) {
+      const matched = pathMatch[0];
+      if (!pathAllowlist?.has(matched)) {
+        errors.push(`${filePath}:${lineNo}: forbidden content — local absolute path "${matched}".`);
+      }
+      pathMatch = ABSOLUTE_PATH_RE.exec(line);
+    }
+
+    EMAIL_RE.lastIndex = 0;
+    let emailMatch: RegExpExecArray | null = EMAIL_RE.exec(line);
+    while (emailMatch !== null) {
+      const domain = (emailMatch[1] ?? '').toLowerCase();
+      if (!ALLOWED_EMAIL_DOMAINS.has(domain)) {
+        errors.push(
+          `${filePath}:${lineNo}: forbidden content — non-project email address "${emailMatch[0]}".`,
+        );
+      }
+      emailMatch = EMAIL_RE.exec(line);
+    }
+  }
+
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Rule 8: manifest completeness — every docs/*.md must be tracked or
+// explicitly allowlisted
+// ---------------------------------------------------------------------------
+//
+// Root-cause fix for the review finding that the repo has FIVE parallel doc
+// indexes (AGENTS.md's deeper-docs table, docs/README.md, docs/NAVIGATION.md,
+// llms.txt, and this manifest) that are supposed to move in lockstep but
+// don't: docs/SCM.md shipped discoverable through only 2 of the 5. Task
+// #1609's own discovery pass found the same pattern again — docs/README.md
+// already indexed docs/USAGE_PATTERNS.md, docs/event-router-design.md,
+// docs/BENCHMARK_POLICY.md, and docs/hooks/README.md, none of which were
+// manifest entries (now fixed, see the entries added alongside this rule).
+//
+// This rule closes the gap for the one index that actually gates CI: it
+// walks docs/ recursively (a hard-coded file list is exactly the kind of
+// gate a new file can dodge — see discoverDocsMarkdownFiles) and asserts
+// every *.md file found is EITHER a MANIFEST_SOURCE path OR on the explicit
+// DOC_ALLOWLIST below. A brand-new docs/*.md that isn't wired into either
+// fails the build the moment it's committed.
+//
+// NOTE (follow-on, explicitly OUT OF SCOPE for task #1609): the deeper fix
+// is consolidating the five indexes into one generated source of truth —
+// e.g. generate docs/README.md's table and AGENTS.md's deeper-docs table
+// FROM manifest.ts/MANIFEST_GROUPS, and reduce llms.txt to a category-level
+// pointer — so there is only one place to register a doc instead of five to
+// keep in sync by hand. This rule only prevents the worst failure mode (a
+// doc registered nowhere); it does not fix the fan-out itself.
+
+/**
+ * Explicit allowlist of `docs/*.md` files that are intentionally NOT
+ * manifest entries, grouped into deliberate exclusion classes. Every class
+ * carries a rationale; adding a path here without adding it to an existing
+ * class (or defining a new one with its own rationale) defeats the point of
+ * this rule — the allowlist is meant to be a reviewed, deliberate decision
+ * per file, not an escape hatch.
+ */
+const DOC_ALLOWLIST_CLASSES: ReadonlyArray<{ description: string; paths: readonly string[] }> = [
+  {
+    description:
+      'GSD/superpowers planning artifacts (specs + plans): point-in-time design docs authored ' +
+      "during a milestone's planning phase, written once and not maintained afterward. Once a " +
+      'feature ships, its live-maintained reference lives in a tracked deep doc (e.g. ' +
+      'docs/SCM.md for the pluggable-SCM feature, not the spec that proposed it); the spec ' +
+      'itself stays as a historical planning record, not an agent-context contract subject to ' +
+      'freshness/budget enforcement.',
+    paths: [
+      'docs/superpowers/PLAN-TEMPLATE.md',
+      'docs/superpowers/plans/2026-06-01-wsjf-prioritization.md',
+      'docs/superpowers/plans/2026-06-09-configurable-task-models.md',
+      'docs/superpowers/plans/2026-07-03-tasks-skill-quality-improvements.md',
+      'docs/superpowers/plans/2026-07-16-pluggable-scm-plan.md',
+      'docs/superpowers/specs/2026-06-01-wsjf-prioritization-design.md',
+      'docs/superpowers/specs/2026-06-05-single-command-distribution-design.md',
+      'docs/superpowers/specs/2026-06-06-setup-modes-and-client-driven-remote-auth-design.md',
+      'docs/superpowers/specs/2026-06-09-configurable-task-models-design.md',
+      'docs/superpowers/specs/2026-06-10-guaranteed-task-sizing-design.md',
+      'docs/superpowers/specs/2026-07-16-pluggable-scm-design.md',
+      'docs/superpowers/specs/2026-07-17-pluggable-scm-hardening.md',
+    ],
+  },
+  {
+    description:
+      'Historical/internal artifacts each explicitly self-labelled "INTERNAL HISTORICAL ' +
+      'ARTIFACT — not user-facing documentation" in an HTML comment at the top of the file. ' +
+      'They record a one-time, maintainer-only project rename/migration that predates the first ' +
+      'public release; there is no ongoing freshness or budget enforcement worth doing for a ' +
+      'frozen record of a completed, non-repeatable event.',
+    paths: [
+      'docs/rename/AUDIT.md',
+      'docs/rename/IDENTITY-BRIEF.md',
+      'docs/rename/LOCAL-MIGRATION.md',
+      'docs/rename/POSITIONING.md',
+      'docs/rename/README.md',
+    ],
+  },
+  {
+    description:
+      'Point-in-time audit / decision reports tied to a specific completed project or task ' +
+      '(each quotes a project/task number and a decision "as of" a date in its own header). ' +
+      'They document a finding or a decision at a point in time, not a living contract that ' +
+      'should be flagged as "drifted" if the codebase moves on; docs/CODE_QUALITY_ROADMAP.md ' +
+      '(tracked) is the live index that links out to them.',
+    paths: [
+      'docs/AGENT_READINESS_AUDIT.md',
+      'docs/ASYNC_PROMISE_LINTING.md',
+      'docs/TYPESCRIPT_QUALITY_AUDIT_2026.md',
+      'docs/WINDOWS_CHILD_PROCESS_AUDIT.md',
+    ],
+  },
+  {
+    description:
+      'Retrospectives: a dated post-mortem of a single incident, written once and never edited ' +
+      'again by design. Historical record, not a maintained reference doc.',
+    paths: ['docs/retrospectives/2026-06-01-wsjf-remote-parity-planning-gap.md'],
+  },
+  {
+    description:
+      'Companion illustrative fixture for the tracked docs/loop-run-schema.md contract. The ' +
+      'file\'s own header declares it a "REFERENCE EXAMPLE ... not a live run artifact" with ' +
+      'synthetic values; it is pinned by src/lib/loop-run/__tests__/reference-example.test.ts, ' +
+      'not by agent-context budget/owner checks.',
+    paths: ['docs/loop-run-reference-example.md'],
+  },
+];
+
+const DOC_ALLOWLIST: ReadonlySet<string> = new Set(DOC_ALLOWLIST_CLASSES.flatMap((c) => c.paths));
+
+export { DOC_ALLOWLIST_CLASSES, DOC_ALLOWLIST };
+
+/**
+ * Recursively discover every `docs/**\/*.md` file relative to `repoRoot`.
+ * Mirrors the recursive-walk pattern
+ * `scripts/agent-context/__tests__/interfaces-counts.test.ts`'s
+ * `discoverRouteFiles` uses for `src/api/routes/**` — a hard-coded file list
+ * is exactly the kind of gate a new file can dodge; a filesystem walk
+ * cannot be dodged by simply not being added to a list.
+ */
+export function discoverDocsMarkdownFiles(repoRoot: string): string[] {
+  const results: string[] = [];
+  const docsDir = resolve(repoRoot, 'docs');
+  if (!existsSync(docsDir)) return results;
+
+  function walk(relDir: string): void {
+    const absDir = resolve(repoRoot, relDir);
+    for (const entry of readdirSync(absDir)) {
+      const relPath = `${relDir}/${entry}`;
+      const absPath = resolve(repoRoot, relPath);
+      if (statSync(absPath).isDirectory()) {
+        walk(relPath);
+      } else if (entry.endsWith('.md')) {
+        results.push(relPath);
+      }
+    }
+  }
+  walk('docs');
+  return results.sort();
+}
+
+/**
+ * Rule 8: every `docs/*.md` file discovered on disk must be either a
+ * `MANIFEST_SOURCE` entry (any status — a `reserved` slot still counts as
+ * "tracked") or on `DOC_ALLOWLIST`. Returns one error string per untracked
+ * file; an empty array means the tree is fully accounted for.
+ *
+ * `manifestSource` is injectable (defaults to the real `MANIFEST_SOURCE`)
+ * purely so tests can exercise the diff logic against a synthetic manifest
+ * without needing a throwaway `docs/` tree on disk for every case.
+ */
+export function findUntrackedDocs(
+  repoRoot: string,
+  manifestSource: readonly ManifestSourceEntry[] = MANIFEST_SOURCE,
+): string[] {
+  const known = new Set(manifestSource.map((e) => e.path));
+  const errors: string[] = [];
+  for (const relPath of discoverDocsMarkdownFiles(repoRoot)) {
+    if (known.has(relPath)) continue;
+    if (DOC_ALLOWLIST.has(relPath)) continue;
+    errors.push(
+      `File "${relPath}" is a docs/*.md file but is neither a manifest entry in ` +
+        `scripts/agent-context/manifest.ts (MANIFEST_SOURCE) nor on the explicit allowlist in ` +
+        `scripts/agent-context/check.ts (DOC_ALLOWLIST). Add a manifest entry if this is a ` +
+        `canonical agent-facing doc, or extend DOC_ALLOWLIST with a rationale (grouped into an ` +
+        `existing or new exclusion class) if it deliberately isn't.`,
+    );
+  }
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Rule 9: recipe-count consistency — AGENTS.md / llms.txt must restate the
+// current docs/NAVIGATION.md recipe count
+// ---------------------------------------------------------------------------
+//
+// docs/NAVIGATION.md's per-surface "if you want to do X, read these files"
+// recipes are numbered `### N. <title>` headings. AGENTS.md and llms.txt
+// each restate the total in prose ("18 task shapes", "19 change-type
+// recipes") as a cheap orientation hint. Task #1602 found both counts
+// stale after the SCM recipe landed (NAVIGATION.md grew to 21, the two
+// callers still said 18 and 19) — this rule recounts the headings from
+// source and asserts every known claim site agrees with it.
+
+const NAVIGATION_DOC = 'docs/NAVIGATION.md';
+const NAVIGATION_RECIPE_HEADING_RE = /^### /gm;
+
+/**
+ * Count docs/NAVIGATION.md's `### N. <title>` recipe headings directly from
+ * source (never a hand-maintained number) so a new recipe cannot be added
+ * without the count moving too.
+ */
+export function countNavigationRecipes(repoRoot: string): number {
+  const text = readFileSync(resolve(repoRoot, NAVIGATION_DOC), 'utf8');
+  const matches = text.match(NAVIGATION_RECIPE_HEADING_RE);
+  return matches ? matches.length : 0;
+}
+
+interface RecipeCountClaim {
+  file: string;
+  /** Must contain exactly one capture group: the claimed integer. */
+  pattern: RegExp;
+  describe: string;
+}
+
+// One entry per prose site that restates the NAVIGATION.md recipe count.
+// Add a new entry here if another doc starts quoting the count.
+const RECIPE_COUNT_CLAIMS: readonly RecipeCountClaim[] = [
+  { file: 'AGENTS.md', pattern: /\((\d+) task shapes with files/, describe: 'task shapes' },
+  {
+    file: 'llms.txt',
+    pattern: /docs\/NAVIGATION\.md\]\(docs\/NAVIGATION\.md\):\s*(\d+) change-type recipes/,
+    describe: 'change-type recipes',
+  },
+];
+
+/**
+ * Rule 9: every claim site in `RECIPE_COUNT_CLAIMS` must quote the actual
+ * `docs/NAVIGATION.md` recipe count. Returns one error string per
+ * mismatched (or missing) claim; an empty array means every claim agrees
+ * with source.
+ */
+export function checkRecipeCountConsistency(repoRoot: string): string[] {
+  const errors: string[] = [];
+  const actual = countNavigationRecipes(repoRoot);
+
+  for (const claim of RECIPE_COUNT_CLAIMS) {
+    const abs = resolve(repoRoot, claim.file);
+    if (!existsSync(abs)) continue; // file-exists already reported elsewhere
+    const text = readFileSync(abs, 'utf8');
+    const match = claim.pattern.exec(text);
+    if (!match) {
+      errors.push(
+        `${claim.file}: expected a "${claim.describe}" count claim matching ${claim.pattern} ` +
+          `but found none. Restate the current ${NAVIGATION_DOC} recipe count (${actual}).`,
+      );
+      continue;
+    }
+    const claimed = Number(match[1]);
+    if (claimed !== actual) {
+      errors.push(
+        `${claim.file} claims ${claimed} ${claim.describe} but ${NAVIGATION_DOC} has ${actual} ` +
+          `"^### " recipe headings. Update the claim in ${claim.file} (or the recipe count in ` +
+          `${NAVIGATION_DOC}) so they agree.`,
+      );
+    }
+  }
+
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Rule 10: duplicate-row guard for AGENTS.md markdown tables
+// ---------------------------------------------------------------------------
+//
+// Task #1602 found docs/ONBOARDING_SMOKE.md listed twice in AGENTS.md's
+// "Deeper docs" table (once as "Onboarding smoke test — 7 probe scenarios
+// for fresh agents", once as "Repeatable onboarding smoke test (scripted +
+// manual)") — a copy/paste duplicate that survived because nothing checked
+// table rows for repeats. This walks AGENTS.md, treats each contiguous run
+// of `| ... |` lines as one markdown table (row 0 = header, row 1 = the
+// `|---|---|` separator, skipped), and flags any data row whose first cell
+// repeats an earlier row's first cell within the same table.
+
+const MARKDOWN_TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+const MARKDOWN_TABLE_SEPARATOR_RE = /^\s*\|[\s:|-]+\|?\s*$/;
+
+/**
+ * Rule 10: find duplicate first-column values within any single markdown
+ * table in `file` (defaults to AGENTS.md). Returns one error string per
+ * duplicate row found (citing both the duplicate line and the line the
+ * value first appeared on); an empty array means every table is
+ * duplicate-free.
+ */
+export function findDuplicateAgentsTableRows(repoRoot: string, file = 'AGENTS.md'): string[] {
+  const abs = resolve(repoRoot, file);
+  if (!existsSync(abs)) return [];
+  const lines = readFileSync(abs, 'utf8').split('\n');
+  const errors: string[] = [];
+
+  let rowIndexInTable = -1; // -1 = not currently inside a table block
+  let seen = new Map<string, number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (!MARKDOWN_TABLE_ROW_RE.test(line)) {
+      rowIndexInTable = -1;
+      seen = new Map();
+      continue;
+    }
+    rowIndexInTable++;
+    if (rowIndexInTable === 0) continue; // header row
+    if (rowIndexInTable === 1 && MARKDOWN_TABLE_SEPARATOR_RE.test(line)) continue; // separator row
+
+    const cells = line.split('|').slice(1, -1);
+    const key = (cells[0] ?? '').trim();
+    if (!key) continue;
+
+    const firstSeenAt = seen.get(key);
+    if (firstSeenAt !== undefined) {
+      errors.push(
+        `${file}:${i + 1}: duplicate table row "${key}" (first seen at line ${firstSeenAt}). ` +
+          'Dedupe the table.',
+      );
+    } else {
+      seen.set(key, i + 1);
+    }
+  }
+
+  return errors;
+}
 
 function normalizeForCompare(m: AgentContextManifest): Omit<AgentContextManifest, '_generated'> & {
   _generated: Omit<AgentContextManifest['_generated'], 'generated_at'>;
@@ -109,6 +556,27 @@ export function runChecks(repoRoot: string): CheckResult {
       );
     }
   }
+
+  // Rule 7: forbidden-content scan (section 4.4). Runs over every
+  // "present" file — the same set already covered by rules 1-3 above.
+  for (const entry of fresh.files) {
+    if (entry.status !== 'present') continue;
+    const abs = resolve(repoRoot, entry.path);
+    if (!existsSync(abs)) continue; // file-exists already reported above
+    const text = readFileSync(abs, 'utf8');
+    errors.push(...scanTextForForbiddenContent(entry.path, text));
+  }
+
+  // Rule 8: manifest completeness — every docs/*.md is tracked or
+  // explicitly allowlisted.
+  errors.push(...findUntrackedDocs(repoRoot));
+
+  // Rule 9: AGENTS.md / llms.txt recipe-count claims agree with the actual
+  // docs/NAVIGATION.md heading count.
+  errors.push(...checkRecipeCountConsistency(repoRoot));
+
+  // Rule 10: no duplicate first-column rows in any AGENTS.md markdown table.
+  errors.push(...findDuplicateAgentsTableRows(repoRoot));
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);
   if (!existsSync(manifestAbsPath)) {

@@ -19,6 +19,8 @@ The loop is project-agnostic. Validation commands (`build`, `test`, `smoke`) and
 
 **Execution ledger:** before the first MCP call, mirror this skill's step list into the harness todo list per [loop-shared.md §S](loop-shared.md#s-execution-ledger-mandatory-step-tracking).
 
+**Pluggable source control (§6.4 version-skew guard):** this loop records, publishes, and inspects the working tree through `tasks scm <verb>` (the pluggable backend — git / perforce / none), NEVER raw VCS commands. Run `tasks scm detect` ONCE at run start and confirm the SCM verbs resolve. If `tasks scm detect` reports an unknown command / missing verb (a pre-SCM `tasks` CLI), ABORT at start with an explicit "upgrade the wood-fired-tasks CLI" message — do NOT fall back to raw git. The canonical verb vocabulary (`baseline`, `status`, `changed-files <base>`, `stage`, `record <message>`, `change-id`, `publish`, `reset-hard <ref>`, `teardown-isolation <id>`) and its evidence-capture contract live in [loop-shared.md §B](loop-shared.md#b-verifierinputs-envelope-spec) and [§N](loop-shared.md#n-worktree-teardown-run-termination).
+
 This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fired-tasks:<tool>` ↔ harness name `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__get_task,mcp__wood-fired-tasks__get_comments,mcp__wood-fired-tasks__get_dependencies,mcp__wood-fired-tasks__claim_task,mcp__wood-fired-tasks__update_task,mcp__wood-fired-tasks__add_comment,mcp__wood-fired-tasks__topology_check,mcp__wood-fired-tasks__wsjf_ranking,mcp__wood-fired-tasks__wsjf_health,mcp__wood-fired-tasks__resolve_model,mcp__wood-fired-tasks__list_models`) and retry. (`wsjf_ranking` is consumed by Step 1's WSJF-ordered selection; `wsjf_health` by §2g's loop-start health surfacing; `resolve_model` / `list_models` by the Step 4 / §7b dispatch-model resolution per [loop-shared.md §R](loop-shared.md#r-model-resolution).)
 
 ---
@@ -138,8 +140,8 @@ For each unique sibling repo `R` in the union of all `cross_repo` sets:
 
 **Pre-loop sibling-repo state concerns.** For each sibling repo `R` in the §2a-flagged set, ALSO check:
 
-1. `git -C <R> status --porcelain` — if non-empty, the repo has uncommitted local changes. Surface as a pre-loop concern (the loop may interact badly with the user's in-flight work — e.g. a worker may run `git stash` or commit alongside unrelated dirty files).
-2. `git -C <R> rev-parse --abbrev-ref HEAD` — if the result is NOT `main`, the repo is on a feature/topic branch. Surface as a pre-loop concern (the loop typically targets `main`; landing commits on an unintended branch is hard to undo).
+1. `tasks scm status --repo <R>` — if `data.dirty` is true, the repo has uncommitted local changes. Surface as a pre-loop concern (the loop may interact badly with the user's in-flight work — e.g. a worker may record changes alongside unrelated dirty files).
+2. The sibling repo's checkout is not on its integration target — if the backend exposes a branch notion (git mode) and the repo is not on `main`, it is on a feature/topic branch. Surface as a pre-loop concern (the loop typically targets `main`; landing changes on an unintended branch is hard to undo). The SCM abstraction has no branch-name verb, so this concern is git-mode-specific — inspected via the resolved backend and a no-op for branchless backends (perforce / none).
 
 The orchestrator MUST NOT auto-stash, auto-switch branches, or otherwise mutate the sibling repo's working tree. Just surface the concerns grouped by repo with a one-line description each, and let the user decide whether to proceed, fix the state, or abort. Example surface:
 
@@ -292,7 +294,7 @@ The brief's decision rules (pick A-vs-B yourself, pass excerpts not whole docs, 
 
 When the subagent returns its summary:
 
-1. `git status` — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `git status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it. Also confirm the report contains the §A **Per-AC evidence map** with every AC present; a report missing it (or missing an AC line) is a brief deviation — re-brief per item #5 before any validation runs.
+1. `tasks scm status` (`data.entries`) — confirm only the files the subagent named were modified. **If a file the subagent claimed to change is missing from `tasks scm status`, re-read it.** Subagents occasionally report a change they planned but didn't actually write; this catches it. Also confirm the report contains the §A **Per-AC evidence map** with every AC present; a report missing it (or missing an AC line) is a brief deviation — re-brief per item #5 before any validation runs.
 2. Read each modified file for obvious deviations from the brief (don't audit every line — sample the changes the summary highlighted). **Watch specifically for silent-pass gates**: a new CI job, npm script, or assertion that passes trivially (no-op, always-true condition, doesn't actually run the underlying tool). A gate that doesn't exercise the real check is worse than no gate — it gives false confidence forever. If you see one, re-brief and remove it (don't accept the compromise just because validation passed).
 3. **Independently re-run the validation commands** from Step 3. Do not trust the subagent's reported numbers without re-running. Prefer `bash-summarize` *if it's available* (optional — see the note in §2c) for long-output commands (tests, full builds with many files) to keep raw output out of context; use plain `Bash` for short-output commands (typical `lint`, `npm run build` on small projects) where the summarizer overhead exceeds the savings, and for everything if the wrapper isn't installed. **Trust the exit code over the prose**: if the summarizer flags an error but exit is 0 and headline numbers match expectation, it's noise from a test exercising an error path. When `bash-summarize` is in use, the `[bash-summarize] cmd=... exit=N` trailer line printed *by the wrapper itself* is the authoritative exit code — when the model's natural-language prose says "the exit code is likely 1" but the trailer shows `exit=0`, the trailer wins. The model's prose can hallucinate exit codes from scary stderr lines. **Regression-delta computation (load-bearing — no stash dance required).** The subagent's "Reporting back" block now contains two FQN sets: **Baseline (pre-edit)** and **Post-edit**. Compute `regressions_introduced_by_this_change = post_edit_failures - baseline_failures` (set difference on the FQN strings, applied AFTER the §2c `.flaky-tests.json` exclusion filter both sets were captured under). If the delta is empty, the subagent's work is clean (modulo any new tests added in this change — those count separately). If the delta is non-empty, those FQNs are real regressions introduced by this change and trigger the re-brief loop in item #5 below — the orchestrator does NOT need to stash the working tree and re-baseline to determine pre-existing-vs-new, because the subagent already captured the pre-edit set before touching code. If the subagent's report is missing either FQN block (or the two blocks were captured under different exclusion flags), treat that as a brief-deviation per Step 5's error-handling clause and re-brief.
 4. **Test re-run exception for declarative diffs.** If the entire diff is confined to config files (`tsconfig.json`, `*.config.*`, `package.json`, `.github/**`), documentation (`docs/**`, `README.md`, `*.md`), or no-behavior-change declarative modifiers (e.g. adding `override`/`readonly`/access modifiers to existing fields with identical initializers), you may skip the test re-run and validate with `build` + `lint` only. Note this in the close-out comment. Default is still to re-run tests — only skip when the diff truly cannot change runtime behaviour.
@@ -304,26 +306,24 @@ If after 2 round-trips the task isn't validating green, **stop the loop and ask 
 
 ### Step 6 — Commit + push
 
-Stage **only** the files modified by the fix — never `git add -A` or `git add .`. Use a commit message that:
+Stage **only** the files modified by the fix via `tasks scm stage <files…>` — never stage the whole tree (the verb enforces the §4.4 exclusion filter, and `tasks scm record` commits only what was staged). Use a commit message that:
 
-- States the change concisely in the subject (under 70 chars).
-- References the task ID and title in the body.
-- Notes any disabled / deferred items so future tasks pick them up.
-- Mentions the validation result at the bottom.
+- States the change concisely in the subject (under 70 chars); references the task ID and title in the body.
+- Notes any disabled / deferred items so future tasks pick them up; mentions the validation result at the bottom.
 
 ```bash
-git add <specific files>
-git commit -m "<subject>
+tasks scm stage <specific files>
+tasks scm record "<subject>
 
 <body>
 
 Resolves task #<id>: <title>"
-git push
+tasks scm publish
 ```
 
-If push fails because the branch has no upstream, run `git push --set-upstream origin <branch>` once. If push fails for any other reason (auth, conflict), note it in the task comment as a manual follow-up and continue to the next task — don't block the loop.
+`tasks scm publish` sets the upstream automatically when the branch has none (git backend → `origin <branch>`). If publish fails for any other reason (auth, conflict), note it in the task comment as a manual follow-up and continue to the next task — don't block the loop.
 
-**Anti-fabrication + one-state-mutation-per-turn (load-bearing — applies to this step and Steps 7–8).** Every evidence value (SHA, row count, exit code, verdict) MUST be copied verbatim from a tool result that ALREADY RETURNED in a prior turn — never composed, predicted, or quoted in the same turn as the call that produces it. So perform at most ONE state-producing action per turn and let it return before citing its result: never batch a `git commit` with the `update_task` / `add_comment` that cites its SHA, nor a query with the comment that cites its output. Full rule + motivating incident: [`loop-shared.md` §L](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
+**Anti-fabrication + one-state-mutation-per-turn (load-bearing — applies to this step and Steps 7–8).** Every evidence value (SHA, row count, exit code, verdict) MUST be copied verbatim from a tool result that ALREADY RETURNED in a prior turn — never composed, predicted, or quoted in the same turn as the call that produces it. So perform at most ONE state-producing action per turn and let it return before citing its result: never batch a `tasks scm record` with the `update_task` / `add_comment` that cites its change-id, nor a query with the comment that cites its output. Full rule + motivating incident: [`loop-shared.md` §L](./loop-shared.md#l-anti-fabrication--evidence-integrity-canon).
 
 If the Step 5 carve-out fired and the orchestrator took an inline post-correction, Step 8's close-out comment MUST include a separate **"Orchestrator post-correction:"** bullet listing the file(s) changed and a one-line rationale, so the audit trail survives.
 
@@ -341,7 +341,7 @@ The orchestrator MUST dispatch a separate `tasks-verifier` subagent to grade the
 
 - The full `VerifierInputs` TypeScript interface (fields: `task_id`, `acceptance_criteria`, `worker_subagent_session_id`, `commit_shas`, `file_changes`).
 - The `acceptance_criteria` resolution order (column → description block → skip-with-NOT_VERIFIED escape hatch).
-- The `commit_shas` + `file_changes` capture rules (post-Step-6 `git rev-parse HEAD` + `git diff --name-only`, empty arrays on "no changes needed").
+- The `commit_shas` + `file_changes` capture rules (post-Step-6 `tasks scm change-id` (`data.ids`) + `tasks scm changed-files <base>` (`data.files[].path`), empty arrays on "no changes needed").
 - The **scope-narrowed envelope** rules for declared design-only / slice-of-epic tasks: narrow `acceptance_criteria` to in-scope bullets only, populate `additional_observations` with the SCOPE: header so the verifier doesn't fabricate SKIP checks for deferred runtime ACs.
 
 **Cross-reference: this is the ONLY legitimate path for an intentional narrowed-scope closure to reach PASS.** Without §2a's scope annotation, the orchestrator passes the full AC list and accepts whatever verdict the verifier returns — there is no inline shortcut, and §7c's "no upgrades" rule still binds. The §7d declared-scope carve-out (below) is a status-level decision predicated on this envelope construction; it does NOT bypass it.
@@ -491,7 +491,7 @@ All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections us
 
 - **`## Tasks Closed`** — one row per task attempted so far. Columns in order: `task_id | title | verdict | evidence_link | subagent_session_id | commit_shas`. Title truncated to ≤ 100 chars with `…`. `commit_shas` is `—` when no commits landed (FAIL / NOT_VERIFIED / "no changes needed" branches).
 - **`## Verifier Findings`** — one block per task with verdict `FAIL` or `PARTIAL`, populated from `verification_evidence.checks` cited verbatim (failing check `name` + `evidence_url_or_text`). Sentinel paragraph `_No findings: all attempted tasks verified clean._` when empty.
-- **`## Integration Concerns`** — auto-flag when `git diff --name-only` across the worker session SHAs surfaces **≥ 2 distinct worker sessions touching the same file**. Exclude generated / lockfiles (`package-lock.json`, `*.lock`, `dist/**`). One bullet per overlap citing the file path, contributing task IDs, and commit SHAs. Sentinel `_No integration concerns auto-detected._` when empty.
+- **`## Integration Concerns`** — auto-flag when `tasks scm changed-files <base>` (`data.files[].path`) across the worker sessions surfaces **≥ 2 distinct worker sessions touching the same file**. Exclude generated / lockfiles (`package-lock.json`, `*.lock`, `dist/**`). One bullet per overlap citing the file path, contributing task IDs, and commit SHAs. Sentinel `_No integration concerns auto-detected._` when empty.
 - **`## Cost Breakdown`** — table with one row per participant (`orchestrator` + `subagent:<task_id>`) plus a `TOTAL` row. Columns: `participant | model | input_tokens | cache_create_tokens | cache_read_tokens | output_tokens | usd`. Primary source: orchestrator-observed `<usage>` blocks. Cross-check: `agent_transactions_v` (post-run, not required at emit time).
 - **`## Replay Instructions`** — fenced ```bash block with the exact `/tasks:loop` arguments to re-grade this run (project name / id, `--max-tasks`, etc.) plus the verification commands the loop trusted (`npm run build && npm test && npm run lint`).
 - **`## WSJF Ranking`** — the ranking snapshot Step 1's WSJF-ordered selection consumed (per-task scores, `effectiveWsjf`, propagation breakdown, γ/CAP). Full table + header + sentinel rules: [loop-shared.md §M](loop-shared.md#m-loop-runmd-wsjf-ranking-snapshot). Sentinel `_No WSJF ranking: project has no WSJF-scored tasks; selection used the priority + ID (or topological) order._` when the project was unscored or WSJF was never probed.
@@ -499,7 +499,7 @@ All sections from `docs/loop-run-schema.md` §4 are mandatory (empty sections us
 
 #### 9e. NOT committed (intentional)
 
-`.planning/` is gitignored per project policy (`.gitignore`: `Internal planning + agent workspaces (not for open-source distribution)`). LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact: replay across machines requires manual sharing (copy out / attach to a task comment / paste into a PR), but open-source distribution stays clean and per-run forensic detail never leaks into a fork's public history. The orchestrator MUST NOT `git add` the `.planning/loops/` artifact, and MUST NOT modify `.gitignore` to make it an exception.
+`.planning/` is gitignored per project policy (`.gitignore`: `Internal planning + agent workspaces (not for open-source distribution)`). LOOP-RUN.md is therefore a **local-machine per-run audit trail**, not a versioned artifact: replay across machines requires manual sharing (copy out / attach to a task comment / paste into a PR), but open-source distribution stays clean and per-run forensic detail never leaks into a fork's public history. The orchestrator MUST NOT stage or record the `.planning/loops/` artifact into source control (no `tasks scm stage` / `tasks scm record` of it), and MUST NOT modify `.gitignore` to make it an exception.
 
 Return to Step 1.
 
@@ -517,14 +517,14 @@ Step 10 runs ONCE at loop termination, **not per iteration**. Triggers: the `--m
 
 #### 10b. Detect overlaps
 
-Compute the set of worker session commit ranges from the loop run. For each pair of worker sessions (i, j) with `i < j`, run:
+Compute each worker session's change-set from the loop run. For each pair of worker sessions (i, j) with `i < j`, run:
 
 ```bash
-git diff --name-only <worker_i_pre_sha>..<worker_i_post_sha>
-git diff --name-only <worker_j_pre_sha>..<worker_j_post_sha>
+tasks scm changed-files <worker_i_pre_base>   # data.files[].path
+tasks scm changed-files <worker_j_pre_base>   # data.files[].path
 ```
 
-An **overlap** is a file path that appears in ≥ 2 distinct worker sessions' commit sets. Build a deduplicated list of `{file_path, task_ids: [...]}` pairs (task_ids in ascending order, deduped).
+An **overlap** is a file path that appears in ≥ 2 distinct worker sessions' change-sets. Build a deduplicated list of `{file_path, task_ids: [...]}` pairs (task_ids in ascending order, deduped).
 
 **Generated-file exclusion list** — mirrors Step 9d's Integration Concerns auto-flag exactly so the two views never disagree:
 
@@ -614,7 +614,7 @@ After every auditor returns (sequentially or in parallel — orchestrator's choi
 
 #### 10f. NOT committed
 
-Same rationale as Step 9e — `.planning/` is gitignored and INTEGRATION-AUDIT.md lives alongside LOOP-RUN.md as a per-run audit trail, not a versioned artifact. The orchestrator MUST NOT `git add` the `.planning/loops/<...>-integration.md` artifact. It MUST NOT modify `.gitignore`. Cross-reference: see Step 9e for the full open-source-distribution rationale.
+Same rationale as Step 9e — `.planning/` is gitignored and INTEGRATION-AUDIT.md lives alongside LOOP-RUN.md as a per-run audit trail, not a versioned artifact. The orchestrator MUST NOT stage or record the `.planning/loops/<...>-integration.md` artifact into source control (no `tasks scm stage` / `tasks scm record` of it). It MUST NOT modify `.gitignore`. Cross-reference: see Step 9e for the full open-source-distribution rationale.
 
 After Step 10 completes, the loop terminates. Do NOT return to Step 1.
 
@@ -665,7 +665,7 @@ Same agent = full context preserved; the re-brief can be short ("you previously 
 
 If the subagent committed despite being told not to, or modified files outside the brief's scope, do not paper over it:
 
-1. `git reset` the bad changes if they're staged.
+1. `tasks scm reset-hard <base>` to discard the bad changes if the subagent recorded or staged them (`<base>` = the run's integration baseline id from `tasks scm baseline`).
 2. Re-brief with explicit "you previously did X, do not do that — here's why".
 3. If it happens twice in a session, switch agent types or fall back to inline implementation for that task (and note the recurrence to the user — repeated off-script behaviour from the same agent type is a signal worth a skill update).
 

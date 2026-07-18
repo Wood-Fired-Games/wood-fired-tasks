@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ErrorResponseSchema } from '../tasks/schemas.js';
 import { ValueCharterSchema } from '../../../schemas/project.schema.js';
 import { ModelPolicySchema } from '../../../schemas/model-policy.schema.js';
+import { ScmCharterSchema } from '../../../schemas/scm-charter.schema.js';
 
 export {
   DependencyGraphTreeResponseSchema,
@@ -33,6 +34,13 @@ export const ProjectResponseSchema = z.object({
   // so legacy callers / partial rows that omit the column do not fail response
   // serialization.
   model_policy: ModelPolicySchema.nullable().optional(),
+  // Pluggable SCM (spec §6.3): the parsed per-project scm charter default rides
+  // on every project response so the remote (REST + MCP proxy) `get_project`
+  // path reads it back IDENTICALLY to the stdio surface — this parity is the
+  // whole point of the field. `null` when the project has no scm default (the
+  // precedence-2 fallback is then absent). Optional so legacy callers / partial
+  // rows that omit the column do not fail response serialization.
+  scm: ScmCharterSchema.nullable().optional(),
 });
 
 export const ProjectListResponseSchema = z.array(ProjectResponseSchema);
