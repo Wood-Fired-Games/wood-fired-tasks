@@ -4,6 +4,8 @@ Owner: Repository maintainers
 
 First-read navigation hub for any AI coding agent working on `wood-fired-tasks`. Vendor-neutral. Points at deeper docs; does not duplicate them. The full contract is in [docs/AGENT_CONTEXT.md](docs/AGENT_CONTEXT.md).
 
+**Current work:** Pluggable Source Control (SCM) — active design spec: [docs/superpowers/specs/2026-07-16-pluggable-scm-design.md](docs/superpowers/specs/2026-07-16-pluggable-scm-design.md).
+
 ## What is wood-fired-tasks
 
 `wood-fired-tasks` is a single-repo TypeScript task-tracking system that exposes the same underlying data through three surfaces and one notification channel:
@@ -16,6 +18,16 @@ First-read navigation hub for any AI coding agent working on `wood-fired-tasks`.
 All three surfaces sit on a shared core: typed Zod schemas (`src/schemas/`), services (`src/services/`), repositories (`src/repositories/`), and a **better-sqlite3** database (`src/db/`) with umzug migrations. Tests are vitest; lint is biome; Node ≥ 22 ESM throughout. Run `npm run dev` for the REST API, `npm run mcp:dev` for the MCP server, `npm run cli -- <command>` for the CLI. Everything else (build, lint, tests, migrations) is `npm run …`. There is no separate frontend, microservice, or background worker — one process per surface, one shared SQLite file, one TypeScript codebase.
 
 Beyond the flat `priority` enum, the system now ships **WSJF (Weighted Shortest Job First)** economic prioritization: tasks are scored on Cost of Delay (Business Value + Time Criticality + Risk/Opportunity) over Job Size, grounded in a per-project **value charter**, with an append-only score/charter history and a degeneracy linter. WSJF scoring/ranking is exposed across the surfaces — the REST API and MCP server both expose ranking, history, health, and rescore; the CLI covers history, manual set, and charter history. It is backward-compatible: projects with no charter and no scores sort by `priority` then age exactly as before.
+
+## Glossary
+
+Jargon used before it's defined elsewhere in the docs:
+
+- **frontier** — the set of open tasks whose `blocked_by` dependencies are all satisfied; `loop-dag` recomputes it wave-by-wave. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **verifier** — the read-only subagent that independently grades a closed task's evidence against its acceptance criteria before the run trusts it. Contract: [docs/verifier-contract.md](docs/verifier-contract.md).
+- **evidence envelope** — the structured `verification_evidence` a worker attaches to a task close (commands run, SHAs, verdict) that anti-fabrication guardrails check. See [docs/RELIABILITY.md](docs/RELIABILITY.md).
+- **topology** — a project's dependency shape: `FLAT` (independent tasks, run by `/tasks:loop`), `DAG` (dependency graph, run by `/tasks:loop-dag`), or `DAG_CYCLIC` (a cycle exists; must be broken before either executor runs). See [docs/tasks-decompose-design.md](docs/tasks-decompose-design.md).
+- **value charter** — a project's mission, ranked value themes, time pressure, and risk posture, used to ground WSJF Business Value scoring. See [Value charter](docs/API.md#value-charter).
 
 ## Read-next by intent
 

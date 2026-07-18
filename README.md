@@ -4,6 +4,10 @@
 [![Install Scripts](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml/badge.svg)](https://github.com/Wood-Fired-Games/wood-fired-tasks/actions/workflows/install-scripts.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+**TL;DR:** A shared, SQLite-backed task tracker for fleets of AI coding agents — MCP, REST, and CLI at full parity, atomic claiming so agents never collide, and `/tasks:*` skills that plan → decompose → execute → audit a backlog.
+
+**→ [Quickstart in 3 commands](#solo--local--fastest-start)**
+
 Wood Fired Tasks is open-source coordination infrastructure for fleets of AI coding agents — the missing primitive between "I have one Claude Code session running" and "I have ten of them working the same backlog without stepping on each other." You point Claude Code (or Cursor, Gemini, Codex) and a `tasks` CLI at one shared, SQLite-backed service — over MCP, REST, or the CLI, all at full feature parity — and every surface reads and writes the same source of truth. The coordination primitives are first-class: atomic task claiming with optimistic locking (20 agents race, exactly one wins), workflow automation that auto-unblocks dependents and auto-completes parents as subtasks finish, and a real-time SSE event stream keeping every agent and dashboard in sync. On top of that, a set of `/tasks:*` skills turn a project-level goal into a decomposed, executable, auditable plan — and an optional economic prioritizer (WSJF) can rank the backlog by value-per-effort so the loops drain the most-unblocking work first. Self-hostable and MIT-licensed; one server can be shared by a whole team across Windows, Linux, and macOS.
 
 **What you actually do with it:**
