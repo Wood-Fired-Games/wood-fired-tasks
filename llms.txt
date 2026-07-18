@@ -24,6 +24,7 @@
 - [docs/MCP.md](docs/MCP.md): MCP tools (incl. `wait_for_unblock` long-poll).
 - [docs/CLI.md](docs/CLI.md): CLI.
 - [docs/SLACK.md](docs/SLACK.md): Slack surface.
+- [docs/SCM.md](docs/SCM.md): Pluggable source control (git/perforce/none) via `tasks scm <verb>`.
 
 ## Automation
 

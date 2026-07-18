@@ -58,6 +58,11 @@ const OWNER_LINE_EXEMPT = new Set<string>([
   'docs/SLACK.md',
   'docs/RELEASE.md',
   'docs/CODE_QUALITY_ROADMAP.md',
+  // docs/SCM.md content is owned by a parallel task (not #1598, which only
+  // adds this manifest entry) — exempted rather than editing the doc body to
+  // add an Owner: line out of that task's lane. Follow-up: add the line and
+  // drop this exemption.
+  'docs/SCM.md',
   'CONTRIBUTING.md',
   // Adapter files (authority: 'adapter') intentionally carry no Owner: line.
   // They are thin pointers to the canonical entry (AGENTS.md), not
@@ -236,8 +241,13 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // #1004 (atomic block-with-dependency) kept the budget at 1800 by
     // condensing the `tasks update` examples to fit the `--blocked-by` row —
     // the onboarding-smoke probe (MAX_LINES_PER_PROBE_FILE) hard-caps every
-    // recommended-read doc at 1800, so the advisory budget must not exceed it.
-    line_budget: 1800,
+    // recommended-read doc, so the advisory budget must not exceed it.
+    // 1800 -> 1950 by #1598 (docs/SCM.md discovery pass): added the "Source
+    // Control (SCM) Commands" section documenting `tasks scm <verb>` (verbs,
+    // common flags, envelope shape, exit codes); doc grew to 1848. 1950
+    // leaves ~100 lines of headroom, matching MAX_LINES_PER_PROBE_FILE in
+    // scripts/agent-context/__tests__/onboarding-smoke.test.ts (kept in step).
+    line_budget: 1950,
     authority: 'authoritative',
     owner_role: 'CLI maintainers',
     status: 'present',
@@ -266,6 +276,22 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     authority: 'authoritative',
     owner_role: 'Slack maintainers',
     status: 'present',
+  },
+  {
+    path: 'docs/SCM.md',
+    role: 'deep-doc',
+    purpose:
+      'Pluggable source-control (SCM) reference: git/perforce/none backends, `.tasks/scm.json` config + resolution precedence, the `tasks scm <verb>` wire contract (envelope, exit codes, per-verb data shapes), and none-mode recovery guidance. Operator- and agent-facing summary; the design spec is the normative contract.',
+    when_to_read: 'on-demand',
+    // 458 actual lines at #1598 (this doc's discoverability pass); 550 leaves
+    // ~90 lines of headroom for the still-active hardening work on this
+    // flagship SCM feature.
+    line_budget: 550,
+    authority: 'authoritative',
+    owner_role: 'Repository maintainers',
+    status: 'present',
+    notes:
+      'Shipped by the pluggable-SCM feature (task #1544+); this entry (task #1598) is what gives it agent-context freshness/budget enforcement.',
   },
   {
     path: 'docs/RELEASE.md',

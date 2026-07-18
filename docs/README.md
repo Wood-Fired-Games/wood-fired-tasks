@@ -27,6 +27,7 @@ This directory holds the reference and agent-facing docs for `wood-fired-tasks`.
 | [`MCP.md`](MCP.md) | MCP server reference (tool schemas, local stdio + remote HTTP modes). |
 | [`CLI.md`](CLI.md) | `tasks` CLI reference (every subcommand, every flag). |
 | [`SLACK.md`](SLACK.md) | Slack integration reference (manifest, scopes, slash-command surface, notifier). |
+| [`SCM.md`](SCM.md) | Pluggable source control (git/perforce/none): `tasks scm <verb>` command group, `.tasks/scm.json` config, wire contract. |
 
 ### Prioritization (WSJF)
 

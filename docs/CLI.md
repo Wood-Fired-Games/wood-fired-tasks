@@ -632,6 +632,55 @@ Always emits the bare `TopologyReport` JSON object on stdout (no `{success, data
 
 Returns `0` on every successful classification, **including `DAG_CYCLIC`** (the classifier reporting a hostile topology is not itself a failure). Returns `1` only on argument-parse failures (invalid `--project`) or service-layer exceptions.
 
+## Source Control (SCM) Commands
+
+Pluggable source-control adapter. Every SCM action funnels through **one** CLI verb dispatcher that resolves the configured backend (`git`, `perforce`, or `none`) for `--repo` and dispatches to it — skills and automation never hard-code git. This section is a compact summary; [`docs/SCM.md`](SCM.md) is the normative deep reference (config schema, resolution precedence, per-backend semantics, per-verb `data` shapes, none-mode recovery).
+
+### tasks scm <verb> [args...]
+
+**Verbs:** `detect`, `baseline`, `status`, `changed-files <base>`, `stage <files…>`, `record <message>`, `change-id`, `publish`, `open-review`, `isolate <id>`, `teardown-isolation <id>`, `reset-hard <ref>`.
+
+**Example:**
+
+```bash
+tasks scm detect --repo .
+tasks scm changed-files HEAD~1 --repo .
+tasks scm stage src/foo.ts src/bar.ts
+tasks scm record "fix: bar" --context task-1421
+tasks scm publish --context task-1421
+```
+
+**Options (common to every verb):**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| --repo <path> | string | Repo root (default: discovered by walking up from cwd to the nearest `.tasks/scm.json` or SCM marker) |
+| --context <key> | string | Scope key namespacing per-run state (none-mode baselines, perforce numbered changelists, temp-client names). Default `"default"`; parallel orchestrators MUST pass distinct contexts. |
+| --charter-scm <json> | string | Project charter `scm` hint as JSON — the default-only precedence-3 fallback used when there is no `.tasks/scm.json` and no on-disk marker |
+
+**Output (envelope):**
+
+Every verb prints exactly one single-line JSON object on stdout; human-readable detail goes to stderr only:
+
+```json
+{ "ok": true, "verb": "changed-files", "backend": "git", "context": "task-1421", "data": { }, "warnings": [] }
+```
+
+On failure `ok` is `false` and `data` is replaced by `"error": { "code": "<STABLE_CODE>", "message": "...", "hint": "..." }`. Stable error codes: `CONFIG_INVALID`, `BACKEND_UNAVAILABLE`, `AUTH_EXPIRED`, `NO_REMOTE`, `SUBMIT_CONFLICT`, `UNSUPPORTED_VERB`, `TIMEOUT`, `DIRTY_TREE`, `DETACHED_HEAD`.
+
+**Exit codes:**
+
+| Exit | Meaning |
+|------|---------|
+| 0 | Success — including empty results (e.g. `changed-files` with nothing changed) |
+| 1 | SCM operation failed (push rejected, submit conflict, merge needed) |
+| 2 | Usage / config error (unknown verb, invalid `.tasks/scm.json`, ambiguous auto-detect) |
+| 3 | Backend unavailable (server unreachable, expired auth ticket, `git`/`p4` binary missing) |
+| 4 | Verb unsupported for this backend/toggle combination (e.g. none-mode `reset-hard`) |
+| 124 | Inner command exceeded the exec timeout |
+
+See [`docs/SCM.md`](SCM.md) for the full per-verb `data` shapes, per-backend behavior tables, `.tasks/scm.json` config schema, resolution precedence, and none-mode recovery guidance.
+
 ## WSJF Commands
 
 WSJF (Weighted Shortest Job First) prioritizes a project's backlog by **Cost of Delay ÷ Job Size**. The CLI covers the history/manual-set surface; the ranking, health-linter, and rescore tools are exposed only via MCP and REST — see [`docs/MCP.md`](MCP.md) and [`docs/API.md`](API.md). Each task carries four Fibonacci-tier components (`value`, `timeCriticality`, `riskOpportunity`, `jobSize`), per-component locks/source, and an append-only score history; each project carries an optional value charter with its own version history.

@@ -77,7 +77,8 @@
     "docs/SLACK.md",
     "docs/RELIABILITY.md",
     "docs/TROUBLESHOOTING.md",
-    "docs/ARCHITECTURE.md"
+    "docs/ARCHITECTURE.md",
+    "docs/SCM.md"
   ],
   "engines": {
     "node": ">=22"
