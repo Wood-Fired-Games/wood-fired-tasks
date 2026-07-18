@@ -356,7 +356,7 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. The remote server exposes all **27 REST-backed tools** with
+`src/schemas/`. The remote server exposes all **31 REST-backed tools** with
 identical input validation; behavioural differences are limited to transport
 (stdio vs HTTP) and the auth boundary. `topology_check` (#318) reaches the
 same `TopologyService` over REST — the remote server proxies it to
