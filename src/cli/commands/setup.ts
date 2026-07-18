@@ -1462,6 +1462,60 @@ async function completeManualPatOnboarding(
   };
 }
 
+/**
+ * Values accepted by the `tasks setup --mode <mode>` alias (task #1605).
+ * Deliberately narrower than {@link SetupMode} — `service` has its own
+ * dedicated `--service` flag and isn't part of the local⇄remote switching
+ * story this alias documents.
+ */
+export const SETUP_MODE_FLAG_VALUES = ['local', 'remote'] as const;
+export type SetupModeFlagValue = (typeof SETUP_MODE_FLAG_VALUES)[number];
+
+/**
+ * Validate the raw `--mode` flag value. Returns the narrowed value, or
+ * throws a message-only Error (no stack-trace noise) for anything else —
+ * mirroring the existing "remote onboarding requires a --remote <url> base
+ * URL" style of validation error elsewhere in this file.
+ */
+export function parseSetupModeFlag(value: string): SetupModeFlagValue {
+  if ((SETUP_MODE_FLAG_VALUES as readonly string[]).includes(value)) {
+    return value as SetupModeFlagValue;
+  }
+  throw new Error(
+    `Invalid --mode value "${value}": expected ${SETUP_MODE_FLAG_VALUES.map((v) => `"${v}"`).join(' or ')}.`,
+  );
+}
+
+/** The subset of `tasks setup`'s Commander-parsed options that determine mode. */
+export interface SetupModeFlags {
+  local?: boolean;
+  service?: boolean;
+  remote?: string;
+  mode?: string;
+}
+
+/**
+ * Resolve the explicit setup mode from CLI flags (task #805's `--local` /
+ * `--service` / `--remote <url>`, plus the `--mode local|remote` alias added
+ * for task #1605). Precedence: `--remote <url>` (implies remote mode) >
+ * `--service` > `--local` > `--mode <mode>`. Returns `undefined` when none of
+ * the flags resolved a mode, so {@link runSetupInteractive} falls back to the
+ * interactive menu on a TTY (or the local default on a non-TTY) —
+ * preserving back-compat with the flagless invocation.
+ *
+ * Pulled out of the `setupCommand` action so the flag→mode precedence is
+ * unit-testable without exercising Commander parsing or any filesystem side
+ * effects. Throws (via {@link parseSetupModeFlag}) when `--mode` is given a
+ * value other than "local" or "remote".
+ */
+export function resolveSetupModeFromFlags(flags: SetupModeFlags): SetupMode | undefined {
+  if (flags.remote !== undefined) return 'remote';
+  if (flags.service === true) return 'service';
+  if (flags.local === true) return 'local';
+  if (flags.mode !== undefined) return parseSetupModeFlag(flags.mode);
+  return undefined;
+}
+
 export const setupCommand = new Command('setup')
   .description(
     'Install the local wood-fired-tasks MCP server into ~/.claude.json, copy skills into ~/.claude/commands/tasks/, and copy subagent definitions into ~/.claude/agents/',
@@ -1477,6 +1531,10 @@ export const setupCommand = new Command('setup')
     'Install the remote MCP bridge (wood-fired-tasks-remote) pointed at the given REST API base URL; requires --token',
   )
   .option(
+    '--mode <mode>',
+    'Explicit alias for --local/--remote: "local" or "remote" (documents that switching between them is supported; use alongside --remote <url> and --token to fully specify a non-interactive remote install)',
+  )
+  .option(
     '--token <pat>',
     'Personal access token for `--remote`. When supplied, setup validates it against the server, persists it to the credentials file (the PAT is never stored in claude.json), and writes the URL-only remote MCP entry (WFT_API_URL) — skipping the OIDC probe. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
   )
@@ -1486,6 +1544,7 @@ export const setupCommand = new Command('setup')
       local?: boolean;
       service?: boolean;
       remote?: string;
+      mode?: string;
       token?: string;
     }) => {
       // `--token` is ALSO a global option on the root program (src/cli/bin/tasks.ts),
@@ -1500,17 +1559,17 @@ export const setupCommand = new Command('setup')
           ? opts.token
           : (globalOpts['token'] as string | undefined);
 
-      // Resolve the explicit mode from the flags. `--remote <url>` implies the
-      // remote mode; `--service` and `--local` are bare flags. When none is
-      // present, `mode` stays undefined so runSetupInteractive shows the menu on
-      // a TTY (and defaults to local on a non-TTY) — preserving back-compat.
+      // Resolve the explicit mode from the flags (see resolveSetupModeFromFlags
+      // for the precedence). When none is present, `mode` stays undefined so
+      // runSetupInteractive shows the menu on a TTY (and defaults to local on a
+      // non-TTY) — preserving back-compat.
       let mode: SetupMode | undefined;
-      if (opts.remote !== undefined) {
-        mode = 'remote';
-      } else if (opts.service === true) {
-        mode = 'service';
-      } else if (opts.local === true) {
-        mode = 'local';
+      try {
+        mode = resolveSetupModeFromFlags(opts);
+      } catch (err) {
+        process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+        process.exitCode = 1;
+        return;
       }
 
       void runSetupInteractive({

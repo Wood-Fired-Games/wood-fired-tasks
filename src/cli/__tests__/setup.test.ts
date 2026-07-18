@@ -19,6 +19,8 @@ import {
   wireStatusline,
   offerStatuslineWiring,
   isLoopbackServerUrl,
+  parseSetupModeFlag,
+  resolveSetupModeFromFlags,
   type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
@@ -571,6 +573,110 @@ describe('tasks setup — modes (task #805)', () => {
         expect(result.remote).toBe(false);
         const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
         expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+});
+
+describe('tasks setup — --mode local|remote alias (task #1605)', () => {
+  it('parseSetupModeFlag accepts "local" and "remote"', () => {
+    expect(parseSetupModeFlag('local')).toBe('local');
+    expect(parseSetupModeFlag('remote')).toBe('remote');
+  });
+
+  it('parseSetupModeFlag rejects anything else, including "service"', () => {
+    expect(() => parseSetupModeFlag('service')).toThrow(/Invalid --mode value "service"/);
+    expect(() => parseSetupModeFlag('bogus')).toThrow(/Invalid --mode value "bogus"/);
+    expect(() => parseSetupModeFlag('')).toThrow(/Invalid --mode value ""/);
+  });
+
+  it('resolveSetupModeFromFlags: --mode local resolves to local', () => {
+    expect(resolveSetupModeFromFlags({ mode: 'local' })).toBe('local');
+  });
+
+  it('resolveSetupModeFromFlags: --mode remote resolves to remote', () => {
+    expect(resolveSetupModeFromFlags({ mode: 'remote' })).toBe('remote');
+  });
+
+  it('resolveSetupModeFromFlags: no flags at all resolves to undefined (menu/default fallback)', () => {
+    expect(resolveSetupModeFromFlags({})).toBeUndefined();
+  });
+
+  it('resolveSetupModeFromFlags: --mode bogus throws', () => {
+    expect(() => resolveSetupModeFromFlags({ mode: 'bogus' })).toThrow(
+      /Invalid --mode value "bogus"/,
+    );
+  });
+
+  it('resolveSetupModeFromFlags: the specific --remote/--service/--local flags outrank --mode', () => {
+    // A caller (or a stray shell alias) passing both should not be surprising:
+    // the more specific, longer-standing flags win.
+    expect(resolveSetupModeFromFlags({ remote: 'http://x:3000', mode: 'local' })).toBe('remote');
+    expect(resolveSetupModeFromFlags({ service: true, mode: 'remote' })).toBe('service');
+    expect(resolveSetupModeFromFlags({ local: true, mode: 'remote' })).toBe('local');
+  });
+
+  it('--mode local routes through runSetupInteractive exactly like --local (via the resolved mode)', async () => {
+    await withTempHomeAsync(async (home) => {
+      let modePrompted = false;
+      const resolvedMode = resolveSetupModeFromFlags({ mode: 'local' });
+      expect(resolvedMode).toBe('local');
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: resolvedMode,
+        ...localSandboxOpts(home),
+        isInteractive: () => true,
+        selectMode: async () => {
+          modePrompted = true;
+          return 'remote';
+        },
+        confirmStatusline: async () => false,
+      });
+
+      expect(modePrompted).toBe(false);
+      expect(result.mode).toBe('local');
+      if (result.mode !== 'service') {
+        const doc = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
+        expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      }
+    });
+  });
+
+  it('--mode remote (with --remote/--token) routes through runSetupInteractive exactly like --remote --token', async () => {
+    await withTempHomeAsync(async (home) => {
+      const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-setup-mode-alias-cfg-'));
+      try {
+        const resolvedMode = resolveSetupModeFromFlags({
+          mode: 'remote',
+          remote: 'http://tasks.example.local:3000',
+        });
+        // The more specific --remote flag wins over --mode, same as running
+        // `--remote <url> --mode remote` together — both agree on 'remote'.
+        expect(resolvedMode).toBe('remote');
+
+        const probeSpy = vi.fn(async () => ({ ok: true, oidc: 'disabled' as const }));
+        const persistSpy = vi.fn(async () => ({
+          ok: true as const,
+          identity: { id: 1, displayName: 'Test User', email: null },
+        }));
+        const result = await runSetupInteractive({
+          home,
+          configDir,
+          log: () => {},
+          mode: resolvedMode,
+          remote: 'http://tasks.example.local:3000',
+          token: FAKE_PAT,
+          oidcProbe: probeSpy,
+          manualPatPersist: persistSpy,
+          isInteractive: () => false,
+        });
+
+        expect(probeSpy).not.toHaveBeenCalled();
+        expect(persistSpy).toHaveBeenCalledWith('http://tasks.example.local:3000', FAKE_PAT);
+        expect(result.mode).toBe('remote');
+      } finally {
+        fs.rmSync(configDir, { recursive: true, force: true });
       }
     });
   });
