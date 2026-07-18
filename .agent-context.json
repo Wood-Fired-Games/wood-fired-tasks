@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-17T03:43:54.943Z",
+    "generated_at": "2026-07-18T13:28:24.257Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -77,8 +77,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 5000,
-      "actual_lines": 197,
-      "sha256": "93e241305939a772ff0bf2ae3d43c2f8d1dcd9d49b27287230b9e2976ef86d0d",
+      "actual_lines": 198,
+      "sha256": "40cdc5a5f5bf08fade00bd17090c990359d60072efe78806fbd5e2e22ef8206c",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -93,7 +93,7 @@
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
       "actual_lines": 391,
-      "sha256": "879afdf100c5c00456ab00c564e0730a688051d1aa238d7dc4e57bb3bc14e58a",
+      "sha256": "44b6f4a01d2488916c046b5129c8f782e4c5524e92240407fb12de311c59b286",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 31600,
-      "actual_lines": 1553,
-      "sha256": "5c575c280ed190fa23f10165cc58a0e6c1378411d1fcee4128b6d54d5ab290a7"
+      "actual_lines": 1549,
+      "sha256": "815225f04cad095a84a8291506a3df08edab12ac8f38b1cd1dc43576442e8133"
     },
     {
       "path": "docs/SLACK.md",
@@ -372,7 +372,7 @@
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 18200,
       "actual_lines": 901,
-      "sha256": "07655c53e5350f5bafc815f52b7dcecfb07e375b2df3cd1f8f6eb5d7ec1dbdda"
+      "sha256": "eeb2ea884c32146eeb6a1213c514ffe674312925074d35f0697115a0463460ba"
     },
     {
       "path": "SECURITY.md",
