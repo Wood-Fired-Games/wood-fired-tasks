@@ -3,7 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { mergeClaudeJson, type ClaudeMcpServerEntry } from '../../setup/claude-json.js';
+import {
+  mergeClaudeJson,
+  removeClaudeJsonServer,
+  type ClaudeMcpServerEntry,
+} from '../../setup/claude-json.js';
+import { deleteCredentials, getCredentialsPath, readCredentials } from '../auth/credentials.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { resolvePathHint } from '../util/path-hint.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
@@ -542,6 +547,14 @@ export interface RunSetupResult {
   serverName: string;
   /** True when the remote bridge entry was written (vs the local entry). */
   remote: boolean;
+  /**
+   * True when the OTHER mode's MCP entry was present and removed this run —
+   * i.e. the install was CONVERTED between local and remote (the local path
+   * removes 'wood-fired-tasks-remote'; the remote path removes
+   * 'wood-fired-tasks'). Setup into mode X removes mode Y's claim so the two
+   * entries never accrete side by side.
+   */
+  staleEntryRemoved: boolean;
   skills: CopySkillsResult;
   agents: CopyAgentsResult;
   npmPrefix?: FixNpmPrefixResult;
@@ -573,6 +586,20 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
       ? `Installed local MCP server '${SERVER_NAME}' into ${claudeJsonPath}`
       : `Local MCP server '${SERVER_NAME}' already present in ${claudeJsonPath}`,
   );
+
+  // Conversion contract: setting up LOCAL removes the REMOTE bridge entry, so
+  // a remote→local switch never leaves both MCP servers configured. Strict
+  // no-op (no write, no .bak churn) when no remote entry exists.
+  const removal = removeClaudeJsonServer({
+    filePath: claudeJsonPath,
+    serverName: REMOTE_SERVER_NAME,
+  });
+  if (removal.removed) {
+    log(
+      `Removed remote MCP entry ('${REMOTE_SERVER_NAME}') from ${claudeJsonPath} — ` +
+        'install converted to local',
+    );
+  }
 
   // Task #752: ~/.claude.json can carry the local-credentials PAT and the
   // remote WFT_API_KEY env, so tighten it to owner-only (0600) on POSIX after
@@ -627,6 +654,7 @@ export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
     claudeJsonChanged: !merge.unchanged,
     serverName,
     remote: false,
+    staleEntryRemoved: removal.removed,
     skills,
     agents,
     ...(npmPrefix !== undefined && { npmPrefix }),
@@ -671,6 +699,20 @@ export function writeRemoteMcpEntryOnly(options: RunSetupOptions = {}): RunSetup
       : `Remote MCP server '${REMOTE_SERVER_NAME}' already present in ${claudeJsonPath}`,
   );
 
+  // Conversion contract (symmetric to runSetup): setting up REMOTE removes the
+  // LOCAL stdio entry, so a local→remote switch never leaves both MCP servers
+  // configured. Strict no-op when no local entry exists.
+  const removal = removeClaudeJsonServer({
+    filePath: claudeJsonPath,
+    serverName: SERVER_NAME,
+  });
+  if (removal.removed) {
+    log(
+      `Removed local MCP entry ('${SERVER_NAME}') from ${claudeJsonPath} — ` +
+        'install converted to remote',
+    );
+  }
+
   // ~/.claude.json may carry other credentials, so tighten to 0600 on POSIX
   // (mirrors runSetup). Best-effort + guarded so a chmod failure never blocks.
   if (process.platform !== 'win32') {
@@ -700,9 +742,185 @@ export function writeRemoteMcpEntryOnly(options: RunSetupOptions = {}): RunSetup
     claudeJsonChanged: !merge.unchanged,
     serverName: REMOTE_SERVER_NAME,
     remote: true,
+    staleEntryRemoved: removal.removed,
     skills,
     agents,
   };
+}
+
+/**
+ * Whether a credentials-file `active.server` URL points at THIS machine
+ * (loopback). Loopback-server credentials belong to a local/self-hosted server
+ * and are left alone by the local-conversion reconcile; anything else is a
+ * REMOTE credential that keeps authenticating the CLI as the remote user after
+ * a remote→local switch. Unparseable URLs are treated as non-loopback (stale
+ * junk worth surfacing) rather than silently kept.
+ */
+export function isLoopbackServerUrl(serverUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  return host === 'localhost' || host === '::1' || host === '[::1]' || host.startsWith('127.');
+}
+
+/** Outcome classes of {@link reconcileStaleRemoteCredentials}. */
+export type StaleRemoteCredentialsAction =
+  /** No credentials file exists — nothing to reconcile. */
+  | 'none'
+  /** Credentials point at a loopback server — left alone, no prompt. */
+  | 'kept-loopback'
+  /** Non-loopback credentials, interactive consent given — file deleted. */
+  | 'deleted'
+  /** Non-loopback credentials, interactive consent declined — file kept. */
+  | 'kept'
+  /** Non-TTY (or unreadable file) — nothing deleted, a loud warning printed. */
+  | 'warned';
+
+export interface ReconcileRemoteCredentialsOptions {
+  /** Override the credentials file path (testing). Defaults to {@link getCredentialsPath}. */
+  credentialsPath?: string;
+  /** Injectable TTY predicate (defaults to {@link shouldPrompt}). */
+  isInteractive?: () => boolean;
+  /** Prompt IO forwarded to the removal prompt (tests inject streams). */
+  promptIO?: PromptIO;
+  /** Injectable logger (testing). */
+  log?: (line: string) => void;
+}
+
+export interface ReconcileRemoteCredentialsResult {
+  action: StaleRemoteCredentialsAction;
+  /** The credentials file path that was inspected. */
+  credentialsPath: string;
+  /** The `active.server` URL, or null when no/unreadable credentials. */
+  server: string | null;
+}
+
+/**
+ * Local-conversion credential reconcile (conversion contract, part of the
+ * remote→local fix): after a LOCAL setup, a leftover credentials file pointing
+ * at a NON-loopback server keeps authenticating the CLI as the remote user —
+ * the "local database" install silently stays remote on the CLI data plane.
+ *
+ *  - No credentials file, or `active.server` is loopback → no-op (a loopback
+ *    server IS this machine; those credentials are not stale).
+ *  - Non-loopback + interactive TTY → prompt (default YES) and delete via
+ *    {@link deleteCredentials} on consent.
+ *  - Non-loopback + non-TTY / `--no-input` → NEVER delete silently; print a
+ *    loud warning naming the file, the stale server URL, and the remedy.
+ *  - Unreadable file (insecure perms / malformed TOML) → never delete; warn
+ *    with the underlying reason so the user can repair or remove it.
+ */
+export async function reconcileStaleRemoteCredentials(
+  options: ReconcileRemoteCredentialsOptions = {},
+): Promise<ReconcileRemoteCredentialsResult> {
+  const credentialsPath = options.credentialsPath ?? getCredentialsPath();
+  const isInteractive = options.isInteractive ?? shouldPrompt;
+  const log = options.log ?? ((line: string) => console.log(line));
+
+  let creds;
+  try {
+    creds = readCredentials(credentialsPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(
+      `WARNING: could not read the credentials file at ${credentialsPath} (${message}). ` +
+        'If it holds stale remote credentials, remove it with `tasks logout` ' +
+        'or delete the file, then re-run `tasks setup`.',
+    );
+    return { action: 'warned', credentialsPath, server: null };
+  }
+  if (creds === null) {
+    return { action: 'none', credentialsPath, server: null };
+  }
+
+  const server = creds.active.server;
+  if (isLoopbackServerUrl(server)) {
+    return { action: 'kept-loopback', credentialsPath, server };
+  }
+
+  if (!isInteractive()) {
+    log(
+      `WARNING: remote credentials for ${server} remain at ${credentialsPath}. ` +
+        'The CLI will keep authenticating against that remote server until they are removed. ' +
+        'Remove them with `tasks logout`, or re-run `tasks setup` interactively.',
+    );
+    return { action: 'warned', credentialsPath, server };
+  }
+
+  const answer = (
+    await promptLine(
+      `Remote credentials for ${server} found — remove them? [Y/n] `,
+      options.promptIO,
+    )
+  )
+    .trim()
+    .toLowerCase();
+  if (answer === '' || answer === 'y' || answer === 'yes') {
+    deleteCredentials(credentialsPath);
+    log(
+      `Removed remote credentials for ${server} (${credentialsPath}) — install converted to local`,
+    );
+    return { action: 'deleted', credentialsPath, server };
+  }
+
+  log(
+    `Kept remote credentials for ${server} at ${credentialsPath}. ` +
+      'The CLI will keep authenticating against that remote server; ' +
+      'remove them later with `tasks logout`.',
+  );
+  return { action: 'kept', credentialsPath, server };
+}
+
+export interface BootstrapLocalDbOptions {
+  /** Environment map for DB-path resolution (defaults to `process.env`). */
+  env?: NodeJS.ProcessEnv;
+  /** Base dir for relative-path / legacy-DB resolution (defaults to `process.cwd()`). */
+  cwd?: string;
+  /** Injectable logger (testing). */
+  log?: (line: string) => void;
+}
+
+export interface BootstrapLocalDbResult {
+  /** True when the database exists and is fully migrated. */
+  ok: boolean;
+  /** The resolved DB path, or null when the bootstrap failed. */
+  dbPath: string | null;
+}
+
+/**
+ * Eager local-database bootstrap (conversion contract, part of the
+ * remote→local fix): a LOCAL setup must END with a working database, not defer
+ * it to the first local-MCP boot. Resolves the path through the SAME unified
+ * resolver every entry point uses (env `DATABASE_PATH` > deprecated `DB_PATH`
+ * > legacy `./data/tasks.db` adopt > OS app-data default) and runs all pending
+ * migrations via the programmatic migration entry (`migrateCli`), which is
+ * idempotent when the DB already exists.
+ *
+ * A failure is reported LOUDLY but does not abort the rest of setup — the
+ * claude.json/skills work already done is valid, and the MCP server will retry
+ * the migration on its next boot.
+ */
+export async function bootstrapLocalDb(
+  options: BootstrapLocalDbOptions = {},
+): Promise<BootstrapLocalDbResult> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  try {
+    // Dynamic import: keeps the native better-sqlite3 driver out of the module
+    // graph for remote/service setups that never touch a local database.
+    const { migrateCli } = await import('../../db/migrate.js');
+    const dbPath = await migrateCli(options.env ?? process.env, options.cwd ?? process.cwd());
+    log(`Local database ready at ${dbPath}`);
+    return { ok: true, dbPath };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`ERROR: could not create/migrate the local database: ${message}`);
+    log('Fix the underlying issue and re-run `tasks setup --local`.');
+    return { ok: false, dbPath: null };
+  }
 }
 
 /**
@@ -869,6 +1087,18 @@ export interface RunSetupInteractiveOptions extends RunSetupOptions {
    * this to drive the consent / decline / existing-statusLine branches.
    */
   confirmStatusline?: ConfirmStatusline;
+  /**
+   * Override the credentials file the Local path's stale-remote-credentials
+   * reconcile inspects (testing). Defaults to {@link getCredentialsPath} (which
+   * honours `WFT_CREDENTIALS_PATH` / `XDG_CONFIG_HOME`).
+   */
+  credentialsPath?: string;
+  /**
+   * Environment map the Local path's DB bootstrap resolves the database path
+   * from (testing). Defaults to `process.env`, preserving the unified
+   * `DATABASE_PATH` > `DB_PATH` > legacy > app-data precedence.
+   */
+  dbEnv?: NodeJS.ProcessEnv;
 }
 
 /** Result returned by the service path (no claude.json/skills work was done). */
@@ -900,6 +1130,10 @@ export type RunSetupInteractiveResult =
       mode: 'local';
       /** Outcome of the opt-in `tasks statusline` wiring offer (#798). */
       statusline: WireStatuslineResult;
+      /** Outcome of the stale-remote-credentials reconcile (conversion contract). */
+      staleCredentials: ReconcileRemoteCredentialsResult;
+      /** Outcome of the eager local-database bootstrap (conversion contract). */
+      db: BootstrapLocalDbResult;
     })
   | RunSetupServiceResult
   | RunSetupRemoteResult;
@@ -1006,8 +1240,28 @@ export async function runSetupInteractive(
   }
 
   // Local flows through the existing synchronous runSetup verbatim, preserving
-  // all idempotency / 0600 / asset-resolver guarantees.
+  // all idempotency / 0600 / asset-resolver guarantees. runSetup also removes a
+  // leftover remote MCP entry (conversion contract).
   const result = runSetup(options);
+
+  // Conversion contract: after a remote→local switch, a leftover credentials
+  // file for a NON-loopback server keeps authenticating the CLI as the remote
+  // user. Offer to remove it (interactive, default yes) or warn loudly
+  // (non-TTY — never delete silently).
+  const staleCredentials = await reconcileStaleRemoteCredentials({
+    ...(options.credentialsPath !== undefined && { credentialsPath: options.credentialsPath }),
+    isInteractive,
+    ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
+    log,
+  });
+
+  // Conversion contract: a "local database" install must END with a database.
+  // Eagerly resolve the DB path and run migrations (idempotent when the DB
+  // already exists) instead of deferring to the first local-MCP boot.
+  const db = await bootstrapLocalDb({
+    ...(options.dbEnv !== undefined && { env: options.dbEnv }),
+    log,
+  });
 
   // Task #798: after the core local install, OPT-IN offer to wire
   // `tasks statusline` into ~/.claude/settings.json. Non-clobbering and
@@ -1020,7 +1274,7 @@ export async function runSetupInteractive(
     ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
   });
 
-  return { ...result, mode: 'local', statusline };
+  return { ...result, mode: 'local', statusline, staleCredentials, db };
 }
 
 /**

@@ -63,6 +63,57 @@ function isRetryableRenameError(err: unknown): boolean {
 }
 
 /**
+ * Shared atomic-write tail for {@link mergeClaudeJson} and
+ * {@link removeClaudeJsonServer}: write `serialized` to a `.tmp` sibling, back
+ * up the current file to `.bak` (when one exists), then rename the temp file
+ * into place with an EPERM/EBUSY retry loop.
+ */
+function writeClaudeJsonAtomically(
+  filePath: string,
+  serialized: string,
+  existingRaw: string | null,
+  renameImpl: (oldPath: string, newPath: string) => void,
+  maxRenameAttempts: number,
+): { backupPath: string | null; renameAttempts: number } {
+  const tmpPath = `${filePath}.tmp`;
+  const backupPath = `${filePath}.bak`;
+  fs.writeFileSync(tmpPath, serialized, 'utf8');
+
+  let producedBackup: string | null = null;
+  if (existingRaw !== null) {
+    fs.copyFileSync(filePath, backupPath);
+    producedBackup = backupPath;
+  }
+
+  let renameAttempts = 0;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxRenameAttempts; attempt++) {
+    renameAttempts = attempt;
+    try {
+      renameImpl(tmpPath, filePath);
+      lastErr = undefined;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (isRetryableRenameError(err) && attempt < maxRenameAttempts) {
+        // Short synchronous backoff so we don't busy-spin.
+        const until = Date.now() + 25 * attempt;
+        while (Date.now() < until) {
+          /* spin */
+        }
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (lastErr !== undefined) {
+    throw lastErr;
+  }
+
+  return { backupPath: producedBackup, renameAttempts };
+}
+
+/**
  * Read `~/.claude.json` (or `{}` if absent/empty), ensure an `mcpServers`
  * object, set `mcpServers[serverName] = entry`, and write the result back
  * ATOMICALLY (temp file + rename) with a `.bak` backup of the prior file.
@@ -119,45 +170,114 @@ export function mergeClaudeJson(options: MergeClaudeJsonOptions): MergeClaudeJso
   }
 
   // Atomic write: temp file -> backup current -> rename temp into place.
-  const tmpPath = `${filePath}.tmp`;
-  const backupPath = `${filePath}.bak`;
-  fs.writeFileSync(tmpPath, serialized, 'utf8');
-
-  let producedBackup: string | null = null;
-  if (existingRaw !== null) {
-    fs.copyFileSync(filePath, backupPath);
-    producedBackup = backupPath;
-  }
-
-  let renameAttempts = 0;
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxRenameAttempts; attempt++) {
-    renameAttempts = attempt;
-    try {
-      renameImpl(tmpPath, filePath);
-      lastErr = undefined;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (isRetryableRenameError(err) && attempt < maxRenameAttempts) {
-        // Short synchronous backoff so we don't busy-spin.
-        const until = Date.now() + 25 * attempt;
-        while (Date.now() < until) {
-          /* spin */
-        }
-        continue;
-      }
-      throw err;
-    }
-  }
-  if (lastErr !== undefined) {
-    throw lastErr;
-  }
+  const written = writeClaudeJsonAtomically(
+    filePath,
+    serialized,
+    existingRaw,
+    renameImpl,
+    maxRenameAttempts,
+  );
 
   return {
     filePath,
-    backupPath: producedBackup,
+    backupPath: written.backupPath,
     unchanged: false,
-    renameAttempts,
+    renameAttempts: written.renameAttempts,
+  };
+}
+
+export interface RemoveClaudeJsonServerOptions {
+  /** Target file. Defaults to `~/.claude.json`. */
+  filePath?: string;
+  /** Key under `mcpServers` to remove. Defaults to `'wood-fired-tasks'`. */
+  serverName?: string;
+  /** Internal DI seam for the atomic rename (mirrors {@link MergeClaudeJsonOptions}). */
+  _renameImpl?: (oldPath: string, newPath: string) => void;
+  /** Internal: max rename attempts on EPERM/EBUSY. Defaults to 3. */
+  _maxRenameAttempts?: number;
+}
+
+export interface RemoveClaudeJsonServerResult {
+  /** Absolute path that was targeted. */
+  filePath: string;
+  /** Path of the `.bak` backup, or null when nothing was removed (no write). */
+  backupPath: string | null;
+  /** True when the key existed and was removed (a write happened). */
+  removed: boolean;
+  /** Number of rename attempts performed (0 when the removal was a no-op). */
+  renameAttempts: number;
+}
+
+/**
+ * Remove `mcpServers[serverName]` from `~/.claude.json`, atomically and with a
+ * `.bak` backup — the inverse of {@link mergeClaudeJson}, used when `tasks
+ * setup` converts an install between local and remote modes so the OTHER
+ * mode's MCP entry does not accrete forever.
+ *
+ * Strict no-op contract: when the file is absent/empty, has no `mcpServers`
+ * object, or the key is not present, NOTHING is written — no temp file, no
+ * `.bak` churn — so re-running the same setup mode stays byte-idempotent.
+ * All foreign `mcpServers` keys and all non-`mcpServers` content are preserved
+ * verbatim (same deterministic 2-space + trailing-newline serialization as the
+ * merge).
+ */
+export function removeClaudeJsonServer(
+  options: RemoveClaudeJsonServerOptions = {},
+): RemoveClaudeJsonServerResult {
+  const filePath = options.filePath ?? defaultClaudeJsonPath();
+  const serverName = options.serverName ?? DEFAULT_SERVER_NAME;
+  const renameImpl = options._renameImpl ?? fs.renameSync;
+  const maxRenameAttempts = options._maxRenameAttempts ?? 3;
+
+  const noop: RemoveClaudeJsonServerResult = {
+    filePath,
+    backupPath: null,
+    removed: false,
+    renameAttempts: 0,
+  };
+
+  // Absent/empty file → nothing to remove, nothing to write.
+  if (!fs.existsSync(filePath)) return noop;
+  const existingRaw = fs.readFileSync(filePath, 'utf8');
+  const trimmed = existingRaw.trim();
+  if (trimmed.length === 0) return noop;
+
+  const value = JSON.parse(trimmed) as unknown;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Refusing to modify: ${filePath} does not contain a JSON object`);
+  }
+  const parsed = value as Record<string, unknown>;
+
+  const existingServers = parsed['mcpServers'];
+  if (
+    typeof existingServers !== 'object' ||
+    existingServers === null ||
+    Array.isArray(existingServers)
+  ) {
+    return noop;
+  }
+  const mcpServers = existingServers as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(mcpServers, serverName)) {
+    return noop;
+  }
+
+  delete mcpServers[serverName];
+
+  // Deterministic serialization: 2-space indent + trailing newline (identical
+  // to mergeClaudeJson, so merge/remove sequences stay byte-stable).
+  const serialized = `${JSON.stringify(parsed, null, 2)}\n`;
+  const written = writeClaudeJsonAtomically(
+    filePath,
+    serialized,
+    existingRaw,
+    renameImpl,
+    maxRenameAttempts,
+  );
+
+  return {
+    filePath,
+    backupPath: written.backupPath,
+    removed: true,
+    renameAttempts: written.renameAttempts,
   };
 }
