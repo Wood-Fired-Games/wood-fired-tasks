@@ -26,6 +26,13 @@ paths = [
   # Local gitleaks JSON report — never tracked, but allowlist it
   # defensively in case it ever lands in a transient working copy.
   '''^\.gitleaks-report\.json$''',
+  # Positive-case fixtures for the agent-context forbidden-content scan
+  # (check.ts rule 7). This file DELIBERATELY contains secret-SHAPED
+  # strings (AWS/GitHub/GitLab/Slack/Stripe/JWT/PEM) so the unit tests can
+  # prove the scanner detects each shape — they are non-functional fakes,
+  # never real credentials. Path-allowlisted so the gitleaks history scan
+  # doesn't flag the scanner's own test data. (task #1604)
+  '''^scripts/agent-context/__tests__/forbidden-content\.test\.ts$''',
 ]
 
 regexes = [
