@@ -8,6 +8,8 @@ import {
   runSetupInteractive,
   fixNpmPrefix,
   buildLocalMcpEntry,
+  buildRemoteMcpEntry,
+  writeRemoteMcpEntryOnly,
   resolveMcpEntryPoint,
   commandsDestDir,
   agentsDestDir,
@@ -16,10 +18,13 @@ import {
   statuslineEmbedSnippet,
   wireStatusline,
   offerStatuslineWiring,
+  isLoopbackServerUrl,
   type SetupMode,
 } from '../commands/setup.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { resolveAssetPath, packageRoot } from '../../assets/resolve.js';
+import { writeCredentials } from '../auth/credentials.js';
+import Database from '../../db/driver.js';
 
 // The packaged task-skill .md files SHIP under dist/skills/tasks/ (the asset
 // resolver's `resolveAssetPath('dist','skills','tasks')`) — that is the only
@@ -307,6 +312,23 @@ async function withTempHomeAsync<T>(fn: (home: string) => Promise<T>): Promise<T
   }
 }
 
+/**
+ * Sandbox seams for the Local path's conversion-contract steps: the
+ * stale-remote-credentials reconcile and the eager DB bootstrap both default to
+ * REAL machine paths (`getCredentialsPath()` / the unified DB resolver), so
+ * every test that drives runSetupInteractive into the Local branch must pin
+ * both under the temp home — never the developer's real ~/.config or app-data.
+ */
+function localSandboxOpts(home: string): {
+  credentialsPath: string;
+  dbEnv: NodeJS.ProcessEnv;
+} {
+  return {
+    credentialsPath: path.join(home, 'wft-credentials'),
+    dbEnv: { DATABASE_PATH: path.join(home, 'wft-sandbox-tasks.db') },
+  };
+}
+
 describe('tasks setup — modes (task #805)', () => {
   it('no args on a simulated TTY presents the Local/Service/Remote menu', async () => {
     await withTempHomeAsync(async (home) => {
@@ -314,6 +336,7 @@ describe('tasks setup — modes (task #805)', () => {
       const result = await runSetupInteractive({
         home,
         log: () => {},
+        ...localSandboxOpts(home),
         // Simulate a TTY so the menu path is taken.
         isInteractive: () => true,
         // Stub the selector but capture that a 3-option menu would be shown,
@@ -376,6 +399,7 @@ describe('tasks setup — modes (task #805)', () => {
         home,
         log: () => {},
         mode: 'local',
+        ...localSandboxOpts(home),
         // A TTY is simulated, but with an EXPLICIT --local mode the MODE menu
         // must never be consulted (selectMode is the real mode-menu seam).
         isInteractive: () => true,
@@ -531,6 +555,7 @@ describe('tasks setup — modes (task #805)', () => {
       const result = await runSetupInteractive({
         home,
         log: () => {},
+        ...localSandboxOpts(home),
         // Non-interactive environment, no explicit mode.
         isInteractive: () => false,
         selectMode: async () => {
@@ -713,6 +738,7 @@ describe('tasks setup — statusline wiring (task #798)', () => {
         home,
         log: () => {},
         mode: 'local',
+        ...localSandboxOpts(home),
         isInteractive: () => true,
         confirmStatusline: async () => true,
       });
@@ -723,6 +749,328 @@ describe('tasks setup — statusline wiring (task #798)', () => {
         const doc = JSON.parse(fs.readFileSync(settingsJsonPath(home), 'utf8'));
         expect(doc.statusLine).toEqual(buildStatuslineConfig());
       }
+    });
+  });
+});
+
+describe('tasks setup — mode conversion (remote⇄local)', () => {
+  const REMOTE_URL = 'http://tasks.example.local:3000';
+  const FOREIGN_ENTRY = { type: 'stdio', command: 'x' };
+
+  /** Seed a valid 0600 credentials TOML pointing at `server`. */
+  function seedCredentials(credFile: string, server: string): void {
+    writeCredentials(
+      {
+        active: {
+          token: FAKE_PAT,
+          token_id: 1,
+          server,
+          user_id: 1,
+          display_name: 'Test User',
+          email: null,
+          logged_in_at: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      credFile,
+    );
+  }
+
+  /** Seed ~/.claude.json with a foreign server plus the given wft entries. */
+  function seedClaudeJson(home: string, wftEntries: Record<string, unknown>): string {
+    const claudeJson = path.join(home, '.claude.json');
+    fs.writeFileSync(
+      claudeJson,
+      JSON.stringify(
+        { numStartups: 3, mcpServers: { 'some-other': FOREIGN_ENTRY, ...wftEntries } },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+    return claudeJson;
+  }
+
+  it('remote→local leaves exactly the local entry (foreign keys preserved)', async () => {
+    await withTempHomeAsync(async (home) => {
+      const claudeJson = seedClaudeJson(home, {
+        'wood-fired-tasks-remote': buildRemoteMcpEntry(REMOTE_URL),
+      });
+
+      const lines: string[] = [];
+      const result = await runSetupInteractive({
+        home,
+        log: (l) => lines.push(l),
+        mode: 'local',
+        ...localSandboxOpts(home),
+        isInteractive: () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleEntryRemoved).toBe(true);
+      }
+      const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+      // EXACTLY the local entry remains (plus the preserved foreign key).
+      expect(Object.keys(doc.mcpServers).sort()).toEqual(['some-other', 'wood-fired-tasks']);
+      expect(doc.mcpServers['wood-fired-tasks']).toEqual(buildLocalMcpEntry());
+      expect(doc.mcpServers['some-other']).toEqual(FOREIGN_ENTRY);
+      // Non-mcpServers content preserved.
+      expect(doc.numStartups).toBe(3);
+      // The conversion is announced.
+      const joined = lines.join('\n');
+      expect(joined).toContain("Removed remote MCP entry ('wood-fired-tasks-remote')");
+      expect(joined).toContain('install converted to local');
+    });
+  });
+
+  it('local→remote leaves exactly the remote entry (foreign keys preserved)', () => {
+    withTempHome((home) => {
+      const claudeJson = seedClaudeJson(home, { 'wood-fired-tasks': buildLocalMcpEntry() });
+
+      const lines: string[] = [];
+      const result = writeRemoteMcpEntryOnly({
+        home,
+        log: (l) => lines.push(l),
+        remote: REMOTE_URL,
+      });
+
+      expect(result.staleEntryRemoved).toBe(true);
+      const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+      expect(Object.keys(doc.mcpServers).sort()).toEqual(['some-other', 'wood-fired-tasks-remote']);
+      expect(doc.mcpServers['wood-fired-tasks-remote']).toEqual(buildRemoteMcpEntry(REMOTE_URL));
+      expect(doc.mcpServers['some-other']).toEqual(FOREIGN_ENTRY);
+      expect(doc.numStartups).toBe(3);
+      const joined = lines.join('\n');
+      expect(joined).toContain("Removed local MCP entry ('wood-fired-tasks')");
+      expect(joined).toContain('install converted to remote');
+    });
+  });
+
+  it('re-running the same mode is byte-idempotent (no backup churn from the remove)', () => {
+    withTempHome((home) => {
+      const claudeJson = seedClaudeJson(home, {
+        'wood-fired-tasks-remote': buildRemoteMcpEntry(REMOTE_URL),
+      });
+      const bakPath = `${claudeJson}.bak`;
+
+      const first = runSetup({ home, log: () => {} });
+      expect(first.claudeJsonChanged).toBe(true);
+      expect(first.staleEntryRemoved).toBe(true);
+      const bytes = fs.readFileSync(claudeJson, 'utf8');
+      expect(fs.existsSync(bakPath)).toBe(true);
+      const bakBytes = fs.readFileSync(bakPath, 'utf8');
+      const bakMtime = fs.statSync(bakPath).mtimeMs;
+
+      const second = runSetup({ home, log: () => {} });
+      // Second run: merge is unchanged AND the remove is a strict no-op — no
+      // write, no .bak churn, byte-identical file.
+      expect(second.claudeJsonChanged).toBe(false);
+      expect(second.staleEntryRemoved).toBe(false);
+      expect(fs.readFileSync(claudeJson, 'utf8')).toBe(bytes);
+      expect(fs.readFileSync(bakPath, 'utf8')).toBe(bakBytes);
+      expect(fs.statSync(bakPath).mtimeMs).toBe(bakMtime);
+      expect(fs.existsSync(`${claudeJson}.tmp`)).toBe(false);
+    });
+  });
+
+  it('remote→local with non-loopback credentials: interactive accept deletes them', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      seedCredentials(sandbox.credentialsPath, REMOTE_URL);
+
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+      // Bare Enter takes the [Y/n] default: yes.
+      input.write('\n');
+
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        ...sandbox,
+        isInteractive: () => true,
+        promptIO: { input, output },
+        confirmStatusline: async () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('deleted');
+        expect(result.staleCredentials.server).toBe(REMOTE_URL);
+      }
+      expect(outChunks.join('')).toContain(
+        `Remote credentials for ${REMOTE_URL} found — remove them? [Y/n]`,
+      );
+      // The credentials file is gone.
+      expect(fs.existsSync(sandbox.credentialsPath)).toBe(false);
+    });
+  });
+
+  it('remote→local with non-loopback credentials: declining keeps them', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      seedCredentials(sandbox.credentialsPath, REMOTE_URL);
+
+      const input = new PassThrough();
+      input.write('n\n');
+
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        ...sandbox,
+        isInteractive: () => true,
+        promptIO: { input, output: { write: () => true } },
+        confirmStatusline: async () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('kept');
+      }
+      expect(fs.existsSync(sandbox.credentialsPath)).toBe(true);
+    });
+  });
+
+  it('remote→local with non-loopback credentials: --no-input warns and keeps the file', async () => {
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      seedCredentials(sandbox.credentialsPath, REMOTE_URL);
+      const bytesBefore = fs.readFileSync(sandbox.credentialsPath, 'utf8');
+
+      const lines: string[] = [];
+      const result = await runSetupInteractive({
+        home,
+        log: (l) => lines.push(l),
+        mode: 'local',
+        ...sandbox,
+        // --no-input / non-TTY: NEVER delete silently.
+        isInteractive: () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('warned');
+      }
+      // File intact, byte for byte.
+      expect(fs.readFileSync(sandbox.credentialsPath, 'utf8')).toBe(bytesBefore);
+      // The warning names the path, the stale server, and the remedy.
+      const joined = lines.join('\n');
+      expect(joined).toContain('WARNING');
+      expect(joined).toContain(sandbox.credentialsPath);
+      expect(joined).toContain(REMOTE_URL);
+      expect(joined).toContain('tasks logout');
+    });
+  });
+
+  it('remote→local with loopback-server credentials: untouched, no prompt', async () => {
+    const { PassThrough } = await import('node:stream');
+    await withTempHomeAsync(async (home) => {
+      const sandbox = localSandboxOpts(home);
+      const loopbackUrl = 'http://127.0.0.1:3000';
+      seedCredentials(sandbox.credentialsPath, loopbackUrl);
+
+      // An input stream with NO data: if the reconcile wrongly prompted, the
+      // await would hang and the test would time out.
+      const input = new PassThrough();
+      const outChunks: string[] = [];
+      const output = { write: (s: string) => (outChunks.push(s), true) };
+
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        ...sandbox,
+        isInteractive: () => true,
+        promptIO: { input, output },
+        confirmStatusline: async () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.staleCredentials.action).toBe('kept-loopback');
+        expect(result.staleCredentials.server).toBe(loopbackUrl);
+      }
+      // No removal prompt was rendered and the file is untouched.
+      expect(outChunks.join('')).not.toContain('remove them?');
+      expect(fs.existsSync(sandbox.credentialsPath)).toBe(true);
+    });
+  });
+
+  it('classifies loopback vs non-loopback server URLs', () => {
+    expect(isLoopbackServerUrl('http://localhost:3000')).toBe(true);
+    expect(isLoopbackServerUrl('http://127.0.0.1:3000')).toBe(true);
+    expect(isLoopbackServerUrl('http://[::1]:3000')).toBe(true);
+    expect(isLoopbackServerUrl('http://tasks.example.local:3000')).toBe(false);
+    expect(isLoopbackServerUrl('https://tasks.example.com')).toBe(false);
+    // Unparseable → treated as non-loopback (stale junk worth surfacing).
+    expect(isLoopbackServerUrl('not a url')).toBe(false);
+  });
+
+  it('local setup creates + migrates the DB at the resolved path, idempotently', async () => {
+    await withTempHomeAsync(async (home) => {
+      const dbPath = path.join(home, 'db', 'tasks.db');
+      const opts = {
+        home,
+        log: () => {},
+        mode: 'local' as const,
+        credentialsPath: path.join(home, 'wft-credentials'),
+        dbEnv: { DATABASE_PATH: dbPath },
+        isInteractive: () => false,
+      };
+
+      const result = await runSetupInteractive(opts);
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.db.ok).toBe(true);
+        expect(result.db.dbPath).toBe(dbPath);
+      }
+      // The DB file exists and the migrations table is populated.
+      expect(fs.existsSync(dbPath)).toBe(true);
+      const db = new Database(dbPath, { readonly: true });
+      const rows = db.prepare('SELECT name FROM _migrations ORDER BY name').all() as {
+        name: string;
+      }[];
+      db.close();
+      expect(rows.length).toBeGreaterThan(0);
+
+      // Idempotent on a second run: same migration set, no failure.
+      const second = await runSetupInteractive(opts);
+      expect(second.mode).toBe('local');
+      if (second.mode === 'local') {
+        expect(second.db.ok).toBe(true);
+        expect(second.db.dbPath).toBe(dbPath);
+      }
+      const db2 = new Database(dbPath, { readonly: true });
+      const rows2 = db2.prepare('SELECT name FROM _migrations ORDER BY name').all() as {
+        name: string;
+      }[];
+      db2.close();
+      expect(rows2).toEqual(rows);
+    });
+  });
+
+  it('honours the deprecated DB_PATH alias for the eager DB bootstrap', async () => {
+    await withTempHomeAsync(async (home) => {
+      const dbPath = path.join(home, 'alias', 'tasks.db');
+      const result = await runSetupInteractive({
+        home,
+        log: () => {},
+        mode: 'local',
+        credentialsPath: path.join(home, 'wft-credentials'),
+        dbEnv: { DB_PATH: dbPath },
+        isInteractive: () => false,
+      });
+
+      expect(result.mode).toBe('local');
+      if (result.mode === 'local') {
+        expect(result.db.ok).toBe(true);
+        expect(result.db.dbPath).toBe(dbPath);
+      }
+      expect(fs.existsSync(dbPath)).toBe(true);
     });
   });
 });
