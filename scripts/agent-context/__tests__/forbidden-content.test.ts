@@ -23,10 +23,7 @@ describe('scanTextForForbiddenContent', () => {
     });
 
     it('flags a GitHub token', () => {
-      const errors = scanTextForForbiddenContent(
-        'fake.md',
-        `token: ghp_${'a'.repeat(36)}\n`,
-      );
+      const errors = scanTextForForbiddenContent('fake.md', `token: ghp_${'a'.repeat(36)}\n`);
       expect(errors.some((e) => e.includes('GitHub token'))).toBe(true);
     });
 
@@ -52,10 +49,7 @@ describe('scanTextForForbiddenContent', () => {
     });
 
     it('flags a Stripe live secret key', () => {
-      const errors = scanTextForForbiddenContent(
-        'fake.md',
-        `key: sk_live_${'a'.repeat(24)}\n`,
-      );
+      const errors = scanTextForForbiddenContent('fake.md', `key: sk_live_${'a'.repeat(24)}\n`);
       expect(errors.some((e) => e.includes('Stripe live secret key'))).toBe(true);
     });
 
@@ -72,9 +66,9 @@ describe('scanTextForForbiddenContent', () => {
         'some/other/file.md',
         'The binary lives at /home/stuart/bin/tool\n',
       );
-      expect(errors.some((e) => e.includes('local absolute path') && e.includes('/home/stuart'))).toBe(
-        true,
-      );
+      expect(
+        errors.some((e) => e.includes('local absolute path') && e.includes('/home/stuart')),
+      ).toBe(true);
     });
 
     it('flags an unallowlisted /Users absolute path', () => {
@@ -82,9 +76,9 @@ describe('scanTextForForbiddenContent', () => {
         'some/other/file.md',
         'Config at /Users/jdoe/.config/tool.json\n',
       );
-      expect(errors.some((e) => e.includes('local absolute path') && e.includes('/Users/jdoe'))).toBe(
-        true,
-      );
+      expect(
+        errors.some((e) => e.includes('local absolute path') && e.includes('/Users/jdoe')),
+      ).toBe(true);
     });
 
     it('flags an unallowlisted Windows absolute path', () => {
@@ -108,7 +102,10 @@ describe('scanTextForForbiddenContent', () => {
     });
 
     it('reports the correct 1-based line number', () => {
-      const errors = scanTextForForbiddenContent('fake.md', 'line one\nline two\nAKIAABCDEFGHIJKLMNOP\n');
+      const errors = scanTextForForbiddenContent(
+        'fake.md',
+        'line one\nline two\nAKIAABCDEFGHIJKLMNOP\n',
+      );
       expect(errors.some((e) => e.startsWith('fake.md:3:'))).toBe(true);
     });
 

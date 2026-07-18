@@ -148,9 +148,7 @@ export function scanTextForForbiddenContent(filePath: string, text: string): str
     while (pathMatch !== null) {
       const matched = pathMatch[0];
       if (!pathAllowlist?.has(matched)) {
-        errors.push(
-          `${filePath}:${lineNo}: forbidden content — local absolute path "${matched}".`,
-        );
+        errors.push(`${filePath}:${lineNo}: forbidden content — local absolute path "${matched}".`);
       }
       pathMatch = ABSOLUTE_PATH_RE.exec(line);
     }
