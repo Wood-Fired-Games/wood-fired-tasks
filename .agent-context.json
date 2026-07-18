@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-18T14:25:35.971Z",
+    "generated_at": "2026-07-18T14:39:51.180Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -278,6 +278,35 @@
       "actual_owner": "Repository maintainers"
     },
     {
+      "path": "docs/tasks-audit-design.md",
+      "role": "deep-doc",
+      "purpose": "/tasks:audit design spec: the retroactive-grader contract, task enumeration from a LOOP-RUN.md, per-task verifier dispatch, and the AUDIT.md artifact schema. skills/tasks/audit.md defers to this doc as its source of truth (same pattern as decompose.md ↔ docs/tasks-decompose-design.md).",
+      "when_to_read": "on-demand",
+      "line_budget": 500,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Design-of-record for the OPERATIONAL /tasks:audit skill, same class as docs/tasks-decompose-design.md above. Was missing from this manifest before task #1609's manifest-completeness guard surfaced it — genuinely canonical, not a doc that belongs on the allowlist.",
+      "approx_token_budget": 10000,
+      "actual_lines": 447,
+      "sha256": "2f4762de06cb1106d250ea43402eeead8fd90d7e55923e5c78a969cebe81cab0",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/loop-run-schema.md",
+      "role": "deep-doc",
+      "purpose": "LOOP-RUN.md artifact contract: the frontmatter schema `loop`, `loop-dag`, `decompose`, and `audit` skills (and `src/lib/loop-run/**`) read and write. Companion files: `loop-run-schema.json` (Ajv schema) and `loop-run-reference-example.md` (illustrative fixture).",
+      "when_to_read": "on-demand",
+      "line_budget": 320,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Widely cross-referenced from skills/tasks/*.md and src/lib/loop-run/** as the canonical contract but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 6400,
+      "actual_lines": 297,
+      "sha256": "744139edbc7f7a5bf48d52a89997d02ac6944d94b2dd169d1292d98dca07bae0"
+    },
+    {
       "path": "docs/automation-recipes/claude-routines.md",
       "role": "deep-doc",
       "purpose": "Automation recipe: dispatch a routine on task close via the vendor-neutral agent_session_dispatch + shell_exec core handlers, with a validating sample triggers.yaml and the adapter-contract shape.",
@@ -317,6 +346,78 @@
       "approx_token_budget": 6000,
       "actual_lines": 223,
       "sha256": "1bbda3776025304f95114962ccdd4cc0bdb1136fa02691845f64fce75a8818dc",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/event-router-design.md",
+      "role": "deep-doc",
+      "purpose": "Design-of-record for the `wft-router` event-router daemon: SSE subscription → predicate match → handler dispatch. Companion to `packages/wft-router/README.md` (the package/CLI reference), which points here as its design-of-record.",
+      "when_to_read": "on-demand",
+      "line_budget": 1000,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Referenced by llms.txt and docs/README.md's Automation index — proof it was already discoverable through 2 of the 5 doc indexes while missing from this manifest, exactly the drift class task #1609's guard now catches.",
+      "approx_token_budget": 20000,
+      "actual_lines": 934,
+      "sha256": "3a5348feffa74c926996a775d69d0ef2c7f83dcd74effecf1c50309a7ca9dedd",
+      "actual_owner": "Repository maintainers"
+    },
+    {
+      "path": "docs/BENCHMARK_POLICY.md",
+      "role": "deep-doc",
+      "purpose": "Benchmark & performance-regression policy: which hot paths run under bench, the stable `npm run test:bench` invocation, recorded baselines, and the advisory-not-blocking CI rule.",
+      "when_to_read": "on-demand",
+      "line_budget": 160,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Listed in docs/README.md's Quality index but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 3200,
+      "actual_lines": 130,
+      "sha256": "9b4748d9020980a0f1dbfb40975ba238989de4e7f37f839d660a3c8de68ce6f7"
+    },
+    {
+      "path": "docs/hooks/README.md",
+      "role": "reference-hook-doc",
+      "purpose": "Optional client-side `PreToolUse` reference hook (`validate-sha.mjs`) that blocks evidence containing git SHAs unknown to the local repo. Not loaded, imported, or required by the server or CLI — copy-paste opt-in reference material.",
+      "when_to_read": "on-demand",
+      "line_budget": 100,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Linked from docs/README.md's Quality index and docs/NAVIGATION.md but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 2000,
+      "actual_lines": 81,
+      "sha256": "bbab1640b91260a5b8cf050572de5f28a66cf3b206906d8e2e1122564125e1b0"
+    },
+    {
+      "path": "docs/QUALITY_COMMANDS.md",
+      "role": "deep-doc",
+      "purpose": "Practical guide to the local quality commands for contributors and agents: `quality:fast` vs `quality:full`, what each step needs (network/runtime), and how to triage a failure.",
+      "when_to_read": "on-demand",
+      "line_budget": 130,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Agent-facing operational doc that was not linked from any of the five doc indexes (AGENTS.md, docs/README.md, docs/NAVIGATION.md, llms.txt, .agent-context.json) before task #1609 — the purest instance of the \"shipped but untracked\" failure mode this task's guard targets. Follow-up: link it from docs/README.md's Quality section too (out of scope here — no docs-content edits in this task).",
+      "approx_token_budget": 2600,
+      "actual_lines": 108,
+      "sha256": "7b426860fec46187db1c94887f0cb0555adbe26fca6e303f6237ef948d16c698"
+    },
+    {
+      "path": "docs/USAGE_PATTERNS.md",
+      "role": "operator-playbook",
+      "purpose": "Operator playbook: the real plan → decompose → loop lifecycle shapes (branch/PR hygiene, context-clear rituals, the live-verified fallback). Illustrative, not contract.",
+      "when_to_read": "on-demand",
+      "line_budget": 350,
+      "authority": "authoritative",
+      "owner_role": "Repository maintainers",
+      "status": "present",
+      "notes": "Listed in docs/README.md's Agents index but was missing from this manifest before task #1609's guard surfaced it.",
+      "approx_token_budget": 7000,
+      "actual_lines": 322,
+      "sha256": "90dd1e5cd973a900bc2c4edcf0430397df6b3a8093bbb47c8360fe0cc46e4a7e",
       "actual_owner": "Repository maintainers"
     },
     {
