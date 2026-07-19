@@ -11,7 +11,7 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
-## [2.5.0] - 2026-07-18
+## [2.5.0] - 2026-07-19
 
 ### Added
 - **Pluggable source control (git / perforce / none).** Source-control actions
@@ -97,6 +97,29 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 - **Stale hand-counts fixed across README/docs** (migration count,
   docs/README tool count, AGENTS.md/llms.txt recipe counts), now enforced
   by the new consistency guards above so they can't silently rot again.
+- **Dev toolchain: TypeScript upgraded to the 7.0 native port** (7.0.2),
+  alongside grouped Dependabot dependency refreshes (the `npm-patch` and
+  `npm-minor` update groups). The project compiles and its full test suite
+  passes on TypeScript 7; no REST, MCP, or CLI runtime surface changed. This
+  is a dev-dependency/build-toolchain change only — installed package
+  consumers are unaffected.
+
+### Fixed
+- **Nightly mutation testing restored on TypeScript 7.** The TypeScript 7
+  native port removed `ts.parseConfigFileTextToJson`, which Stryker's sandbox
+  tsconfig preprocessor and its `typescript` checker both call, so every
+  mutation shard died at startup with
+  `TypeError: ts.parseConfigFileTextToJson is not a function` — no Stryker
+  release (≤ 9.6.1, the latest) supports the TS 7 compiler API yet. `tsc` and
+  the main CI/build stayed green, so mutation testing was the only casualty.
+  `stryker.config.js` now drops the `typescript` checker and keeps
+  `tsconfig.json` out of Stryker's sandbox via `ignorePatterns`, which no-ops
+  the crashing preprocessor path while retaining sandbox mode and leaving the
+  sharded nightly, aggregate scoring, and threshold gate unchanged. The
+  now-unused `@stryker-mutator/typescript-checker` dev dependency was removed.
+  Trade-off: mutants that would previously be filtered as compile errors now
+  run through vitest and are scored as killed/survived like any other mutant —
+  revert both changes once Stryker supports TypeScript 7.
 
 ### Upgrade notes
 - **A repo with both `.git` and a Perforce marker now fails closed.** If a
