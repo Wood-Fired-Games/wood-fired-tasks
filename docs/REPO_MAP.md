@@ -18,7 +18,7 @@ than duplicating them.
 | `skills/` | Task-loop skill files under `skills/tasks/`. |
 | `tests/` | Cross-cutting test assets outside `src/`: `fixtures/`, `helpers/`, `smoke/` (CLI e2e/install smoke), `verifier-fixtures/`. |
 | `deploy/` | Linux systemd unit, crontab, backup/restore, install notes. |
-| `.github/workflows/` | CI: `ci.yml`, `bench.yml`, `install-scripts.yml`, `mutation.yml`, `secret-scan.yml`. |
+| `.github/workflows/` | CI: `ci.yml`, `bench.yml`, `install-scripts.yml`, `mutation.yml`, `secret-scan.yml`, `publish.yml` (npm OIDC release), `scm-real-p4d.yml` (nightly perforce suite). |
 | `data/` | SQLite DB location (gitignored). |
 | `dist/` | `tsc` build output (gitignored). |
 | `coverage/`, `reports/`, `.stryker-tmp/` | Test / mutation artifacts (gitignored). |
@@ -37,13 +37,13 @@ than duplicating them.
 - `server.ts` — app factory. `start.ts` — process entrypoint (`npm run dev`).
 - `routes/health.ts`, `routes/events.ts` — flat route files.
 - `routes/auth/`, `routes/comments/`, `routes/dependencies/`, `routes/me/`, `routes/projects/`, `routes/tasks/`, `routes/web/` — resource folders. WSJF routes live at `routes/tasks/wsjf.ts` (task component get/set + score-history) and `routes/projects/wsjf.ts` (ranking, health, rescore, charter-history, rescore-runs).
-- `plugins/auth.ts` (API-key), `plugins/swagger.ts` (OpenAPI).
+- `plugins/auth.ts` (backward-compat shim; the real auth chain — PAT → session → legacy — lives at `plugins/auth/index.ts`), `plugins/swagger.ts` (OpenAPI).
 - `hooks/error-handler.ts` — global error hook.
 - Tests: `src/api/__tests__/`. Deeper: [`docs/API.md`](API.md).
 
 ### `src/mcp/` — Model Context Protocol server
 - `server.ts`, `index.ts` — stdio + transport entry points.
-- `tools/` — eight files: `comment-tools.ts`, `dependency-tools.ts`, `health-tools.ts`, `project-tools.ts`, `task-tools.ts`, `topology-tools.ts`, `wait-for-unblock-tools.ts`, `wsjf-tools.ts`. `wsjf-tools.ts` registers the four WSJF tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health`), bringing the stdio total to 27 (the prior six-file set registered 22; `wait-for-unblock-tools.ts` added 1 and `wsjf-tools.ts` adds 4).
+- `tools/` — nine files: `comment-tools.ts`, `dependency-tools.ts`, `health-tools.ts`, `model-tools.ts`, `project-tools.ts`, `task-tools.ts`, `topology-tools.ts`, `wait-for-unblock-tools.ts`, `wsjf-tools.ts`. `wsjf-tools.ts` registers the four WSJF tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health`) and `model-tools.ts` the four model tools (`list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults`), bringing the stdio total to 31.
 - `resources/`, `remote/` (HTTP transport), `commands/` (helpers).
 - Tests: `src/mcp/__tests__/`. Deeper: [`docs/MCP.md`](MCP.md).
 
@@ -63,7 +63,7 @@ than duplicating them.
 ### `src/db/` — SQLite + migrations
 - `database.ts` — better-sqlite3 connection.
 - `migrate.ts` — umzug runner (`npm run migrate`).
-- `migrations/001-initial-schema.ts` … `015-wsjf-audit.ts` (WSJF added `013-wsjf-fields.ts`, `014-value-charter.ts`, `015-wsjf-audit.ts`).
+- `migrations/001-initial-schema.ts` … `017-scm-charter.ts` (WSJF added `013-wsjf-fields.ts`, `014-value-charter.ts`, `015-wsjf-audit.ts`; `016-model-policy.ts` added configurable task models; `017-scm-charter.ts` the SCM charter default).
 - Tests: `src/db/__tests__/` (includes migration tests).
 
 ### `src/repositories/` — SQL access layer
@@ -115,7 +115,7 @@ than duplicating them.
 | Deploy script | `deploy/` | none (manual) | `deploy/README` notes |
 | Existing deep doc | `docs/<NAME>.md` | n/a | this map |
 | Skill file | `skills/tasks/<name>.md` | n/a | — |
-| API key auth plugin | `src/api/plugins/auth.ts` | `src/api/__tests__/` | [`API.md`](API.md) |
+| Auth plugin (PAT → session → legacy chain) | `src/api/plugins/auth/index.ts` (`auth.ts` is a compat shim) | `src/api/__tests__/` | [`API.md`](API.md) |
 | OpenAPI surface | `src/api/plugins/swagger.ts` + route schemas | `src/api/__tests__/` | [`API.md`](API.md) |
 
 ## Generated / derived / not hand-edited

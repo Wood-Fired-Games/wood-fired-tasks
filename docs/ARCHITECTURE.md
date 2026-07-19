@@ -256,7 +256,7 @@ WAL mode is enabled by `src/db/database.ts`:
 - SQLite gotchas: `DROP COLUMN` needs referencing indexes dropped first;
   changing a `CHECK` constraint needs the `tasks_new` + copy + rename +
   recreate-indexes + recreate-FTS-triggers pattern (migration 005).
-- Current max is **015** (15 migrations, `001`–`015`). The three WSJF
+- Current max is **017** (17 migrations, `001`–`017`). The three WSJF
   migrations are `013-wsjf-fields` (the `wsjf_*` columns on `tasks`),
   `014-value-charter` (`projects.value_charter`), and `015-wsjf-audit` (the
   three append-only tables, created FK-dependency-first with

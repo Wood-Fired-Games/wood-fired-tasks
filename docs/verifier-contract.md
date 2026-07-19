@@ -90,7 +90,8 @@ Example:
 
 The verifier MUST emit, as its final message, a single JSON object that
 matches the `VerificationEvidence` shape at
-[`src/types/task.ts:18-25`](../src/types/task.ts) (authoritative zod
+[`src/types/task.ts:47`](../src/types/task.ts) (`VerificationCheck` at
+`:41`; authoritative zod
 schema: [`src/schemas/task.schema.ts` → `VerificationEvidenceSchema`](../src/schemas/task.schema.ts)):
 
 ```ts
@@ -222,8 +223,10 @@ Every `evidence_url_or_text` MUST be one of:
 2. **Test command + stdout snippet** — `$ <command>\n<stdout excerpt>`.
    The command MUST be one of the allowlisted Bash tools below. Excerpt
    trimmed to the smallest fragment that proves the assertion.
-3. **Git citation** — `git show <sha>:<path>` output excerpt, or `git log
-   --oneline <range>` line, or `git diff <range> -- <path>` hunk.
+3. **`tasks scm` citation** — a `tasks scm` READ-verb result excerpt:
+   `tasks scm change-id` (`data.ids`), `tasks scm changed-files <base>`
+   (`data.files[].path`), `tasks scm baseline` (`data.id`), or
+   `tasks scm status` (`data.entries[].path`).
 4. **UNCHECKABLE:** prefix, as above, for criteria the verifier cannot
    observe within bounds.
 
@@ -248,9 +251,11 @@ The verifier subagent is read-only. The frontmatter `tools:` list at
 
 Bash commands the verifier MAY invoke:
 
-- `git log` (any read-only invocation)
-- `git diff` (any read-only invocation)
-- `git show` (any read-only invocation)
+- `tasks scm baseline` (read-only — the worktree's integration baseline id; `data.id`)
+- `tasks scm change-id` (read-only — the recorded change-ids; `data.ids`)
+- `tasks scm changed-files <base>` (read-only — changed paths vs a baseline id; `data.files[].path`)
+- `tasks scm status` (read-only — working-tree dirty state; `data.entries[].path`)
+- `tasks scm detect` (read-only — the resolved backend + behaviors)
 - `npm test`
 - `npm run lint`
 - `npm run build`

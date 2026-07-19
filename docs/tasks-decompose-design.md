@@ -4,8 +4,7 @@ Owner: Repository maintainers
 
 > **Companion artifacts:**
 > a zod schema mirror at `src/lib/decompose/schema.ts` (shipped — backs the
-> live pipeline) and a reference example at
-> `docs/decomposition-reference-example.md`. This document is the
+> live pipeline). This document is the
 > design-of-record landed by wood-fired-tasks task **#320**; the runtime that
 > implements it shipped subsequently (see Status below).
 
@@ -76,6 +75,7 @@ required-args:
 optional-args:
   --success "..."         # repeatable bullet; 3–5 total required by §1
   --domain <enum>         # frontend | backend | docs | infra | mixed
+  --spec <path>           # source spec; enables Step 8d spec-coverage audit
   --dry-run               # run §1–§7, emit DECOMPOSITION.md, skip §8 materialize
 outputs:
   - N candidate tasks created in wood-fired-tasks via create_task

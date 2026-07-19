@@ -98,11 +98,11 @@ and stop — do not guess:
 /tasks:audit requires exactly one of --loop-run <path> | --project <id> (got both / neither).
 ```
 
-Read and parse the resolved LOOP-RUN.md frontmatter. Capture `run_id`,
-`project_id`, `started_at`, `ended_at` — these are **reused** in the
-AUDIT.md frontmatter so the two artifacts correlate. Record
-`audit_started_at = <now UTC, RFC 3339>` and mint a fresh `audit_id`
-(UUIDv4).
+Read and parse the resolved LOOP-RUN.md frontmatter. Capture `run_id`
+and `project_id` — these two are **reused** in the AUDIT.md frontmatter
+so the two artifacts correlate. The audit's own timestamps are fresh,
+NOT reused: record `audit_started_at = <now UTC, RFC 3339>` (and
+`audit_ended_at` at emit time) and mint a fresh `audit_id` (UUIDv4).
 
 ## Step 2 — Enumerate closed tasks
 

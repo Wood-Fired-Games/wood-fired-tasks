@@ -67,7 +67,7 @@ The tool returns `{ healthy, scored_task_count, findings[] }`. Each entry in `fi
 
 - **`healthy: true` (empty `findings[]`)** → render NOTHING for that project. A healthy backlog is silent — do not print an "OK" line per project (it is noise on a multi-project workspace).
 - **`findings[]` non-empty** → under the project's status block, add a `WSJF Health` subsection listing each finding as `- [<severity>] <message> Fix: <suggestion>`. Order findings `critical` → `warning` → `info`. Lead with the highest severity so a past-deadline stale-Time-Criticality (`critical`) finding is the first thing the reader sees.
-- If `wsjf_health` is unavailable (the tool is CONDITIONALLY registered — `src/mcp/server.ts` omits it when no health linter is wired), skip this subsection silently; status output is never blocked on the linter.
+- If `wsjf_health` is unavailable (the shipped stdio server ALWAYS registers it — `src/mcp/server.ts` always constructs `WsjfHealthService` and passes it to `registerWsjfTools`; absence means an older or non-standard server), skip this subsection silently; status output is never blocked on the linter.
 
 ### 5. Generate highlights section
 After all projects are shown, add highlights:

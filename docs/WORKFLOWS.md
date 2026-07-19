@@ -43,6 +43,7 @@ only when adding or removing dependencies.
 | Bench suite                  | `npm run test:bench`                     | Perf-sensitive changes only.                                                |
 | Lint                         | `npm run lint`                           | Before commit. Required by `quality`.                                       |
 | Format (writes)              | `npm run format`                         | When you intentionally want Biome to rewrite files. See note below.         |
+| Format check (CI-gated)      | `npm run format:check`                   | Read-only Biome format check; **gated in CI** (fails on unformatted files). Run before commit. |
 | Unused-deps check            | `npm run lint:deps`                      | Before commit when `package.json` changed.                                  |
 | Dep cycle / boundary check   | `npm run depcruise`                      | Before commit on cross-module refactors.                                    |
 | Dep graph (DOT)              | `npm run depcruise:graph`                | Visualising module structure; produces `dependency-graph.dot`.              |
@@ -53,12 +54,14 @@ only when adding or removing dependencies.
 | Manifest regenerate          | `npm run agent-context:gen`              | After flipping a manifest entry from `reserved` to `present`.               |
 | Full local quality gate      | `npm run quality`                        | Before opening a PR — mirrors the CI matrix.                                |
 
-### `format:check` deliberate-failure note
+### `format` vs `format:check`
 
-`npm run format:check` is intentionally broken today: `biome.json` has
-`formatter.enabled=false`, so the script prints to stderr and exits 1. CI does
-not gate on it. Do not use it as a check; enable the formatter in a dedicated
-follow-up PR before re-adding the gate.
+`npm run format` runs `biome format --write .` and **rewrites** files in
+place — use it when you intentionally want Biome to reformat. `npm run
+format:check` runs `biome format .` read-only and **fails on unformatted
+files**; it is gated in CI (`.github/workflows/ci.yml` — the "Format check"
+step) alongside `lint`, so run it (or `format`) before committing. The Biome
+formatter is enabled (`biome.json` `formatter.enabled = true`).
 
 ## Surface dev recipes
 

@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 The single authoritative source for both enums is the TypeScript constant module:
 
-- **Source of truth:** [`src/types/task.ts`](../../src/types/task.ts) lines 2–3
+- **Source of truth:** [`src/types/task.ts`](../../src/types/task.ts) line ~24 (`TASK_STATUSES`) and line ~32 (`TASK_PRIORITIES`)
 - **Zod re-export:** [`src/schemas/task.schema.ts`](../../src/schemas/task.schema.ts) line 2 (imports `TASK_STATUSES` and `TASK_PRIORITIES` from `src/types/task.ts` and re-exposes them via `z.enum()`)
 
 If the values below ever drift from `src/types/task.ts`, **the source wins**. Update this file (and any skill that cites it) to match.

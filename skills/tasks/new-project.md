@@ -210,7 +210,8 @@ Rules the server enforces (respect them as you build the object):
       Criticality (score-churn included, §11.4) becomes visible right after the run
       that caused it. The findings are advisory: never auto-rescore again in
       response, and never block on the linter — if `wsjf_health` is unavailable
-      (conditionally registered), skip this surfacing silently.
+      (the shipped stdio server always registers it; absence means an older
+      or non-standard server), skip this surfacing silently.
     - On `Skip rescore`, write nothing further: the new charter is saved, the
       backlog keeps its existing scores, and the user can run a rescore later.
       Never rescore without the explicit confirmation.

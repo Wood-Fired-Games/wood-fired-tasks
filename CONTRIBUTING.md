@@ -299,7 +299,7 @@ AI assistant at all.
 | `docs/INTERFACES.md`          | Adding or removing a REST route, MCP tool, or CLI command. Update the per-surface table **and** the `Total: N` anchor; the drift test fails otherwise.                                            | Generated (verified by test) |
 | `docs/NAVIGATION.md`          | Adding a new change-type recipe, or changing the implementation / test / docs paths for an existing recipe.                                                                                       | Authoritative              |
 | `.agent-context.json`         | After editing `scripts/agent-context/manifest.ts` (path additions, status flips, budget changes). Regenerate with `npm run agent-context:gen`.                                                    | Generated                  |
-| `README.md` Quick Start       | Editing the `## Quick Start` section. The CLI must be invoked via `npm run cli -- <args>` (no bare global `tasks` without an `npm link` step), and both `API_KEYS` (server) + `API_KEY` (client) must be exported. `src/__tests__/readme-quickstart-drift.test.ts` fails otherwise (runs in `npm test`/CI). | Authoritative (verified by test) |
+| `README.md` install/run       | Editing the `## Install & run modes` section. It must install globally via `npm i -g wood-fired-tasks` (no `git clone`, no build step) and drive the global `wood-fired-tasks` bin (`setup`, `serve`) — not `npm run cli -- <args>`; auth is PAT/`API_KEY`-based. `src/__tests__/readme-quickstart-drift.test.ts` fails otherwise (runs in `npm test`/CI). | Authoritative (verified by test) |
 
 ### PR checklist for agent context impact
 
@@ -312,7 +312,7 @@ description and tick the ones that apply.
 - [ ] If this PR changes a status transition, claim rule, event type, idempotency rule, or other behavior that crosses surfaces, I updated `docs/ARCHITECTURE.md`.
 - [ ] If this PR adds a new top-level directory or renames a notable subtree, I updated `docs/REPO_MAP.md`.
 - [ ] If this PR adds an `npm` script or changes a developer command, I updated `docs/WORKFLOWS.md`.
-- [ ] If this PR edits the `README.md` Quick Start, I kept the `npm run cli -- <args>` invocation form (no bare global `tasks`) and the `API_KEYS`/`API_KEY` exports, and ran `npm test` so `readme-quickstart-drift.test.ts` stays green.
+- [ ] If this PR edits the `README.md` "Install & run modes" section, I kept the global `npm i -g wood-fired-tasks` install and the global `wood-fired-tasks` bin (`setup`/`serve`) invocation form (no `git clone`, no `npm run cli -- <args>`), and ran `npm test` so `readme-quickstart-drift.test.ts` stays green.
 - [ ] If this PR adds a new canonical agent-facing doc, I added a row in the `docs/AGENT_CONTEXT.md` §2 table, classified it in §3, and gave it a size budget in §4.
 - [ ] If this PR changes the canonical-files list, the size budgets, or the freshness rules, I updated `docs/AGENT_CONTEXT.md` and `AGENTS.md`'s deeper-docs table to match.
 - [ ] If this PR edits `scripts/agent-context/manifest.ts` or any agent-facing doc, I ran `npm run agent-context:gen` and `npm run agent-context:check` and committed the regenerated `.agent-context.json`.

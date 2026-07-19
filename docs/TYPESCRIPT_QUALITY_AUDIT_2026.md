@@ -13,6 +13,16 @@ actual config and source tree (see [§5 Commands Used](#5-commands-used-reproduc
 for the reproducible command set). It is the evidence anchor every later
 project-37 task builds on.
 
+> **Update (2026-07-19, post-audit):** the toolchain has moved on since the
+> `a872170` baseline this snapshot describes. TypeScript is now `^7.0.2` (the
+> native port), not `^6.0.3` (§1.1). Stryker no longer uses the `typescript`
+> checker — it was dropped for TypeScript-7 compatibility and
+> `stryker.config.js` now sets `ignorePatterns: ['tsconfig.json']` (§1.5). The
+> unified CI mutation **break threshold is 50%** (a conservative floor
+> ratcheting toward 60%), not 75%; the `break: 75` in `stryker.config.js` is
+> the local-only gate (§1.5). The rest of this document remains an accurate
+> record of the 2026-06-05 baseline.
+
 It deliberately does **not** remediate code. Where it recommends work, it
 points at the existing [`docs/CODE_QUALITY_ROADMAP.md`](CODE_QUALITY_ROADMAP.md)
 and reconciles against it (see [§4](#4-prioritized-roadmap-reconciled)) so we

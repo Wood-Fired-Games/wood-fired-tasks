@@ -108,9 +108,10 @@ supplied):
 - `--project <id>`: glob `.planning/loops/<UTC>-<id>.md`, sort by
   UTC timestamp prefix descending, pick the first. Refuse if no match.
 
-Parse the LOOP-RUN.md frontmatter (the `run_id`, `project_id`,
-`started_at`, `ended_at` are reused in the AUDIT.md frontmatter so the
-two artifacts can be correlated).
+Parse the LOOP-RUN.md frontmatter (only `run_id` and `project_id` are
+reused in the AUDIT.md frontmatter so the two artifacts can be
+correlated; the audit's own timestamps are fresh, named
+`audit_started_at` / `audit_ended_at`, not reused from the LOOP-RUN).
 
 ### Step 2 — Enumerate closed tasks
 
