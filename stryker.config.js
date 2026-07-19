@@ -37,11 +37,22 @@ export default {
   },
   coverageAnalysis: 'perTest',
   mutate: [...includes, ...shardExcludes, ...exclusions],
-  checkers: ['typescript'],
-  tsconfigFile: 'tsconfig.json',
-  typescriptChecker: {
-    prioritizePerformanceOverAccuracy: true,
-  },
+  // TypeScript 7 (native port, bumped in PR #91) removed `ts.parseConfigFileTextToJson`,
+  // which Stryker's sandbox TSConfigPreprocessor and its `typescript` checker both call —
+  // no Stryker release (≤9.6.1) supports the TS7 API yet. To keep mutation testing running
+  // on TS7 without leaving sandbox mode we:
+  //   (a) drop the `typescript` checker so Stryker never invokes the TS compiler API, and
+  //   (b) keep tsconfig.json OUT of the sandbox via `ignorePatterns`. The crash is at
+  //       ts-config-preprocessor.js:46 (`ts.parseConfigFileTextToJson`), but line 43 guards
+  //       it with `if (project.files.get(tsconfigFileName))` — so if tsconfig.json is not a
+  //       sandbox file the preprocessor no-ops instead of crashing. tsconfig.json has no
+  //       `paths`/`extends`, and vitest compiles via esbuild, so nothing in the sandbox
+  //       needs it. (`inPlace: true` also skips the preprocessor, but it makes vitest
+  //       discover the .stryker-tmp backup copies of tests, breaking import.meta.url-based
+  //       asset resolution — so we avoid it.)
+  // Trade-off: mutants that would be compile errors are no longer filtered out up front —
+  // they run through vitest and are scored as killed/survived. Revert once Stryker supports TS7.
+  ignorePatterns: ['tsconfig.json'],
   reporters: ['html', 'clear-text', 'progress'],
   thresholds: {
     high: 80,
