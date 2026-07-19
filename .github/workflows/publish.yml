@@ -10,7 +10,7 @@ name: Publish
 #   Workflow filename:    publish.yml
 #   Allowed actions:      npm publish
 #
-# Trigger: pushing a vX.Y tag (the release convention), or manual dispatch.
+# Trigger: pushing a vX.Y.Z tag (the release convention), or manual dispatch.
 on:
   push:
     tags:

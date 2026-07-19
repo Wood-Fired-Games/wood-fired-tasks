@@ -5,7 +5,7 @@
 
 ## Decision: Biome-only (no ESLint overlay)
 
-This repo is **Biome-only** (`@biomejs/biome` 2.4.16; no ESLint toolchain). We
+This repo is **Biome-only** (`@biomejs/biome` 2.5.4; no ESLint toolchain). We
 evaluated adding a narrow `typescript-eslint` overlay solely to get
 `@typescript-eslint/no-floating-promises` / `no-misuses-promises`, versus using
 Biome's native type-aware equivalents.

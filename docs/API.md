@@ -2,7 +2,10 @@
 
 Agents: start at [`AGENTS.md`](../AGENTS.md); the full read-order contract is in [`docs/AGENT_CONTEXT.md`](AGENT_CONTEXT.md).
 
-Complete reference for the Wood Fired Tasks REST API.
+Reference for the Wood Fired Tasks REST API. Covers the core
+task/project/dependency/comment/WSJF/model surfaces; a few auxiliary routes
+(e.g. `GET /api/v1/projects/:id/dependency-graph`, and the `/me`, `/auth`,
+`/web` surfaces) are enumerated in [`docs/INTERFACES.md`](INTERFACES.md).
 
 **Base URL:** `http://localhost:3000`
 

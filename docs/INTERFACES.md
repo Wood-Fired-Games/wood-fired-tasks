@@ -290,8 +290,9 @@ shared infrastructure, not a service.
 - `src/repositories/row-mapper.ts` is the canonical converter for joined
   `task_tags` rows; route/tool/CLI code never reshapes rows by hand.
 - Helper files (`errors.ts`, `interfaces.ts`, `row-mapper.ts`, `types.ts`)
-  are not repositories. The four concrete repositories are `task`,
-  `project`, `comment`, `dependency`.
+  are not repositories. The ten concrete repositories are `task`, `project`,
+  `comment`, `dependency`, `api-token`, `user`, `settings`,
+  `project-charter-history`, `wsjf-history`, and `wsjf-rescore`.
 
 ## Pagination envelope
 

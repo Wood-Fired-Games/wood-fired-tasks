@@ -746,7 +746,7 @@ The API server will start with hot reload enabled. Any changes to TypeScript fil
 ### 6. Pre-publish smoke test
 
 Before cutting a release, run the fresh-clone smoke recipe to prove the
-documented first-user flow (the [README Quick Start](../README.md#quick-start))
+documented first-user flow (the [README Quick Start](../README.md#install--run-modes))
 still works end-to-end from a clean slate:
 
 ```bash
@@ -1003,7 +1003,7 @@ gates the release contract enforces.
 ## CLI Installation
 
 From a fresh clone the CLI runs **in-tree** with no global install — this is
-the path the [README Quick Start](../README.md#quick-start) uses. A global
+the path the [README Quick Start](../README.md#install--run-modes) uses. A global
 `tasks` binary via `npm link` is **optional** and only convenient if you want
 to call `tasks` from outside the repo.
 

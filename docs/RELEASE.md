@@ -202,8 +202,9 @@ The `.gitleaks-report.json` artifact is git-ignored (see `.gitignore`).
 
 ## Versioning and tag convention
 
-There are two version identifiers in play, and they use **different
-segment counts on purpose**. This section is the canonical reconciliation
+There are two version identifiers in play — the `package.json` version and
+the git release tag. Since `v2.0.0` they are kept **identical** (the tag is
+the version with a `v` prefix). This section is the canonical reconciliation
 so they never silently diverge again (the divergence that triggered this
 doc: `package.json` sat at `1.0.0` while git tags had already advanced to
 the `v1.x` line).
@@ -215,39 +216,44 @@ the `v1.x` line).
 present. This is the version npm publishes and the version
 `CHANGELOG.md` documents.
 
-### git tag — 2-segment `vMAJOR.MINOR`
+### git tag — 3-segment `vMAJOR.MINOR.PATCH`
 
-Release tags are annotated tags of the form **`vMAJOR.MINOR`**, e.g.
-`v1.11`. They are *not* 3-segment. The current tag history is:
+Release tags are annotated tags of the form **`vMAJOR.MINOR.PATCH`**, e.g.
+`v2.5.0` — byte-for-byte the `package.json` version with a `v` prefix. The
+npm publish workflow (`.github/workflows/publish.yml`) triggers on `v*` tag
+pushes and derives the published version from the tag via OIDC Trusted
+Publishing, so the tag MUST carry all three segments. The recent tag history
+is:
 
 ```
-v1.0  v1.1  v1.2  v1.3  v1.4  v1.5
-v1.6  v1.7  v1.8  v1.9  v1.10 v1.11
+v2.0.0  v2.0.1 … v2.0.6  v2.1.0  v2.1.1
+v2.2.0  v2.3.0  v2.4.0
 ```
 
-CHANGELOG release headings mirror this 2-segment form (e.g.
-`## [v1.11] - 2026-05-21`).
+(The early `v1.0`–`v1.11` line used a 2-segment form; every release since
+`v2.0.0` is 3-segment. Do not cut a 2-segment tag — it would not match the
+published npm version.)
+
+CHANGELOG release headings mirror the 3-segment form (e.g.
+`## [v2.4.0] - 2026-07-09`).
 
 ### Reconciliation rule (keep these in sync)
 
-> **git tag `vX.Y` corresponds to `package.json` version `X.Y.Z`** — the
-> tag drops the PATCH segment, the package version always keeps it.
-> Concretely, tag `v1.11` is cut from a tree whose `package.json` reads
-> `1.11.0` (or a later `1.11.Z` patch). The MAJOR and MINOR of the tag
-> MUST equal the MAJOR and MINOR of `package.json` at the tagged commit.
+> **git tag `vX.Y.Z` equals `package.json` version `X.Y.Z`** — the tag is
+> the package version with a `v` prefix, all three segments included.
+> Concretely, tag `v2.5.0` is cut from a tree whose `package.json` reads
+> `2.5.0`. The tag MUST equal `v` + the `version` field at the tagged commit.
 
 Practical consequences:
 
-- Before tagging, confirm `package.json` `version` MAJOR.MINOR matches the
-  tag you are about to cut:
-  `node -p "require('./package.json').version"` → must be `X.Y.Z`
-  before you run `git tag vX.Y`.
-- PATCH releases (`X.Y.1`, `X.Y.2`, …) bump `package.json` but reuse /
-  move forward under the same `vX.Y` tag line; if you need a distinct git
-  marker for a patch, append the patch segment (`vX.Y.Z`) — but the
-  default house style is 2-segment `vX.Y` to match the existing history.
-- Never bump one without the other. A tag whose MAJOR.MINOR does not
-  match `package.json` is the divergence this section exists to prevent.
+- Before tagging, confirm the tag matches `package.json` exactly:
+  `node -p "require('./package.json').version"` → `X.Y.Z`, then cut
+  `git tag vX.Y.Z`.
+- PATCH releases (`X.Y.1`, `X.Y.2`, …) bump `package.json` and get their
+  own distinct 3-segment tag (`vX.Y.1`, `vX.Y.2`) — every published version
+  has its own tag; there is no shared 2-segment tag line.
+- Never bump one without the other. A tag that does not equal `v` +
+  `package.json` version is the divergence this section exists to prevent.
 
 ## Release tagging
 
@@ -256,13 +262,15 @@ publishing `package.json` version `X.Y.Z` (3-segment SemVer):
 
 ```bash
 # 1. Verify the package version is what you intend to release.
-node -p "require('./package.json').version"   # e.g. 1.11.0
+node -p "require('./package.json').version"   # e.g. 2.5.0
 
-# 2. Cut the 2-segment annotated tag (MAJOR.MINOR of the version above).
-git tag -a vX.Y -m "Release vX.Y"              # e.g. git tag -a v1.11 -m "Release v1.11"
-git push origin vX.Y
+# 2. Cut the 3-segment annotated tag (identical to the version above).
+git tag -a vX.Y.Z -m "Release vX.Y.Z"          # e.g. git tag -a v2.5.0 -m "Release v2.5.0"
+git push origin vX.Y.Z
 
-# 3. Publish the 3-segment npm version.
+# 3. Publishing is automated: the `v*` tag push triggers
+#    .github/workflows/publish.yml, which publishes to npm via OIDC Trusted
+#    Publishing (no NPM_TOKEN). Manual fallback only if the workflow fails:
 npm publish
 ```
 
@@ -270,6 +278,6 @@ The npm `prepublishOnly` hook already runs as a defensive last step on
 `npm publish` — it re-runs `npm run build && npm test && npm run lint:deps
 && npm audit --omit=dev --audit-level=high && npm run pack:check` (see
 `package.json` `scripts.prepublishOnly`). Note that releases are normally
-cut by pushing the `vX.Y` tag, which fires `.github/workflows/publish.yml`
+cut by pushing the `vX.Y.Z` tag, which fires `.github/workflows/publish.yml`
 (OIDC trusted publishing, no long-lived `NPM_TOKEN`); the manual
 `npm publish` above is the fallback path.

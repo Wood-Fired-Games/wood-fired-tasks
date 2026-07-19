@@ -190,14 +190,14 @@ alternatives to pick between.
 | `detect` | resolved backend + source + capabilities | resolved backend + source + capabilities | resolved backend + source + capabilities |
 | `baseline` | `git rev-parse HEAD` | highest submitted CL visible to the client | manifest digest → `.tasks/.scm/<context>/baseline.json` |
 | `status` | `git status --porcelain` | `p4 opened` + `p4 status` | manifest compare |
-| `changed-files <base>` | `git diff --name-only <base>..HEAD` | `p4 opened` / `p4 describe -s` | filesystem diff vs baseline manifest |
+| `changed-files <base>` | `git diff --name-status <base>..HEAD` | `p4 opened` / `p4 describe -s` | filesystem diff vs baseline manifest |
 | `stage <files…>` | `git add <files>` (never `-A`/`.`) | `p4 edit`/`add`/`reconcile` into the context's numbered pending CL | no-op |
 | `record <msg>` | `git commit -m` | pending/shelved CL, or `p4 submit` if `publish` on | no-op |
 | `change-id` | `git rev-parse HEAD` | the context's CL number — **post-renumber if submitted** | empty `ids: []` |
 | `publish` | `git push` (`--set-upstream origin` fallback; no remote → `NO_REMOTE`) | `p4 submit` of the context CL | no-op |
 | `open-review` | `gh pr create` (missing `gh` → clean skip + warning) | `p4 shelve` + swarm (or clean skip) | no-op |
 | `isolate <id>` | **capability report only** (see below) | provision temp p4 client from template, else report `serialized` | report `shared` |
-| `teardown-isolation <id>` | remove only worktrees recorded in `.tasks/.scm/<context>/` — never sweep `.claude/worktrees/*` wholesale | delete the temp client for `<id>`; revert its opened files first | no-op |
+| `teardown-isolation <id>` | no-op (git `isolate` provisions nothing — worktrees are platform-managed; teardown records/removes nothing and never sweeps `.claude/worktrees/*`) | delete the temp client for `<id>`; revert its opened files first | no-op |
 | `reset-hard <ref>` | `git reset --hard <ref>` | `p4 revert //...` + `p4 sync @<cl>` | **unsupported** — exit 4 (digest-only manifest cannot restore content) |
 
 **`isolate` is asymmetric by necessity.** For git, isolation is provided by the

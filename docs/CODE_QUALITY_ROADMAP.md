@@ -22,7 +22,9 @@ The repository is already in a healthy state for a small TypeScript service:
 - `vitest.config.ts` enforces coverage thresholds at 85% lines, functions,
   and statements, with 75% branches.
 - `stryker.config.js` and `.github/workflows/mutation.yml` provide mutation
-  testing with a 75% aggregate break threshold, sharded CI execution, and
+  testing with a 50% aggregate break threshold enforced in CI (a conservative
+  floor, ratcheting toward 60%; the local-only `break` gate in
+  `stryker.config.js` is 75%), sharded CI execution, and
   nightly/manual/label-triggered runs.
 - Property and benchmark tests exist for high-risk areas such as workflow
   invariants, status transitions, and cycle detection.
