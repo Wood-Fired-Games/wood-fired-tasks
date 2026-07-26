@@ -7,6 +7,16 @@
  * three v1 core handlers and REUSES the shared handler contract (`types.ts`)
  * and the shared HTTP transport (`http-client.ts`) established by #428.
  *
+ * Redirect handling (audit finding H4, part 2/2 — task #1619): `httpRequest`
+ * never follows a 3xx transparently (#1618, `redirect: 'manual'`) — it
+ * returns the status + `Location` header to this handler. This handler
+ * re-runs EVERY resolved Location through {@link assertEndpointAllowed}
+ * (with `viaRedirect: true`, which is STRICTER than the direct-config check
+ * — see that function's doc) before issuing the next hop, and caps the chain
+ * at {@link MAX_REDIRECT_HOPS}. A refused or over-the-limit redirect target
+ * fails delivery through the SAME PERMANENTLY_FAILED / non-retryable path as
+ * a directly-disallowed `with.url` — no bespoke error type.
+ *
  * Unlike `create_task_in_project` (which targets the first-party REST API via
  * `apiBaseUrl`/`authToken`), webhook_post sends to an operator-supplied
  * endpoint. The target `url`, optional `headers`, and `body` all come from the
@@ -79,6 +89,14 @@ import type { Handler, HandlerContext, HandlerOutcome } from './types.js';
 
 /** Default per-attempt HTTP timeout if the context does not pin one. */
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * Maximum number of 3xx hops a single delivery attempt will follow (audit
+ * finding H4, part 2/2 — task #1619). A chain that exceeds this is refused
+ * rather than followed indefinitely — guards against redirect loops and
+ * slow-drip degradation from a misbehaving/malicious endpoint.
+ */
+export const MAX_REDIRECT_HOPS = 5;
 
 /** Result of the TLS / loopback posture check on a target URL. */
 export interface EndpointDecision {
@@ -162,10 +180,22 @@ function isPrivateHost(host: string): boolean {
  *     refused for any routable host (plaintext credential-exposure guard).
  *   - anything else (unparseable, non-http(s) scheme) → refused.
  *
+ * `opts.viaRedirect` (task #1619): when true, EVERY `http://` target is
+ * refused — including loopback/private hosts that a DIRECTLY-configured
+ * `with.url` would be allowed to hit. A directly-configured loopback target
+ * is explicit operator intent; a target reached by following a 3xx from an
+ * (already-validated) endpoint is not — an attacker-influenced redirect must
+ * not be able to walk an https-validated dispatch to loopback or plaintext
+ * (docs/event-router-design.md §"Threat surface"). Same {@link
+ * EndpointDecision} shape either way — this is not a bespoke error type.
+ *
  * Pure function; performs no I/O and no DNS resolution. Intended to be shared
  * later with the daemon startup check (#433).
  */
-export function assertEndpointAllowed(rawUrl: string): EndpointDecision {
+export function assertEndpointAllowed(
+  rawUrl: string,
+  opts?: { viaRedirect?: boolean },
+): EndpointDecision {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -178,6 +208,12 @@ export function assertEndpointAllowed(rawUrl: string): EndpointDecision {
     return { allowed: true };
   }
   if (scheme === 'http:') {
+    if (opts?.viaRedirect === true) {
+      return {
+        allowed: false,
+        reason: 'http:// redirect target refused (credential-exposure guard)',
+      };
+    }
     const host = normalizeHost(parsed.hostname);
     if (isLoopbackHost(host) || isPrivateHost(host)) {
       return { allowed: true };
@@ -315,30 +351,103 @@ export const webhookPost: Handler = async (ctx: HandlerContext): Promise<Handler
 
   let status: number;
   let bodyText: string;
-  try {
-    const res = await httpRequest({
-      method: 'POST',
-      url: rawUrl,
-      headers,
-      ...(body !== undefined && { body }),
-      timeoutMs: ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      ...(ctx.fetchImpl !== undefined && { fetchImpl: ctx.fetchImpl }),
-    });
+  let dispatchUrl = rawUrl;
+  let hops = 0;
+
+  for (;;) {
+    let res;
+    try {
+      res = await httpRequest({
+        method: 'POST',
+        url: dispatchUrl,
+        headers,
+        ...(body !== undefined && { body }),
+        timeoutMs: ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        ...(ctx.fetchImpl !== undefined && { fetchImpl: ctx.fetchImpl }),
+      });
+    } catch (err) {
+      const isTimeout = err instanceof HttpTimeoutError;
+      store.complete(identity.rule_name, identity.event_id, 'FAILED');
+      const detail = isTimeout ? 'request timed out' : 'network error';
+      logger.warn(
+        {
+          rule_name: identity.rule_name,
+          event_id: identity.event_id,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'webhook_post_transport_error',
+      );
+      return { kind: 'failed', retryable: true, detail };
+    }
+
+    // --- 4a. 3xx: re-validate the Location and follow it (bounded). -------
+    if (res.status >= 300 && res.status < 400 && res.location !== undefined) {
+      hops += 1;
+      if (hops > MAX_REDIRECT_HOPS) {
+        store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
+        logger.error(
+          {
+            rule_name: identity.rule_name,
+            event_id: identity.event_id,
+            hops,
+          },
+          'webhook_post_redirect_hop_limit',
+        );
+        return {
+          kind: 'failed',
+          retryable: false,
+          detail: `redirect hop limit (${String(MAX_REDIRECT_HOPS)}) exceeded`,
+        };
+      }
+
+      let nextUrl: string;
+      try {
+        nextUrl = new URL(res.location, dispatchUrl).toString();
+      } catch {
+        store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
+        logger.error(
+          {
+            rule_name: identity.rule_name,
+            event_id: identity.event_id,
+            location: res.location,
+          },
+          'webhook_post_redirect_unparseable',
+        );
+        return {
+          kind: 'failed',
+          retryable: false,
+          detail: 'redirect target url is missing or unparseable',
+        };
+      }
+
+      // SAME check + SAME failure shape as the original endpoint guard
+      // (step 3a) — an attacker-influenced redirect gets no bespoke error
+      // type, just the reused disallow path.
+      const redirectDecision = assertEndpointAllowed(nextUrl, { viaRedirect: true });
+      if (!redirectDecision.allowed) {
+        store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
+        logger.error(
+          {
+            rule_name: identity.rule_name,
+            event_id: identity.event_id,
+            reason: redirectDecision.reason,
+          },
+          'webhook_post_redirect_refused',
+        );
+        return {
+          kind: 'failed',
+          retryable: false,
+          detail: redirectDecision.reason ?? 'endpoint refused',
+        };
+      }
+
+      dispatchUrl = nextUrl;
+      continue;
+    }
+
     status = res.status;
     bodyText = res.bodyText;
-  } catch (err) {
-    const isTimeout = err instanceof HttpTimeoutError;
-    store.complete(identity.rule_name, identity.event_id, 'FAILED');
-    const detail = isTimeout ? 'request timed out' : 'network error';
-    logger.warn(
-      {
-        rule_name: identity.rule_name,
-        event_id: identity.event_id,
-        error: err instanceof Error ? err.message : String(err),
-      },
-      'webhook_post_transport_error',
-    );
-    return { kind: 'failed', retryable: true, detail };
+    break;
   }
 
   // --- 5. Map the response status to a terminal status + outcome. --------
