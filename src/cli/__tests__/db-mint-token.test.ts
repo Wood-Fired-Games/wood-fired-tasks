@@ -249,18 +249,22 @@ describe('db-mint-token command', () => {
     const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
     dbMintTokenCommand.exitOverride();
 
+    // Security Audit finding M1 (task #1620): ApiTokenRepository.insert now
+    // rejects scopes outside the canonical taxonomy (read/write/admin) at
+    // the repository boundary, so this CSV-splitting test uses two valid
+    // taxonomy tiers instead of the (now-invalid) "reader".
     const legacy = readUser("display_name = 'legacy-key'");
     await dbMintTokenCommand.parseAsync(
-      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'admin,reader'],
+      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'admin,write'],
       { from: 'user' },
     );
 
     expect(process.exitCode).toBe(0);
-    expect(loggedStdout()).toContain('Scopes: [admin, reader]');
+    expect(loggedStdout()).toContain('Scopes: [admin, write]');
 
     const rows = readTokens();
     expect(rows).toHaveLength(1);
-    expect(rows[0].scopes).toBe('["admin","reader"]');
+    expect(rows[0].scopes).toBe('["admin","write"]');
   });
 
   it('Case 7: --expires-at valid ISO is stored and printed', async () => {

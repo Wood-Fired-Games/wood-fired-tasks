@@ -300,20 +300,24 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         headers: { cookie: legacyUserCookie },
         payload: {
           name: 'with-scopes',
-          scopes: ['a', 'b'],
+          // Security Audit finding M1 (task #1620): scopes are now checked
+          // against the canonical taxonomy at mint time, so this
+          // persistence test uses valid taxonomy tiers instead of
+          // arbitrary strings.
+          scopes: ['read', 'write'],
           expiresAt,
         },
       });
 
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.body);
-      expect(body.scopes).toEqual(['a', 'b']);
+      expect(body.scopes).toEqual(['read', 'write']);
       expect(body.expiresAt).toBe(expiresAt);
 
       const row = harness.db
         .prepare('SELECT scopes, expires_at FROM api_tokens WHERE id = ?')
         .get(body.id) as { scopes: string; expires_at: string };
-      expect(row.scopes).toBe('["a","b"]');
+      expect(row.scopes).toBe('["read","write"]');
       expect(row.expires_at).toBe(expiresAt);
     });
 
@@ -362,20 +366,28 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(count.c).toBe(0);
     });
 
-    it('WR-02: accepts the cap exactly (32 scopes, 64-char elements)', async () => {
+    // Security Audit finding M1 (task #1620): the schema-level 32-element /
+    // 64-char caps (WR-02) are shape bounds, but every valid scope must now
+    // ALSO be a taxonomy member — no taxonomy tier is anywhere near 64
+    // chars, so this case now asserts the array-length cap alone (still at
+    // exactly 32 elements) using valid tiers. The 64-char-string cap
+    // remains covered by the "rejects oversized scope string" case above,
+    // which fails validation regardless (too long AND not a taxonomy
+    // member).
+    it('WR-02: accepts the array-length cap exactly (32 valid scopes)', async () => {
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
         headers: { cookie: legacyUserCookie },
         payload: {
           name: 'at-the-cap',
-          scopes: Array.from({ length: 32 }, () => 'a'.repeat(64)),
+          scopes: Array.from({ length: 32 }, () => 'admin'),
         },
       });
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.body);
       expect(body.scopes).toHaveLength(32);
-      expect(body.scopes[0]).toHaveLength(64);
+      expect(body.scopes[0]).toBe('admin');
     });
 
     it('WR-02: rejects empty-string scope element (min(1)) with 400', async () => {
@@ -389,6 +401,32 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         },
       });
       expect(res.statusCode).toBe(400);
+    });
+
+    // Security Audit finding M1 (task #1620) — mint-time scope-taxonomy
+    // validation. `bogus:scope` is well-formed (passes the WR-02 shape
+    // caps) but is not a member of the canonical taxonomy
+    // (read/write/admin), so it must be rejected with a VALIDATION_ERROR
+    // shaped 400 body — no row persisted.
+    it('rejects an unknown scope (not in the read/write/admin taxonomy) with 400', async () => {
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { cookie: legacyUserCookie },
+        payload: {
+          name: 'bogus-scope',
+          scopes: ['bogus:scope'],
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('VALIDATION_ERROR');
+      expect(body.details.invalidScopes).toEqual(['bogus:scope']);
+
+      const count = harness.db
+        .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'bogus-scope'")
+        .get() as { c: number };
+      expect(count.c).toBe(0);
     });
   });
 

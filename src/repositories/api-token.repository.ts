@@ -2,6 +2,36 @@ import type Database from '../db/driver.js';
 import type { ApiToken } from '../types/identity.js';
 import type { IApiTokenRepository } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
+import { findUnknownScopes } from '../schemas/pat-scope.schema.js';
+import { InvalidScopeError } from './errors.js';
+
+/**
+ * Repository-boundary half of mint-time scope validation (Security Audit
+ * finding M1, task #1620). `scopesJson` is the JSON-array string the caller
+ * intends to persist; throws {@link InvalidScopeError} if it decodes to
+ * anything other than an array of canonical taxonomy scope strings.
+ *
+ * This runs for EVERY `insert` caller — the `/me/tokens` route, the
+ * `tasks db mint-token` CLI, and the device-flow HTML mint path — even
+ * though the route additionally validates earlier for a cleaner 400. It is
+ * deliberately defense-in-depth, not a replacement for route-level
+ * validation.
+ */
+function assertKnownScopes(scopesJson: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(scopesJson);
+  } catch {
+    throw new InvalidScopeError([scopesJson]);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new InvalidScopeError([scopesJson]);
+  }
+  const unknown = findUnknownScopes(parsed as string[]);
+  if (unknown.length > 0) {
+    throw new InvalidScopeError(unknown);
+  }
+}
 
 /**
  * Repository for the `api_tokens` table.
@@ -75,13 +105,15 @@ export class ApiTokenRepository implements IApiTokenRepository {
     scopes?: string;
     expiresAt?: string | null;
   }): ApiToken {
+    const scopesJson = input.scopes ?? '[]';
+    assertKnownScopes(scopesJson);
     const info = this.insertStmt.run(
       input.userId,
       input.name,
       input.prefix,
       input.suffix,
       input.hash,
-      input.scopes ?? '[]',
+      scopesJson,
       input.expiresAt ?? null,
     );
     // The row is guaranteed to exist (we just inserted it). The non-null

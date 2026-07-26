@@ -3,6 +3,8 @@ import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { ApiTokenRepository } from '../api-token.repository.js';
+import { InvalidScopeError } from '../errors.js';
+import { isPatScope, scopeSatisfies } from '../interfaces.js';
 
 /**
  * Helper: insert a parent users row (FK satisfaction for api_tokens.user_id).
@@ -202,6 +204,53 @@ describe('ApiTokenRepository', () => {
       });
 
       expect(result.expires_at).toBe('2027-01-01T00:00:00.000Z');
+    });
+
+    // Security Audit finding M1 (task #1620) — roundtrip proof that the
+    // repository boundary and the taxonomy predicate agree: a token minted
+    // with the `admin` tier reads back a scope that satisfies both `read`
+    // and `write` via `scopeSatisfies` (re-exported through
+    // `../interfaces.js`, the same barrel downstream consumers import).
+    it('a token minted with ["admin"] reads back with the admin tier satisfying read and write', () => {
+      const result = repo.insert({
+        userId,
+        name: 'admin-satisfies',
+        prefix: 'wft_pat_',
+        suffix: 'admn',
+        hash: 'sha256-insert-admin-satisfies',
+        scopes: JSON.stringify(['admin']),
+      });
+
+      const reread = repo.findById(result.id);
+      expect(reread).not.toBeNull();
+      const scopes = JSON.parse(reread!.scopes) as string[];
+      expect(scopes).toEqual(['admin']);
+
+      const [grantedScope] = scopes;
+      expect(isPatScope(grantedScope)).toBe(true);
+      if (!isPatScope(grantedScope)) throw new Error('unreachable');
+
+      expect(scopeSatisfies(grantedScope, 'read')).toBe(true);
+      expect(scopeSatisfies(grantedScope, 'write')).toBe(true);
+      expect(scopeSatisfies(grantedScope, 'admin')).toBe(true);
+    });
+
+    it('rejects an unknown scope at the repository boundary (InvalidScopeError)', () => {
+      expect(() =>
+        repo.insert({
+          userId,
+          name: 'bogus-scope',
+          prefix: 'wft_pat_',
+          suffix: 'bogu',
+          hash: 'sha256-insert-bogus-scope',
+          scopes: JSON.stringify(['bogus:scope']),
+        }),
+      ).toThrow(InvalidScopeError);
+
+      const count = db
+        .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'bogus-scope'")
+        .get() as { c: number };
+      expect(count.c).toBe(0);
     });
 
     it('throws on FK violation when userId references a non-existent user', () => {

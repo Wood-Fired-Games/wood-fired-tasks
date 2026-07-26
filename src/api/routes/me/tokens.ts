@@ -42,6 +42,7 @@ import { z } from 'zod';
 import { requireUser } from '../../plugins/auth.js';
 import { generateToken } from '../../../services/pat-hash.js';
 import { verifyCsrfToken } from '../auth/csrf.js';
+import { findUnknownScopes } from '../../../schemas/pat-scope.schema.js';
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -50,10 +51,12 @@ import { verifyCsrfToken } from '../auth/csrf.js';
 // WR-02 (Phase 28 review) — bounded scopes prevent a session-authed caller
 // from POSTing `{ name: "x", scopes: [<<1 MB of strings>>] }` and inflating
 // the persisted `scopes` TEXT column (which then surfaces verbatim on every
-// subsequent `GET /me/tokens` response). Caps reflect the advisory-only
-// nature of scopes in v1.6 — 32 distinct scopes of ≤64 chars each is more
-// headroom than any realistic deployment will use. `name` keeps its
-// existing 100-char cap.
+// subsequent `GET /me/tokens` response). These caps are shape-level bounds
+// only; since Security Audit finding M1 (task #1620) requested scopes are
+// ALSO checked against the canonical taxonomy (`read` | `write` | `admin`,
+// see `findUnknownScopes` below) — an unknown scope is rejected even when
+// it fits comfortably inside the 32-element / 64-char caps. `name` keeps
+// its existing 100-char cap.
 const MintTokenBodySchema = z.object({
   name: z.string().min(1).max(100),
   scopes: z.array(z.string().min(1).max(64)).max(32).optional(),
@@ -125,6 +128,18 @@ const BadRequestResponseSchema = z.object({
   statusCode: z.literal(400),
   error: z.string(),
   message: z.string(),
+});
+
+// Security Audit finding M1 (task #1620) — mint-time scope-taxonomy
+// validation. Shape matches the existing `VALIDATION_ERROR` convention
+// produced by the global error handler for `ValidationError`
+// (src/api/hooks/error-handler.ts) and the manual VALIDATION_ERROR replies
+// already used elsewhere in the route layer (e.g.
+// src/api/routes/tasks/index.ts), so this is not a new 400 shape.
+const ScopeValidationErrorResponseSchema = z.object({
+  error: z.literal('VALIDATION_ERROR'),
+  message: z.string(),
+  details: z.object({ invalidScopes: z.array(z.string()) }),
 });
 
 // ---------------------------------------------------------------------------
@@ -211,10 +226,15 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
       // consumers share the same MintTokenBodySchema source-of-truth.
       response: {
         201: MintTokenResponseSchema,
-        // 400 covers both the manual JSON Zod-fail AND the HTML branch's
-        // validation_failed envelope. The two shapes share `error: string`
-        // so the union below is the simplest typing.
-        400: z.union([BadRequestResponseSchema, ValidationFailedResponseSchema]),
+        // 400 covers the manual JSON Zod-fail, the HTML branch's
+        // validation_failed envelope, AND the mint-time scope-taxonomy
+        // rejection (task #1620). The shapes share `error: string` so the
+        // union below is the simplest typing.
+        400: z.union([
+          BadRequestResponseSchema,
+          ValidationFailedResponseSchema,
+          ScopeValidationErrorResponseSchema,
+        ]),
         // 403 carries TWO shapes: the chain's session_required gate AND
         // the HTML branch's csrf_invalid. Zod type provider needs both.
         403: z.union([SessionRequiredResponseSchema, CsrfInvalidResponseSchema]),
@@ -276,6 +296,17 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
             .code(400)
             .send({ error: 'validation_failed' });
         }
+        // Security Audit finding M1 (task #1620) — reject any scope not in
+        // the canonical taxonomy (`read` | `write` | `admin`) BEFORE
+        // minting. Uses the branch's existing `validation_failed` envelope
+        // (in-branch convention) rather than the JSON branch's
+        // VALIDATION_ERROR shape.
+        if (findUnknownScopes(parsed.data.scopes ?? []).length > 0) {
+          return reply
+            .header('Cache-Control', 'no-store')
+            .code(400)
+            .send({ error: 'validation_failed' });
+        }
         const htmlUser = requireUser(request);
         const minted = generateToken();
         const scopesJsonHtml = JSON.stringify(parsed.data.scopes ?? []);
@@ -305,6 +336,18 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           statusCode: 400,
           error: 'Bad Request',
           message: 'Invalid request body',
+        });
+      }
+      // Security Audit finding M1 (task #1620) — reject any requested scope
+      // that is not a member of the canonical taxonomy (`read` | `write` |
+      // `admin`) BEFORE minting. This is mint-time validation ONLY; it does
+      // not gate any other request (that's task #1621's job).
+      const invalidScopes = findUnknownScopes(jsonParsed.data.scopes ?? []);
+      if (invalidScopes.length > 0) {
+        return reply.code(400).send({
+          error: 'VALIDATION_ERROR',
+          message: `Unknown scope(s): ${invalidScopes.join(', ')}`,
+          details: { invalidScopes },
         });
       }
       const user = requireUser(request);

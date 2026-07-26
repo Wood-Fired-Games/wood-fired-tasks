@@ -56,6 +56,32 @@ export class AppendOnlyViolationError extends Error {
 }
 
 /**
+ * InvalidScopeError — thrown when `ApiTokenRepository.insert` is asked to
+ * persist one or more scope strings that are not members of the canonical
+ * PAT scope taxonomy (`read` | `write` | `admin` — see
+ * `src/schemas/pat-scope.schema.ts`, Security Audit finding M1 / task
+ * #1620).
+ *
+ * This is the repository-boundary half of mint-time scope validation; the
+ * `/me/tokens` route performs the same check earlier (so well-formed
+ * clients get a clean 400 without ever reaching the repository), but the
+ * repository re-validates as defense-in-depth for every other caller
+ * (the `tasks db mint-token` CLI, the device-flow HTML mint path).
+ */
+export class InvalidScopeError extends Error {
+  public override readonly name = 'InvalidScopeError';
+  public readonly scopes: string[];
+
+  constructor(scopes: string[]) {
+    super(`Unknown PAT scope(s): ${scopes.join(', ')}`);
+    this.scopes = scopes;
+
+    // Restore prototype chain for instanceof checks across module boundaries.
+    Object.setPrototypeOf(this, InvalidScopeError.prototype);
+  }
+}
+
+/**
  * Detect whether a raw error from better-sqlite3 is an FTS5 syntax error.
  *
  * Pattern: SQLITE_ERROR with a message that contains FTS-specific phrases.

@@ -234,3 +234,18 @@ export interface IApiTokenRepository {
    */
   touchLastUsed(id: number): void;
 }
+
+// Security Audit finding M1 (task #1620) — canonical PAT scope taxonomy,
+// re-exported here so repository consumers (and the four downstream tasks
+// that build on it: #1621, #1622, #1623, #1631, #1635) can import the
+// scope constant set + `satisfies`-style predicate from this barrel
+// alongside the repository interfaces they already depend on. The source
+// of truth lives in `../schemas/pat-scope.schema.js`.
+export {
+  PAT_SCOPES,
+  PatScopeSchema,
+  isPatScope,
+  findUnknownScopes,
+  scopeSatisfies,
+} from '../schemas/pat-scope.schema.js';
+export type { PatScope } from '../schemas/pat-scope.schema.js';
