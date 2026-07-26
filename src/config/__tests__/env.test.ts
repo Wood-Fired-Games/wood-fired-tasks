@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { configSchema, ExitCodes, CliExitCodes, resetConfig, parseApiKeyEntries } from '../env.js';
+import {
+  configSchema,
+  ExitCodes,
+  CliExitCodes,
+  resetConfig,
+  parseApiKeyEntries,
+  loadConfig,
+} from '../env.js';
 // task #731 + C1/H1: DATABASE_PATH now defaults via the unified resolver
 // (env > legacy-adopt ./data/tasks.db > OS app-data). When unset, the schema
 // default delegates to `resolveDbPath()`, so assert against that exact source
@@ -676,6 +683,116 @@ describe('Configuration Validation', () => {
         const errorMessages = result.error.issues.map((i) => i.message).join(' ');
         expect(errorMessages).toMatch(/LEGACY_AUTH_SUNSET_DATE/);
       }
+    });
+  });
+
+  describe('isProductionPosture (task #1611, H1 audit finding)', () => {
+    // Foundation flag for #1612 (swagger gate), #1613 (cookie secure flag),
+    // #1624 (WFT_STRICT_EVIDENCE default). Must be derived from whether
+    // NODE_ENV was EXPLICITLY present in process.env, not from the
+    // post-default parsed value — an absent NODE_ENV must read as hardened
+    // (true), not permissive.
+
+    it('is true when process.env.NODE_ENV is deleted before loadConfig()', () => {
+      delete process.env.NODE_ENV;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.isProductionPosture).toBe(true);
+      }
+    });
+
+    it("is false for explicit NODE_ENV='development'", () => {
+      process.env.NODE_ENV = 'development';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.isProductionPosture).toBe(false);
+      }
+    });
+
+    it("is false for explicit NODE_ENV='test'", () => {
+      process.env.NODE_ENV = 'test';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.isProductionPosture).toBe(false);
+      }
+    });
+
+    it("is true for explicit NODE_ENV='production'", () => {
+      process.env.NODE_ENV = 'production';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.isProductionPosture).toBe(true);
+      }
+    });
+
+    // Reverting the derivation to `NODE_ENV === 'production'` (the post-default
+    // parsed value) would make this case pass with isProductionPosture===false
+    // instead of the required true — proving the derivation reads the raw
+    // process.env presence rather than the defaulted enum value.
+    it('reproduces the H1 bug check: unset NODE_ENV must NOT look like development', () => {
+      delete process.env.NODE_ENV;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        // The post-default NODE_ENV is still 'development' for backward
+        // compatibility with non-security consumers...
+        expect(result.data.NODE_ENV).toBe('development');
+        // ...but the security posture flag must NOT be fooled by that.
+        expect(result.data.isProductionPosture).toBe(true);
+      }
+    });
+  });
+
+  describe('HOST loopback boot fatal when posture is non-production (task #1611)', () => {
+    let exitSpy: ReturnType<typeof vi.spyOn>;
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      // loadConfig() calls process.exit(EX_CONFIG) on validation failure
+      // outside NODE_ENV=test; make it throw instead of killing the worker.
+      exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as never);
+      consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      exitSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("fails with EX_CONFIG for NODE_ENV='development' + HOST='0.0.0.0'", () => {
+      process.env.NODE_ENV = 'development';
+      process.env.HOST = '0.0.0.0';
+
+      expect(() => loadConfig()).toThrow(`process.exit(${ExitCodes.EX_CONFIG})`);
+      expect(exitSpy).toHaveBeenCalledWith(ExitCodes.EX_CONFIG);
+    });
+
+    it("succeeds for NODE_ENV='development' + HOST='127.0.0.1'", () => {
+      process.env.NODE_ENV = 'development';
+      process.env.HOST = '127.0.0.1';
+
+      const config = loadConfig();
+
+      expect(config.NODE_ENV).toBe('development');
+      expect(config.HOST).toBe('127.0.0.1');
+      expect(config.isProductionPosture).toBe(false);
+      expect(exitSpy).not.toHaveBeenCalled();
     });
   });
 });

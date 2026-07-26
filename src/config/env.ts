@@ -49,11 +49,46 @@ export const CliExitCodes = {
 } as const;
 
 /**
+ * task #1611 (H1 audit finding) — true when `host` is a loopback-only bind
+ * target. Used by the `isProductionPosture` × HOST boot fatal below: an
+ * explicitly non-production NODE_ENV (e.g. 'development') bound to a
+ * routable interface is the exact footgun H1 exists to close. Recognizes the
+ * entire 127.0.0.0/8 loopback range (not just 127.0.0.1), plus 'localhost'
+ * and the IPv6 loopback forms.
+ */
+function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  if (h === 'localhost' || h === '::1' || h === '::ffff:127.0.0.1') return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/**
  * Configuration schema with Zod validation
  */
 export const configSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    // task #1611 (H1 audit finding): fail-closed security posture flag.
+    // THREE downstream security controls key off this instead of
+    // re-deriving NODE_ENV themselves — #1612 (swagger gate), #1613 (cookie
+    // secure flag), #1624 (WFT_STRICT_EVIDENCE default).
+    //
+    // Deliberately derived from whether NODE_ENV was EXPLICITLY present in
+    // the real process.env — NOT from `NODE_ENV` above, which is the
+    // POST-DEFAULT parsed value and is therefore always 'development' when
+    // the var was never set (the common containerized case). Deriving from
+    // the post-default value would reproduce the exact bug this task fixes:
+    // an absent NODE_ENV silently looking identical to an explicit
+    // NODE_ENV=development and opening every "only in production" gate.
+    //
+    // Absence must read as "hardened", not "permissive": a container that
+    // forgot to set NODE_ENV still gets production-strength security
+    // controls. Explicit 'development'/'test' are NOT locked down (dev
+    // ergonomics unchanged); explicit 'production' is locked down.
+    isProductionPosture: z.boolean().default(() => {
+      const raw = process.env['NODE_ENV'];
+      return raw === undefined || raw === 'production';
+    }),
     PORT: z.string().min(1).default('3000').transform(Number),
     // task #188: default to loopback so a quick-start `npm run dev` on a public
     // network does not expose the task tracker on every interface. Operators
@@ -272,6 +307,20 @@ export const configSchema = z
   .refine((d) => !d.OIDC_ISSUER_URL || !!d.SESSION_COOKIE_SECRET, {
     message: 'SESSION_COOKIE_SECRET is required when OIDC is enabled',
     path: ['SESSION_COOKIE_SECRET'],
+  })
+  .refine((d) => d.isProductionPosture || isLoopbackHost(d.HOST), {
+    // task #1611 (H1): closes the remaining hole the posture flag alone
+    // cannot — an EXPLICIT non-production NODE_ENV (e.g. 'development')
+    // bound to a routable HOST (e.g. 0.0.0.0) would otherwise silently
+    // expose a non-production server on every interface. Reuses the
+    // existing boot-fatal convention: a failed refine surfaces through
+    // loadConfig()'s safeParse-failure branch, which logs and
+    // process.exit(EX_CONFIG)s (or throws under NODE_ENV=test).
+    message:
+      'HOST must be a loopback address (127.0.0.0/8, localhost, ::1) unless NODE_ENV is ' +
+      "explicitly 'production' — set HOST to a loopback address, or set NODE_ENV=production " +
+      'if this is really a production deployment.',
+    path: ['HOST'],
   });
 
 /**
