@@ -85,6 +85,71 @@ declare module 'fastify' {
 }
 
 /**
+ * Rate-limit bucket key for a request. Prefers the authenticated principal
+ * (PAT token id, else user id) so a single proxy IP does not collapse every
+ * authenticated client into one bucket; falls back to `request.ip`, which
+ * Fastify resolves from X-Forwarded-For ONLY when `trustProxy` is set
+ * (default OFF — see `createServer`'s Fastify options for the spoof-
+ * resistance guarantee).
+ *
+ * Audit H2 (2026-07-26) — exported (rather than left as an inline closure)
+ * so `rate-limit.test.ts` can assert directly on the generated key shape
+ * without needing an end-to-end HTTP round trip. This ONLY reads decorated
+ * request state; it does not perform its own auth — it depends on the
+ * PRINCIPAL-KEYED rate-limit layer being registered with `hook: 'preHandler'`
+ * (see below) so the auth chain's `preHandler` has already run and populated
+ * `tokenId`/`user` by the time this executes.
+ *
+ * This is layer 2 of the two-tier design below; it does NOT replace the
+ * layer 1 IP-keyed, pre-auth limiter — see the comment on `createServer`'s
+ * rate-limit registrations for why both layers are required.
+ */
+export function rateLimitKeyGenerator(req: {
+  tokenId?: number | null;
+  user?: { id: number } | null;
+  ip: string;
+}): string {
+  const tokenId = req.tokenId;
+  if (typeof tokenId === 'number') return `tok:${tokenId}`;
+  const user = req.user;
+  if (user && typeof user.id === 'number') return `usr:${user.id}`;
+  return `ip:${req.ip}`;
+}
+
+/**
+ * Multiplier applied to `config.RATE_LIMIT_MAX` to derive the budget for the
+ * coarse, pre-auth, IP-keyed rate-limit layer (layer 1 below).
+ *
+ * Audit H2 review (2026-07-26) — the first cut of the H2 fix moved the ONLY
+ * rate-limit registration to `hook: 'preHandler'` so its keyGenerator could
+ * read the authenticated principal. That broke a real security property:
+ * the auth chain's preHandler sends its 401 and short-circuits the hook
+ * chain, so a request with NO or INVALID credentials never reaches a
+ * `preHandler`-phase limiter at all — brute-force credential guessing
+ * against an auth-gated route became completely unthrottled.
+ *
+ * The fix is TWO independent layers (see `createServer`), not one:
+ *   - Layer 1 (`onRequest`, IP-keyed): unconditionally runs before auth, so
+ *     it catches unauthenticated/invalid-credential floods regardless of
+ *     whether auth ultimately accepts or rejects the request.
+ *   - Layer 2 (`preHandler`, principal-keyed via `rateLimitKeyGenerator`):
+ *     the actual H2 fix — isolates each authenticated principal's budget
+ *     from a shared proxy IP.
+ *
+ * Layer 1's budget MUST be comfortably larger than layer 2's, or it
+ * re-introduces the H2 collapse for well-behaved traffic: EVERY request
+ * from an IP (successful or not) consumes layer 1's budget, so if it were
+ * sized the same as (or smaller than) the per-principal budget, many
+ * distinct legitimate authenticated clients sharing one reverse-proxy IP
+ * would trip the coarse layer well before any single principal exhausts
+ * its own fair share. A multiplier (rather than a fixed constant) keeps
+ * that headroom proportional however an operator tunes RATE_LIMIT_MAX.
+ * Exported so tests can compute the exact trip point instead of
+ * hard-coding a magic number.
+ */
+export const RATE_LIMIT_IP_MAX_FACTOR = 20;
+
+/**
  * Create Fastify server with Zod type provider and Phase 1 services
  */
 export async function createServer(options?: { dbPath?: string }): Promise<{
@@ -319,42 +384,82 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // probes never consume the budget. Defaults are intentionally high to
     // avoid disrupting the existing test suite, which exercises many
     // server.inject calls from 127.0.0.1; operators tune via env.
+    //
+    // Audit H2 (2026-07-26) — TWO independent layers, registered back to
+    // back, so both properties hold at once (see `RATE_LIMIT_IP_MAX_FACTOR`
+    // above for the full history/rationale):
+    //
+    //   1. IP-KEYED, `onRequest` (coarse, pre-auth): preserves brute-force
+    //      defence — `onRequest` unconditionally completes before the auth
+    //      chain's `preHandler` can reject (and short-circuit) a request, so
+    //      repeated invalid-credential/unauthenticated traffic from one
+    //      source IP is still throttled regardless of auth outcome.
+    //   2. PRINCIPAL-KEYED, `preHandler` (fine-grained, post-auth): the
+    //      actual H2 fix — `rateLimitKeyGenerator` reads the decorated
+    //      `tokenId`/`user` so each authenticated principal gets an
+    //      independent budget instead of collapsing into the shared proxy
+    //      IP bucket.
+    //
+    // @fastify/rate-limit supports being registered more than once on the
+    // same instance: each registration adds its OWN `onRoute` listener with
+    // its own store/closure, and each listener injects its handler into a
+    // DIFFERENT per-route hook array (`routeOptions.onRequest` vs
+    // `routeOptions.preHandler`) — see @fastify/rate-limit/index.js
+    // `addRouteRateHook`. No collisions: the internal `rateLimitRan`
+    // decorator is a fresh `Symbol()` per registration, and the
+    // `rateLimit`/`createRateLimit` instance decorators are guarded by
+    // `hasDecorator` so the second registration's redundant decorate calls
+    // are harmless no-ops.
+    const rateLimitAllowList = (req: { url: string }) =>
+      req.url === '/health' || req.url.startsWith('/health/');
+    // The error returned here is thrown by @fastify/rate-limit; the project's
+    // custom errorHandler reads `statusCode` and `code` to shape the JSON
+    // response. Shared by BOTH layers so { error: 'TOO_MANY_REQUESTS', ... }
+    // is identical regardless of which layer throttled the request.
+    const rateLimitErrorResponseBuilder = (
+      _req: unknown,
+      ctx: { statusCode: number; after: string },
+    ) => {
+      const err = new Error(`Rate limit exceeded, retry in ${ctx.after}`) as Error & {
+        statusCode?: number;
+        code?: string;
+      };
+      err.statusCode = ctx.statusCode;
+      err.code = 'TOO_MANY_REQUESTS';
+      return err;
+    };
+
+    // Layer 1 — coarse, IP-keyed, pre-auth flood/brute-force defence.
+    // `keyGenerator` is omitted: @fastify/rate-limit's own default
+    // (`(req) => req.ip`) is exactly what this layer wants, and staying
+    // unauthenticated-only here keeps it trivially independent of the auth
+    // chain (it must run correctly even when auth never gets to execute).
     await server.register(rateLimit, {
-      // Issue #75 — global budget now sourced from the validated config
-      // (src/config/env.ts), not raw process.env. Defaults reproduce the
-      // prior effective behavior exactly: 1000 requests / 1 minute.
+      max: config.RATE_LIMIT_MAX * RATE_LIMIT_IP_MAX_FACTOR,
+      timeWindow: config.RATE_LIMIT_TIME_WINDOW,
+      allowList: rateLimitAllowList,
+      hook: 'onRequest',
+      errorResponseBuilder: rateLimitErrorResponseBuilder,
+    });
+
+    // Layer 2 — fine-grained, principal-keyed (Issue #75 / Audit H2 fix).
+    // @fastify/rate-limit does NOT add a plain instance-level hook; it
+    // registers an `onRoute` listener that injects its per-request handler
+    // into THAT route's own `routeOptions[hook]` array. Route-level hook
+    // arrays run AFTER the scope's instance-level hooks (e.g. the auth
+    // chain's `preHandler` registered inside the `/api/v1`, `/health/
+    // detailed`, and production-swagger scopes) for the SAME phase — so
+    // pinning `hook: 'preHandler'` here is sufficient to guarantee the auth
+    // chain has already decorated `request.tokenId` / `request.user` by the
+    // time `rateLimitKeyGenerator` runs, with NO registration-order change
+    // required relative to those auth scopes.
+    await server.register(rateLimit, {
       max: config.RATE_LIMIT_MAX,
       timeWindow: config.RATE_LIMIT_TIME_WINDOW,
-      allowList: (req) => req.url === '/health' || req.url.startsWith('/health/'),
-      // Issue #75 — proxy-aware keying. Prefer the authenticated principal
-      // (PAT token id, else user id) so a single proxy IP does not collapse
-      // every authenticated client into one bucket; fall back to
-      // `request.ip`, which Fastify resolves from X-Forwarded-For ONLY when
-      // `trustProxy` is set (default OFF). The KEY GUARANTEE: with trustProxy
-      // OFF a spoofed X-Forwarded-For cannot change `request.ip`, so it
-      // cannot move the bucket. The rate-limit plugin is registered above the
-      // auth scope, so `request.tokenId` / `request.user` may be undefined on
-      // routes outside that scope — guard both.
-      keyGenerator: (req) => {
-        const tokenId = req.tokenId;
-        if (typeof tokenId === 'number') return `tok:${tokenId}`;
-        const user = req.user;
-        if (user && typeof user.id === 'number') return `usr:${user.id}`;
-        return `ip:${req.ip}`;
-      },
-      // The error returned here is thrown by @fastify/rate-limit; the project's
-      // custom errorHandler reads `statusCode` and `code` to shape the JSON
-      // response. We attach both so the response surfaces as
-      // { error: 'TOO_MANY_REQUESTS', message: ... } with HTTP 429.
-      errorResponseBuilder: (_req, ctx) => {
-        const err = new Error(`Rate limit exceeded, retry in ${ctx.after}`) as Error & {
-          statusCode?: number;
-          code?: string;
-        };
-        err.statusCode = ctx.statusCode;
-        err.code = 'TOO_MANY_REQUESTS';
-        return err;
-      },
+      allowList: rateLimitAllowList,
+      hook: 'preHandler',
+      keyGenerator: rateLimitKeyGenerator,
+      errorResponseBuilder: rateLimitErrorResponseBuilder,
     });
 
     // ─── Phase 29 Plan 04 ─── cookie → secure-session → formbody (top level)
