@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-26T16:21:53.780Z",
+    "generated_at": "2026-07-26T16:54:46.479Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -35,8 +35,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 8000,
-      "actual_lines": 285,
-      "sha256": "5e077a76e7c0a2c8f966591547849fbd330fec05cf2d1cc3e87b17f49ed4ac36",
+      "actual_lines": 308,
+      "sha256": "9a5ede25f0edb0af5ccaab75b48f8f19fac4700104352a5415d601e5fbe1afb9",
       "actual_owner": "Repository maintainers"
     },
     {

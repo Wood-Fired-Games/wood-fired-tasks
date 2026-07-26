@@ -38,6 +38,12 @@
  *      docs/ONBOARDING_SMOKE.md was listed twice in the "Deeper docs" table
  *      with two different one-line descriptions. See
  *      `findDuplicateAgentsTableRows`.
+ *  11. package.json's `overrides` object key set differs from the set of
+ *      override keys documented in docs/AGENT_CONTEXT.md §13 (Dependency
+ *      overrides), in either direction. Root-cause guard for task #1616: an
+ *      override pin (e.g. for a fixable HIGH audit advisory) added without a
+ *      corresponding GHSA-cited doc row, or a stale doc row left behind after
+ *      an override was removed. See `checkDependencyOverridesConsistency`.
  *
  * This script reads only files inside the repository (.md sources, the
  * committed .agent-context.json, and the in-process manifest.ts source).
@@ -498,6 +504,97 @@ export function findDuplicateAgentsTableRows(repoRoot: string, file = 'AGENTS.md
   return errors;
 }
 
+// ---------------------------------------------------------------------------
+// Rule 11: dependency-overrides doc/package.json key-set consistency
+// ---------------------------------------------------------------------------
+//
+// Task #1616 added `package.json`'s `overrides` object (transitive-dependency
+// version pins) plus a documentation table in `docs/AGENT_CONTEXT.md` §13
+// listing each key with its GHSA identifier and the package it pins. Nothing
+// enforced that the two stay in sync — the exact same class of drift rules
+// 8-10 exist to catch elsewhere in this file. This rule reads both sources
+// directly (never a hand-maintained count) and fails if the key sets differ
+// in either direction: an override added without a doc row, or a doc row for
+// an override that no longer exists.
+
+const OVERRIDES_DOC = 'docs/AGENT_CONTEXT.md';
+const OVERRIDES_SECTION_HEADING = '## 13. Dependency overrides';
+const OVERRIDES_TABLE_ROW_RE = /^\|\s*`([^`]+)`\s*\|/gm;
+
+/**
+ * Read the `overrides` object's keys straight from `package.json`. Returns an
+ * empty array if the field is absent.
+ */
+export function readPackageJsonOverrideKeys(repoRoot: string): string[] {
+  const pkgPath = resolve(repoRoot, 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+    overrides?: Record<string, unknown>;
+  };
+  return Object.keys(pkg.overrides ?? {});
+}
+
+/**
+ * Extract the first-column (backtick-quoted override key) values from the
+ * `docs/AGENT_CONTEXT.md` §13 table. Parses only the section between the §13
+ * heading and the next `## ` heading so unrelated tables elsewhere in the
+ * doc can't be mistaken for override rows.
+ */
+export function readDocumentedOverrideKeys(repoRoot: string): string[] {
+  const abs = resolve(repoRoot, OVERRIDES_DOC);
+  const text = readFileSync(abs, 'utf8');
+  const startIdx = text.indexOf(OVERRIDES_SECTION_HEADING);
+  if (startIdx === -1) return [];
+  const afterHeading = text.slice(startIdx + OVERRIDES_SECTION_HEADING.length);
+  const nextHeadingIdx = afterHeading.search(/^## /m);
+  const section = nextHeadingIdx === -1 ? afterHeading : afterHeading.slice(0, nextHeadingIdx);
+
+  const keys: string[] = [];
+  OVERRIDES_TABLE_ROW_RE.lastIndex = 0;
+  let match: RegExpExecArray | null = OVERRIDES_TABLE_ROW_RE.exec(section);
+  while (match !== null) {
+    const key = match[1];
+    // Skip the header row ("Override key") — it has no backticks so it
+    // never matches OVERRIDES_TABLE_ROW_RE in the first place; nothing extra
+    // to filter here.
+    if (key) keys.push(key);
+    match = OVERRIDES_TABLE_ROW_RE.exec(section);
+  }
+  return keys;
+}
+
+/**
+ * Rule 11: the set of `package.json` `overrides` keys must exactly equal the
+ * set of override keys documented in `docs/AGENT_CONTEXT.md` §13. Returns one
+ * error string per direction of mismatch (undocumented override, or a
+ * documented row for a key that isn't actually overridden); an empty array
+ * means the two sets agree.
+ */
+export function checkDependencyOverridesConsistency(repoRoot: string): string[] {
+  const errors: string[] = [];
+  const actual = new Set(readPackageJsonOverrideKeys(repoRoot));
+  const documented = new Set(readDocumentedOverrideKeys(repoRoot));
+
+  for (const key of actual) {
+    if (!documented.has(key)) {
+      errors.push(
+        `package.json overrides."${key}" has no matching row in ${OVERRIDES_DOC} §13 ` +
+          '(Dependency overrides). Add a row with its GHSA identifier and the package it pins.',
+      );
+    }
+  }
+  for (const key of documented) {
+    if (!actual.has(key)) {
+      errors.push(
+        `${OVERRIDES_DOC} §13 documents override key "${key}" but package.json's overrides ` +
+          'object no longer has it. Remove the stale row (or restore the override if it was ' +
+          'dropped by mistake).',
+      );
+    }
+  }
+
+  return errors;
+}
+
 function normalizeForCompare(m: AgentContextManifest): Omit<AgentContextManifest, '_generated'> & {
   _generated: Omit<AgentContextManifest['_generated'], 'generated_at'>;
 } {
@@ -577,6 +674,9 @@ export function runChecks(repoRoot: string): CheckResult {
 
   // Rule 10: no duplicate first-column rows in any AGENTS.md markdown table.
   errors.push(...findDuplicateAgentsTableRows(repoRoot));
+
+  // Rule 11: package.json overrides key set matches docs/AGENT_CONTEXT.md §13.
+  errors.push(...checkDependencyOverridesConsistency(repoRoot));
 
   const manifestAbsPath = resolve(repoRoot, MANIFEST_PATH);
   if (!existsSync(manifestAbsPath)) {
