@@ -244,6 +244,7 @@ describe('PAT strategy tryAuth', () => {
           },
           authMethod: 'pat',
           tokenId: 99,
+          scopes: [],
         },
       });
     });
@@ -263,6 +264,41 @@ describe('PAT strategy tryAuth', () => {
       expect(callArg).not.toBe(token);
       // SHA-256 hex is 64 chars.
       expect(callArg).toMatch(/^[0-9a-f]{64}$/);
+    });
+  });
+
+  describe('scopes parsing (task #1621)', () => {
+    it('parses a single-scope row into a PatScope[]', async () => {
+      const req = makeRequest(`Bearer ${makeToken()}`);
+      const deps = makeDeps({
+        findByHash: makeTokenRow({ scopes: '["write"]' }),
+        findById: makeUser(),
+      });
+      const out = await tryAuth(req, deps);
+      expect(out.kind).toBe('match');
+      expect(out.kind === 'match' && out.result.scopes).toEqual(['write']);
+    });
+
+    it('drops unrecognised scope strings rather than throwing', async () => {
+      const req = makeRequest(`Bearer ${makeToken()}`);
+      const deps = makeDeps({
+        findByHash: makeTokenRow({ scopes: '["write","bogus"]' }),
+        findById: makeUser(),
+      });
+      const out = await tryAuth(req, deps);
+      expect(out.kind).toBe('match');
+      expect(out.kind === 'match' && out.result.scopes).toEqual(['write']);
+    });
+
+    it('treats malformed JSON as an empty (legacy full-tier) scope array', async () => {
+      const req = makeRequest(`Bearer ${makeToken()}`);
+      const deps = makeDeps({
+        findByHash: makeTokenRow({ scopes: 'not json' }),
+        findById: makeUser(),
+      });
+      const out = await tryAuth(req, deps);
+      expect(out.kind).toBe('match');
+      expect(out.kind === 'match' && out.result.scopes).toEqual([]);
     });
   });
 

@@ -118,6 +118,7 @@ describe('Session strategy tryAuth (Phase 29 real impl)', () => {
         },
         authMethod: 'session',
         tokenId: null,
+        scopes: null,
       },
     });
     expect(userRepository.findById).toHaveBeenCalledWith(7);

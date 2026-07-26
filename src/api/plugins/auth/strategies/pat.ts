@@ -18,6 +18,7 @@ import type { ApiTokenRepository } from '../../../../repositories/api-token.repo
 import type { UserRepository } from '../../../../repositories/user.repository.js';
 import type { AuthenticatedUser, User } from '../../../../types/identity.js';
 import { hashToken, PAT_PREFIX } from '../../../../services/pat-hash.js';
+import { isPatScope, type PatScope } from '../../../../schemas/pat-scope.schema.js';
 import type { StrategyOutcome } from './types.js';
 
 /** Standard HTTP Bearer scheme prefix (RFC 6750 §2.1). */
@@ -47,6 +48,29 @@ export function toAuthenticatedUser(user: User): AuthenticatedUser {
     isLegacy: user.is_legacy === 1,
     isServiceAccount: user.is_service_account === 1,
   };
+}
+
+/**
+ * Parse the `api_tokens.scopes` JSON-array column into a validated
+ * `PatScope[]` (Security Audit finding M1 — task #1621). Non-array JSON,
+ * unparseable JSON, and unrecognised scope strings are all dropped rather
+ * than thrown — `assertKnownScopes` (repository boundary) already rejects
+ * unknown scopes at write time, so this is defense-in-depth against a
+ * hand-edited DB, not a validation path. An empty result (including the
+ * canonical `'[]'` for tokens minted before the taxonomy existed) is the
+ * explicit legacy "full-tier" case consumed by `grantSatisfiesScope`.
+ */
+function parseScopes(scopesJson: string): PatScope[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(scopesJson);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter((s): s is PatScope => typeof s === 'string' && isPatScope(s));
 }
 
 /**
@@ -128,6 +152,7 @@ export async function tryAuth(request: FastifyRequest, deps: PatDeps): Promise<S
       user: toAuthenticatedUser(user),
       authMethod: 'pat',
       tokenId: row.id,
+      scopes: parseScopes(row.scopes),
     },
   };
 }

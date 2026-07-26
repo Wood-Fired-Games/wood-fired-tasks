@@ -90,6 +90,10 @@ export async function tryAuth(
       user: toAuthenticatedUser(row),
       authMethod: 'session',
       tokenId: null,
+      // Session-authenticated principals carry no PAT scope taxonomy at
+      // all — `null` is the "no PAT scope restriction" grant consumed by
+      // `grantSatisfiesScope` (Security Audit finding M1 — task #1621).
+      scopes: null,
     },
   };
 }

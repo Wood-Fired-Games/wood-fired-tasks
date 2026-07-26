@@ -53,6 +53,7 @@ import type { AuthenticatedUser, AuthResult } from '../../../types/identity.js';
 import { tryAuth as tryPat, type PatDeps } from './strategies/pat.js';
 import { tryAuth as trySession } from './strategies/session.js';
 import { shouldTouchLastUsed } from '../../../services/pat-touch-debounce.js';
+import { grantSatisfiesScope } from '../../../schemas/pat-scope.schema.js';
 
 /**
  * Throws if `preHandler` has not run yet (or if `skipAuth` was set). Use in
@@ -93,6 +94,7 @@ function applyPrincipal(request: FastifyRequest, result: AuthResult, apiKeyLabel
   request.user = result.user;
   request.authMethod = result.authMethod;
   request.tokenId = result.tokenId;
+  request.scopes = result.scopes;
   if (apiKeyLabel !== undefined) {
     request.apiKeyLabel = apiKeyLabel;
   }
@@ -122,6 +124,42 @@ function enforceSessionOnly(request: FastifyRequest, reply: FastifyReply): boole
     return true;
   }
   return false;
+}
+
+/**
+ * Post-auth gate: if the matched route declares `config.requiredScope`
+ * (Security Audit finding M1 — task #1621; route declarations land in
+ * #1622), the authenticated principal's granted scope set must satisfy it.
+ * Returns `true` when the gate fired and the reply has been sent; the
+ * caller MUST stop processing.
+ *
+ * A route with NO `requiredScope` declared (`undefined`, the default) is
+ * unaffected — reachable by any successfully-authenticated principal,
+ * exactly as before this gate existed.
+ *
+ * `request.scopes` was just populated by `applyPrincipal` from the matched
+ * strategy's `AuthResult.scopes`. The `null` (session / no-PAT-restriction)
+ * and `[]` (legacy pre-taxonomy PAT) full-tier special cases live in
+ * `grantSatisfiesScope` (`src/schemas/pat-scope.schema.ts`) — this function
+ * only wires the route-config flag to that shared predicate.
+ *
+ * The 403 body uses the project's standard error envelope
+ * (`{ error, message }`, matching `ErrorResponseSchema`) via a direct
+ * `reply.send`, never a thrown/raw Fastify error.
+ */
+function enforceRequiredScope(request: FastifyRequest, reply: FastifyReply): boolean {
+  const required = request.routeOptions.config.requiredScope;
+  if (required === undefined) {
+    return false;
+  }
+  if (grantSatisfiesScope(request.scopes, required)) {
+    return false;
+  }
+  reply.code(403).send({
+    error: 'insufficient_scope',
+    message: `This endpoint requires the '${required}' scope.`,
+  });
+  return true;
 }
 
 /**
@@ -230,6 +268,10 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
   fastify.decorateRequest('user', null);
   fastify.decorateRequest('authMethod', null);
   fastify.decorateRequest('tokenId', null);
+  // Security Audit finding M1 (task #1621) — resolved PAT scope grant, set
+  // by applyPrincipal after a successful match. See the fastify.d.ts
+  // augmentation for the null/[]/PatScope[] contract.
+  fastify.decorateRequest('scopes', null);
   // MIGR-01 compat: `apiKeyLabel` decoration retained so existing
   // routes/tests (events.ts SSE fingerprinting, auth-logging.test.ts) keep
   // working. Default `undefined` matches the pre-split contract.
@@ -264,6 +306,7 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
         applyPrincipal(request, patOutcome.result);
         scheduleLastUsedTouch(fastify, patOutcome.result.tokenId, request.log);
         if (enforceSessionOnly(request, reply)) return;
+        if (enforceRequiredScope(request, reply)) return;
         return;
       }
 
@@ -283,6 +326,7 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
       if (sessionOutcome.kind === 'match') {
         applyPrincipal(request, sessionOutcome.result);
         if (enforceSessionOnly(request, reply)) return;
+        if (enforceRequiredScope(request, reply)) return;
         return;
       }
 

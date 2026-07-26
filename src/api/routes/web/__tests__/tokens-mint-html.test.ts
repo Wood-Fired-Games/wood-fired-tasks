@@ -47,6 +47,7 @@ vi.mock('../../../plugins/auth/strategies/session.js', () => ({
       user,
       authMethod: 'session',
       tokenId: null,
+      scopes: null,
     };
     return { kind: 'match', result };
   },
