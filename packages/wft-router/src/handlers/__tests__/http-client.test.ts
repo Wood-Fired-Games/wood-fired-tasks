@@ -5,6 +5,12 @@
  * HttpTimeoutError, network reject → HttpNetworkError, and external-signal
  * abort. The wrapper exposes NO TLS-insecure option — there is nothing to
  * test for an escape hatch because it does not exist.
+ *
+ * Also covers redirect posture (audit finding H4, part 1/2 — task #1618):
+ * `redirect: 'manual'` is passed to fetch, and a 3xx round-trips with its
+ * `Location` header surfaced rather than being followed. See
+ * `packages/wft-router/__tests__/fix-14-redirect-manual.test.ts` for the
+ * AC-mandated pair of tests covering this behaviour end to end.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -20,6 +26,31 @@ describe('httpRequest', () => {
 
     expect(res.status).toBe(500);
     expect(res.bodyText).toBe('boom');
+    expect(res.location).toBeUndefined();
+  });
+
+  it('passes redirect: "manual" to fetchImpl so 3xx is never followed transparently', async () => {
+    let seen: RequestInit | undefined;
+    const fetchImpl = ((_url: string, init?: RequestInit) => {
+      seen = init;
+      return Promise.resolve(new Response('ok', { status: 200 }));
+    }) as typeof fetch;
+
+    await httpRequest({ method: 'GET', url: 'https://x.example/y', fetchImpl });
+
+    expect(seen?.redirect).toBe('manual');
+  });
+
+  it('surfaces a 302 as status 302 with the Location header populated', async () => {
+    const fetchImpl = (() =>
+      Promise.resolve(
+        new Response('', { status: 302, headers: { Location: 'https://x.example/moved' } }),
+      )) as typeof fetch;
+
+    const res = await httpRequest({ method: 'GET', url: 'https://x.example/y', fetchImpl });
+
+    expect(res.status).toBe(302);
+    expect(res.location).toBe('https://x.example/moved');
   });
 
   it('passes method, headers, and body through to fetch', async () => {
