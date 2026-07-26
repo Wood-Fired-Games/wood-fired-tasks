@@ -5,6 +5,14 @@ import type { App } from '../../index.js';
 
 // Configure API keys for tests
 process.env.API_KEYS = 'test-key';
+// task #1612: the Swagger UI opt-in is now mandatory in EVERY environment
+// (see src/api/server.ts) — previously non-production auto-exposed the UI,
+// which is exactly the fail-open behavior #1612 closes. Set both explicitly
+// so this suite's unauthenticated /docs assertions keep testing the intended
+// "explicit non-production opt-in" path rather than depending on vitest's
+// implicit NODE_ENV=test default.
+process.env.NODE_ENV = 'test';
+process.env.ENABLE_SWAGGER_IN_PRODUCTION = 'true';
 
 describe('OpenAPI Documentation', () => {
   let server: FastifyInstance;

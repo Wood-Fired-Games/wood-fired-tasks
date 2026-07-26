@@ -50,11 +50,15 @@ export async function registerSwaggerSpec(fastify: FastifyInstance): Promise<voi
  * Register the interactive Swagger UI plugin at `/docs`.
  *
  * Splitting this from spec registration lets `createServer` gate UI exposure
- * (production-only opt-in + auth) without affecting the in-process OpenAPI
- * document that tests rely on for schema introspection.
+ * (mandatory opt-in in every environment, + auth in production posture)
+ * without affecting the in-process OpenAPI document that tests rely on for
+ * schema introspection.
  *
- * Task #185: in production, this is only called inside an auth-protected
- * scope (or skipped entirely when ENABLE_SWAGGER_IN_PRODUCTION!=true).
+ * Task #185 / task #1612: `createServer` only calls this when
+ * `ENABLE_SWAGGER_IN_PRODUCTION=true` is explicitly set (mandatory in EVERY
+ * environment, not only production — see task #1611's `isProductionPosture`),
+ * and wraps it in an auth-protected scope whenever posture is production
+ * (explicit `NODE_ENV=production`, or `NODE_ENV` absent/unset).
  */
 export async function registerSwaggerUI(fastify: FastifyInstance): Promise<void> {
   await fastify.register(fastifySwaggerUI, {

@@ -124,9 +124,10 @@ than a verb method, so it is *not* part of the 59 verb count; the table lists
 it for completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
-`/docs` when `npm run dev` runs (production opt-in via
-`ENABLE_SWAGGER_IN_PRODUCTION=true`); spec collector is
-`src/api/plugins/swagger.ts`. No static OpenAPI snapshot is committed today.
+`/docs` only with an explicit opt-in (`ENABLE_SWAGGER_IN_PRODUCTION=true`) —
+mandatory in every environment since task #1612, including `npm run dev`;
+spec collector is `src/api/plugins/swagger.ts`. No static OpenAPI snapshot is
+committed today.
 
 ## MCP tools
 
@@ -388,5 +389,5 @@ the model tools, and 1 is `wait_for_unblock`).
 | [`docs/CLI.md`](CLI.md) | Full CLI reference (every flag, every command). |
 | [`docs/WORKFLOWS.md`](WORKFLOWS.md) | Canonical build/test/lint/run recipes. |
 | [`docs/SLACK.md`](SLACK.md) | Slack notifier behaviour and signing-secret setup. |
-| OpenAPI | Live at `/docs` (Swagger UI) when `npm run dev` runs; spec collector in `src/api/plugins/swagger.ts`. No committed snapshot. |
+| OpenAPI | Live at `/docs` (Swagger UI) with explicit `ENABLE_SWAGGER_IN_PRODUCTION=true` (mandatory in every environment since task #1612, including `npm run dev`); spec collector in `src/api/plugins/swagger.ts`. No committed snapshot. |
 | Tests | `src/api/__tests__/`, `src/mcp/__tests__/`, `src/cli/__tests__/`, `src/services/__tests__/`. |

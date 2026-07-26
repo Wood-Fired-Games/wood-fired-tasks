@@ -1415,7 +1415,7 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 | `REQUEST_TIMEOUT` | no | `60000` (ms) | Fastify `requestTimeout`. |
 | `KEEP_ALIVE_TIMEOUT` | no | `10000` (ms) | Fastify `keepAliveTimeout`. |
 | `WAL_CHECKPOINT_INTERVAL_MS` | no | `900000` (15 min) | Interval for the periodic SQLite WAL checkpoint job. |
-| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag to expose `/docs` and `/docs/json` when `NODE_ENV=production`. Gated by the auth plugin when enabled (task #185). |
+| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag required to expose `/docs` and `/docs/json` in **every** environment, including `npm run dev` (task #1612 — an absent `NODE_ENV` is treated as production-strength posture, not as development). In production posture, gated by the auth plugin when enabled; in explicit `development`/`test`, no auth required (task #185). |
 | `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-credential (PAT) cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
 | `SSE_MAX_CONNECTIONS_PER_IP` | no | `8` | Per-IP cap on concurrent SSE connections. |
 | `SSE_MAX_CONNECTIONS` | no | `200` | Global cap on concurrent SSE connections. |

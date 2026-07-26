@@ -351,17 +351,32 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // register it conditionally below.
     await registerSwaggerSpec(server);
 
-    // task #185: gate Swagger UI / `/docs/json` in production.
-    // - Non-production (development, test): expose UI without auth — keeps the
-    //   current developer workflow and existing openapi.test.ts assertions.
-    // - Production + ENABLE_SWAGGER_IN_PRODUCTION=true: expose UI but require
-    //   X-API-Key (same canonical auth plugin used for /api/v1).
-    // - Production + default config: do NOT register the UI plugin at all.
-    //   `/docs` and `/docs/json` return 404.
-    const exposeSwaggerUI =
-      config.NODE_ENV !== 'production' || config.ENABLE_SWAGGER_IN_PRODUCTION === true;
+    // task #1612 (H1/H3 audit finding): gate Swagger UI / `/docs/json` behind
+    // an EXPLICIT opt-in in EVERY environment, not only production.
+    //
+    // `@fastify/swagger-ui` transitively registers `@fastify/static`, which
+    // carries an unfixed HIGH advisory — so this isn't only about hiding
+    // `/docs` from unauthenticated callers, it's about never LOADING the
+    // vulnerable plugin in a hardened posture at all. Gating on
+    // `config.NODE_ENV !== 'production'` (the pre-#1612 behavior) meant an
+    // absent NODE_ENV — the common containerized "operator forgot to set it"
+    // case — silently fell into the permissive non-production branch and
+    // loaded `@fastify/static` unauthenticated. That is exactly the bug #1611
+    // introduced `isProductionPosture` to close: absence must read as
+    // "hardened", not "permissive".
+    //
+    // - Opt-in unset (default), ANY environment: do NOT register the UI
+    //   plugin (or its transitive `@fastify/static`) at all. `/docs` and
+    //   `/docs/json` return 404.
+    // - Opt-in set + isProductionPosture (explicit 'production', OR NODE_ENV
+    //   absent/unset): expose UI but require a valid credential (same
+    //   canonical auth plugin used for /api/v1).
+    // - Opt-in set + explicit NODE_ENV=development|test (isProductionPosture
+    //   false): expose UI without auth — unchanged dev ergonomics, now
+    //   requires the same explicit opt-in as every other environment.
+    const exposeSwaggerUI = config.ENABLE_SWAGGER_IN_PRODUCTION === true;
     if (exposeSwaggerUI) {
-      if (config.NODE_ENV === 'production') {
+      if (config.isProductionPosture) {
         await server.register(async (scope) => {
           await scope.register(authPlugin);
           await registerSwaggerUI(scope);
