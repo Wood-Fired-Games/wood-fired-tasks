@@ -169,13 +169,17 @@ describe('assertEndpointAllowed', () => {
     expect(assertEndpointAllowed('http://127.5.5.5/in').allowed).toBe(true);
   });
 
-  it('allows http:// to RFC1918 / link-local / ULA private hosts', () => {
+  it('allows http:// to RFC1918 / ULA private hosts over plaintext (non-regression)', () => {
+    // This is the load-bearing non-regression assertion for task #1633: RFC1918
+    // and loopback remain a plaintext-http trust boundary even after link-local
+    // is carved out below. Do not weaken or remove this case.
     expect(assertEndpointAllowed('http://10.1.2.3/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://172.16.0.1/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://172.31.255.255/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://192.168.1.1/in').allowed).toBe(true);
-    expect(assertEndpointAllowed('http://169.254.1.1/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://[fd00::1]/in').allowed).toBe(true);
+    expect(assertEndpointAllowed('http://127.0.0.1:9000/in').allowed).toBe(true);
+    expect(assertEndpointAllowed('http://localhost/in').allowed).toBe(true);
   });
 
   it('refuses http:// to routable hosts (credential-exposure guard)', () => {

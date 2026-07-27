@@ -56,11 +56,19 @@
  *     no `--insecure` equivalent in v1.
  *   - `http://` → allowed ONLY when the literal host is loopback
  *     (`127.0.0.1`, `::1`, `localhost`) or a private / non-routable address
- *     (RFC1918 `10/8`, `172.16/12`, `192.168/16`; link-local `169.254/16`;
- *     IPv6 ULA `fc00::/7`). Otherwise the dispatch is REFUSED: a plaintext
- *     POST (often carrying an `authorization` header) to a routable host is
- *     credential exposure, so we mark the row PERMANENTLY_FAILED and return a
- *     non-retryable failure WITHOUT sending anything.
+ *     (RFC1918 `10/8`, `172.16/12`, `192.168/16`; IPv6 ULA `fc00::/7`).
+ *     Otherwise the dispatch is REFUSED: a plaintext POST (often carrying an
+ *     `authorization` header) to a routable host is credential exposure, so
+ *     we mark the row PERMANENTLY_FAILED and return a non-retryable failure
+ *     WITHOUT sending anything.
+ *   - link-local (`169.254.0.0/16`, e.g. the cloud instance-metadata endpoint
+ *     `169.254.169.254`) is REFUSED BY DEFAULT (audit finding H4 rider, task
+ *     #1633): unlike RFC1918, link-local is not a trust boundary — it is
+ *     reachable from inside any cloud VM/container, so a plaintext POST to it
+ *     is the textbook SSRF-to-credential-exposure path. A deployment that
+ *     genuinely needs link-local delivery must opt in explicitly via the
+ *     {@link LINK_LOCAL_OPT_IN_ENV} environment variable — see
+ *     {@link isLinkLocalOptInEnabled}.
  *
  * Field mapping (rendered `with:` → request):
  *   - `url`     → the absolute target URL. REQUIRED and must parse. A missing
@@ -138,9 +146,16 @@ function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * True when the literal host is an RFC1918 / link-local private IPv4 address
- * or an IPv6 unique-local address (ULA, `fc00::/7`). DNS is NOT resolved —
- * matching is purely on the literal in the URL, per the task contract.
+ * True when the literal host is an RFC1918 private IPv4 address or an IPv6
+ * unique-local address (ULA, `fc00::/7`). DNS is NOT resolved — matching is
+ * purely on the literal in the URL, per the task contract.
+ *
+ * Link-local (`169.254.0.0/16`) is deliberately NOT classified as private
+ * here — see {@link isLinkLocalHost} and the module-header note on task
+ * #1633. RFC1918 is an operator-drawn trust boundary (a network operator
+ * chose to route that block internally); link-local is not — it is a
+ * self-assigned, always-present address any host on the local link (or,
+ * critically, the cloud instance-metadata responder) answers on.
  */
 function isPrivateHost(host: string): boolean {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
@@ -159,9 +174,6 @@ function isPrivateHost(host: string): boolean {
     if (a === 192 && b === 168) {
       return true; // 192.168.0.0/16
     }
-    if (a === 169 && b === 254) {
-      return true; // 169.254.0.0/16 link-local
-    }
     return false;
   }
   // IPv6 ULA: fc00::/7 → first byte 0xFC or 0xFD (prefixes "fc"/"fd").
@@ -172,12 +184,58 @@ function isPrivateHost(host: string): boolean {
 }
 
 /**
+ * True when the literal host is an IPv4 link-local address (`169.254.0.0/16`
+ * — this is the block hosting the cloud instance-metadata endpoint at
+ * `169.254.169.254/latest/meta-data/`). Separated out from {@link
+ * isPrivateHost} (task #1633) so it can be refused by default and only
+ * allowed under the explicit {@link isLinkLocalOptInEnabled} opt-in.
+ */
+function isLinkLocalHost(host: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!m) {
+    return false;
+  }
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if ([a, b, Number(m[3]), Number(m[4])].some((o) => o > 255)) {
+    return false;
+  }
+  return a === 169 && b === 254; // 169.254.0.0/16
+}
+
+/**
+ * Name of the environment variable that opts a deployment back in to
+ * plaintext `http://` dispatch against link-local (`169.254.0.0/16`)
+ * targets. Default OFF — set to `1` or `true` (case-insensitive) to enable.
+ *
+ * This is intentionally narrower than {@link isPrivateHost}'s RFC1918
+ * allowance: RFC1918 stays allowed unconditionally because it is an
+ * operator-chosen trust boundary, whereas link-local (task #1633, audit
+ * finding H4 rider) fronts the cloud instance-metadata endpoint on most
+ * providers and must be an explicit, deliberate operator choice.
+ */
+export const LINK_LOCAL_OPT_IN_ENV = 'WFT_ROUTER_ALLOW_LINK_LOCAL';
+
+/** True when {@link LINK_LOCAL_OPT_IN_ENV} is set to a truthy value (`1` / `true`, case-insensitive). */
+function isLinkLocalOptInEnabled(): boolean {
+  const raw = process.env[LINK_LOCAL_OPT_IN_ENV];
+  if (raw === undefined) {
+    return false;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true';
+}
+
+/**
  * Decide whether a target URL may be dispatched to under the v1 TLS posture.
  *
  *   - `https://` → ALWAYS allowed (cert validation is enforced downstream by
  *     Node's default `rejectUnauthorized: true`; never disabled here).
  *   - `http://`  → allowed ONLY for loopback / private (non-routable) hosts;
  *     refused for any routable host (plaintext credential-exposure guard).
+ *     Link-local (`169.254.0.0/16`) is refused UNLESS the
+ *     {@link LINK_LOCAL_OPT_IN_ENV} environment variable is explicitly set
+ *     (task #1633 — see {@link isLinkLocalOptInEnabled}).
  *   - anything else (unparseable, non-http(s) scheme) → refused.
  *
  * `opts.viaRedirect` (task #1619): when true, EVERY `http://` target is
@@ -216,6 +274,9 @@ export function assertEndpointAllowed(
     }
     const host = normalizeHost(parsed.hostname);
     if (isLoopbackHost(host) || isPrivateHost(host)) {
+      return { allowed: true };
+    }
+    if (isLinkLocalHost(host) && isLinkLocalOptInEnabled()) {
       return { allowed: true };
     }
     return {
