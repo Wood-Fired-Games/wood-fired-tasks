@@ -1,7 +1,32 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { initTestDatabase } from '../database.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Partial mock of node:fs so the ':memory:' test below can assert
+// chmodSync was never invoked. vitest's ESM transform hoists this above
+// the imports that follow, and it wraps (rather than replaces) chmodSync —
+// every other test in this file gets the real filesystem behavior,
+// unmodified, just observed through a vi.fn() spy.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    chmodSync: vi.fn(actual.chmodSync),
+  };
+});
+
+import { initTestDatabase, initDatabase } from '../database.js';
 import { runMigrations } from '../migrate.js';
 import type Database from '../driver.js';
+import {
+  chmodSync as chmodSyncSpy,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  statSync,
+  existsSync,
+} from 'node:fs';
+import type { Mock } from 'vitest';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 describe('Database Initialization', () => {
   let db: Database.Database;
@@ -200,5 +225,93 @@ describe('Database Initialization', () => {
       .prepare('SELECT COUNT(*) as count FROM tasks WHERE project_id = ?')
       .get(projectId) as { count: number };
     expect(tasks.count).toBe(0);
+  });
+});
+
+describe('Database file permissions (audit M4)', () => {
+  // POSIX-only: chmod mode bits don't map cleanly to Windows ACLs, matching
+  // the guard in database.ts and the precedent in doctor.test.ts.
+  const POSIX = process.platform !== 'win32';
+  let tmpDir: string;
+  let openDbs: Database.Database[];
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'wft-db-perms-'));
+    openDbs = [];
+  });
+
+  afterEach(() => {
+    for (const db of openDbs) {
+      try {
+        db.close();
+      } catch {
+        // already closed by the test
+      }
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it.skipIf(!POSIX)('chmods a file-backed database to 0o600, independent of ambient umask', () => {
+    const dbPath = join(tmpDir, 'perms.db');
+
+    // Pre-create the file and force it to a deliberately loose mode first.
+    // writeFileSync's `mode` option and the OS's default creation mode are
+    // both subject to the ambient umask, so without this explicit
+    // chmodSync the assertion below could pass vacuously on a host with an
+    // unusually strict umask. Forcing 0o644 here guarantees the only way
+    // the file ends up group/other-inaccessible is initDatabase's own
+    // chmod.
+    writeFileSync(dbPath, '');
+    chmodSyncSpy(dbPath, 0o644);
+    expect(statSync(dbPath).mode & 0o077).not.toBe(0);
+
+    const db = initDatabase(dbPath);
+    openDbs.push(db);
+
+    const mode = statSync(dbPath).mode;
+    expect(mode & 0o077).toBe(0);
+    expect(mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(!POSIX)('tightens the -wal sidecar to 0o600 after a write transaction', () => {
+    const dbPath = join(tmpDir, 'wal.db');
+    const walPath = `${dbPath}-wal`;
+    const shmPath = `${dbPath}-shm`;
+
+    const db = initDatabase(dbPath);
+    openDbs.push(db);
+
+    // -wal/-shm don't exist until the WAL pragma has been set AND a write
+    // has actually happened — SQLite creates them lazily. Confirm that
+    // precondition so the write-transaction step below is doing real work.
+    expect(existsSync(walPath)).toBe(false);
+
+    db.exec('CREATE TABLE perm_check (id INTEGER PRIMARY KEY)');
+
+    expect(existsSync(walPath)).toBe(true);
+    const walMode = statSync(walPath).mode;
+    expect(walMode & 0o077).toBe(0);
+    expect(walMode & 0o777).toBe(0o600);
+
+    // -shm is created alongside -wal; assert it's tightened too and that
+    // handling it never throws even though it didn't exist at open time.
+    if (existsSync(shmPath)) {
+      const shmMode = statSync(shmPath).mode;
+      expect(shmMode & 0o077).toBe(0);
+    }
+  });
+
+  it('opening :memory: does not throw and performs no chmod', () => {
+    const chmodMock = chmodSyncSpy as unknown as Mock;
+    chmodMock.mockClear();
+
+    let db: Database.Database | undefined;
+    expect(() => {
+      db = initDatabase(':memory:');
+    }).not.toThrow();
+
+    expect(chmodMock).not.toHaveBeenCalled();
+
+    db?.close();
   });
 });
