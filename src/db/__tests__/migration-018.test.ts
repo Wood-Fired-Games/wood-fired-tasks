@@ -133,9 +133,18 @@ describe('migration 018: audit_events append-only table', () => {
     const beforeIndexes = indexNames();
     expect(beforeCols.length).toBeGreaterThan(0);
 
+    // 019 layers the hash-chain columns onto THIS table, so 018 can only be
+    // round-tripped underneath it: unwind 019 first, then re-apply it after
+    // 018 has rebuilt the table. Round-tripping 018 alone would compare the
+    // 018-era column set against the 018+019 one and fail.
     const { up, down } = await import('../migrations/018-audit-events.js');
+    const { up: up019, down: down019 } = await import(
+      '../migrations/019-audit-events-hash-chain.js'
+    );
+    await down019(db);
     await down(db);
     await up(db);
+    await up019(db);
 
     expect(auditColumnDefs()).toEqual(beforeCols);
     expect(indexNames()).toEqual(beforeIndexes);

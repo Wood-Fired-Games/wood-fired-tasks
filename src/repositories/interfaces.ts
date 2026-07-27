@@ -285,11 +285,25 @@ export interface AuditEventRow {
   resource_id: string | null;
   request_id: string | null;
   metadata: Record<string, unknown> | null;
+  /**
+   * Hash-chain link columns (migration 019). `prev_hash` is the previous
+   * row's `row_hash` (or the 64-zero genesis constant for the first row);
+   * `row_hash` is the SHA-256 over this row's content plus `prev_hash`. Both
+   * are NULL only for a row inserted around the repository, which
+   * {@link IAuditEventRepository.verifyChain} reports as a break.
+   */
+  prev_hash: string | null;
+  row_hash: string | null;
 }
 
 export interface IAuditEventRepository {
   /** Append one immutable audit-event row. Returns the new row id. */
   append(record: AuditEventRecord): number;
+  /**
+   * Walk the hash chain in `id` order. Returns the id of the first row whose
+   * link or content hash does not verify, or `null` when the trail is intact.
+   */
+  verifyChain(): number | null;
   /** Bounded, newest-first (timestamp DESC, id DESC) trail for one actor. */
   findByActor(actorId: string, limit: number): AuditEventRow[];
   /** Bounded, newest-first (timestamp DESC, id DESC) trail for one resource. */
