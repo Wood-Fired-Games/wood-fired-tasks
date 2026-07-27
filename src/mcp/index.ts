@@ -65,6 +65,7 @@ async function main() {
     actorUserId,
     path: resolutionPath,
     scopes,
+    tokenId,
   } = resolveActorUserIdWithPath({
     apiKey: process.env['WFT_API_KEY'],
     apiTokenRepo: app.apiTokenRepository,
@@ -98,7 +99,18 @@ async function main() {
     app.commentService,
     app.db,
     // #1631: `scopes` is what makes the per-tool gate real in production.
-    { actorUserId, scopes, userRepository: app.userRepository },
+    // #1632: `tokenId` / `resolutionPath` / `auditEventRepository` are what
+    // make this process an audit-trail PRODUCER. `app.auditEventRepository` is
+    // the SAME instance the REST hook writes through — the exclusive owner of
+    // the `audit_events` table's lifecycle.
+    {
+      actorUserId,
+      scopes,
+      tokenId: tokenId === null ? null : String(tokenId),
+      resolutionPath,
+      auditEventRepository: app.auditEventRepository,
+      userRepository: app.userRepository,
+    },
     // Wave 4.1 (#318): topology classifier behind the `topology_check` tool.
     app.topologyService,
     // Configurable Task Models Task 11 (#920) / #931: the three services

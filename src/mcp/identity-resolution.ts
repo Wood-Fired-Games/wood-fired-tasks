@@ -155,6 +155,20 @@ export interface ResolvedMcpActor {
   actorUserId: number;
   path: ResolutionPath;
   scopes: PatScope[] | null;
+  /**
+   * `api_tokens.id` of the PAT that authenticated this process (Security Audit
+   * finding M5 — task #1632), or `null` for every other credential class.
+   *
+   * Threaded into `McpServerContext.tokenId` so the MCP audit producer can
+   * fill `audit_events.token_id` with the SAME value the REST chain writes
+   * from `request.tokenId` — without it, a token-scoped audit query would see
+   * only the REST half of a principal's activity.
+   *
+   * Non-null on the `'pat'` path ONLY: on a `pat-*-fallback` the token was
+   * REJECTED and the resolved actor is mcp-bot, not the token's owner, so
+   * attributing rows to that token id would be a lie.
+   */
+  tokenId: number | null;
 }
 
 /**
@@ -256,7 +270,13 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): Reso
       // path resolves a DIFFERENT principal (legacy user or mcp-bot) whose
       // authority is not described by this token's scopes, so they return
       // null (= no PAT restriction).
-      return { actorUserId: row.user_id, path: 'pat', scopes: parseGrantedScopes(row.scopes) };
+      return {
+        actorUserId: row.user_id,
+        path: 'pat',
+        scopes: parseGrantedScopes(row.scopes),
+        // #1632: the ONLY path carrying a token id — see ResolvedMcpActor.
+        tokenId: row.id,
+      };
     }
 
     // Rejected. Either throw (default — WR-02 fail-closed) or fall back
@@ -281,8 +301,10 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): Reso
       actorUserId: resolveMcpBotOrThrow(userRepo),
       path: fallbackPath,
       // The PAT was REJECTED — the resolved actor is mcp-bot, not the
-      // token's owner, so the token's scopes must NOT be honoured here.
+      // token's owner, so neither the token's scopes nor its id may be
+      // honoured here (#1632).
       scopes: null,
+      tokenId: null,
     };
   }
 
@@ -318,13 +340,14 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): Reso
       if (user !== null && user.disabled_at === null) {
         // Legacy API_KEYS entries carry no scope metadata at all — null (=
         // full tier), mirroring how the REST chain treats session auth.
-        return { actorUserId: user.id, path: 'legacy', scopes: null };
+        return { actorUserId: user.id, path: 'legacy', scopes: null, tokenId: null };
       }
     }
     return {
       actorUserId: resolveMcpBotOrThrow(userRepo),
       path: 'legacy-unmatched-fallback',
       scopes: null,
+      tokenId: null,
     };
   }
 
@@ -333,6 +356,7 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): Reso
     actorUserId: resolveMcpBotOrThrow(userRepo),
     path: 'service-account-fallback',
     scopes: null,
+    tokenId: null,
   };
 }
 

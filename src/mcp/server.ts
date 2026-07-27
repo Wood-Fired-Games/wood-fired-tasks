@@ -19,6 +19,8 @@ import type { ModelCatalogService } from '../services/model-catalog.service.js';
 import type { ModelPolicyService } from '../services/model-policy.service.js';
 import type { SettingsService } from '../services/settings.service.js';
 import type { PatScope } from '../schemas/pat-scope.schema.js';
+import type { ResolutionPath } from './identity-resolution.js';
+import { type AuditAppender, defaultAuditAppender, installMcpAuditTrail } from './audit-trail.js';
 import { TaskRepository } from '../repositories/task.repository.js';
 import { DependencyRepository } from '../repositories/dependency.repository.js';
 import { WsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
@@ -67,6 +69,31 @@ export interface McpServerContext {
    *     supplies this field.
    */
   scopes?: readonly PatScope[] | null;
+  /**
+   * `api_tokens.id` of the PAT that authenticated this process, as TEXT
+   * (Security Audit finding M5 — task #1632). Written to
+   * `audit_events.token_id`, the SAME column and semantics the REST hook fills
+   * from `request.tokenId`, so a trail can be pivoted by token across both
+   * surfaces. `null`/omitted for every non-PAT credential class.
+   */
+  tokenId?: string | null;
+  /**
+   * Which boot resolution path produced `actorUserId`
+   * (`src/mcp/identity-resolution.ts`). Task #1632 threads it in so the audit
+   * producer can derive `actor_type` (`user` vs the `mcp-bot`
+   * `service_account`) and `metadata.authMethod` MECHANICALLY, instead of
+   * carrying two more hand-set fields that could disagree with each other.
+   */
+  resolutionPath?: ResolutionPath;
+  /**
+   * Append-only `audit_events` writer (Security Audit finding M5 — task
+   * #1632). Omit and `createMcpServer` builds one over the same `db` handle,
+   * so auditing is ON BY DEFAULT for every stdio MCP server — a boot path that
+   * forgets to pass this still records. Production passes
+   * `app.auditEventRepository`, the instance `createApp` owns; tests pass a
+   * stub to prove an append failure is non-fatal.
+   */
+  auditEventRepository?: AuditAppender;
   /**
    * Optional UserRepository used by the update_task tool to best-effort
    * resolve `assignee_user_id` from a user-supplied `assignee` email
@@ -135,6 +162,18 @@ export function createMcpServer(
   const server = new McpServer({
     name: 'wood-fired-tasks',
     version: VERSION,
+  });
+
+  // Task #1632 (Security Audit finding M5): make this server an audit-trail
+  // PRODUCER. Must run BEFORE every `register*Tools` call below — it works by
+  // replacing `server.registerTool`, so a tool registered first would escape
+  // the wrapper. The audited set is derived from `MUTATING_TOOL_SCOPES`, the
+  // same map the #1631 scope gate uses, so gated and audited can never drift.
+  installMcpAuditTrail(server, {
+    repository: ctx.auditEventRepository ?? defaultAuditAppender(db),
+    actorUserId: ctx.actorUserId,
+    tokenId: ctx.tokenId ?? null,
+    ...(ctx.resolutionPath === undefined ? {} : { resolutionPath: ctx.resolutionPath }),
   });
 
   // Register all tools — ctx is threaded into every tool group so create /
