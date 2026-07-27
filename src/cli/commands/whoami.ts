@@ -203,6 +203,7 @@ export const whoamiCommand = new Command('whoami')
           id: activeToken.id,
           name: activeToken.name,
           lastUsedAt: activeToken.lastUsedAt,
+          scopes: activeToken.scopes,
         };
       }
       emitJsonEvent(envelope);
@@ -216,6 +217,7 @@ export const whoamiCommand = new Command('whoami')
       process.stdout.write(
         fmtLine('Active token', `${activeToken.name} (id ${activeToken.id})`) + '\n',
       );
+      process.stdout.write(fmtLine('Scopes', `[${activeToken.scopes.join(', ')}]`) + '\n');
       process.stdout.write(fmtLine('Last used', activeToken.lastUsedAt ?? '(never)') + '\n');
     }
     process.stdout.write(fmtLine('Server', server) + '\n');

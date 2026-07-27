@@ -194,6 +194,7 @@ describe('tasks whoami (subprocess)', () => {
     expect(res.stdout).toContain('Display name: Stuart Jeff');
     expect(res.stdout).toContain('Email:        stuart@woodfiredgames.com');
     expect(res.stdout).toContain('Active token: cli-stuart-laptop-2026-05-23 (id 17)');
+    expect(res.stdout).toContain('Scopes:       [*]');
     expect(res.stdout).toContain('Last used:    2026-05-23T12:34:56.000Z');
     expect(res.stdout).toContain(`Server:       ${server.baseUrl}`);
 
@@ -225,7 +226,7 @@ describe('tasks whoami (subprocess)', () => {
       .filter((l) => l.length > 0);
     const envelope = JSON.parse(lines[lines.length - 1]!) as {
       user: Record<string, unknown>;
-      token?: { id: number; name: string; lastUsedAt: string | null };
+      token?: { id: number; name: string; lastUsedAt: string | null; scopes: string[] };
       server: string;
       fallback?: string;
     };
@@ -236,6 +237,7 @@ describe('tasks whoami (subprocess)', () => {
     expect(envelope.token!.id).toBe(17);
     expect(envelope.token!.name).toBe('cli-stuart-laptop-2026-05-23');
     expect(envelope.token!.lastUsedAt).toBe('2026-05-23T12:34:56.000Z');
+    expect(envelope.token!.scopes).toEqual(['*']);
     expect(envelope.server).toBe(server.baseUrl);
     expect(envelope.fallback).toBeUndefined();
   });
@@ -261,6 +263,7 @@ describe('tasks whoami (subprocess)', () => {
     expect(res.stdout).toContain('Display name: Stuart Jeff');
     expect(res.stdout).toContain('Email:        stuart@woodfiredgames.com');
     expect(res.stdout).not.toContain('Active token:');
+    expect(res.stdout).not.toContain('Scopes:');
     expect(res.stdout).not.toContain('Last used:');
     expect(res.stdout).toContain(`Server:       ${server.baseUrl}`);
 
