@@ -100,5 +100,47 @@ export function resolveActiveSessionUser(
     return null;
   }
 
-  return toAuthenticatedUser(row);
+  const user = toAuthenticatedUser(row);
+  publishPrincipal(request, user);
+  return user;
+}
+
+/**
+ * Security Audit finding M5 (task #1630) — publish the principal this helper
+ * just authenticated onto the request, exactly as the auth chain's
+ * `applyPrincipal` does for `/api/v1`.
+ *
+ * Motivation: the web HTML routes are `config.skipAuth` and authenticate
+ * THEMSELVES through this helper, so before this the request carried no
+ * principal at all — and `POST /me/tokens/:id/revoke`, a real PAT revocation,
+ * produced no audit row because the response-phase audit hook had no
+ * `request.user` to attribute it to. Publishing here rather than at each call
+ * site closes the CLASS: this helper is the single entry point for "who is the
+ * signed-in web caller", so every current and future session-gated web route
+ * becomes attributable (and therefore auditable) by construction. A route that
+ * forgot to call it would not be authenticated in the first place.
+ *
+ * Deliberately NARROW:
+ *   - `authMethod` is `'session'` and `tokenId` is `null` — a cookie session,
+ *     never a PAT. `scopes` stays `null`, which `grantSatisfiesScope` reads as
+ *     the unrestricted session tier; this matches what the auth chain records
+ *     for the same principal on `/api/v1`.
+ *   - It does NOT re-child `request.log`. The chain does that for the API
+ *     surface; doing it here would change existing web log-line shapes for no
+ *     benefit to this fix.
+ *   - It grants nothing. `skipAuth` routes never reach `enforceSessionOnly` /
+ *     `enforceRequiredScope`, and no web handler consults `request.user` —
+ *     they all use this function's RETURN value. This only makes an already
+ *     established identity visible to instance-level hooks.
+ *
+ * The slots are declared in `src/types/fastify.d.ts` but only DECORATED inside
+ * scopes that register the auth chain; these routes sit outside every such
+ * scope, so the assignments create own properties on the request. That is the
+ * intended behaviour — the audit hook reads the same slot either way, and it
+ * treats both `null` and `undefined` as "no principal".
+ */
+function publishPrincipal(request: FastifyRequest, user: AuthenticatedUser): void {
+  request.user = user;
+  request.authMethod = 'session';
+  request.tokenId = null;
 }

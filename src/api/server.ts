@@ -40,6 +40,7 @@ import meRoutes from './routes/me/index.js';
 import webRoutes from './routes/web/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
+import auditTrailPlugin from './hooks/audit-trail.js';
 import { registerSwaggerSpec, registerSwaggerUI } from './plugins/swagger.js';
 import authPlugin from './plugins/auth.js';
 
@@ -242,6 +243,15 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // files and a duplicate here would conflict.
   server.decorate('userRepository', app.userRepository);
   server.decorate('apiTokenRepository', app.apiTokenRepository);
+
+  // Security Audit finding M5 (task #1630): the append-only `audit_events`
+  // writer consumed by the response-phase audit hook registered inside the
+  // `/api/v1` scope below. Decorated (rather than closed over) so the hook
+  // resolves it per request — that is what lets a test stub `append` and
+  // prove an audit failure cannot change the client's HTTP status. Its
+  // FastifyInstance augmentation lives with the hook, in
+  // `src/api/hooks/audit-trail.ts`.
+  server.decorate('auditEventRepository', app.auditEventRepository);
 
   // Create and decorate IdempotencyService
   const idempotencyService = new IdempotencyService(app.db);
@@ -621,6 +631,38 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     }
     // ─── end Phase 29 Plan 04 ───
 
+    // ─── Security Audit finding M5 (task #1630) — REST audit-trail producer ───
+    //
+    // Registered on the ROOT instance, ABOVE every route registration below,
+    // rather than inside the `/api/v1` scope.
+    //
+    // Why root and not per-scope: the acceptance criterion is "one row per
+    // AUTHENTICATED non-GET request", unqualified — not "per /api/v1 request".
+    // The authenticated surface is spread across four sibling scopes (the
+    // production-posture Swagger scope, the device-flow scope, the
+    // `/health/detailed` scope, the `/api/v1` scope) PLUS top-level web HTML
+    // routes that carry `config.skipAuth` and run their own session gate
+    // (`POST /me/tokens/:id/revoke`). Registering the plugin once per
+    // authenticated scope would have covered the scopes that exist TODAY and
+    // silently missed the next one somebody adds — the same class of blindness
+    // finding M1 was about. A single root registration is scope-agnostic: a
+    // hook on the root instance runs for every routed request in every
+    // descendant scope, so a new authenticated scope is audited the moment it
+    // is created, with no wiring to remember.
+    //
+    // Why exactly one row is structurally guaranteed: this is the ONLY
+    // registration of `auditTrailPlugin` in the process, and Fastify runs an
+    // instance-level `onResponse` hook exactly once per request regardless of
+    // how deeply the matched route's scope is nested. There is no nesting
+    // arrangement that can double-count, because there is no second hook.
+    // (Registering it in both a parent and a child scope WOULD double-count —
+    // see the no-duplication test in audit-trail.test.ts.)
+    //
+    // Requests with no principal write nothing: the hook reads `request.user`,
+    // which is `undefined` outside any auth-bearing scope and `null` on the
+    // 401 path, and `audit_events.actor_id` is NOT NULL by design.
+    await server.register(auditTrailPlugin);
+
     // Register public health check route (no auth required). task #185: the
     // route now returns only { status, timestamp, version } so internal stats
     // (SSE client count, uptime) are not leaked to unauthenticated probes.
@@ -801,6 +843,18 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         // production keys, uses constant-time comparison, logs invalid
         // attempts without leaking the supplied key.
         await api.register(authPlugin);
+
+        // NOTE (task #1630): the audit-trail producer is deliberately NOT
+        // registered here. It is registered ONCE on the root instance above
+        // (search "finding M5"), which covers this scope and every other
+        // authenticated scope at the same time. Adding a second registration
+        // here would append TWO rows for every /api/v1 mutation.
+        //
+        // Ordering is a non-issue: `onResponse` is a strictly later phase than
+        // the auth chain's `preHandler`, so the hook always observes the
+        // principal the chain resolved — including on a request the chain
+        // itself short-circuited with a 403, which is precisely why
+        // scope-denied mutations get recorded instead of silently dropped.
 
         // Register task routes
         await api.register(taskRoutes, { prefix: '/tasks' });
