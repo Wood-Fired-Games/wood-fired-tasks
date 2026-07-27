@@ -249,3 +249,54 @@ export {
   scopeSatisfies,
 } from '../schemas/pat-scope.schema.js';
 export type { PatScope } from '../schemas/pat-scope.schema.js';
+
+/**
+ * Security Audit finding M5 (task #1629): append-only writer + bounded
+ * readers for the `audit_events` table (created by migration 018, task
+ * #1628). The table itself enforces append-only via `BEFORE UPDATE` /
+ * `BEFORE DELETE` triggers that `RAISE(ABORT, ...)` — see the migration's
+ * doc comment. The type-level half of that guarantee lives HERE: this
+ * interface exposes only `append` plus bounded, newest-first query helpers
+ * and deliberately has NO `update`/`delete` member (not even a throwing
+ * stub) so no caller can even compile a mutation call against it.
+ */
+
+/** One audit-event write. `metadata`, if present, is a JSON-serializable blob. */
+export interface AuditEventRecord {
+  actorType: string;
+  actorId: string;
+  tokenId?: string | null;
+  action: string;
+  resourceType: string;
+  resourceId?: string | null;
+  requestId?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/** An audit-event row as read back (JSON `metadata` column parsed). */
+export interface AuditEventRow {
+  id: number;
+  timestamp: string;
+  actor_type: string;
+  actor_id: string;
+  token_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  request_id: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface IAuditEventRepository {
+  /** Append one immutable audit-event row. Returns the new row id. */
+  append(record: AuditEventRecord): number;
+  /** Bounded, newest-first (timestamp DESC, id DESC) trail for one actor. */
+  findByActor(actorId: string, limit: number): AuditEventRow[];
+  /** Bounded, newest-first (timestamp DESC, id DESC) trail for one resource. */
+  findByResource(resourceType: string, resourceId: string, limit: number): AuditEventRow[];
+  /**
+   * Bounded, newest-first (timestamp DESC, id DESC) trail within an
+   * inclusive ISO8601 `[start, end]` timestamp range.
+   */
+  findByTimeRange(start: string, end: string, limit: number): AuditEventRow[];
+}
