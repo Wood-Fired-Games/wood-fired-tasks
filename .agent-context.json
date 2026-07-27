@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-26T16:54:46.479Z",
+    "generated_at": "2026-07-27T13:52:52.735Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -122,7 +122,7 @@
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
       "approx_token_budget": 30000,
       "actual_lines": 1499,
-      "sha256": "0d3afaa0618fea9edfd3ee000817426dda7f3745cdeecb48b45b3230407299d4"
+      "sha256": "82e655be60dd39644ba0288ee65ded350c04715d117779fbdc94e07d6b46938d"
     },
     {
       "path": "docs/MCP.md",
@@ -500,8 +500,8 @@
       "status": "present",
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 6000,
-      "actual_lines": 262,
-      "sha256": "172fa00830eb38632b3f26ecfe67b2f60c2c6eb50bbdc22556a303c45b42a4ec"
+      "actual_lines": 279,
+      "sha256": "d19547d615d3873b710d06f2085c13793fd0234d480413b510c749511e23aeae"
     },
     {
       "path": "llms.txt",
