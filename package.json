@@ -131,7 +131,7 @@
     "@fastify/swagger-ui": "^6.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@slack/bolt": "^4.6.0",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^13.0.1",
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
