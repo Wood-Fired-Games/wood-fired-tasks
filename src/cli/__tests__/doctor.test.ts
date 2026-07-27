@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Command } from 'commander';
 import Database from '../../db/driver.js';
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -77,10 +77,14 @@ describe('doctor command', () => {
     credsPath = join(tmpDir, 'credentials');
     claudeJsonPath = join(tmpDir, 'claude.json');
 
-    // A trivial valid DB.
+    // A trivial valid DB. Chmod to 0600 because that is what the hardened
+    // write paths (tasks #1625/#1626) now guarantee in production — better-
+    // sqlite3 itself creates the file at 0666 & ~umask, which the secret-file
+    // permission check (task #1627) correctly flags as drift.
     const db = new Database(dbPath);
     db.exec('CREATE TABLE thing (id INTEGER)');
     db.close();
+    chmodSync(dbPath, 0o600);
 
     process.env.DATABASE_PATH = dbPath;
     process.env.NO_COLOR = '1';
@@ -360,6 +364,9 @@ describe('doctor command', () => {
         },
       }),
     );
+    // Keep the fixture owner-only so this case isolates the LEGACY detector
+    // rather than also tripping the secret-file permission check (#1627).
+    chmodSync(claudeJsonPath, 0o600);
     const program = await buildProgram();
     await program.parseAsync(['node', 'tasks', 'doctor']);
     const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -445,5 +452,110 @@ describe('doctor command', () => {
     expect(env.data.credentialsFile.status).toBe('FAIL');
     expect(env.data.credentialsFile.blocking).toBe(true);
     expect(process.exitCode).toBe(1);
+  });
+
+  // ── Secret-file permission drift (task #1627) ────────────────
+  //
+  // beforeEach already creates the DB at 0600 and leaves the .claude.json /
+  // .bak / .tmp siblings and the -wal/-shm sidecars absent, so the default
+  // fixture is the "clean install" case.
+
+  it('secret-file permission check PASSES when the database file is 0600', async () => {
+    if (process.platform === 'win32') return;
+    chmodSync(dbPath, 0o600);
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/Perms:\s+\[PASS\]/);
+    expect(logged).toMatch(/secret-bearing file\(s\) are owner-only/);
+    expect(logged).not.toContain(`chmod 600 ${dbPath}`);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('secret-file permission check FAILS and names the path when the database file is 0644', async () => {
+    if (process.platform === 'win32') return;
+    chmodSync(dbPath, 0o644);
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/Perms:\s+\[FAIL\]/);
+    // The offending path is named, with its actual mode ...
+    expect(logged).toContain(dbPath);
+    expect(logged).toMatch(/mode 644, expected 600/);
+    // ... and a copy-pasteable remediation for that exact path.
+    expect(logged).toContain(`chmod 600 ${dbPath}`);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('flags a group/other-readable -wal sidecar with its own chmod remediation', async () => {
+    if (process.platform === 'win32') return;
+    const walPath = `${dbPath}-wal`;
+    writeFileSync(walPath, '', { mode: 0o600 });
+    chmodSync(walPath, 0o640);
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    const logged = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toMatch(/Perms:\s+\[FAIL\]/);
+    expect(logged).toContain(`chmod 600 ${walPath}`);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('flags group/other-readable .claude.json .bak and .tmp siblings, one chmod each', async () => {
+    if (process.platform === 'win32') return;
+    const bakPath = `${claudeJsonPath}.bak`;
+    const tmpPath = `${claudeJsonPath}.tmp`;
+    for (const p of [claudeJsonPath, bakPath, tmpPath]) {
+      writeFileSync(p, '{}', { mode: 0o600 });
+      chmodSync(p, 0o644);
+    }
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', '--json', 'doctor']);
+    const written = stdoutSpy.mock.calls[0][0] as string;
+    const env = JSON.parse(written);
+    expect(env.data.secretFilePermissions.status).toBe('FAIL');
+    expect(env.data.secretFilePermissions.blocking).toBe(true);
+    const findings = env.data.secretFilePermissions.findings as Array<{
+      path: string;
+      remediation: string;
+    }>;
+    const offenders = findings.map((f) => f.path);
+    expect(offenders).toContain(claudeJsonPath);
+    expect(offenders).toContain(bakPath);
+    expect(offenders).toContain(tmpPath);
+    for (const f of findings) {
+      expect(f.remediation).toBe(`Run: chmod 600 ${f.path}`);
+    }
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('does NOT flag absent -wal/-shm sidecars or absent .bak/.tmp siblings', async () => {
+    if (process.platform === 'win32') return;
+    // Only the DB exists (beforeEach); every other candidate is missing.
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', '--json', 'doctor']);
+    const written = stdoutSpy.mock.calls[0][0] as string;
+    const env = JSON.parse(written);
+    expect(env.data.secretFilePermissions.status).toBe('PASS');
+    expect(env.data.secretFilePermissions.findings).toEqual([]);
+    // Missing files are skipped silently — only the DB was actually stat'ed.
+    expect(env.data.secretFilePermissions.checked).toEqual([dbPath]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('does not create the -wal/-shm sidecars it inspects', async () => {
+    if (process.platform === 'win32') return;
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    expect(existsSync(`${dbPath}-wal`)).toBe(false);
+    expect(existsSync(`${dbPath}-shm`)).toBe(false);
+  });
+
+  it('does not change the mode of an offending file (detector only)', async () => {
+    if (process.platform === 'win32') return;
+    chmodSync(dbPath, 0o644);
+    const program = await buildProgram();
+    await program.parseAsync(['node', 'tasks', 'doctor']);
+    // Still 0644 — the check reports drift, it never repairs it.
+    expect(statSync(dbPath).mode & 0o777).toBe(0o644);
   });
 });

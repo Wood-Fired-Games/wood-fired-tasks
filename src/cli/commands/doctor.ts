@@ -401,6 +401,150 @@ export async function checkCredentialsFile(
   };
 }
 
+// ── Secret-file permission drift (task #1627) ────────────────────────────
+
+/**
+ * One secret-bearing file whose mode leaks bits to group or other.
+ *  - `path`        — the offending file.
+ *  - `mode`        — its current permission bits, octal (e.g. `644`).
+ *  - `message`     — human-readable one-liner for the doctor output.
+ *  - `remediation` — a copy-pasteable `chmod 600 <path>`.
+ */
+export interface SecretFilePermissionFinding {
+  path: string;
+  mode: string;
+  message: string;
+  remediation: string;
+}
+
+export interface SecretFilePermissionsResult {
+  /** PASS when every existing candidate is owner-only; FAIL on any offender. */
+  status: 'PASS' | 'FAIL';
+  message: string;
+  findings: SecretFilePermissionFinding[];
+  /** True when at least one offender was found — insecure secrets block. */
+  blocking: boolean;
+  /** Candidates that actually exist and were stat'ed (missing ones are skipped). */
+  checked: string[];
+}
+
+/**
+ * The secret-bearing candidate paths this check inspects (task #1627).
+ *
+ * Derived — never hardcoded — from the SAME resolvers the app uses:
+ *  - `dbPath` from `resolveDbPath()` (src/config/db-path.ts), plus the `-wal`
+ *    and `-shm` sidecars SQLite creates alongside it in WAL mode. The DB holds
+ *    PAT hashes and audit events; the sidecars hold the same rows pre-checkpoint.
+ *  - `claudeJsonPath` (`WFT_CLAUDE_JSON_PATH` or `~/.claude.json`), plus the
+ *    `.bak` and `.tmp` siblings `src/setup/claude-json.ts` writes during its
+ *    atomic temp-file + rename merge. Both can hold a live `WFT_API_KEY`.
+ *
+ * An in-memory database is not a file on disk, so it contributes no candidates.
+ */
+export function secretFileCandidates(dbPath: string, claudeJsonPath: string): string[] {
+  const paths: string[] = [];
+  const inMemory = dbPath === ':memory:' || dbPath.startsWith('file::memory:');
+  if (dbPath.length > 0 && !inMemory) {
+    paths.push(dbPath, `${dbPath}-wal`, `${dbPath}-shm`);
+  }
+  if (claudeJsonPath.length > 0) {
+    paths.push(claudeJsonPath, `${claudeJsonPath}.bak`, `${claudeJsonPath}.tmp`);
+  }
+  return paths;
+}
+
+/**
+ * Detect permission DRIFT on secret-bearing files (task #1627).
+ *
+ * Tasks #1625/#1626 tightened the WRITE paths so newly created files land at
+ * 0600. This is the read-only DETECTOR for installs that predate those fixes,
+ * whose files are still group/other-readable with nothing reporting it.
+ *
+ * Contract:
+ *  - Reports only. It NEVER chmods, and it never opens the database — opening
+ *    it would create the very `-wal`/`-shm` sidecars this check inspects.
+ *  - A candidate that does not exist is NOT an offender: an absent `.bak`/`.tmp`
+ *    sibling, or a `-wal` sidecar for a DB that never engaged WAL mode, is
+ *    skipped silently (ENOENT/ENOTDIR).
+ *  - Any existing candidate with `(mode & 0o077) !== 0` is an offender, and each
+ *    offender carries its own copy-pasteable `chmod 600 <path>`.
+ *  - Non-POSIX platforms have no comparable mode bits, so the check is a no-op.
+ *
+ * Any offender is BLOCKING — a world- or group-readable PAT hash store is
+ * exactly the drift this check exists to stop.
+ */
+export function checkSecretFilePermissions(
+  dbPath: string,
+  claudeJsonPath: string,
+): SecretFilePermissionsResult {
+  if (!POSIX) {
+    return {
+      status: 'PASS',
+      message: 'Skipped (no POSIX mode bits on this platform)',
+      findings: [],
+      blocking: false,
+      checked: [],
+    };
+  }
+
+  const checked: string[] = [];
+  const findings: SecretFilePermissionFinding[] = [];
+
+  for (const filePath of secretFileCandidates(dbPath, claudeJsonPath)) {
+    let mode: number;
+    try {
+      // statSync (not lstat): a symlink's own mode is 0777 and meaningless, so
+      // the security-relevant mode is the target's. A dangling symlink raises
+      // ENOENT and is skipped below, exactly like an absent file.
+      mode = statSync(filePath).mode & 0o777;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      // Missing candidate → not an offender. Skip silently.
+      if (code === 'ENOENT' || code === 'ENOTDIR') continue;
+      const msg = err instanceof Error ? err.message : String(err);
+      findings.push({
+        path: filePath,
+        mode: 'unknown',
+        message: `Could not stat ${filePath}: ${msg}`,
+        remediation: `Verify ${filePath} (and its parent directory) is accessible, then re-run \`tasks doctor\`.`,
+      });
+      continue;
+    }
+
+    checked.push(filePath);
+    if ((mode & 0o077) !== 0) {
+      const octal = mode.toString(8).padStart(3, '0');
+      findings.push({
+        path: filePath,
+        mode: octal,
+        message: `${filePath} is group/other-accessible (mode ${octal}, expected 600)`,
+        remediation: `Run: chmod 600 ${filePath}`,
+      });
+    }
+  }
+
+  if (findings.length > 0) {
+    return {
+      status: 'FAIL',
+      message: `${findings.length} secret-bearing file(s) have insecure permissions`,
+      findings,
+      blocking: true,
+      checked,
+    };
+  }
+
+  return {
+    status: 'PASS',
+    message:
+      checked.length > 0
+        ? `${checked.length} secret-bearing file(s) are owner-only (600)`
+        : 'No secret-bearing files present on disk',
+    findings,
+    blocking: false,
+    checked,
+  };
+}
+
 export const doctorCommand = new Command('doctor')
   .description('Run diagnostics: DB connectivity, disk space, config validity, and OIDC readiness')
   .action(async () => {
@@ -514,6 +658,12 @@ export const doctorCommand = new Command('doctor')
       doctorReachabilityDefaults.probe,
     );
 
+    // --- Check 7: secret-file permission drift (task #1627) ---
+    // Stat (never open, never chmod) the resolved DB plus its -wal/-shm
+    // sidecars and ~/.claude.json plus its .bak/.tmp siblings; any existing
+    // file with group/other bits set is a blocking offender.
+    const secretPerms = checkSecretFilePermissions(dbPath, claudeJsonPath);
+
     // --- Set exit code if any check fails ---
     if (
       dbStatus === 'FAIL' ||
@@ -521,7 +671,8 @@ export const doctorCommand = new Command('doctor')
       configStatus === 'FAIL' ||
       oidc.blocking ||
       legacy.blocking ||
-      credentials.blocking
+      credentials.blocking ||
+      secretPerms.blocking
     ) {
       process.exitCode = 1;
     }
@@ -555,6 +706,13 @@ export const doctorCommand = new Command('doctor')
           ...(credentials.remediation !== undefined && { remediation: credentials.remediation }),
           ...(credentials.server !== undefined && { server: credentials.server }),
           ...(credentials.reachable !== undefined && { reachable: credentials.reachable }),
+        },
+        secretFilePermissions: {
+          status: secretPerms.status,
+          message: secretPerms.message,
+          blocking: secretPerms.blocking,
+          checked: secretPerms.checked,
+          findings: secretPerms.findings,
         },
       });
     } else {
@@ -621,6 +779,17 @@ export const doctorCommand = new Command('doctor')
       console.log(`Creds:     ${credLabel} ${credentials.message}`);
       if (credentials.remediation !== undefined) {
         console.log(`           - ${credentials.remediation}`);
+      }
+
+      // Secret-file permission drift (task #1627). PASS when every existing
+      // secret-bearing file is owner-only; FAIL (blocking) otherwise, with a
+      // copy-pasteable `chmod 600 <path>` per offender.
+      const permsLabel =
+        secretPerms.status === 'PASS' ? colorSuccess('[PASS]') : colorError('[FAIL]');
+      console.log(`Perms:     ${permsLabel} ${secretPerms.message}`);
+      for (const finding of secretPerms.findings) {
+        console.log(`           - ${finding.message}`);
+        console.log(`             ${finding.remediation}`);
       }
     }
   });
