@@ -214,7 +214,14 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.route({
     method: 'POST',
     url: '/',
-    config: { sessionOnly: true },
+    // Security Audit finding M1 (task #1622): token surface → `admin` tier.
+    // Belt-and-suspenders only — `sessionOnly` already rejects every PAT
+    // caller (including admin-scoped ones) before this gate would run; a
+    // session-authenticated caller carries `scopes: null` and always
+    // satisfies any tier per `grantSatisfiesScope`. Declared anyway so the
+    // drift-guard coverage test (#1622) and the OpenAPI doc both reflect the
+    // intended tier for this token-minting surface.
+    config: { sessionOnly: true, requiredScope: 'admin' },
     schema: {
       tags: ['me-tokens'],
       description:
@@ -443,6 +450,12 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
     '/active',
     {
       // NO `config: { sessionOnly: true }` — explicitly Bearer-accepting.
+      // Security Audit finding M1 (task #1622): token surface → `admin`
+      // tier. A pre-taxonomy PAT (`scopes: '[]'`) is still treated as
+      // full-tier by `grantSatisfiesScope`, so this does not regress the
+      // "PAT can revoke itself" contract for existing tokens minted before
+      // scopes existed.
+      config: { requiredScope: 'admin' },
       schema: {
         tags: ['me-tokens'],
         description:

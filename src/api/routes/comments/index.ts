@@ -18,6 +18,8 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/:id/comments',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         params: z.object({ id: z.coerce.number().int().positive() }),
         body: CreateCommentBodySchema,
@@ -50,6 +52,8 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/comments',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         params: z.object({ id: z.coerce.number().int().positive() }),
         querystring: QueryCommentListSchema,
@@ -75,6 +79,8 @@ const commentRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.delete(
     '/:id/comments/:commentId',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         params: z.object({
           id: z.coerce.number().int().positive(),

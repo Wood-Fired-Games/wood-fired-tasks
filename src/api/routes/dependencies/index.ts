@@ -11,6 +11,8 @@ const dependencyRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/:id/dependencies',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         params: z.object({ id: z.coerce.number().int().positive() }),
         body: CreateDependencyBodySchema,
@@ -38,6 +40,8 @@ const dependencyRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/dependencies',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         params: z.object({ id: z.coerce.number().int().positive() }),
         response: {
@@ -61,6 +65,8 @@ const dependencyRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.delete(
     '/:id/dependencies/:blocksTaskId',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         params: z.object({
           id: z.coerce.number().int().positive(),

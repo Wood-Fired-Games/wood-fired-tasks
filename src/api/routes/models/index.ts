@@ -29,6 +29,8 @@ const modelsRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['models'],
         description:

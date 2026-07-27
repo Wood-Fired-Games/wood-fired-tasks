@@ -345,6 +345,45 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
       contentSecurityPolicy: false,
     });
 
+    // Security Audit finding M1 (task #1622) — build-time route-scope audit.
+    // Collects a { method, url, config } triple for every route registered
+    // inside an authenticated scope (the production-posture Swagger UI scope
+    // below, the `/health/detailed` scope, and the `/api/v1` scope), so the
+    // drift-guard test (src/api/__tests__/route-scope-coverage.test.ts) can
+    // enumerate the ACTUAL built route table instead of a hand-maintained file
+    // list — the exact blindness the AC exists to prevent. `onRoute` hooks
+    // registered on a scope observe every route added to that scope AND its
+    // descendants (nested child plugins — dependency-graph, wsjf, tokens, the
+    // swagger-ui plugin's own routes, etc. — are captured too), so registering
+    // the hook as the FIRST statement inside each scope callback below is
+    // sufficient; no per-route-file wiring is needed. Attached to `server` via
+    // a plain cast (not a typed Fastify decorator) to keep this addition
+    // self-contained to this region — no fastify.d.ts module augmentation
+    // required.
+    //
+    // Defined HERE — above the Swagger UI registration rather than next to the
+    // `/api/v1` scope it also serves — because the production-posture Swagger
+    // scope is registered first and needs the same collector; a collector
+    // declared later would not be in scope for it, and the swagger routes would
+    // silently stay invisible to the drift guard (the original M1 hole).
+    type RouteAuditEntry = { method: string; url: string; config: Record<string, unknown> };
+    const authenticatedRouteAudit: RouteAuditEntry[] = [];
+    (server as unknown as { authenticatedRouteAudit: RouteAuditEntry[] }).authenticatedRouteAudit =
+      authenticatedRouteAudit;
+    const collectRouteAudit = (routeOptions: {
+      method: string | string[];
+      url: string;
+      config?: Record<string, unknown>;
+    }): void => {
+      authenticatedRouteAudit.push({
+        method: Array.isArray(routeOptions.method)
+          ? routeOptions.method.join(',')
+          : routeOptions.method,
+        url: routeOptions.url,
+        config: routeOptions.config ?? {},
+      });
+    };
+
     // Register Swagger/OpenAPI spec collector (must be before routes so it can
     // capture their schemas). task #185: the spec collector itself does not
     // expose any HTTP endpoint — only `@fastify/swagger-ui` does that, and we
@@ -391,6 +430,52 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     if (exposeSwaggerUI) {
       if (config.isProductionPosture) {
         await server.register(async (scope) => {
+          // Security Audit finding M1 (task #1622) — the swagger-ui plugin
+          // registers its own routes (`/docs`, `/docs/json`, `/docs/static/*`,
+          // …) INSIDE this authenticated scope, but they are third-party
+          // registrations: we cannot add a `config.requiredScope` at their
+          // definition sites the way every first-party route file does. Left
+          // alone they would be authenticated-but-UNDECLARED, and
+          // `enforceRequiredScope` (src/api/plugins/auth/index.ts) fails OPEN
+          // on an undeclared route — any successfully-authenticated principal,
+          // whatever its scope grant, could read them. This `onRoute` hook
+          // closes that by stamping the declaration on the way in and feeding
+          // the SAME `collectRouteAudit` collector the other authenticated
+          // scopes use, so the drift guard can actually see them.
+          //
+          // `read` is the correct tier: viewing API docs is a read operation,
+          // and `read` is the lowest tier in the PAT_SCOPES taxonomy — every
+          // non-empty grant satisfies it (see `grantSatisfiesScope`), so this
+          // adds no functional restriction beyond "must be authenticated",
+          // which this scope already imposes. It is a DECLARATION, not an
+          // exemption: marking these routes `skipAuth`/`sessionOnly` would
+          // quiet the guard while leaving the fail-open hole intact.
+          //
+          // Mutating `routeOptions.config` from an `onRoute` hook is the
+          // supported way to do this: Fastify runs the onRoute hooks BEFORE it
+          // derives the route context's `config` from `opts.config`
+          // (fastify/lib/route.js — hooks at the top of `addNewRoute`, the
+          // `{ ...opts.config, url, method }` spread further down), so the
+          // stamp is what `request.routeOptions.config` reports at request
+          // time. The `undefined` guard keeps any future route that declares
+          // its own tier authoritative.
+          scope.addHook('onRoute', (routeOptions) => {
+            const mutable = routeOptions as unknown as {
+              method: string | string[];
+              url: string;
+              config?: Record<string, unknown>;
+            };
+            const routeConfig = mutable.config ?? {};
+            if (
+              routeConfig['requiredScope'] === undefined &&
+              routeConfig['skipAuth'] !== true &&
+              routeConfig['sessionOnly'] !== true
+            ) {
+              routeConfig['requiredScope'] = 'read';
+            }
+            mutable.config = routeConfig;
+            collectRouteAudit(mutable);
+          });
           await scope.register(authPlugin);
           await registerSwaggerUI(scope);
         });
@@ -701,6 +786,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // SAME canonical auth plugin used for /api/v1.
     await server.register(
       async (scope) => {
+        scope.addHook('onRoute', collectRouteAudit);
         await scope.register(authPlugin);
         await scope.register(detailedHealthRoutes);
       },
@@ -710,6 +796,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // Register routes under /api/v1 with auth protection
     await server.register(
       async (api) => {
+        api.addHook('onRoute', collectRouteAudit);
         // Centralized auth (task #182): single canonical plugin. Hardens
         // production keys, uses constant-time comparison, logs invalid
         // attempts without leaking the supplied key.

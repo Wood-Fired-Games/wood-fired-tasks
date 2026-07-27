@@ -21,6 +21,8 @@ const modelPolicyRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/model-policy',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['settings'],
         description:
@@ -43,6 +45,8 @@ const modelPolicyRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.put(
     '/model-policy',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['settings'],
         description:

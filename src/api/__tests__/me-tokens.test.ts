@@ -282,6 +282,30 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(after.c).toBe(before.c);
     });
 
+    // Security Audit finding M1 (task #1622): POST /me/tokens is a token
+    // surface and is declared `requiredScope: 'admin'` (in addition to the
+    // pre-existing `sessionOnly: true`). A read-scoped PAT is rejected with
+    // 403 regardless — today via the sessionOnly gate (which runs first and
+    // rejects ANY PAT auth method before the scope gate is reached), and
+    // structurally would ALSO be rejected by the requiredScope gate if
+    // sessionOnly were ever relaxed. This test locks in the "requires admin
+    // tier" contract at the black-box (status code) level.
+    it("requires the admin tier: a read-scoped PAT is rejected with 403 (can't mint PATs)", async () => {
+      const { token } = mintPatViaDb(harness.db, {
+        userId: harness.legacyUser.id,
+        scopes: '["read"]',
+      });
+
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: 'should-not-mint-read-scoped' },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
     it('3. rejects with 401 when no credentials are presented', async () => {
       const res = await harness.server.inject({
         method: 'POST',

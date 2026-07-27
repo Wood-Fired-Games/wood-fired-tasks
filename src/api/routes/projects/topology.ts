@@ -31,6 +31,8 @@ const topologyRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/topology',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['projects'],
         description:

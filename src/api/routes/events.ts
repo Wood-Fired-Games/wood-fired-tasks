@@ -86,6 +86,8 @@ const eventsRoute: FastifyPluginAsyncZod = async (server) => {
     '/',
     {
       sse: true, // Enable SSE for this route
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['Events'],
         description: 'Subscribe to real-time task and project events via Server-Sent Events',

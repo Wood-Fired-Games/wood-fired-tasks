@@ -131,6 +131,8 @@ const taskWsjfRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/wsjf',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['tasks'],
         description:
@@ -155,6 +157,8 @@ const taskWsjfRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.put(
     '/:id/wsjf',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['tasks'],
         description:
@@ -203,6 +207,8 @@ const taskWsjfRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/score-history',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['tasks'],
         description:
