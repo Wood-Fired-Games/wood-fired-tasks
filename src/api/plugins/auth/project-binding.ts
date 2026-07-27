@@ -104,6 +104,8 @@ export type BindingRule =
  * | /api/v1/models                               | global — static model catalogue        |
  * | /api/v1/settings/model-policy (GET)          | global — read of a DB-wide setting     |
  * | /api/v1/settings/model-policy (PUT)          | deny   — writes a DB-wide setting      |
+ * | /api/v1/audit-events                         | deny   — cross-project trail, and the  |
+ * |                                              |          rows carry no project column  |
  * | /api/v1/projects (GET)                       | deny   — enumerates every project      |
  * | /api/v1/projects (POST)                      | deny   — creates a project outside any |
  * |                                              |          existing binding              |
@@ -128,6 +130,32 @@ export type BindingRule =
  * the direction this gate exists to close.
  */
 const BINDING_RULES: Record<string, BindingRule> = {
+  // ── cross-project by construction ───────────────────────────────────────
+  // Security Audit finding M5 (task #1637). `deny`, NOT `global`, and the
+  // distinction is load-bearing:
+  //
+  //  - `global` asserts the route provably has NO project dimension. That is
+  //    false here. Audit rows describe actions taken across EVERY project —
+  //    `resource_id` names tasks and projects by id and `metadata.params`
+  //    carries their path ids — so classifying it `global` would resolve to
+  //    `[]`, which every binding satisfies, and hand a token bound to project
+  //    A the complete cross-project trail. That is precisely the enumeration
+  //    this gate exists to close, and it would be a worse leak than the
+  //    project-listing route already classified `deny` below.
+  //  - Narrowing via `resolve` is not available either: `audit_events` has no
+  //    `project_id` column and the repository exposes no project-filtered
+  //    helper, so there is nothing to resolve a target set FROM. A rule that
+  //    cannot be evaluated must not be guessed at.
+  //
+  // `deny` refuses bound tokens (resolves to `null`) while leaving UNBOUND
+  // operator credentials — the ones that actually answer "who did what" —
+  // completely untouched, since `enforceProjectBinding` short-circuits on a
+  // `null` binding before this table is ever consulted. Same shape as
+  // `GET /api/v1/projects`. Note the rule is keyed by url with no method
+  // override because only GET/HEAD exist on this surface, and both are reads
+  // of the same cross-project data.
+  '/api/v1/audit-events': { kind: 'deny' },
+
   // ── no project dimension ────────────────────────────────────────────────
   '/health/detailed': { kind: 'global' },
   '/api/v1/me': { kind: 'global' },

@@ -36,6 +36,7 @@ import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
 import modelsRoutes from './routes/models/index.js';
 import modelPolicyRoutes from './routes/settings/model-policy.js';
+import auditRoutes from './routes/audit/index.js';
 import meRoutes from './routes/me/index.js';
 import webRoutes from './routes/web/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
@@ -875,6 +876,12 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         // database-wide model-policy default.
         await api.register(modelsRoutes, { prefix: '/models' });
         await api.register(modelPolicyRoutes, { prefix: '/settings' });
+
+        // Security Audit finding M5 (task #1637): READ-ONLY query surface over
+        // the append-only audit trail. GET only — see the module docblock in
+        // routes/audit/index.ts for why no write verb exists here, and
+        // `project-binding.ts` for why bound tokens are denied it outright.
+        await api.register(auditRoutes, { prefix: '/audit-events' });
 
         // Phase 28 Plan 28-05: per-caller resources. All routes inside
         // meRoutes carry `config: { sessionOnly: true }` so the auth-chain
