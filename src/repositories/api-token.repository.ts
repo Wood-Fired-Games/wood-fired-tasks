@@ -3,7 +3,7 @@ import type { ApiToken } from '../types/identity.js';
 import type { IApiTokenRepository } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import { findUnknownScopes } from '../schemas/pat-scope.schema.js';
-import { InvalidScopeError } from './errors.js';
+import { InvalidProjectBindingError, InvalidScopeError } from './errors.js';
 
 /**
  * Repository-boundary half of mint-time scope validation (Security Audit
@@ -63,8 +63,12 @@ export class ApiTokenRepository implements IApiTokenRepository {
       'SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC',
     );
 
+    // `project_id` (Security Audit finding M1 — task #1635, migration 020)
+    // is the optional project binding. Callers that omit it persist NULL,
+    // which `bindingSatisfiesProjects` reads as "unbound" — so every existing
+    // insert call site keeps its exact pre-#1635 behaviour.
     this.insertStmt = db.prepare(
-      'INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     );
 
     // Cross-user revoke isolation enforced at SQL: id AND user_id must
@@ -104,9 +108,23 @@ export class ApiTokenRepository implements IApiTokenRepository {
     hash: string;
     scopes?: string;
     expiresAt?: string | null;
+    projectId?: number | null;
   }): ApiToken {
     const scopesJson = input.scopes ?? '[]';
     assertKnownScopes(scopesJson);
+    // Repository-boundary half of the project-binding validation (task
+    // #1635). A non-integer / non-positive binding is refused here as well as
+    // at the route, because a bogus value that slipped through would be
+    // compared with `===` against a real project id in
+    // `bindingSatisfiesProjects` and would therefore lock the token out of
+    // everything — a confusing failure mode we would rather reject at mint
+    // time. Existence of the referenced project is enforced by the FK
+    // (`REFERENCES projects(id)`, PRAGMA foreign_keys = ON), which throws a
+    // SQLITE_CONSTRAINT_FOREIGNKEY on insert.
+    const projectId = input.projectId ?? null;
+    if (projectId !== null && (!Number.isInteger(projectId) || projectId <= 0)) {
+      throw new InvalidProjectBindingError(projectId);
+    }
     const info = this.insertStmt.run(
       input.userId,
       input.name,
@@ -115,6 +133,7 @@ export class ApiTokenRepository implements IApiTokenRepository {
       input.hash,
       scopesJson,
       input.expiresAt ?? null,
+      projectId,
     );
     // The row is guaranteed to exist (we just inserted it). The non-null
     // assertion is the canonical pattern for "just-inserted row lookup" in

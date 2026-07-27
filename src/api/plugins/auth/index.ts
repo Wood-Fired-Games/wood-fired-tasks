@@ -53,7 +53,11 @@ import type { AuthenticatedUser, AuthResult } from '../../../types/identity.js';
 import { tryAuth as tryPat, type PatDeps } from './strategies/pat.js';
 import { tryAuth as trySession } from './strategies/session.js';
 import { shouldTouchLastUsed } from '../../../services/pat-touch-debounce.js';
-import { grantSatisfiesScope } from '../../../schemas/pat-scope.schema.js';
+import {
+  bindingSatisfiesProjects,
+  grantSatisfiesScope,
+} from '../../../schemas/pat-scope.schema.js';
+import { resolveTargetProjects, type ProjectBindingDeps } from './project-binding.js';
 
 /**
  * Throws if `preHandler` has not run yet (or if `skipAuth` was set). Use in
@@ -95,6 +99,7 @@ function applyPrincipal(request: FastifyRequest, result: AuthResult, apiKeyLabel
   request.authMethod = result.authMethod;
   request.tokenId = result.tokenId;
   request.scopes = result.scopes;
+  request.projectBinding = result.projectId;
   if (apiKeyLabel !== undefined) {
     request.apiKeyLabel = apiKeyLabel;
   }
@@ -160,6 +165,72 @@ function enforceRequiredScope(request: FastifyRequest, reply: FastifyReply): boo
     message: `This endpoint requires the '${required}' scope.`,
   });
   return true;
+}
+
+/**
+ * Post-auth gate: the SECOND authorization dimension (Security Audit finding
+ * M1 — task #1635). `enforceRequiredScope` above answers "how much may this
+ * token do?"; this one answers "*where* may it do it?".
+ *
+ * `request.projectBinding` was just populated by `applyPrincipal` from the
+ * matched strategy's `AuthResult.projectId`. `null` — every session match, and
+ * every PAT whose `api_tokens.project_id` is NULL — short-circuits to
+ * "allowed", so this gate is a no-op for every credential that existed before
+ * #1635. Only a token that explicitly asked to be bound is narrowed.
+ *
+ * The target project set is resolved by `resolveTargetProjects`
+ * (`./project-binding.ts`), which handles BOTH the direct case
+ * (`/api/v1/projects/:id`) and the indirect one (`PUT /api/v1/tasks/:id`, where
+ * the project is reached through the task row). A route it cannot classify
+ * resolves to `null` and is REFUSED — `bindingSatisfiesProjects` never widens
+ * a binding on ambiguity.
+ *
+ * The 403 body deliberately does NOT echo the target project ids the resolver
+ * computed: for a task-id route that would confirm the existence of, and name
+ * the owning project of, a task the caller has no right to see. It names only
+ * the binding the caller already holds.
+ *
+ * Returns `true` when the gate fired and the reply has been sent; the caller
+ * MUST stop processing.
+ */
+function enforceProjectBinding(
+  deps: ProjectBindingDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): boolean {
+  const binding = request.projectBinding;
+  if (binding === null) {
+    return false;
+  }
+  if (bindingSatisfiesProjects(binding, resolveTargetProjects(request, deps))) {
+    return false;
+  }
+  reply.code(403).send({
+    error: 'project_scope_denied',
+    message: `This token is restricted to project ${binding}.`,
+  });
+  return true;
+}
+
+/**
+ * The single post-auth authorization gate: tier first, then project binding.
+ *
+ * Composed into ONE function (rather than two call sites per strategy branch)
+ * so a request that fails both checks is refused exactly once, with the tier
+ * failure winning the response. Tier-before-binding is the coherent order: the
+ * tier is a property of the credential alone and is cheap, whereas resolving
+ * the target project can cost a task lookup — there is no reason to pay for it
+ * on a request that is already denied.
+ */
+function enforceAuthorization(
+  deps: ProjectBindingDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): boolean {
+  if (enforceRequiredScope(request, reply)) {
+    return true;
+  }
+  return enforceProjectBinding(deps, request, reply);
 }
 
 /**
@@ -272,6 +343,11 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
   // by applyPrincipal after a successful match. See the fastify.d.ts
   // augmentation for the null/[]/PatScope[] contract.
   fastify.decorateRequest('scopes', null);
+  // Security Audit finding M1 (task #1635) — the token's optional project
+  // binding, set by applyPrincipal after a successful match. `null` means
+  // unbound (cross-project), which is both the pre-auth default and the
+  // permanent value for session matches.
+  fastify.decorateRequest('projectBinding', null);
   // MIGR-01 compat: `apiKeyLabel` decoration retained so existing
   // routes/tests (events.ts SSE fingerprinting, auth-logging.test.ts) keep
   // working. Default `undefined` matches the pre-split contract.
@@ -280,6 +356,17 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
   const patDeps: PatDeps = {
     apiTokenRepository: fastify.apiTokenRepository,
     userRepository: fastify.userRepository,
+  };
+
+  // Security Audit finding M1 (task #1635) — service handle used by the
+  // project-binding gate to dereference a task id to its owning project. Read
+  // through an optional cast rather than `fastify.taskService` directly
+  // because the minimal harnesses in auth-chain.test.ts register this plugin
+  // without the service decorations. An absent service means the indirect
+  // lookup cannot be performed, which `resolveTargetProjects` reports as
+  // "cannot determine" ⇒ the bound token is REFUSED. Fail-closed, never open.
+  const projectBindingDeps: ProjectBindingDeps = {
+    taskService: (fastify as Partial<ProjectBindingDeps>).taskService,
   };
 
   fastify.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -306,7 +393,7 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
         applyPrincipal(request, patOutcome.result);
         scheduleLastUsedTouch(fastify, patOutcome.result.tokenId, request.log);
         if (enforceSessionOnly(request, reply)) return;
-        if (enforceRequiredScope(request, reply)) return;
+        if (enforceAuthorization(projectBindingDeps, request, reply)) return;
         return;
       }
 
@@ -326,7 +413,7 @@ const authChainImpl: FastifyPluginAsync = async (fastify) => {
       if (sessionOutcome.kind === 'match') {
         applyPrincipal(request, sessionOutcome.result);
         if (enforceSessionOnly(request, reply)) return;
-        if (enforceRequiredScope(request, reply)) return;
+        if (enforceAuthorization(projectBindingDeps, request, reply)) return;
         return;
       }
 

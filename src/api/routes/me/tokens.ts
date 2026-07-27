@@ -63,6 +63,15 @@ const MintTokenBodySchema = z.object({
   // ISO-8601 timestamp; persisted verbatim so the auth chain's
   // `new Date(expires_at).getTime()` comparison works.
   expiresAt: z.string().datetime().optional(),
+  // Security Audit finding M1 (task #1635) — the OPTIONAL project binding.
+  // Omitted (the default) mints an unbound, cross-project token, which is
+  // exactly the pre-#1635 contract; supplying a project id confines the token
+  // to that one project for every authenticated route (see
+  // `bindingSatisfiesProjects` and `src/api/plugins/auth/project-binding.ts`).
+  // Shape validation only here — that the project actually EXISTS is checked
+  // separately below, so a typo'd id fails with a 400 rather than minting a
+  // token bound to nothing.
+  projectId: z.number().int().positive().optional(),
 });
 
 const MintTokenResponseSchema = z.object({
@@ -77,6 +86,12 @@ const MintTokenResponseSchema = z.object({
   scopes: z.array(z.string()),
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
+  // Security Audit finding M1 (task #1635). `null` ⇒ unbound / every project.
+  projectId: z
+    .number()
+    .int()
+    .nullable()
+    .describe('Project this token is restricted to; null means every project.'),
 });
 
 const TokenListItemSchema = z.object({
@@ -89,6 +104,9 @@ const TokenListItemSchema = z.object({
   lastUsedAt: z.string().nullable(),
   revokedAt: z.string().nullable(),
   expiresAt: z.string().nullable(),
+  // Security Audit finding M1 (task #1635). Surfaced on the list so a caller
+  // can tell a bound token from an unbound one without re-minting.
+  projectId: z.number().int().nullable(),
 });
 const TokenListResponseSchema = z.array(TokenListItemSchema);
 
@@ -141,6 +159,43 @@ const ScopeValidationErrorResponseSchema = z.object({
   message: z.string(),
   details: z.object({ invalidScopes: z.array(z.string()) }),
 });
+
+// Security Audit finding M1 (task #1635) — mint-time project-binding
+// validation. Same `VALIDATION_ERROR` envelope as the scope rejection above,
+// with a `details.invalidProjectId` discriminator so a client can tell the two
+// 400s apart without string-matching the message.
+const ProjectBindingValidationErrorResponseSchema = z.object({
+  error: z.literal('VALIDATION_ERROR'),
+  message: z.string(),
+  details: z.object({ invalidProjectId: z.number().int() }),
+});
+
+/**
+ * True iff `projectId` names an existing project.
+ *
+ * A binding is compared with `===` against the request's resolved target
+ * project on every subsequent call, so a token bound to a project that does
+ * not exist could never authorize anything — it would be a token that silently
+ * does nothing. Rejecting at mint time turns that into an immediate,
+ * actionable 400 instead of a mystery 403 on first use.
+ *
+ * `projectService.getProject` signals "no such project" by throwing
+ * `NotFoundError`, so a lookup that throws is reported as "does not exist".
+ * Collapsing every throw to `false` is the safe direction: the only
+ * consequence is refusing to mint, and refusing to mint a binding we could not
+ * confirm is exactly the fail-closed posture this feature is built on.
+ */
+function projectExists(
+  projectService: { getProject(id: number): unknown },
+  projectId: number,
+): boolean {
+  try {
+    projectService.getProject(projectId);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Content-negotiation helper (Phase 29 Plan 07)
@@ -241,6 +296,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           BadRequestResponseSchema,
           ValidationFailedResponseSchema,
           ScopeValidationErrorResponseSchema,
+          ProjectBindingValidationErrorResponseSchema,
         ]),
         // 403 carries TWO shapes: the chain's session_required gate AND
         // the HTML branch's csrf_invalid. Zod type provider needs both.
@@ -264,6 +320,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           name?: unknown;
           scopes?: unknown;
           expiresAt?: unknown;
+          projectId?: unknown;
         };
         if (!verifyCsrfToken(request, body._csrf)) {
           return reply
@@ -292,10 +349,18 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           }
           formExpiresAt = d.toISOString();
         }
+        // formbody supplies `projectId` as a string when the field is
+        // present; coerce it so the shared MintTokenBodySchema sees the same
+        // number the JSON branch does. Absent/empty ⇒ undefined ⇒ unbound.
+        const formProjectId =
+          typeof body.projectId === 'string' && body.projectId.length > 0
+            ? Number(body.projectId)
+            : undefined;
         const parsed = MintTokenBodySchema.safeParse({
           name: body.name,
           scopes: formScopes,
           expiresAt: formExpiresAt,
+          projectId: formProjectId,
         });
         if (!parsed.success) {
           return reply
@@ -314,6 +379,19 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
             .code(400)
             .send({ error: 'validation_failed' });
         }
+        // Security Audit finding M1 (task #1635) — refuse a binding that names
+        // no existing project, using this branch's `validation_failed`
+        // envelope (in-branch convention) rather than the JSON branch's
+        // VALIDATION_ERROR shape.
+        if (
+          parsed.data.projectId !== undefined &&
+          !projectExists(fastify.projectService, parsed.data.projectId)
+        ) {
+          return reply
+            .header('Cache-Control', 'no-store')
+            .code(400)
+            .send({ error: 'validation_failed' });
+        }
         const htmlUser = requireUser(request);
         const minted = generateToken();
         const scopesJsonHtml = JSON.stringify(parsed.data.scopes ?? []);
@@ -325,6 +403,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           hash: minted.hash,
           scopes: scopesJsonHtml,
           expiresAt: parsed.data.expiresAt ?? null,
+          projectId: parsed.data.projectId ?? null,
         });
         request.session.set('mintedToken', {
           id: htmlRow.id,
@@ -357,6 +436,21 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           details: { invalidScopes },
         });
       }
+      // Security Audit finding M1 (task #1635) — validate the OPTIONAL project
+      // binding before minting. Shape (`positive integer`) is already enforced
+      // by MintTokenBodySchema; what is checked here is that the project
+      // actually EXISTS, so a typo cannot produce a token bound to nothing.
+      const requestedProjectId = jsonParsed.data.projectId;
+      if (
+        requestedProjectId !== undefined &&
+        !projectExists(fastify.projectService, requestedProjectId)
+      ) {
+        return reply.code(400).send({
+          error: 'VALIDATION_ERROR',
+          message: `Unknown project: ${requestedProjectId}`,
+          details: { invalidProjectId: requestedProjectId },
+        });
+      }
       const user = requireUser(request);
       const { token, prefix, suffix, hash } = generateToken();
       const scopesJson = JSON.stringify(jsonParsed.data.scopes ?? []);
@@ -368,6 +462,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         hash,
         scopes: scopesJson,
         expiresAt: jsonParsed.data.expiresAt ?? null,
+        projectId: requestedProjectId ?? null,
       });
       return reply.code(201).send({
         id: row.id,
@@ -378,6 +473,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         scopes: JSON.parse(row.scopes) as string[],
         expiresAt: row.expires_at,
         createdAt: row.created_at,
+        projectId: row.project_id,
       });
     },
   });
@@ -415,6 +511,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         lastUsedAt: r.last_used_at,
         revokedAt: r.revoked_at,
         expiresAt: r.expires_at,
+        projectId: r.project_id,
       }));
       return reply.code(200).send(items);
     },

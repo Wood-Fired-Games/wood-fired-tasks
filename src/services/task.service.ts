@@ -648,6 +648,23 @@ export class TaskService {
   }
 
   /**
+   * Resolve a task id to the id of the project that owns it, or `null` when
+   * no such task exists (Security Audit finding M1 — task #1635).
+   *
+   * Exists for the auth chain's project-binding gate
+   * (`src/api/plugins/auth/project-binding.ts`), which has to answer "which
+   * project does `PUT /tasks/:id` actually touch?" BEFORE the handler runs.
+   * Deliberately NON-throwing, unlike {@link getTask}: a missing task is a
+   * normal, expected input to an authorization decision (it resolves to
+   * "cannot determine" ⇒ refused), not an error condition, and raising
+   * `NotFoundError` from inside the auth preHandler would surface as a 500
+   * and would also leak task existence through the status code.
+   */
+  findProjectIdForTask(id: number): number | null {
+    return this.taskRepo.findById(id)?.project_id ?? null;
+  }
+
+  /**
    * List tasks with optional filtering.
    *
    * Returns a plain array of the current page — callers who need the

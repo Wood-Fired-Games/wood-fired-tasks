@@ -53,6 +53,9 @@ function makeTokenRow(overrides: Partial<ApiToken> = {}): ApiToken {
     last_used_at: null,
     revoked_at: null,
     expires_at: null,
+    // Security Audit finding M1 (task #1635) — unbound by default, the shape
+    // of every token minted before migration 020.
+    project_id: null,
     ...overrides,
   };
 }
@@ -245,8 +248,24 @@ describe('PAT strategy tryAuth', () => {
           authMethod: 'pat',
           tokenId: 99,
           scopes: [],
+          // Security Audit finding M1 (task #1635): the row fixture carries no
+          // `project_id`, which normalises to the unbound (cross-project)
+          // value — the shape of every token minted before migration 020.
+          projectId: null,
         },
       });
+    });
+
+    // Security Audit finding M1 (task #1635) — the strategy is the ONLY place
+    // the persisted binding enters the request lifecycle, so a regression here
+    // would silently unbind every token without failing the gate's own tests.
+    it('carries the row project_id through as AuthResult.projectId', async () => {
+      const req = makeRequest(`Bearer ${makeToken()}`);
+      const row = makeTokenRow({ id: 99, user_id: 42, project_id: 3 });
+      const deps = makeDeps({ findByHash: row, findById: makeUser() });
+      const out = await tryAuth(req, deps);
+      expect(out.kind).toBe('match');
+      expect(out.kind === 'match' && out.result.projectId).toBe(3);
     });
 
     it('hashes the token before lookup (findByHash receives the SHA-256 hex, never the raw token)', async () => {

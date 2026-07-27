@@ -87,3 +87,57 @@ export function grantSatisfiesScope(
   }
   return scopes.some((granted) => scopeSatisfies(granted, required));
 }
+
+/**
+ * Request-time enforcement predicate for the SECOND authorization dimension
+ * (Security Audit finding M1 — task #1635): the optional per-token project
+ * binding. The tier predicate above answers "how much may this token do?";
+ * this one answers "*where* may it do it?". Both must pass.
+ *
+ * `binding` is the resolved `api_tokens.project_id` for the current principal
+ * (`request.projectBinding`):
+ *
+ *   - `null` — the token declares NO project binding, or the request
+ *     authenticated via a mechanism that carries none at all (a session
+ *     cookie). Full cross-project access, exactly as before #1635. This is the
+ *     same legacy convention `grantSatisfiesScope` applies to an empty scope
+ *     array, so no pre-existing credential is silently 403'd by this gate.
+ *   - a project id — the request is confined to that one project.
+ *
+ * `targets` is the set of project ids the request would actually touch, as
+ * resolved by `resolveTargetProjects`
+ * (`src/api/plugins/auth/project-binding.ts`):
+ *
+ *   - `null` — the target project could NOT be determined (an undeclared
+ *     route, a task id that resolves to no row, a missing required
+ *     `project_id`, or a route that is cross-project by construction such as
+ *     `POST /api/v1/projects`). **Refused.** Ambiguity must never widen a
+ *     binding, so this is the fail-closed branch and the reason the resolver
+ *     returns `null` rather than an empty array in those cases.
+ *   - `[]` (empty array) — the route provably has no project dimension at all
+ *     (`GET /api/v1/me`, `GET /api/v1/models`, `/health/detailed`). Allowed:
+ *     there is nothing project-scoped to leak. `[].every(...)` is `true`, so
+ *     this falls out of the implementation rather than being special-cased —
+ *     which is precisely why a resolver that "found nothing" MUST return
+ *     `null`, never `[]`.
+ *   - a non-empty array — allowed iff EVERY target equals the binding. `every`
+ *     (not `some`) is deliberate: `POST /tasks/:id/dependencies` can name a
+ *     second task in another project, and a rule that accepted the request
+ *     because *one* of the two touched projects matched would be the bypass
+ *     this gate exists to prevent.
+ *
+ * Like {@link grantSatisfiesScope}, this is the ONE predicate every consumer
+ * must import rather than re-implementing the null/empty special cases.
+ */
+export function bindingSatisfiesProjects(
+  binding: number | null,
+  targets: readonly number[] | null,
+): boolean {
+  if (binding === null) {
+    return true;
+  }
+  if (targets === null) {
+    return false;
+  }
+  return targets.every((projectId) => projectId === binding);
+}

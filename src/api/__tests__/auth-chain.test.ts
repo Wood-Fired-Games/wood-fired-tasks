@@ -729,3 +729,127 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
     });
   });
 });
+
+/**
+ * Security Audit finding M1 (task #1635) — the project-binding half of the
+ * post-auth gate, asserted here alongside the tier half it runs with.
+ *
+ * The tier gate lets a `write` token reach EVERY project. The binding narrows
+ * that to one, and the case that matters is the INDIRECT one: `PUT
+ * /api/v1/tasks/:id` never names a project, so a gate that only understood
+ * path-level `project_id` would be bypassed by simply addressing the target
+ * task by its id. The full contract (nested subroutes, dependency edges,
+ * fail-closed resolution, and the route-coverage drift guard) lives in
+ * `src/api/__tests__/pat-project-binding.test.ts`; this block pins the
+ * headline behaviour in the gate's own test file.
+ */
+describe('Security Audit finding M1 (task #1635) — PAT project binding in the auth chain', () => {
+  let server: FastifyInstance;
+  let db: Database.Database;
+  let projectA: number;
+  let projectB: number;
+  let taskInA: number;
+  let taskInB: number;
+
+  beforeAll(async () => {
+    process.env.API_KEYS = 'test-key';
+    const { createServer } = await import('../server.js');
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    db = result.app.db;
+
+    projectA = Number(
+      db.prepare('INSERT INTO projects (name) VALUES (?)').run('binding-project-a').lastInsertRowid,
+    );
+    projectB = Number(
+      db.prepare('INSERT INTO projects (name) VALUES (?)').run('binding-project-b').lastInsertRowid,
+    );
+    taskInA = Number(
+      db
+        .prepare('INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)')
+        .run('task-in-a', projectA, 'seed').lastInsertRowid,
+    );
+    taskInB = Number(
+      db
+        .prepare('INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)')
+        .run('task-in-b', projectB, 'seed').lastInsertRowid,
+    );
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+  });
+
+  /** Mint a `write`-scoped PAT, optionally bound to a project. */
+  function mintWriteToken(projectId: number | null): string {
+    const userId = Number(
+      db.prepare('INSERT INTO users (display_name) VALUES (?)').run(`binding-user-${Math.random()}`)
+        .lastInsertRowid,
+    );
+    const { token, prefix, suffix, hash } = generateToken();
+    db.prepare(
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, project_id)
+       VALUES (?, ?, ?, ?, ?, '["write"]', ?)`,
+    ).run(userId, 'binding-token', prefix, suffix, hash, projectId);
+    return token;
+  }
+
+  it('a write token bound to A gets 200 mutating a task in A and 403 mutating a task in B', async () => {
+    const token = mintWriteToken(projectA);
+
+    const inBinding = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${taskInA}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: 'inside the binding' },
+    });
+    expect(inBinding.statusCode).toBe(200);
+
+    const outOfBinding = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${taskInB}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: 'outside the binding' },
+    });
+    expect(outOfBinding.statusCode).toBe(403);
+    expect(JSON.parse(outOfBinding.body).error).toBe('project_scope_denied');
+  });
+
+  it('a write token with NO binding retains cross-project access (backward compatibility)', async () => {
+    const token = mintWriteToken(null);
+
+    for (const taskId of [taskInA, taskInB]) {
+      const res = await server.inject({
+        method: 'PUT',
+        url: `/api/v1/tasks/${taskId}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { description: 'unbound token reaches every project' },
+      });
+      expect(res.statusCode, `task ${taskId}`).toBe(200);
+    }
+  });
+
+  it('the tier gate still wins when a request fails BOTH checks', async () => {
+    // A `read` token bound to A, hitting a `write` route in B: refused once,
+    // and the response names the tier failure rather than the binding.
+    const userId = Number(
+      db.prepare('INSERT INTO users (display_name) VALUES (?)').run(`binding-user-${Math.random()}`)
+        .lastInsertRowid,
+    );
+    const { token, prefix, suffix, hash } = generateToken();
+    db.prepare(
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, project_id)
+       VALUES (?, ?, ?, ?, ?, '["read"]', ?)`,
+    ).run(userId, 'read-bound-token', prefix, suffix, hash, projectA);
+
+    const res = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${taskInB}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: 'fails tier and binding' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('insufficient_scope');
+  });
+});

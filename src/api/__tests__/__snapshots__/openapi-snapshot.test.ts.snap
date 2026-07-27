@@ -142,6 +142,12 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "prefix": {
                         "type": "string",
                       },
+                      "projectId": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "nullable": true,
+                        "type": "integer",
+                      },
                       "revokedAt": {
                         "nullable": true,
                         "type": "string",
@@ -166,6 +172,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "lastUsedAt",
                       "revokedAt",
                       "expiresAt",
+                      "projectId",
                     ],
                     "type": "object",
                   },
@@ -233,6 +240,13 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "prefix": {
                       "type": "string",
                     },
+                    "projectId": {
+                      "description": "Project this token is restricted to; null means every project.",
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "nullable": true,
+                      "type": "integer",
+                    },
                     "scopes": {
                       "items": {
                         "type": "string",
@@ -256,6 +270,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "scopes",
                     "expiresAt",
                     "createdAt",
+                    "projectId",
                   ],
                   "type": "object",
                 },
@@ -321,6 +336,40 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                           },
                           "required": [
                             "invalidScopes",
+                          ],
+                          "type": "object",
+                        },
+                        "error": {
+                          "enum": [
+                            "VALIDATION_ERROR",
+                          ],
+                          "type": "string",
+                        },
+                        "message": {
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "error",
+                        "message",
+                        "details",
+                      ],
+                      "type": "object",
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "details": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "invalidProjectId": {
+                              "maximum": 9007199254740991,
+                              "minimum": -9007199254740991,
+                              "type": "integer",
+                            },
+                          },
+                          "required": [
+                            "invalidProjectId",
                           ],
                           "type": "object",
                         },

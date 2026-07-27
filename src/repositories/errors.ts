@@ -82,6 +82,32 @@ export class InvalidScopeError extends Error {
 }
 
 /**
+ * InvalidProjectBindingError — thrown when `ApiTokenRepository.insert` is
+ * asked to persist a project binding (`api_tokens.project_id`, Security Audit
+ * finding M1 / task #1635) that is not a positive integer.
+ *
+ * Sibling of {@link InvalidScopeError}: the `/me/tokens` route validates the
+ * binding earlier so well-formed clients get a clean 400, and this is the
+ * repository-boundary re-validation that also covers the `tasks db
+ * mint-token` CLI and the device-flow HTML mint path. Existence of the
+ * referenced project is NOT checked here — the FK on the column
+ * (`REFERENCES projects(id)` with `PRAGMA foreign_keys = ON`) already refuses
+ * a dangling binding at insert time.
+ */
+export class InvalidProjectBindingError extends Error {
+  public override readonly name = 'InvalidProjectBindingError';
+  public readonly projectId: unknown;
+
+  constructor(projectId: unknown) {
+    super(`Invalid PAT project binding: ${String(projectId)} (expected a positive integer)`);
+    this.projectId = projectId;
+
+    // Restore prototype chain for instanceof checks across module boundaries.
+    Object.setPrototypeOf(this, InvalidProjectBindingError.prototype);
+  }
+}
+
+/**
  * Detect whether a raw error from better-sqlite3 is an FTS5 syntax error.
  *
  * Pattern: SQLITE_ERROR with a message that contains FTS-specific phrases.

@@ -452,6 +452,131 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         .get() as { c: number };
       expect(count.c).toBe(0);
     });
+
+    // -----------------------------------------------------------------------
+    // Security Audit finding M1 (task #1635) — optional project binding.
+    //
+    // The mint surface is the ONLY way a binding is ever attached to a token,
+    // so these cases pin the whole persistence contract: accepted when valid,
+    // NULL (unbound) when omitted, and refused before any row is written when
+    // the id is malformed or names no project. Enforcement of the resulting
+    // binding lives in src/api/__tests__/pat-project-binding.test.ts.
+    // -----------------------------------------------------------------------
+    describe('project binding (task #1635)', () => {
+      it('persists projectId when supplied and echoes it on the mint response', async () => {
+        const projectId = Number(
+          harness.db
+            .prepare('INSERT INTO projects (name) VALUES (?)')
+            .run(`mint-binding-${Date.now()}`).lastInsertRowid,
+        );
+
+        const res = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'bound-token', scopes: ['write'], projectId },
+        });
+
+        expect(res.statusCode).toBe(201);
+        const body = JSON.parse(res.body);
+        expect(body.projectId).toBe(projectId);
+
+        const row = harness.db
+          .prepare('SELECT project_id FROM api_tokens WHERE id = ?')
+          .get(body.id) as { project_id: number | null };
+        expect(row.project_id).toBe(projectId);
+      });
+
+      it('omitting projectId persists NULL — the unbound, cross-project default', async () => {
+        const res = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'unbound-token', scopes: ['write'] },
+        });
+
+        expect(res.statusCode).toBe(201);
+        const body = JSON.parse(res.body);
+        expect(body.projectId).toBeNull();
+
+        const row = harness.db
+          .prepare('SELECT project_id FROM api_tokens WHERE id = ?')
+          .get(body.id) as { project_id: number | null };
+        expect(row.project_id).toBeNull();
+      });
+
+      it('rejects a projectId naming no existing project with 400 — and persists nothing', async () => {
+        const res = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'dangling-binding', projectId: 999_999 },
+        });
+
+        expect(res.statusCode).toBe(400);
+        const body = JSON.parse(res.body);
+        expect(body.error).toBe('VALIDATION_ERROR');
+        expect(body.details.invalidProjectId).toBe(999_999);
+
+        const count = harness.db
+          .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'dangling-binding'")
+          .get() as { c: number };
+        expect(count.c).toBe(0);
+      });
+
+      it('rejects a non-positive-integer projectId with 400', async () => {
+        for (const projectId of [0, -1, 1.5, 'abc']) {
+          const res = await harness.server.inject({
+            method: 'POST',
+            url: '/api/v1/me/tokens',
+            headers: { cookie: legacyUserCookie },
+            payload: { name: `bad-binding-${String(projectId)}`, projectId },
+          });
+          expect(res.statusCode, `projectId=${String(projectId)}`).toBe(400);
+        }
+        const count = harness.db
+          .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name LIKE 'bad-binding-%'")
+          .get() as { c: number };
+        expect(count.c).toBe(0);
+      });
+
+      it('GET /me/tokens surfaces the binding on each listed token', async () => {
+        const projectId = Number(
+          harness.db
+            .prepare('INSERT INTO projects (name) VALUES (?)')
+            .run(`list-binding-${Date.now()}`).lastInsertRowid,
+        );
+        const minted = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'listed-bound-token', projectId },
+        });
+        expect(minted.statusCode).toBe(201);
+        const mintedId = JSON.parse(minted.body).id as number;
+
+        const unbound = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'listed-unbound-token' },
+        });
+        expect(unbound.statusCode).toBe(201);
+        const unboundId = JSON.parse(unbound.body).id as number;
+
+        const res = await harness.server.inject({
+          method: 'GET',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+        });
+        expect(res.statusCode).toBe(200);
+        const items = JSON.parse(res.body) as Array<{ id: number; projectId: number | null }>;
+        expect(items.find((i) => i.id === mintedId)?.projectId).toBe(projectId);
+        // …while a token minted without one reports null in the same payload,
+        // proving the column is projected per-row rather than defaulted.
+        expect(items.find((i) => i.id === unboundId)?.projectId).toBeNull();
+      });
+    });
   });
 
   // -------------------------------------------------------------------------

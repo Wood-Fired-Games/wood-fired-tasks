@@ -153,6 +153,13 @@ export async function tryAuth(request: FastifyRequest, deps: PatDeps): Promise<S
       authMethod: 'pat',
       tokenId: row.id,
       scopes: parseScopes(row.scopes),
+      // Security Audit finding M1 — task #1635. The optional project
+      // binding, read straight off the authenticated row. `?? null`
+      // normalises the pre-migration-020 case (a row-mapper result whose
+      // `project_id` key is absent because the column did not exist when the
+      // row was written) to the explicit "unbound" value, so an older DB can
+      // never surface `undefined` into `bindingSatisfiesProjects`.
+      projectId: row.project_id ?? null,
     },
   };
 }

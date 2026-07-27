@@ -45,6 +45,21 @@ declare module 'fastify' {
      */
     scopes: PatScope[] | null;
     /**
+     * Resolved project binding for the current principal (Security Audit
+     * finding M1 — task #1635), populated by `applyPrincipal` from the
+     * matched strategy's `AuthResult.projectId`:
+     *   - `null` before auth runs, permanently for session matches, and for
+     *     any PAT whose `api_tokens.project_id` is NULL — all of which mean
+     *     "unbound", i.e. full cross-project access (the pre-#1635
+     *     behaviour and the explicit backward-compatibility rule).
+     *   - a project id for a PAT minted with an explicit binding, which the
+     *     auth chain then confines to that one project.
+     * See `bindingSatisfiesProjects` (`src/schemas/pat-scope.schema.ts`) for
+     * the shared predicate and `src/api/plugins/auth/project-binding.ts` for
+     * the per-route target-project resolution it consumes.
+     */
+    projectBinding: number | null;
+    /**
      * MIGR-01 legacy compat slot. Populated by the legacy strategy with the
      * derived display-name label of the matched API_KEYS entry (e.g.
      * `key_test-key`). Stays `undefined` on PAT and session matches.
