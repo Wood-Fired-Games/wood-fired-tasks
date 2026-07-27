@@ -42,6 +42,7 @@ import { eventBus } from '../events/event-bus.js';
 import { DEFAULT_CLAIM_TTL_MINUTES } from './claim-release.service.js';
 import { validateVerificationEvidence } from './evidence-validation.js';
 import type Database from '../db/driver.js';
+import { config } from '../config/env.js';
 
 /**
  * Sanitized message surfaced to clients when the FTS5 search expression
@@ -755,23 +756,20 @@ export class TaskService {
       throw new NotFoundError('Task', id);
     }
 
-    // task #608 (PIECE A): server-side anti-fabrication validation of
-    // verification_evidence, gated behind WFT_STRICT_EVIDENCE (default OFF).
-    // Runs only when the flag is on AND the update supplies a non-null
-    // verification_evidence. The trailing `callerId` mirrors the
-    // additive-positional precedent set by claimTask's assigneeUserId — all
-    // existing callers (which omit it) are unaffected. On any violation we
-    // throw the SAME ValidationError the service uses for Zod failures.
+    // task #608 (PIECE A) / #1624 (M2 audit finding): server-side
+    // anti-fabrication validation of verification_evidence, gated behind
+    // WFT_STRICT_EVIDENCE — DEFAULT ON as of #1624. Runs whenever the flag is
+    // on AND the update supplies a non-null verification_evidence. The
+    // trailing `callerId` mirrors the additive-positional precedent set by
+    // claimTask's assigneeUserId — all existing callers (which omit it) are
+    // unaffected. On any violation we throw the SAME ValidationError the
+    // service uses for Zod failures.
     //
-    // The gate reads `process.env.WFT_STRICT_EVIDENCE` directly (matching the
-    // env schema's `v === 'true'` transform) rather than the `config` Proxy:
-    // touching the Proxy eagerly runs `loadConfig()`, which validates the
-    // whole environment (including the required `API_KEYS`). Pure service-
-    // layer tests never set `API_KEYS`, so a Proxy access in this hot path
-    // would break the existing suite. A direct env read keeps the default-OFF
-    // path zero-cost and side-effect-free.
+    // Reads the validated config field (not raw `process.env`) so the
+    // zod-coerced boolean (unset/anything-but-'false' → true, 'false' →
+    // false) is the single source of truth for the resolved flag value.
     if (
-      process.env['WFT_STRICT_EVIDENCE'] === 'true' &&
+      config.WFT_STRICT_EVIDENCE &&
       result.data.verification_evidence !== undefined &&
       result.data.verification_evidence !== null
     ) {

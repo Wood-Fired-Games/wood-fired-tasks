@@ -48,7 +48,11 @@ describe('TaskService — verification_evidence (#312)', () => {
       verdict: 'PASS' as const,
       checks: [
         { name: 'unit', status: 'PASS' as const, evidence_url_or_text: 'green' },
-        { name: 'lint', status: 'SKIP' as const, evidence_url_or_text: 'n/a' },
+        {
+          name: 'lint',
+          status: 'SKIP' as const,
+          evidence_url_or_text: 'skipped — no lint-relevant changes in this diff',
+        },
       ],
       verifier_session_id: 'sess-1',
       verifier_request_id: 'req-1',
@@ -90,6 +94,7 @@ describe('TaskService — verification_evidence (#312)', () => {
     app.taskService.updateTask(id, {
       verification_evidence: {
         verdict: 'PASS',
+        checks: [{ name: 'unit', status: 'PASS', evidence_url_or_text: 'real check output' }],
         verifier_session_id: 'real-verifier',
       },
     });
@@ -127,16 +132,23 @@ describe('TaskService — verification_evidence (#312)', () => {
     app.taskService.updateTask(id, { status: 'in_progress' });
     const closed = app.taskService.updateTask(id, {
       status: 'done',
-      verification_evidence: { verdict: 'FAIL' },
+      verification_evidence: { verdict: 'FAIL', verifier_session_id: 'critic-fail-1' },
     });
 
-    expect(closed.verification_evidence).toEqual({ verdict: 'FAIL' });
+    expect(closed.verification_evidence).toEqual({
+      verdict: 'FAIL',
+      verifier_session_id: 'critic-fail-1',
+    });
   });
 
   it('closing with explicit null clears whatever was there (no auto-fill)', () => {
     const id = newTask();
     app.taskService.updateTask(id, {
-      verification_evidence: { verdict: 'PASS' },
+      verification_evidence: {
+        verdict: 'PASS',
+        checks: [{ name: 'unit', status: 'PASS', evidence_url_or_text: 'real check output' }],
+        verifier_session_id: 'critic-clear-1',
+      },
     });
     app.taskService.updateTask(id, { status: 'in_progress' });
     const closed = app.taskService.updateTask(id, {

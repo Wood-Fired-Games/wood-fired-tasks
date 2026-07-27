@@ -757,6 +757,72 @@ describe('Configuration Validation', () => {
     });
   });
 
+  describe('WFT_STRICT_EVIDENCE (task #1624, M2 audit finding)', () => {
+    // #1624 flips the anti-fabrication verification_evidence gate to
+    // DEFAULT ON, mirroring the `isProductionPosture` "absent reads as
+    // hardened" shape (task #1611): unset must resolve to strict-on (true),
+    // not the old permissive default. Only the literal string 'false' opts
+    // back out to the permissive path.
+
+    it('resolves true when the env var is unset', () => {
+      delete process.env.WFT_STRICT_EVIDENCE;
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.WFT_STRICT_EVIDENCE).toBe(true);
+      }
+    });
+
+    it("resolves false only when explicitly set to 'false'", () => {
+      process.env.WFT_STRICT_EVIDENCE = 'false';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.WFT_STRICT_EVIDENCE).toBe(false);
+      }
+    });
+
+    it("resolves true for explicit WFT_STRICT_EVIDENCE='true'", () => {
+      process.env.WFT_STRICT_EVIDENCE = 'true';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.WFT_STRICT_EVIDENCE).toBe(true);
+      }
+    });
+
+    // Pins the "only explicitly false" wording: a non-'false' value (a
+    // falsy-looking string like '0', or a stray typo) must NOT be treated as
+    // an opt-out — it must still resolve to strict-on (true).
+    it("resolves true for a non-'false' value such as '0' (not treated as opt-out)", () => {
+      process.env.WFT_STRICT_EVIDENCE = '0';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.WFT_STRICT_EVIDENCE).toBe(true);
+      }
+    });
+
+    it("resolves true for a non-'false' value such as 'no' (not treated as opt-out)", () => {
+      process.env.WFT_STRICT_EVIDENCE = 'no';
+
+      const result = configSchema.safeParse(process.env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.WFT_STRICT_EVIDENCE).toBe(true);
+      }
+    });
+  });
+
   describe('HOST loopback boot fatal when posture is non-production (task #1611)', () => {
     let exitSpy: ReturnType<typeof vi.spyOn>;
     let consoleErrorSpy: ReturnType<typeof vi.spyOn>;

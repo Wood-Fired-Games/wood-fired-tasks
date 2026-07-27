@@ -121,17 +121,25 @@ export const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    // task #608 (PIECE A): server-side anti-fabrication validation of
-    // verification_evidence. DEFAULT OFF — operators opt in with
-    // WFT_STRICT_EVIDENCE=true. When enabled, an update that supplies a
-    // non-null verification_evidence is run through the generator/critic
-    // separation + placeholder-evidence checks in
-    // src/services/evidence-validation.ts and rejected (ValidationError) on
-    // any violation.
+    // task #608 (PIECE A) / #1624 (M2 audit finding): server-side
+    // anti-fabrication validation of verification_evidence. DEFAULT ON as of
+    // #1624 — an update that supplies a non-null verification_evidence is run
+    // through the generator/critic separation + placeholder-evidence checks
+    // in src/services/evidence-validation.ts and rejected (ValidationError)
+    // on any violation. The control only means something if it is on by
+    // default; operators who need the old permissive behaviour opt OUT with
+    // WFT_STRICT_EVIDENCE=false.
+    //
+    // Mirrors the `isProductionPosture` "absent reads as hardened" shape
+    // (task #1611): absence must resolve to the SAFE (strict) posture, not
+    // the permissive one. Resolution is deliberately `v !== 'false'` rather
+    // than `v === 'true'` — unset AND any non-'false' value (e.g. '0', 'no',
+    // stray typos) all resolve to strict-on; only the literal string 'false'
+    // opts out.
     WFT_STRICT_EVIDENCE: z
       .string()
       .optional()
-      .transform((v) => v === 'true'),
+      .transform((v) => v !== 'false'),
     // task #185: SSE connection caps. New per-key/per-IP/global limits bound
     // long-lived connection exhaustion. When any cap is hit the route returns
     // 429 with Retry-After.
