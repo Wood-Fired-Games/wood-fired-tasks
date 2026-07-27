@@ -427,6 +427,198 @@ describe('rate limiting with trustProxy OFF: authenticated bucket is spoof-immun
   });
 });
 
+/**
+ * Task #1615 — regression pin for the UNAUTHENTICATED fallback branch of
+ * `rateLimitKeyGenerator` (server.ts §`return \`ip:${req.ip}\``).
+ *
+ * Task #1614 moved the principal-keyed limiter to `hook: 'preHandler'` so its
+ * keyGenerator could read the auth chain's decorations. The suites above pin
+ * the AUTHENTICATED branches (`tok:` / `usr:`) and the pre-auth layer-1
+ * behaviour on auth-GATED routes (where the 401 is what proves layer 1 ran).
+ * Neither exercises the case where the `preHandler` limiter actually runs to
+ * completion with NO principal resolved: a `config: { skipAuth: true }` route.
+ * There the auth chain short-circuits without decorating `tokenId`/`user`, the
+ * handler runs normally (200 — not 401), and layer 2's keyGenerator MUST fall
+ * through to `ip:<addr>`. If that fallback ever regressed to a constant (or to
+ * anything request-derived), anonymous traffic would either collapse into one
+ * global bucket or mint a fresh bucket per request — both silent failures that
+ * the 401-based suites above cannot see.
+ *
+ * `/login` (src/api/routes/web/login.ts) is the vehicle: top-level, skipAuth,
+ * 200 for an anonymous caller, and NOT `/health`-allow-listed. It mounts only
+ * when secure-session is active, hence SESSION_COOKIE_SECRET below. It carries
+ * no per-route `config.rateLimit`, so it uses the shared global store (see
+ * @fastify/rate-limit `onRoute` → `addRouteRateHook(pluginComponent, ...)`) —
+ * which is what makes the cross-route assertion at the end meaningful.
+ *
+ * Own server + own `:memory:` DB per describe, so every case starts from an
+ * empty bucket regardless of file order and no sleep/timing is involved.
+ */
+describe('unauthenticated (skipAuth) routes: IP-keyed shared budget', () => {
+  let server: FastifyInstance;
+  let db: Database.Database;
+  const anonMax = 2;
+
+  beforeAll(async () => {
+    process.env.RATE_LIMIT_MAX = String(anonMax);
+    process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
+    delete process.env.TRUST_PROXY;
+    // Required for the skipAuth web routes (/login) to be registered at all.
+    process.env.SESSION_COOKIE_SECRET = randomBytes(32).toString('base64');
+    resetConfig();
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    db = result.app.db;
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+    delete process.env.RATE_LIMIT_MAX;
+    delete process.env.RATE_LIMIT_TIME_WINDOW;
+    delete process.env.SESSION_COOKIE_SECRET;
+    resetConfig();
+  });
+
+  it('keys anonymous requests to a skipAuth route by IP — one shared budget, not one per request', async () => {
+    // Mechanism anchor: with neither `tokenId` nor `user` decorated (exactly
+    // the state a skipAuth route leaves the request in), the exported
+    // keyGenerator must produce the `ip:` form.
+    expect(rateLimitKeyGenerator({ tokenId: null, user: null, ip: '127.0.0.1' })).toBe(
+      'ip:127.0.0.1',
+    );
+
+    // Two anonymous requests that differ in EVERY caller-controlled respect
+    // except the source socket — different path shape (query string) and a
+    // different User-Agent. If the bucket key were derived from anything
+    // request-specific instead of the IP, these would land in separate
+    // buckets and the third request below would not be throttled.
+    const r1 = await server.inject({
+      method: 'GET',
+      url: '/login?next=%2Fme',
+      headers: { 'user-agent': 'anon-client-one' },
+    });
+    const r2 = await server.inject({
+      method: 'GET',
+      url: '/login',
+      headers: { 'user-agent': 'anon-client-two' },
+    });
+    // 200, not 401: skipAuth means the handler really ran, so the
+    // `preHandler` limiter ran to completion with NO principal resolved.
+    expect(r1.statusCode).toBe(200);
+    expect(r2.statusCode).toBe(200);
+
+    // Both consumed the SAME `ip:127.0.0.1` bucket, so the (max + 1)-th
+    // anonymous request is throttled.
+    const r3 = await server.inject({
+      method: 'GET',
+      url: '/login',
+      headers: { 'user-agent': 'anon-client-three' },
+    });
+    expect(r3.statusCode).toBe(429);
+    const body = JSON.parse(r3.body);
+    expect(body.error).toBe('TOO_MANY_REQUESTS');
+    expect(body.message).toMatch(/Rate limit exceeded/);
+
+    // Discriminator — the bucket that just filled is the `ip:` one, NOT a
+    // global counter. An authenticated principal from the same socket keys
+    // `tok:<id>` against the same shared store and must be unaffected.
+    // (Layer 1's IP budget is anonMax * RATE_LIMIT_IP_MAX_FACTOR = 40, far
+    // from exhausted by the handful of requests above.)
+    const principal = seedAuth(db, { displayName: 'anon-probe', name: 'anon-probe-token' });
+    const authed = await server.inject({
+      method: 'GET',
+      url: '/api/v1/tasks',
+      headers: principal.headers,
+    });
+    expect(authed.statusCode).toBe(200);
+  });
+});
+
+/**
+ * Task #1615 — spoof resistance for that same unauthenticated `ip:` branch.
+ *
+ * `request.ip` resolves from `X-Forwarded-For` ONLY when Fastify's
+ * `trustProxy` option is enabled (server.ts §`trustProxy: config.TRUST_PROXY`,
+ * default OFF). With it off, a caller that rewrites `X-Forwarded-For` between
+ * batches must NOT be able to mint itself a fresh bucket.
+ *
+ * Batch-oriented on purpose: the existing layer-1 spoof test varies the header
+ * on every single request against an auth-gated (401) route. This one drives a
+ * skipAuth route where layer 2's `ip:` fallback is the binding limiter, and
+ * splits the traffic into two clearly separated batches over ONE socket, so
+ * the failure mode it detects — "the second batch got its own bucket" — is
+ * exactly the shape of a real spoofing attempt. Flipping `trustProxy` on makes
+ * this case fail (batch two stops 429ing); the sibling suite above, which
+ * sends no XFF at all, stays green.
+ */
+describe('unauthenticated (skipAuth) routes: X-Forwarded-For cannot mint a fresh bucket', () => {
+  let server: FastifyInstance;
+  let db: Database.Database;
+  const anonMax = 2;
+  // Documentation ranges (RFC 5737) so these can never collide with a real
+  // host in any environment the suite runs in.
+  const BATCH_ONE_XFF = '203.0.113.7';
+  const BATCH_TWO_XFF = '198.51.100.9';
+
+  beforeAll(async () => {
+    process.env.RATE_LIMIT_MAX = String(anonMax);
+    process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
+    // TRUST_PROXY intentionally UNSET → Fastify `trustProxy: false`.
+    delete process.env.TRUST_PROXY;
+    process.env.SESSION_COOKIE_SECRET = randomBytes(32).toString('base64');
+    resetConfig();
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    db = result.app.db;
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+    delete process.env.RATE_LIMIT_MAX;
+    delete process.env.RATE_LIMIT_TIME_WINDOW;
+    delete process.env.SESSION_COOKIE_SECRET;
+    resetConfig();
+  });
+
+  it('shares ONE budget across two batches sent from the same socket under different X-Forwarded-For values', async () => {
+    const batch = async (xff: string, count: number): Promise<number[]> => {
+      const codes: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const r = await server.inject({
+          method: 'GET',
+          url: '/login',
+          headers: { 'x-forwarded-for': xff },
+        });
+        codes.push(r.statusCode);
+      }
+      return codes;
+    };
+
+    // Batch one claims to come from BATCH_ONE_XFF and spends the whole
+    // anonymous budget.
+    const first = await batch(BATCH_ONE_XFF, anonMax);
+    expect(first).toEqual(Array(anonMax).fill(200));
+
+    // Batch two claims a DIFFERENT origin over the same socket. With
+    // trustProxy off, `request.ip` is still 127.0.0.1 for these, so they hit
+    // the already-exhausted bucket instead of a fresh one.
+    const second = await batch(BATCH_TWO_XFF, anonMax);
+    expect(second).toEqual(Array(anonMax).fill(429));
+
+    const throttled = await server.inject({
+      method: 'GET',
+      url: '/login',
+      headers: { 'x-forwarded-for': BATCH_TWO_XFF },
+    });
+    expect(throttled.statusCode).toBe(429);
+    const body = JSON.parse(throttled.body);
+    expect(body.error).toBe('TOO_MANY_REQUESTS');
+    expect(body.message).toMatch(/Rate limit exceeded/);
+  });
+});
+
 describe('per-route auth rate limit (tighter than global)', () => {
   // The real /auth/device/code route (with its per-route rateLimit config)
   // only mounts when OIDC is ENABLED — the disabled-mode stub carries no
