@@ -54,7 +54,18 @@ async function main() {
   const apiKeyEntries = parseApiKeyEntries(process.env['API_KEYS']);
   const hashedEntries = precomputeHashedEntries(apiKeyEntries);
   const allowBadPat = process.env['WFT_MCP_ALLOW_BAD_PAT'] === '1';
-  const { actorUserId, path: resolutionPath } = resolveActorUserIdWithPath({
+  //
+  // Task #1631: the resolver ALSO returns the PAT grant (`scopes`). It is
+  // threaded into the McpServerContext below so every mutating tool can gate
+  // on it — without this, stdio MCP is a complete authorization bypass (a
+  // read-scoped PAT in WFT_API_KEY could mutate everything, because MCP tool
+  // handlers never traverse the Fastify auth chain that enforces scopes for
+  // REST).
+  const {
+    actorUserId,
+    path: resolutionPath,
+    scopes,
+  } = resolveActorUserIdWithPath({
     apiKey: process.env['WFT_API_KEY'],
     apiTokenRepo: app.apiTokenRepository,
     userRepo: app.userRepository,
@@ -72,6 +83,10 @@ async function main() {
       event: 'mcp.actor_resolved',
       actor_user_id: actorUserId,
       resolution_path: resolutionPath,
+      // #1631: the granted tiers (never the token). `null` = a credential
+      // class with no PAT scope restriction; `[]` = a pre-taxonomy PAT,
+      // which the shared predicate treats as full-tier.
+      scopes,
     }),
   );
 
@@ -82,7 +97,8 @@ async function main() {
     app.dependencyService,
     app.commentService,
     app.db,
-    { actorUserId, userRepository: app.userRepository },
+    // #1631: `scopes` is what makes the per-tool gate real in production.
+    { actorUserId, scopes, userRepository: app.userRepository },
     // Wave 4.1 (#318): topology classifier behind the `topology_check` tool.
     app.topologyService,
     // Configurable Task Models Task 11 (#920) / #931: the three services

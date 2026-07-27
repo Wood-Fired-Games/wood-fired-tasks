@@ -6,7 +6,9 @@ import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js'
 import { ScmCharterNullableSchema } from '../../schemas/scm-charter.schema.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { enforceToolScope } from '../scope-gate.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
+import type { McpServerContext } from '../server.js';
 
 /**
  * Register all project-related MCP tools
@@ -17,8 +19,21 @@ import { omitUndefined } from '../../utils/omit-undefined.js';
  * - list_projects: List all projects
  * - update_project: Update existing project
  * - delete_project: Delete project by ID
+ *
+ * @param ctx - Task #1631: boot-time context carrying the resolved PAT grant
+ *   (`ctx.scopes`). The three mutating tools (`create_project` /
+ *   `update_project` → write, `delete_project` → admin) check it via
+ *   `enforceToolScope` before touching the service; `get_project` and
+ *   `list_projects` are pure reads and stay ungated. Defaults to
+ *   `{ actorUserId: null }` (no scopes ⇒ full tier) so pre-#1631 callers,
+ *   including the many tests that build a server without a context, keep
+ *   working unchanged.
  */
-export function registerProjectTools(server: McpServer, projectService: ProjectService): void {
+export function registerProjectTools(
+  server: McpServer,
+  projectService: ProjectService,
+  ctx: McpServerContext = { actorUserId: null },
+): void {
   // Tool: create_project
   server.registerTool(
     'create_project',
@@ -31,6 +46,8 @@ export function registerProjectTools(server: McpServer, projectService: ProjectS
     },
     async (args) => {
       try {
+        // #1631: authorize BEFORE the write ('write' tier).
+        enforceToolScope(ctx.scopes, 'create_project');
         const project = projectService.createProject(args);
         return {
           content: [
@@ -163,6 +180,8 @@ export function registerProjectTools(server: McpServer, projectService: ProjectS
     },
     async (args) => {
       try {
+        // #1631: authorize BEFORE the write ('write' tier).
+        enforceToolScope(ctx.scopes, 'update_project');
         const project = projectService.updateProject(args.id, args.updates);
         return {
           content: [
@@ -190,6 +209,8 @@ export function registerProjectTools(server: McpServer, projectService: ProjectS
     },
     async (args) => {
       try {
+        // #1631: row-destructive (cascades to the project's tasks) → 'admin'.
+        enforceToolScope(ctx.scopes, 'delete_project');
         projectService.deleteProject(args.id);
         return {
           content: [

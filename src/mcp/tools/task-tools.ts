@@ -17,6 +17,7 @@ import {
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { convertToMcpError } from '../errors.js';
+import { enforceToolScope } from '../scope-gate.js';
 import type { McpServerContext } from '../server.js';
 import type { UserRepository } from '../../repositories/user.repository.js';
 import { ScoreSubmissionSchema } from '../../schemas/wsjf.schema.js';
@@ -185,6 +186,10 @@ export function registerTaskTools(
         }),
       );
       try {
+        // #1631: authorize BEFORE any mutation. Throws a structured
+        // insufficient_scope McpError (passed through unchanged by
+        // convertToMcpError) when the boot PAT grant is below 'write'.
+        enforceToolScope(ctx.scopes, 'create_task');
         // Phase 31 Plan 03 (T-31-07): strip any client-supplied identity
         // FKs from the JSON-RPC args BEFORE forwarding to the service.
         // ctx.actorUserId is the authoritative server-derived value; a
@@ -344,6 +349,8 @@ export function registerTaskTools(
         }),
       );
       try {
+        // #1631: authorize BEFORE any mutation ('write' tier).
+        enforceToolScope(ctx.scopes, 'update_task');
         // Phase 31 Plan 03 (T-31-07): strip any client-supplied
         // assignee_user_id spoof, then derive it server-side from the
         // body's `assignee` string (when present) using the same email-
@@ -511,6 +518,8 @@ export function registerTaskTools(
     },
     async (args) => {
       try {
+        // #1631: row-destructive → 'admin' tier, one above ordinary writes.
+        enforceToolScope(ctx.scopes, 'delete_task');
         taskService.deleteTask(args.id);
         return {
           content: [
@@ -549,6 +558,8 @@ export function registerTaskTools(
         }),
       );
       try {
+        // #1631: a claim writes assignee + status → 'write' tier.
+        enforceToolScope(ctx.scopes, 'claim_task');
         // Phase 31 Plan 03: pass the boot-resolved actor as the trailing
         // optional positional (Plan 01 service signature). 'workflow' is
         // the source tag because MCP-initiated claims are agent-driven,

@@ -39,12 +39,23 @@ function summarizeFieldErrors(fieldErrors: Record<string, string[]>): string {
  * Convert Phase 1 custom errors to MCP-compatible McpError
  *
  * Maps domain errors to appropriate MCP error codes:
+ * - McpError -> passed through unchanged (already structured)
  * - ValidationError -> InvalidParams (with field details)
  * - NotFoundError -> InvalidRequest (with entity context)
  * - BusinessError -> InvalidRequest (with message)
  * - Unknown errors -> InternalError (sanitized, logged)
  */
 export function convertToMcpError(error: unknown): McpError {
+  // Already an McpError: a handler deliberately raised a structured protocol
+  // error (e.g. the insufficient_scope gate in `src/mcp/scope-gate.ts`, task
+  // #1631). Pass it through verbatim. Without this branch it would fall to
+  // the unknown-error arm below and be flattened into a generic
+  // "An internal error occurred", destroying both the message and the
+  // structured `data` payload the caller needs to act on.
+  if (error instanceof McpError) {
+    return error;
+  }
+
   // ValidationError: structured field errors, named inline in the message
   if (error instanceof ValidationError) {
     return new McpError(ErrorCode.InvalidParams, summarizeFieldErrors(error.fieldErrors), {

@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toStructuredContent } from '../lib/structured-content.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { enforceToolScope } from '../scope-gate.js';
+import type { McpServerContext } from '../server.js';
 import { rankFrontier } from '../../services/wsjf.service.js';
 import type { RankDeps, ScoreSubmission } from '../../services/wsjf.service.js';
 import type { IWsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
@@ -65,8 +67,18 @@ const COMPONENT_KEYS = [
  *
  * @param server the MCP server to register tools on.
  * @param deps   the {@link WsjfToolDeps} collaborators (RankDeps + history repo).
+ * @param ctx    Task #1631: boot-time context carrying the resolved PAT grant
+ *   (`ctx.scopes`). Only `rescore_project` is a mutation — it opens a rescore
+ *   run and appends one history row per changed task — so it alone is gated,
+ *   at the `write` tier. `wsjf_ranking`, `wsjf_history`, and `wsjf_health` are
+ *   pure reads and stay ungated. Defaults to `{ actorUserId: null }` (no
+ *   scopes ⇒ full tier) for pre-#1631 callers.
  */
-export function registerWsjfTools(server: McpServer, deps: WsjfToolDeps): void {
+export function registerWsjfTools(
+  server: McpServer,
+  deps: WsjfToolDeps,
+  ctx: McpServerContext = { actorUserId: null },
+): void {
   // -------------------------------------------------------------------------
   // Tool: wsjf_ranking
   // -------------------------------------------------------------------------
@@ -228,6 +240,9 @@ export function registerWsjfTools(server: McpServer, deps: WsjfToolDeps): void {
       },
       async (args) => {
         try {
+          // #1631: authorize BEFORE the write ('write' tier — a rescore run
+          // mutates task scores and appends audit history).
+          enforceToolScope(ctx.scopes, 'rescore_project');
           const submissions: RescoreSubmission[] = args.submissions.map((s) => ({
             taskId: s.task_id,
             submission: {
