@@ -510,7 +510,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         cookie: {
           path: '/',
           httpOnly: true,
-          secure: config.NODE_ENV === 'production',
+          // task #1613 (H1 audit finding): derive from the fail-closed
+          // posture flag (task #1611), not raw NODE_ENV — an absent
+          // NODE_ENV must read as hardened, not permissive. Same idiom as
+          // the Swagger UI gate (task #1612, commit d0cc487).
+          secure: config.isProductionPosture,
           sameSite: 'lax',
           maxAge: SESSION_LIFETIME_SECONDS,
         },
