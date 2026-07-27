@@ -374,6 +374,19 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // - Opt-in set + explicit NODE_ENV=development|test (isProductionPosture
     //   false): expose UI without auth — unchanged dev ergonomics, now
     //   requires the same explicit opt-in as every other environment.
+    //
+    // task #1617 completes the H3 remediation: `@fastify/swagger-ui` is now a
+    // devDependency and `registerSwaggerUI` imports it dynamically, so the
+    // vulnerable `@fastify/static` is absent from the production dependency
+    // tree entirely (not merely unregistered). Because the default path below
+    // never calls `registerSwaggerUI`, the dynamic import is never evaluated
+    // and a missing module cannot affect boot. When the opt-in IS set and the
+    // module is absent, `registerSwaggerUI` logs a warning and returns false
+    // rather than throwing, so `/docs` degrades to 404 instead of bricking the
+    // server. (The warning is emitted inside `registerSwaggerUI` against the
+    // encapsulated instance — deliberately not re-checked here, because the
+    // production-posture branch registers through a deferred plugin callback
+    // whose return value is not observable at this point in the boot queue.)
     const exposeSwaggerUI = config.ENABLE_SWAGGER_IN_PRODUCTION === true;
     if (exposeSwaggerUI) {
       if (config.isProductionPosture) {
