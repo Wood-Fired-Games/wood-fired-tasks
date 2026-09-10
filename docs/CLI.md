@@ -61,6 +61,92 @@ export API_BASE_URL=http://localhost:3000   # default; the CLI target
 export API_KEY=wft_pat_your-token-here      # a PAT
 ```
 
+## Codex installation and updates
+
+Install globally with a user-writable npm prefix (see the admin-free instructions
+in [setup](SETUP.md#frictionless-install-npm--no-clone)), then choose the Codex target explicitly. Codex installation requires
+Node.js/npm; Claude Code and a repository clone are unnecessary.
+
+```bash
+npm install -g wood-fired-tasks
+# Already have working Wood Fired Tasks MCP in Codex? Install skills only:
+wood-fired-tasks setup --target codex --skills-only
+# Or configure a new local MCP connection and initialize the local database:
+wood-fired-tasks setup --target codex --local
+# Or connect to your shared service; omit --token for interactive login:
+wood-fired-tasks setup --target codex --remote https://tasks.example.com --token wft_pat_…
+# Upgrade npm package and refresh Codex skills, including when already current:
+wood-fired-tasks self-update --target codex
+```
+
+The 17 invocable workflows install as `~/.agents/skills/tasks-*/SKILL.md`,
+with valid YAML metadata. In a fresh Codex session use `/skills` or type `$`
+to select one, for example `$tasks-project-status 36` or `$tasks-show-task 42`.
+Codex detects skill changes automatically; restart it if a change does not
+appear, and restart after MCP configuration changes. See the official
+[skill discovery documentation](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills).
+`CODEX_HOME` selects the Codex configuration directory (default `~/.codex`);
+it does **not** move this installer's user skills out of `~/.agents/skills`.
+On Windows `~` denotes the user profile directory. Paths with spaces are supported.
+
+Canonical workflows, shared loop contracts, enums, WSJF rubric, and verifier/
+auditor role definitions are bundled under
+`~/.agents/skills/.wood-fired-tasks/references/`. These are references, not
+additional invocable skills or registered Codex agents. Generated entrypoints
+map invocation arguments, MCP discovery and harness mechanics to the tools
+actually available in the Codex session. Claude-specific tool/model/agent
+names in canonical references are not advertised as Codex capabilities.
+Independent verification still requires a separate agent context; a worker's
+self-review is insufficient. Use the canonical `inherit` model fallback where
+supported; an unavailable explicit model, delegation or isolation feature must
+be reported before its dependent step. Installation/discovery and a read-only
+smoke do not establish full runtime parity for the orchestration workflows.
+
+**Existing installations and ownership.** Re-running setup or self-update
+refreshes unchanged files tracked by the installer's SHA-256 ownership manifest
+and restores missing tracked files. Unrelated skills and extra personal files
+are preserved. Modified tracked files, symlinks within the managed destination,
+and preexisting unowned `tasks-*` directories cause an explicit conflict before
+any skill files change. This includes skills created by earlier personal adapter
+scripts: back them up and move the conflicting directories outside the discovery
+root before installing. Do not delete your only copy of custom instructions.
+Retired, unmodified tracked files are removed during refresh. Keep the
+`.wood-fired-tasks` reference directory and ownership manifest with the installed
+skills. There is no forced overwrite flag.
+
+Without `--target`, self-update refreshes detected owned Codex installations and
+existing Claude installations; a Codex-only install does not gain Claude files.
+With no detected Codex install it retains the historical Claude default. Use
+explicit targets when maintaining both clients. Setup defaults to Claude;
+`--target claude` retains the existing Claude configuration and command behavior.
+
+**MCP connections.** Codex setup appends only an absent Wood Fired Tasks server
+section to `$CODEX_HOME/config.toml`, preserving existing settings, comments and
+other servers. Existing matching entries are left byte-for-byte unchanged.
+A differing entry or an existing opposite-mode connection is preserved and
+reported as a conflict. To keep your current connection, use `--skills-only`.
+To switch, back up your configuration, run `codex mcp remove wood-fired-tasks`
+(or `wood-fired-tasks-remote` as appropriate), then repeat the desired setup
+command. Setup never silently replaces a working Codex connection.
+Local setup pins the resolved absolute `DATABASE_PATH`; remote setup pins
+`WFT_API_URL` and the non-secret `WFT_CREDENTIALS_PATH`. This keeps both
+connections working when Codex filters inherited environment variables, including
+custom data/config directories. PATs stay in the separate credentials file used
+by `tasks login`; no token is written into Codex TOML. To change these paths,
+remove the old MCP entry as above and rerun setup with the desired overrides.
+
+For unusual TOML layouts the installer cannot safely append to, configure the
+server with Codex's own CLI, then install skills with `--skills-only`:
+
+```bash
+# Replace the quoted path with the installed package path shown by npm root -g.
+codex mcp add wood-fired-tasks --env DATABASE_PATH="/absolute/path/to/tasks.db" -- node "<npm-root>/wood-fired-tasks/dist/mcp/index.js"
+# Remote bridge uses credentials previously stored by tasks login:
+codex mcp add wood-fired-tasks-remote --env WFT_API_URL=https://tasks.example.com --env WFT_CREDENTIALS_PATH="/absolute/path/to/credentials" -- node "<npm-root>/wood-fired-tasks/dist/mcp/remote/index.js"
+```
+
+Use one connection mode. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
 ## Task Commands
 
 ### tasks create
