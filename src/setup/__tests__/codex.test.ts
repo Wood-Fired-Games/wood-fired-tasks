@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -111,6 +111,36 @@ describe('Codex owned skill installation', () => {
 });
 
 describe('Codex setup and MCP configuration', () => {
+  it.each([true, false])(
+    'rejects skill conflicts before remote authentication (token=%s)',
+    async (hasToken) => {
+      const dest = codexSkillsDir(home);
+      copyCodexSkills(dest);
+      const skill = path.join(dest, 'tasks-show-task/SKILL.md');
+      write(skill, 'personal customization');
+      const authenticate = vi.fn(async () => {
+        throw new Error('authentication must not start');
+      });
+      await expect(
+        runSetupInteractive({
+          home,
+          codexHome: path.join(home, '.codex'),
+          target: 'codex',
+          mode: 'remote',
+          remote: 'http://localhost:3000',
+          ...(hasToken && { token: 'test-token' }),
+          manualPatPersist: authenticate,
+          oidcProbe: authenticate,
+          isInteractive: () => false,
+          log: () => {},
+        }),
+      ).rejects.toThrow('Preserved conflicting Codex skills');
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(fs.readFileSync(skill, 'utf8')).toBe('personal customization');
+      expect(fs.existsSync(codexConfigPath(home, path.join(home, '.codex')))).toBe(false);
+    },
+  );
+
   it('skills-only uses user discovery root and leaves both agent configs untouched', async () => {
     const config = path.join(home, 'custom codex/config.toml');
     write(config, '# existing\nmodel = "custom"\n');

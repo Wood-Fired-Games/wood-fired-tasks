@@ -627,6 +627,12 @@ function runCodexSetup(options: RunSetupOptions): RunSetupResult {
   };
 }
 
+/** Reject known config/skill conflicts before remote login can replace credentials. */
+function preflightCodexSetup(options: RunSetupOptions): void {
+  codexMcpPlan(options);
+  copyCodexSkills(codexSkillsDir(options.home), undefined, true);
+}
+
 /**
  * Pure-ish LOCAL setup action. Resolves all paths from `home` so tests can
  * sandbox with a temp HOME and never touch the real ~/.claude.json or ~/.claude/.
@@ -1581,7 +1587,7 @@ export async function runRemoteOnboarding(
     throw new Error('remote onboarding requires a --remote <url> base URL.');
   }
 
-  if (options.target === 'codex') codexMcpPlan(options);
+  if (options.target === 'codex') preflightCodexSetup(options);
 
   const probe = options.oidcProbe ?? probeOidcState;
   const deviceLogin = options.deviceLogin ?? runDeviceLogin;
@@ -1702,7 +1708,7 @@ async function completeManualPatOnboarding(
 ): Promise<RunSetupRemoteResult> {
   const log = options.log ?? ((line: string) => console.log(line));
 
-  if (options.target === 'codex') codexMcpPlan(options);
+  if (options.target === 'codex') preflightCodexSetup(options);
 
   const token = await resolveManualPatToken({
     ...(options.token !== undefined && { token: options.token }),

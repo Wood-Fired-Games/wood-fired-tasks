@@ -107,7 +107,7 @@ refreshes unchanged files tracked by the installer's SHA-256 ownership manifest
 and restores missing tracked files. Unrelated skills and extra personal files
 are preserved. Modified tracked files, symlinks within the managed destination,
 and preexisting unowned `tasks-*` directories cause an explicit conflict before
-any skill files change. This includes skills created by earlier personal adapter
+any skill files change; remote setup checks conflicts before authentication. This includes skills created by earlier personal adapter
 scripts: back them up and move the conflicting directories outside the discovery
 root before installing. Do not delete your only copy of custom instructions.
 Retired, unmodified tracked files are removed during refresh. Keep the
