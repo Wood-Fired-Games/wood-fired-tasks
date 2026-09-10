@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export async function smokeCodex({ prefixDir, tarball, mkTemp, assert }) {
@@ -46,6 +46,7 @@ export async function smokeCodex({ prefixDir, tarball, mkTemp, assert }) {
         cwd,
         env: { ...env, ...extraEnv },
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
       });
       let output = '';
       child.stdout.on('data', (bytes) => {
@@ -54,10 +55,22 @@ export async function smokeCodex({ prefixDir, tarball, mkTemp, assert }) {
       child.stderr.on('data', (bytes) => {
         output += bytes;
       });
+      // Real npm installs can rebuild native addons on cold Windows runners.
+      const timeoutMs = args[0] === 'self-update' ? 480_000 : 180_000;
       const timeout = setTimeout(() => {
-        child.kill();
-        reject(new Error('Codex artifact command timed out'));
-      }, 180_000);
+        if (child.pid) {
+          if (process.platform === 'win32')
+            spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { timeout: 10_000 });
+          else {
+            try {
+              process.kill(-child.pid, 'SIGKILL');
+            } catch {
+              /* already exited */
+            }
+          }
+        }
+        reject(new Error(`Codex artifact ${args[0]} timed out after ${timeoutMs}ms:\n${output}`));
+      }, timeoutMs);
       child.once('error', (error) => {
         clearTimeout(timeout);
         reject(error);

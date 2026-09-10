@@ -45,7 +45,7 @@ jobs:
       - name: Install p4 CLI (helix-command-line, pinned + sha256-verified)
         env:
           P4_VERSION: 'r24.2'
-          P4_SHA256: '5132fc1fc81c1911700924f18375558eec30d0aa7c82e80f8397da0b9f352a86'
+          P4_SHA256: '949c4bc71f15f58bae95aa702ec812d3e43b8fbc4e789b744ada0b96c5557257'
         run: |
           set -euo pipefail
           curl -fsSL -o /tmp/p4 \
