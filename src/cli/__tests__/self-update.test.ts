@@ -198,6 +198,39 @@ describe('self-update command', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it.each([0, 1])('honors npm exit code %i with a cleanup permission warning', async (code) => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+    const warning =
+      'npm warn cleanup Failed to remove some directories\n' +
+      'npm warn cleanup Error: EPERM: operation not permitted, unlink sodium-native.node\n';
+    const child = makeFakeChild();
+    const spawn = vi.fn(() => {
+      setImmediate(() => {
+        child.stderr.emit('data', warning);
+        child.emit('close', code);
+      });
+      return child as never;
+    });
+    const syncAssets = makeSyncStub({ skills: ['show-task.md'] });
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets });
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update', '--target', 'codex']);
+
+    // Keep npm's warning visible regardless of whether its install succeeded.
+    expect(stderrSpy).toHaveBeenCalledWith(warning);
+    expect(process.exitCode).toBe(code);
+    if (code === 0) {
+      expect(syncAssets).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } else {
+      expect(syncAssets).not.toHaveBeenCalled();
+      expect(consoleErrorSpy.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+        'EACCES',
+      );
+    }
+  });
+
   it('wires an injectable update-notifier nudge (testable without network)', async () => {
     const { __setSelfUpdateDeps, defaultNotify } = await loadFresh();
 
