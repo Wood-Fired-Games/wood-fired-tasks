@@ -1448,7 +1448,7 @@ move a bucket; behind a proxy, enable it or all clients share one IP bucket.
 | `RATE_LIMIT_AUTH_MAX` | no | `10` | Per-route max for login, callback, device/code, device/verify. |
 | `RATE_LIMIT_AUTH_TIME_WINDOW` | no | `1 minute` | Window for the per-route auth limits (incl. device/token). |
 | `RATE_LIMIT_DEVICE_TOKEN_MAX` | no | `30` | Per-route max for `/auth/device/token` (CLI polls it — looser). |
-| `TRUST_PROXY` | no | `false` | `false`/unset = ignore forwarded headers; `true` = trust all hops; integer = trust N hops; `ip,cidr,…` = trust only those proxy IPs/CIDRs. |
+| `TRUST_PROXY` | no | `false` | `false`/unset = ignore forwarded headers; `true` = trust all hops; `ip,cidr,…` = trust those proxy IPs/CIDRs. Legacy integers now ignore forwarded headers; migrate to a proxy IP/CIDR allowlist. |
 
 ### Model catalog (read directly in `src/index.ts`)
 

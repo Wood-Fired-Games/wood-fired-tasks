@@ -338,6 +338,8 @@ describe('self-update command', () => {
     expect(errOut).toMatch(/skills\/agents.*failed/);
     expect(errOut).toMatch(/EROFS/);
     expect(errOut).toMatch(/wood-fired-tasks setup/);
+    expect(errOut).toContain('setup --target codex --skills-only');
+    expect(errOut).toContain('setup --target claude');
     expect(process.exitCode).toBe(1);
   });
 

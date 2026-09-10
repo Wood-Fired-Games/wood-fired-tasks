@@ -265,7 +265,9 @@ export const selfUpdateCommand = new Command('self-update')
       );
       console.error(
         colorWarn(
-          `Run \`${PACKAGE_NAME} setup${options.target === 'codex' ? ' --target codex --skills-only' : ''}\` to retry the skills sync.`,
+          options.target
+            ? `Run \`${PACKAGE_NAME} setup --target ${options.target}${options.target === 'codex' ? ' --skills-only' : ''}\` to retry the skills sync.`
+            : `Retry the affected target: \`${PACKAGE_NAME} setup --target codex --skills-only\` for Codex, or \`${PACKAGE_NAME} setup --target claude\` for Claude.`,
         ),
       );
       process.exitCode = 1;

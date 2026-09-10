@@ -101,6 +101,7 @@ function writeAtomic(file: string, bytes: Buffer | string): void {
 export function copyCodexSkills(
   destDir = codexSkillsDir(),
   sourceDir = resolveAssetPath('dist', 'skills', 'codex'),
+  dryRun = false,
 ): CodexCopyResult {
   const files = listFiles(sourceDir);
   if (!files.some((file) => /^tasks-[a-z0-9-]+\/SKILL\.md$/.test(file)))
@@ -142,6 +143,7 @@ export function copyCodexSkills(
       `Preserved conflicting Codex skills: ${[...conflicts].join(', ')}. Back up and move the conflicting skill directories outside ${destDir}, then re-run setup --target codex --skills-only. No files were changed.`,
     );
   const written: string[] = [];
+  if (dryRun) return { sourceDir, destDir, written, files };
   for (const [file, bytes] of contents) {
     const dest = path.join(destDir, file);
     if (!fs.existsSync(dest) || !bytes.equals(fs.readFileSync(dest))) {
