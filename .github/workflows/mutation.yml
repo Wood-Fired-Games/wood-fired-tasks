@@ -23,7 +23,7 @@ permissions:
 # never executes. `schedule` runs are therefore never cancelled in-flight; PR /
 # dispatch runs still supersede their own earlier attempts.
 concurrency:
-  group: mutation-${{ github.ref }}
+  group: mutation-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
@@ -37,8 +37,8 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'mutation'))
     runs-on: ubuntu-latest
     # Each shard is a disjoint subset of src/ — see the matrix below for the
-    # exact partitioning. The 11-way shard keeps every job comfortably under the
-    # cap: the first full run (task #823) measured api-routes and
+    # exact partitioning. MCP and misc-core are split further after reaching
+    # the 300-minute cap; the first full run (task #823) measured api-routes and
     # services+db+repos needing ~7h / ~5.5h as single shards, so both are split
     # so the heaviest job is now ~165 min (api-core / slack).
     timeout-minutes: 300
@@ -80,8 +80,8 @@ jobs:
             name: api-core # plugins+hooks+top-level, ~695 mutants, ~165 min
             globs: 'src/api/plugins/**/*.ts src/api/hooks/**/*.ts src/api/*.ts'
           - id: 5
-            name: mcp
-            globs: 'src/mcp/**/*.ts'
+            name: mcp-task-tools
+            globs: 'src/mcp/tools/task-tools.ts'
           - id: 6
             name: services-wsjf-task # wsjf*+task.service, ~1449 mutants, ~152 min
             globs: 'src/services/wsjf*.ts src/services/task.service.ts'
@@ -96,14 +96,28 @@ jobs:
             name: slack # ~1019 mutants, ~166 min
             globs: 'src/slack/**/*.ts'
           - id: 10
-            name: misc-core # schemas/events/utils/types/config/index, ~741 mutants, ~122 min
-            globs: >-
-              src/schemas/**/*.ts
-              src/events/**/*.ts
-              src/utils/**/*.ts
-              src/types/**/*.ts
-              src/config/**/*.ts
-              src/index.ts
+            name: schemas
+            globs: 'src/schemas/**/*.ts'
+          - id: 11
+            name: mcp-other-tools
+            globs: 'src/mcp/tools/**/*.ts'
+            globsExclude: '!src/mcp/tools/task-tools.ts'
+          - id: 12
+            name: mcp-remote
+            globs: 'src/mcp/remote/**/*.ts'
+          - id: 13
+            name: mcp-core
+            globs: 'src/mcp/**/*.ts'
+            globsExclude: '!src/mcp/tools/**/*.ts !src/mcp/remote/**/*.ts'
+          - id: 14
+            name: config
+            globs: 'src/config/**/*.ts'
+          - id: 15
+            name: utils
+            globs: 'src/utils/**/*.ts'
+          - id: 16
+            name: events-types-index
+            globs: 'src/events/**/*.ts src/types/**/*.ts src/index.ts'
     name: shard-${{ matrix.shard.id }}-${{ matrix.shard.name }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -169,6 +183,14 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      - name: Require every mutation shard to succeed
+        env:
+          SHARD_RESULT: ${{ needs.shard.result }}
+        run: |
+          if [ "$SHARD_RESULT" != "success" ]; then
+            echo "Mutation coverage is incomplete: shard result=$SHARD_RESULT" >&2
+            exit 1
+          fi
       - name: Download all shard JSON reports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -197,7 +219,7 @@ jobs:
           set -euo pipefail
           mkdir -p reports/mutation
           npx tsx scripts/aggregate-mutation-reports.ts \
-            --threshold 50 \
+            --threshold 50 --expected-reports 17 \
             --output reports/mutation/aggregate.json \
             shard-reports/*/mutation.json | tee reports/mutation/aggregate-summary.txt
       - name: Append summary to GitHub job summary

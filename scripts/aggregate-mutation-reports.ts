@@ -205,16 +205,22 @@ export function formatSummary(r: AggregateResult, threshold: number | null): str
 // ---------------------------------------------------------------------------
 
 interface CliArgs {
+  expectedReports: number | null;
   threshold: number | null;
   output: string | null;
   inputs: string[];
 }
 
 export function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { threshold: null, output: null, inputs: [] };
+  const args: CliArgs = { threshold: null, output: null, inputs: [], expectedReports: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--threshold' || a === '-t') {
+    if (a === '--expected-reports') {
+      const count = Number(argv[++i]);
+      if (!Number.isInteger(count) || count < 1)
+        throw new Error('--expected-reports requires a positive integer');
+      args.expectedReports = count;
+    } else if (a === '--threshold' || a === '-t') {
       const v = argv[++i];
       if (v === undefined) throw new Error('--threshold requires a value');
       const n = Number(v);
@@ -258,6 +264,17 @@ export function loadReport(path: string): StrykerReport {
   return parsed as StrykerReport;
 }
 
+export function validateCompleteReports(reports: StrykerReport[], expected: number | null): void {
+  if (expected !== null && reports.length !== expected)
+    throw new Error(`Expected ${expected} shard reports, received ${reports.length}`);
+  for (const report of reports) {
+    for (const [file, result] of Object.entries(report.files)) {
+      if (result.mutants.some((mutant) => mutant.status === 'Pending'))
+        throw new Error(`Incomplete mutation report: ${file} contains Pending mutants`);
+    }
+  }
+}
+
 function isMainModule(): boolean {
   // tsx / node both set process.argv[1] to the entry script path; we treat
   // any direct invocation as "main".
@@ -284,6 +301,7 @@ function main(): void {
   let reports: StrykerReport[];
   try {
     reports = args.inputs.map(loadReport);
+    validateCompleteReports(reports, args.expectedReports);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     process.stderr.write(`error: ${msg}\n`);
