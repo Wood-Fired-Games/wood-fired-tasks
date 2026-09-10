@@ -214,7 +214,11 @@ export const selfUpdateCommand = new Command('self-update')
 
     const { code, error, stderr } = await runNpmInstall(spawn);
 
-    if (isEaccesFailure(error, stderr)) {
+    // Windows may warn that a loaded native addon could not be removed from
+    // npm's old-package cleanup directory even though installation succeeded.
+    // Classify permission errors only after npm actually fails; stderr remains
+    // visible, and a successful install must still refresh the bundled skills.
+    if ((error !== null || code !== 0) && isEaccesFailure(error, stderr)) {
       console.error(eaccesRemediation());
       process.exitCode = 1;
       return;
