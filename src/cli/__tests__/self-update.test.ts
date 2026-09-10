@@ -326,6 +326,11 @@ describe('self-update command', () => {
       files: [],
     }));
     vi.doMock('../commands/setup.js', () => ({ copySkills, copyAgents }));
+    // Native Codex detection must not depend on or refresh the developer's profile.
+    vi.doMock('../../setup/codex.js', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../../setup/codex.js')>()),
+      hasCodexInstallation: () => false,
+    }));
     const { selfUpdateCommand, __setSelfUpdateDeps } = await import('../commands/self-update.js');
 
     const child = makeFakeChild();
@@ -345,6 +350,7 @@ describe('self-update command', () => {
     expect(process.exitCode).toBe(0);
 
     vi.doUnmock('../commands/setup.js');
+    vi.doUnmock('../../setup/codex.js');
   });
 
   it('isEaccesFailure classifies structured + textual EACCES/EPERM', async () => {

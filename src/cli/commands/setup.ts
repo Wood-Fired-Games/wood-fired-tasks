@@ -1,5 +1,12 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import os from 'node:os';
+import {
+  copyCodexSkills,
+  codexSkillsDir,
+  planCodexMcp,
+  writeCodexMcp,
+  type SetupTarget,
+} from '../../setup/codex.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -9,6 +16,7 @@ import {
   type ClaudeMcpServerEntry,
 } from '../../setup/claude-json.js';
 import { deleteCredentials, getCredentialsPath, readCredentials } from '../auth/credentials.js';
+import { resolveDbPath } from '../../config/db-path.js';
 import { resolveAssetPath } from '../../assets/resolve.js';
 import { resolvePathHint } from '../util/path-hint.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
@@ -516,6 +524,11 @@ export function fixNpmPrefix(options: FixNpmPrefixOptions = {}): FixNpmPrefixRes
 }
 
 export interface RunSetupOptions {
+  target?: SetupTarget;
+  skillsOnly?: boolean;
+  codexHome?: string;
+  dbEnv?: NodeJS.ProcessEnv;
+  credentialsPath?: string;
   /** Override HOME root (testing). Defaults to os.homedir(). */
   home?: string;
   fixNpmPrefix?: boolean;
@@ -541,6 +554,8 @@ export interface RunSetupOptions {
 }
 
 export interface RunSetupResult {
+  target?: SetupTarget;
+  codexConfigPath?: string;
   claudeJsonPath: string;
   claudeJsonChanged: boolean;
   /** The MCP server key written this run ('wood-fired-tasks[-remote]'). */
@@ -560,6 +575,58 @@ export interface RunSetupResult {
   npmPrefix?: FixNpmPrefixResult;
 }
 
+/** Install Codex assets without loading Claude settings or registering named agents. */
+function codexMcpPlan(options: RunSetupOptions) {
+  const entry = options.remote ? buildRemoteMcpEntry(options.remote) : buildLocalMcpEntry();
+  const dbPath = options.remote ? undefined : resolveDbPath(options.dbEnv);
+  // Codex filters inherited environment. Pin non-secret paths selected during
+  // setup so the MCP process uses the initialized DB / validated credentials.
+  const env = options.remote
+    ? {
+        ...entry.env,
+        WFT_CREDENTIALS_PATH: path.resolve(options.credentialsPath ?? getCredentialsPath()),
+      }
+    : { DATABASE_PATH: dbPath === ':memory:' ? dbPath : path.resolve(dbPath!) };
+  return planCodexMcp({
+    ...(options.home !== undefined && { home: options.home }),
+    ...(options.codexHome !== undefined && { codexHome: options.codexHome }),
+    serverName: options.remote ? REMOTE_SERVER_NAME : SERVER_NAME,
+    entry: { command: entry.command, args: entry.args ?? [], env },
+  });
+}
+function runCodexSetup(options: RunSetupOptions): RunSetupResult {
+  const home = options.home ?? os.homedir();
+  const log = options.log ?? console.log;
+  const plan = options.skillsOnly ? undefined : codexMcpPlan(options);
+  const skills = copyCodexSkills(codexSkillsDir(home));
+  if (plan) {
+    writeCodexMcp(plan);
+    log(`Codex MCP server ${plan.changed ? 'installed' : 'already present'} in ${plan.filePath}`);
+  }
+  log(
+    `Codex skills ${skills.written.length ? 'refreshed' : 'already up to date'} in ${skills.destDir}`,
+  );
+  log(
+    'Use $tasks-project-status or $tasks-show-task. Restart Codex if skills or MCP changes do not appear.',
+  );
+  const npmPrefix = options.fixNpmPrefix
+    ? fixNpmPrefix({ home, log, ...(options.npmRunner && { runner: options.npmRunner }) })
+    : undefined;
+  return {
+    target: 'codex',
+    ...(plan && { codexConfigPath: plan.filePath }),
+    // Historical result fields describe Claude only; its config is untouched.
+    claudeJsonPath: path.join(home, '.claude.json'),
+    claudeJsonChanged: false,
+    serverName: options.remote ? REMOTE_SERVER_NAME : SERVER_NAME,
+    remote: Boolean(options.remote),
+    staleEntryRemoved: false,
+    skills,
+    agents: { sourceDir: '', destDir: '', written: [], files: [] },
+    ...(npmPrefix && { npmPrefix }),
+  };
+}
+
 /**
  * Pure-ish LOCAL setup action. Resolves all paths from `home` so tests can
  * sandbox with a temp HOME and never touch the real ~/.claude.json or ~/.claude/.
@@ -570,6 +637,7 @@ export interface RunSetupResult {
  * the URL-only bridge entry via {@link writeRemoteMcpEntryOnly}.
  */
 export function runSetup(options: RunSetupOptions = {}): RunSetupResult {
+  if (options.target === 'codex') return runCodexSetup(options);
   const home = options.home ?? os.homedir();
   const log = options.log ?? ((line: string) => console.log(line));
 
@@ -684,6 +752,8 @@ export function writeRemoteMcpEntryOnly(options: RunSetupOptions = {}): RunSetup
   if (typeof apiUrl !== 'string' || apiUrl.length === 0) {
     throw new Error('writeRemoteMcpEntryOnly requires a --remote <url> base URL.');
   }
+
+  if (options.target === 'codex') return runCodexSetup(options);
 
   const claudeJsonPath = path.join(home, '.claude.json');
 
@@ -1310,6 +1380,7 @@ export type RunSetupInteractiveResult =
       /** Outcome of the post-setup local-auth guidance/offer (task #1610). */
       authGuidance: AuthGuidanceResult;
     })
+  | (RunSetupResult & { mode: 'skills' })
   | RunSetupServiceResult
   | RunSetupRemoteResult;
 
@@ -1319,7 +1390,7 @@ export function selectSetupMode(io?: PromptIO): Promise<SetupMode> {
     {
       message: 'How would you like to set up Wood Fired Tasks?',
       options: [
-        { label: 'Local — install the local MCP server into ~/.claude.json', value: 'local' },
+        { label: 'Local — install the local MCP server for the selected target', value: 'local' },
         { label: 'Service — install the background service (user-scoped)', value: 'service' },
         { label: 'Remote — connect to a remote Wood Fired Tasks server', value: 'remote' },
       ],
@@ -1351,6 +1422,20 @@ export async function runSetupInteractive(
   const log = options.log ?? ((line: string) => console.log(line));
   const isInteractive = options.isInteractive ?? shouldPrompt;
   const selectMode = options.selectMode ?? selectSetupMode;
+
+  if (options.skillsOnly) {
+    if (
+      options.target !== 'codex' ||
+      options.mode !== undefined ||
+      options.remote !== undefined ||
+      options.token !== undefined
+    ) {
+      throw new Error(
+        '--skills-only requires --target codex and cannot be combined with a connection mode or token.',
+      );
+    }
+    return { ...runCodexSetup(options), mode: 'skills' };
+  }
 
   // Resolve the mode: explicit flag wins; otherwise prompt on a TTY, else local.
   let mode: SetupMode;
@@ -1444,7 +1529,7 @@ export async function runSetupInteractive(
   const statusline = await offerStatuslineWiring({
     home,
     log,
-    isInteractive,
+    isInteractive: options.target === 'codex' ? () => false : isInteractive,
     ...(options.confirmStatusline !== undefined && { confirm: options.confirmStatusline }),
     ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
   });
@@ -1495,6 +1580,8 @@ export async function runRemoteOnboarding(
   if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
     throw new Error('remote onboarding requires a --remote <url> base URL.');
   }
+
+  if (options.target === 'codex') codexMcpPlan(options);
 
   const probe = options.oidcProbe ?? probeOidcState;
   const deviceLogin = options.deviceLogin ?? runDeviceLogin;
@@ -1615,6 +1702,8 @@ async function completeManualPatOnboarding(
 ): Promise<RunSetupRemoteResult> {
   const log = options.log ?? ((line: string) => console.log(line));
 
+  if (options.target === 'codex') codexMcpPlan(options);
+
   const token = await resolveManualPatToken({
     ...(options.token !== undefined && { token: options.token }),
     ...(options.promptIO !== undefined && { promptIO: options.promptIO }),
@@ -1709,13 +1798,15 @@ export function resolveSetupModeFromFlags(flags: SetupModeFlags): SetupMode | un
 }
 
 export const setupCommand = new Command('setup')
-  .description(
-    'Install the local wood-fired-tasks MCP server into ~/.claude.json, copy skills into ~/.claude/commands/tasks/, and copy subagent definitions into ~/.claude/agents/',
-  )
+  .description('Install MCP configuration and bundled workflows for Claude (default) or Codex')
   .option(
     '--fix-npm-prefix',
     'Configure a user-writable npm global prefix (~/.npm-global) to avoid EACCES on `npm i -g` (never uses sudo)',
   )
+  .addOption(
+    new Option('--target <target>', 'Agent target').choices(['claude', 'codex']).default('claude'),
+  )
+  .option('--skills-only', 'Install Codex skills without changing MCP, credentials, or databases')
   .option('--local', 'Run the Local setup path non-interactively (skip the menu)')
   .option('--service', 'Run the Service setup path non-interactively (user-scoped service install)')
   .option(
@@ -1731,7 +1822,9 @@ export const setupCommand = new Command('setup')
     'Personal access token for `--remote`. When supplied, setup validates it against the server, persists it to the credentials file (the PAT is never stored in claude.json), and writes the URL-only remote MCP entry (WFT_API_URL) — skipping the OIDC probe. Omit --token to run the interactive device-flow / manual-PAT onboarding instead.',
   )
   .action(
-    (opts: {
+    async (opts: {
+      target?: SetupTarget;
+      skillsOnly?: boolean;
       fixNpmPrefix?: boolean;
       local?: boolean;
       service?: boolean;
@@ -1764,11 +1857,19 @@ export const setupCommand = new Command('setup')
         return;
       }
 
-      void runSetupInteractive({
-        fixNpmPrefix: Boolean(opts.fixNpmPrefix),
-        ...(mode !== undefined && { mode }),
-        ...(opts.remote !== undefined && { remote: opts.remote }),
-        ...(token !== undefined && { token }),
-      });
+      try {
+        const result = await runSetupInteractive({
+          ...(opts.target && { target: opts.target }),
+          skillsOnly: Boolean(opts.skillsOnly),
+          fixNpmPrefix: Boolean(opts.fixNpmPrefix),
+          ...(mode !== undefined && { mode }),
+          ...(opts.remote !== undefined && { remote: opts.remote }),
+          ...(token !== undefined && { token }),
+        });
+        if (result.mode === 'remote' && !result.ok) process.exitCode = 1;
+      } catch (error) {
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 1;
+      }
     },
   );

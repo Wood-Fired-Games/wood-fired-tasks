@@ -466,6 +466,9 @@ jobs:
   #   - `setup` merges the wood-fired-tasks stdio MCP entry into ~/.claude.json
   #   - `setup` copies the task skills into ~/.claude/commands/tasks/
   #   - `setup` is idempotent (claude.json bytes unchanged on re-run)
+  #   - Codex user skills, shared references, conflict preservation and MCP config
+  #   - real Codex self-update against a loopback registry serving the packed artifact
+  #     (including current-version refresh, with isolated user paths containing spaces)
   #   - `serve` boots against a temp app-data DB, GET /health → 200 healthy,
   #     the DB is created AND migrations applied (_migrations non-empty)
   #
@@ -502,7 +505,7 @@ jobs:
         # and warms the dist tree before the harness packs it.
         run: npm run build
 
-      - name: Run global-install smoke (incl. setup --remote assertion)
+      - name: Run global-install smoke (Claude and Codex install/reinstall/update)
         # `npm run smoke:global` is pure cross-platform Node (temp-dir based,
         # no shell built-ins), so it runs identically on win/mac/linux without
         # a `shell:` override. SMOKE_REMOTE=1 turns on the extra assertion that

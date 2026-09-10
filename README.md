@@ -135,6 +135,9 @@ wood-fired-tasks list --project 2
 > Do NOT assume a project id 1 exists — always create one first and use the id
 > it returns.
 
+**Codex:** run `wood-fired-tasks setup --target codex --local` (or `--skills-only` with existing MCP) and `wood-fired-tasks self-update --target codex`.
+Try `$tasks-project-status` or `$tasks-show-task 42` in a fresh session; [Codex setup](docs/SETUP.md#codex-installation-and-updates) covers remote connections, reload, ownership and capability limits.
+
 **Admin-free guarantee.** No step ever escalates: `setup`, `serve`,
 `self-update`, and `service install` refuse to shell out to `sudo` / `runas` /
 `pkexec` / `doas`. If a global `npm i -g` hits an EACCES on a root-owned npm
