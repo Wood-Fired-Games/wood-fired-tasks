@@ -126,17 +126,18 @@ export const configSchema = z
     // behind a reverse proxy (the documented deployment) opt in. Accepted:
     //   - unset / 'false'          → false  (do NOT trust forwarded headers)
     //   - 'true'                   → true   (trust all — proxy is the only hop)
-    //   - integer hop count ('1')  → number (trust N proxy hops)
+    //   - integer hop count ('1')  → false (unsafe legacy mode; fail closed)
     //   - 'ip,cidr,…'              → string[] (trust only these proxy IPs/CIDRs)
     TRUST_PROXY: z
       .string()
       .optional()
-      .transform((raw): boolean | number | string[] => {
+      .transform((raw): boolean | string[] => {
         const s = (raw ?? '').trim();
         if (s === '' || s.toLowerCase() === 'false') return false;
         if (s.toLowerCase() === 'true') return true;
-        // Pure integer → hop count. (Reject negatives/decimals → fall through.)
-        if (/^\d+$/.test(s)) return Number(s);
+        // Hop counts cannot authenticate the immediate peer. Match Fastify's
+        // security fix: ignore forwarded headers until an IP/CIDR is configured.
+        if (/^\d+$/.test(s)) return false;
         // Otherwise treat as a comma-separated IP/CIDR allowlist.
         return s
           .split(',')

@@ -101,8 +101,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // device-flow origin trust in §3a). DEFAULT OFF (config.TRUST_PROXY ===
     // false) so a spoofed X-Forwarded-For cannot move a client's rate-limit
     // bucket on the loopback-bind default; operators behind a reverse proxy
-    // opt in via TRUST_PROXY. Accepts boolean | number (hop count) | string[]
-    // (IP/CIDR allowlist) — see src/config/env.ts.
+    // opt in via TRUST_PROXY. Accepts boolean | string[] (IP/CIDR allowlist);
+    // legacy numeric hop counts fail closed — see src/config/env.ts.
     trustProxy: config.TRUST_PROXY,
     // Timeout configurations to prevent hung requests
     connectionTimeout: config.CONNECTION_TIMEOUT, // Socket inactivity timeout (2 min)

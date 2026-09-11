@@ -3,6 +3,7 @@ import {
   aggregateReports,
   formatSummary,
   parseArgs,
+  validateCompleteReports,
   type StrykerReport,
 } from '../aggregate-mutation-reports.js';
 
@@ -188,6 +189,11 @@ describe('formatSummary', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseArgs', () => {
+  it('validates the required shard count', () => {
+    expect(parseArgs(['--expected-reports', '17', 'a.json']).expectedReports).toBe(17);
+    for (const value of ['0', '-1', '1.5', 'oops'])
+      expect(() => parseArgs(['--expected-reports', value])).toThrow('positive integer');
+  });
   it('parses positional inputs', () => {
     const a = parseArgs(['a.json', 'b.json']);
     expect(a.inputs).toEqual(['a.json', 'b.json']);
@@ -221,5 +227,21 @@ describe('parseArgs', () => {
 
   it('rejects --threshold without a value', () => {
     expect(() => parseArgs(['--threshold'])).toThrow(/requires a value/);
+  });
+});
+
+describe('mutation report completeness', () => {
+  it('rejects missing shard reports even when all received mutants were killed', () => {
+    const reports = [shard({ 'src/a.ts': [{ status: 'Killed' }] })];
+    expect(() => validateCompleteReports(reports, 2)).toThrow('Expected 2');
+    expect(() => validateCompleteReports(reports, 1)).not.toThrow();
+  });
+  it('rejects unfinished reports instead of dropping Pending mutants from the score', () => {
+    expect(() =>
+      validateCompleteReports(
+        [shard({ 'src/a.ts': [{ status: 'Killed' }, { status: 'Pending' }] })],
+        1,
+      ),
+    ).toThrow('Pending');
   });
 });

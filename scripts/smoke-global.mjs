@@ -34,6 +34,7 @@
  * the entire trick.
  */
 
+import { smokeCodex } from './smoke-codex.mjs';
 import { spawnSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
@@ -92,17 +93,24 @@ function needsWindowsShell(cmd) {
  * Run a command synchronously, capturing output. Hard-guards against ever
  * invoking an elevation binary (this smoke must NEVER prompt for a password).
  */
+function quoteShellArg(arg) {
+  return /[\s"&|<>^()%!]/.test(arg) ? `"${arg.replaceAll('"', '""')}"` : arg;
+}
 function run(cmd, args, opts = {}) {
   if (ELEVATION_RE.test(cmd)) {
     fail(`refusing to run elevated command: ${cmd}`);
   }
   const useShell = needsWindowsShell(cmd);
-  const res = spawnSync(cmd, args, {
-    encoding: 'utf8',
-    shell: useShell,
-    ...opts,
-    env: { ...process.env, ...(opts.env ?? {}) },
-  });
+  const res = spawnSync(
+    useShell ? quoteShellArg(cmd) : cmd,
+    useShell ? args.map(quoteShellArg) : args,
+    {
+      encoding: 'utf8',
+      shell: useShell,
+      ...opts,
+      env: { ...process.env, ...(opts.env ?? {}) },
+    },
+  );
   if (res.error) fail(`spawn failed for ${cmd}: ${res.error.message}`);
   return res;
 }
@@ -130,12 +138,16 @@ function runAsync(cmd, args, opts = {}) {
   }
   const useShell = needsWindowsShell(cmd);
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, {
-      shell: useShell,
-      ...opts,
-      env: { ...process.env, ...(opts.env ?? {}) },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      useShell ? quoteShellArg(cmd) : cmd,
+      useShell ? args.map(quoteShellArg) : args,
+      {
+        shell: useShell,
+        ...opts,
+        env: { ...process.env, ...(opts.env ?? {}) },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (c) => {
@@ -246,7 +258,7 @@ async function main() {
 
   // -- 2. install -g into a TEMP prefix (no sudo: user-writable temp dir) -----
   console.log('-- install -g (temp prefix, no sudo) --');
-  const prefixDir = mkTemp('wft-smoke-prefix-');
+  const prefixDir = mkTemp('wft smoke prefix with spaces ');
   runOrFail(NPM, ['install', '-g', tarball, '--prefix', prefixDir], {
     cwd: packDir,
   });
@@ -258,6 +270,8 @@ async function main() {
       : path.join(prefixDir, 'bin', binName);
   assert(existsSync(binPath), `installed bin present at ${binPath}`);
 
+  await smokeCodex({ prefixDir, tarball, mkTemp, assert });
+
   // -- 3. setup with a temp HOME, run from a cwd OUTSIDE the repo -------------
   console.log('-- setup (temp HOME) --');
   const homeDir = mkTemp('wft-smoke-home-');
@@ -265,6 +279,16 @@ async function main() {
   const setupEnv = {
     HOME: homeDir,
     USERPROFILE: homeDir, // Windows parity
+    XDG_CONFIG_HOME: path.join(homeDir, '.config'),
+    WFT_CREDENTIALS_PATH: path.join(homeDir, '.config/wood-fired-tasks/credentials'),
+    XDG_DATA_HOME: path.join(homeDir, '.local/share'),
+    APPDATA: path.join(homeDir, 'AppData/Roaming'),
+    LOCALAPPDATA: path.join(homeDir, 'AppData/Local'),
+    DATABASE_PATH: path.join(homeDir, 'local.db'),
+    WFT_API_KEY: '',
+    API_KEY: '',
+    WFT_API_URL: '',
+    API_BASE_URL: 'http://localhost:3000',
   };
 
   const setup1 = runOrFail(binPath, ['setup'], {
@@ -359,7 +383,7 @@ async function main() {
     API_KEYS: 'smoke0key0smoke0key0smoke0key0aa',
   };
 
-  serverProc = spawn(binPath, ['serve'], {
+  serverProc = spawn(needsWindowsShell(binPath) ? quoteShellArg(binPath) : binPath, ['serve'], {
     cwd: outsideCwd,
     env: serveEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -490,6 +514,7 @@ async function main() {
       // Keep the OS config dir (and thus the credentials file) inside the temp
       // HOME on every platform so the PAT never lands in the runner's real tree.
       XDG_CONFIG_HOME: path.join(remoteHome, '.config'),
+      WFT_CREDENTIALS_PATH: path.join(remoteHome, '.config/wood-fired-tasks/credentials'),
       LOCALAPPDATA: path.join(remoteHome, 'AppData', 'Local'),
       APPDATA: path.join(remoteHome, 'AppData', 'Roaming'),
     };

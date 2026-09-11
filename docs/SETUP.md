@@ -1,6 +1,6 @@
 # Setup Guide
 
-Complete setup instructions for Wood Fired Tasks in development, production, and Claude Code environments.
+Complete setup instructions for Wood Fired Tasks in development, production, Claude Code, and Codex environments.
 
 This guide opens with the **frictionless npm install** — the recommended path
 for most users: one global install, no git clone, no build, no admin rights.
@@ -94,6 +94,15 @@ talk to the REST API and needs no API key.
 | `--fix-npm-prefix` | Configure a user-writable npm global prefix (`~/.npm-global`) to dodge EACCES on `npm i -g`. Never uses sudo. |
 | `--remote <url>` | Write the **remote** MCP bridge entry (`wood-fired-tasks-remote`) pointed at a deployed REST API instead of the local one. Requires `--token`. |
 | `--token <pat>` | PAT for `--remote`: written as `WFT_API_KEY` on the remote MCP entry and cached under the OS config dir. |
+
+### Codex installation and updates
+
+- `wood-fired-tasks setup --target codex --skills-only` keeps an existing MCP connection.
+- `wood-fired-tasks setup --target codex --local` configures local MCP.
+- `wood-fired-tasks setup --target codex --remote <url> --token <pat>` connects remotely.
+- `wood-fired-tasks self-update --target codex` refreshes the CLI and owned skills.
+
+Codex discovers `$tasks-*` under `~/.agents/skills`. The [Codex CLI guide](CLI.md#codex-installation-and-updates) covers reload, ownership, migration, MCP preservation, custom paths and orchestration limits.
 
 ### `wood-fired-tasks setup --remote` — point at a shared server
 
@@ -1439,7 +1448,7 @@ move a bucket; behind a proxy, enable it or all clients share one IP bucket.
 | `RATE_LIMIT_AUTH_MAX` | no | `10` | Per-route max for login, callback, device/code, device/verify. |
 | `RATE_LIMIT_AUTH_TIME_WINDOW` | no | `1 minute` | Window for the per-route auth limits (incl. device/token). |
 | `RATE_LIMIT_DEVICE_TOKEN_MAX` | no | `30` | Per-route max for `/auth/device/token` (CLI polls it — looser). |
-| `TRUST_PROXY` | no | `false` | `false`/unset = ignore forwarded headers; `true` = trust all hops; integer = trust N hops; `ip,cidr,…` = trust only those proxy IPs/CIDRs. |
+| `TRUST_PROXY` | no | `false` | `false`/unset = ignore forwarded headers; `true` = trust all hops; `ip,cidr,…` = trust those proxy IPs/CIDRs. Legacy integers now ignore forwarded headers; migrate to a proxy IP/CIDR allowlist. |
 
 ### Model catalog (read directly in `src/index.ts`)
 

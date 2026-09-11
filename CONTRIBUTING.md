@@ -244,18 +244,15 @@ assert something useful" signal that line/branch coverage cannot give).
 - **Sharded design (task #252):** A full unsharded Stryker run was ~6h09m
   on the default ubuntu-latest runner (~7000 mutants), exceeding the 6h GH
   Actions ceiling. `.github/workflows/mutation.yml` now runs Stryker
-  across **4 parallel matrix shards**, each restricted to a disjoint
-  subset of `src/` via `--mutate` overrides:
-  - shard 0 (`cli`) — `src/cli/**/*.ts`
-  - shard 1 (`api-mcp`) — `src/api/**/*.ts`, `src/mcp/**/*.ts`
-  - shard 2 (`services-db-repos`) — `src/services/**/*.ts`,
-    `src/db/**/*.ts`, `src/repositories/**/*.ts`
-  - shard 3 (`misc`) — `src/slack`, `src/schemas`, `src/events`,
-    `src/utils`, `src/types`, `src/config`, `src/index.ts`
+  across **17 parallel matrix shards**, with the partition defined in
+  `.github/workflows/mutation.yml`. MCP is split into task tools, other tools,
+  remote, and core; schemas, config, utils, and events/types/index run separately
+  after the former MCP and misc-core shards exceeded five hours.
 
   Each shard uploads its `mutation.json` as artifact
   `mutation-shard-<id>-json`. A final `aggregate` job downloads every
-  shard report, merges `files[].mutants[]` via
+  shard report only after all jobs succeed, requires all 17 completed reports
+  (no Pending mutants), and merges `files[].mutants[]` via
   `scripts/aggregate-mutation-reports.ts`, computes the unified score
   `(killed + timeout) / (killed + timeout + survived + noCoverage)`, and
   fails the workflow when the unified score is below the `75` threshold.
@@ -269,7 +266,7 @@ assert something useful" signal that line/branch coverage cannot give).
 - **Adding files to a shard:** when a new top-level directory lands under
   `src/`, add its glob to the appropriate shard in the matrix in
   `.github/workflows/mutation.yml`. The aggregator does not care about
-  partitioning — it merges whatever JSON arrives — but the shards must
+  partitioning — its required report count must match the matrix — and shards must
   cover the same set of files that `stryker.config.js` mutates, otherwise
   the unified score will silently exclude them.
 

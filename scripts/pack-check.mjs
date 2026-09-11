@@ -98,6 +98,30 @@ function main() {
     violations.push('MISSING: no `dist/skills/agents/` entries (agents skill not shipped).');
   }
 
+  const codexSkills = files.filter((file) =>
+    /^dist\/skills\/codex\/tasks-[a-z0-9-]+\/SKILL\.md$/.test(file),
+  );
+  if (codexSkills.length !== 17)
+    violations.push(
+      `MISSING: expected 17 Codex SKILL.md entrypoints, found ${codexSkills.length}.`,
+    );
+  for (const reference of [
+    'skills/tasks/loop-shared.md',
+    'skills/tasks/_enums.md',
+    'skills/tasks/wsjf-rubric.md',
+    'skills/agents/tasks-verifier.md',
+    'skills/agents/integration-auditor.md',
+    'docs/verifier-contract.md',
+    'docs/automation-recipes/persistent-agent-sessions.md',
+    'docs/automation-recipes/claude-routines.md',
+    'docs/event-router-design.md',
+    'docs/USAGE_PATTERNS.md',
+    'VERSION',
+  ]) {
+    if (!files.includes(`dist/skills/codex/.wood-fired-tasks/references/${reference}`))
+      violations.push(`MISSING: Codex reference ${reference}`);
+  }
+
   // Curated user-facing guides the `docs` command maps to MUST be present.
   const fileSet = new Set(files);
   const missingDocs = REQUIRED_DOCS.filter((d) => !fileSet.has(d));
