@@ -1,6 +1,16 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'child_process';
 import { colorError, colorInfo, colorSuccess, colorWarn } from '../output/formatters.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  copyCodexSkills,
+  codexSkillsDir,
+  hasCodexInstallation,
+  type SetupTarget,
+  type CodexCopyResult,
+} from '../../setup/codex.js';
 import { VERSION } from '../../utils/version.js';
 import { buildNpmInvocation } from '../util/npm-spawn.js';
 import { copySkills, copyAgents, type CopySkillsResult, type CopyAgentsResult } from './setup.js';
@@ -46,7 +56,33 @@ export type NotifyFn = (currentVersion: string) => void | Promise<void>;
 // copySkills/copyAgents pair `tasks setup` uses, so the update path and the
 // onboarding path cannot drift. Tests inject a recorder to avoid touching the
 // real ~/.claude.
-export type SyncAssetsFn = () => { skills: CopySkillsResult; agents: CopyAgentsResult };
+export type SyncAssetsFn = () => {
+  skills: CopySkillsResult;
+  agents: CopyAgentsResult;
+  codex?: CodexCopyResult;
+  codexOnly?: boolean;
+};
+
+/** Refresh detected installations; keep the historical Claude default for new users. */
+export function syncInstalledAssets(
+  target?: SetupTarget,
+  home = os.homedir(),
+): ReturnType<SyncAssetsFn> {
+  const codex = target === 'codex' || (target === undefined && hasCodexInstallation(home));
+  const claude =
+    target === 'claude' ||
+    (target === undefined &&
+      (!codex || fs.existsSync(path.join(home, '.claude', 'commands', 'tasks'))));
+  const empty = { sourceDir: '', destDir: '', written: [], files: [] };
+  // Check/copy Codex before legacy copies so a Codex ownership conflict is loud.
+  const codexResult = codex ? copyCodexSkills(codexSkillsDir(home)) : undefined;
+  return {
+    skills: claude ? copySkills(path.join(home, '.claude', 'commands', 'tasks')) : empty,
+    agents: claude ? copyAgents(path.join(home, '.claude', 'agents')) : empty,
+    ...(codexResult && { codex: codexResult }),
+    codexOnly: !claude,
+  };
+}
 
 export interface SelfUpdateDeps {
   spawn?: SpawnFn;
@@ -154,15 +190,20 @@ function runNpmInstall(
 
 export const selfUpdateCommand = new Command('self-update')
   .description(`Update ${PACKAGE_NAME} to the latest published version via npm (no sudo)`)
-  .action(async function selfUpdateAction(this: Command) {
+  .addOption(
+    new Option(
+      '--target <target>',
+      'Refresh this agent target (default: detected installations, otherwise Claude)',
+    ).choices(['claude', 'codex']),
+  )
+  .action(async function selfUpdateAction(this: Command, options: { target?: SetupTarget }) {
     // Dependency-injection seam: tests attach mocks on the command via
     // `.deps`; production falls through to the real spawn + notifier.
     const deps: SelfUpdateDeps =
       (selfUpdateCommand as unknown as { _deps?: SelfUpdateDeps })._deps ?? {};
     const spawn = deps.spawn ?? (nodeSpawn as unknown as SpawnFn);
     const notify = deps.notify ?? defaultNotify;
-    const syncAssets: SyncAssetsFn =
-      deps.syncAssets ?? (() => ({ skills: copySkills(), agents: copyAgents() }));
+    const syncAssets: SyncAssetsFn = deps.syncAssets ?? (() => syncInstalledAssets(options.target));
 
     // update-notifier nudge: surface a "newer version available" hint before
     // we attempt the upgrade. Best-effort and never blocks the update.
@@ -173,7 +214,11 @@ export const selfUpdateCommand = new Command('self-update')
 
     const { code, error, stderr } = await runNpmInstall(spawn);
 
-    if (isEaccesFailure(error, stderr)) {
+    // Windows may warn that a loaded native addon could not be removed from
+    // npm's old-package cleanup directory even though installation succeeded.
+    // Classify permission errors only after npm actually fails; stderr remains
+    // visible, and a successful install must still refresh the bundled skills.
+    if ((error !== null || code !== 0) && isEaccesFailure(error, stderr)) {
       console.error(eaccesRemediation());
       process.exitCode = 1;
       return;
@@ -197,23 +242,34 @@ export const selfUpdateCommand = new Command('self-update')
     // succeeded but your skills are stale" is exactly the silent state this
     // step exists to eliminate (task #934).
     try {
-      const { skills, agents } = syncAssets();
+      const { skills, agents, codex, codexOnly } = syncAssets();
+      if (codex)
+        console.log(
+          colorInfo(
+            `Codex skills ${codex.written.length ? 'refreshed' : 'already up to date'} in ${codex.destDir}`,
+          ),
+        );
       const refreshed = skills.written.length + agents.written.length;
-      console.log(
-        refreshed > 0
-          ? colorInfo(
-              `Refreshed ${skills.written.length} skill(s) in ${skills.destDir} and ${agents.written.length} agent(s) in ${agents.destDir}`,
-            )
-          : colorInfo(`Skills and agents already up to date in ${skills.destDir}`),
-      );
+      if (!codexOnly)
+        console.log(
+          refreshed > 0
+            ? colorInfo(
+                `Refreshed ${skills.written.length} skill(s) in ${skills.destDir} and ${agents.written.length} agent(s) in ${agents.destDir}`,
+              )
+            : colorInfo(`Skills and agents already up to date in ${skills.destDir}`),
+        );
     } catch (syncError) {
       const message = syncError instanceof Error ? syncError.message : String(syncError);
       console.error(
-        colorError(
-          `Update installed, but syncing bundled skills/agents into ~/.claude failed: ${message}`,
+        colorError(`Update installed, but syncing bundled skills/agents failed: ${message}`),
+      );
+      console.error(
+        colorWarn(
+          options.target
+            ? `Run \`${PACKAGE_NAME} setup --target ${options.target}${options.target === 'codex' ? ' --skills-only' : ''}\` to retry the skills sync.`
+            : `Retry the affected target: \`${PACKAGE_NAME} setup --target codex --skills-only\` for Codex, or \`${PACKAGE_NAME} setup --target claude\` for Claude.`,
         ),
       );
-      console.error(colorWarn(`Run \`${PACKAGE_NAME} setup\` to retry the skills sync.`));
       process.exitCode = 1;
       return;
     }

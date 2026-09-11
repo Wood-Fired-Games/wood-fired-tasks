@@ -133,54 +133,58 @@ describe('proxy-aware rate limiting (trustProxy ON)', () => {
   });
 });
 
-describe('rate limiting with trustProxy OFF (spoof-resistant)', () => {
-  let server: FastifyInstance;
-  let db: Database.Database;
+describe.each([undefined, '1'])(
+  'rate limiting with TRUST_PROXY=%s (spoof-resistant)',
+  (trustProxy) => {
+    let server: FastifyInstance;
+    let db: Database.Database;
 
-  beforeAll(async () => {
-    process.env.RATE_LIMIT_MAX = '2';
-    process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
-    // TRUST_PROXY intentionally UNSET → default false.
-    delete process.env.TRUST_PROXY;
-    resetConfig();
-    const result = await createServer({ dbPath: ':memory:' });
-    server = result.server;
-    db = result.app.db;
-  });
+    beforeAll(async () => {
+      process.env.RATE_LIMIT_MAX = '2';
+      process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
+      if (trustProxy === undefined) delete process.env.TRUST_PROXY;
+      else process.env.TRUST_PROXY = trustProxy;
+      resetConfig();
+      const result = await createServer({ dbPath: ':memory:' });
+      server = result.server;
+      db = result.app.db;
+    });
 
-  afterAll(async () => {
-    await server.close();
-    db.close();
-    delete process.env.RATE_LIMIT_MAX;
-    delete process.env.RATE_LIMIT_TIME_WINDOW;
-    resetConfig();
-  });
+    afterAll(async () => {
+      await server.close();
+      db.close();
+      delete process.env.RATE_LIMIT_MAX;
+      delete process.env.RATE_LIMIT_TIME_WINDOW;
+      delete process.env.TRUST_PROXY;
+      resetConfig();
+    });
 
-  it('a spoofed X-Forwarded-For does NOT change the bucket', async () => {
-    // Every request claims a DIFFERENT X-Forwarded-For. With trustProxy OFF,
-    // request.ip stays the socket IP (127.0.0.1 under inject) for all of
-    // them, so they share ONE bucket and the 3rd (> max=2) is throttled.
-    const r1 = await server.inject({
-      method: 'GET',
-      url: '/api/v1/tasks',
-      headers: { 'x-forwarded-for': '10.0.0.1' },
+    it('a spoofed X-Forwarded-For does NOT change the bucket', async () => {
+      // Every request claims a DIFFERENT X-Forwarded-For. With trustProxy OFF,
+      // request.ip stays the socket IP (127.0.0.1 under inject) for all of
+      // them, so they share ONE bucket and the 3rd (> max=2) is throttled.
+      const r1 = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        headers: { 'x-forwarded-for': '10.0.0.1' },
+      });
+      const r2 = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        headers: { 'x-forwarded-for': '10.0.0.2' },
+      });
+      const r3 = await server.inject({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        headers: { 'x-forwarded-for': '10.0.0.3' },
+      });
+      expect(r1.statusCode).not.toBe(429);
+      expect(r2.statusCode).not.toBe(429);
+      // Spoofing a fresh XFF did NOT buy a fresh bucket.
+      expect(r3.statusCode).toBe(429);
     });
-    const r2 = await server.inject({
-      method: 'GET',
-      url: '/api/v1/tasks',
-      headers: { 'x-forwarded-for': '10.0.0.2' },
-    });
-    const r3 = await server.inject({
-      method: 'GET',
-      url: '/api/v1/tasks',
-      headers: { 'x-forwarded-for': '10.0.0.3' },
-    });
-    expect(r1.statusCode).not.toBe(429);
-    expect(r2.statusCode).not.toBe(429);
-    // Spoofing a fresh XFF did NOT buy a fresh bucket.
-    expect(r3.statusCode).toBe(429);
-  });
-});
+  },
+);
 
 describe('per-route auth rate limit (tighter than global)', () => {
   // The real /auth/device/code route (with its per-route rateLimit config)
