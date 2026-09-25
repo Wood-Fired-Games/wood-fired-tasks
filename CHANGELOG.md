@@ -80,6 +80,8 @@ Security release. Lands the remediation of the 2.5.0 security audit: PAT scopes 
 - `@fastify/static` (unfixed HIGH advisory) removed from the production
   dependency tree; the four fixable HIGH production advisories remediated.
   `npm audit --omit=dev` reports zero vulnerabilities.
+- Dev-only: vitest family 4.1.10 → 4.1.11 (Vitest mocker path-traversal
+  advisory); full `npm audit` reports zero vulnerabilities.
 - SECURITY.md corrected: Slack runs in Socket Mode, so there is no inbound
   signed-request endpoint in scope.
 
