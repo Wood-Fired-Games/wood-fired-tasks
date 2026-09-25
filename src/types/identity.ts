@@ -3,6 +3,8 @@
 // repository row-mapper boundary returns rows as-is (see src/repositories/row-mapper.ts).
 // SQLite booleans land as INTEGER (0|1), so we model them as `number`.
 
+import type { PatScope } from '../schemas/pat-scope.schema.js';
+
 export interface User {
   id: number;
   oidc_sub: string | null;
@@ -28,6 +30,15 @@ export interface ApiToken {
   last_used_at: string | null;
   revoked_at: string | null;
   expires_at: string | null;
+  /**
+   * Optional project binding (Security Audit finding M1 — task #1635,
+   * migration 020). `null` ⇒ unbound: the token may reach every project,
+   * which is the pre-#1635 behaviour and the state of every token minted
+   * before the column existed. A project id confines the token to that one
+   * project; see `bindingSatisfiesProjects`
+   * (`src/schemas/pat-scope.schema.ts`).
+   */
+  project_id: number | null;
 }
 
 /**
@@ -70,11 +81,29 @@ export type AuthMethod = 'pat' | 'session' | 'legacy';
  * `tokenId` carries the matching `api_tokens.id` for PAT matches; it is
  * `null` for legacy and session matches (those do not have an associated
  * token row).
+ *
+ * `scopes` (Security Audit finding M1 — task #1621) is the resolved PAT
+ * scope grant for enforcement via `grantSatisfiesScope`
+ * (`src/schemas/pat-scope.schema.ts`):
+ *   - `null` for session (and legacy) matches — no PAT scope restriction
+ *     applies, so these are treated as full-tier.
+ *   - the parsed `api_tokens.scopes` array for PAT matches. An empty array
+ *     means the token was minted before the taxonomy existed (task #1620)
+ *     and is, by explicit legacy rule, also treated as full-tier.
+ *
+ * `projectId` (Security Audit finding M1 — task #1635) is the second
+ * authorization dimension: the token's optional project binding, enforced via
+ * `bindingSatisfiesProjects` (`src/schemas/pat-scope.schema.ts`).
+ *   - `null` for session and legacy matches, and for any PAT whose
+ *     `api_tokens.project_id` is NULL — no project restriction applies.
+ *   - a project id for a bound PAT.
  */
 export interface AuthResult {
   user: AuthenticatedUser;
   authMethod: AuthMethod;
   tokenId: number | null;
+  scopes: PatScope[] | null;
+  projectId: number | null;
 }
 
 /**

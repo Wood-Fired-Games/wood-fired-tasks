@@ -46,6 +46,8 @@ const resolveModelRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/resolve-model',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['projects'],
         description:

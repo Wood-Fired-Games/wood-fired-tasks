@@ -249,18 +249,59 @@ describe('db-mint-token command', () => {
     const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
     dbMintTokenCommand.exitOverride();
 
+    // Security Audit finding M1 (task #1620): ApiTokenRepository.insert now
+    // rejects scopes outside the canonical taxonomy (read/write/admin) at
+    // the repository boundary, so this CSV-splitting test uses two valid
+    // taxonomy tiers instead of the (now-invalid) "reader".
     const legacy = readUser("display_name = 'legacy-key'");
     await dbMintTokenCommand.parseAsync(
-      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'admin,reader'],
+      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'admin,write'],
       { from: 'user' },
     );
 
     expect(process.exitCode).toBe(0);
-    expect(loggedStdout()).toContain('Scopes: [admin, reader]');
+    expect(loggedStdout()).toContain('Scopes: [admin, write]');
 
     const rows = readTokens();
     expect(rows).toHaveLength(1);
-    expect(rows[0].scopes).toBe('["admin","reader"]');
+    expect(rows[0].scopes).toBe('["admin","write"]');
+  });
+
+  it('Case 6b: --scopes with a single valid scope exits 0 and persists the scope array', async () => {
+    const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
+    dbMintTokenCommand.exitOverride();
+
+    const legacy = readUser("display_name = 'legacy-key'");
+    await dbMintTokenCommand.parseAsync(
+      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'read'],
+      { from: 'user' },
+    );
+
+    expect(process.exitCode).toBe(0);
+    expect(loggedStdout()).toContain('Scopes: [read]');
+
+    const rows = readTokens();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].scopes).toBe('["read"]');
+  });
+
+  it('Case 6c: --scopes with an unknown value exits non-zero, names the allowed scopes, inserts no row', async () => {
+    const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
+    dbMintTokenCommand.exitOverride();
+
+    const legacy = readUser("display_name = 'legacy-key'");
+    await dbMintTokenCommand.parseAsync(
+      ['--user', String(legacy!.id), '--name', 'foo', '--scopes', 'reader'],
+      { from: 'user' },
+    );
+
+    expect(process.exitCode).not.toBe(0);
+    const stderr = loggedStderr();
+    expect(stderr).toContain('reader');
+    expect(stderr).toContain('read');
+    expect(stderr).toContain('write');
+    expect(stderr).toContain('admin');
+    expect(readTokens()).toHaveLength(0);
   });
 
   it('Case 7: --expires-at valid ISO is stored and printed', async () => {
@@ -312,6 +353,17 @@ describe('db-mint-token command', () => {
     expect((caught as { exitCode?: number; code?: string }).exitCode).toBe(1);
     // No token row created.
     expect(readTokens()).toHaveLength(0);
+  });
+
+  it("--scopes help text states scopes are enforced, not the stale 'not enforced' wording (task #1623)", async () => {
+    const { dbMintTokenCommand } = await import('../commands/db-mint-token.js');
+    const scopesOption = dbMintTokenCommand.options.find((o) => o.long === '--scopes');
+    expect(scopesOption).toBeDefined();
+    expect(scopesOption!.description).not.toContain('not enforced');
+    expect(scopesOption!.description).toContain('enforced');
+    expect(scopesOption!.description).toContain('read');
+    expect(scopesOption!.description).toContain('write');
+    expect(scopesOption!.description).toContain('admin');
   });
 
   describe('parser integration (Task 2)', () => {

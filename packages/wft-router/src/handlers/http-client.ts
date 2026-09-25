@@ -22,6 +22,14 @@
  * certificate validation — there is intentionally no insecure escape hatch
  * (hard constraint, docs/event-router-design.md §"TLS posture").
  *
+ * Redirect posture (audit finding H4, part 1/2 — task #1618): fetch is called
+ * with `redirect: 'manual'` so a 3xx response is returned to the caller
+ * verbatim (status + the `Location` header value) instead of being followed
+ * transparently. This module does NOT re-validate the redirect target, count
+ * hops, or decide whether to follow — it only EXPOSES the metadata. Task
+ * #1619 is the consumer that re-validates a redirect target through the
+ * endpoint guard with a bounded hop limit before choosing to follow it.
+ *
  * Standalone-package isolation: no imports from root `src/`.
  *
  * Vendor-neutrality: no AI provider, chat platform, or CI vendor name appears
@@ -35,6 +43,14 @@ export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 export interface HttpResponse {
   status: number;
   bodyText: string;
+  /**
+   * The `Location` header value when present, `undefined` otherwise. Only
+   * ever populated for 3xx responses in practice (fetch is called with
+   * `redirect: 'manual'` so 3xx is returned to the caller rather than
+   * followed) — but this field simply mirrors whatever header value fetch
+   * saw, so any response type carries whatever `Location` it had.
+   */
+  location: string | undefined;
 }
 
 /** Options for {@link httpRequest}. */
@@ -126,10 +142,17 @@ export async function httpRequest(opts: HttpRequestOptions): Promise<HttpRespons
       method: opts.method,
       ...(opts.headers !== undefined && { headers: opts.headers }),
       ...(opts.body !== undefined && { body: opts.body }),
+      // Audit finding H4 (task #1618): never follow redirects transparently.
+      // The caller's endpoint guard validated the ORIGINAL url only — a
+      // silently-followed 3xx could transit somewhere that guard never saw.
+      // Surface the Location header instead; re-validating/following it is
+      // task #1619's job, not this wrapper's.
+      redirect: 'manual',
       signal: controller.signal,
     });
     const bodyText = await response.text();
-    return { status: response.status, bodyText };
+    const location = response.headers.get('Location') ?? undefined;
+    return { status: response.status, bodyText, location };
   } catch (err) {
     if (timedOut) {
       throw new HttpTimeoutError(timeoutMs);

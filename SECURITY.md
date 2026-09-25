@@ -53,9 +53,18 @@ We will:
 - The `tasks` CLI under `src/cli/` — command parsers, HTTP client, and the
   small set of offline subcommands that touch SQLite directly
   (`backup`, `doctor`, `stats`, `db-check`, `completed`).
-- The Slack integration under `src/slack/` — Bolt subprocess, slash-command
-  handlers, signed-request verification, and the EventBus → Slack notifier
-  path.
+- The Slack integration under `src/slack/` and
+  `src/services/slack.service.ts`. The Bolt app runs **in-process** inside
+  the API server in **Socket Mode** (`socketMode: true`) — an *outbound*
+  WebSocket that Slack authenticates with `SLACK_APP_TOKEN` +
+  `SLACK_BOT_TOKEN`. There is **no inbound Slack HTTP endpoint** in this
+  codebase, and therefore no request-signature check to bypass. The
+  reachable surface is: the outbound WebSocket and its tokens; the `/tasks`
+  slash-command handlers (`src/slack/commands/tasks-command.ts`); the
+  Slack-user → local-identity mapping (`src/slack/user-identity.ts`); the
+  channel-subscription store
+  (`src/slack/repositories/channel-subscription.repository.ts`); and the
+  EventBus → Slack notifier path (`src/slack/notifier.ts`).
 - The shared service / repository / workflow layer under `src/services/`,
   `src/repositories/`, and `src/events/` that all four entry points sit on
   top of.
@@ -80,8 +89,9 @@ Issues we will prioritize include, but are not limited to:
   the SSE auth path. (Note: there is no separate authorization layer to
   bypass — see "Authentication Is Not Authorization" below. Any valid
   credential is already full-access.)
-- Secrets exposure (API keys, Slack tokens, `.env` leakage, log
-  scrubbing gaps in pino redaction, Slack signing-secret disclosure).
+- Secrets exposure (API keys, `.env` leakage, log scrubbing gaps in pino
+  redaction, disclosure of `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` — the two
+  Slack credentials this service actually holds).
 - SQL injection or FTS5 injection in task/comment/project queries
   (better-sqlite3 prepared statements, search filters, sort/order
   parameters).
@@ -89,8 +99,15 @@ Issues we will prioritize include, but are not limited to:
 - Prompt-injection vectors via MCP tool descriptions, task fields,
   comment bodies, or resource contents that cause an MCP client to
   take unintended action.
-- Signature-verification bypass on the Slack webhook / events endpoint,
-  or replay of signed Slack requests.
+- Slack-path issues that survive Socket Mode: a `/tasks` subcommand that
+  mutates or discloses data on behalf of the wrong actor (the
+  Slack-user → local-user mapping falls back to the `slack-bot` service
+  account when a Slack `user_id` has no `users` row), or a channel
+  subscription that causes the notifier to push task content to a channel
+  that should not receive it. A change that swaps Socket Mode for an HTTP
+  receiver **without** Bolt signature verification is also in scope —
+  `src/slack/__tests__/signing-verification.test.ts` guards that
+  regression.
 - Anything that allows **unauthenticated** mutation of tasks, projects,
   comments, dependencies, or Slack channel subscriptions — i.e. mutating
   state without presenting any valid credential, or escalating

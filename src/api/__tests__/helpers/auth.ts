@@ -30,6 +30,18 @@ export interface SeedAuthOptions {
   displayName?: string;
   /** Name for the api_tokens row (default 'test-token'). */
   name?: string;
+  /**
+   * PAT scope grant (Security Audit finding M1 — task #1620). Default `[]`,
+   * the pre-taxonomy legacy value that `grantSatisfiesScope` treats as
+   * full-tier — so existing callers keep their unrestricted test token.
+   */
+  scopes?: readonly string[];
+  /**
+   * Project binding (Security Audit finding M1 — task #1635). Default `null`
+   * = unbound / every project, matching every token minted before the column
+   * existed.
+   */
+  projectId?: number | null;
 }
 
 /**
@@ -45,10 +57,18 @@ export function seedAuth(db: Database.Database, opts: SeedAuthOptions = {}): See
   const { token, prefix, suffix, hash } = generateToken();
   const tokenInfo = db
     .prepare(
-      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, revoked_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, '[]', NULL, NULL)`,
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, revoked_at, expires_at, project_id)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
     )
-    .run(userId, opts.name ?? 'test-token', prefix, suffix, hash);
+    .run(
+      userId,
+      opts.name ?? 'test-token',
+      prefix,
+      suffix,
+      hash,
+      JSON.stringify(opts.scopes ?? []),
+      opts.projectId ?? null,
+    );
 
   return {
     token,

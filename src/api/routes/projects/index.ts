@@ -18,6 +18,8 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['projects'],
         description: 'Create a new project',
@@ -40,6 +42,8 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['projects'],
         description: 'List projects (paginated). Returns `{ data, total, limit, offset }`.',
@@ -59,6 +63,8 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['projects'],
         description: 'Get project by ID',
@@ -78,6 +84,8 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.put(
     '/:id',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['projects'],
         description: 'Update project by ID',
@@ -119,6 +127,8 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.delete(
     '/:id',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['projects'],
         description: 'Delete project by ID',

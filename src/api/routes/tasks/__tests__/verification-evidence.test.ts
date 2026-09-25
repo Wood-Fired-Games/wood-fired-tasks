@@ -93,7 +93,11 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
       url: `/api/v1/tasks/${id}`,
       headers,
       payload: {
-        verification_evidence: { verdict: 'PASS', verifier_session_id: 'x' },
+        verification_evidence: {
+          verdict: 'PASS',
+          checks: [{ name: 'unit', status: 'PASS', evidence_url_or_text: 'real check output' }],
+          verifier_session_id: 'x',
+        },
       },
     });
 
@@ -113,7 +117,13 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
 
   it('GET /tasks?include=verification inflates verification_evidence', async () => {
     const id = await createTaskHere('list-include');
-    const evidence = { verdict: 'PASS' as const, verifier_session_id: 'incl' };
+    const evidence = {
+      verdict: 'PASS' as const,
+      checks: [
+        { name: 'unit', status: 'PASS' as const, evidence_url_or_text: 'real check output' },
+      ],
+      verifier_session_id: 'incl',
+    };
     await server.inject({
       method: 'PUT',
       url: `/api/v1/tasks/${id}`,
@@ -143,11 +153,20 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
     const notVerifiedId = await createTaskHere('not-verified');
 
     const setEvidence = async (id: number, verdict: string) => {
+      const evidence: Record<string, unknown> = {
+        verdict,
+        verifier_session_id: `critic-${verdict.toLowerCase()}-1`,
+      };
+      if (verdict === 'PASS') {
+        evidence.checks = [
+          { name: 'unit', status: 'PASS', evidence_url_or_text: 'real check output' },
+        ];
+      }
       const resp = await server.inject({
         method: 'PUT',
         url: `/api/v1/tasks/${id}`,
         headers,
-        payload: { verification_evidence: { verdict } },
+        payload: { verification_evidence: evidence },
       });
       expect(resp.statusCode).toBe(200);
     };
@@ -197,7 +216,11 @@ describe('REST /api/v1/tasks — verification_evidence field (#312)', () => {
       url: `/api/v1/tasks/${id}`,
       headers,
       payload: {
-        verification_evidence: { verdict: 'PASS', verifier_session_id: 'keep' },
+        verification_evidence: {
+          verdict: 'PASS',
+          checks: [{ name: 'unit', status: 'PASS', evidence_url_or_text: 'real check output' }],
+          verifier_session_id: 'keep',
+        },
       },
     });
 

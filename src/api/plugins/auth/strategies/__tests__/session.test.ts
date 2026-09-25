@@ -118,6 +118,10 @@ describe('Session strategy tryAuth (Phase 29 real impl)', () => {
         },
         authMethod: 'session',
         tokenId: null,
+        scopes: null,
+        // Security Audit finding M1 (task #1635): a session carries no PAT
+        // project binding, so the principal is unbound (cross-project).
+        projectId: null,
       },
     });
     expect(userRepository.findById).toHaveBeenCalledWith(7);

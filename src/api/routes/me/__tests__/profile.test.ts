@@ -39,14 +39,27 @@ interface Harness {
 }
 
 /** Mint a PAT for `userId` directly via SQL and return the plaintext. */
-function mintPatViaDb(db: Database.Database, userId: number): { id: number; token: string } {
+function mintPatViaDb(
+  db: Database.Database,
+  userId: number,
+  opts: { scopes?: string; projectId?: number | null } = {},
+): { id: number; token: string } {
   const { token, prefix, suffix, hash } = generateToken();
   const info = db
     .prepare(
-      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, expires_at, project_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(userId, 'profile-test-token', prefix, suffix, hash, '[]', null);
+    .run(
+      userId,
+      'profile-test-token',
+      prefix,
+      suffix,
+      hash,
+      opts.scopes ?? '[]',
+      null,
+      opts.projectId ?? null,
+    );
   return { id: Number(info.lastInsertRowid), token };
 }
 
@@ -146,8 +159,8 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
     expect(Number.isNaN(Date.parse(body.authenticatedAt))).toBe(false);
   });
 
-  it('2. PAT-authed: returns 200 with profile and OMITS authenticatedAt', async () => {
-    const { token } = mintPatViaDb(harness.db, harness.oidcUser.id);
+  it('2. PAT-authed: returns 200 with profile + own token block, OMITS authenticatedAt', async () => {
+    const { id, token } = mintPatViaDb(harness.db, harness.oidcUser.id);
 
     const res = await harness.server.inject({
       method: 'GET',
@@ -163,8 +176,49 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
       email: 'alice@example.com',
       isLegacy: false,
       isServiceAccount: false,
+      token: {
+        id,
+        name: 'profile-test-token',
+        scopes: [],
+        projectId: null,
+        lastUsedAt: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
+      },
     });
     expect(body).not.toHaveProperty('authenticatedAt');
+  });
+
+  it('2b. PAT-authed: token block reflects scopes and project binding, never the hash', async () => {
+    const project = harness.db
+      .prepare(`INSERT INTO projects (name) VALUES (?)`)
+      .run('profile-bound-project');
+    const projectId = Number(project.lastInsertRowid);
+    const { token } = mintPatViaDb(harness.db, harness.oidcUser.id, {
+      scopes: '["read"]',
+      projectId,
+    });
+
+    const res = await harness.server.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.token.scopes).toEqual(['read']);
+    expect(body.token.projectId).toBe(projectId);
+    expect(Object.keys(body.token).sort()).toEqual(
+      ['id', 'lastUsedAt', 'name', 'projectId', 'scopes'].sort(),
+    );
+  });
+
+  it('2c. session-authed: no token block', async () => {
+    const res = await harness.server.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { cookie: oidcUserCookie },
+    });
+    expect(JSON.parse(res.body)).not.toHaveProperty('token');
   });
 
   it('3. legacy-flagged user (PAT-authed): returns 200 with isLegacy=true', async () => {
@@ -188,7 +242,7 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
   });
 
   it('4. service-account user (PAT-authed): reflects isServiceAccount=true', async () => {
-    const { token } = mintPatViaDb(harness.db, harness.serviceUser.id);
+    const { id, token } = mintPatViaDb(harness.db, harness.serviceUser.id);
 
     const res = await harness.server.inject({
       method: 'GET',
@@ -204,6 +258,7 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
       email: null,
       isLegacy: false,
       isServiceAccount: true,
+      token: expect.objectContaining({ id, scopes: [], projectId: null }),
     });
   });
 
@@ -232,6 +287,7 @@ describe('Phase 30 Plan 30-03 — GET /api/v1/me', () => {
       'isLegacy',
       'isServiceAccount',
       'authenticatedAt',
+      'token',
     ]);
     for (const key of Object.keys(body)) {
       expect(allowedKeys.has(key)).toBe(true);

@@ -282,6 +282,30 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(after.c).toBe(before.c);
     });
 
+    // Security Audit finding M1 (task #1622): POST /me/tokens is a token
+    // surface and is declared `requiredScope: 'admin'` (in addition to the
+    // pre-existing `sessionOnly: true`). A read-scoped PAT is rejected with
+    // 403 regardless — today via the sessionOnly gate (which runs first and
+    // rejects ANY PAT auth method before the scope gate is reached), and
+    // structurally would ALSO be rejected by the requiredScope gate if
+    // sessionOnly were ever relaxed. This test locks in the "requires admin
+    // tier" contract at the black-box (status code) level.
+    it("requires the admin tier: a read-scoped PAT is rejected with 403 (can't mint PATs)", async () => {
+      const { token } = mintPatViaDb(harness.db, {
+        userId: harness.legacyUser.id,
+        scopes: '["read"]',
+      });
+
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: 'should-not-mint-read-scoped' },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
     it('3. rejects with 401 when no credentials are presented', async () => {
       const res = await harness.server.inject({
         method: 'POST',
@@ -300,20 +324,24 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         headers: { cookie: legacyUserCookie },
         payload: {
           name: 'with-scopes',
-          scopes: ['a', 'b'],
+          // Security Audit finding M1 (task #1620): scopes are now checked
+          // against the canonical taxonomy at mint time, so this
+          // persistence test uses valid taxonomy tiers instead of
+          // arbitrary strings.
+          scopes: ['read', 'write'],
           expiresAt,
         },
       });
 
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.body);
-      expect(body.scopes).toEqual(['a', 'b']);
+      expect(body.scopes).toEqual(['read', 'write']);
       expect(body.expiresAt).toBe(expiresAt);
 
       const row = harness.db
         .prepare('SELECT scopes, expires_at FROM api_tokens WHERE id = ?')
         .get(body.id) as { scopes: string; expires_at: string };
-      expect(row.scopes).toBe('["a","b"]');
+      expect(row.scopes).toBe('["read","write"]');
       expect(row.expires_at).toBe(expiresAt);
     });
 
@@ -362,20 +390,28 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
       expect(count.c).toBe(0);
     });
 
-    it('WR-02: accepts the cap exactly (32 scopes, 64-char elements)', async () => {
+    // Security Audit finding M1 (task #1620): the schema-level 32-element /
+    // 64-char caps (WR-02) are shape bounds, but every valid scope must now
+    // ALSO be a taxonomy member — no taxonomy tier is anywhere near 64
+    // chars, so this case now asserts the array-length cap alone (still at
+    // exactly 32 elements) using valid tiers. The 64-char-string cap
+    // remains covered by the "rejects oversized scope string" case above,
+    // which fails validation regardless (too long AND not a taxonomy
+    // member).
+    it('WR-02: accepts the array-length cap exactly (32 valid scopes)', async () => {
       const res = await harness.server.inject({
         method: 'POST',
         url: '/api/v1/me/tokens',
         headers: { cookie: legacyUserCookie },
         payload: {
           name: 'at-the-cap',
-          scopes: Array.from({ length: 32 }, () => 'a'.repeat(64)),
+          scopes: Array.from({ length: 32 }, () => 'admin'),
         },
       });
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.body);
       expect(body.scopes).toHaveLength(32);
-      expect(body.scopes[0]).toHaveLength(64);
+      expect(body.scopes[0]).toBe('admin');
     });
 
     it('WR-02: rejects empty-string scope element (min(1)) with 400', async () => {
@@ -389,6 +425,157 @@ describe('Phase 28 Plan 05 — /api/v1/me/tokens routes', () => {
         },
       });
       expect(res.statusCode).toBe(400);
+    });
+
+    // Security Audit finding M1 (task #1620) — mint-time scope-taxonomy
+    // validation. `bogus:scope` is well-formed (passes the WR-02 shape
+    // caps) but is not a member of the canonical taxonomy
+    // (read/write/admin), so it must be rejected with a VALIDATION_ERROR
+    // shaped 400 body — no row persisted.
+    it('rejects an unknown scope (not in the read/write/admin taxonomy) with 400', async () => {
+      const res = await harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: { cookie: legacyUserCookie },
+        payload: {
+          name: 'bogus-scope',
+          scopes: ['bogus:scope'],
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('VALIDATION_ERROR');
+      expect(body.details.invalidScopes).toEqual(['bogus:scope']);
+
+      const count = harness.db
+        .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'bogus-scope'")
+        .get() as { c: number };
+      expect(count.c).toBe(0);
+    });
+
+    // -----------------------------------------------------------------------
+    // Security Audit finding M1 (task #1635) — optional project binding.
+    //
+    // The mint surface is the ONLY way a binding is ever attached to a token,
+    // so these cases pin the whole persistence contract: accepted when valid,
+    // NULL (unbound) when omitted, and refused before any row is written when
+    // the id is malformed or names no project. Enforcement of the resulting
+    // binding lives in src/api/__tests__/pat-project-binding.test.ts.
+    // -----------------------------------------------------------------------
+    describe('project binding (task #1635)', () => {
+      it('persists projectId when supplied and echoes it on the mint response', async () => {
+        const projectId = Number(
+          harness.db
+            .prepare('INSERT INTO projects (name) VALUES (?)')
+            .run(`mint-binding-${Date.now()}`).lastInsertRowid,
+        );
+
+        const res = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'bound-token', scopes: ['write'], projectId },
+        });
+
+        expect(res.statusCode).toBe(201);
+        const body = JSON.parse(res.body);
+        expect(body.projectId).toBe(projectId);
+
+        const row = harness.db
+          .prepare('SELECT project_id FROM api_tokens WHERE id = ?')
+          .get(body.id) as { project_id: number | null };
+        expect(row.project_id).toBe(projectId);
+      });
+
+      it('omitting projectId persists NULL — the unbound, cross-project default', async () => {
+        const res = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'unbound-token', scopes: ['write'] },
+        });
+
+        expect(res.statusCode).toBe(201);
+        const body = JSON.parse(res.body);
+        expect(body.projectId).toBeNull();
+
+        const row = harness.db
+          .prepare('SELECT project_id FROM api_tokens WHERE id = ?')
+          .get(body.id) as { project_id: number | null };
+        expect(row.project_id).toBeNull();
+      });
+
+      it('rejects a projectId naming no existing project with 400 — and persists nothing', async () => {
+        const res = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'dangling-binding', projectId: 999_999 },
+        });
+
+        expect(res.statusCode).toBe(400);
+        const body = JSON.parse(res.body);
+        expect(body.error).toBe('VALIDATION_ERROR');
+        expect(body.details.invalidProjectId).toBe(999_999);
+
+        const count = harness.db
+          .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name = 'dangling-binding'")
+          .get() as { c: number };
+        expect(count.c).toBe(0);
+      });
+
+      it('rejects a non-positive-integer projectId with 400', async () => {
+        for (const projectId of [0, -1, 1.5, 'abc']) {
+          const res = await harness.server.inject({
+            method: 'POST',
+            url: '/api/v1/me/tokens',
+            headers: { cookie: legacyUserCookie },
+            payload: { name: `bad-binding-${String(projectId)}`, projectId },
+          });
+          expect(res.statusCode, `projectId=${String(projectId)}`).toBe(400);
+        }
+        const count = harness.db
+          .prepare("SELECT COUNT(*) as c FROM api_tokens WHERE name LIKE 'bad-binding-%'")
+          .get() as { c: number };
+        expect(count.c).toBe(0);
+      });
+
+      it('GET /me/tokens surfaces the binding on each listed token', async () => {
+        const projectId = Number(
+          harness.db
+            .prepare('INSERT INTO projects (name) VALUES (?)')
+            .run(`list-binding-${Date.now()}`).lastInsertRowid,
+        );
+        const minted = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'listed-bound-token', projectId },
+        });
+        expect(minted.statusCode).toBe(201);
+        const mintedId = JSON.parse(minted.body).id as number;
+
+        const unbound = await harness.server.inject({
+          method: 'POST',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+          payload: { name: 'listed-unbound-token' },
+        });
+        expect(unbound.statusCode).toBe(201);
+        const unboundId = JSON.parse(unbound.body).id as number;
+
+        const res = await harness.server.inject({
+          method: 'GET',
+          url: '/api/v1/me/tokens',
+          headers: { cookie: legacyUserCookie },
+        });
+        expect(res.statusCode).toBe(200);
+        const items = JSON.parse(res.body) as Array<{ id: number; projectId: number | null }>;
+        expect(items.find((i) => i.id === mintedId)?.projectId).toBe(projectId);
+        // …while a token minted without one reports null in the same payload,
+        // proving the column is projected per-row rather than defaulted.
+        expect(items.find((i) => i.id === unboundId)?.projectId).toBeNull();
+      });
     });
   });
 

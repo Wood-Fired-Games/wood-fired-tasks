@@ -63,6 +63,7 @@ import type { UserRepository } from '../repositories/user.repository.js';
 import type { ApiKeyEntry } from '../config/env.js';
 import { hashKey, precomputeHashedEntries } from '../api/plugins/auth/keys.js';
 import { hashToken, PAT_PREFIX } from '../services/pat-hash.js';
+import { isPatScope, type PatScope } from '../schemas/pat-scope.schema.js';
 
 export interface ResolveActorUserIdInput {
   /** Raw `process.env.WFT_API_KEY`, possibly undefined. */
@@ -131,6 +132,80 @@ export type ResolutionPath =
 type PatRejectReason = 'unknown' | 'revoked' | 'expired' | 'user-disabled';
 
 /**
+ * The boot-resolved MCP actor identity.
+ *
+ * `scopes` (Security Audit finding M1 — task #1631) carries the PAT grant
+ * forward so the per-tool gate in `src/mcp/scope-gate.ts` can enforce it.
+ * Semantics deliberately match `request.scopes` in the REST chain
+ * (`src/types/fastify.d.ts`), so the SAME `grantSatisfiesScope` predicate
+ * interprets both:
+ *
+ *   - `PatScope[]` — the validated grant from `api_tokens.scopes`, produced
+ *     ONLY on the `'pat'` path. May be `[]` for a token minted before the
+ *     #1620 taxonomy existed; `grantSatisfiesScope` treats `[]` as full-tier
+ *     (the explicit legacy rule).
+ *   - `null` — the actor authenticated via a credential class that carries no
+ *     PAT scope restriction at all: a legacy `API_KEYS` hash match, the
+ *     `mcp-bot` service-account fallback, or any `pat-*-fallback` path (where
+ *     the PAT was REJECTED, so its scopes must not be honoured — the actor is
+ *     mcp-bot, not the token's owner). Full-tier, mirroring how the REST
+ *     chain treats session auth.
+ */
+export interface ResolvedMcpActor {
+  actorUserId: number;
+  path: ResolutionPath;
+  scopes: PatScope[] | null;
+  /**
+   * `api_tokens.id` of the PAT that authenticated this process (Security Audit
+   * finding M5 — task #1632), or `null` for every other credential class.
+   *
+   * Threaded into `McpServerContext.tokenId` so the MCP audit producer can
+   * fill `audit_events.token_id` with the SAME value the REST chain writes
+   * from `request.tokenId` — without it, a token-scoped audit query would see
+   * only the REST half of a principal's activity.
+   *
+   * Non-null on the `'pat'` path ONLY: on a `pat-*-fallback` the token was
+   * REJECTED and the resolved actor is mcp-bot, not the token's owner, so
+   * attributing rows to that token id would be a lie.
+   */
+  tokenId: number | null;
+}
+
+/**
+ * Parse the `api_tokens.scopes` JSON-array column into a validated
+ * `PatScope[]`.
+ *
+ * Deliberately mirrors the private `parseScopes` helper in the REST PAT
+ * strategy (`src/api/plugins/auth/strategies/pat.ts`), including its
+ * lenient failure mode: non-array JSON, unparseable JSON, and unrecognised
+ * scope strings are DROPPED rather than thrown. `assertKnownScopes` at the
+ * repository write boundary already rejects unknown scopes before a token is
+ * persisted, so this is defense-in-depth against a hand-edited DB, not a
+ * validation path.
+ *
+ * NOTE the security consequence of that leniency, which is identical on both
+ * surfaces: a garbage `scopes` column degrades to `[]`, which
+ * `grantSatisfiesScope` reads as the legacy FULL-TIER case. That is the
+ * deliberate #1620/#1621 trade-off (never silently 403 a pre-taxonomy token)
+ * and is why the write boundary, not this reader, is the enforcement point
+ * for scope validity.
+ *
+ * Exported so tests can exercise the column-parsing contract directly.
+ */
+export function parseGrantedScopes(scopesJson: string): PatScope[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(scopesJson);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter((s): s is PatScope => typeof s === 'string' && isPatScope(s));
+}
+
+/**
  * Resolve the active MCP actor user.id from the supplied environment.
  *
  * @throws Error if the service-account fallback is reached but `mcp-bot` is
@@ -142,18 +217,17 @@ export function resolveActorUserId(input: ResolveActorUserIdInput): number {
 
 /**
  * Variant of `resolveActorUserId` that also returns the resolution path
- * taken. Useful for the MCP boot wrapper's one-line INFO log so operators
- * can see at a glance which credential class authenticated this process.
+ * taken plus the PAT grant. The path drives the MCP boot wrapper's one-line
+ * INFO log so operators can see at a glance which credential class
+ * authenticated this process; the grant (`scopes`, task #1631) is threaded
+ * into `McpServerContext` so `src/mcp/scope-gate.ts` can gate mutating tools.
  *
  * Throws the same boot-fatal error as `resolveActorUserId` when the
  * service-account fallback is reached but `mcp-bot` is not seeded, or
  * when a PAT is supplied but is invalid/revoked/expired/owned by a
  * disabled user AND `allowBadPat` is false (the default — see WR-02).
  */
-export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): {
-  actorUserId: number;
-  path: ResolutionPath;
-} {
+export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): ResolvedMcpActor {
   const {
     apiKey,
     apiTokenRepo,
@@ -192,7 +266,17 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): {
     }
 
     if (reject === null && row !== null) {
-      return { actorUserId: row.user_id, path: 'pat' };
+      // #1631: the ONLY path that carries a PAT grant forward. Every other
+      // path resolves a DIFFERENT principal (legacy user or mcp-bot) whose
+      // authority is not described by this token's scopes, so they return
+      // null (= no PAT restriction).
+      return {
+        actorUserId: row.user_id,
+        path: 'pat',
+        scopes: parseGrantedScopes(row.scopes),
+        // #1632: the ONLY path carrying a token id — see ResolvedMcpActor.
+        tokenId: row.id,
+      };
     }
 
     // Rejected. Either throw (default — WR-02 fail-closed) or fall back
@@ -216,6 +300,11 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): {
     return {
       actorUserId: resolveMcpBotOrThrow(userRepo),
       path: fallbackPath,
+      // The PAT was REJECTED — the resolved actor is mcp-bot, not the
+      // token's owner, so neither the token's scopes nor its id may be
+      // honoured here (#1632).
+      scopes: null,
+      tokenId: null,
     };
   }
 
@@ -249,12 +338,16 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): {
       // CR-02: also reject if the legacy user is disabled (mirrors REST
       // legacy strategy at strategies/legacy.ts:100-102).
       if (user !== null && user.disabled_at === null) {
-        return { actorUserId: user.id, path: 'legacy' };
+        // Legacy API_KEYS entries carry no scope metadata at all — null (=
+        // full tier), mirroring how the REST chain treats session auth.
+        return { actorUserId: user.id, path: 'legacy', scopes: null, tokenId: null };
       }
     }
     return {
       actorUserId: resolveMcpBotOrThrow(userRepo),
       path: 'legacy-unmatched-fallback',
+      scopes: null,
+      tokenId: null,
     };
   }
 
@@ -262,6 +355,8 @@ export function resolveActorUserIdWithPath(input: ResolveActorUserIdInput): {
   return {
     actorUserId: resolveMcpBotOrThrow(userRepo),
     path: 'service-account-fallback',
+    scopes: null,
+    tokenId: null,
   };
 }
 

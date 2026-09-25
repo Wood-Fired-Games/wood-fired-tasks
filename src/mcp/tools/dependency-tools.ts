@@ -3,10 +3,24 @@ import { toStructuredContent } from '../lib/structured-content.js';
 import type { DependencyService } from '../../services/dependency.service.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { enforceToolScope } from '../scope-gate.js';
+import type { McpServerContext } from '../server.js';
 
+/**
+ * Register the MCP dependency tools.
+ *
+ * @param ctx - Task #1631: boot-time context carrying the resolved PAT grant
+ *   (`ctx.scopes`). Both edge mutations (`add_dependency` /
+ *   `remove_dependency`) are gated at the `write` tier — a dependency edge is
+ *   ordinary task-graph editing, not a destructive row delete, so neither is
+ *   raised to `admin`. `get_dependencies` is a pure read and stays ungated.
+ *   Defaults to `{ actorUserId: null }` (no scopes ⇒ full tier) for pre-#1631
+ *   callers.
+ */
 export function registerDependencyTools(
   server: McpServer,
   dependencyService: DependencyService,
+  ctx: McpServerContext = { actorUserId: null },
 ): void {
   // add_dependency - Create a dependency relationship
   server.registerTool(
@@ -20,6 +34,8 @@ export function registerDependencyTools(
     },
     async (args) => {
       try {
+        // #1631: authorize BEFORE the write ('write' tier).
+        enforceToolScope(ctx.scopes, 'add_dependency');
         const dependency = dependencyService.addDependency({
           task_id: args.task_id,
           blocks_task_id: args.blocks_task_id,
@@ -59,6 +75,8 @@ export function registerDependencyTools(
     },
     async (args) => {
       try {
+        // #1631: authorize BEFORE the write ('write' tier — edge edit).
+        enforceToolScope(ctx.scopes, 'remove_dependency');
         dependencyService.removeDependency(args.task_id, args.blocks_task_id);
 
         return {

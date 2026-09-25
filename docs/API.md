@@ -1486,14 +1486,14 @@ The Swagger UI provides:
 
 ### Production gating
 
-Swagger UI is **disabled by default in production** (`NODE_ENV=production`). The behaviour is:
+Swagger UI is **disabled by default in every environment** (task #1612, not just production) — `@fastify/swagger-ui` transitively loads `@fastify/static` (unfixed HIGH advisory), so the opt-in below keeps that plugin from being registered at all, not just hidden. An absent `NODE_ENV` counts as production posture (task #1611), so `npm run dev` needs the opt-in too. The behaviour is:
 
 | Environment | `ENABLE_SWAGGER_IN_PRODUCTION` | `/docs` and `/docs/json` |
 |-------------|-------------------------------|--------------------------|
-| `development` or `test` | (ignored) | Exposed, no auth required. |
-| `production` | unset / `false` (default) | **Not registered** — returns 404. |
-| `production` | `true` | Exposed, but a Bearer PAT is required (same canonical auth plugin as `/api/v1`). |
+| any (including `NODE_ENV` unset) | unset / `false` (default) | **Not registered** — returns 404. |
+| explicit `development` or `test` | `true` | Exposed, no auth required. |
+| `production`, or `NODE_ENV` unset | `true` | Exposed, but a Bearer PAT is required (same canonical auth plugin as `/api/v1`). |
 
-The in-process OpenAPI spec collector is always loaded so internal tests can introspect route schemas, but the HTTP routes that serve the UI and JSON document are only mounted when the gate above allows it.
+The in-process OpenAPI spec collector is always loaded so internal tests can introspect route schemas, but the HTTP routes — and the underlying `@fastify/swagger-ui`/`@fastify/static` plugins — are only mounted when the gate above allows it. Since task #1617 `@fastify/swagger-ui` is a **devDependency** loaded via a guarded dynamic import — it was the only path by which the vulnerable `@fastify/static` reached the production tree, so moving it out clears `npm audit --omit=dev --audit-level=high` by removing the package rather than suppressing the finding. The consequence: in a production install (`npm ci --omit=dev`, or the published tarball) the module is absent, so `/docs` **and `/docs/json`** return 404 even with the opt-in set — swagger-ui serves both routes, and the spec collector exposes no HTTP endpoint of its own. The server still boots normally and logs a warning. Reinstalling `@fastify/swagger-ui` restores the UI but re-introduces `@fastify/static` there.
 
-[TIP] Use Swagger UI in development to explore the API and test endpoints without writing curl commands. In production, fetch the spec via `/docs/json` with your Bearer PAT only after opting in with `ENABLE_SWAGGER_IN_PRODUCTION=true`.
+[TIP] Use Swagger UI in development via `ENABLE_SWAGGER_IN_PRODUCTION=true npm run dev` (a dev checkout has the devDependency installed). In production, fetch `/docs/json` with your Bearer PAT after opting in the same way.

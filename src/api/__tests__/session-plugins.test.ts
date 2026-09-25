@@ -23,8 +23,10 @@ import { extractSessionCookie } from '../../../tests/helpers/session-cookie.js';
  *      → headers.cookie replay across two inject() calls.
  *   4. Plugin order — printPlugins() output places cookie before
  *      secure-session before formbody.
- *   5. Cookie attributes per environment — httpOnly + sameSite=Lax always,
- *      Secure only in NODE_ENV=production.
+ *   5. Cookie attributes per environment — httpOnly + sameSite=Lax always;
+ *      Secure derives from the fail-closed `isProductionPosture` flag
+ *      (task #1613): present when NODE_ENV is absent or 'production',
+ *      absent only when NODE_ENV is explicitly 'development' (or 'test').
  *
  * Test isolation: each block manages its own env vars + uses resetConfig()
  * so the Proxy-cached config reflects the per-test setup. The vitest
@@ -148,15 +150,21 @@ describe('session plugins — enabled mode', () => {
     expect(JSON.parse(getResp.body)).toEqual({ probe: 'hello' });
   });
 
-  it('cookie attributes: HttpOnly + SameSite=Lax present; Secure absent in development', async () => {
+  it('task #1613 (H1): cookie attributes with NODE_ENV deleted — Secure + HttpOnly + SameSite=Lax all present (fail-closed posture)', async () => {
+    // NODE_ENV is deleted (not merely defaulted) by this block's beforeAll.
+    // `config.isProductionPosture` (task #1611) treats an ABSENT NODE_ENV as
+    // hardened, so `secure` must be true here even though the post-default
+    // `config.NODE_ENV` reads 'development'. Reverting server.ts's `secure`
+    // option back to `config.NODE_ENV === 'production'` makes this
+    // assertion fail, since an absent NODE_ENV parses to the 'development'
+    // default under that (pre-#1613) comparison.
     const r = await server.inject({ method: 'POST', url: '/_test/session-set' });
     const setCookieRaw = r.headers['set-cookie'];
     const setCookie = Array.isArray(setCookieRaw) ? setCookieRaw[0] : setCookieRaw!;
 
     expect(setCookie).toMatch(/HttpOnly/i);
     expect(setCookie).toMatch(/SameSite=Lax/i);
-    // In development (default) the Secure attribute must NOT be set.
-    expect(setCookie).not.toMatch(/;\s*Secure/i);
+    expect(setCookie).toMatch(/;\s*Secure/i);
   });
 
   it('plugin registration order: cookie → secure-session → formbody', async () => {
@@ -310,6 +318,49 @@ describe('session plugins — production cookie attributes', () => {
     const setCookie = Array.isArray(setCookieRaw) ? setCookieRaw[0] : setCookieRaw!;
     expect(setCookie).toMatch(/;\s*Secure/i);
     // HttpOnly + SameSite=Lax remain set in prod.
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/SameSite=Lax/i);
+  });
+});
+
+describe('session plugins — task #1613 (H1): explicit development posture omits Secure', () => {
+  let server: FastifyInstance;
+  let db: Database.Database;
+
+  beforeAll(async () => {
+    // Explicit 'development' (as opposed to the absent-NODE_ENV case
+    // covered above) is the ONE posture the fail-closed flag deliberately
+    // leaves permissive — dev ergonomics are unchanged from before #1613.
+    process.env.NODE_ENV = 'development';
+    process.env.API_KEYS = 'test-key';
+    process.env.SESSION_COOKIE_SECRET = validSecret32;
+    resetConfig();
+    const { createServer } = await import('../server.js');
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    db = result.app.db;
+
+    server.post('/_test/session-set', async (request, reply) => {
+      request.session.set('probe', 'hello');
+      return reply.send({ ok: true });
+    });
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+    delete process.env.NODE_ENV;
+    delete process.env.SESSION_COOKIE_SECRET;
+    resetConfig();
+  });
+
+  it('Secure attribute is omitted when NODE_ENV is explicitly development', async () => {
+    const r = await server.inject({ method: 'POST', url: '/_test/session-set' });
+    const setCookieRaw = r.headers['set-cookie'];
+    const setCookie = Array.isArray(setCookieRaw) ? setCookieRaw[0] : setCookieRaw!;
+    expect(setCookie).not.toMatch(/;\s*Secure/i);
+    // HttpOnly + SameSite=Lax remain set regardless of posture.
     expect(setCookie).toMatch(/HttpOnly/i);
     expect(setCookie).toMatch(/SameSite=Lax/i);
   });

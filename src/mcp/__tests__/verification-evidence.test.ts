@@ -73,7 +73,11 @@ describe('MCP — verification_evidence (#312)', () => {
       verdict: 'PASS' as const,
       checks: [
         { name: 'build', status: 'PASS' as const, evidence_url_or_text: 'green' },
-        { name: 'tests', status: 'SKIP' as const, evidence_url_or_text: 'n/a' },
+        {
+          name: 'tests',
+          status: 'SKIP' as const,
+          evidence_url_or_text: 'skipped — no test-relevant changes in this diff',
+        },
       ],
       verifier_session_id: 'mcp-sess-1',
       verifier_request_id: 'mcp-req-1',

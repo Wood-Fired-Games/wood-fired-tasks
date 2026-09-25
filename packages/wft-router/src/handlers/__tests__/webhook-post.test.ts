@@ -25,7 +25,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { IdempotencyStore, type DispatchStatus } from '../../dispatch/index.js';
 import type { EventPayloadShape } from '../../dispatch/index.js';
-import { assertEndpointAllowed, webhookPost } from '../webhook-post.js';
+import { assertEndpointAllowed, MAX_REDIRECT_HOPS, webhookPost } from '../webhook-post.js';
 import type { HandlerContext, HandlerLogger } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -73,6 +73,32 @@ function recordingFetch(
       body: typeof init?.body === 'string' ? init.body : undefined,
     });
     return Promise.resolve(new Response(responseBody, { status }));
+  }) as typeof fetch;
+  return { fetchImpl, calls };
+}
+
+/**
+ * Redirect-chain fetch fake (task #1619) — returns one canned response per
+ * call, in order (the last entry repeats if more calls arrive than entries,
+ * which is exactly what a redirect loop would do if re-validation were
+ * skipped). Records every URL actually hit so tests can assert hop counts.
+ */
+function sequenceFetch(responses: Array<{ status: number; location?: string; body?: string }>): {
+  fetchImpl: typeof fetch;
+  calls: string[];
+} {
+  const calls: string[] = [];
+  let i = 0;
+  const fetchImpl = ((url: string | URL | Request) => {
+    const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    calls.push(urlStr);
+    const next = responses[Math.min(i, responses.length - 1)]!;
+    i += 1;
+    const headers = new Headers();
+    if (next.location !== undefined) {
+      headers.set('Location', next.location);
+    }
+    return Promise.resolve(new Response(next.body ?? '', { status: next.status, headers }));
   }) as typeof fetch;
   return { fetchImpl, calls };
 }
@@ -143,13 +169,17 @@ describe('assertEndpointAllowed', () => {
     expect(assertEndpointAllowed('http://127.5.5.5/in').allowed).toBe(true);
   });
 
-  it('allows http:// to RFC1918 / link-local / ULA private hosts', () => {
+  it('allows http:// to RFC1918 / ULA private hosts over plaintext (non-regression)', () => {
+    // This is the load-bearing non-regression assertion for task #1633: RFC1918
+    // and loopback remain a plaintext-http trust boundary even after link-local
+    // is carved out below. Do not weaken or remove this case.
     expect(assertEndpointAllowed('http://10.1.2.3/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://172.16.0.1/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://172.31.255.255/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://192.168.1.1/in').allowed).toBe(true);
-    expect(assertEndpointAllowed('http://169.254.1.1/in').allowed).toBe(true);
     expect(assertEndpointAllowed('http://[fd00::1]/in').allowed).toBe(true);
+    expect(assertEndpointAllowed('http://127.0.0.1:9000/in').allowed).toBe(true);
+    expect(assertEndpointAllowed('http://localhost/in').allowed).toBe(true);
   });
 
   it('refuses http:// to routable hosts (credential-exposure guard)', () => {
@@ -411,5 +441,81 @@ describe('webhookPost', () => {
     expect(outcome).toEqual({ kind: 'succeeded' });
     expect(calls[0]!.url).toBe('https://hooks.example.com/replay');
     expect(calls[0]!.body).toBe('replayed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Redirect re-validation (audit finding H4, part 2/2 — task #1619)
+// ---------------------------------------------------------------------------
+
+describe('webhookPost redirect re-validation', () => {
+  it('an https endpoint that 302s to http://127.0.0.1/ fails delivery with the same refused-endpoint error type as a directly-disallowed target', async () => {
+    const store = makeStore();
+    const { fetchImpl, calls } = sequenceFetch([{ status: 302, location: 'http://127.0.0.1/' }]);
+    const ctx = baseContext({
+      store,
+      fetchImpl,
+      withBlock: { url: 'https://hooks.example.com/in', body: { x: 1 } },
+    });
+
+    const outcome = await webhookPost(ctx);
+
+    expect(outcome.kind).toBe('failed');
+    if (outcome.kind === 'failed') {
+      // Same error class the direct-config guard raises for a refused
+      // endpoint (step 3a): non-retryable, credential-exposure reason.
+      expect(outcome.retryable).toBe(false);
+      expect(outcome.detail).toContain('credential-exposure');
+    }
+    // Redirect never followed — only the original request went out.
+    expect(calls).toEqual(['https://hooks.example.com/in']);
+    expect(statusOf(store, 'rule-A', 'evt-1')).toBe('PERMANENTLY_FAILED');
+  });
+
+  it('an https endpoint that 302s to another allowed https endpoint succeeds and reports the final status', async () => {
+    const store = makeStore();
+    const { fetchImpl, calls } = sequenceFetch([
+      { status: 302, location: 'https://hooks2.example.com/final' },
+      { status: 200, body: '{"ok":true}' },
+    ]);
+    const ctx = baseContext({
+      store,
+      fetchImpl,
+      withBlock: { url: 'https://hooks.example.com/in', body: { x: 1 } },
+    });
+
+    const outcome = await webhookPost(ctx);
+
+    expect(outcome).toEqual({ kind: 'succeeded' });
+    expect(calls).toEqual(['https://hooks.example.com/in', 'https://hooks2.example.com/final']);
+    expect(statusOf(store, 'rule-A', 'evt-1')).toBe('SUCCEEDED');
+  });
+
+  it('a redirect chain longer than the hop limit fails rather than recursing', async () => {
+    const store = makeStore();
+    // Every hop points to a fresh (allowed) https target, one more than the
+    // limit permits — if hop-counting were broken this would recurse forever.
+    const responses = Array.from({ length: MAX_REDIRECT_HOPS + 2 }, (_, idx) => ({
+      status: 302,
+      location: `https://hooks.example.com/hop-${String(idx + 1)}`,
+    }));
+    const { fetchImpl, calls } = sequenceFetch(responses);
+    const ctx = baseContext({
+      store,
+      fetchImpl,
+      withBlock: { url: 'https://hooks.example.com/in', body: { x: 1 } },
+    });
+
+    const outcome = await webhookPost(ctx);
+
+    expect(outcome.kind).toBe('failed');
+    if (outcome.kind === 'failed') {
+      expect(outcome.retryable).toBe(false);
+      expect(outcome.detail).toContain('hop limit');
+    }
+    // Original request + MAX_REDIRECT_HOPS follow-ups, then refuse — never
+    // an unbounded chain.
+    expect(calls).toHaveLength(MAX_REDIRECT_HOPS + 1);
+    expect(statusOf(store, 'rule-A', 'evt-1')).toBe('PERMANENTLY_FAILED');
   });
 });

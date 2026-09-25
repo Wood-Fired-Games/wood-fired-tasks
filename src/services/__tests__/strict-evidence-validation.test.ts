@@ -10,13 +10,16 @@ import {
 import type { VerificationEvidence } from '../../types/task.js';
 
 /**
- * task #608 (PIECE A) — server-side anti-fabrication validation of
- * verification_evidence behind the default-OFF WFT_STRICT_EVIDENCE flag.
+ * task #608 (PIECE A) / #1624 (M2 audit finding) — server-side
+ * anti-fabrication validation of verification_evidence behind the
+ * WFT_STRICT_EVIDENCE flag, DEFAULT ON as of #1624.
  *
  * Two layers of coverage:
  *  - The pure validator function (no DB) for each accept/reject path.
- *  - The service-layer integration: flag-off permissive, flag-on accept,
- *    flag-on reject for each path. Uses the env save/restore pattern from
+ *  - The service-layer integration: unset-env strict-by-default reject,
+ *    flag-on accept, flag-on reject for each path, and explicit
+ *    WFT_STRICT_EVIDENCE=false restoring the old permissive path. Uses the
+ *    env save/restore pattern from
  *    src/api/__tests__/swagger-production.test.ts, resetting the lazy config
  *    Proxy before and after each test.
  */
@@ -160,8 +163,19 @@ describe('TaskService strict-evidence integration (#608)', () => {
     verifier_session_id: 'orchestrator-main',
   };
 
-  it('flag OFF (default): accepts evidence that would fail strict mode', () => {
+  it('unset env (default, #1624): rejects placeholder verification_evidence with ValidationError', () => {
     delete process.env.WFT_STRICT_EVIDENCE;
+    resetConfig();
+    const id = newTask();
+    expect(() =>
+      app.taskService.updateTask(id, {
+        verification_evidence: FABRICATED,
+      }),
+    ).toThrow(ValidationError);
+  });
+
+  it("explicit WFT_STRICT_EVIDENCE='false' (#1624 opt-out): restores the permissive path", () => {
+    process.env.WFT_STRICT_EVIDENCE = 'false';
     resetConfig();
     const id = newTask();
     const updated = app.taskService.updateTask(id, {

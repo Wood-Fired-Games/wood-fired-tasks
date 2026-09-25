@@ -36,6 +36,7 @@ import { UserRepository } from '../../repositories/user.repository.js';
 import { ApiTokenRepository } from '../../repositories/api-token.repository.js';
 import { generateToken } from '../../services/pat-hash.js';
 import type { User } from '../../types/identity.js';
+import { PAT_SCOPES, findUnknownScopes } from '../../schemas/pat-scope.schema.js';
 import '../config/env.js';
 
 /**
@@ -107,6 +108,21 @@ function parseScopes(csv: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
+/**
+ * Validate the parsed `--scopes` list against the canonical PAT scope
+ * taxonomy (`src/schemas/pat-scope.schema.ts`, Security Audit finding M1 —
+ * task #1620). Scopes ARE enforced by the auth chain (task #1621); rejecting
+ * unknown values here at mint time is operator clarity, not a second
+ * enforcement point, and mirrors the defense-in-depth check
+ * `ApiTokenRepository.insert` already applies.
+ */
+function validateScopes(scopes: string[]): void {
+  const unknown = findUnknownScopes(scopes);
+  if (unknown.length > 0) {
+    throw new Error(`unknown scope(s): ${unknown.join(', ')} (allowed: ${PAT_SCOPES.join(', ')})`);
+  }
+}
+
 export const dbMintTokenCommand = new Command('mint-token')
   .description(
     'Mint a Personal Access Token by direct DB access. Bootstrap path for the first PAT before browser sessions land in Phase 29. The token is displayed exactly once.',
@@ -116,7 +132,10 @@ export const dbMintTokenCommand = new Command('mint-token')
     'User identifier — numeric id, email (case-insensitive), or legacy/service-account display_name',
   )
   .requiredOption('--name <name>', 'Human-readable token label')
-  .option('--scopes <list>', 'Comma-separated scope list (advisory in v1.6; not enforced)')
+  .option(
+    '--scopes <list>',
+    `Comma-separated scope list, enforced by the auth chain (allowed: ${PAT_SCOPES.join(', ')})`,
+  )
   .option('--expires-at <iso>', 'ISO-8601 expiry timestamp (e.g. 2027-05-22T00:00:00Z)')
   .action(async (opts: { user: string; name: string; scopes?: string; expiresAt?: string }) => {
     const dbPath = resolveDbPath();
@@ -148,6 +167,14 @@ export const dbMintTokenCommand = new Command('mint-token')
       }
 
       const scopes = parseScopes(opts.scopes);
+      try {
+        validateScopes(scopes);
+      } catch (err) {
+        console.error(`--scopes: ${(err as Error).message}`);
+        process.exitCode = 1;
+        return;
+      }
+
       const { token, prefix, suffix, hash } = generateToken();
       const row = apiTokenRepo.insert({
         userId: user.id,

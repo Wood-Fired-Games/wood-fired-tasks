@@ -13,6 +13,7 @@ import { ApiTokenRepository } from '../../repositories/api-token.repository.js';
 import { generateToken } from '../../services/pat-hash.js';
 import { LOGGER_REDACT_CONFIG } from '../server.js';
 import authPlugin from '../plugins/auth.js';
+import { grantSatisfiesScope, type PatScope } from '../../schemas/pat-scope.schema.js';
 
 /**
  * Phase 28 Plan 04 — auth-chain.test.ts
@@ -44,7 +45,7 @@ async function buildHarness(opts: {
   routes: Array<{
     path: string;
     method?: 'GET' | 'POST';
-    config?: { skipAuth?: boolean; sessionOnly?: boolean };
+    config?: { skipAuth?: boolean; sessionOnly?: boolean; requiredScope?: PatScope };
   }>;
 }): Promise<TestHarness> {
   process.env.API_KEYS = opts.apiKeys ?? 'test-key';
@@ -131,13 +132,21 @@ function mintPatRow(
     name?: string;
     revoked?: boolean;
     expiresAt?: string | null;
+    /**
+     * Scope tier(s) to mint the token with. Defaults to `[]` — the explicit
+     * legacy rule (task #1621): a PAT minted before the taxonomy existed
+     * carries an empty scope array and is treated as full-tier by
+     * `grantSatisfiesScope`.
+     */
+    scopes?: PatScope[];
   },
 ): { token: string; tokenId: number } {
   const { token, prefix, suffix, hash } = generateToken();
+  const scopesJson = JSON.stringify(opts.scopes ?? []);
   const info = db
     .prepare(
       `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, revoked_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, '[]', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       opts.userId,
@@ -145,6 +154,7 @@ function mintPatRow(
       prefix,
       suffix,
       hash,
+      scopesJson,
       opts.revoked ? "datetime('now')" : null,
       opts.expiresAt ?? null,
     );
@@ -167,6 +177,9 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
         { path: '/api/v1/probe' },
         { path: '/api/v1/probe-skip', config: { skipAuth: true } },
         { path: '/api/v1/probe-session-only', config: { sessionOnly: true } },
+        { path: '/api/v1/probe-read', config: { requiredScope: 'read' } },
+        { path: '/api/v1/probe-write', config: { requiredScope: 'write' } },
+        { path: '/api/v1/probe-admin', config: { requiredScope: 'admin' } },
       ],
     });
   });
@@ -372,6 +385,173 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
     });
   });
 
+  describe('scope enforcement (Security Audit finding M1 — task #1621)', () => {
+    // Route config: /api/v1/probe-read (requiredScope: 'read'),
+    // /api/v1/probe-write (requiredScope: 'write'), /api/v1/probe-admin
+    // (requiredScope: 'admin'), and the pre-existing /api/v1/probe (no
+    // requiredScope declared at all).
+
+    it('read-scoped token → 200 on the read-required route', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['read'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-read',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('read-scoped token → 403 on the write-required route', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['read'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-write',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('read-scoped token → 403 on the admin-required route', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['read'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-admin',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('write-scoped token → 200 on the write-required route', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['write'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-write',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('write-scoped token → 403 on the admin-required route', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['write'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-admin',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('write-scoped token → 200 on the read-required route (higher tier satisfies lower)', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['write'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-read',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('admin-scoped token → 200 on all three tiered routes', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['admin'],
+      });
+      for (const url of ['/api/v1/probe-read', '/api/v1/probe-write', '/api/v1/probe-admin']) {
+        const res = await harness.server.inject({
+          method: 'GET',
+          url,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        expect(res.statusCode).toBe(200);
+      }
+    });
+
+    it('403 body uses the standard error envelope, not a raw Fastify error', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['read'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-admin',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+      const body = JSON.parse(res.body);
+      // Standard project envelope: { error, message }. A raw/unhandled
+      // Fastify error would instead carry a `statusCode` field and a
+      // framework-generated message (e.g. "Forbidden").
+      expect(body).toEqual({
+        error: 'insufficient_scope',
+        message: "This endpoint requires the 'admin' scope.",
+      });
+      expect(body.statusCode).toBeUndefined();
+    });
+
+    it('a route with no declared requirement is reachable by any valid token (no behaviour change)', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        scopes: ['read'],
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('legacy rule: a PAT minted before the taxonomy existed (empty scope array) is full-tier — 200 on the admin-required route', async () => {
+      const { token } = mintPatRow(harness.db, {
+        userId: harness.legacyUserId,
+        // scopes omitted → defaults to [] — the pre-taxonomy legacy shape.
+      });
+      const res = await harness.server.inject({
+        method: 'GET',
+        url: '/api/v1/probe-admin',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('grantSatisfiesScope: null grant (session-authenticated principal) is full-tier for every required scope', () => {
+      // Session matches carry `scopes: null` (see strategies/session.ts) —
+      // there is no PAT scope taxonomy to check for a session-authenticated
+      // principal, so this must be `true` unconditionally. Asserted as a
+      // direct unit call on the shared predicate (rather than a full
+      // secure-session integration harness) — this is the "separately
+      // tested" companion to the empty-array legacy-PAT rule above, which
+      // IS exercised end-to-end via the harness.
+      expect(grantSatisfiesScope(null, 'read')).toBe(true);
+      expect(grantSatisfiesScope(null, 'write')).toBe(true);
+      expect(grantSatisfiesScope(null, 'admin')).toBe(true);
+    });
+
+    it('grantSatisfiesScope: empty-array grant (legacy pre-taxonomy PAT) is full-tier for every required scope', () => {
+      expect(grantSatisfiesScope([], 'read')).toBe(true);
+      expect(grantSatisfiesScope([], 'write')).toBe(true);
+      expect(grantSatisfiesScope([], 'admin')).toBe(true);
+    });
+  });
+
   describe('WR-01: strategy DB errors → 500 INTERNAL_ERROR + auth.error log + auth.failure audit', () => {
     // A throwing `apiTokenRepository.findByHash` (e.g. DB locked, connection
     // lost, prepared-statement compile error from a runtime migration) must
@@ -547,5 +727,129 @@ describe('Auth chain plugin — strategy order + audit log + route opt-outs', ()
       });
       expect(res.statusCode).toBe(401);
     });
+  });
+});
+
+/**
+ * Security Audit finding M1 (task #1635) — the project-binding half of the
+ * post-auth gate, asserted here alongside the tier half it runs with.
+ *
+ * The tier gate lets a `write` token reach EVERY project. The binding narrows
+ * that to one, and the case that matters is the INDIRECT one: `PUT
+ * /api/v1/tasks/:id` never names a project, so a gate that only understood
+ * path-level `project_id` would be bypassed by simply addressing the target
+ * task by its id. The full contract (nested subroutes, dependency edges,
+ * fail-closed resolution, and the route-coverage drift guard) lives in
+ * `src/api/__tests__/pat-project-binding.test.ts`; this block pins the
+ * headline behaviour in the gate's own test file.
+ */
+describe('Security Audit finding M1 (task #1635) — PAT project binding in the auth chain', () => {
+  let server: FastifyInstance;
+  let db: Database.Database;
+  let projectA: number;
+  let projectB: number;
+  let taskInA: number;
+  let taskInB: number;
+
+  beforeAll(async () => {
+    process.env.API_KEYS = 'test-key';
+    const { createServer } = await import('../server.js');
+    const result = await createServer({ dbPath: ':memory:' });
+    server = result.server;
+    db = result.app.db;
+
+    projectA = Number(
+      db.prepare('INSERT INTO projects (name) VALUES (?)').run('binding-project-a').lastInsertRowid,
+    );
+    projectB = Number(
+      db.prepare('INSERT INTO projects (name) VALUES (?)').run('binding-project-b').lastInsertRowid,
+    );
+    taskInA = Number(
+      db
+        .prepare('INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)')
+        .run('task-in-a', projectA, 'seed').lastInsertRowid,
+    );
+    taskInB = Number(
+      db
+        .prepare('INSERT INTO tasks (title, project_id, created_by) VALUES (?, ?, ?)')
+        .run('task-in-b', projectB, 'seed').lastInsertRowid,
+    );
+  });
+
+  afterAll(async () => {
+    await server.close();
+    db.close();
+  });
+
+  /** Mint a `write`-scoped PAT, optionally bound to a project. */
+  function mintWriteToken(projectId: number | null): string {
+    const userId = Number(
+      db.prepare('INSERT INTO users (display_name) VALUES (?)').run(`binding-user-${Math.random()}`)
+        .lastInsertRowid,
+    );
+    const { token, prefix, suffix, hash } = generateToken();
+    db.prepare(
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, project_id)
+       VALUES (?, ?, ?, ?, ?, '["write"]', ?)`,
+    ).run(userId, 'binding-token', prefix, suffix, hash, projectId);
+    return token;
+  }
+
+  it('a write token bound to A gets 200 mutating a task in A and 403 mutating a task in B', async () => {
+    const token = mintWriteToken(projectA);
+
+    const inBinding = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${taskInA}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: 'inside the binding' },
+    });
+    expect(inBinding.statusCode).toBe(200);
+
+    const outOfBinding = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${taskInB}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: 'outside the binding' },
+    });
+    expect(outOfBinding.statusCode).toBe(403);
+    expect(JSON.parse(outOfBinding.body).error).toBe('project_scope_denied');
+  });
+
+  it('a write token with NO binding retains cross-project access (backward compatibility)', async () => {
+    const token = mintWriteToken(null);
+
+    for (const taskId of [taskInA, taskInB]) {
+      const res = await server.inject({
+        method: 'PUT',
+        url: `/api/v1/tasks/${taskId}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { description: 'unbound token reaches every project' },
+      });
+      expect(res.statusCode, `task ${taskId}`).toBe(200);
+    }
+  });
+
+  it('the tier gate still wins when a request fails BOTH checks', async () => {
+    // A `read` token bound to A, hitting a `write` route in B: refused once,
+    // and the response names the tier failure rather than the binding.
+    const userId = Number(
+      db.prepare('INSERT INTO users (display_name) VALUES (?)').run(`binding-user-${Math.random()}`)
+        .lastInsertRowid,
+    );
+    const { token, prefix, suffix, hash } = generateToken();
+    db.prepare(
+      `INSERT INTO api_tokens (user_id, name, prefix, suffix, hash, scopes, project_id)
+       VALUES (?, ?, ?, ?, ?, '["read"]', ?)`,
+    ).run(userId, 'read-bound-token', prefix, suffix, hash, projectA);
+
+    const res = await server.inject({
+      method: 'PUT',
+      url: `/api/v1/tasks/${taskInB}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { description: 'fails tier and binding' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('insufficient_scope');
   });
 });

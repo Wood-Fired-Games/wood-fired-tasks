@@ -23,12 +23,42 @@
 // (either `null` before auth runs, or the populated principal after).
 
 import type { AuthenticatedUser, AuthMethod } from './identity.js';
+import type { PatScope } from '../schemas/pat-scope.schema.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
     user: AuthenticatedUser | null;
     authMethod: AuthMethod | null;
     tokenId: number | null;
+    /**
+     * Resolved PAT scope grant for the current principal (Security Audit
+     * finding M1 — task #1621), populated by `applyPrincipal` from the
+     * matched strategy's `AuthResult.scopes`:
+     *   - `null` before auth runs, and permanently for session matches (no
+     *     PAT scope restriction — full-tier).
+     *   - `[]` for a PAT minted before the taxonomy existed (task #1620) —
+     *     explicit legacy rule, also full-tier.
+     *   - a non-empty `PatScope[]` for a taxonomy-aware PAT.
+     * See `grantSatisfiesScope` (`src/schemas/pat-scope.schema.ts`), the
+     * shared predicate every consumer (this gate, #1622 route
+     * declarations, the #1631 stdio MCP surface) must use.
+     */
+    scopes: PatScope[] | null;
+    /**
+     * Resolved project binding for the current principal (Security Audit
+     * finding M1 — task #1635), populated by `applyPrincipal` from the
+     * matched strategy's `AuthResult.projectId`:
+     *   - `null` before auth runs, permanently for session matches, and for
+     *     any PAT whose `api_tokens.project_id` is NULL — all of which mean
+     *     "unbound", i.e. full cross-project access (the pre-#1635
+     *     behaviour and the explicit backward-compatibility rule).
+     *   - a project id for a PAT minted with an explicit binding, which the
+     *     auth chain then confines to that one project.
+     * See `bindingSatisfiesProjects` (`src/schemas/pat-scope.schema.ts`) for
+     * the shared predicate and `src/api/plugins/auth/project-binding.ts` for
+     * the per-route target-project resolution it consumes.
+     */
+    projectBinding: number | null;
     /**
      * MIGR-01 legacy compat slot. Populated by the legacy strategy with the
      * derived display-name label of the matched API_KEYS entry (e.g.
@@ -58,6 +88,18 @@ declare module 'fastify' {
      * `/me/tokens` routes: PATs cannot mint, list, or revoke PATs.
      */
     sessionOnly?: boolean;
+
+    /**
+     * Route-level PAT scope requirement (Security Audit finding M1 — task
+     * #1621; declared per-route by #1622). When set, the auth-chain
+     * preHandler runs `grantSatisfiesScope(request.scopes, requiredScope)`
+     * after a successful match and returns 403 `{ error:
+     * 'insufficient_scope' }` when it fails. Undefined (the default) means
+     * the route has no declared requirement — reachable by any
+     * successfully-authenticated principal, unchanged from pre-#1621
+     * behaviour.
+     */
+    requiredScope?: PatScope;
   }
 
   interface FastifyInstance {

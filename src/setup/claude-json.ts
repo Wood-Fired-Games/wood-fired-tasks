@@ -3,6 +3,17 @@ import path from 'node:path';
 import os from 'node:os';
 
 /**
+ * `.claude.json` MCP server entries can carry auth tokens (e.g. bearer
+ * headers baked into `env`), so the `.tmp` scratch file, the `.bak` backup,
+ * and the final destination are all tightened to owner-only (0o600) — the
+ * same atomic-write pattern as `src/cli/auth/credentials.ts`. `writeFileSync`'s
+ * `mode` option is only the open(2) creation mode (subject to the process
+ * umask), so an explicit `chmodSync` follows every write to pin the bits
+ * exactly regardless of umask.
+ */
+const POSIX = process.platform !== 'win32';
+
+/**
  * Shape of the MCP server entry written under `mcpServers[<serverName>]` in
  * `~/.claude.json`. Kept loose on purpose: the merge module does not own the
  * real production args/env — callers pass the fully-formed entry object so the
@@ -77,11 +88,15 @@ function writeClaudeJsonAtomically(
 ): { backupPath: string | null; renameAttempts: number } {
   const tmpPath = `${filePath}.tmp`;
   const backupPath = `${filePath}.bak`;
-  fs.writeFileSync(tmpPath, serialized, 'utf8');
+  // `mode` on writeFileSync is the open(2) creation mode — combined with the
+  // process umask. Belt-and-braces chmod below pins it to exactly 0o600.
+  fs.writeFileSync(tmpPath, serialized, { encoding: 'utf8', mode: 0o600 });
+  if (POSIX) fs.chmodSync(tmpPath, 0o600);
 
   let producedBackup: string | null = null;
   if (existingRaw !== null) {
     fs.copyFileSync(filePath, backupPath);
+    if (POSIX) fs.chmodSync(backupPath, 0o600);
     producedBackup = backupPath;
   }
 
@@ -109,6 +124,12 @@ function writeClaudeJsonAtomically(
   if (lastErr !== undefined) {
     throw lastErr;
   }
+
+  // Explicit chmod of the final destination: renameImpl may be a test-injected
+  // stub (see _renameImpl) that doesn't guarantee the moved inode's mode, and
+  // a pre-existing world/group-readable destination must end up tightened,
+  // not left at its prior (e.g. 0o644) permissions.
+  if (POSIX) fs.chmodSync(filePath, 0o600);
 
   return { backupPath: producedBackup, renameAttempts };
 }

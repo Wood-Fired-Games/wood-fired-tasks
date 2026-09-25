@@ -42,6 +42,7 @@ import { eventBus } from '../events/event-bus.js';
 import { DEFAULT_CLAIM_TTL_MINUTES } from './claim-release.service.js';
 import { validateVerificationEvidence } from './evidence-validation.js';
 import type Database from '../db/driver.js';
+import { config } from '../config/env.js';
 
 /**
  * Sanitized message surfaced to clients when the FTS5 search expression
@@ -647,6 +648,23 @@ export class TaskService {
   }
 
   /**
+   * Resolve a task id to the id of the project that owns it, or `null` when
+   * no such task exists (Security Audit finding M1 — task #1635).
+   *
+   * Exists for the auth chain's project-binding gate
+   * (`src/api/plugins/auth/project-binding.ts`), which has to answer "which
+   * project does `PUT /tasks/:id` actually touch?" BEFORE the handler runs.
+   * Deliberately NON-throwing, unlike {@link getTask}: a missing task is a
+   * normal, expected input to an authorization decision (it resolves to
+   * "cannot determine" ⇒ refused), not an error condition, and raising
+   * `NotFoundError` from inside the auth preHandler would surface as a 500
+   * and would also leak task existence through the status code.
+   */
+  findProjectIdForTask(id: number): number | null {
+    return this.taskRepo.findById(id)?.project_id ?? null;
+  }
+
+  /**
    * List tasks with optional filtering.
    *
    * Returns a plain array of the current page — callers who need the
@@ -755,23 +773,20 @@ export class TaskService {
       throw new NotFoundError('Task', id);
     }
 
-    // task #608 (PIECE A): server-side anti-fabrication validation of
-    // verification_evidence, gated behind WFT_STRICT_EVIDENCE (default OFF).
-    // Runs only when the flag is on AND the update supplies a non-null
-    // verification_evidence. The trailing `callerId` mirrors the
-    // additive-positional precedent set by claimTask's assigneeUserId — all
-    // existing callers (which omit it) are unaffected. On any violation we
-    // throw the SAME ValidationError the service uses for Zod failures.
+    // task #608 (PIECE A) / #1624 (M2 audit finding): server-side
+    // anti-fabrication validation of verification_evidence, gated behind
+    // WFT_STRICT_EVIDENCE — DEFAULT ON as of #1624. Runs whenever the flag is
+    // on AND the update supplies a non-null verification_evidence. The
+    // trailing `callerId` mirrors the additive-positional precedent set by
+    // claimTask's assigneeUserId — all existing callers (which omit it) are
+    // unaffected. On any violation we throw the SAME ValidationError the
+    // service uses for Zod failures.
     //
-    // The gate reads `process.env.WFT_STRICT_EVIDENCE` directly (matching the
-    // env schema's `v === 'true'` transform) rather than the `config` Proxy:
-    // touching the Proxy eagerly runs `loadConfig()`, which validates the
-    // whole environment (including the required `API_KEYS`). Pure service-
-    // layer tests never set `API_KEYS`, so a Proxy access in this hot path
-    // would break the existing suite. A direct env read keeps the default-OFF
-    // path zero-cost and side-effect-free.
+    // Reads the validated config field (not raw `process.env`) so the
+    // zod-coerced boolean (unset/anything-but-'false' → true, 'false' →
+    // false) is the single source of truth for the resolved flag value.
     if (
-      process.env['WFT_STRICT_EVIDENCE'] === 'true' &&
+      config.WFT_STRICT_EVIDENCE &&
       result.data.verification_evidence !== undefined &&
       result.data.verification_evidence !== null
     ) {

@@ -73,6 +73,7 @@ The core task/project/comment/dependency CRUD surface:
 | POST | `/api/v1/tasks/:id/dependencies` | `routes/dependencies/index.ts` | Add dependency (this task blocks another). | Yes |
 | GET | `/api/v1/tasks/:id/dependencies` | `routes/dependencies/index.ts` | Get all dependencies for a task. | Yes |
 | DELETE | `/api/v1/tasks/:id/dependencies/:blocksTaskId` | `routes/dependencies/index.ts` | Remove a dependency. | Yes |
+| GET | `/api/v1/audit-events` | `routes/audit/index.ts` | Security Audit M5 (#1637): read-only, admin-scoped audit-trail query (filter by actor, resource, or time range). No write verb exists on this surface. | Yes (admin) |
 
 The identity / auth / web surface (`src/api/routes/me/`, `auth/`, `web/`):
 
@@ -110,23 +111,26 @@ sets are mutually exclusive at runtime.
 and `dependency-graph` rows above live in their own sibling files and are
 counted in the full-surface total below.
 
-**Full surface — Total: 59 route handlers; up to 52 reachable in any single
+**Full surface — Total: 60 route handlers; up to 53 reachable in any single
 running instance.** Counted by
 `/(fastify|server|app)\.(get|post|put|patch|delete)\(/g` across
 `src/api/routes/` (excluding `__tests__`). The 7 OIDC-disabled stub handlers
 are mutually exclusive with the 8 live `/auth/*` routes, so a given instance
-serves 59 − 7 = 52. WSJF 4.5 (#645) added 5 verb registrations (2 in
+serves 60 − 7 = 53. Security Audit M5 (#1637) added 1 (the single GET in
+`routes/audit/index.ts` — the audit-trail surface is read-only by
+construction). WSJF 4.5 (#645) added 5 verb registrations (2 in
 `routes/projects/wsjf.ts`, 3 in `routes/tasks/wsjf.ts`); Configurable Task
 Models added 4 (1 in `routes/models/index.ts`, 2 in
 `routes/settings/model-policy.ts`, 1 in `routes/projects/resolve-model.ts`).
 (The POST `/api/v1/me/tokens` route is registered via `fastify.route` rather
-than a verb method, so it is *not* part of the 59 verb count; the table lists
+than a verb method, so it is *not* part of the 60 verb count; the table lists
 it for completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
-`/docs` when `npm run dev` runs (production opt-in via
-`ENABLE_SWAGGER_IN_PRODUCTION=true`); spec collector is
-`src/api/plugins/swagger.ts`. No static OpenAPI snapshot is committed today.
+`/docs` only with an explicit opt-in (`ENABLE_SWAGGER_IN_PRODUCTION=true`) —
+mandatory in every environment since task #1612, including `npm run dev`;
+spec collector is `src/api/plugins/swagger.ts`. No static OpenAPI snapshot is
+committed today.
 
 ## MCP tools
 
@@ -388,5 +392,5 @@ the model tools, and 1 is `wait_for_unblock`).
 | [`docs/CLI.md`](CLI.md) | Full CLI reference (every flag, every command). |
 | [`docs/WORKFLOWS.md`](WORKFLOWS.md) | Canonical build/test/lint/run recipes. |
 | [`docs/SLACK.md`](SLACK.md) | Slack notifier behaviour and signing-secret setup. |
-| OpenAPI | Live at `/docs` (Swagger UI) when `npm run dev` runs; spec collector in `src/api/plugins/swagger.ts`. No committed snapshot. |
+| OpenAPI | Live at `/docs` (Swagger UI) with explicit `ENABLE_SWAGGER_IN_PRODUCTION=true` (mandatory in every environment since task #1612, including `npm run dev`); spec collector in `src/api/plugins/swagger.ts`. No committed snapshot. |
 | Tests | `src/api/__tests__/`, `src/mcp/__tests__/`, `src/cli/__tests__/`, `src/services/__tests__/`. |

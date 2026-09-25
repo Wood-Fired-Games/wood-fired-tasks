@@ -7,7 +7,10 @@
 //
 // Response shape (locked in 30-03-PLAN.md):
 //   { id, displayName, email, isLegacy, isServiceAccount }
-// plus `authenticatedAt: <ISO-8601>` ONLY when session-authed. The
+// plus `authenticatedAt: <ISO-8601>` ONLY when session-authed, and `token`
+// ONLY when PAT-authed (the calling token's own name/scopes/binding — the
+// list route `/me/tokens` is session-only, so this is the one place a PAT
+// caller such as `tasks whoami` can read its own grant). The
 // `authenticatedAt` value persists in the session payload as epoch ms (set by
 // the OIDC callback at src/api/routes/auth/callback.ts:209) — we convert to
 // ISO at the boundary so the public surface is human-readable AND
@@ -33,6 +36,17 @@ const MeResponseSchema = z.object({
   // strategy. PAT and legacy callers have no `authenticatedAt` because the
   // auth event for them is per-request, not session-bounded.
   authenticatedAt: z.string().datetime().optional(),
+  // Present ONLY when the chain matched the PAT strategy. Explicit projection
+  // of the calling token's row — never the hash (Threat T-28-05-03).
+  token: z
+    .object({
+      id: z.number().int(),
+      name: z.string(),
+      scopes: z.array(z.string()),
+      projectId: z.number().int().nullable(),
+      lastUsedAt: z.string().nullable(),
+    })
+    .optional(),
 });
 
 /**
@@ -54,6 +68,8 @@ const profileRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       // No `config: { sessionOnly: true }` — this endpoint accepts session,
       // PAT, and legacy callers (CLI-04 requires PAT support).
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['me'],
         description:
@@ -81,6 +97,18 @@ const profileRoutes: FastifyPluginAsyncZod = async (fastify) => {
       // WITHOUT the field, matching the schema's `.optional()`.
       if (authenticatedAtMs !== undefined) {
         body.authenticatedAt = new Date(authenticatedAtMs).toISOString();
+      }
+      if (request.authMethod === 'pat' && request.tokenId !== null) {
+        const row = fastify.apiTokenRepository.findById(request.tokenId);
+        if (row && row.user_id === user.id) {
+          body.token = {
+            id: row.id,
+            name: row.name,
+            scopes: JSON.parse(row.scopes) as string[],
+            projectId: row.project_id ?? null,
+            lastUsedAt: row.last_used_at,
+          };
+        }
       }
       return reply.code(200).send(body);
     },

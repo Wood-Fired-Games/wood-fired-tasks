@@ -3,6 +3,7 @@ import { toStructuredContent } from '../lib/structured-content.js';
 import type { CommentService } from '../../services/comment.service.js';
 import { z } from 'zod';
 import { convertToMcpError } from '../errors.js';
+import { enforceToolScope } from '../scope-gate.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
 import type { McpServerContext } from '../server.js';
 
@@ -13,6 +14,10 @@ import type { McpServerContext } from '../server.js';
  *   handler injects `ctx.actorUserId` into the service-write input so the
  *   parallel `task_comments.author_user_id` FK column is populated.
  *   Defaults to `{ actorUserId: null }` for callers that pre-date Phase 31.
+ *   Task #1631: also carries `ctx.scopes`, the boot PAT grant the two
+ *   mutating tools here (`add_comment` → write, `delete_comment` → admin)
+ *   check via `enforceToolScope`. `get_comments` is a pure read and stays
+ *   ungated.
  */
 export function registerCommentTools(
   server: McpServer,
@@ -32,6 +37,8 @@ export function registerCommentTools(
     },
     async (args) => {
       try {
+        // #1631: authorize BEFORE the write ('write' tier).
+        enforceToolScope(ctx.scopes, 'add_comment');
         // Phase 31 Plan 03: inject the boot-resolved actor user.id so the
         // parallel `task_comments.author_user_id` FK column is populated
         // alongside the legacy TEXT `author` column. ctx.actorUserId may
@@ -120,6 +127,8 @@ export function registerCommentTools(
     },
     async (args) => {
       try {
+        // #1631: row-destructive → 'admin' tier.
+        enforceToolScope(ctx.scopes, 'delete_comment');
         const commentId = args.comment_id;
         commentService.deleteComment(commentId);
 

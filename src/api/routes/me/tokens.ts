@@ -42,6 +42,7 @@ import { z } from 'zod';
 import { requireUser } from '../../plugins/auth.js';
 import { generateToken } from '../../../services/pat-hash.js';
 import { verifyCsrfToken } from '../auth/csrf.js';
+import { findUnknownScopes } from '../../../schemas/pat-scope.schema.js';
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -50,16 +51,27 @@ import { verifyCsrfToken } from '../auth/csrf.js';
 // WR-02 (Phase 28 review) — bounded scopes prevent a session-authed caller
 // from POSTing `{ name: "x", scopes: [<<1 MB of strings>>] }` and inflating
 // the persisted `scopes` TEXT column (which then surfaces verbatim on every
-// subsequent `GET /me/tokens` response). Caps reflect the advisory-only
-// nature of scopes in v1.6 — 32 distinct scopes of ≤64 chars each is more
-// headroom than any realistic deployment will use. `name` keeps its
-// existing 100-char cap.
+// subsequent `GET /me/tokens` response). These caps are shape-level bounds
+// only; since Security Audit finding M1 (task #1620) requested scopes are
+// ALSO checked against the canonical taxonomy (`read` | `write` | `admin`,
+// see `findUnknownScopes` below) — an unknown scope is rejected even when
+// it fits comfortably inside the 32-element / 64-char caps. `name` keeps
+// its existing 100-char cap.
 const MintTokenBodySchema = z.object({
   name: z.string().min(1).max(100),
   scopes: z.array(z.string().min(1).max(64)).max(32).optional(),
   // ISO-8601 timestamp; persisted verbatim so the auth chain's
   // `new Date(expires_at).getTime()` comparison works.
   expiresAt: z.string().datetime().optional(),
+  // Security Audit finding M1 (task #1635) — the OPTIONAL project binding.
+  // Omitted (the default) mints an unbound, cross-project token, which is
+  // exactly the pre-#1635 contract; supplying a project id confines the token
+  // to that one project for every authenticated route (see
+  // `bindingSatisfiesProjects` and `src/api/plugins/auth/project-binding.ts`).
+  // Shape validation only here — that the project actually EXISTS is checked
+  // separately below, so a typo'd id fails with a 400 rather than minting a
+  // token bound to nothing.
+  projectId: z.number().int().positive().optional(),
 });
 
 const MintTokenResponseSchema = z.object({
@@ -74,6 +86,12 @@ const MintTokenResponseSchema = z.object({
   scopes: z.array(z.string()),
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
+  // Security Audit finding M1 (task #1635). `null` ⇒ unbound / every project.
+  projectId: z
+    .number()
+    .int()
+    .nullable()
+    .describe('Project this token is restricted to; null means every project.'),
 });
 
 const TokenListItemSchema = z.object({
@@ -86,6 +104,9 @@ const TokenListItemSchema = z.object({
   lastUsedAt: z.string().nullable(),
   revokedAt: z.string().nullable(),
   expiresAt: z.string().nullable(),
+  // Security Audit finding M1 (task #1635). Surfaced on the list so a caller
+  // can tell a bound token from an unbound one without re-minting.
+  projectId: z.number().int().nullable(),
 });
 const TokenListResponseSchema = z.array(TokenListItemSchema);
 
@@ -126,6 +147,55 @@ const BadRequestResponseSchema = z.object({
   error: z.string(),
   message: z.string(),
 });
+
+// Security Audit finding M1 (task #1620) — mint-time scope-taxonomy
+// validation. Shape matches the existing `VALIDATION_ERROR` convention
+// produced by the global error handler for `ValidationError`
+// (src/api/hooks/error-handler.ts) and the manual VALIDATION_ERROR replies
+// already used elsewhere in the route layer (e.g.
+// src/api/routes/tasks/index.ts), so this is not a new 400 shape.
+const ScopeValidationErrorResponseSchema = z.object({
+  error: z.literal('VALIDATION_ERROR'),
+  message: z.string(),
+  details: z.object({ invalidScopes: z.array(z.string()) }),
+});
+
+// Security Audit finding M1 (task #1635) — mint-time project-binding
+// validation. Same `VALIDATION_ERROR` envelope as the scope rejection above,
+// with a `details.invalidProjectId` discriminator so a client can tell the two
+// 400s apart without string-matching the message.
+const ProjectBindingValidationErrorResponseSchema = z.object({
+  error: z.literal('VALIDATION_ERROR'),
+  message: z.string(),
+  details: z.object({ invalidProjectId: z.number().int() }),
+});
+
+/**
+ * True iff `projectId` names an existing project.
+ *
+ * A binding is compared with `===` against the request's resolved target
+ * project on every subsequent call, so a token bound to a project that does
+ * not exist could never authorize anything — it would be a token that silently
+ * does nothing. Rejecting at mint time turns that into an immediate,
+ * actionable 400 instead of a mystery 403 on first use.
+ *
+ * `projectService.getProject` signals "no such project" by throwing
+ * `NotFoundError`, so a lookup that throws is reported as "does not exist".
+ * Collapsing every throw to `false` is the safe direction: the only
+ * consequence is refusing to mint, and refusing to mint a binding we could not
+ * confirm is exactly the fail-closed posture this feature is built on.
+ */
+function projectExists(
+  projectService: { getProject(id: number): unknown },
+  projectId: number,
+): boolean {
+  try {
+    projectService.getProject(projectId);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Content-negotiation helper (Phase 29 Plan 07)
@@ -199,7 +269,14 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.route({
     method: 'POST',
     url: '/',
-    config: { sessionOnly: true },
+    // Security Audit finding M1 (task #1622): token surface → `admin` tier.
+    // Belt-and-suspenders only — `sessionOnly` already rejects every PAT
+    // caller (including admin-scoped ones) before this gate would run; a
+    // session-authenticated caller carries `scopes: null` and always
+    // satisfies any tier per `grantSatisfiesScope`. Declared anyway so the
+    // drift-guard coverage test (#1622) and the OpenAPI doc both reflect the
+    // intended tier for this token-minting surface.
+    config: { sessionOnly: true, requiredScope: 'admin' },
     schema: {
       tags: ['me-tokens'],
       description:
@@ -211,10 +288,16 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
       // consumers share the same MintTokenBodySchema source-of-truth.
       response: {
         201: MintTokenResponseSchema,
-        // 400 covers both the manual JSON Zod-fail AND the HTML branch's
-        // validation_failed envelope. The two shapes share `error: string`
-        // so the union below is the simplest typing.
-        400: z.union([BadRequestResponseSchema, ValidationFailedResponseSchema]),
+        // 400 covers the manual JSON Zod-fail, the HTML branch's
+        // validation_failed envelope, AND the mint-time scope-taxonomy
+        // rejection (task #1620). The shapes share `error: string` so the
+        // union below is the simplest typing.
+        400: z.union([
+          BadRequestResponseSchema,
+          ValidationFailedResponseSchema,
+          ScopeValidationErrorResponseSchema,
+          ProjectBindingValidationErrorResponseSchema,
+        ]),
         // 403 carries TWO shapes: the chain's session_required gate AND
         // the HTML branch's csrf_invalid. Zod type provider needs both.
         403: z.union([SessionRequiredResponseSchema, CsrfInvalidResponseSchema]),
@@ -237,6 +320,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           name?: unknown;
           scopes?: unknown;
           expiresAt?: unknown;
+          projectId?: unknown;
         };
         if (!verifyCsrfToken(request, body._csrf)) {
           return reply
@@ -265,12 +349,44 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           }
           formExpiresAt = d.toISOString();
         }
+        // formbody supplies `projectId` as a string when the field is
+        // present; coerce it so the shared MintTokenBodySchema sees the same
+        // number the JSON branch does. Absent/empty ⇒ undefined ⇒ unbound.
+        const formProjectId =
+          typeof body.projectId === 'string' && body.projectId.length > 0
+            ? Number(body.projectId)
+            : undefined;
         const parsed = MintTokenBodySchema.safeParse({
           name: body.name,
           scopes: formScopes,
           expiresAt: formExpiresAt,
+          projectId: formProjectId,
         });
         if (!parsed.success) {
+          return reply
+            .header('Cache-Control', 'no-store')
+            .code(400)
+            .send({ error: 'validation_failed' });
+        }
+        // Security Audit finding M1 (task #1620) — reject any scope not in
+        // the canonical taxonomy (`read` | `write` | `admin`) BEFORE
+        // minting. Uses the branch's existing `validation_failed` envelope
+        // (in-branch convention) rather than the JSON branch's
+        // VALIDATION_ERROR shape.
+        if (findUnknownScopes(parsed.data.scopes ?? []).length > 0) {
+          return reply
+            .header('Cache-Control', 'no-store')
+            .code(400)
+            .send({ error: 'validation_failed' });
+        }
+        // Security Audit finding M1 (task #1635) — refuse a binding that names
+        // no existing project, using this branch's `validation_failed`
+        // envelope (in-branch convention) rather than the JSON branch's
+        // VALIDATION_ERROR shape.
+        if (
+          parsed.data.projectId !== undefined &&
+          !projectExists(fastify.projectService, parsed.data.projectId)
+        ) {
           return reply
             .header('Cache-Control', 'no-store')
             .code(400)
@@ -287,6 +403,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           hash: minted.hash,
           scopes: scopesJsonHtml,
           expiresAt: parsed.data.expiresAt ?? null,
+          projectId: parsed.data.projectId ?? null,
         });
         request.session.set('mintedToken', {
           id: htmlRow.id,
@@ -307,6 +424,33 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
           message: 'Invalid request body',
         });
       }
+      // Security Audit finding M1 (task #1620) — reject any requested scope
+      // that is not a member of the canonical taxonomy (`read` | `write` |
+      // `admin`) BEFORE minting. This is mint-time validation ONLY; it does
+      // not gate any other request (that's task #1621's job).
+      const invalidScopes = findUnknownScopes(jsonParsed.data.scopes ?? []);
+      if (invalidScopes.length > 0) {
+        return reply.code(400).send({
+          error: 'VALIDATION_ERROR',
+          message: `Unknown scope(s): ${invalidScopes.join(', ')}`,
+          details: { invalidScopes },
+        });
+      }
+      // Security Audit finding M1 (task #1635) — validate the OPTIONAL project
+      // binding before minting. Shape (`positive integer`) is already enforced
+      // by MintTokenBodySchema; what is checked here is that the project
+      // actually EXISTS, so a typo cannot produce a token bound to nothing.
+      const requestedProjectId = jsonParsed.data.projectId;
+      if (
+        requestedProjectId !== undefined &&
+        !projectExists(fastify.projectService, requestedProjectId)
+      ) {
+        return reply.code(400).send({
+          error: 'VALIDATION_ERROR',
+          message: `Unknown project: ${requestedProjectId}`,
+          details: { invalidProjectId: requestedProjectId },
+        });
+      }
       const user = requireUser(request);
       const { token, prefix, suffix, hash } = generateToken();
       const scopesJson = JSON.stringify(jsonParsed.data.scopes ?? []);
@@ -318,6 +462,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         hash,
         scopes: scopesJson,
         expiresAt: jsonParsed.data.expiresAt ?? null,
+        projectId: requestedProjectId ?? null,
       });
       return reply.code(201).send({
         id: row.id,
@@ -328,6 +473,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         scopes: JSON.parse(row.scopes) as string[],
         expiresAt: row.expires_at,
         createdAt: row.created_at,
+        projectId: row.project_id,
       });
     },
   });
@@ -365,6 +511,7 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
         lastUsedAt: r.last_used_at,
         revokedAt: r.revoked_at,
         expiresAt: r.expires_at,
+        projectId: r.project_id,
       }));
       return reply.code(200).send(items);
     },
@@ -400,6 +547,12 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
     '/active',
     {
       // NO `config: { sessionOnly: true }` — explicitly Bearer-accepting.
+      // Security Audit finding M1 (task #1622): token surface → `admin`
+      // tier. A pre-taxonomy PAT (`scopes: '[]'`) is still treated as
+      // full-tier by `grantSatisfiesScope`, so this does not regress the
+      // "PAT can revoke itself" contract for existing tokens minted before
+      // scopes existed.
+      config: { requiredScope: 'admin' },
       schema: {
         tags: ['me-tokens'],
         description:

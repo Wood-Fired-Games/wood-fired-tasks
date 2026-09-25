@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -7,6 +7,8 @@ import {
   removeClaudeJsonServer,
   type ClaudeMcpServerEntry,
 } from '../claude-json.js';
+
+const POSIX = process.platform !== 'win32';
 
 const ENTRY: ClaudeMcpServerEntry = {
   type: 'stdio',
@@ -92,6 +94,46 @@ describe('mergeClaudeJson', () => {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     expect(parsed.mcpServers['wood-fired-tasks']).toEqual(ENTRY);
   });
+
+  it('writes the .tmp file with an explicit mode: 0o600 option', () => {
+    const spy = vi.spyOn(fs, 'writeFileSync');
+    try {
+      mergeClaudeJson({ filePath, entry: ENTRY });
+
+      const tmpCall = spy.mock.calls.find(
+        (call) => typeof call[0] === 'string' && call[0] === `${filePath}.tmp`,
+      );
+      expect(tmpCall).toBeDefined();
+      const options = tmpCall?.[2];
+      expect(options).toEqual(expect.objectContaining({ mode: 0o600 }));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.skipIf(!POSIX)('leaves the .bak backup owner-only (no group/other bits)', () => {
+    fs.writeFileSync(filePath, JSON.stringify({ numStartups: 5 }, null, 2) + '\n');
+    fs.chmodSync(filePath, 0o644);
+
+    const result = mergeClaudeJson({ filePath, entry: ENTRY });
+    expect(result.backupPath).toBe(`${filePath}.bak`);
+
+    const bakMode = fs.statSync(`${filePath}.bak`).mode;
+    expect(bakMode & 0o077).toBe(0);
+  });
+
+  it.skipIf(!POSIX)(
+    'tightens a pre-existing 0o644 destination file to 0o600 after the write',
+    () => {
+      fs.writeFileSync(filePath, JSON.stringify({ numStartups: 5 }, null, 2) + '\n');
+      fs.chmodSync(filePath, 0o644);
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o644);
+
+      mergeClaudeJson({ filePath, entry: ENTRY });
+
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+    },
+  );
 });
 
 describe('removeClaudeJsonServer', () => {

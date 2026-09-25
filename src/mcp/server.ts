@@ -18,6 +18,9 @@ import { registerModelTools, registerModelDefaultsTools } from './tools/model-to
 import type { ModelCatalogService } from '../services/model-catalog.service.js';
 import type { ModelPolicyService } from '../services/model-policy.service.js';
 import type { SettingsService } from '../services/settings.service.js';
+import type { PatScope } from '../schemas/pat-scope.schema.js';
+import type { ResolutionPath } from './identity-resolution.js';
+import { type AuditAppender, defaultAuditAppender, installMcpAuditTrail } from './audit-trail.js';
 import { TaskRepository } from '../repositories/task.repository.js';
 import { DependencyRepository } from '../repositories/dependency.repository.js';
 import { WsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
@@ -48,6 +51,49 @@ import {
 export interface McpServerContext {
   /** Resolved user.id for the MCP actor; see src/mcp/identity-resolution.ts. */
   actorUserId: number | null;
+  /**
+   * The PAT grant resolved at boot alongside `actorUserId` (Security Audit
+   * finding M1 — task #1631). Consumed by `enforceToolScope`
+   * (`src/mcp/scope-gate.ts`), which every mutating tool handler calls before
+   * touching a service.
+   *
+   * Three states, interpreted by the SHARED `grantSatisfiesScope` predicate
+   * so stdio MCP and REST can never drift:
+   *   - `PatScope[]` — the token's validated grant (`'pat'` resolution path).
+   *   - `null` — a credential class with no PAT scope restriction (legacy
+   *     API_KEYS match, mcp-bot fallback). Full tier.
+   *   - omitted (`undefined`) — the caller predates #1631 (every pre-existing
+   *     test constructs a context this way). Treated exactly like `null`, so
+   *     back-compat is preserved and nothing that used to work starts
+   *     failing. The PRODUCTION boot path in `src/mcp/index.ts` always
+   *     supplies this field.
+   */
+  scopes?: readonly PatScope[] | null;
+  /**
+   * `api_tokens.id` of the PAT that authenticated this process, as TEXT
+   * (Security Audit finding M5 — task #1632). Written to
+   * `audit_events.token_id`, the SAME column and semantics the REST hook fills
+   * from `request.tokenId`, so a trail can be pivoted by token across both
+   * surfaces. `null`/omitted for every non-PAT credential class.
+   */
+  tokenId?: string | null;
+  /**
+   * Which boot resolution path produced `actorUserId`
+   * (`src/mcp/identity-resolution.ts`). Task #1632 threads it in so the audit
+   * producer can derive `actor_type` (`user` vs the `mcp-bot`
+   * `service_account`) and `metadata.authMethod` MECHANICALLY, instead of
+   * carrying two more hand-set fields that could disagree with each other.
+   */
+  resolutionPath?: ResolutionPath;
+  /**
+   * Append-only `audit_events` writer (Security Audit finding M5 — task
+   * #1632). Omit and `createMcpServer` builds one over the same `db` handle,
+   * so auditing is ON BY DEFAULT for every stdio MCP server — a boot path that
+   * forgets to pass this still records. Production passes
+   * `app.auditEventRepository`, the instance `createApp` owns; tests pass a
+   * stub to prove an append failure is non-fatal.
+   */
+  auditEventRepository?: AuditAppender;
   /**
    * Optional UserRepository used by the update_task tool to best-effort
    * resolve `assignee_user_id` from a user-supplied `assignee` email
@@ -118,14 +164,32 @@ export function createMcpServer(
     version: VERSION,
   });
 
+  // Task #1632 (Security Audit finding M5): make this server an audit-trail
+  // PRODUCER. Must run BEFORE every `register*Tools` call below — it works by
+  // replacing `server.registerTool`, so a tool registered first would escape
+  // the wrapper. The audited set is derived from `MUTATING_TOOL_SCOPES`, the
+  // same map the #1631 scope gate uses, so gated and audited can never drift.
+  installMcpAuditTrail(server, {
+    repository: ctx.auditEventRepository ?? defaultAuditAppender(db),
+    actorUserId: ctx.actorUserId,
+    tokenId: ctx.tokenId ?? null,
+    ...(ctx.resolutionPath === undefined ? {} : { resolutionPath: ctx.resolutionPath }),
+  });
+
   // Register all tools — ctx is threaded into every tool group so create /
   // update / claim / comment handlers can inject ctx.actorUserId into the
   // service-write input objects (Phase 31 Plan 03 Task 2). update_task
   // additionally uses ctx.userRepository for best-effort assignee
   // email-resolution (mirrors REST PATCH from Plan 31-02 Task 3).
+  //
+  // Task #1631: ctx additionally carries the boot-resolved PAT grant
+  // (`ctx.scopes`), so EVERY registrar owning at least one mutating tool now
+  // receives it — project and dependency tools gained a ctx parameter purely
+  // for that gate. Registrars whose tools are all read-only (health,
+  // wait_for_unblock, topology, list/resolve model) still take no ctx.
   registerTaskTools(server, taskService, projectService, ctx);
-  registerProjectTools(server, projectService);
-  registerDependencyTools(server, dependencyService);
+  registerProjectTools(server, projectService, ctx);
+  registerDependencyTools(server, dependencyService, ctx);
   registerCommentTools(server, commentService, ctx);
   registerHealthTools(server, db);
   // Task #455: long-poll tool that blocks until a task unblocks. Registered
@@ -166,16 +230,22 @@ export function createMcpServer(
     tasks: wsjfTaskRepo,
     history: wsjfHistoryRepo,
   });
-  registerWsjfTools(server, {
-    rank: {
-      topology: wsjfTopologyService,
-      dependency: dependencyService,
-      tasks: wsjfTaskRepo,
+  registerWsjfTools(
+    server,
+    {
+      rank: {
+        topology: wsjfTopologyService,
+        dependency: dependencyService,
+        tasks: wsjfTaskRepo,
+      },
+      history: wsjfHistoryRepo,
+      rescore: wsjfRescoreService,
+      health: wsjfHealthService,
     },
-    history: wsjfHistoryRepo,
-    rescore: wsjfRescoreService,
-    health: wsjfHealthService,
-  });
+    // #1631: `rescore_project` is a mutation (it opens a run + appends
+    // history rows), so this registrar needs the grant.
+    ctx,
+  );
 
   // Configurable Task Models Task 11 (#920): register the four model tools when
   // their backing services are provided. `list_models` + `resolve_model` need
@@ -189,7 +259,10 @@ export function createMcpServer(
     });
   }
   if (settingsService) {
-    registerModelDefaultsTools(server, { settings: settingsService });
+    // #1631: `set_model_defaults` mutates the database-wide default policy —
+    // admin tier — so this registrar needs the grant. `registerModelTools`
+    // above stays ctx-free: both its tools are pure reads.
+    registerModelDefaultsTools(server, { settings: settingsService }, ctx);
   }
 
   // Register resources

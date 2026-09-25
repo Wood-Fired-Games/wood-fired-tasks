@@ -36,10 +36,12 @@ import commentRoutes from './routes/comments/index.js';
 import eventsRoute from './routes/events.js';
 import modelsRoutes from './routes/models/index.js';
 import modelPolicyRoutes from './routes/settings/model-policy.js';
+import auditRoutes from './routes/audit/index.js';
 import meRoutes from './routes/me/index.js';
 import webRoutes from './routes/web/index.js';
 import healthRoutes, { detailedHealthRoutes } from './routes/health.js';
 import { errorHandler } from './hooks/error-handler.js';
+import auditTrailPlugin from './hooks/audit-trail.js';
 import { registerSwaggerSpec, registerSwaggerUI } from './plugins/swagger.js';
 import authPlugin from './plugins/auth.js';
 
@@ -83,6 +85,71 @@ declare module 'fastify' {
     oidcStatus: OidcStatus;
   }
 }
+
+/**
+ * Rate-limit bucket key for a request. Prefers the authenticated principal
+ * (PAT token id, else user id) so a single proxy IP does not collapse every
+ * authenticated client into one bucket; falls back to `request.ip`, which
+ * Fastify resolves from X-Forwarded-For ONLY when `trustProxy` is set
+ * (default OFF — see `createServer`'s Fastify options for the spoof-
+ * resistance guarantee).
+ *
+ * Audit H2 (2026-07-26) — exported (rather than left as an inline closure)
+ * so `rate-limit.test.ts` can assert directly on the generated key shape
+ * without needing an end-to-end HTTP round trip. This ONLY reads decorated
+ * request state; it does not perform its own auth — it depends on the
+ * PRINCIPAL-KEYED rate-limit layer being registered with `hook: 'preHandler'`
+ * (see below) so the auth chain's `preHandler` has already run and populated
+ * `tokenId`/`user` by the time this executes.
+ *
+ * This is layer 2 of the two-tier design below; it does NOT replace the
+ * layer 1 IP-keyed, pre-auth limiter — see the comment on `createServer`'s
+ * rate-limit registrations for why both layers are required.
+ */
+export function rateLimitKeyGenerator(req: {
+  tokenId?: number | null;
+  user?: { id: number } | null;
+  ip: string;
+}): string {
+  const tokenId = req.tokenId;
+  if (typeof tokenId === 'number') return `tok:${tokenId}`;
+  const user = req.user;
+  if (user && typeof user.id === 'number') return `usr:${user.id}`;
+  return `ip:${req.ip}`;
+}
+
+/**
+ * Multiplier applied to `config.RATE_LIMIT_MAX` to derive the budget for the
+ * coarse, pre-auth, IP-keyed rate-limit layer (layer 1 below).
+ *
+ * Audit H2 review (2026-07-26) — the first cut of the H2 fix moved the ONLY
+ * rate-limit registration to `hook: 'preHandler'` so its keyGenerator could
+ * read the authenticated principal. That broke a real security property:
+ * the auth chain's preHandler sends its 401 and short-circuits the hook
+ * chain, so a request with NO or INVALID credentials never reaches a
+ * `preHandler`-phase limiter at all — brute-force credential guessing
+ * against an auth-gated route became completely unthrottled.
+ *
+ * The fix is TWO independent layers (see `createServer`), not one:
+ *   - Layer 1 (`onRequest`, IP-keyed): unconditionally runs before auth, so
+ *     it catches unauthenticated/invalid-credential floods regardless of
+ *     whether auth ultimately accepts or rejects the request.
+ *   - Layer 2 (`preHandler`, principal-keyed via `rateLimitKeyGenerator`):
+ *     the actual H2 fix — isolates each authenticated principal's budget
+ *     from a shared proxy IP.
+ *
+ * Layer 1's budget MUST be comfortably larger than layer 2's, or it
+ * re-introduces the H2 collapse for well-behaved traffic: EVERY request
+ * from an IP (successful or not) consumes layer 1's budget, so if it were
+ * sized the same as (or smaller than) the per-principal budget, many
+ * distinct legitimate authenticated clients sharing one reverse-proxy IP
+ * would trip the coarse layer well before any single principal exhausts
+ * its own fair share. A multiplier (rather than a fixed constant) keeps
+ * that headroom proportional however an operator tunes RATE_LIMIT_MAX.
+ * Exported so tests can compute the exact trip point instead of
+ * hard-coding a magic number.
+ */
+export const RATE_LIMIT_IP_MAX_FACTOR = 20;
 
 /**
  * Create Fastify server with Zod type provider and Phase 1 services
@@ -177,6 +244,15 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
   // files and a duplicate here would conflict.
   server.decorate('userRepository', app.userRepository);
   server.decorate('apiTokenRepository', app.apiTokenRepository);
+
+  // Security Audit finding M5 (task #1630): the append-only `audit_events`
+  // writer consumed by the response-phase audit hook registered inside the
+  // `/api/v1` scope below. Decorated (rather than closed over) so the hook
+  // resolves it per request — that is what lets a test stub `append` and
+  // prove an audit failure cannot change the client's HTTP status. Its
+  // FastifyInstance augmentation lives with the hook, in
+  // `src/api/hooks/audit-trail.ts`.
+  server.decorate('auditEventRepository', app.auditEventRepository);
 
   // Create and decorate IdempotencyService
   const idempotencyService = new IdempotencyService(app.db);
@@ -280,24 +356,137 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
       contentSecurityPolicy: false,
     });
 
+    // Security Audit finding M1 (task #1622) — build-time route-scope audit.
+    // Collects a { method, url, config } triple for every route registered
+    // inside an authenticated scope (the production-posture Swagger UI scope
+    // below, the `/health/detailed` scope, and the `/api/v1` scope), so the
+    // drift-guard test (src/api/__tests__/route-scope-coverage.test.ts) can
+    // enumerate the ACTUAL built route table instead of a hand-maintained file
+    // list — the exact blindness the AC exists to prevent. `onRoute` hooks
+    // registered on a scope observe every route added to that scope AND its
+    // descendants (nested child plugins — dependency-graph, wsjf, tokens, the
+    // swagger-ui plugin's own routes, etc. — are captured too), so registering
+    // the hook as the FIRST statement inside each scope callback below is
+    // sufficient; no per-route-file wiring is needed. Attached to `server` via
+    // a plain cast (not a typed Fastify decorator) to keep this addition
+    // self-contained to this region — no fastify.d.ts module augmentation
+    // required.
+    //
+    // Defined HERE — above the Swagger UI registration rather than next to the
+    // `/api/v1` scope it also serves — because the production-posture Swagger
+    // scope is registered first and needs the same collector; a collector
+    // declared later would not be in scope for it, and the swagger routes would
+    // silently stay invisible to the drift guard (the original M1 hole).
+    type RouteAuditEntry = { method: string; url: string; config: Record<string, unknown> };
+    const authenticatedRouteAudit: RouteAuditEntry[] = [];
+    (server as unknown as { authenticatedRouteAudit: RouteAuditEntry[] }).authenticatedRouteAudit =
+      authenticatedRouteAudit;
+    const collectRouteAudit = (routeOptions: {
+      method: string | string[];
+      url: string;
+      config?: Record<string, unknown>;
+    }): void => {
+      authenticatedRouteAudit.push({
+        method: Array.isArray(routeOptions.method)
+          ? routeOptions.method.join(',')
+          : routeOptions.method,
+        url: routeOptions.url,
+        config: routeOptions.config ?? {},
+      });
+    };
+
     // Register Swagger/OpenAPI spec collector (must be before routes so it can
     // capture their schemas). task #185: the spec collector itself does not
     // expose any HTTP endpoint — only `@fastify/swagger-ui` does that, and we
     // register it conditionally below.
     await registerSwaggerSpec(server);
 
-    // task #185: gate Swagger UI / `/docs/json` in production.
-    // - Non-production (development, test): expose UI without auth — keeps the
-    //   current developer workflow and existing openapi.test.ts assertions.
-    // - Production + ENABLE_SWAGGER_IN_PRODUCTION=true: expose UI but require
-    //   X-API-Key (same canonical auth plugin used for /api/v1).
-    // - Production + default config: do NOT register the UI plugin at all.
-    //   `/docs` and `/docs/json` return 404.
-    const exposeSwaggerUI =
-      config.NODE_ENV !== 'production' || config.ENABLE_SWAGGER_IN_PRODUCTION === true;
+    // task #1612 (H1/H3 audit finding): gate Swagger UI / `/docs/json` behind
+    // an EXPLICIT opt-in in EVERY environment, not only production.
+    //
+    // `@fastify/swagger-ui` transitively registers `@fastify/static`, which
+    // carries an unfixed HIGH advisory — so this isn't only about hiding
+    // `/docs` from unauthenticated callers, it's about never LOADING the
+    // vulnerable plugin in a hardened posture at all. Gating on
+    // `config.NODE_ENV !== 'production'` (the pre-#1612 behavior) meant an
+    // absent NODE_ENV — the common containerized "operator forgot to set it"
+    // case — silently fell into the permissive non-production branch and
+    // loaded `@fastify/static` unauthenticated. That is exactly the bug #1611
+    // introduced `isProductionPosture` to close: absence must read as
+    // "hardened", not "permissive".
+    //
+    // - Opt-in unset (default), ANY environment: do NOT register the UI
+    //   plugin (or its transitive `@fastify/static`) at all. `/docs` and
+    //   `/docs/json` return 404.
+    // - Opt-in set + isProductionPosture (explicit 'production', OR NODE_ENV
+    //   absent/unset): expose UI but require a valid credential (same
+    //   canonical auth plugin used for /api/v1).
+    // - Opt-in set + explicit NODE_ENV=development|test (isProductionPosture
+    //   false): expose UI without auth — unchanged dev ergonomics, now
+    //   requires the same explicit opt-in as every other environment.
+    //
+    // task #1617 completes the H3 remediation: `@fastify/swagger-ui` is now a
+    // devDependency and `registerSwaggerUI` imports it dynamically, so the
+    // vulnerable `@fastify/static` is absent from the production dependency
+    // tree entirely (not merely unregistered). Because the default path below
+    // never calls `registerSwaggerUI`, the dynamic import is never evaluated
+    // and a missing module cannot affect boot. When the opt-in IS set and the
+    // module is absent, `registerSwaggerUI` logs a warning and returns false
+    // rather than throwing, so `/docs` degrades to 404 instead of bricking the
+    // server. (The warning is emitted inside `registerSwaggerUI` against the
+    // encapsulated instance — deliberately not re-checked here, because the
+    // production-posture branch registers through a deferred plugin callback
+    // whose return value is not observable at this point in the boot queue.)
+    const exposeSwaggerUI = config.ENABLE_SWAGGER_IN_PRODUCTION === true;
     if (exposeSwaggerUI) {
-      if (config.NODE_ENV === 'production') {
+      if (config.isProductionPosture) {
         await server.register(async (scope) => {
+          // Security Audit finding M1 (task #1622) — the swagger-ui plugin
+          // registers its own routes (`/docs`, `/docs/json`, `/docs/static/*`,
+          // …) INSIDE this authenticated scope, but they are third-party
+          // registrations: we cannot add a `config.requiredScope` at their
+          // definition sites the way every first-party route file does. Left
+          // alone they would be authenticated-but-UNDECLARED, and
+          // `enforceRequiredScope` (src/api/plugins/auth/index.ts) fails OPEN
+          // on an undeclared route — any successfully-authenticated principal,
+          // whatever its scope grant, could read them. This `onRoute` hook
+          // closes that by stamping the declaration on the way in and feeding
+          // the SAME `collectRouteAudit` collector the other authenticated
+          // scopes use, so the drift guard can actually see them.
+          //
+          // `read` is the correct tier: viewing API docs is a read operation,
+          // and `read` is the lowest tier in the PAT_SCOPES taxonomy — every
+          // non-empty grant satisfies it (see `grantSatisfiesScope`), so this
+          // adds no functional restriction beyond "must be authenticated",
+          // which this scope already imposes. It is a DECLARATION, not an
+          // exemption: marking these routes `skipAuth`/`sessionOnly` would
+          // quiet the guard while leaving the fail-open hole intact.
+          //
+          // Mutating `routeOptions.config` from an `onRoute` hook is the
+          // supported way to do this: Fastify runs the onRoute hooks BEFORE it
+          // derives the route context's `config` from `opts.config`
+          // (fastify/lib/route.js — hooks at the top of `addNewRoute`, the
+          // `{ ...opts.config, url, method }` spread further down), so the
+          // stamp is what `request.routeOptions.config` reports at request
+          // time. The `undefined` guard keeps any future route that declares
+          // its own tier authoritative.
+          scope.addHook('onRoute', (routeOptions) => {
+            const mutable = routeOptions as unknown as {
+              method: string | string[];
+              url: string;
+              config?: Record<string, unknown>;
+            };
+            const routeConfig = mutable.config ?? {};
+            if (
+              routeConfig['requiredScope'] === undefined &&
+              routeConfig['skipAuth'] !== true &&
+              routeConfig['sessionOnly'] !== true
+            ) {
+              routeConfig['requiredScope'] = 'read';
+            }
+            mutable.config = routeConfig;
+            collectRouteAudit(mutable);
+          });
           await scope.register(authPlugin);
           await registerSwaggerUI(scope);
         });
@@ -319,42 +508,82 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // probes never consume the budget. Defaults are intentionally high to
     // avoid disrupting the existing test suite, which exercises many
     // server.inject calls from 127.0.0.1; operators tune via env.
+    //
+    // Audit H2 (2026-07-26) — TWO independent layers, registered back to
+    // back, so both properties hold at once (see `RATE_LIMIT_IP_MAX_FACTOR`
+    // above for the full history/rationale):
+    //
+    //   1. IP-KEYED, `onRequest` (coarse, pre-auth): preserves brute-force
+    //      defence — `onRequest` unconditionally completes before the auth
+    //      chain's `preHandler` can reject (and short-circuit) a request, so
+    //      repeated invalid-credential/unauthenticated traffic from one
+    //      source IP is still throttled regardless of auth outcome.
+    //   2. PRINCIPAL-KEYED, `preHandler` (fine-grained, post-auth): the
+    //      actual H2 fix — `rateLimitKeyGenerator` reads the decorated
+    //      `tokenId`/`user` so each authenticated principal gets an
+    //      independent budget instead of collapsing into the shared proxy
+    //      IP bucket.
+    //
+    // @fastify/rate-limit supports being registered more than once on the
+    // same instance: each registration adds its OWN `onRoute` listener with
+    // its own store/closure, and each listener injects its handler into a
+    // DIFFERENT per-route hook array (`routeOptions.onRequest` vs
+    // `routeOptions.preHandler`) — see @fastify/rate-limit/index.js
+    // `addRouteRateHook`. No collisions: the internal `rateLimitRan`
+    // decorator is a fresh `Symbol()` per registration, and the
+    // `rateLimit`/`createRateLimit` instance decorators are guarded by
+    // `hasDecorator` so the second registration's redundant decorate calls
+    // are harmless no-ops.
+    const rateLimitAllowList = (req: { url: string }) =>
+      req.url === '/health' || req.url.startsWith('/health/');
+    // The error returned here is thrown by @fastify/rate-limit; the project's
+    // custom errorHandler reads `statusCode` and `code` to shape the JSON
+    // response. Shared by BOTH layers so { error: 'TOO_MANY_REQUESTS', ... }
+    // is identical regardless of which layer throttled the request.
+    const rateLimitErrorResponseBuilder = (
+      _req: unknown,
+      ctx: { statusCode: number; after: string },
+    ) => {
+      const err = new Error(`Rate limit exceeded, retry in ${ctx.after}`) as Error & {
+        statusCode?: number;
+        code?: string;
+      };
+      err.statusCode = ctx.statusCode;
+      err.code = 'TOO_MANY_REQUESTS';
+      return err;
+    };
+
+    // Layer 1 — coarse, IP-keyed, pre-auth flood/brute-force defence.
+    // `keyGenerator` is omitted: @fastify/rate-limit's own default
+    // (`(req) => req.ip`) is exactly what this layer wants, and staying
+    // unauthenticated-only here keeps it trivially independent of the auth
+    // chain (it must run correctly even when auth never gets to execute).
     await server.register(rateLimit, {
-      // Issue #75 — global budget now sourced from the validated config
-      // (src/config/env.ts), not raw process.env. Defaults reproduce the
-      // prior effective behavior exactly: 1000 requests / 1 minute.
+      max: config.RATE_LIMIT_MAX * RATE_LIMIT_IP_MAX_FACTOR,
+      timeWindow: config.RATE_LIMIT_TIME_WINDOW,
+      allowList: rateLimitAllowList,
+      hook: 'onRequest',
+      errorResponseBuilder: rateLimitErrorResponseBuilder,
+    });
+
+    // Layer 2 — fine-grained, principal-keyed (Issue #75 / Audit H2 fix).
+    // @fastify/rate-limit does NOT add a plain instance-level hook; it
+    // registers an `onRoute` listener that injects its per-request handler
+    // into THAT route's own `routeOptions[hook]` array. Route-level hook
+    // arrays run AFTER the scope's instance-level hooks (e.g. the auth
+    // chain's `preHandler` registered inside the `/api/v1`, `/health/
+    // detailed`, and production-swagger scopes) for the SAME phase — so
+    // pinning `hook: 'preHandler'` here is sufficient to guarantee the auth
+    // chain has already decorated `request.tokenId` / `request.user` by the
+    // time `rateLimitKeyGenerator` runs, with NO registration-order change
+    // required relative to those auth scopes.
+    await server.register(rateLimit, {
       max: config.RATE_LIMIT_MAX,
       timeWindow: config.RATE_LIMIT_TIME_WINDOW,
-      allowList: (req) => req.url === '/health' || req.url.startsWith('/health/'),
-      // Issue #75 — proxy-aware keying. Prefer the authenticated principal
-      // (PAT token id, else user id) so a single proxy IP does not collapse
-      // every authenticated client into one bucket; fall back to
-      // `request.ip`, which Fastify resolves from X-Forwarded-For ONLY when
-      // `trustProxy` is set (default OFF). The KEY GUARANTEE: with trustProxy
-      // OFF a spoofed X-Forwarded-For cannot change `request.ip`, so it
-      // cannot move the bucket. The rate-limit plugin is registered above the
-      // auth scope, so `request.tokenId` / `request.user` may be undefined on
-      // routes outside that scope — guard both.
-      keyGenerator: (req) => {
-        const tokenId = req.tokenId;
-        if (typeof tokenId === 'number') return `tok:${tokenId}`;
-        const user = req.user;
-        if (user && typeof user.id === 'number') return `usr:${user.id}`;
-        return `ip:${req.ip}`;
-      },
-      // The error returned here is thrown by @fastify/rate-limit; the project's
-      // custom errorHandler reads `statusCode` and `code` to shape the JSON
-      // response. We attach both so the response surfaces as
-      // { error: 'TOO_MANY_REQUESTS', message: ... } with HTTP 429.
-      errorResponseBuilder: (_req, ctx) => {
-        const err = new Error(`Rate limit exceeded, retry in ${ctx.after}`) as Error & {
-          statusCode?: number;
-          code?: string;
-        };
-        err.statusCode = ctx.statusCode;
-        err.code = 'TOO_MANY_REQUESTS';
-        return err;
-      },
+      allowList: rateLimitAllowList,
+      hook: 'preHandler',
+      keyGenerator: rateLimitKeyGenerator,
+      errorResponseBuilder: rateLimitErrorResponseBuilder,
     });
 
     // ─── Phase 29 Plan 04 ─── cookie → secure-session → formbody (top level)
@@ -390,7 +619,11 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         cookie: {
           path: '/',
           httpOnly: true,
-          secure: config.NODE_ENV === 'production',
+          // task #1613 (H1 audit finding): derive from the fail-closed
+          // posture flag (task #1611), not raw NODE_ENV — an absent
+          // NODE_ENV must read as hardened, not permissive. Same idiom as
+          // the Swagger UI gate (task #1612, commit d0cc487).
+          secure: config.isProductionPosture,
           sameSite: 'lax',
           maxAge: SESSION_LIFETIME_SECONDS,
         },
@@ -398,6 +631,38 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
       await server.register(fastifyFormbody);
     }
     // ─── end Phase 29 Plan 04 ───
+
+    // ─── Security Audit finding M5 (task #1630) — REST audit-trail producer ───
+    //
+    // Registered on the ROOT instance, ABOVE every route registration below,
+    // rather than inside the `/api/v1` scope.
+    //
+    // Why root and not per-scope: the acceptance criterion is "one row per
+    // AUTHENTICATED non-GET request", unqualified — not "per /api/v1 request".
+    // The authenticated surface is spread across four sibling scopes (the
+    // production-posture Swagger scope, the device-flow scope, the
+    // `/health/detailed` scope, the `/api/v1` scope) PLUS top-level web HTML
+    // routes that carry `config.skipAuth` and run their own session gate
+    // (`POST /me/tokens/:id/revoke`). Registering the plugin once per
+    // authenticated scope would have covered the scopes that exist TODAY and
+    // silently missed the next one somebody adds — the same class of blindness
+    // finding M1 was about. A single root registration is scope-agnostic: a
+    // hook on the root instance runs for every routed request in every
+    // descendant scope, so a new authenticated scope is audited the moment it
+    // is created, with no wiring to remember.
+    //
+    // Why exactly one row is structurally guaranteed: this is the ONLY
+    // registration of `auditTrailPlugin` in the process, and Fastify runs an
+    // instance-level `onResponse` hook exactly once per request regardless of
+    // how deeply the matched route's scope is nested. There is no nesting
+    // arrangement that can double-count, because there is no second hook.
+    // (Registering it in both a parent and a child scope WOULD double-count —
+    // see the no-duplication test in audit-trail.test.ts.)
+    //
+    // Requests with no principal write nothing: the hook reads `request.user`,
+    // which is `undefined` outside any auth-bearing scope and `null` on the
+    // 401 path, and `audit_events.actor_id` is NOT NULL by design.
+    await server.register(auditTrailPlugin);
 
     // Register public health check route (no auth required). task #185: the
     // route now returns only { status, timestamp, version } so internal stats
@@ -564,6 +829,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // SAME canonical auth plugin used for /api/v1.
     await server.register(
       async (scope) => {
+        scope.addHook('onRoute', collectRouteAudit);
         await scope.register(authPlugin);
         await scope.register(detailedHealthRoutes);
       },
@@ -573,10 +839,23 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // Register routes under /api/v1 with auth protection
     await server.register(
       async (api) => {
+        api.addHook('onRoute', collectRouteAudit);
         // Centralized auth (task #182): single canonical plugin. Hardens
         // production keys, uses constant-time comparison, logs invalid
         // attempts without leaking the supplied key.
         await api.register(authPlugin);
+
+        // NOTE (task #1630): the audit-trail producer is deliberately NOT
+        // registered here. It is registered ONCE on the root instance above
+        // (search "finding M5"), which covers this scope and every other
+        // authenticated scope at the same time. Adding a second registration
+        // here would append TWO rows for every /api/v1 mutation.
+        //
+        // Ordering is a non-issue: `onResponse` is a strictly later phase than
+        // the auth chain's `preHandler`, so the hook always observes the
+        // principal the chain resolved — including on a request the chain
+        // itself short-circuited with a 403, which is precisely why
+        // scope-denied mutations get recorded instead of silently dropped.
 
         // Register task routes
         await api.register(taskRoutes, { prefix: '/tasks' });
@@ -597,6 +876,12 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         // database-wide model-policy default.
         await api.register(modelsRoutes, { prefix: '/models' });
         await api.register(modelPolicyRoutes, { prefix: '/settings' });
+
+        // Security Audit finding M5 (task #1637): READ-ONLY query surface over
+        // the append-only audit trail. GET only — see the module docblock in
+        // routes/audit/index.ts for why no write verb exists here, and
+        // `project-binding.ts` for why bound tokens are denied it outright.
+        await api.register(auditRoutes, { prefix: '/audit-events' });
 
         // Phase 28 Plan 28-05: per-caller resources. All routes inside
         // meRoutes carry `config: { sessionOnly: true }` so the auth-chain

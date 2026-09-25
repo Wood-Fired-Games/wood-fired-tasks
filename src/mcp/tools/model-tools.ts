@@ -23,6 +23,8 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { convertToMcpError } from '../errors.js';
+import { enforceToolScope } from '../scope-gate.js';
+import type { McpServerContext } from '../server.js';
 import {
   LIST_MODELS_TOOL_DEFINITION,
   RESOLVE_MODEL_TOOL_DEFINITION,
@@ -83,8 +85,19 @@ export interface ModelDefaultsToolsDeps {
  * (mirroring the `registerModelTools` registration shape — `toStructuredContent`
  * + `convertToMcpError`). `set_model_defaults` validates its input through
  * `ModelPolicyNullableSchema` (a `null` policy clears the default).
+ *
+ * @param ctx Task #1631: boot-time context carrying the resolved PAT grant
+ *   (`ctx.scopes`). `set_model_defaults` writes a DATABASE-WIDE default that
+ *   changes model routing for every project, so it is gated at the `admin`
+ *   tier — ordinary agent `write` authority is not enough. `get_model_defaults`
+ *   is a pure read and stays ungated. Defaults to `{ actorUserId: null }` (no
+ *   scopes ⇒ full tier) for pre-#1631 callers.
  */
-export function registerModelDefaultsTools(server: McpServer, deps: ModelDefaultsToolsDeps): void {
+export function registerModelDefaultsTools(
+  server: McpServer,
+  deps: ModelDefaultsToolsDeps,
+  ctx: McpServerContext = { actorUserId: null },
+): void {
   server.registerTool('get_model_defaults', GET_MODEL_DEFAULTS_TOOL_DEFINITION, async () => {
     try {
       const policy = deps.settings.getModelPolicyDefault();
@@ -96,6 +109,8 @@ export function registerModelDefaultsTools(server: McpServer, deps: ModelDefault
 
   server.registerTool('set_model_defaults', SET_MODEL_DEFAULTS_TOOL_DEFINITION, async (args) => {
     try {
+      // #1631: database-wide settings mutation → 'admin' tier.
+      enforceToolScope(ctx.scopes, 'set_model_defaults');
       deps.settings.setModelPolicyDefault(args.model_policy);
       return renderSetModelDefaultsResult(args.model_policy);
     } catch (error) {

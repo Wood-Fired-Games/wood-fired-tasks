@@ -95,6 +95,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['tasks'],
         description: 'Create a new task',
@@ -135,6 +137,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['tasks'],
         description:
@@ -180,6 +184,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/completion-report',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['tasks'],
         description:
@@ -205,6 +211,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['tasks'],
         description: 'Get task by ID',
@@ -224,6 +232,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.put(
     '/:id',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['tasks'],
         description: 'Update task by ID',
@@ -308,6 +318,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.delete(
     '/:id',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['tasks'],
         description: 'Delete task by ID',
@@ -327,6 +339,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/:id/claim',
     {
+      // Security Audit finding M1 (task #1622): mutation → `write` tier.
+      config: { requiredScope: 'write' },
       schema: {
         tags: ['tasks'],
         description: 'Atomically claim an unassigned task',
@@ -402,6 +416,8 @@ const taskRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
     '/:id/subtasks',
     {
+      // Security Audit finding M1 (task #1622): GET-shaped read → `read` tier.
+      config: { requiredScope: 'read' },
       schema: {
         tags: ['tasks'],
         description:

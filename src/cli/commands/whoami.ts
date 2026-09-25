@@ -1,16 +1,14 @@
 /**
  * Phase 30 Plan 30-07 Task 2 — `tasks whoami` Commander command.
  *
- * Two-step lookup, in parallel:
+ * One lookup: GET ${active.server}/api/v1/me with Bearer auth — the
+ * authoritative identity envelope (src/api/routes/me/profile.ts). For a PAT
+ * caller it also carries the calling token's own name, scopes, project
+ * binding and lastUsedAt. (The token LIST route `/me/tokens` is session-only
+ * and always 403s a PAT, so it is not consulted.)
  *
- *   1. GET ${active.server}/api/v1/me with Bearer auth — the authoritative
- *      identity envelope (src/api/routes/me/profile.ts).
- *   2. GET ${active.server}/api/v1/me/tokens with Bearer auth — best-effort
- *      enrichment so the user sees the active token's name + lastUsedAt.
- *      (src/api/routes/me/tokens.ts:349)
- *
- * /me failures are FATAL (exit 1). /me/tokens failures are NON-FATAL: the
- * command degrades to just the user envelope and omits the token block.
+ * /me failures are FATAL (exit 1). A /me body without a `token` block (legacy
+ * key, or an older server) omits the token lines.
  *
  * Output modes:
  *   - text (default): 5 left-aligned fields (Display name, Email, Active
@@ -34,18 +32,13 @@ interface MeResponse {
   isLegacy: boolean;
   isServiceAccount: boolean;
   authenticatedAt?: string;
-}
-
-interface TokenListItem {
-  id: number;
-  name: string;
-  prefix: string;
-  suffix: string;
-  scopes: string[];
-  createdAt: string;
-  lastUsedAt: string | null;
-  revokedAt: string | null;
-  expiresAt: string | null;
+  token?: {
+    id: number;
+    name: string;
+    scopes: string[];
+    projectId: number | null;
+    lastUsedAt: string | null;
+  };
 }
 
 /** Emit one newline-separated JSON envelope on stdout (used in --json mode). */
@@ -81,29 +74,6 @@ async function fetchMe(server: string, token: string): Promise<MeResult> {
   }
 }
 
-type TokensResult = { kind: 'ok'; body: TokenListItem[] } | { kind: 'failed'; reason: string };
-
-async function fetchTokens(server: string, token: string): Promise<TokensResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(`${server}/api/v1/me/tokens`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.signal,
-    });
-    if (res.status === 200) {
-      const body = (await res.json()) as TokenListItem[];
-      return { kind: 'ok', body };
-    }
-    return { kind: 'failed', reason: `status ${res.status}` };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { kind: 'failed', reason: message };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /**
  * Format a key:value line with the label left-padded to width 13.
  * Width 13 = 'Display name:' (the longest label) — keeps the colon column
@@ -131,14 +101,9 @@ export const whoamiCommand = new Command('whoami')
       return;
     }
 
-    const { server, token, token_id } = creds.active;
+    const { server, token } = creds.active;
 
-    // Parallel fetches. /me/tokens is best-effort; we don't let its failure
-    // gate the command.
-    const [meResult, tokensResult] = await Promise.all([
-      fetchMe(server, token),
-      fetchTokens(server, token),
-    ]);
+    const meResult = await fetchMe(server, token);
 
     if (meResult.kind === 'unauthorized') {
       if (isJson) {
@@ -174,18 +139,8 @@ export const whoamiCommand = new Command('whoami')
       return;
     }
 
-    // /me succeeded. Find the matching token row (if any).
     const me = meResult.body;
-    let activeToken: TokenListItem | null = null;
-    if (tokensResult.kind === 'ok') {
-      activeToken = tokensResult.body.find((t) => t.id === token_id) ?? null;
-    } else {
-      // Surface the /me/tokens failure as a stderr warning (text mode only;
-      // --json mode just omits the token field).
-      if (!isJson) {
-        process.stderr.write(`(warning: could not list tokens: ${tokensResult.reason})\n`);
-      }
-    }
+    const activeToken = me.token ?? null;
 
     if (isJson) {
       const envelope: Record<string, unknown> = {
@@ -203,6 +158,8 @@ export const whoamiCommand = new Command('whoami')
           id: activeToken.id,
           name: activeToken.name,
           lastUsedAt: activeToken.lastUsedAt,
+          scopes: activeToken.scopes,
+          projectId: activeToken.projectId,
         };
       }
       emitJsonEvent(envelope);
@@ -216,6 +173,10 @@ export const whoamiCommand = new Command('whoami')
       process.stdout.write(
         fmtLine('Active token', `${activeToken.name} (id ${activeToken.id})`) + '\n',
       );
+      process.stdout.write(fmtLine('Scopes', `[${activeToken.scopes.join(', ')}]`) + '\n');
+      if (activeToken.projectId !== null) {
+        process.stdout.write(fmtLine('Project', `#${activeToken.projectId}`) + '\n');
+      }
       process.stdout.write(fmtLine('Last used', activeToken.lastUsedAt ?? '(never)') + '\n');
     }
     process.stdout.write(fmtLine('Server', server) + '\n');

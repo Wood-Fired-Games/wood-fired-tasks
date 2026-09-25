@@ -7,6 +7,16 @@
  * three v1 core handlers and REUSES the shared handler contract (`types.ts`)
  * and the shared HTTP transport (`http-client.ts`) established by #428.
  *
+ * Redirect handling (audit finding H4, part 2/2 — task #1619): `httpRequest`
+ * never follows a 3xx transparently (#1618, `redirect: 'manual'`) — it
+ * returns the status + `Location` header to this handler. This handler
+ * re-runs EVERY resolved Location through {@link assertEndpointAllowed}
+ * (with `viaRedirect: true`, which is STRICTER than the direct-config check
+ * — see that function's doc) before issuing the next hop, and caps the chain
+ * at {@link MAX_REDIRECT_HOPS}. A refused or over-the-limit redirect target
+ * fails delivery through the SAME PERMANENTLY_FAILED / non-retryable path as
+ * a directly-disallowed `with.url` — no bespoke error type.
+ *
  * Unlike `create_task_in_project` (which targets the first-party REST API via
  * `apiBaseUrl`/`authToken`), webhook_post sends to an operator-supplied
  * endpoint. The target `url`, optional `headers`, and `body` all come from the
@@ -46,11 +56,19 @@
  *     no `--insecure` equivalent in v1.
  *   - `http://` → allowed ONLY when the literal host is loopback
  *     (`127.0.0.1`, `::1`, `localhost`) or a private / non-routable address
- *     (RFC1918 `10/8`, `172.16/12`, `192.168/16`; link-local `169.254/16`;
- *     IPv6 ULA `fc00::/7`). Otherwise the dispatch is REFUSED: a plaintext
- *     POST (often carrying an `authorization` header) to a routable host is
- *     credential exposure, so we mark the row PERMANENTLY_FAILED and return a
- *     non-retryable failure WITHOUT sending anything.
+ *     (RFC1918 `10/8`, `172.16/12`, `192.168/16`; IPv6 ULA `fc00::/7`).
+ *     Otherwise the dispatch is REFUSED: a plaintext POST (often carrying an
+ *     `authorization` header) to a routable host is credential exposure, so
+ *     we mark the row PERMANENTLY_FAILED and return a non-retryable failure
+ *     WITHOUT sending anything.
+ *   - link-local (`169.254.0.0/16`, e.g. the cloud instance-metadata endpoint
+ *     `169.254.169.254`) is REFUSED BY DEFAULT (audit finding H4 rider, task
+ *     #1633): unlike RFC1918, link-local is not a trust boundary — it is
+ *     reachable from inside any cloud VM/container, so a plaintext POST to it
+ *     is the textbook SSRF-to-credential-exposure path. A deployment that
+ *     genuinely needs link-local delivery must opt in explicitly via the
+ *     {@link LINK_LOCAL_OPT_IN_ENV} environment variable — see
+ *     {@link isLinkLocalOptInEnabled}.
  *
  * Field mapping (rendered `with:` → request):
  *   - `url`     → the absolute target URL. REQUIRED and must parse. A missing
@@ -79,6 +97,14 @@ import type { Handler, HandlerContext, HandlerOutcome } from './types.js';
 
 /** Default per-attempt HTTP timeout if the context does not pin one. */
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * Maximum number of 3xx hops a single delivery attempt will follow (audit
+ * finding H4, part 2/2 — task #1619). A chain that exceeds this is refused
+ * rather than followed indefinitely — guards against redirect loops and
+ * slow-drip degradation from a misbehaving/malicious endpoint.
+ */
+export const MAX_REDIRECT_HOPS = 5;
 
 /** Result of the TLS / loopback posture check on a target URL. */
 export interface EndpointDecision {
@@ -120,9 +146,16 @@ function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * True when the literal host is an RFC1918 / link-local private IPv4 address
- * or an IPv6 unique-local address (ULA, `fc00::/7`). DNS is NOT resolved —
- * matching is purely on the literal in the URL, per the task contract.
+ * True when the literal host is an RFC1918 private IPv4 address or an IPv6
+ * unique-local address (ULA, `fc00::/7`). DNS is NOT resolved — matching is
+ * purely on the literal in the URL, per the task contract.
+ *
+ * Link-local (`169.254.0.0/16`) is deliberately NOT classified as private
+ * here — see {@link isLinkLocalHost} and the module-header note on task
+ * #1633. RFC1918 is an operator-drawn trust boundary (a network operator
+ * chose to route that block internally); link-local is not — it is a
+ * self-assigned, always-present address any host on the local link (or,
+ * critically, the cloud instance-metadata responder) answers on.
  */
 function isPrivateHost(host: string): boolean {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
@@ -141,9 +174,6 @@ function isPrivateHost(host: string): boolean {
     if (a === 192 && b === 168) {
       return true; // 192.168.0.0/16
     }
-    if (a === 169 && b === 254) {
-      return true; // 169.254.0.0/16 link-local
-    }
     return false;
   }
   // IPv6 ULA: fc00::/7 → first byte 0xFC or 0xFD (prefixes "fc"/"fd").
@@ -154,18 +184,76 @@ function isPrivateHost(host: string): boolean {
 }
 
 /**
+ * True when the literal host is an IPv4 link-local address (`169.254.0.0/16`
+ * — this is the block hosting the cloud instance-metadata endpoint at
+ * `169.254.169.254/latest/meta-data/`). Separated out from {@link
+ * isPrivateHost} (task #1633) so it can be refused by default and only
+ * allowed under the explicit {@link isLinkLocalOptInEnabled} opt-in.
+ */
+function isLinkLocalHost(host: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!m) {
+    return false;
+  }
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if ([a, b, Number(m[3]), Number(m[4])].some((o) => o > 255)) {
+    return false;
+  }
+  return a === 169 && b === 254; // 169.254.0.0/16
+}
+
+/**
+ * Name of the environment variable that opts a deployment back in to
+ * plaintext `http://` dispatch against link-local (`169.254.0.0/16`)
+ * targets. Default OFF — set to `1` or `true` (case-insensitive) to enable.
+ *
+ * This is intentionally narrower than {@link isPrivateHost}'s RFC1918
+ * allowance: RFC1918 stays allowed unconditionally because it is an
+ * operator-chosen trust boundary, whereas link-local (task #1633, audit
+ * finding H4 rider) fronts the cloud instance-metadata endpoint on most
+ * providers and must be an explicit, deliberate operator choice.
+ */
+export const LINK_LOCAL_OPT_IN_ENV = 'WFT_ROUTER_ALLOW_LINK_LOCAL';
+
+/** True when {@link LINK_LOCAL_OPT_IN_ENV} is set to a truthy value (`1` / `true`, case-insensitive). */
+function isLinkLocalOptInEnabled(): boolean {
+  const raw = process.env[LINK_LOCAL_OPT_IN_ENV];
+  if (raw === undefined) {
+    return false;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true';
+}
+
+/**
  * Decide whether a target URL may be dispatched to under the v1 TLS posture.
  *
  *   - `https://` → ALWAYS allowed (cert validation is enforced downstream by
  *     Node's default `rejectUnauthorized: true`; never disabled here).
  *   - `http://`  → allowed ONLY for loopback / private (non-routable) hosts;
  *     refused for any routable host (plaintext credential-exposure guard).
+ *     Link-local (`169.254.0.0/16`) is refused UNLESS the
+ *     {@link LINK_LOCAL_OPT_IN_ENV} environment variable is explicitly set
+ *     (task #1633 — see {@link isLinkLocalOptInEnabled}).
  *   - anything else (unparseable, non-http(s) scheme) → refused.
+ *
+ * `opts.viaRedirect` (task #1619): when true, EVERY `http://` target is
+ * refused — including loopback/private hosts that a DIRECTLY-configured
+ * `with.url` would be allowed to hit. A directly-configured loopback target
+ * is explicit operator intent; a target reached by following a 3xx from an
+ * (already-validated) endpoint is not — an attacker-influenced redirect must
+ * not be able to walk an https-validated dispatch to loopback or plaintext
+ * (docs/event-router-design.md §"Threat surface"). Same {@link
+ * EndpointDecision} shape either way — this is not a bespoke error type.
  *
  * Pure function; performs no I/O and no DNS resolution. Intended to be shared
  * later with the daemon startup check (#433).
  */
-export function assertEndpointAllowed(rawUrl: string): EndpointDecision {
+export function assertEndpointAllowed(
+  rawUrl: string,
+  opts?: { viaRedirect?: boolean },
+): EndpointDecision {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -178,8 +266,17 @@ export function assertEndpointAllowed(rawUrl: string): EndpointDecision {
     return { allowed: true };
   }
   if (scheme === 'http:') {
+    if (opts?.viaRedirect === true) {
+      return {
+        allowed: false,
+        reason: 'http:// redirect target refused (credential-exposure guard)',
+      };
+    }
     const host = normalizeHost(parsed.hostname);
     if (isLoopbackHost(host) || isPrivateHost(host)) {
+      return { allowed: true };
+    }
+    if (isLinkLocalHost(host) && isLinkLocalOptInEnabled()) {
       return { allowed: true };
     }
     return {
@@ -315,30 +412,103 @@ export const webhookPost: Handler = async (ctx: HandlerContext): Promise<Handler
 
   let status: number;
   let bodyText: string;
-  try {
-    const res = await httpRequest({
-      method: 'POST',
-      url: rawUrl,
-      headers,
-      ...(body !== undefined && { body }),
-      timeoutMs: ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      ...(ctx.fetchImpl !== undefined && { fetchImpl: ctx.fetchImpl }),
-    });
+  let dispatchUrl = rawUrl;
+  let hops = 0;
+
+  for (;;) {
+    let res;
+    try {
+      res = await httpRequest({
+        method: 'POST',
+        url: dispatchUrl,
+        headers,
+        ...(body !== undefined && { body }),
+        timeoutMs: ctx.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        ...(ctx.fetchImpl !== undefined && { fetchImpl: ctx.fetchImpl }),
+      });
+    } catch (err) {
+      const isTimeout = err instanceof HttpTimeoutError;
+      store.complete(identity.rule_name, identity.event_id, 'FAILED');
+      const detail = isTimeout ? 'request timed out' : 'network error';
+      logger.warn(
+        {
+          rule_name: identity.rule_name,
+          event_id: identity.event_id,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'webhook_post_transport_error',
+      );
+      return { kind: 'failed', retryable: true, detail };
+    }
+
+    // --- 4a. 3xx: re-validate the Location and follow it (bounded). -------
+    if (res.status >= 300 && res.status < 400 && res.location !== undefined) {
+      hops += 1;
+      if (hops > MAX_REDIRECT_HOPS) {
+        store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
+        logger.error(
+          {
+            rule_name: identity.rule_name,
+            event_id: identity.event_id,
+            hops,
+          },
+          'webhook_post_redirect_hop_limit',
+        );
+        return {
+          kind: 'failed',
+          retryable: false,
+          detail: `redirect hop limit (${String(MAX_REDIRECT_HOPS)}) exceeded`,
+        };
+      }
+
+      let nextUrl: string;
+      try {
+        nextUrl = new URL(res.location, dispatchUrl).toString();
+      } catch {
+        store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
+        logger.error(
+          {
+            rule_name: identity.rule_name,
+            event_id: identity.event_id,
+            location: res.location,
+          },
+          'webhook_post_redirect_unparseable',
+        );
+        return {
+          kind: 'failed',
+          retryable: false,
+          detail: 'redirect target url is missing or unparseable',
+        };
+      }
+
+      // SAME check + SAME failure shape as the original endpoint guard
+      // (step 3a) — an attacker-influenced redirect gets no bespoke error
+      // type, just the reused disallow path.
+      const redirectDecision = assertEndpointAllowed(nextUrl, { viaRedirect: true });
+      if (!redirectDecision.allowed) {
+        store.complete(identity.rule_name, identity.event_id, 'PERMANENTLY_FAILED');
+        logger.error(
+          {
+            rule_name: identity.rule_name,
+            event_id: identity.event_id,
+            reason: redirectDecision.reason,
+          },
+          'webhook_post_redirect_refused',
+        );
+        return {
+          kind: 'failed',
+          retryable: false,
+          detail: redirectDecision.reason ?? 'endpoint refused',
+        };
+      }
+
+      dispatchUrl = nextUrl;
+      continue;
+    }
+
     status = res.status;
     bodyText = res.bodyText;
-  } catch (err) {
-    const isTimeout = err instanceof HttpTimeoutError;
-    store.complete(identity.rule_name, identity.event_id, 'FAILED');
-    const detail = isTimeout ? 'request timed out' : 'network error';
-    logger.warn(
-      {
-        rule_name: identity.rule_name,
-        event_id: identity.event_id,
-        error: err instanceof Error ? err.message : String(err),
-      },
-      'webhook_post_transport_error',
-    );
-    return { kind: 'failed', retryable: true, detail };
+    break;
   }
 
   // --- 5. Map the response status to a terminal status + outcome. --------

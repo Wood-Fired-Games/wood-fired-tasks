@@ -5,9 +5,12 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  checkDependencyOverridesConsistency,
   checkRecipeCountConsistency,
   countNavigationRecipes,
   findDuplicateAgentsTableRows,
+  readDocumentedOverrideKeys,
+  readPackageJsonOverrideKeys,
   runChecks,
 } from '../check.js';
 import {
@@ -387,5 +390,89 @@ describe('findDuplicateAgentsTableRows (synthetic fixtures)', () => {
   it('returns no errors when AGENTS.md does not exist at the given root', () => {
     const root = mkdtempSync(join(tmpdir(), 'agent-ctx-check-empty-'));
     expect(findDuplicateAgentsTableRows(root)).toEqual([]);
+  });
+});
+
+describe('checkDependencyOverridesConsistency (committed tree)', () => {
+  it('package.json overrides keys and the docs/AGENT_CONTEXT.md §13 table agree (task #1616)', () => {
+    const repoRoot = findRepoRoot();
+    const actual = readPackageJsonOverrideKeys(repoRoot);
+    expect(actual.length).toBeGreaterThan(0);
+
+    const documented = readDocumentedOverrideKeys(repoRoot);
+    expect(new Set(documented)).toEqual(new Set(actual));
+    expect(checkDependencyOverridesConsistency(repoRoot)).toEqual([]);
+  });
+
+  it('the committed tree surfaces no override-consistency errors via runChecks', () => {
+    const repoRoot = findRepoRoot();
+    const { errors } = runChecks(repoRoot);
+    const overrideErrors = errors.filter((e) => e.includes('overrides'));
+    expect(overrideErrors).toEqual([]);
+  });
+});
+
+describe('checkDependencyOverridesConsistency (synthetic fixtures)', () => {
+  const docWithRows = (rows: string) =>
+    [
+      '# Agent context',
+      '',
+      '## 13. Dependency overrides',
+      '',
+      '| Override key | Pins | Primary GHSA |',
+      '|---|---|---|',
+      rows,
+      '',
+      '## 14. Something else',
+      '',
+      '| Override key | Not a real override row |',
+      '|---|---|',
+      '| `decoy` | should never be read — outside §13 |',
+      '',
+    ].join('\n');
+
+  it('flags a package.json override key with no matching doc row', () => {
+    const root = makeTempRepoWithFiles({
+      'package.json': JSON.stringify({ overrides: { qs: '^6.15.2', axios: '^1.18.1' } }),
+      'docs/AGENT_CONTEXT.md': docWithRows('| `qs` | `qs` | [GHSA-x](https://example.com) |'),
+    });
+
+    const errors = checkDependencyOverridesConsistency(root);
+    expect(errors).toEqual([expect.stringContaining('overrides."axios" has no matching row')]);
+  });
+
+  it('flags a documented row for a key that is not actually overridden', () => {
+    const root = makeTempRepoWithFiles({
+      'package.json': JSON.stringify({ overrides: { qs: '^6.15.2' } }),
+      'docs/AGENT_CONTEXT.md': docWithRows(
+        [
+          '| `qs` | `qs` | [GHSA-x](https://example.com) |',
+          '| `stale-pkg` | `stale-pkg` | [GHSA-y](https://example.com) |',
+        ].join('\n'),
+      ),
+    });
+
+    const errors = checkDependencyOverridesConsistency(root);
+    expect(errors).toEqual([expect.stringContaining('documents override key "stale-pkg"')]);
+  });
+
+  it('does not read rows from a table outside the §13 section', () => {
+    const root = makeTempRepoWithFiles({
+      'package.json': JSON.stringify({ overrides: { qs: '^6.15.2' } }),
+      'docs/AGENT_CONTEXT.md': docWithRows('| `qs` | `qs` | [GHSA-x](https://example.com) |'),
+    });
+
+    expect(readDocumentedOverrideKeys(root)).toEqual(['qs']);
+    expect(checkDependencyOverridesConsistency(root)).toEqual([]);
+  });
+
+  it('returns no errors when package.json has no overrides object and none are documented', () => {
+    const root = makeTempRepoWithFiles({
+      'package.json': JSON.stringify({}),
+      'docs/AGENT_CONTEXT.md': '# Agent context\n\nNo §13 section here.\n',
+    });
+
+    expect(readPackageJsonOverrideKeys(root)).toEqual([]);
+    expect(checkDependencyOverridesConsistency(root)).toEqual([]);
   });
 });

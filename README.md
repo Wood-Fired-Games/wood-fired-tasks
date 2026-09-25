@@ -808,7 +808,7 @@ The four WSJF MCP tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsj
 | SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET | Optional Slack integration (all three required together) — see [docs/SLACK.md](docs/SLACK.md) | (none) |
 | RATE_LIMIT_MAX / RATE_LIMIT_TIME_WINDOW | Global rate limiter knobs | 1000 / "1 minute" |
 | SSE_MAX_CONNECTIONS_PER_KEY / SSE_MAX_CONNECTIONS_PER_IP / SSE_MAX_CONNECTIONS | SSE connection caps | 4 / 8 / 200 |
-| ENABLE_SWAGGER_IN_PRODUCTION | Opt-in to expose Swagger UI when `NODE_ENV=production` | false |
+| ENABLE_SWAGGER_IN_PRODUCTION | Opt-in required to expose Swagger UI / `/docs/json` in **every** environment (task #1612) — not just production. Without it the UI plugin (and its transitive `@fastify/static`) is never registered. Also required for `npm run dev` to serve `/docs` locally. | false |
 | WFT_STRICT_EVIDENCE | Opt-in anti-fabrication gate: when `true`, `update_task` rejects `verification_evidence` with a self-graded/empty/placeholder verifier identity or placeholder check text. Recommended for `/tasks:loop[-dag]` deployments — see [docs/RELIABILITY.md](docs/RELIABILITY.md). | false |
 
 [NOTE] The full env-var reference (including server timeouts and installer

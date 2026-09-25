@@ -65,6 +65,11 @@ describe('Migration 008: Identity Tables', () => {
         'last_used_at',
         'revoked_at',
         'expires_at',
+        // Added by migration 020 (Security Audit finding M1 / task #1635) —
+        // the optional PAT project binding. This suite runs the FULL migration
+        // chain, not 008 in isolation, so later ALTER TABLEs on `api_tokens`
+        // legitimately show up here.
+        'project_id',
       ].sort(),
     );
   });
@@ -239,6 +244,15 @@ describe('Migration 008: Identity Tables', () => {
     const { up, down } = await import('../migrations/008-identity-tables.js');
     await down(db);
     await up(db);
+    // `down()` DROPs `api_tokens`, so it also discards the columns LATER
+    // migrations added to that table by `ALTER TABLE` — migration 020's
+    // `project_id` (Security Audit finding M1 / task #1635) is the first such
+    // column. Re-applying 020 restores the post-chain shape so this assertion
+    // stays a real "008 round-trips faithfully" check rather than being
+    // weakened to ignore the difference. Any future ALTER on an 008-owned
+    // table must be replayed here for the same reason.
+    const migration020 = await import('../migrations/020-api-token-project-scope.js');
+    await migration020.up(db);
 
     const after = snapshotStmt.all(...MIGRATION_008_OBJECTS);
 

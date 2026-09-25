@@ -11,6 +11,7 @@ import { UserRepository } from './repositories/user.repository.js';
 import { ApiTokenRepository } from './repositories/api-token.repository.js';
 import { WsjfHistoryRepository } from './repositories/wsjf-history.repository.js';
 import { ProjectCharterHistoryRepository } from './repositories/project-charter-history.repository.js';
+import { AuditEventRepository } from './repositories/audit-event.repository.js';
 import { ProjectService } from './services/project.service.js';
 import { TaskService } from './services/task.service.js';
 import { backfillJobSizes } from './services/job-size-backfill.js';
@@ -107,6 +108,15 @@ export interface App {
    */
   userRepository: UserRepository;
   apiTokenRepository: ApiTokenRepository;
+  /**
+   * Security Audit finding M5 (task #1630): the append-only, hash-chained
+   * writer for `audit_events` — and the EXCLUSIVE owner of that table's
+   * lifecycle. Constructed ONCE here (like the identity repositories above)
+   * so the hash-chain head statement and the INSERT are prepared once, then
+   * decorated onto the Fastify instance by `createServer` for the REST
+   * response-phase audit hook (`src/api/hooks/audit-trail.ts`).
+   */
+  auditEventRepository: AuditEventRepository;
   workflowEngine: WorkflowEngine;
   /**
    * Phase 29 Plan 08: OIDC client Configuration from `initOidc(env)`, or
@@ -276,6 +286,10 @@ export async function createApp(dbPath?: string): Promise<App> {
   // `db` handle as ProjectRepository so a charter overwrite snapshots the prior
   // charter and replaces it in one `db.transaction(...)`.
   const charterHistoryRepo = new ProjectCharterHistoryRepository(db);
+  // Security Audit finding M5 (#1630): shares the SAME `db` handle as every
+  // other repository so an append participates in the same connection (and
+  // therefore the same WAL/locking regime) as the mutation it records.
+  const auditEventRepository = new AuditEventRepository(db);
 
   // Create services
   const projectService = new ProjectService(projectRepo, {
@@ -399,6 +413,7 @@ export async function createApp(dbPath?: string): Promise<App> {
     modelPolicyService,
     userRepository,
     apiTokenRepository,
+    auditEventRepository,
     workflowEngine,
     oidcConfig,
     oidcStatus,

@@ -56,6 +56,58 @@ export class AppendOnlyViolationError extends Error {
 }
 
 /**
+ * InvalidScopeError — thrown when `ApiTokenRepository.insert` is asked to
+ * persist one or more scope strings that are not members of the canonical
+ * PAT scope taxonomy (`read` | `write` | `admin` — see
+ * `src/schemas/pat-scope.schema.ts`, Security Audit finding M1 / task
+ * #1620).
+ *
+ * This is the repository-boundary half of mint-time scope validation; the
+ * `/me/tokens` route performs the same check earlier (so well-formed
+ * clients get a clean 400 without ever reaching the repository), but the
+ * repository re-validates as defense-in-depth for every other caller
+ * (the `tasks db mint-token` CLI, the device-flow HTML mint path).
+ */
+export class InvalidScopeError extends Error {
+  public override readonly name = 'InvalidScopeError';
+  public readonly scopes: string[];
+
+  constructor(scopes: string[]) {
+    super(`Unknown PAT scope(s): ${scopes.join(', ')}`);
+    this.scopes = scopes;
+
+    // Restore prototype chain for instanceof checks across module boundaries.
+    Object.setPrototypeOf(this, InvalidScopeError.prototype);
+  }
+}
+
+/**
+ * InvalidProjectBindingError — thrown when `ApiTokenRepository.insert` is
+ * asked to persist a project binding (`api_tokens.project_id`, Security Audit
+ * finding M1 / task #1635) that is not a positive integer.
+ *
+ * Sibling of {@link InvalidScopeError}: the `/me/tokens` route validates the
+ * binding earlier so well-formed clients get a clean 400, and this is the
+ * repository-boundary re-validation that also covers the `tasks db
+ * mint-token` CLI and the device-flow HTML mint path. Existence of the
+ * referenced project is NOT checked here — the FK on the column
+ * (`REFERENCES projects(id)` with `PRAGMA foreign_keys = ON`) already refuses
+ * a dangling binding at insert time.
+ */
+export class InvalidProjectBindingError extends Error {
+  public override readonly name = 'InvalidProjectBindingError';
+  public readonly projectId: unknown;
+
+  constructor(projectId: unknown) {
+    super(`Invalid PAT project binding: ${String(projectId)} (expected a positive integer)`);
+    this.projectId = projectId;
+
+    // Restore prototype chain for instanceof checks across module boundaries.
+    Object.setPrototypeOf(this, InvalidProjectBindingError.prototype);
+  }
+}
+
+/**
  * Detect whether a raw error from better-sqlite3 is an FTS5 syntax error.
  *
  * Pattern: SQLITE_ERROR with a message that contains FTS-specific phrases.
