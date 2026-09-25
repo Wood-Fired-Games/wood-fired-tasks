@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-07-27T16:44:01.971Z",
+    "generated_at": "2026-09-25T14:42:19.778Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -21,8 +21,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 3000,
-      "actual_lines": 141,
-      "sha256": "f7410e4dbbd2dd625a3206edc200451113cbfe28d3debaa974163beafec10601",
+      "actual_lines": 144,
+      "sha256": "132978a878a5c12b59e8d19ba9379a810b6437920abf435aecdb39d43048eb82",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -93,7 +93,7 @@
       "notes": "Hand-authored today; counts drift-checked by scripts/agent-context/__tests__/interfaces-counts.test.ts. A future task may swap to a true generator.",
       "approx_token_budget": 8000,
       "actual_lines": 396,
-      "sha256": "20f26dccad1b9e98a9ead1e984a750ece107d5d5543d8c0875564103237ec4af",
+      "sha256": "cd345a4d801b560d470b812011ab8e05fe33d759c7cae4210e081d27b4b8f324",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -149,8 +149,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 39000,
-      "actual_lines": 1848,
-      "sha256": "bf040488702fa39d1efd88fb05d65d0dfd4ef873eb49067b11c613d8f2c6ade4"
+      "actual_lines": 1934,
+      "sha256": "e2dc3909f0fd02f755666e777bdb9c2c2bcc87e10a71bc3d1a380464adc02bf3"
     },
     {
       "path": "docs/SETUP.md",
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 31600,
-      "actual_lines": 1570,
-      "sha256": "c3c649300f0d5809cae45d052646a7b3947ecec285993596a709e41486e91a36"
+      "actual_lines": 1579,
+      "sha256": "e0b10c97d6f81ee226727d8899eac509390ad9485053d20f2e51ab33e144df9a"
     },
     {
       "path": "docs/SLACK.md",
@@ -472,8 +472,8 @@
       "owner_role": "Repository maintainers",
       "status": "present",
       "approx_token_budget": 12000,
-      "actual_lines": 416,
-      "sha256": "3fae55e3f1e70acb8e62f4289fb08da3d5c0bdfdafd1543b9c65858c0f2f39ed"
+      "actual_lines": 413,
+      "sha256": "f9d05b39a02a9f52efc98e7dcce783e37c952dc6be096e1f6dccff2071a084bc"
     },
     {
       "path": "README.md",
@@ -486,8 +486,8 @@
       "status": "present",
       "notes": "Owner line check exempt — front-door doc, not agent-facing primary.",
       "approx_token_budget": 18200,
-      "actual_lines": 907,
-      "sha256": "dfd2565a1aa6fab3035699d3ca3e334796fae93309d609ff962d0190e9d8564e"
+      "actual_lines": 910,
+      "sha256": "71a37ad1239a9ab9264cafc384311417f41725856670c08950f816920addae7e"
     },
     {
       "path": "SECURITY.md",

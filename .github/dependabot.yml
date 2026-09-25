@@ -13,6 +13,8 @@ updates:
         update-types: ["patch"]
       npm-minor:
         update-types: ["minor"]
+        # Zod minors can change public validation/OpenAPI contracts; review separately.
+        exclude-patterns: ["zod"]
     labels: ["dependencies", "automated"]
 
   - package-ecosystem: "github-actions"

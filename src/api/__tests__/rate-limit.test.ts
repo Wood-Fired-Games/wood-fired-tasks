@@ -321,56 +321,62 @@ describe('proxy-aware rate limiting (trustProxy ON)', () => {
   });
 });
 
-describe('rate limiting with trustProxy OFF (spoof-resistant)', () => {
-  let server: FastifyInstance;
-  let db: Database.Database;
-  let ipMax: number;
+// TRUST_PROXY='1' is the legacy hop-count form, which now fails closed
+// (src/config/env.ts) — it must be exactly as spoof-resistant as unset.
+describe.each([undefined, '1'])(
+  'rate limiting with TRUST_PROXY=%s (spoof-resistant)',
+  (trustProxy) => {
+    let server: FastifyInstance;
+    let db: Database.Database;
+    let ipMax: number;
 
-  beforeAll(async () => {
-    process.env.RATE_LIMIT_MAX = '2';
-    process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
-    // TRUST_PROXY intentionally UNSET → default false.
-    delete process.env.TRUST_PROXY;
-    resetConfig();
-    ipMax = 2 * RATE_LIMIT_IP_MAX_FACTOR;
-    const result = await createServer({ dbPath: ':memory:' });
-    server = result.server;
-    db = result.app.db;
-  });
+    beforeAll(async () => {
+      process.env.RATE_LIMIT_MAX = '2';
+      process.env.RATE_LIMIT_TIME_WINDOW = '1 minute';
+      if (trustProxy === undefined) delete process.env.TRUST_PROXY;
+      else process.env.TRUST_PROXY = trustProxy;
+      resetConfig();
+      ipMax = 2 * RATE_LIMIT_IP_MAX_FACTOR;
+      const result = await createServer({ dbPath: ':memory:' });
+      server = result.server;
+      db = result.app.db;
+    });
 
-  afterAll(async () => {
-    await server.close();
-    db.close();
-    delete process.env.RATE_LIMIT_MAX;
-    delete process.env.RATE_LIMIT_TIME_WINDOW;
-    resetConfig();
-  });
+    afterAll(async () => {
+      await server.close();
+      db.close();
+      delete process.env.RATE_LIMIT_MAX;
+      delete process.env.RATE_LIMIT_TIME_WINDOW;
+      delete process.env.TRUST_PROXY;
+      resetConfig();
+    });
 
-  it('a spoofed X-Forwarded-For does NOT change the (unauthenticated, IP-keyed) bucket', async () => {
-    // Every request claims a DIFFERENT X-Forwarded-For and carries no
-    // credential. With trustProxy OFF, request.ip stays the socket IP
-    // (127.0.0.1 under inject) for all of them, so they share ONE layer-1
-    // bucket and the request beyond `ipMax` is throttled.
-    const codes: number[] = [];
-    for (let i = 0; i < ipMax; i++) {
-      const r = await server.inject({
+    it('a spoofed X-Forwarded-For does NOT change the (unauthenticated, IP-keyed) bucket', async () => {
+      // Every request claims a DIFFERENT X-Forwarded-For and carries no
+      // credential. With trustProxy OFF, request.ip stays the socket IP
+      // (127.0.0.1 under inject) for all of them, so they share ONE layer-1
+      // bucket and the request beyond `ipMax` is throttled.
+      const codes: number[] = [];
+      for (let i = 0; i < ipMax; i++) {
+        const r = await server.inject({
+          method: 'GET',
+          url: '/api/v1/tasks',
+          headers: { 'x-forwarded-for': `10.0.0.${i + 1}` },
+        });
+        codes.push(r.statusCode);
+      }
+      expect(codes.every((c) => c === 401)).toBe(true);
+
+      // Spoofing yet another fresh XFF did NOT buy a fresh bucket.
+      const over = await server.inject({
         method: 'GET',
         url: '/api/v1/tasks',
-        headers: { 'x-forwarded-for': `10.0.0.${i + 1}` },
+        headers: { 'x-forwarded-for': '10.0.0.999' },
       });
-      codes.push(r.statusCode);
-    }
-    expect(codes.every((c) => c === 401)).toBe(true);
-
-    // Spoofing yet another fresh XFF did NOT buy a fresh bucket.
-    const over = await server.inject({
-      method: 'GET',
-      url: '/api/v1/tasks',
-      headers: { 'x-forwarded-for': '10.0.0.999' },
+      expect(over.statusCode).toBe(429);
     });
-    expect(over.statusCode).toBe(429);
-  });
-});
+  },
+);
 
 // Separate describe (own server/bucket) from the unauthenticated spoof-
 // resistance test above: that test deliberately exhausts the IP-keyed

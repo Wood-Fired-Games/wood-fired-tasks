@@ -11,6 +11,36 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-09
+
+### Added
+- Native Codex setup through `wood-fired-tasks setup --target codex`, including
+  a skills-only mode, 17 discoverable workflows, bundled shared references,
+  and local/remote MCP configuration that preserves existing servers.
+- Ownership-aware Codex skill refresh during setup and self-update, preserving
+  user edits and unrelated skills. Documented installation, invocation, reload,
+  migration, and limits for workflows requiring delegation or specific models.
+- Packaged installation, reinstall, and real self-update checks for Codex on
+  Linux, macOS, and Windows, including isolated paths containing spaces.
+
+### Fixed
+- Align the development TypeScript compiler with dependency-cruiser's supported
+  range so architecture checks inspect source modules instead of passing empty scans.
+- Reject Codex skill conflicts before remote authentication can replace saved
+  credentials; recovery instructions identify the appropriate agent target.
+- Respect npm's successful exit status when Windows native-module cleanup emits
+  a permission warning, while retaining fatal handling for failed updates.
+- Replace a brittle fixed MCP startup delay in tests with bounded readiness polling.
+
+### Security
+- Numeric `TRUST_PROXY` hop counts now ignore forwarded headers, matching the
+  upstream spoofing fix. Deployments using integers must switch to explicit
+  trusted proxy IP/CIDR allowlists; the default remains untrusted.
+- Refresh production dependencies to resolve all currently reported production
+  advisories; the production dependency audit reports zero vulnerabilities.
+- Pin non-secret MCP database/credential paths for filtered host environments;
+  isolate smoke credentials and reject managed skill symlinks and user-file conflicts.
+
 ## [2.5.0] - 2026-07-19
 
 ### Added

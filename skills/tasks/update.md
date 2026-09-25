@@ -15,7 +15,10 @@ disable-model-invocation: false
 > flows while evaluating an unknown repo.
 
 Updates the installed `tasks` CLI to the latest published version by running the
-built-in `tasks self-update` command. This is the action target of the
+built-in `tasks self-update` command. For a Codex-targeted install use
+`tasks self-update --target codex`; `--target claude` selects Claude explicitly.
+Without a target the updater refreshes detected owned Codex and existing Claude
+installations, retaining the Claude default when no Codex install is detected. This is the action target of the
 status-line update notification (`⬆ /tasks:update`).
 
 ## Preflight
@@ -28,7 +31,9 @@ suggest the user re-run the project's install/setup step.
 ## Workflow
 
 1. **Run the self-update command**
-   - Execute `tasks self-update` in a shell.
+   - Execute `tasks self-update` in a shell, adding `--target codex` for a
+     Codex-targeted update. The skill/reference refresh runs even when npm is
+     already current. Report ownership conflicts instead of overwriting custom skills.
    - This spawns `npm i -g wood-fired-tasks@latest` (no sudo) and, on success,
      replaces the globally installed CLI with the latest published version.
 
@@ -42,7 +47,9 @@ suggest the user re-run the project's install/setup step.
 
 3. **Confirm next steps**
    - Note that the new version takes effect on the next `tasks` invocation /
-     new session. No further action is needed.
+     new session. Restart Codex if refreshed skills do not appear. See the bundled
+     setup guide (`tasks docs show setup`) for ownership conflicts and migration
+     from personal adapter scripts.
 
 ## Example Usage
 

@@ -30,6 +30,7 @@
  *   npm run build:skills        # tsx scripts/build-skills.ts
  */
 
+import { buildCodexSkills } from './build-codex-skills.js';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,6 +101,7 @@ function main(): void {
   for (const pass of PASSES) {
     total += buildPass(pass);
   }
+  buildCodexSkills(REPO_ROOT);
   console.log(`Built ${total} skill file(s) total across ${PASSES.length} dir(s).`);
 }
 

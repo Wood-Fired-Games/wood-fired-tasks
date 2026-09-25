@@ -121,7 +121,10 @@ This repo ships agent skills under `skills/tasks/` that automate the
 plan→execute→audit loop over a wood-fired-tasks project. They are copied to
 `~/.claude/commands/tasks/` by `wood-fired-tasks setup` (the published-npm
 install path; the old root `install.sh` is a deprecated shim that just delegates
-to `setup`). The orchestration set:
+to `setup`). `setup --target codex` also generates native user skills under
+`~/.agents/skills/tasks-*/SKILL.md`; shared contracts and role definitions remain
+references. See [Codex setup](docs/SETUP.md#codex-installation-and-updates) for
+installation, updates and harness capability limits. The orchestration set:
 
 | Skill | Status | One-line purpose |
 |---|---|---|

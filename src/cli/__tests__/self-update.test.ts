@@ -198,6 +198,39 @@ describe('self-update command', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it.each([0, 1])('honors npm exit code %i with a cleanup permission warning', async (code) => {
+    const { selfUpdateCommand, __setSelfUpdateDeps } = await loadFresh();
+    const warning =
+      'npm warn cleanup Failed to remove some directories\n' +
+      'npm warn cleanup Error: EPERM: operation not permitted, unlink sodium-native.node\n';
+    const child = makeFakeChild();
+    const spawn = vi.fn(() => {
+      setImmediate(() => {
+        child.stderr.emit('data', warning);
+        child.emit('close', code);
+      });
+      return child as never;
+    });
+    const syncAssets = makeSyncStub({ skills: ['show-task.md'] });
+    __setSelfUpdateDeps({ spawn: spawn as never, notify: vi.fn(), syncAssets });
+    const program = new Command();
+    program.addCommand(selfUpdateCommand);
+    await program.parseAsync(['node', 'tasks', 'self-update', '--target', 'codex']);
+
+    // Keep npm's warning visible regardless of whether its install succeeded.
+    expect(stderrSpy).toHaveBeenCalledWith(warning);
+    expect(process.exitCode).toBe(code);
+    if (code === 0) {
+      expect(syncAssets).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } else {
+      expect(syncAssets).not.toHaveBeenCalled();
+      expect(consoleErrorSpy.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
+        'EACCES',
+      );
+    }
+  });
+
   it('wires an injectable update-notifier nudge (testable without network)', async () => {
     const { __setSelfUpdateDeps, defaultNotify } = await loadFresh();
 
@@ -305,6 +338,8 @@ describe('self-update command', () => {
     expect(errOut).toMatch(/skills\/agents.*failed/);
     expect(errOut).toMatch(/EROFS/);
     expect(errOut).toMatch(/wood-fired-tasks setup/);
+    expect(errOut).toContain('setup --target codex --skills-only');
+    expect(errOut).toContain('setup --target claude');
     expect(process.exitCode).toBe(1);
   });
 
@@ -326,6 +361,11 @@ describe('self-update command', () => {
       files: [],
     }));
     vi.doMock('../commands/setup.js', () => ({ copySkills, copyAgents }));
+    // Native Codex detection must not depend on or refresh the developer's profile.
+    vi.doMock('../../setup/codex.js', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../../setup/codex.js')>()),
+      hasCodexInstallation: () => false,
+    }));
     const { selfUpdateCommand, __setSelfUpdateDeps } = await import('../commands/self-update.js');
 
     const child = makeFakeChild();
@@ -345,6 +385,7 @@ describe('self-update command', () => {
     expect(process.exitCode).toBe(0);
 
     vi.doUnmock('../commands/setup.js');
+    vi.doUnmock('../../setup/codex.js');
   });
 
   it('isEaccesFailure classifies structured + textual EACCES/EPERM', async () => {

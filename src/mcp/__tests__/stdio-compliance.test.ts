@@ -150,13 +150,40 @@ describe('MCP Server stdio compliance', () => {
 
       child.stdin.write(initRequest);
 
-      // Wait for stderr output
-      await new Promise<void>((resolve) => {
-        setTimeout(() => resolve(), 1000);
-      });
-
-      // Kill the child process
-      child.kill();
+      // Module loading and migrations can take longer than one second. Wait
+      // for readiness, failing promptly if the server exits before it is ready.
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = () => {
+            clearTimeout(timeout);
+            child.stderr.off('data', onData);
+            child.off('error', onError);
+            child.off('close', onClose);
+          };
+          const onData = () => {
+            if (stderrChunks.join('').includes('Wood Fired Tasks MCP Server running on stdio')) {
+              cleanup();
+              resolve();
+            }
+          };
+          const onError = (error: Error) => {
+            cleanup();
+            reject(error);
+          };
+          const onClose = (code: number | null) => {
+            onError(new Error(`MCP server exited before readiness (code ${code})`));
+          };
+          const timeout = setTimeout(() => {
+            onError(new Error('Timeout waiting for MCP startup message on stderr'));
+          }, 8000);
+          child.stderr.on('data', onData);
+          child.once('error', onError);
+          child.once('close', onClose);
+          onData();
+        });
+      } finally {
+        child.kill();
+      }
 
       // Verify stderr contains startup message
       const stderr = stderrChunks.join('');
