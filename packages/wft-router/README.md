@@ -22,6 +22,12 @@ Four core handlers ship in v1, selected per rule:
 
 Dispatch is at-least-once (SQLite idempotency store) with secret-redacted logs.
 
+`webhook_post` target guard: `https://` always; `http://` only to loopback or
+RFC1918/ULA hosts. `http://` to link-local `169.254.0.0/16` (cloud metadata) is
+refused unless `WFT_ROUTER_ALLOW_LINK_LOCAL=1` (or `true`). Redirects are not
+followed transparently: each hop is re-validated (any `http://` hop refused),
+max 5 hops; a refusal fails delivery permanently (non-retryable).
+
 ## Run
 
 `wft-router` ships inside the [`wood-fired-tasks`](https://www.npmjs.com/package/wood-fired-tasks)

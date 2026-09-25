@@ -14,11 +14,11 @@ security updates. Older tags are provided as-is.
 | Version           | Supported          |
 | ----------------- | ------------------ |
 | `main` (HEAD)     | :white_check_mark: |
-| `v2.5.0` (latest) | :white_check_mark: |
-| `v1.0` – `v2.4.0` | :x:                |
+| `v2.7.0` (latest) | :white_check_mark: |
+| `v1.0` – `v2.6.0` | :x:                |
 
 "Latest" tracks whichever tag is most recent on GitHub; at the time of
-writing that is `v2.5.0`. If you are reading this on an older checkout,
+writing that is `v2.7.0`. If you are reading this on an older checkout,
 verify the current latest release via
 `git tag --sort=-creatordate | head -1` or the GitHub Releases page.
 
@@ -86,9 +86,11 @@ Issues we will prioritize include, but are not limited to:
 
 - Authentication bypass on any endpoint — reaching a `/api/v1` route
   without a valid PAT or session credential, or bypassing
-  the SSE auth path. (Note: there is no separate authorization layer to
-  bypass — see "Authentication Is Not Authorization" below. Any valid
-  credential is already full-access.)
+  the SSE auth path.
+- Authorization bypass — a PAT reaching a route or stdio MCP tool above
+  its scope tier, or a project-bound PAT touching another project (see
+  "Authentication Is Not Authorization" below).
+- Tampering with, or silently suppressing, the `audit_events` trail.
 - Secrets exposure (API keys, `.env` leakage, log scrubbing gaps in pino
   redaction, disclosure of `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` — the two
   Slack credentials this service actually holds).
@@ -112,8 +114,8 @@ Issues we will prioritize include, but are not limited to:
   comments, dependencies, or Slack channel subscriptions — i.e. mutating
   state without presenting any valid credential, or escalating
   read-only access to write access on either MCP transport. (Mutation by
-  an *authenticated* identity is by design — every credential is
-  full-access; see "Authentication Is Not Authorization".)
+  an *authenticated*, sufficiently-scoped identity is by design; see
+  "Authentication Is Not Authorization".)
 
 Thank you for helping keep wood-fired-tasks and its users safe.
 
@@ -163,6 +165,16 @@ for hygiene:
   the PAT auth strategy: once `expires_at` is in the past the token fails
   with `reasonCode: expired`.
 
+**Scopes and project binding are enforced** — see
+[Authentication Is Not Authorization](#authentication-is-not-authorization).
+`--scopes` accepts only `read`, `write`, `admin`.
+
+**At rest.** The SQLite database (which holds the PAT hashes and the audit
+trail) and its `-wal`/`-shm` sidecars are tightened to mode `0600` when
+opened (POSIX), as are `~/.claude.json` and the `.tmp`/`.bak` files
+`tasks setup` writes beside it (which can hold a live `WFT_API_KEY`). Installs that predate this can check for drift
+with `tasks doctor` (the `Perms` check prints a `chmod 600` per offender).
+
 The PAT prefix (`wft_pat_`) is part of the wire format. The remote MCP
 server and the CLI HTTP client read the PAT from their respective env var
 (`WFT_API_KEY` for MCP, `API_KEY` for CLI) and send it as
@@ -177,22 +189,25 @@ claims. The cookie:
 - Uses `SESSION_COOKIE_SECRET` (32 bytes, generated via
   `openssl rand -base64 32`) as the sodium sealed-box key.
 - Has `maxAge=8h`, `httpOnly=true`, and `sameSite=lax`.
-- Sets the `secure` attribute **only when `NODE_ENV=production`**
-  (`src/api/server.ts` — `secure: config.NODE_ENV === 'production'`).
+- Sets the `secure` attribute in **production posture** — explicit
+  `NODE_ENV=production` **or `NODE_ENV` unset** (`src/api/server.ts` —
+  `secure: config.isProductionPosture`). Only an explicit
+  `NODE_ENV=development|test` drops it.
 - Has **no DB-side sessions table** — the cookie is self-contained.
   Rotating `SESSION_COOKIE_SECRET` invalidates every active session
   immediately because the existing cookies can no longer be decrypted.
 
 > **Run production behind HTTPS — even on a LAN.** Because the cookie is
-> flagged `secure` whenever `NODE_ENV=production`, a production server
+> flagged `secure` in production posture (including `NODE_ENV` unset), a server
 > reached over plain `http://` will have its `Set-Cookie` dropped by the
 > browser, silently breaking the OIDC login flow (the session never
 > persists, so the callback loops back to `/auth/login`). This applies to
 > internal / LAN deployments too: terminate TLS in front of the service
 > (reverse proxy or a self-signed cert the clients trust) before exposing
-> the browser login. The matching `secure=false` in non-production exists
-> only so local `http://localhost` development works — do not run a
-> public or shared instance with `NODE_ENV` unset.
+> the browser login. The matching `secure=false` under an explicit
+> `NODE_ENV=development|test` exists only so local `http://localhost`
+> development works — and such a server refuses to boot (exit 78) unless
+> `HOST` is a loopback address.
 
 The OIDC flow itself uses **PKCE + state** to prevent CSRF / replay
 against the callback endpoint, and validates the issuer + audience
@@ -215,6 +230,30 @@ Failures emit a counterpart `tag: auth.failure` line with a coarse
 so secret values never appear in logs. The `auth-audit` helper enforces
 this — it is the **only** sanctioned way for the auth plugin to
 log into the request.
+
+### Audit trail
+
+Separately from the log lines above, state changes are recorded in the
+`audit_events` table (migrations 018/019):
+
+- **Producers.** One row per authenticated, state-changing REST request
+  (GET/HEAD are exempt; refused attempts such as a scope `403` are
+  recorded with their status), and one row per mutating stdio MCP tool
+  call. Rows carry actor, `api_tokens` row id (never token material),
+  action (route pattern or `MCP <tool>`), resource, request id, and
+  status/auth-method/params metadata — never request bodies or headers.
+  A failed audit write never changes the response but is logged at
+  ERROR (`audit.append_failed`).
+- **Append-only.** `BEFORE UPDATE`/`BEFORE DELETE` triggers abort any
+  modification through the schema.
+- **Tamper-evident.** Each row stores a SHA-256 `row_hash` over its
+  content plus the previous row's hash (`prev_hash`), so an out-of-band
+  edit, insert, or deletion against the SQLite file breaks the chain at a
+  detectable point.
+- **Read access.** `GET /api/v1/audit-events` (admin scope, not available
+  to project-bound tokens) with exactly one bounded filter mode — by
+  actor, by resource, or by time window; see
+  [`docs/API.md`](docs/API.md#get-apiv1audit-events).
 
 ## Legacy `X-API-Key` Status — Removed in v2.0
 
@@ -260,20 +299,36 @@ default.
 
 ## Authentication Is Not Authorization
 
-Authentication identifies the caller; it does **not** scope what the
-caller may do. Wood Fired Tasks has **no RBAC, no ACL, and no tenant /
-project isolation.** Every authenticated identity — whether it arrived
-via PAT or OIDC session — is effectively an
-admin: it can read, write, and delete **every** task, project, comment,
-dependency, and Slack subscription across **every** project in the
-database. The `--scopes` minted onto a PAT are advisory metadata only and
-are **not enforced** by any endpoint.
+Authentication identifies the caller. Authorization is limited to what a
+**PAT** declares about itself; there is still **no per-user RBAC, no ACL,
+and no tenant isolation between users.**
 
-The consequence: any valid credential is a full-access credential. If you
-need per-user, per-team, or per-tenant isolation, you must enforce it
-**outside** this service — front it with an authenticating reverse proxy
-that performs its own per-tenant authorization. Treat the loss or leak of
-any single PAT or API key as a full-database compromise and revoke/rotate
-accordingly. Scoped, role-based permissions are tracked as future work;
-until they land, the model above is the whole authorization story.
+- **Scope tiers (enforced).** A PAT carries scopes from the closed
+  taxonomy `read < write < admin` (`src/schemas/pat-scope.schema.ts`).
+  Every authenticated REST route declares a required tier (a drift-guard
+  test fails if one does not); reads need `read`, mutations `write`,
+  and the token surface and `GET /api/v1/audit-events` need `admin`. An
+  out-of-scope request gets **403 `insufficient_scope`**. The stdio MCP
+  server enforces the same tiers on its mutating tools against the PAT in
+  `WFT_API_KEY` (`src/mcp/scope-gate.ts`; deletes and
+  `set_model_defaults` need `admin`).
+- **Project binding (optional, enforced).** A PAT minted via
+  `POST /api/v1/me/tokens` with a `projectId` (migration 020) may only
+  touch that project — including through task-id routes — and is refused
+  (**403 `project_scope_denied`**) on anything it cannot be proven to
+  stay within. Deleting the project deletes the token. The stdio MCP
+  surface does not apply project binding.
+- **Full-tier cases.** OIDC session-cookie requests, PATs with an empty
+  scope list (all tokens minted before scopes were enforced, and any
+  minted without `--scopes`), and the stdio MCP `mcp-bot` fallback carry
+  no scope restriction. Such a credential can read, write, and delete
+  **every** task, project, comment, dependency, and Slack subscription
+  across **every** project.
+
+The consequence: mint least-privilege PATs (e.g. `read` for dashboards,
+project-bound `write` for agents) and treat the leak of any full-tier
+credential as a full-database compromise. If you need per-user,
+per-team, or per-tenant isolation, enforce it **outside** this service —
+front it with an authenticating reverse proxy that performs its own
+authorization.
 

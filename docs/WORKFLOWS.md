@@ -136,9 +136,9 @@ as a group (bot + app + signing) or not at all.
 
 | Variable                   | Required?   | Notes                                                          |
 | -------------------------- | ----------- | -------------------------------------------------------------- |
-| `NODE_ENV=development`     | recommended | Default.                                                        |
+| `NODE_ENV=development`     | recommended | Dev ergonomics (non-`secure` cookie). Unset = production posture. Requires a loopback `HOST`. |
 | `PORT=3000`                | optional    | API listen port.                                               |
-| `HOST=127.0.0.1`           | optional    | Loopback. Only set to `0.0.0.0` for deliberate LAN exposure.   |
+| `HOST=127.0.0.1`           | optional    | Loopback. Non-loopback with `NODE_ENV=development` is a boot fatal (exit 78). |
 | `LOG_LEVEL=info`           | optional    | `trace`/`debug`/`info`/`warn`/`error`.                         |
 | `API_KEYS`                 | optional (legacy) | **Not an auth method, not required, not in the Zod schema.** If set, only seeds inert legacy `users` rows (`is_legacy=1`). |
 | `DATABASE_PATH`            | optional    | Defaults to the OS app-data DB; if unset and a legacy `./data/tasks.db` exists (and the app-data DB does not), it is auto-adopted with a one-time warning. `DB_PATH` is a deprecated alias — prefer `DATABASE_PATH`. |
@@ -152,7 +152,7 @@ as a group (bot + app + signing) or not at all.
 
 | Variable                   | Required? | Notes                                                              |
 | -------------------------- | --------- | ------------------------------------------------------------------ |
-| `NODE_ENV=production`      | REQUIRED  | Enables production hardening.                                      |
+| `NODE_ENV=production`      | REQUIRED  | Production hardening (also applied when `NODE_ENV` is unset).     |
 | `HOST=0.0.0.0`             | typical   | Behind firewall / reverse proxy.                                   |
 | `API_KEYS`                 | optional (legacy) | **Not an auth method, not required, not in the Zod schema.** If set, only seeds inert legacy `users` rows. Issue PATs (`tasks db mint-token`) for real auth. |
 | `DATABASE_PATH=/opt/wood-fired-tasks/data/tasks.db` | typical | Matches the installer default.                  |
@@ -160,7 +160,7 @@ as a group (bot + app + signing) or not at all.
 | `WFT_SERVICE_USER`         | optional  | Installer service user. See `deploy/README.md`.                    |
 | `WFT_API_URL`              | REQUIRED (remote MCP) | URL of the running API.                                |
 | `WFT_API_KEY`              | REQUIRED (remote MCP) | A PAT (`wft_pat_…`) sent as `Authorization: Bearer <pat>`. |
-| `WFT_STRICT_EVIDENCE`      | optional  | `true` opts into the anti-fabrication evidence gate (default off). Recommended for `/tasks:loop[-dag]` hosts. See [docs/RELIABILITY.md](RELIABILITY.md). |
+| `WFT_STRICT_EVIDENCE`      | optional  | Anti-fabrication evidence gate, **default on**; `false` opts out (not recommended for `/tasks:loop[-dag]` hosts). See [docs/RELIABILITY.md](RELIABILITY.md). |
 
 ## Network / secrets / running-API / writable-DB / approval flags
 

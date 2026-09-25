@@ -241,6 +241,7 @@ WAL mode is enabled by `src/db/database.ts`:
 | `wsjf_rescore_run` | `id PK`, `project_id` (FK CASCADE), `triggered_at`, `charter_version`, `actor_type`, `actor_id`, `tasks_evaluated`, `tasks_changed`, `tasks_skipped_locked`, `summary` | Append-only; one row per rescore event (migration 015). |
 | `wsjf_score_history` | `id PK`, `task_id`/`project_id` (FK CASCADE), `changed_at`, `trigger`, `actor_type`, `actor_id`, `charter_version`, `rescore_run_id` (soft FK SET NULL), the four components, `classifications`, `features`, `evidence`, `source`, `locked`, `wsjf_score`, `prev_wsjf_score` | Append-only; one immutable row per score write (full inputs, replay-able). Migration 015. |
 | `project_charter_history` | `id PK`, `project_id` (FK CASCADE), `interview_version`, `charter` (JSON), `change_kind`, `actor_type`, `actor_id`, `changed_at` | Append-only; full charter snapshot per interview version (migration 015). |
+| `audit_events` | `id PK`, `timestamp`, `actor_type`, `actor_id`, `token_id`, `action`, `resource_type`, `resource_id`, `request_id`, `metadata` (JSON), `prev_hash`, `row_hash` | Append-only (UPDATE/DELETE triggers abort); SHA-256 hash chain. Written by authenticated REST mutations + stdio MCP mutating tools (migrations 018–019). |
 | `_migrations` | `name`, `executed_at` | Umzug bookkeeping (canonical names, no extension). |
 
 ## Migration rules
@@ -256,11 +257,9 @@ WAL mode is enabled by `src/db/database.ts`:
 - SQLite gotchas: `DROP COLUMN` needs referencing indexes dropped first;
   changing a `CHECK` constraint needs the `tasks_new` + copy + rename +
   recreate-indexes + recreate-FTS-triggers pattern (migration 005).
-- Current max is **017** (17 migrations, `001`–`017`). The three WSJF
-  migrations are `013-wsjf-fields` (the `wsjf_*` columns on `tasks`),
-  `014-value-charter` (`projects.value_charter`), and `015-wsjf-audit` (the
-  three append-only tables, created FK-dependency-first with
-  `wsjf_rescore_run` before `wsjf_score_history`).
+- Current max is **020** (20 migrations, `001`–`020`). The three WSJF migrations are `013-wsjf-fields` (the `wsjf_*` columns on `tasks`),
+  `014-value-charter` (`projects.value_charter`), and `015-wsjf-audit` (the three append-only tables, created FK-dependency-first with
+  `wsjf_rescore_run` before `wsjf_score_history`); `018`–`019` add the hash-chained `audit_events` trail and `020` the PAT project binding.
 
 ## Pagination + filtering contract
 

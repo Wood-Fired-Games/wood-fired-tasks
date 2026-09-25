@@ -46,8 +46,9 @@ The release responding to task #608 ships three layers, defense-in-depth:
 check in `update_task` rejects `verification_evidence` whose `verifier_session_id`
 is empty, equals the task assignee/caller, or matches a self-grading pattern
 (`^orchestrator`, `^self`, `^main-loop`), and rejects placeholder or empty check
-evidence text. It is **default-off** for backward compatibility; deployments opt
-in by setting `WFT_STRICT_EVIDENCE`.
+evidence text. It is **default-on** (task #1624): unset, or any value other than
+the literal `false`, is strict; deployments that need the old permissive
+behaviour opt out with `WFT_STRICT_EVIDENCE=false`.
 
 **Piece B — client-side SHA reference hook.** An optional `PreToolUse` reference
 hook (see [`hooks/README.md`](hooks/README.md), `hooks/validate-sha.*`) blocks

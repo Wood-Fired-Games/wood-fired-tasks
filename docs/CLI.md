@@ -1120,7 +1120,7 @@ Returns `0` in all cases (including no-credentials and server-side revoke failur
 
 ### tasks whoami
 
-Show the currently logged-in user. Fetches `/api/v1/me` (authoritative identity) and `/api/v1/me/tokens` (best-effort enrichment for the active token's name and last-used timestamp) in parallel.
+Show the currently logged-in user. Fetches `/api/v1/me`, which returns the identity plus — for a PAT — the calling token's own name, scopes, project binding, and last-used timestamp.
 
 **Example:**
 
@@ -1130,7 +1130,7 @@ tasks whoami
 
 **Output:**
 
-Text mode prints aligned fields on stdout: `Display name`, `Email`, `Active token` (name + id), `Last used`, and `Server`. If both the `API_KEY` env var and the credentials file are set, a footer notes the credentials file took precedence. With `--json`, emits a single envelope `{user, server, token?, fallback?}` on stdout (the `token` field is omitted if the token listing fetch failed).
+Text mode prints aligned fields on stdout: `Display name`, `Email`, `Active token` (name + id), `Scopes` (e.g. `[read, write]`; `[]` for a legacy full-tier token), `Project` (only for a project-bound token), `Last used`, and `Server`. With `--json`, emits a single envelope `{user, server, token?}` on stdout (`token` is `{id, name, lastUsedAt, scopes, projectId}`; omitted when the server returns no token block, e.g. an older server).
 
 **Exit codes:**
 
@@ -1183,7 +1183,7 @@ These commands operate directly on the local SQLite database file (read from `DA
 
 ### tasks doctor
 
-Run diagnostics for database connectivity, disk space, and configuration validity. Useful as a first-line health check when something is misbehaving.
+Run diagnostics for database connectivity, disk space, configuration validity, OIDC readiness, legacy credentials, the CLI credentials file, and secret-file permissions. Useful as a first-line health check when something is misbehaving.
 
 **Example:**
 
@@ -1198,10 +1198,14 @@ tasks doctor
 | Database | Opens the SQLite file read-only, runs `SELECT 1`, reports the active journal mode (WAL expected). |
 | Disk | Reports free vs total bytes on the partition holding the database. Status is `WARN` below 10% free, `FAIL` below 5%. |
 | Config | Parses environment variables against the configuration schema and lists any issues. |
+| OIDC | When a remote server is configured (`--remote <url>` or `WFT_API_URL`), probes its `/health/detailed` OIDC state: `ready` (`PASS`), `disabled` (`WARN`, server is PAT-only), `degraded` (`WARN`; `FAIL` when `WFT_OIDC_REQUIRED` is truthy), `unreachable` (`FAIL`). `[N/A]` when no remote is configured. |
+| Legacy | Flags a non-PAT `WFT_API_KEY` (env, or in `~/.claude.json` / `WFT_CLAUDE_JSON_PATH`) and any `API_KEYS` env var (removed in v2.0). Any finding is `FAIL`. |
+| Creds | The CLI credentials file (`WFT_CREDENTIALS_PATH`, else `$XDG_CONFIG_HOME/wood-fired-tasks/credentials`, else `~/.config/wood-fired-tasks/credentials`): `WARN` when absent, `FAIL` when not mode `0600` (POSIX) or not valid TOML, otherwise `PASS` (plus a best-effort, non-blocking reachability probe of the recorded server). |
+| Perms | Secret-file permission drift (task #1627): stats — never opens, never chmods — the resolved database file plus its `-wal`/`-shm` sidecars, and `~/.claude.json` (or `WFT_CLAUDE_JSON_PATH`) plus its `.bak`/`.tmp` siblings. Absent files are skipped. Any existing file with group/other permission bits set is `FAIL`, with a `chmod 600 <path>` remediation per offender. Skipped (`PASS`) on non-POSIX platforms. |
 
 **Exit codes:**
 
-Returns `0` when all checks pass (or only `WARN`). Returns `1` if database, disk, or config status is `FAIL`.
+Returns `0` when every check passes or only warns. Returns `1` if the database, disk, config, legacy, credentials-file, or secret-file-permission check is `FAIL`, or if the OIDC check is blocking (`unreachable`, or `degraded` with `WFT_OIDC_REQUIRED` set).
 
 **Output:**
 
@@ -1209,9 +1213,19 @@ Returns `0` when all checks pass (or only `WARN`). Returns `1` if database, disk
 Database:  [PASS] Connected (SQLite WAL mode)
 Disk:      [PASS] 42.3% free (180.4 GB / 426.7 GB)
 Config:    [PASS] All required variables present
+OIDC:      [N/A]  No remote server configured (set WFT_API_URL to probe OIDC)
+Legacy:    [PASS] No legacy credentials detected
+Creds:     [PASS] Credentials file OK (0600, valid TOML)
+Perms:     [PASS] 3 secret-bearing file(s) are owner-only (600)
 ```
 
-When a check fails, the corresponding line uses `[FAIL]` (or `[WARN]` for disk usage between 5%–10%). Config failures are followed by per-field issue lines.
+When a check fails, the corresponding line uses `[FAIL]` (or `[WARN]`). Config failures are followed by per-field issue lines; OIDC and credentials-file lines are followed by a remediation hint when one applies; legacy and permission findings are each followed by a message and remediation line, e.g.:
+
+```
+Perms:     [FAIL] 1 secret-bearing file(s) have insecure permissions
+           - ~/.local/share/wood-fired-tasks/tasks.db is group/other-accessible (mode 644, expected 600)
+             Run: chmod 600 ~/.local/share/wood-fired-tasks/tasks.db
+```
 
 **JSON output:**
 
@@ -1223,19 +1237,18 @@ tasks doctor --json
 {
   "success": true,
   "data": {
-    "database": {
+    "database": { "status": "PASS", "message": "Connected (SQLite WAL mode)" },
+    "disk": { "status": "PASS", "free": 193710571520, "total": 458153459712, "freePercent": "42.3" },
+    "config": { "status": "PASS", "errors": [] },
+    "oidc": { "state": "not-configured", "message": "No remote server configured (set WFT_API_URL to probe OIDC)", "blocking": false },
+    "legacyCredentials": { "status": "PASS", "blocking": false, "findings": [] },
+    "credentialsFile": { "status": "PASS", "message": "Credentials file OK (0600, valid TOML)", "blocking": false },
+    "secretFilePermissions": {
       "status": "PASS",
-      "message": "Connected (SQLite WAL mode)"
-    },
-    "disk": {
-      "status": "PASS",
-      "free": 193710571520,
-      "total": 458153459712,
-      "freePercent": "42.3"
-    },
-    "config": {
-      "status": "PASS",
-      "errors": []
+      "message": "3 secret-bearing file(s) are owner-only (600)",
+      "blocking": false,
+      "checked": ["~/.local/share/wood-fired-tasks/tasks.db", "~/.local/share/wood-fired-tasks/tasks.db-wal", "~/.local/share/wood-fired-tasks/tasks.db-shm"],
+      "findings": []
     }
   }
 }
@@ -1651,7 +1664,7 @@ tasks db mint-token --user 1 --name "ci-runner"
 tasks db mint-token \
   --user alice@example.com \
   --name "deploy-bot" \
-  --scopes "admin,reader" \
+  --scopes "write" \
   --expires-at 2027-05-22T00:00:00Z
 ```
 
@@ -1661,7 +1674,7 @@ tasks db mint-token \
 |--------|------|-------------|
 | --user | string | User identifier — numeric id, email (case-insensitive), or legacy display_name (required) |
 | --name | string | Human-readable token label (required) |
-| --scopes | string | Comma-separated scope list (advisory in v1.6; not enforced) |
+| --scopes | string | Comma-separated scope list, **enforced** by the auth chain (REST and stdio MCP). Allowed values: `read`, `write`, `admin` (ordered `read < write < admin`; a higher tier satisfies a lower one). Unknown values (e.g. `reader`) are rejected. Omitted = `[]`, which is treated as full-tier (legacy behaviour). See [SECURITY.md → Authentication Is Not Authorization](../SECURITY.md#authentication-is-not-authorization). |
 | --expires-at | string | ISO-8601 expiry timestamp with explicit timezone (e.g. `2027-05-22T00:00:00Z`). Bare dates and timezone-less stamps are rejected. |
 
 **Output:**
@@ -1670,15 +1683,17 @@ tasks db mint-token \
 Token: wft_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 Id: 17
 User: 1 (legacy-key)
-Scopes: [admin, reader]
+Scopes: [write]
 Expires: 2027-05-22T00:00:00Z
 ```
 
 `Scopes` is always printed (`[]` when empty). `Expires` is omitted entirely when `--expires-at` was not supplied.
 
+`mint-token` always mints an unbound (cross-project) token. To confine a PAT to a single project, mint it through `POST /api/v1/me/tokens` with a `projectId` (see [API.md → Authentication](API.md#authentication)).
+
 **Exit codes:**
 
-Returns `0` on success. Returns `1` if the user cannot be resolved (`User '<arg>' not found.`) or `--expires-at` is not a valid strict ISO-8601 timestamp.
+Returns `0` on success. Returns `1` if the user cannot be resolved (`User '<arg>' not found.`), `--expires-at` is not a valid strict ISO-8601 timestamp, or `--scopes` names an unknown scope (`--scopes: unknown scope(s): reader (allowed: read, write, admin)`).
 
 ### tasks db migrate-identities
 

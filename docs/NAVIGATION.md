@@ -152,8 +152,8 @@ statement of what each layer does **not** guarantee.
 
 - **Server-side gate (Piece A):** `src/services/evidence-validation.ts` (pure
   fn), wired into `update_task` via `src/services/task.service.ts`, gated behind
-  the `WFT_STRICT_EVIDENCE` env flag (**default off** — opt in per
-  [`docs/SETUP.md`](SETUP.md) → *Optional hardening flags*).
+  the `WFT_STRICT_EVIDENCE` env flag (**default on** — opt out with
+  `WFT_STRICT_EVIDENCE=false` per [`docs/SETUP.md`](SETUP.md) → *Optional hardening flags*).
 - **Client-side hook (Piece B):** [`docs/hooks/validate-sha.mjs`](hooks/validate-sha.mjs)
   + [`docs/hooks/README.md`](hooks/README.md) — an optional `PreToolUse` guard
   that blocks evidence citing SHAs unknown to the local repo. Client-side by
