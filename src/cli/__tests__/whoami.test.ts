@@ -118,24 +118,33 @@ const STUART_ME = {
 };
 
 /**
- * Token list with one entry whose id matches the seeded credentials' token_id.
- * Uses the server's actual camelCase shape (lastUsedAt, createdAt).
+ * `/me` body for a PAT caller: the server appends the calling token's own
+ * name/scopes/binding (src/api/routes/me/profile.ts). The token LIST route
+ * `/me/tokens` is session-only and 403s a PAT, so whoami must not depend on it.
  */
-function tokenListWith(id: number, name: string, lastUsedAt: string | null) {
-  return [
-    {
+function meWithToken(
+  id: number,
+  name: string,
+  lastUsedAt: string | null,
+  opts: { scopes?: string[]; projectId?: number | null } = {},
+) {
+  return {
+    ...STUART_ME,
+    token: {
       id,
       name,
-      prefix: 'wft_pat_',
-      suffix: '7890',
-      scopes: ['*'],
-      createdAt: '2026-05-23T11:00:00.000Z',
+      scopes: opts.scopes ?? ['write'],
+      projectId: opts.projectId ?? null,
       lastUsedAt,
-      revokedAt: null,
-      expiresAt: null,
     },
-  ];
+  };
 }
+
+// What the real server answers a PAT on the session-only list route.
+const TOKENS_SESSION_ONLY = {
+  status: 403,
+  body: { error: 'session_required', message: 'session required' },
+};
 
 describe('tasks whoami (subprocess)', () => {
   let server: LogoutWhoamiServer | null = null;
@@ -177,11 +186,11 @@ describe('tasks whoami (subprocess)', () => {
 
   it('happy path text: prints all 5 labeled lines with the right values', async () => {
     server = await startLogoutWhoamiServer({
-      meResponse: { status: 200, body: STUART_ME },
-      tokensResponse: {
+      meResponse: {
         status: 200,
-        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
+        body: meWithToken(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
+      tokensResponse: TOKENS_SESSION_ONLY,
     });
     seedCredentials(tmpDir, {
       token: TEST_TOKEN,
@@ -194,23 +203,26 @@ describe('tasks whoami (subprocess)', () => {
     expect(res.stdout).toContain('Display name: Stuart Jeff');
     expect(res.stdout).toContain('Email:        stuart@woodfiredgames.com');
     expect(res.stdout).toContain('Active token: cli-stuart-laptop-2026-05-23 (id 17)');
-    expect(res.stdout).toContain('Scopes:       [*]');
+    expect(res.stdout).toContain('Scopes:       [write]');
+    expect(res.stdout).not.toContain('Project:');
+    expect(res.stderr).not.toContain('warning');
     expect(res.stdout).toContain('Last used:    2026-05-23T12:34:56.000Z');
     expect(res.stdout).toContain(`Server:       ${server.baseUrl}`);
 
     // Authorization header sent with Bearer prefix.
     const recorded = server.getRequests();
     expect(recorded.me[0]!.authorization).toBe(`Bearer ${TEST_TOKEN}`);
-    expect(recorded.tokens[0]!.authorization).toBe(`Bearer ${TEST_TOKEN}`);
+    // The session-only list route is never consulted with a PAT.
+    expect(recorded.tokens).toHaveLength(0);
   });
 
   it('happy path --json: documented envelope shape', async () => {
     server = await startLogoutWhoamiServer({
-      meResponse: { status: 200, body: STUART_ME },
-      tokensResponse: {
+      meResponse: {
         status: 200,
-        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
+        body: meWithToken(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
+      tokensResponse: TOKENS_SESSION_ONLY,
     });
     seedCredentials(tmpDir, {
       token: TEST_TOKEN,
@@ -226,7 +238,13 @@ describe('tasks whoami (subprocess)', () => {
       .filter((l) => l.length > 0);
     const envelope = JSON.parse(lines[lines.length - 1]!) as {
       user: Record<string, unknown>;
-      token?: { id: number; name: string; lastUsedAt: string | null; scopes: string[] };
+      token?: {
+        id: number;
+        name: string;
+        lastUsedAt: string | null;
+        scopes: string[];
+        projectId: number | null;
+      };
       server: string;
       fallback?: string;
     };
@@ -237,20 +255,16 @@ describe('tasks whoami (subprocess)', () => {
     expect(envelope.token!.id).toBe(17);
     expect(envelope.token!.name).toBe('cli-stuart-laptop-2026-05-23');
     expect(envelope.token!.lastUsedAt).toBe('2026-05-23T12:34:56.000Z');
-    expect(envelope.token!.scopes).toEqual(['*']);
+    expect(envelope.token!.scopes).toEqual(['write']);
+    expect(envelope.token!.projectId).toBeNull();
     expect(envelope.server).toBe(server.baseUrl);
     expect(envelope.fallback).toBeUndefined();
   });
 
-  it('token id not in /me/tokens list: gracefully omits the token block', async () => {
+  it('/me without a token block (legacy key / older server): omits the token lines', async () => {
     server = await startLogoutWhoamiServer({
       meResponse: { status: 200, body: STUART_ME },
-      // /me/tokens returns 200 but no matching id (e.g. revoked between
-      // login and whoami).
-      tokensResponse: {
-        status: 200,
-        body: tokenListWith(99, 'some-other-token', '2026-01-01T00:00:00.000Z'),
-      },
+      tokensResponse: TOKENS_SESSION_ONLY,
     });
     seedCredentials(tmpDir, {
       token: TEST_TOKEN,
@@ -313,13 +327,13 @@ describe('tasks whoami (subprocess)', () => {
     expect(res.stderr).toContain('Could not reach');
   });
 
-  it('/me/tokens 5xx but /me 200: user info still printed, token block omitted', async () => {
+  it('project-bound token: prints the binding in text and --json', async () => {
     server = await startLogoutWhoamiServer({
-      meResponse: { status: 200, body: STUART_ME },
-      tokensResponse: {
-        status: 500,
-        body: { error: 'INTERNAL_ERROR', message: 'boom' },
+      meResponse: {
+        status: 200,
+        body: meWithToken(17, 'bound-token', null, { scopes: ['read'], projectId: 42 }),
       },
+      tokensResponse: TOKENS_SESSION_ONLY,
     });
     seedCredentials(tmpDir, {
       token: TEST_TOKEN,
@@ -327,15 +341,18 @@ describe('tasks whoami (subprocess)', () => {
       server: server.baseUrl,
     });
 
-    const res = await runWhoami(['--json'], { XDG_CONFIG_HOME: tmpDir });
+    const res = await runWhoami([], { XDG_CONFIG_HOME: tmpDir });
     expect(res.exitCode).toBe(0);
-    const envelope = JSON.parse(res.stdout.trim().split('\n').slice(-1)[0]!) as Record<
-      string,
-      unknown
-    >;
-    expect((envelope.user as { id: number }).id).toBe(1);
-    expect(envelope.token).toBeUndefined();
-    expect(envelope.server).toBeDefined();
+    expect(res.stdout).toContain('Scopes:       [read]');
+    expect(res.stdout).toContain('Project:      #42');
+    expect(res.stdout).toContain('Last used:    (never)');
+
+    const resJson = await runWhoami(['--json'], { XDG_CONFIG_HOME: tmpDir });
+    const envelope = JSON.parse(resJson.stdout.trim().split('\n').slice(-1)[0]!) as {
+      token: { projectId: number | null; scopes: string[] };
+    };
+    expect(envelope.token.projectId).toBe(42);
+    expect(envelope.token.scopes).toEqual(['read']);
   });
 
   // Removed in the v2.0 cutover (#802, commit d9ffe56 "make CLI client +
@@ -347,11 +364,11 @@ describe('tasks whoami (subprocess)', () => {
 
   it('PAT value never appears in stdout or stderr (T-30-07-01)', async () => {
     server = await startLogoutWhoamiServer({
-      meResponse: { status: 200, body: STUART_ME },
-      tokensResponse: {
+      meResponse: {
         status: 200,
-        body: tokenListWith(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
+        body: meWithToken(17, 'cli-stuart-laptop-2026-05-23', '2026-05-23T12:34:56.000Z'),
       },
+      tokensResponse: TOKENS_SESSION_ONLY,
     });
     seedCredentials(tmpDir, {
       token: TEST_TOKEN,

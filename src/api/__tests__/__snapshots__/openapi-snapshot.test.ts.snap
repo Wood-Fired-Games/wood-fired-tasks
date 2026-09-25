@@ -301,6 +301,43 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "isServiceAccount": {
                       "type": "boolean",
                     },
+                    "token": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer",
+                        },
+                        "lastUsedAt": {
+                          "nullable": true,
+                          "type": "string",
+                        },
+                        "name": {
+                          "type": "string",
+                        },
+                        "projectId": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "nullable": true,
+                          "type": "integer",
+                        },
+                        "scopes": {
+                          "items": {
+                            "type": "string",
+                          },
+                          "type": "array",
+                        },
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "scopes",
+                        "projectId",
+                        "lastUsedAt",
+                      ],
+                      "type": "object",
+                    },
                   },
                   "required": [
                     "id",
