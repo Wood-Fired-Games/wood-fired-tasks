@@ -86,6 +86,9 @@ regexes = [
   '''wft_pat_your-dev-token''',
   '''wft_pat_dev-token''',
   '''wft_pat_X{10,}''',
+  # Admin-tier placeholder in the GET /api/v1/audit-events curl examples
+  # (docs/API.md, v2.7.0 release docs). Same rationale as above.
+  '''wft_pat_admin-token''',
 ]
 
 stopwords = [

@@ -55,7 +55,7 @@ fallback when an autonomous run can't be trusted — are written up with illustr
 command sequences in **[docs/USAGE_PATTERNS.md](docs/USAGE_PATTERNS.md)**.
 
 Because the loops close tasks on agent-written evidence, they ship with
-anti-fabrication guardrails (the opt-in `WFT_STRICT_EVIDENCE` server gate, an optional
+anti-fabrication guardrails (the default-on `WFT_STRICT_EVIDENCE` server gate, an optional
 client-side SHA hook, and skill-level discipline) — see
 [docs/RELIABILITY.md](docs/RELIABILITY.md).
 
@@ -201,14 +201,14 @@ a single task unblock, the MCP server also exposes a `wait_for_unblock` tool
 
 PATs are minted from a logged-in `/me` web session or offline via `tasks db mint-token`; the raw value is shown **once** at mint time (only a hash is stored) and revoked via the `/me` UI, `DELETE /me/tokens/:id`, or `tasks logout`. Sessions come from OIDC (`/auth/login` → provider → `/auth/callback`, protected by PKCE + state), are sealed-box-encrypted with `SESSION_COOKIE_SECRET`, and expire after 8h. The CLI and remote MCP client send the PAT as `Authorization: Bearer`. Full detail: [SECURITY.md → Authentication Architecture](SECURITY.md#authentication-architecture).
 
-### ⚠️ Authentication is NOT authorization — every identity is admin
+### ⚠️ Authentication is NOT authorization — only PATs can be narrowed
 
 **Read this before exposing the service to anything but trusted callers.**
 
-- **Authentication ≠ authorization.** The auth chain only *identifies* the caller; it does **not** scope what they may do.
-- **Every authenticated identity is effectively an admin.** Any valid credential — PAT or OIDC session — can read, write, and delete **every** task, project, comment, and dependency across **every** project in the database.
-- **There is NO RBAC, NO ACL, and NO per-project / per-tenant isolation.** These are not implemented; scoped/role-based permissions are tracked only as future work.
-- **Do NOT expose this service on a public network, and do NOT run it multi-tenant, without an external authorization layer** (e.g. an authenticating reverse proxy that enforces its own per-tenant access control in front of the API). Treat any issued credential as full admin access to all data.
+- **PAT scopes are enforced.** Tiers `read < write < admin`; every route (and every mutating stdio MCP tool) declares a required tier, and an out-of-scope call gets **403 `insufficient_scope`**. A PAT may also be bound to one project (`projectId` on `POST /api/v1/me/tokens`) — **403 `project_scope_denied`** elsewhere.
+- **Full-tier credentials are effectively admin.** OIDC sessions and PATs with no scopes (every pre-scope token, and any minted without `--scopes`) can read, write, and delete **every** task, project, comment, and dependency across **every** project in the database.
+- **There is NO per-user RBAC, NO ACL, and NO tenant isolation.** Mint least-privilege PATs; mutations are recorded in a hash-chained `audit_events` trail (`GET /api/v1/audit-events`, admin).
+- **Do NOT expose this service on a public network, and do NOT run it multi-tenant, without an external authorization layer** (e.g. an authenticating reverse proxy that enforces its own per-tenant access control in front of the API). See [SECURITY.md](SECURITY.md#authentication-is-not-authorization).
 
 ### Legacy `X-API-Key` was removed in v2.0
 
@@ -459,10 +459,11 @@ The OIDC/session/PAT surface backing the auth model lives partly outside the tas
 | GET | /api/v1/me/tokens | List the caller's personal access tokens |
 | DELETE | /api/v1/me/tokens/active | Revoke the caller's currently-active token |
 | DELETE | /api/v1/me/tokens/:id | Revoke a personal access token by ID |
+| GET | /api/v1/audit-events | Read the append-only audit trail (admin scope; one filter mode required) |
 
 A device-authorization flow under `/auth/device*` (`GET /auth/device`, `POST /auth/device/code`, `POST /auth/device/token`, `POST /auth/device/verify`) supports headless PAT minting. When OIDC is **not** configured, the `/auth/*` and `/auth/device/*` routes are replaced by disabled-stub handlers (HTTP 501), so they exist in both modes but only one set is live per instance. When `SESSION_COOKIE_SECRET` is set, top-level HTML web routes (`GET /login`, `GET /me`, `GET /me/tokens`, `POST /me/tokens/:id/revoke`) are also served for the browser sign-in UI.
 
-This brings the full registered surface to **59 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **52** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
+This brings the full registered surface to **60 route handlers** under `src/api/routes/` — derived by counting `fastify.<verb>(` / `server.<verb>(` registrations across the route files (excluding tests). A single running instance serves up to **53** of them: the 7 OIDC-disabled stub handlers are mutually exclusive with the live OIDC `/auth/*` routes.
 
 For detailed API documentation including request/response schemas, see [docs/API.md](docs/API.md).
 
@@ -798,18 +799,18 @@ The four WSJF MCP tools (`wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsj
 | Variable | Description | Default |
 |----------|-------------|---------|
 | PORT | HTTP server port | 3000 |
-| HOST | HTTP server host. Defaults to loopback only; set to `0.0.0.0` (or a specific LAN IP) to expose on the network. | 127.0.0.1 |
+| HOST | HTTP server host. Defaults to loopback only; set to `0.0.0.0` (or a specific LAN IP) to expose on the network. Non-loopback with an explicit `NODE_ENV=development`/`test` is a boot fatal (exit 78). | 127.0.0.1 |
 | API_KEYS | Optional, legacy-only. **Not an auth method and not required** — it is not in the Zod config schema. If set (comma-separated `key` or `key:label`), it only seeds inert legacy `users` rows (`is_legacy=1`) for display/back-reference; those rows carry no usable credential. Auth is PAT (Bearer) or OIDC session. | (optional — no default) |
 | LOG_LEVEL | Logging level (debug, info, warn, error) | info |
-| NODE_ENV | Environment (development, production) | (none) |
+| NODE_ENV | Environment (`development`, `production`, `test`). Unset ⇒ hardened production posture (`secure` session cookie, Swagger gated); only explicit `development`/`test` relaxes it. | (none) |
 | DATABASE_PATH | Path to SQLite database file (canonical; MCP server also accepts legacy `DB_PATH`). Resolution precedence: explicit `DATABASE_PATH` > legacy `./data/tasks.db` auto-adopt (used with a one-time warning when `DATABASE_PATH` is unset, a legacy `./data/tasks.db` exists, and the app-data DB does not) > OS app-data default. | OS app-data dir — `~/.local/share/wood-fired-tasks/tasks.db` (Linux), `~/Library/Application Support/wood-fired-tasks/tasks.db` (macOS), `%APPDATA%\wood-fired-tasks\tasks.db` (Windows) |
 | API_BASE_URL | Base URL for CLI API calls | http://localhost:3000 |
 | API_KEY | API key for CLI authentication | (none) |
 | SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET | Optional Slack integration (all three required together) — see [docs/SLACK.md](docs/SLACK.md) | (none) |
 | RATE_LIMIT_MAX / RATE_LIMIT_TIME_WINDOW | Global rate limiter knobs | 1000 / "1 minute" |
 | SSE_MAX_CONNECTIONS_PER_KEY / SSE_MAX_CONNECTIONS_PER_IP / SSE_MAX_CONNECTIONS | SSE connection caps | 4 / 8 / 200 |
-| ENABLE_SWAGGER_IN_PRODUCTION | Opt-in required to expose Swagger UI / `/docs/json` in **every** environment (task #1612) — not just production. Without it the UI plugin (and its transitive `@fastify/static`) is never registered. Also required for `npm run dev` to serve `/docs` locally. | false |
-| WFT_STRICT_EVIDENCE | Opt-in anti-fabrication gate: when `true`, `update_task` rejects `verification_evidence` with a self-graded/empty/placeholder verifier identity or placeholder check text. Recommended for `/tasks:loop[-dag]` deployments — see [docs/RELIABILITY.md](docs/RELIABILITY.md). | false |
+| ENABLE_SWAGGER_IN_PRODUCTION | Opt-in required to expose Swagger UI / `/docs/json` in **every** environment (task #1612) — not just production. Without it the UI plugin (and its transitive `@fastify/static`) is never registered. Also required for `npm run dev` to serve `/docs` locally. Production installs omit the `@fastify/swagger-ui` devDependency, so `/docs` is 404 there even with the opt-in. | false |
+| WFT_STRICT_EVIDENCE | Anti-fabrication gate, **on by default**: `update_task` rejects `verification_evidence` with a self-graded/empty/placeholder verifier identity or placeholder check text. Only the literal `false` opts out — see [docs/RELIABILITY.md](docs/RELIABILITY.md). | on (unset = strict) |
 
 [NOTE] The full env-var reference (including server timeouts and installer
 variables) lives in [docs/SETUP.md → Environment Variables](docs/SETUP.md#environment-variables).
@@ -829,16 +830,8 @@ The canonical command table (focused tests, migrations, quality gate) lives in
 
 ### Database
 
-SQLite with the better-sqlite3 driver, WAL mode, and automatic forward
-migrations via Umzug. The migration files in `src/db/migrations/` (17 as of
-this writing — count them directly, they're the source of truth) are the
-canonical, self-documenting schema history — from `001-initial-schema` (projects,
-tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance
-criteria + verification evidence (`011`–`012`), the WSJF columns, value
-charter, and append-only audit tables (`013`–`015`), the model-policy table
-(`016`), and the pluggable-SCM project charter default (`017`). Read the files
-directly for exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how
-they fit together.
+SQLite with the better-sqlite3 driver, WAL mode, and automatic forward migrations via Umzug. The migration files in `src/db/migrations/` (20 as of this writing — count them directly, they're the source of truth) are the canonical, self-documenting schema history — from `001-initial-schema` (projects, tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance criteria + verification evidence (`011`–`012`), the WSJF columns, value charter, and append-only audit tables (`013`–`015`), the model-policy table (`016`), the pluggable-SCM project charter default (`017`), the hash-chained `audit_events` trail (`018`–`019`), and PAT project binding (`020`).
+Read the files directly for exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how they fit together.
 
 ### Testing
 
@@ -891,7 +884,7 @@ preview the breakdown without touching the database. See
 [docs/tasks-decompose-design.md](docs/tasks-decompose-design.md).
 
 Because the loops close tasks on the strength of agent-written evidence,
-they ship with anti-fabrication guardrails: an opt-in server gate
+they ship with anti-fabrication guardrails: a default-on server gate
 (`WFT_STRICT_EVIDENCE`), an optional client-side SHA hook, and skill-level
 discipline. See [docs/RELIABILITY.md](docs/RELIABILITY.md) for the full
 picture and an honest statement of what the guardrails do and do not

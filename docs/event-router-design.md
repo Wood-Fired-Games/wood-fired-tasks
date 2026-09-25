@@ -605,6 +605,15 @@ What the router adds to the host's attack surface:
        egress restriction should enforce it at the network layer. (If a
        resolve-and-recheck step is ever wanted, track it as a separate
        follow-on; it is deliberately not in v1.)
+  - **Link-local is not "private".** `http://` to `169.254.0.0/16`
+    (e.g. the cloud metadata endpoint `169.254.169.254`) is refused unless
+    the operator sets `WFT_ROUTER_ALLOW_LINK_LOCAL=1` (or `true`).
+  - **Redirects are never followed transparently.** `webhook_post`
+    re-validates every 3xx `Location` before the next hop, stricter than a
+    configured `with.url`: any `http://` redirect target is refused
+    (including loopback/private). Chains longer than `MAX_REDIRECT_HOPS`
+    (5) are refused. Either refusal is a non-retryable
+    `PERMANENTLY_FAILED` delivery.
 - **Subprocess env.** `shell_exec` and `agent_session_dispatch` child
   processes receive a *scrubbed* environment (PATH/HOME/LANG/TZ + the
   rule's own `token_env` + explicit `env:` block only). `WFT_API_KEY`

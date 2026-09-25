@@ -231,7 +231,7 @@ Do NOT commit. Do NOT push. Do NOT modify the tasks database. The orchestrator o
 
 **Self-grading is forbidden.** `verification_evidence.verifier_session_id` MUST be the id of a SEPARATELY DISPATCHED `tasks-verifier` — never the orchestrator's own session, and never a literal like `"orchestrator"`, `"self"`, or `"main-loop"`. The orchestrator constructs the verifier *inputs*; it never authors the *evidence*. Writing your own verdict is fabrication, not verification.
 
-**Honest scope.** A server-side guard (`WFT_STRICT_EVIDENCE`, default OFF) and a client-side SHA hook block the *structural* tells of fabrication — empty/self/placeholder verifier ids and non-existent git SHAs. Numeric truthfulness (a real-but-wrong row count, a misquoted exit code) is NOT machine-checkable and remains a discipline rule enforced by the rules above.
+**Honest scope.** A server-side guard (`WFT_STRICT_EVIDENCE`, default ON; only `WFT_STRICT_EVIDENCE=false` opts out) and a client-side SHA hook block the *structural* tells of fabrication — empty/self/placeholder verifier ids and non-existent git SHAs. Numeric truthfulness (a real-but-wrong row count, a misquoted exit code) is NOT machine-checkable and remains a discipline rule enforced by the rules above.
 
 _Motivating incident (2026-05-31, project 28 via `/tasks:loop-dag`): an orchestrator batched dependent calls in one message and pre-wrote their results — non-existent git SHAs, metrics it never observed, a wrong exit code, an invented row count — then self-graded with `verifier_session_id="orchestrator-…"` instead of dispatching a verifier. See `docs/RELIABILITY.md`._
 

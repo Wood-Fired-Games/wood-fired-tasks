@@ -107,6 +107,12 @@ Only if you have a specific reason to bind the app directly to the LAN —
 `HOST=10.0.0.5`). Binding `0.0.0.0` without a firewall exposes the task tracker
 on every interface, including any public one.
 
+Keep `NODE_ENV=production` (as the template sets it) for any non-loopback bind.
+The server refuses to boot (exit 78, `EX_CONFIG`) when `HOST` is not a loopback
+address and `NODE_ENV` is explicitly `development` or `test`. An unset
+`NODE_ENV` is treated as production posture (`secure` session cookie, Swagger UI
+gated), never as development.
+
 ## Custom install path or service user
 
 Export the env vars before invoking `install.sh`. They are propagated through

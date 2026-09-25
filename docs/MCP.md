@@ -61,7 +61,7 @@ npm run mcp:dev
 |----------|-------------|---------|
 | `DATABASE_PATH` | Path to SQLite database file (canonical name; matches `src/config/env.ts`). | `./data/tasks.db` |
 | `DB_PATH` | Deprecated alias for `DATABASE_PATH`. Read only when `DATABASE_PATH` is unset. Kept for backward compatibility with older `~/.claude.json` installs. | — |
-| `WFT_STRICT_EVIDENCE` | When `true`, `update_task` rejects a `verification_evidence` payload showing the structural tells of fabrication (self-graded/empty/placeholder verifier identity, placeholder check text). Default off. See [RELIABILITY.md](RELIABILITY.md). | `false` (off) |
+| `WFT_STRICT_EVIDENCE` | When on, `update_task` rejects a `verification_evidence` payload showing the structural tells of fabrication (self-graded/empty/placeholder verifier identity, placeholder check text). Default on; only the literal `false` opts out. See [RELIABILITY.md](RELIABILITY.md). | on (unset = strict) |
 
 [NOTE] The MCP server creates its own database connection. It does NOT call the REST API.
 
@@ -216,10 +216,23 @@ resolves the actor at boot:
 1. **PAT** — values starting with `wft_pat_` are hashed (SHA-256) and
    looked up in `api_tokens`. The matched row's
    `user_id` becomes the actor for every subsequent write tool call.
-   Revoked / unknown PATs fall back to `mcp-bot` (see below).
-2. **Unset / unresolved** — if `WFT_API_KEY` is missing, empty, or
-   matches no PAT, the actor falls back to the seeded
-   `mcp-bot` service-account row. Writes are attributed to that bot.
+   An unknown / revoked / expired PAT (or one whose user is disabled) is a
+   boot failure unless `WFT_MCP_ALLOW_BAD_PAT=1`, which falls back to
+   `mcp-bot` instead.
+2. **Unset** — if `WFT_API_KEY` is missing or empty, the actor falls back
+   to the seeded `mcp-bot` service-account row. Writes are attributed to
+   that bot.
+
+**Scope enforcement.** The PAT's scopes are enforced on the stdio surface
+too: mutating tools require `write` (`create_task`, `update_task`,
+`claim_task`, comments, dependencies, `create_project`/`update_project`,
+`rescore_project`, …) or `admin` (`delete_task`, `delete_project`,
+`delete_comment`, `set_model_defaults`); read-only tools are ungated. An
+out-of-scope call fails with an `insufficient_scope` error. A PAT with no
+scopes, and the `mcp-bot` fallback, are full-tier. Every mutating tool
+call is also recorded in the `audit_events` trail (see
+[SECURITY.md → Audit trail](../SECURITY.md#audit-trail)). PAT project
+binding is enforced on the REST/remote path only, not on local stdio.
 
 The fallback is opportunistic — the MCP server stays usable even
 without a credential — but the resulting writes lack per-operator

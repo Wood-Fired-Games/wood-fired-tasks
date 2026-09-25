@@ -1,6 +1,6 @@
 {
   "name": "wood-fired-tasks",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Network-wide task tracking system for Wood Fired Games",
   "keywords": [
     "task-tracker",
@@ -163,7 +163,7 @@
     "@stryker-mutator/vitest-runner": "^9.5.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.0",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.11",
     "cheerio": "^1.2.0",
     "dependency-cruiser": "18.2.0",
     "knip": "^6.14.2",
@@ -172,6 +172,6 @@
     "publint": "^0.3.21",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.11"
   }
 }

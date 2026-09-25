@@ -80,7 +80,7 @@ The identity / auth / web surface (`src/api/routes/me/`, `auth/`, `web/`):
 | Method | Path | Source | Purpose | Auth |
 |---|---|---|---|---|
 | GET | `/api/v1/me` | `routes/me/profile.ts` | Current authenticated identity. | Yes |
-| POST | `/api/v1/me/tokens` | `routes/me/tokens.ts` | Mint a PAT (registered via `fastify.route`). | Yes |
+| POST | `/api/v1/me/tokens` | `routes/me/tokens.ts` | Mint a PAT (registered via `fastify.route`). Session-only; body `{ name, scopes?, expiresAt?, projectId? }` — `scopes` ⊆ `read`/`write`/`admin`, optional `projectId` binds the token to one project (#1635). | Yes |
 | GET | `/api/v1/me/tokens` | `routes/me/tokens.ts` | List the caller's PATs. | Yes |
 | DELETE | `/api/v1/me/tokens/active` | `routes/me/tokens.ts` | Revoke the currently-presented PAT. | Yes |
 | DELETE | `/api/v1/me/tokens/:id` | `routes/me/tokens.ts` | Revoke a PAT by id. | Yes |
@@ -128,8 +128,10 @@ it for completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
 `/docs` only with an explicit opt-in (`ENABLE_SWAGGER_IN_PRODUCTION=true`) —
-mandatory in every environment since task #1612, including `npm run dev`;
-spec collector is `src/api/plugins/swagger.ts`. No static OpenAPI snapshot is
+mandatory in every environment since task #1612, including `npm run dev` —
+and only where the `@fastify/swagger-ui` devDependency is installed (a
+production install serves 404; task #1617); spec collector is
+`src/api/plugins/swagger.ts`. No static OpenAPI snapshot is
 committed today.
 
 ## MCP tools
@@ -219,7 +221,7 @@ call.
 | comment | `comment-list` | `commands/comment-list.ts` | List comments. |
 | comment | `comment-delete` | `commands/comment-delete.ts` | Delete a comment. |
 | system | `health` | `commands/health.ts` | Service health probe. |
-| system | `doctor` | `commands/doctor.ts` | Diagnostics: DB, disk, config. |
+| system | `doctor` | `commands/doctor.ts` | Diagnostics: DB, disk, config, OIDC readiness, legacy credentials, credentials file, secret-file permissions. |
 | system | `db-check` | `commands/db-check.ts` | SQLite `PRAGMA integrity_check`. |
 | system | `db` | `commands/db.ts` | Nested parent for `db <subcommand>` (hosts `mint-token`, `migrate-identities`). |
 | system | `db mint-token` | `commands/db-mint-token.ts` | Offline-mint a PAT against the SQLite DB; raw value printed once. Bootstraps headless agents. |
@@ -392,5 +394,5 @@ the model tools, and 1 is `wait_for_unblock`).
 | [`docs/CLI.md`](CLI.md) | Full CLI reference (every flag, every command). |
 | [`docs/WORKFLOWS.md`](WORKFLOWS.md) | Canonical build/test/lint/run recipes. |
 | [`docs/SLACK.md`](SLACK.md) | Slack notifier behaviour and signing-secret setup. |
-| OpenAPI | Live at `/docs` (Swagger UI) with explicit `ENABLE_SWAGGER_IN_PRODUCTION=true` (mandatory in every environment since task #1612, including `npm run dev`); spec collector in `src/api/plugins/swagger.ts`. No committed snapshot. |
+| OpenAPI | Live at `/docs` (Swagger UI) with explicit `ENABLE_SWAGGER_IN_PRODUCTION=true` (mandatory in every environment since task #1612, including `npm run dev`) and only where the `@fastify/swagger-ui` devDependency is installed (404 in a production install); spec collector in `src/api/plugins/swagger.ts`. No committed snapshot. |
 | Tests | `src/api/__tests__/`, `src/mcp/__tests__/`, `src/cli/__tests__/`, `src/services/__tests__/`. |

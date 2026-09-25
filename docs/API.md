@@ -48,6 +48,36 @@ or
 
 [IMPORTANT] At least one valid PAT must exist for the server to be usable. PATs are minted and revoked at runtime (web `/me`, `tasks login`, or `tasks db mint-token`) — there is no static key list in the environment and no "auth disabled" fallback mode.
 
+### Scopes and project binding
+
+PAT scopes are **enforced**. Every authenticated route declares a required tier from the closed taxonomy `read < write < admin` (`src/schemas/pat-scope.schema.ts`); a higher tier satisfies a lower one. As a rule, reads require `read`, mutations require `write`, and the token surface (`POST /api/v1/me/tokens`, `DELETE /api/v1/me/tokens/active`) and the audit trail (`GET /api/v1/audit-events`) require `admin`.
+
+- A PAT whose scopes are empty (or contain no recognised tier — tokens minted before the taxonomy existed) is treated as **full-tier**.
+- Session-cookie (OIDC) requests carry no PAT scope restriction and are unaffected.
+- Unknown scope strings (e.g. `reader`) are rejected at mint time with `400 VALIDATION_ERROR` (`details.invalidScopes`).
+
+A PAT may also be **bound to one project**: pass an optional `projectId` when minting via `POST /api/v1/me/tokens` (session-authenticated; body `{ "name": "...", "scopes": ["write"], "projectId": 7 }`). A non-existent project is rejected at mint time with `400 VALIDATION_ERROR` (`details.invalidProjectId`). A bound token may only touch that project — including routes that reach it indirectly through a task id — and is refused on cross-project routes (e.g. `GET`/`POST /api/v1/projects`, `PUT /api/v1/settings/model-policy`, `GET /api/v1/audit-events`). Omitting `projectId` mints an unbound token (the default; `tasks db mint-token` always mints unbound tokens). Deleting the bound project also deletes the token.
+
+### Forbidden Responses
+
+An authenticated request that fails authorization receives `403`. Tier is checked before project binding:
+
+```json
+{
+  "error": "insufficient_scope",
+  "message": "This endpoint requires the 'write' scope."
+}
+```
+
+```json
+{
+  "error": "project_scope_denied",
+  "message": "This token is restricted to project 7."
+}
+```
+
+The stdio MCP server applies the same tier check to its mutating tools (e.g. `create_task`/`update_task` need `write`; `delete_task`/`delete_project`/`delete_comment`/`set_model_defaults` need `admin`) based on the PAT in `WFT_API_KEY`.
+
 ## Error Handling
 
 The API uses standard HTTP status codes and returns error details in JSON format.
@@ -61,6 +91,7 @@ The API uses standard HTTP status codes and returns error details in JSON format
 | 204 | No Content (successful deletion) |
 | 400 | Bad Request (validation error) |
 | 401 | Unauthorized (missing or invalid Bearer PAT) |
+| 403 | Forbidden (PAT lacks the route's required scope, or is bound to a different project) |
 | 404 | Not Found |
 | 409 | Conflict (claim already taken, invalid state transition) |
 | 500 | Internal Server Error |
@@ -1466,6 +1497,72 @@ Each event includes a `metadata.source` field:
 - `"user"` — triggered by a direct API call
 - `"workflow"` — triggered by workflow automation (parent auto-complete or dependency auto-unblock)
 
+## Audit Trail Endpoint
+
+### GET /api/v1/audit-events
+
+Read the append-only audit trail (`audit_events`, migrations 018/019). Rows are written by every authenticated, state-changing REST request (GET/HEAD are not recorded; refused attempts such as a `403` are recorded with their status) and by every mutating stdio MCP tool call. Each row carries a SHA-256 hash chain (`prev_hash` → `row_hash`) so retroactive edits or deletions are detectable. See [SECURITY.md → Audit trail](../SECURITY.md#audit-trail).
+
+**Requires the `admin` scope.** Refused for project-bound PATs. The surface is read-only — no write verb exists.
+
+**Query Parameters:**
+
+Specify **exactly one** filter mode; there is no unfiltered mode. Mixing modes, or supplying only half of a pair, returns `400 VALIDATION_ERROR`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| actor_id | string | Mode 1 — rows by this actor (`users.id` as a string) |
+| resource_type | string | Mode 2 — with `resource_id`: rows for one resource (e.g. `tasks`, `projects`) |
+| resource_id | string | Mode 2 — with `resource_type` |
+| start | string (ISO-8601) | Mode 3 — with `end`: inclusive time window (whole-second resolution) |
+| end | string (ISO-8601) | Mode 3 — with `start` |
+| limit | number | Page size (default `50`, max `500`) |
+| offset | number | Offset (default `0`); `offset + limit` must not exceed `500` — narrow the filter to see further back |
+
+**Response:** `200 OK`, newest first. `count` is `data.length` (there is no whole-table `total`); a `count` equal to `limit` means more rows may exist.
+
+```json
+{
+  "data": [
+    {
+      "id": 812,
+      "timestamp": "2026-09-20 14:03:11",
+      "actor_type": "user",
+      "actor_id": "3",
+      "token_id": "17",
+      "action": "PUT /api/v1/tasks/:id",
+      "resource_type": "tasks",
+      "resource_id": "42",
+      "request_id": "3f0c2a9e-6b1d-4c1e-9a53-2b7d8e4f1c20",
+      "metadata": { "status": 200, "authMethod": "pat", "params": { "id": "42" } },
+      "prev_hash": "9f2c…",
+      "row_hash": "41ab…"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "count": 1
+}
+```
+
+`actor_type` is `user` or `service_account`; `token_id` is the `api_tokens` row id (never token material); MCP rows use `action` `"MCP <tool_name>"`. Request bodies and headers are never recorded.
+
+**Examples:**
+
+```bash
+# Everything actor 3 did
+curl -H "Authorization: Bearer wft_pat_admin-token" \
+  "http://localhost:3000/api/v1/audit-events?actor_id=3"
+
+# History of task 42
+curl -H "Authorization: Bearer wft_pat_admin-token" \
+  "http://localhost:3000/api/v1/audit-events?resource_type=tasks&resource_id=42"
+
+# A time window
+curl -H "Authorization: Bearer wft_pat_admin-token" \
+  "http://localhost:3000/api/v1/audit-events?start=2026-09-20T00:00:00Z&end=2026-09-21T00:00:00Z&limit=200"
+```
+
 ## Interactive Documentation
 
 Swagger UI is available at:
@@ -1496,4 +1593,4 @@ Swagger UI is **disabled by default in every environment** (task #1612, not just
 
 The in-process OpenAPI spec collector is always loaded so internal tests can introspect route schemas, but the HTTP routes — and the underlying `@fastify/swagger-ui`/`@fastify/static` plugins — are only mounted when the gate above allows it. Since task #1617 `@fastify/swagger-ui` is a **devDependency** loaded via a guarded dynamic import — it was the only path by which the vulnerable `@fastify/static` reached the production tree, so moving it out clears `npm audit --omit=dev --audit-level=high` by removing the package rather than suppressing the finding. The consequence: in a production install (`npm ci --omit=dev`, or the published tarball) the module is absent, so `/docs` **and `/docs/json`** return 404 even with the opt-in set — swagger-ui serves both routes, and the spec collector exposes no HTTP endpoint of its own. The server still boots normally and logs a warning. Reinstalling `@fastify/swagger-ui` restores the UI but re-introduces `@fastify/static` there.
 
-[TIP] Use Swagger UI in development via `ENABLE_SWAGGER_IN_PRODUCTION=true npm run dev` (a dev checkout has the devDependency installed). In production, fetch `/docs/json` with your Bearer PAT after opting in the same way.
+[TIP] Use Swagger UI in development via `NODE_ENV=development ENABLE_SWAGGER_IN_PRODUCTION=true npm run dev` (a dev checkout has the devDependency installed; with `NODE_ENV` unset the opt-in still works but `/docs` requires a Bearer PAT). In a production install `/docs` and `/docs/json` stay 404 unless `@fastify/swagger-ui` has been explicitly installed, in which case they require a Bearer PAT.

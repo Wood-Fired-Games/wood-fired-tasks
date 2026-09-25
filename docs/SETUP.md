@@ -429,15 +429,17 @@ SESSION_COOKIE_NAME=wft_session
 Rotating it invalidates every active session immediately — every user
 must log in again.
 
-[CRITICAL] The session cookie is marked `secure` only when
-`NODE_ENV=production` (`src/api/server.ts` — the secure-session
-registration sets `secure: config.NODE_ENV === 'production'`). A `secure`
-cookie is never sent by the browser over plain HTTP, so in production the
-browser/OIDC login flow **must** run behind HTTPS — even on a LAN.
+[CRITICAL] The session cookie is marked `secure` in production posture —
+explicit `NODE_ENV=production` **or `NODE_ENV` unset** (`src/api/server.ts` —
+the secure-session registration sets `secure: config.isProductionPosture`). A
+`secure` cookie is never sent by the browser over plain HTTP, so in production
+the browser/OIDC login flow **must** run behind HTTPS — even on a LAN.
 Terminate TLS at a reverse proxy (or run the server with HTTPS) before
 visiting `/auth/login`; otherwise the session cookie is dropped and login
-silently loops back to the login page. In `development`/`test` the cookie
-is non-`secure`, so plain `http://localhost` works.
+silently loops back to the login page. Only with an explicit
+`NODE_ENV=development`/`test` is the cookie non-`secure`, so plain
+`http://localhost` works (and `HOST` must then be loopback — see the
+[`HOST` row](#server-read-by-srcconfigenvts)).
 
 ### 3a. Device-flow verification origin & trust boundary
 
@@ -586,8 +588,8 @@ carries `Authorization: Bearer <pat>`.
 3. **Generate `SESSION_COOKIE_SECRET`** — required whenever OIDC is enabled
    (see below). `env.ts` enforces `!OIDC_ISSUER_URL || !!SESSION_COOKIE_SECRET`,
    so a server with OIDC set but no cookie secret refuses to boot.
-4. **Terminate TLS** in front of the server. The session cookie is `secure` when
-   `NODE_ENV=production`, so the browser drops it over plain HTTP and login
+4. **Terminate TLS** in front of the server. The session cookie is `secure` unless
+   `NODE_ENV` is explicitly `development`/`test`, so the browser drops it over plain HTTP and login
    silently loops — see the [OIDC cookie note](#3-generate-the-session-cookie-secret).
 5. **Restart the server** and verify the flow via `/auth/login` →
    [§5 above](#5-verify-the-oidc-flow).
@@ -691,7 +693,9 @@ Create a `.env` file in the project root:
 PORT=3000
 # HOST defaults to 127.0.0.1 (loopback only). Uncomment the next line to
 # expose the server on the LAN — required only when you actually want
-# other machines on your network to reach it.
+# other machines on your network to reach it. With NODE_ENV=development
+# (below) a non-loopback HOST is a boot fatal (exit 78): switch to
+# NODE_ENV=production (or leave it unset) first.
 # HOST=0.0.0.0
 LOG_LEVEL=debug
 NODE_ENV=development
@@ -821,7 +825,7 @@ export DATABASE_PATH=/var/lib/wood-fired-tasks/tasks.db
 # Mint per-machine PATs at runtime (tasks login / tasks db mint-token).
 ```
 
-[IMPORTANT] Treat every minted PAT as a production-grade secret — each one provides full access to your task data. Issue one PAT per machine/agent so you can revoke them independently.
+[IMPORTANT] Treat every minted PAT as a production-grade secret — a PAT minted without `--scopes` (or via a session with no scopes) is full-tier across every project. Mint least-privilege PATs (`--scopes read|write|admin`; optional project binding via `POST /api/v1/me/tokens`) and issue one PAT per machine/agent so you can revoke them independently.
 
 [SECURITY] The server binds to `127.0.0.1` (loopback) by default. New deployments
 must opt in to LAN exposure by setting `HOST=0.0.0.0` (or a specific LAN IP).
@@ -832,11 +836,12 @@ visible to operators.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `WFT_STRICT_EVIDENCE` | `false` (off) | When `true`, `update_task` rejects a `verification_evidence` payload that shows the structural tells of fabrication — an empty `verifier_session_id`, one equal to the task assignee or the calling identity, one matching a self-grading pattern (`^orchestrator`/`^self`/`^main-loop`), or placeholder/empty check evidence text. Recommended for any deployment that closes tasks via `/tasks:loop` or `/tasks:loop-dag`. See [`RELIABILITY.md`](RELIABILITY.md). |
+| `WFT_STRICT_EVIDENCE` | on (unset = strict) | When on, `update_task` rejects a `verification_evidence` payload that shows the structural tells of fabrication — an empty `verifier_session_id`, one equal to the task assignee or the calling identity, one matching a self-grading pattern (`^orchestrator`/`^self`/`^main-loop`), or placeholder/empty check evidence text. Default on since task #1624 — unset or any value other than the literal `false` is strict; set `false` only if you need the old permissive behaviour (not recommended for deployments that close tasks via `/tasks:loop` or `/tasks:loop-dag`). See [`RELIABILITY.md`](RELIABILITY.md). |
 
 ```bash
-# Opt in to server-side anti-fabrication validation (default off):
-export WFT_STRICT_EVIDENCE=true
+# Server-side anti-fabrication validation is ON by default. Opt out only if
+# you need the old permissive behaviour:
+export WFT_STRICT_EVIDENCE=false
 ```
 
 This is one of three defense-in-depth layers; the deterministic SHA-existence
@@ -1118,7 +1123,7 @@ There are three moving parts: the **server URL** every client must reach, a
   — see [Set Production Environment Variables](#2-set-production-environment-variables).
   By default it is loopback-only and no other machine can reach it.
 - Put it behind a TLS-terminating reverse proxy. This is **required** if you use
-  OIDC browser login (the session cookie is `secure` in production and is
+  OIDC browser login (the session cookie is `secure` in production posture and is
   dropped over plain HTTP — see the OIDC cookie note above) and strongly
   recommended regardless, so tokens never cross the network in cleartext.
 - The reachable origin (e.g. `https://tasks.example.com`) is the `<url>` every
@@ -1395,7 +1400,7 @@ Interactive API documentation is available at:
 http://localhost:3000/docs
 ```
 
-[NOTE] Swagger UI is available in both development and production. Use it to explore endpoints, view schemas, and test API calls with authentication.
+[NOTE] Swagger UI is **off by default in every environment**: set `ENABLE_SWAGGER_IN_PRODUCTION=true` to mount it. In production posture (`NODE_ENV=production` or unset) it then requires a Bearer PAT; with an explicit `NODE_ENV=development`/`test` it is unauthenticated. `@fastify/swagger-ui` is a devDependency, so a production install (`npm ci --omit=dev`, the published package) returns 404 for `/docs` and `/docs/json` even with the opt-in set. See [API.md → Production gating](API.md#production-gating).
 
 The Swagger UI includes:
 
@@ -1415,16 +1420,16 @@ variable the server reads, plus the CLI- and MCP-specific variables.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NODE_ENV` | no | `development` | One of `development`, `production`, `test`. Switches log formatting (pino-pretty in dev) and Swagger gating in production. |
+| `NODE_ENV` | no | unset ⇒ production posture | One of `development`, `production`, `test`. Switches log formatting (pino-pretty in dev). **Security posture** (task #1611): explicit `production` **or unset** ⇒ hardened production posture (`secure` session cookie, Swagger UI authenticated when opted in); only an explicit `development`/`test` relaxes these, and then `HOST` must be loopback. |
 | `PORT` | no | `3000` | HTTP server port. |
-| `HOST` | no | `127.0.0.1` | Bind interface. Loopback-only by default (task #188). Set `0.0.0.0` or a LAN IP to expose. The bound interface is logged at info level on boot. |
+| `HOST` | no | `127.0.0.1` | Bind interface. Loopback-only by default (task #188). Set `0.0.0.0` or a LAN IP to expose. The bound interface is logged at info level on boot. A non-loopback `HOST` (anything outside `127.0.0.0/8`, `localhost`, `::1`) with an explicit `NODE_ENV=development`/`test` is a **boot fatal** (exit 78, `EX_CONFIG`) — use `NODE_ENV=production` or leave it unset. |
 | `LOG_LEVEL` | no | `info` | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. |
 | `DATABASE_PATH` | no | `./data/tasks.db` | Filesystem path to the SQLite database. The MCP server also accepts the legacy `DB_PATH` as a deprecated alias. |
 | `CONNECTION_TIMEOUT` | no | `120000` (ms) | Fastify `connectionTimeout`. |
 | `REQUEST_TIMEOUT` | no | `60000` (ms) | Fastify `requestTimeout`. |
 | `KEEP_ALIVE_TIMEOUT` | no | `10000` (ms) | Fastify `keepAliveTimeout`. |
 | `WAL_CHECKPOINT_INTERVAL_MS` | no | `900000` (15 min) | Interval for the periodic SQLite WAL checkpoint job. |
-| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag required to expose `/docs` and `/docs/json` in **every** environment, including `npm run dev` (task #1612 — an absent `NODE_ENV` is treated as production-strength posture, not as development). In production posture, gated by the auth plugin when enabled; in explicit `development`/`test`, no auth required (task #185). |
+| `ENABLE_SWAGGER_IN_PRODUCTION` | no | `false` | Opt-in flag required to expose `/docs` and `/docs/json` in **every** environment, including `npm run dev` (task #1612 — an absent `NODE_ENV` is treated as production-strength posture, not as development). In production posture, gated by the auth plugin when enabled; in explicit `development`/`test`, no auth required (task #185). `@fastify/swagger-ui` is a devDependency (task #1617), so in a production install (`npm ci --omit=dev`, the published package) `/docs` and `/docs/json` return 404 even with this set; the server logs a warning. |
 | `SSE_MAX_CONNECTIONS_PER_KEY` | no | `4` | Per-credential (PAT) cap on concurrent SSE connections. 429 with `Retry-After` when exceeded. |
 | `SSE_MAX_CONNECTIONS_PER_IP` | no | `8` | Per-IP cap on concurrent SSE connections. |
 | `SSE_MAX_CONNECTIONS` | no | `200` | Global cap on concurrent SSE connections. |

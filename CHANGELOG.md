@@ -11,6 +11,80 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-25
+
+Security release. Lands the remediation of the 2.5.0 security audit: PAT scopes become a real authorization boundary on every surface, mutations are recorded to a tamper-evident audit trail, and several controls that failed open when `NODE_ENV` was unset now fail closed. **Read the upgrade notes before deploying** — some defaults changed.
+
+### Upgrade notes
+- **`NODE_ENV` unset now means production posture.** Security controls that
+  previously keyed off `NODE_ENV === 'production'` (session cookie `Secure`
+  flag, Swagger UI) treat an absent `NODE_ENV` as hardened. Set
+  `NODE_ENV=development` explicitly for a local development server.
+- **Non-loopback `HOST` requires production posture.** An explicit
+  `NODE_ENV=development|test` combined with a routable `HOST` (e.g. `0.0.0.0`)
+  is now a boot-time configuration error (exit 78). Use a loopback `HOST`, or
+  set `NODE_ENV=production` for a real deployment.
+- **PAT scopes are enforced.** A token's scopes (`read` < `write` < `admin`)
+  now gate REST routes and stdio MCP tools; out-of-scope requests get `403`.
+  Tokens minted before this release with no (or unrecognized) scopes keep full
+  access, and session-cookie auth is unaffected. Minting a token with a scope
+  outside the taxonomy is now rejected (`400` / non-zero CLI exit).
+- **`WFT_STRICT_EVIDENCE` defaults on.** `update_task` now rejects fabricated-
+  looking verification evidence unless `WFT_STRICT_EVIDENCE=false` is set.
+- **Swagger UI requires an explicit opt-in and a dev install.**
+  `ENABLE_SWAGGER_IN_PRODUCTION=true` is required in every environment, and
+  `@fastify/swagger-ui` is now a devDependency, so an npm production install
+  serves no `/docs` at all.
+- **wft-router webhooks** refuse link-local targets (`169.254.0.0/16`, incl.
+  cloud metadata endpoints) unless `WFT_ROUTER_ALLOW_LINK_LOCAL` is set, and
+  no longer follow redirects transparently.
+- **Migrations 018–020 run automatically on first start and are forward-only**
+  in practice: take a database backup before upgrading so a rollback to 2.6.x
+  is a file restore.
+- Installs created before this release may hold world-readable secret files;
+  run `tasks doctor` to find them and `chmod 600` what it reports.
+
+### Added
+- Tamper-evident audit trail: append-only `audit_events` table (migration 018)
+  with a SHA-256 hash chain (migration 019) and a `verifyChain()` check.
+  Every authenticated REST mutation and every stdio MCP mutation appends one
+  row (principal, action, resource, status).
+- `GET /api/v1/audit-events` — admin-scoped, read-only query surface
+  filterable by actor, resource, or time range; limit-bounded, no unfiltered dump.
+- Optional per-PAT project binding (`projectId` on `POST /me/tokens`,
+  migration 020), enforced alongside the scope tier: a bound token gets `403`
+  on any other project.
+- `tasks doctor` flags group/other-readable secret-bearing files (database and
+  its `-wal`/`-shm` sidecars, `.claude.json` and its `.bak`/`.tmp` siblings).
+- `tasks whoami` shows the calling PAT's scopes and project binding, read from a
+  new `token` block on `GET /api/v1/me` (PAT callers only).
+
+### Changed
+- Canonical PAT scope taxonomy (`read`/`write`/`admin`) validated at mint time
+  across API, device-flow and CLI (`tasks db mint-token --scopes`).
+- Every authenticated route declares its required scope; a drift guard fails
+  the build when a route is added without one.
+- Rate limiting is two-tier: an IP-keyed layer before auth keeps brute-force
+  protection, and a principal-keyed layer after auth gives each token/user its
+  own bucket instead of collapsing everyone behind a proxy into one.
+
+### Security
+- Stdio MCP enforced no per-call authorization — any configured key could run
+  every mutating tool. It now enforces PAT scopes on all 13 mutating tools.
+- Fail-closed posture flag: an absent `NODE_ENV` no longer silently serves
+  unauthenticated Swagger UI or sends the session cookie without `Secure`.
+- wft-router: redirect targets are re-validated on every hop (max 5), closing
+  an SSRF bypass of the webhook allowlist; link-local targets refused by default.
+- Database file and WAL/SHM sidecars created `0600`; `.claude.json`
+  `.tmp`/`.bak` writes tightened to `0600`.
+- `@fastify/static` (unfixed HIGH advisory) removed from the production
+  dependency tree; the four fixable HIGH production advisories remediated.
+  `npm audit --omit=dev` reports zero vulnerabilities.
+- Dev-only: vitest family 4.1.10 → 4.1.11 (Vitest mocker path-traversal
+  advisory); full `npm audit` reports zero vulnerabilities.
+- SECURITY.md corrected: Slack runs in Socket Mode, so there is no inbound
+  signed-request endpoint in scope.
+
 ## [2.6.0] - 2026-09-09
 
 ### Added
@@ -1132,7 +1206,13 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.6.0...v2.7.0
+[2.6.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.5.0...v2.6.0
+[2.5.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.4.0...v2.5.0
+[v2.4.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.3.0...v2.4.0
+[v2.3.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.2.0...v2.3.0
+[v2.2.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.1...v2.2.0
 [v2.1.1]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.1.0...v2.1.1
 [v2.1.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.0.6...v2.1.0
 [v2.0.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v1.18.2...v2.0.0

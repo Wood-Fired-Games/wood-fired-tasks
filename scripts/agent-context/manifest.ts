@@ -223,7 +223,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'deep-doc',
     purpose: 'Authoritative REST API reference.',
     when_to_read: 'on-demand',
-    line_budget: 1500,
+    line_budget: 1650,
     authority: 'authoritative',
     owner_role: 'API maintainers',
     status: 'present',
@@ -272,7 +272,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // 1500 → 1580: Pluggable SCM (#1544) added the "Source Control (SCM)
     // Configuration" section (backend precedence + `.tasks/scm.json` shape);
     // doc grew to 1553.
-    line_budget: 1580,
+    line_budget: 1620,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
@@ -523,7 +523,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     purpose:
       'Sub-package README for the wft-router event-router daemon — handlers, run flags, config (triggers.example.yaml), and pointers to recipes/adapters/deploy assets. Points at docs/event-router-design.md as the design-of-record.',
     when_to_read: 'on-demand',
-    line_budget: 95,
+    line_budget: 105,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
@@ -558,7 +558,7 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'security-policy',
     purpose: 'Security policy and vulnerability reporting.',
     when_to_read: 'reference',
-    line_budget: 300,
+    line_budget: 350,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
