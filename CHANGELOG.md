@@ -26,6 +26,11 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   crashed the instrumenter.
 
 ### Fixed
+- **Web tokens page: "Expires at" is now UTC regardless of the server's
+  timezone** (task #2110). The `datetime-local` value was parsed in the
+  server's local timezone, so the stored expiry was off by the server's UTC
+  offset. The field is now labelled UTC, parsed as UTC, and malformed or
+  rolled-over values (e.g. month 13) are rejected with 400.
 - CI `host-manifests` no longer fails on systemd diagnostics about the runner
   image's own units (newer systemd flags `CPUAccounting=` there); diagnostics
   about the wft-router unit still fail the job.

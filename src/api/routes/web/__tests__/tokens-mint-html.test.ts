@@ -283,6 +283,75 @@ describe('Phase 29 Plan 07 — content negotiation + revoke flow', () => {
   });
 
   // -------------------------------------------------------------------------
+  // 4b. Task #2110 — the form's datetime-local "Expires at (UTC)" field
+  // -------------------------------------------------------------------------
+  describe('form expiresAt (task #2110)', () => {
+    const mintViaForm = (fields: string) =>
+      harness.server.inject({
+        method: 'POST',
+        url: '/api/v1/me/tokens',
+        headers: {
+          cookie: sessionCookie,
+          accept: 'text/html',
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        payload: `_csrf=${csrfToken}&${fields}`,
+      });
+    const storedExpiry = (name: string) =>
+      (
+        harness.db.prepare('SELECT expires_at FROM api_tokens WHERE name = ?').get(name) as
+          | { expires_at: string | null }
+          | undefined
+      )?.expires_at;
+
+    it('labels the field as UTC', async () => {
+      const page = await harness.server.inject({
+        method: 'GET',
+        url: '/me/tokens',
+        headers: { cookie: sessionCookie },
+      });
+      const $ = cheerio.load(page.body);
+      expect($('input[name="expiresAt"]').attr('type')).toBe('datetime-local');
+      expect($('input[name="expiresAt"]').parent().text()).toContain('UTC');
+    });
+
+    it('stores a datetime-local value as that UTC instant, whatever the server timezone', async () => {
+      const originalTz = process.env.TZ;
+      process.env.TZ = 'America/New_York';
+      try {
+        const res = await mintViaForm('name=expiring&expiresAt=2027-03-04T17%3A30');
+        expect(res.statusCode).toBe(303);
+        expect(storedExpiry('expiring')).toBe('2027-03-04T17:30:00.000Z');
+      } finally {
+        if (originalTz === undefined) delete process.env.TZ;
+        else process.env.TZ = originalTz;
+      }
+    });
+
+    it('accepts a value with seconds', async () => {
+      const res = await mintViaForm('name=expiring-secs&expiresAt=2027-03-04T17%3A30%3A15');
+      expect(res.statusCode).toBe(303);
+      expect(storedExpiry('expiring-secs')).toBe('2027-03-04T17:30:15.000Z');
+    });
+
+    it('treats a blank field as no expiry', async () => {
+      const res = await mintViaForm('name=no-expiry&expiresAt=');
+      expect(res.statusCode).toBe(303);
+      expect(storedExpiry('no-expiry')).toBeNull();
+    });
+
+    it.each(['2027', 'tomorrow', '2027-03-04', '2027-03-04T17:30Z', '2027-13-01T00:00'])(
+      'rejects %s with 400 validation_failed',
+      async (value) => {
+        const res = await mintViaForm(`name=bad-expiry&expiresAt=${encodeURIComponent(value)}`);
+        expect(res.statusCode).toBe(400);
+        expect(JSON.parse(res.body).error).toBe('validation_failed');
+        expect(storedExpiry('bad-expiry')).toBeUndefined();
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // 5. Phase 28 invariant: JSON contract on POST /api/v1/me/tokens unchanged
   // -------------------------------------------------------------------------
   it('POST with Accept: application/json (existing JSON contract) → 201 + body.token preserved', async () => {
