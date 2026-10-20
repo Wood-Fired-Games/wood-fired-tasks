@@ -297,7 +297,6 @@ here; `npm run agent-context:check` asserts the two key sets are identical
 | `qs` | `qs` (via `@fastify/formbody`/body-parsing stack) | [GHSA-q8mj-m7cp-5q26](https://github.com/advisories/GHSA-q8mj-m7cp-5q26) — `qs.stringify` DoS on null/undefined comma-format array entries |
 | `undici` | `undici` (dev-only transitive, various tooling) | [GHSA-vmh5-mc38-953g](https://github.com/advisories/GHSA-vmh5-mc38-953g) — TLS certificate validation bypass via dropped `requestTls` in SOCKS5 `ProxyAgent` |
 | `esbuild` | `esbuild` (dev-only transitive, via `tsx`/`vitest` toolchain) | [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) — arbitrary file read via the dev server on Windows |
-| `@babel/core` | `@babel/core` (dev-only transitive, via test tooling) | [GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8) — arbitrary file read via `sourceMappingURL` comment |
 
 Removing an override is safe once the direct dependency that pulls the package
 in has bumped past the vulnerable range on its own (verify with
