@@ -65,6 +65,14 @@ jobs:
         # the LAST sub-shard is a CATCH-ALL: it mutates the whole directory glob
         # minus its siblings via STRYKER_MUTATE_EXCLUDE (negation globs), so a
         # newly added file in that directory always lands in exactly one shard.
+        #
+        # A single file too heavy for one shard (src/config/env.ts: ~350 mutants,
+        # ~80% static, each static mutant re-runs the whole suite) is split by
+        # Stryker mutation range `file:start-end`. Stryker only mutates nodes that
+        # lie WHOLLY inside a range, so a split must fall between top-level
+        # statements or a spanning mutant is lost; Stryker applies `!` negations
+        # in order after includes, so a ranged file is listed explicitly rather
+        # than via a catch-all exclude. The partition test enforces both rules.
         shard:
           - id: 0
             name: cli
@@ -94,8 +102,9 @@ jobs:
             globs: 'src/services/**/*.ts'
             globsExclude: '!src/services/wsjf*.ts !src/services/task.service.ts !src/services/dependency-graph.service.ts !src/services/device-flow-store.ts !src/services/workflow-engine.ts !src/services/project.service.ts !src/services/model-policy.service.ts'
           - id: 8
-            name: db-repos # ~1330 mutants, ~140 min
+            name: db-repos # task.repository split to shard 22 (190–300 min before split)
             globs: 'src/db/**/*.ts src/repositories/**/*.ts'
+            globsExclude: '!src/repositories/task.repository.ts'
           - id: 9
             name: slack # ~1019 mutants, ~166 min
             globs: 'src/slack/**/*.ts'
@@ -114,8 +123,8 @@ jobs:
             globs: 'src/mcp/**/*.ts'
             globsExclude: '!src/mcp/tools/**/*.ts !src/mcp/remote/**/*.ts'
           - id: 14
-            name: config
-            globs: 'src/config/**/*.ts'
+            name: config # env.ts lines 1-334 split to shard 21 (255–300+ min before split)
+            globs: 'src/config/env.ts:335-9999 src/config/db-path.ts src/config/paths.ts'
           - id: 15
             name: utils
             globs: 'src/utils/**/*.ts'
@@ -134,6 +143,12 @@ jobs:
           - id: 20
             name: services-graph-flow # split from services-rest
             globs: 'src/services/dependency-graph.service.ts src/services/device-flow-store.ts src/services/workflow-engine.ts src/services/project.service.ts src/services/model-policy.service.ts'
+          - id: 21
+            name: config-env-schema # split from config: configSchema (~250 mutants, mostly static)
+            globs: 'src/config/env.ts:1-334'
+          - id: 22
+            name: repos-task # split from db-repos
+            globs: 'src/repositories/task.repository.ts'
     name: shard-${{ matrix.shard.id }}-${{ matrix.shard.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -235,7 +250,7 @@ jobs:
           set -euo pipefail
           mkdir -p reports/mutation
           npx tsx scripts/aggregate-mutation-reports.ts \
-            --threshold 50 --expected-reports 21 \
+            --threshold 50 --expected-reports 23 \
             --output reports/mutation/aggregate.json \
             shard-reports/*/mutation.json | tee reports/mutation/aggregate-summary.txt
       - name: Append summary to GitHub job summary
