@@ -11,6 +11,35 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+### Changed
+- **REST date-time inputs now require seconds.** zod 4.6 aligns
+  `datetime()` with RFC 3339, so the `due_before` / `due_after` /
+  `updated_before` / `updated_after` task filters and the `expiresAt` field of
+  `POST /api/v1/me/tokens` reject minute-precision values such as
+  `2026-10-20T10:00Z`; send `2026-10-20T10:00:00Z`. The OpenAPI `pattern` for
+  every `date-time` field is updated to match.
+- Dev toolchain: vitest 5, @vitest/coverage-v8 5, Stryker 10,
+  @fast-check/vitest 0.5, Biome 2.5.15, dependency-cruiser 18.6. TypeScript
+  stays on 6.x until dependency-cruiser supports TypeScript 7; Dependabot now
+  ignores TypeScript major updates. The `@babel/core` 7.x security override
+  is dropped: its only consumer, Stryker 10, uses Babel 8, and forcing 7.x
+  crashed the instrumenter.
+
+### Fixed
+- CI `host-manifests` no longer fails on systemd diagnostics about the runner
+  image's own units (newer systemd flags `CPUAccounting=` there); diagnostics
+  about the wft-router unit still fail the job.
+- Nightly mutation testing completes again: the api-core shard (and three
+  shards close to the cap) are split so every shard fits the 300-minute job
+  limit, and Stryker's dry-run timeout is raised from 5 to 20 minutes.
+
+### Security
+- Runtime dependencies: `@modelcontextprotocol/sdk`, `fastify`,
+  `proxy-addr`, `fast-uri`, `ip-address` and `smol-toml` updated past
+  published advisories. zod 4.6, @fastify/formbody 9.
+  One moderate advisory remains (`sprintf-js`, reached only through umzug's
+  CLI argument parser; no patched release exists).
+
 ## [2.7.0] - 2026-09-25
 
 Security release. Lands the remediation of the 2.5.0 security audit: PAT scopes become a real authorization boundary on every surface, mutations are recorded to a tamper-evident audit trail, and several controls that failed open when `NODE_ENV` was unset now fail closed. **Read the upgrade notes before deploying** — some defaults changed.

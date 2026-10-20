@@ -15,6 +15,11 @@ updates:
         update-types: ["minor"]
         # Zod minors can change public validation/OpenAPI contracts; review separately.
         exclude-patterns: ["zod"]
+    ignore:
+      # dependency-cruiser (<=18.7) supports typescript <7 only; on TS 7 depcruise
+      # silently scans zero modules. Unpin once dependency-cruiser supports TS 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "automated"]
 
   - package-ecosystem: "github-actions"

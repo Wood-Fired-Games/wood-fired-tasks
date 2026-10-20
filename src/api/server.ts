@@ -1,4 +1,4 @@
-import Fastify, { FastifyInstance } from 'fastify';
+import Fastify, { FastifyInstance, type FastifyPluginAsync } from 'fastify';
 import { randomUUID } from 'crypto';
 import type Database from '../db/driver.js';
 import { serializerCompiler, validatorCompiler, ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -440,7 +440,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     const exposeSwaggerUI = config.ENABLE_SWAGGER_IN_PRODUCTION === true;
     if (exposeSwaggerUI) {
       if (config.isProductionPosture) {
-        await server.register(async (scope) => {
+        const swaggerScope: FastifyPluginAsync = async (scope) => {
           // Security Audit finding M1 (task #1622) — the swagger-ui plugin
           // registers its own routes (`/docs`, `/docs/json`, `/docs/static/*`,
           // …) INSIDE this authenticated scope, but they are third-party
@@ -489,7 +489,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
           });
           await scope.register(authPlugin);
           await registerSwaggerUI(scope);
-        });
+        };
+        await server.register(swaggerScope);
       } else {
         await registerSwaggerUI(server);
       }
@@ -798,7 +799,7 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
       // /auth/device/{code,token} carry `config: { skipAuth: true }` so the
       // preHandler short-circuits for them; only POST /auth/device/verify
       // exercises the session-auth path.
-      await server.register(async (scope) => {
+      const deviceFlowScope: FastifyPluginAsync = async (scope) => {
         await scope.register(authPlugin);
         await scope.register(deviceCodeRoute, {
           origin,
@@ -809,7 +810,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
         });
         await scope.register(deviceTokenRoute, { expectedClientId: deviceClientId });
         await scope.register(deviceHtmlRoute, { origin });
-      });
+      };
+      await server.register(deviceFlowScope);
     } else {
       const disabledStub = (await import('./routes/auth/disabled-stub.js')).default;
       const deviceDisabledStub = (await import('./routes/auth/device-disabled-stub.js')).default;
@@ -827,71 +829,67 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     // task #185: authenticated detailed health check exposes the full
     // diagnostic payload (component checks + runtime stats). Gated by the
     // SAME canonical auth plugin used for /api/v1.
-    await server.register(
-      async (scope) => {
-        scope.addHook('onRoute', collectRouteAudit);
-        await scope.register(authPlugin);
-        await scope.register(detailedHealthRoutes);
-      },
-      { prefix: '/health/detailed' },
-    );
+    const detailedHealthScope: FastifyPluginAsync = async (scope) => {
+      scope.addHook('onRoute', collectRouteAudit);
+      await scope.register(authPlugin);
+      await scope.register(detailedHealthRoutes);
+    };
+    await server.register(detailedHealthScope, { prefix: '/health/detailed' });
 
     // Register routes under /api/v1 with auth protection
-    await server.register(
-      async (api) => {
-        api.addHook('onRoute', collectRouteAudit);
-        // Centralized auth (task #182): single canonical plugin. Hardens
-        // production keys, uses constant-time comparison, logs invalid
-        // attempts without leaking the supplied key.
-        await api.register(authPlugin);
+    const apiV1Scope: FastifyPluginAsync = async (api) => {
+      api.addHook('onRoute', collectRouteAudit);
+      // Centralized auth (task #182): single canonical plugin. Hardens
+      // production keys, uses constant-time comparison, logs invalid
+      // attempts without leaking the supplied key.
+      await api.register(authPlugin);
 
-        // NOTE (task #1630): the audit-trail producer is deliberately NOT
-        // registered here. It is registered ONCE on the root instance above
-        // (search "finding M5"), which covers this scope and every other
-        // authenticated scope at the same time. Adding a second registration
-        // here would append TWO rows for every /api/v1 mutation.
-        //
-        // Ordering is a non-issue: `onResponse` is a strictly later phase than
-        // the auth chain's `preHandler`, so the hook always observes the
-        // principal the chain resolved — including on a request the chain
-        // itself short-circuited with a 403, which is precisely why
-        // scope-denied mutations get recorded instead of silently dropped.
+      // NOTE (task #1630): the audit-trail producer is deliberately NOT
+      // registered here. It is registered ONCE on the root instance above
+      // (search "finding M5"), which covers this scope and every other
+      // authenticated scope at the same time. Adding a second registration
+      // here would append TWO rows for every /api/v1 mutation.
+      //
+      // Ordering is a non-issue: `onResponse` is a strictly later phase than
+      // the auth chain's `preHandler`, so the hook always observes the
+      // principal the chain resolved — including on a request the chain
+      // itself short-circuited with a 403, which is precisely why
+      // scope-denied mutations get recorded instead of silently dropped.
 
-        // Register task routes
-        await api.register(taskRoutes, { prefix: '/tasks' });
+      // Register task routes
+      await api.register(taskRoutes, { prefix: '/tasks' });
 
-        // Register project routes
-        await api.register(projectRoutes, { prefix: '/projects' });
+      // Register project routes
+      await api.register(projectRoutes, { prefix: '/projects' });
 
-        // Register dependency routes (nested under tasks)
-        await api.register(dependencyRoutes, { prefix: '/tasks' });
+      // Register dependency routes (nested under tasks)
+      await api.register(dependencyRoutes, { prefix: '/tasks' });
 
-        // Register comment routes (nested under tasks)
-        await api.register(commentRoutes, { prefix: '/tasks' });
+      // Register comment routes (nested under tasks)
+      await api.register(commentRoutes, { prefix: '/tasks' });
 
-        // Register events route
-        await api.register(eventsRoute, { prefix: '/events' });
+      // Register events route
+      await api.register(eventsRoute, { prefix: '/events' });
 
-        // Configurable Task Models (Task 13): the model catalog + the
-        // database-wide model-policy default.
-        await api.register(modelsRoutes, { prefix: '/models' });
-        await api.register(modelPolicyRoutes, { prefix: '/settings' });
+      // Configurable Task Models (Task 13): the model catalog + the
+      // database-wide model-policy default.
+      await api.register(modelsRoutes, { prefix: '/models' });
+      await api.register(modelPolicyRoutes, { prefix: '/settings' });
 
-        // Security Audit finding M5 (task #1637): READ-ONLY query surface over
-        // the append-only audit trail. GET only — see the module docblock in
-        // routes/audit/index.ts for why no write verb exists here, and
-        // `project-binding.ts` for why bound tokens are denied it outright.
-        await api.register(auditRoutes, { prefix: '/audit-events' });
+      // Security Audit finding M5 (task #1637): READ-ONLY query surface over
+      // the append-only audit trail. GET only — see the module docblock in
+      // routes/audit/index.ts for why no write verb exists here, and
+      // `project-binding.ts` for why bound tokens are denied it outright.
+      await api.register(auditRoutes, { prefix: '/audit-events' });
 
-        // Phase 28 Plan 28-05: per-caller resources. All routes inside
-        // meRoutes carry `config: { sessionOnly: true }` so the auth-chain
-        // plugin's enforceSessionOnly gate rejects PAT-authed callers with
-        // 403 (PATs cannot mint/list/revoke PATs — bootstrap path is the
-        // `tasks db mint-token` CLI).
-        await api.register(meRoutes, { prefix: '/me' });
-      },
-      { prefix: '/api/v1' },
-    );
+      // Phase 28 Plan 28-05: per-caller resources. All routes inside
+      // meRoutes carry `config: { sessionOnly: true }` so the auth-chain
+      // plugin's enforceSessionOnly gate rejects PAT-authed callers with
+      // 403 (PATs cannot mint/list/revoke PATs — bootstrap path is the
+      // `tasks db mint-token` CLI).
+      await api.register(meRoutes, { prefix: '/me' });
+    };
+    await server.register(apiV1Scope, { prefix: '/api/v1' });
 
     // Start Slack connection (no-op if tokens absent, must be after onClose hook registration)
     await slackService.start();
