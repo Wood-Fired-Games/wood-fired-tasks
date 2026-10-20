@@ -11,6 +11,20 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-20
+
+Maintenance and security release. Updates runtime dependencies past one
+critical and one high advisory, restores nightly mutation testing, and fixes the
+web tokens page's expiry timezone. **One API input became stricter** — see the
+upgrade notes.
+
+### Upgrade notes
+- **Date-time inputs must include seconds.** `2026-10-20T10:00Z` is now
+  rejected with 400; send `2026-10-20T10:00:00Z`. This applies to the task
+  list filters (`due_before`, `due_after`, `updated_before`, `updated_after`)
+  over REST, MCP and the CLI, and to `expiresAt` on `POST /api/v1/me/tokens`.
+  Values produced by `Date.prototype.toISOString()` are unaffected.
+
 ### Changed
 - **REST date-time inputs now require seconds.** zod 4.6 aligns
   `datetime()` with RFC 3339, so the `due_before` / `due_after` /
@@ -1240,7 +1254,8 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.4.0...v2.5.0
