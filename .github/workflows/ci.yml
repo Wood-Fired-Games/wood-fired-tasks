@@ -252,9 +252,13 @@ jobs:
             exit 0
           fi
           # Drop the expected placeholder-binary lines; if nothing else remains,
-          # the unit is well-formed and we pass.
+          # the unit is well-formed and we pass. Diagnostics about the RUNNER's
+          # own units (e.g. newer systemd flagging CPUAccounting= in
+          # /usr/lib/systemd/system/walinuxagent.service) are image drift, not
+          # ours, so they are dropped too.
           residual="$(printf '%s\n' "$out" \
             | grep -v 'is not executable: No such file or directory' \
+            | grep -vE '^(/usr/lib|/lib|/etc)/systemd/' \
             | grep -v '^[[:space:]]*$' || true)"
           if [ -z "$residual" ]; then
             echo "::notice::only the expected placeholder-ExecStart warning was emitted; unit is well-formed"

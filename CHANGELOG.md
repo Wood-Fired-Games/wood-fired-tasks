@@ -26,6 +26,9 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
   crashed the instrumenter.
 
 ### Fixed
+- CI `host-manifests` no longer fails on systemd diagnostics about the runner
+  image's own units (newer systemd flags `CPUAccounting=` there); diagnostics
+  about the wft-router unit still fail the job.
 - Nightly mutation testing completes again: the api-core shard (and three
   shards close to the cap) are split so every shard fits the 300-minute job
   limit, and Stryker's dry-run timeout is raised from 5 to 20 minutes.
@@ -33,7 +36,7 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 ### Security
 - Runtime dependencies: `@modelcontextprotocol/sdk`, `fastify`,
   `proxy-addr`, `fast-uri`, `ip-address` and `smol-toml` updated past
-  published advisories. better-sqlite3 13, zod 4.6, @fastify/formbody 9.
+  published advisories. zod 4.6, @fastify/formbody 9.
   One moderate advisory remains (`sprintf-js`, reached only through umzug's
   CLI argument parser; no patched release exists).
 
