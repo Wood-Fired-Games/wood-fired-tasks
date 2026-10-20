@@ -36,6 +36,11 @@ export default {
     related: false,
   },
   coverageAnalysis: 'perTest',
+  // The initial (dry) run executes the whole vitest suite with per-test coverage
+  // instrumentation. After v2.7.0 that run sits right at Stryker's 5-minute
+  // default on GH runners, so a random shard failed "Initial test run timed out!"
+  // every night. 20 min leaves headroom without masking a genuinely hung suite.
+  dryRunTimeoutMinutes: 20,
   mutate: [...includes, ...shardExcludes, ...exclusions],
   // TypeScript 7 (native port, bumped in PR #91) removed `ts.parseConfigFileTextToJson`,
   // which Stryker's sandbox TSConfigPreprocessor and its `typescript` checker both call —
