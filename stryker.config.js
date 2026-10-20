@@ -57,7 +57,13 @@ export default {
   //       asset resolution — so we avoid it.)
   // Trade-off: mutants that would be compile errors are no longer filtered out up front —
   // they run through vitest and are scored as killed/survived. Revert once Stryker supports TS7.
-  ignorePatterns: ['tsconfig.json'],
+  //
+  // The mutation-workflow partition test is also kept out of the sandbox. It checks
+  // mutation.yml against the source tree (imports no src/ code, so it can never kill
+  // a mutant), and inside the sandbox the files it inspects are Stryker-instrumented
+  // copies — its line-range boundary checks on src/config/env.ts cannot hold there.
+  // It still runs in `npm test` / CI against the real tree.
+  ignorePatterns: ['tsconfig.json', 'scripts/__tests__/mutation-workflow.test.ts'],
   reporters: ['html', 'clear-text', 'progress'],
   thresholds: {
     high: 80,
