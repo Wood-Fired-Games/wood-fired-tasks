@@ -8,7 +8,7 @@
  *   2. Active tokens table — name, prefix…suffix, created, last-used,
  *      expires, "Revoke" form per row.
  *   3. New-token form — name (required), scopes csv (optional),
- *      expiresAt datetime-local (optional). Posts to /api/v1/me/tokens
+ *      expiresAt datetime-local, interpreted as UTC (optional). Posts to /api/v1/me/tokens
  *      with the CSRF token + `Accept: text/html` is implicit from the
  *      browser (the route handler's content-negotiation branch fires).
  *   4. Revoked tokens table (only when at least one revoked row exists),
@@ -107,7 +107,7 @@ export function renderTokens(opts: RenderTokensOptions): string {
       <input type="hidden" name="_csrf" value="${opts.csrf}">
       <label>Name <input type="text" name="name" required maxlength="100"></label>
       <label>Scopes (comma-separated, optional) <input type="text" name="scopes"></label>
-      <label>Expires at (optional) <input type="datetime-local" name="expiresAt"></label>
+      <label>Expires at, UTC (optional) <input type="datetime-local" name="expiresAt"></label>
       <button type="submit">Mint token</button>
     </form>
 

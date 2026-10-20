@@ -170,6 +170,29 @@ const ProjectBindingValidationErrorResponseSchema = z.object({
   details: z.object({ invalidProjectId: z.number().int() }),
 });
 
+// datetime-local value as browsers submit it: no zone, seconds optional.
+const DATETIME_LOCAL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/;
+
+/**
+ * Task #2110 — convert the tokens form's `datetime-local` "Expires at (UTC)"
+ * value to an ISO-8601 instant, or `undefined` when it is not a valid
+ * datetime-local value.
+ *
+ * The browser submits the wall-clock value with no zone. `new Date(value)`
+ * would read it in the SERVER's local timezone, so the stored expiry
+ * depended on where the server ran. The field is labelled UTC and parsed
+ * as UTC here. The round-trip check rejects values `Date` silently rolls
+ * over (e.g. month 13, Feb 30).
+ */
+function formExpiryToIso(value: string): string | undefined {
+  if (!DATETIME_LOCAL.test(value)) return undefined;
+  const withSeconds = value.length === 16 ? `${value}:00` : value;
+  const d = new Date(`${withSeconds}Z`);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const iso = d.toISOString();
+  return iso.startsWith(withSeconds) ? iso : undefined;
+}
+
 /**
  * True iff `projectId` names an existing project.
  *
@@ -340,14 +363,13 @@ const tokensRoutes: FastifyPluginAsyncZod = async (fastify) => {
             : undefined;
         let formExpiresAt: string | undefined;
         if (typeof body.expiresAt === 'string' && body.expiresAt.length > 0) {
-          const d = new Date(body.expiresAt);
-          if (Number.isNaN(d.getTime())) {
+          formExpiresAt = formExpiryToIso(body.expiresAt);
+          if (formExpiresAt === undefined) {
             return reply
               .header('Cache-Control', 'no-store')
               .code(400)
               .send({ error: 'validation_failed' });
           }
-          formExpiresAt = d.toISOString();
         }
         // formbody supplies `projectId` as a string when the field is
         // present; coerce it so the shared MintTokenBodySchema sees the same
