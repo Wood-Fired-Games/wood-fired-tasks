@@ -1009,7 +1009,8 @@ artefacts and starting the service. The upgrade path assumes the
 migration is **reversible** — i.e. the matching `down` works and is
 covered by `migrations-roundtrip.test.ts`. For forward-only migrations,
 the rollback recipe above restores `tasks.db` from the pre-deploy backup
-**but** schema-only `down` revert via Umzug is not safe; treat the SQLite
+**but** a schema-only `down` revert is not safe (the migration runner
+only ever applies `up`); treat the SQLite
 backup as the recovery surface. Re-read `docs/RELEASE.md`
 [Migration expectations](RELEASE.md#migration-expectations) before
 shipping any release that adds a migration — it spells out the
@@ -1303,7 +1304,7 @@ includes) that are invoked from workflows rather than typed directly — see
 
 - **Driver:** better-sqlite3 (synchronous SQLite library for Node.js)
 - **Mode:** WAL (Write-Ahead Logging) for better concurrency
-- **Migrations:** Umzug for automatic schema versioning
+- **Migrations:** in-house forward-only runner (`src/db/migrate.ts`) for automatic schema versioning
 
 ### Database Path
 

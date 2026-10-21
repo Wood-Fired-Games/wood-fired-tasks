@@ -13,16 +13,12 @@
     "update-notifier"
   ],
   "ignoreBinaries": [
-    // `gh` (GitHub CLI) is a spec-mandated member of the SCM exec allowlist
-    // (docs/superpowers/specs/2026-07-16-pluggable-scm-design.md §6.1 — git/p4/gh)
-    // and is invoked in src/scm/__tests__/exec.test.ts's allowlist coverage. It
-    // is an external binary resolved from PATH at runtime, never an npm dependency,
-    // so knip's --dependencies binary check must not flag it as unlisted.
-    "gh",
-    // `p4` (Perforce CLI) is likewise on the SCM exec allowlist and is invoked
-    // by the env-gated real-p4d integration suite's docker helper
-    // (src/scm/__tests__/helpers/p4d-docker.ts) — a PATH-resolved external
-    // binary, never an npm dependency.
+    // `p4` (Perforce CLI) is on the SCM exec allowlist and is spawned directly
+    // (`spawnSync('p4', ...)`) by the env-gated real-p4d integration suite's
+    // docker helper (src/scm/__tests__/helpers/p4d-docker.ts) — a PATH-resolved
+    // external binary, never an npm dependency. `gh`, also on the allowlist, is
+    // never spawned by a literal command knip can see, so it needs no entry
+    // (knip reports an unneeded ignore as a configuration hint).
     "p4"
   ]
 }

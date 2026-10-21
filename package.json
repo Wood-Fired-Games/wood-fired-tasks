@@ -154,7 +154,10 @@
   "overrides": {
     "qs": "^6.15.2",
     "undici": "^7.28.0",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "cheerio": {
+      "encoding-sniffer": "^1.0.2"
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 
 describe('MCP Server stdio compliance', () => {
   describe('static analysis guards', () => {
@@ -19,12 +19,19 @@ describe('MCP Server stdio compliance', () => {
       }
     });
 
-    it('Umzug logger does not use raw console (stdout pollution)', () => {
-      const result = execSync('grep -n "logger: console" src/db/migrate.ts || true', {
-        encoding: 'utf-8',
-        cwd: process.cwd(),
-      }).trim();
-      expect(result).toBe('');
+    it('migration runner logs to stderr only (no stdout pollution)', () => {
+      // runMigrations() runs inside the MCP stdio server at startup, so any
+      // stdout write there corrupts the JSON-RPC stream. Its progress logging
+      // must stay on console.error('[migration]', ...).
+      const source = readFileSync(join(process.cwd(), 'src/db/migrate.ts'), 'utf-8');
+      const start = source.indexOf('export async function runMigrations(');
+      expect(start).toBeGreaterThanOrEqual(0);
+      const end = source.indexOf('\n}\n', start);
+      expect(end).toBeGreaterThan(start);
+      const body = source.slice(start, end);
+      expect(body).toMatch(/console\.error\('\[migration\]'/);
+      expect(body).not.toMatch(/console\.(log|info|debug|table|dir)\b/);
+      expect(body).not.toMatch(/process\.stdout/);
     });
   });
 

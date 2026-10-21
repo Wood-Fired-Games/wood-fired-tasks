@@ -109,7 +109,7 @@ unexpected, fix the `files` whitelist in `package.json` before publishing.
 
 These are release-time gates for any release that includes a new `src/db/migrations/` file. They mirror the PR-template checklist but are stated as the operator-facing contract; cross-reference Phase 5 of `docs/CODE_QUALITY_ROADMAP.md`.
 
-- **Serialized flow.** All migrations run through Umzug with `BEGIN EXCLUSIVE`. New migrations must be registered there — never call ad-hoc `db.exec` from product code.
+- **Serialized flow.** All migrations run through the runner in `src/db/migrate.ts` with `BEGIN EXCLUSIVE`. New migrations are files under `src/db/migrations/`, which the runner discovers and applies — never call ad-hoc `db.exec` from product code.
 - **Transactionality.** Every `up` and `down` body wraps schema and data changes in `db.transaction(...)`. Pragma toggles around table rebuilds (e.g. `foreign_keys = OFF`) live inside the same transaction so a failure rolls them back.
 - **Backfills.** Any backfill (`UPDATE`, `INSERT INTO ... SELECT`, `DEFAULT` on `NOT NULL` add-column) MUST be covered by a targeted test under `src/db/__tests__/migration-NNN.test.ts` that seeds pre-migration data, applies the migration, and asserts the post-state. Schema-only migrations are covered by the generic `migrations-roundtrip.test.ts` snapshot and need no per-file test.
 - **Down migrations.** Default expectation is a working `down` that restores the prior schema/data contract — verified by `migrations-roundtrip.test.ts`. Forward-only migrations are allowed for one-way data transforms only; they must:

@@ -830,7 +830,7 @@ The canonical command table (focused tests, migrations, quality gate) lives in
 
 ### Database
 
-SQLite with the better-sqlite3 driver, WAL mode, and automatic forward migrations via Umzug. The migration files in `src/db/migrations/` (20 as of this writing — count them directly, they're the source of truth) are the canonical, self-documenting schema history — from `001-initial-schema` (projects, tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance criteria + verification evidence (`011`–`012`), the WSJF columns, value charter, and append-only audit tables (`013`–`015`), the model-policy table (`016`), the pluggable-SCM project charter default (`017`), the hash-chained `audit_events` trail (`018`–`019`), and PAT project binding (`020`).
+SQLite with the better-sqlite3 driver, WAL mode, and automatic forward migrations via an in-house runner (`src/db/migrate.ts`). The migration files in `src/db/migrations/` (20 as of this writing — count them directly, they're the source of truth) are the canonical, self-documenting schema history — from `001-initial-schema` (projects, tasks, FTS5) through the identity tables (`008`–`010`, OIDC/PAT), acceptance criteria + verification evidence (`011`–`012`), the WSJF columns, value charter, and append-only audit tables (`013`–`015`), the model-policy table (`016`), the pluggable-SCM project charter default (`017`), the hash-chained `audit_events` trail (`018`–`019`), and PAT project binding (`020`).
 Read the files directly for exact DDL; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers how they fit together.
 
 ### Testing

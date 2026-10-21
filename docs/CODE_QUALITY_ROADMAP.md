@@ -37,7 +37,7 @@ The repository is already in a healthy state for a small TypeScript service:
 - The REST API uses Fastify with `fastify-type-provider-zod` and Zod schemas
   for request/response validation.
 - SQLite access is centralized behind repositories and migrations, with WAL,
-  foreign keys, busy timeout, Umzug migration tracking, and migration
+  foreign keys, busy timeout, `_migrations` tracking, and migration
   round-trip tests.
 - `SECURITY.md` documents the supported security model and high-priority
   vulnerability classes.
@@ -161,7 +161,8 @@ Strengths:
 
 - Database initialization enables WAL, foreign keys, synchronous normal, and a
   busy timeout.
-- Migrations are managed by Umzug and serialized with `BEGIN EXCLUSIVE`.
+- Migrations are managed by the in-house runner in `src/db/migrate.ts` and
+  serialized with `BEGIN EXCLUSIVE`.
 - Migration names are normalized between `.ts` and `.js` execution modes.
 - Migration round-trip and migration-specific tests exist.
 - Repositories use prepared statements for user-controlled values.
