@@ -11,6 +11,18 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-21
+
+Install-hygiene release. `npm i -g wood-fired-tasks` no longer prints any
+`npm warn deprecated` lines, and CI now fails if one comes back. **The minimum
+Node.js version rises to 22.14.0** — see the upgrade notes.
+
+### Upgrade notes
+- **Node.js 22.14.0 or newer is required** (was any 22.x). better-sqlite3 13's
+  prebuilt binaries need Node-API 10, which first shipped in Node 22.14.0;
+  on older 22.x releases `new Database()` crashes. Check with `node --version`
+  before upgrading. No database or configuration changes are needed.
+
 ### Added
 - **CI fails if a global install prints a deprecation warning.** The
   cross-OS `global-install-smoke` job now checks the output of
@@ -1286,7 +1298,8 @@ and the task/project/dependency/comment/subtask domain model.
 - Task hierarchy (subtasks), dependency service, comments, time estimates
   (phase 06).
 
-[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/Wood-Fired-Games/wood-fired-tasks/compare/v2.5.0...v2.6.0

@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-10-21T16:28:43.020Z",
+    "generated_at": "2026-10-21T16:57:33.253Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -501,7 +501,7 @@
       "notes": "Owner line check exempt — policy doc, not agent-facing primary.",
       "approx_token_budget": 7000,
       "actual_lines": 334,
-      "sha256": "1e116743d48f1f116df0da608698611c6a973450b30f729db517b0d8893b7761"
+      "sha256": "2e3815193f1dd8cf8d94b9f9005007e5ec3ac2d4d97023a5ccd0932d43c7fd88"
     },
     {
       "path": "llms.txt",
