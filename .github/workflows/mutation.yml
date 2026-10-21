@@ -75,8 +75,9 @@ jobs:
         # than via a catch-all exclude. The partition test enforces both rules.
         shard:
           - id: 0
-            name: cli
+            name: cli # CATCH-ALL; setup.ts split to shard 25 (256 min before split)
             globs: 'src/cli/**/*.ts'
+            globsExclude: '!src/cli/commands/setup.ts'
           - id: 1
             name: api-routes-auth # ~633 mutants, ~152 min
             globs: 'src/api/routes/auth/**/*.ts'
@@ -90,7 +91,7 @@ jobs:
           - id: 4
             name: api-core # CATCH-ALL: plugins (minus auth, shard 17)+hooks+top-level
             globs: 'src/api/plugins/**/*.ts src/api/hooks/**/*.ts src/api/*.ts'
-            globsExclude: '!src/api/plugins/auth/**/*.ts'
+            globsExclude: '!src/api/plugins/auth/**/*.ts !src/api/server.ts'
           - id: 5
             name: mcp-task-tools
             globs: 'src/mcp/tools/task-tools.ts'
@@ -132,8 +133,8 @@ jobs:
             name: events-types-index
             globs: 'src/events/**/*.ts src/types/**/*.ts src/index.ts'
           - id: 17
-            name: api-plugins-auth # split from api-core (300-min overrun after v2.7.0)
-            globs: 'src/api/plugins/auth/**/*.ts'
+            name: api-plugins-auth # project-binding.ts lines 1-238 split to shard 24 (296 min before split)
+            globs: 'src/api/plugins/auth/index.ts src/api/plugins/auth/keys.ts src/api/plugins/auth/strategies/**/*.ts src/api/plugins/auth/project-binding.ts:239-9999'
           - id: 18
             name: api-routes-tasks # split from api-routes-resources
             globs: 'src/api/routes/tasks/**/*.ts'
@@ -149,6 +150,15 @@ jobs:
           - id: 22
             name: repos-task # split from db-repos
             globs: 'src/repositories/task.repository.ts'
+          - id: 23
+            name: api-server # split from api-core (300-min overrun): ~240 mutants, ~90% static
+            globs: 'src/api/server.ts'
+          - id: 24
+            name: api-auth-binding-rules # split from api-plugins-auth: the route binding tables
+            globs: 'src/api/plugins/auth/project-binding.ts:1-238'
+          - id: 25
+            name: cli-setup # split from cli: ~1070 mutants
+            globs: 'src/cli/commands/setup.ts'
     name: shard-${{ matrix.shard.id }}-${{ matrix.shard.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -250,7 +260,7 @@ jobs:
           set -euo pipefail
           mkdir -p reports/mutation
           npx tsx scripts/aggregate-mutation-reports.ts \
-            --threshold 50 --expected-reports 23 \
+            --threshold 50 --expected-reports 26 \
             --output reports/mutation/aggregate.json \
             shard-reports/*/mutation.json | tee reports/mutation/aggregate-summary.txt
       - name: Append summary to GitHub job summary
