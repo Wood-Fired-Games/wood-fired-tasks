@@ -12,7 +12,9 @@
  *   1. `npm run build`, then `npm pack` the repo → a tarball in a temp dir.
  *   2. `npm install -g <tarball> --prefix <tempPrefix>` so the
  *      `wood-fired-tasks` bin lands under <tempPrefix>/bin (user-writable temp
- *      prefix → no sudo by construction).
+ *      prefix → no sudo by construction). The install's combined output must
+ *      contain ZERO `npm warn deprecated` lines (task #2132); each offender is
+ *      printed with its `npm ls` dependency path.
  *   3. From a cwd OUTSIDE the repo, run `<bin> setup` with HOME pointed at a
  *      temp HOME. Assert:
  *        - <tempHome>/.claude.json exists and carries the `wood-fired-tasks`
@@ -23,7 +25,8 @@
  *   4. Boot `<bin> serve` against a temp app-data DB (DATABASE_PATH override) on
  *      a free port, bound to loopback. Poll GET /health → assert 200 healthy.
  *      Assert the DB file was created AND migrations applied (the `_migrations`
- *      Umzug bookkeeping table exists and is non-empty). Then shut it down.
+ *      bookkeeping table written by the migration runner in src/db/migrate.ts
+ *      exists and is non-empty). Then shut it down.
  *   5. Exit 0 on success; non-zero with a clear message on any failed
  *      assertion. Temp dirs removed + server killed even on failure.
  *
@@ -34,6 +37,7 @@
  * the entire trick.
  */
 
+import { formatDeprecationReport, parseNpmInstallWarnings } from './npm-deprecations.mjs';
 import { smokeCodex } from './smoke-codex.mjs';
 import { spawnSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -259,9 +263,35 @@ async function main() {
   // -- 2. install -g into a TEMP prefix (no sudo: user-writable temp dir) -----
   console.log('-- install -g (temp prefix, no sudo) --');
   const prefixDir = mkTemp('wft smoke prefix with spaces ');
-  runOrFail(NPM, ['install', '-g', tarball, '--prefix', prefixDir], {
-    cwd: packDir,
-  });
+  // `--loglevel warn` pins npm's verbosity so an inherited quieter loglevel
+  // (npm_config_loglevel=error/silent) can't hide deprecations from the guard.
+  const installRes = runOrFail(
+    NPM,
+    ['install', '-g', tarball, '--prefix', prefixDir, '--loglevel', 'warn'],
+    { cwd: packDir },
+  );
+
+  // -- 2a. zero-deprecation guard (task #2132) --------------------------------
+  // Every `npm warn deprecated` line here is a deprecated package in OUR
+  // production tree that every `npm i -g wood-fired-tasks` user sees. Applied
+  // ONLY to this install of the freshly packed tarball — never to installs of a
+  // published registry version. Unrelated npm warnings (e.g. Windows EPERM
+  // cleanup noise) are echoed but not counted.
+  const installWarnings = parseNpmInstallWarnings(
+    `${installRes.stdout ?? ''}\n${installRes.stderr ?? ''}`,
+  );
+  for (const w of installWarnings.otherWarnings) {
+    console.log(`  note (unrelated npm warning, not counted): ${w}`);
+  }
+  if (installWarnings.deprecated.length > 0) {
+    fail(
+      formatDeprecationReport(installWarnings.deprecated, (name) => {
+        const ls = run(NPM, ['ls', name, '--all', '-g', '--prefix', prefixDir], { cwd: packDir });
+        return ls.stdout ?? '';
+      }),
+    );
+  }
+  pass('global install printed zero `npm warn deprecated` lines');
   // On POSIX the bin lands under <prefix>/bin; on Windows directly under prefix.
   const binName = process.platform === 'win32' ? 'wood-fired-tasks.cmd' : 'wood-fired-tasks';
   const binPath =
@@ -424,7 +454,7 @@ async function main() {
   // -- 4b. DB created + migrations applied (_migrations table non-empty) -----
   assert(existsSync(dbPath), `app-data DB created at ${dbPath}`);
 
-  // Read the Umzug bookkeeping table from the temp DB directly (read-only) to
+  // Read the migration runner's bookkeeping table from the temp DB directly (read-only) to
   // prove migrations actually ran during serve startup.
   const Database = (await import(pathToInstalledBetterSqlite(prefixDir))).default;
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });

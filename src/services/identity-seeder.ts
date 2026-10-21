@@ -12,8 +12,8 @@ import type { ApiKeyEntry } from '../config/env.js';
  *
  * The seeder runs inside `createApp`, BEFORE Fastify is constructed, so there
  * is no `server.log` available yet. Callers may omit the logger entirely; a
- * console-stub default is used (matches the Umzug pattern in src/db/migrate.ts:
- * 101-106).
+ * console-stub default is used (matches the migration runner's stderr logging
+ * in `runMigrations`, src/db/migrate.ts).
  */
 export interface MinimalLogger {
   info(obj: object, msg?: string): void;
@@ -22,7 +22,8 @@ export interface MinimalLogger {
 
 /**
  * Default console-stub logger used when no logger is supplied. Matches the
- * Umzug pattern in src/db/migrate.ts:101-106 -- writes to stderr so that
+ * migration runner's `console.error('[migration]', ...)` logging in
+ * `runMigrations` (src/db/migrate.ts) -- writes to stderr so that
  * structured-log output is interleavable with the migration logger.
  */
 const consoleStubLogger: MinimalLogger = {

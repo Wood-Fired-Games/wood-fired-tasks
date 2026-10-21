@@ -81,7 +81,12 @@
     "docs/SCM.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.14.0"
+  },
+  "allowScripts": {
+    "better-sqlite3": false,
+    "esbuild": true,
+    "fsevents": true
   },
   "scripts": {
     "build": "tsc && tsc -p packages/wft-router && npm run build:skills",
@@ -130,7 +135,7 @@
     "@fastify/swagger": "^9.7.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@slack/bolt": "^5.1.0",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^13.0.3",
     "chalk": "^6.0.0",
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
@@ -142,7 +147,6 @@
     "openid-client": "^6.8.4",
     "pino": "^10.3.1",
     "smol-toml": "^1.8.0",
-    "umzug": "^3.8.2",
     "update-notifier": "^7.3.1",
     "yaml": "^2.6.1",
     "zod": "~4.6.5"
@@ -150,7 +154,10 @@
   "overrides": {
     "qs": "^6.15.2",
     "undici": "^7.28.0",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "cheerio": {
+      "encoding-sniffer": "^1.0.2"
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

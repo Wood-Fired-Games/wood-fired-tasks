@@ -28,7 +28,7 @@ navigation hub.
                      v
             src/repositories/  (better-sqlite3 prepared statements)
                      v
-                  src/db/  (SQLite + umzug, WAL journal)
+                  src/db/  (SQLite + migrate.ts runner, WAL journal)
 
    eventBus (src/events/event-bus.ts, process-wide singleton)
         ^  emitted by services after every mutation
@@ -242,12 +242,12 @@ WAL mode is enabled by `src/db/database.ts`:
 | `wsjf_score_history` | `id PK`, `task_id`/`project_id` (FK CASCADE), `changed_at`, `trigger`, `actor_type`, `actor_id`, `charter_version`, `rescore_run_id` (soft FK SET NULL), the four components, `classifications`, `features`, `evidence`, `source`, `locked`, `wsjf_score`, `prev_wsjf_score` | Append-only; one immutable row per score write (full inputs, replay-able). Migration 015. |
 | `project_charter_history` | `id PK`, `project_id` (FK CASCADE), `interview_version`, `charter` (JSON), `change_kind`, `actor_type`, `actor_id`, `changed_at` | Append-only; full charter snapshot per interview version (migration 015). |
 | `audit_events` | `id PK`, `timestamp`, `actor_type`, `actor_id`, `token_id`, `action`, `resource_type`, `resource_id`, `request_id`, `metadata` (JSON), `prev_hash`, `row_hash` | Append-only (UPDATE/DELETE triggers abort); SHA-256 hash chain. Written by authenticated REST mutations + stdio MCP mutating tools (migrations 018–019). |
-| `_migrations` | `name`, `executed_at` | Umzug bookkeeping (canonical names, no extension). |
+| `_migrations` | `name`, `executed_at` | Migration-runner bookkeeping, `src/db/migrate.ts` (canonical names, no extension). |
 
 ## Migration rules
 
 - Files live in `src/db/migrations/NNN-<slug>.ts` (monotonic prefix).
-- Run via `npm run migrate` (umzug; see `src/db/migrate.ts`).
+- Run via `npm run migrate` (in-house runner; see `src/db/migrate.ts`).
 - Names stored extensionless in `_migrations`, so `.ts` (dev) and `.js`
   (dist) of the same migration are treated as one. `runMigrations` wraps
   discovery + apply in `BEGIN EXCLUSIVE` so concurrent starters serialise.

@@ -39,7 +39,7 @@
 
 ## Migration changes (only if this PR touches `src/db/migrations/`)
 
-- [ ] Runs inside the serialized migration flow (registered with the existing Umzug pipeline; no ad-hoc connections).
+- [ ] Runs inside the serialized migration flow (a file under `src/db/migrations/` applied by the `src/db/migrate.ts` runner; no ad-hoc connections).
 - [ ] Safe for existing production data (no `DROP TABLE` / `ALTER TABLE ... DROP COLUMN` on populated columns without a backfill plan).
 - [ ] Defaults / backfills correct for `NULL` and legacy rows.
 - [ ] Foreign keys and indexes preserved (or explicitly recreated after a table rebuild).

@@ -14,7 +14,7 @@ const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
  * Build a fresh DB with migrations applied by direct up() calls in filename
  * order, up to and including the migration whose filename starts with
  * `stopPrefix` (e.g. '012-'). Mirrors `migrations-roundtrip.test.ts`'s
- * ordered-apply approach and sidesteps umzug.
+ * ordered-apply approach and sidesteps the migration runner.
  *
  * The round-trip test below uses this instead of the shared `beforeEach`
  * `runMigrations(db)` (which applies ALL migrations) so the 012 down()/up()

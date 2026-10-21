@@ -1,11 +1,11 @@
 /**
  * Node runtime version advisories (task #752).
  *
- * `package.json` `engines.node` stays `>=22`, which permits both even-numbered
+ * `package.json` `engines.node` is `>=22.14.0`, which permits both even-numbered
  * LTS majors (22, 24, …) and odd-numbered "Current" majors (23, 25, …). Odd
  * majors are short-lived, non-LTS releases that drop out of support quickly, so
  * running the CLI on one is a footgun worth flagging — but NOT a hard error
- * (`engines` already enforces the `>=22` floor). This module provides a pure
+ * (`engines` already enforces the `>=22.14.0` floor). This module provides a pure
  * predicate plus a NON-FATAL warning emitter the CLI calls at startup.
  *
  * Contract: the warning NEVER throws and NEVER exits. It writes one line to
@@ -59,7 +59,7 @@ export function warnIfNotEvenLts(options: NodeVersionWarningOptions = {}): boole
 
   warn(
     `warning: wood-fired-tasks is running on Node ${version}, an odd-numbered ` +
-      `"Current" (non-LTS) release. This is supported (engines: >=22) but ` +
+      `"Current" (non-LTS) release. This is supported (engines: >=22.14.0) but ` +
       `even-numbered LTS majors (22, 24, …) are recommended for stability.`,
   );
   return true;

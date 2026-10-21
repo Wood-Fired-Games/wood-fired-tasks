@@ -12,7 +12,7 @@ import type Database from '../driver.js';
  *   idx_users_oidc_sub_provider is unique only when both columns are
  *   non-null, which permits multiple legacy users with (NULL, NULL).
  * - IF NOT EXISTS is used on indexes for idempotent partial-replay safety;
- *   Umzug's _migrations table prevents re-running normally, but this is
+ *   the runner's _migrations table prevents re-running normally, but this is
  *   harmless belt-and-braces and matches the convention in CONTEXT.md.
  * - down() drops indexes before tables (DROP TABLE would clean them up,
  *   but explicit drops match the migration-007 convention and keep the

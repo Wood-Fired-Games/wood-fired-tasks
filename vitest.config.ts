@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     fileParallelism: false, // Run test files sequentially to avoid env var conflicts
     // task #823: several integration tests do real work in setup/body — run
-    // migrations (umzug cold-imports ~30 migration modules), boot the API
+    // migrations (the runner cold-imports every migration module), boot the API
     // server, or spawn the CLI. The 5s test / 10s hook vitest defaults are too
     // tight for them under load, and ESPECIALLY under Stryker's mutation dry
     // run, which executes the FULL suite serially against INSTRUMENTED code with

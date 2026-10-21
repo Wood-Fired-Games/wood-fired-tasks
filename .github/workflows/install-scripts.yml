@@ -251,7 +251,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
 
       - name: Build dist artifacts (CLI bin lives at dist/cli/bin/tasks.js)
         run: |
@@ -304,7 +304,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
 
       - name: Build dist artifacts (CLI bin lives at dist/cli/bin/tasks.js)
         run: |
@@ -362,7 +362,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
 
       - name: Build dist artifacts (CLI bin lives at dist/cli/bin/tasks.js)
         run: |
@@ -432,7 +432,7 @@ jobs:
           curl --version | head -1
 
       - name: Install dependencies
-        run: npm ci
+        run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
 
       - name: Build dist artifacts (server entry, CLI bin, migrations)
         run: |
@@ -497,7 +497,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
 
       - name: Build dist artifacts
         # smoke:global runs `npm run build` itself, but building here first

@@ -268,12 +268,17 @@ export async function smokeCodex({ prefixDir, tarball, mkTemp, assert }) {
       const upstream = await fetch(`https://registry.npmjs.org${req.url}`, {
         signal: AbortSignal.timeout(30_000),
       });
+      // Read the whole body BEFORE sending headers: if the upstream body
+      // stream fails (e.g. the 30s abort fires mid-download), the catch below
+      // can still answer 502 instead of crashing on ERR_HTTP_HEADERS_SENT.
+      const body = Buffer.from(await upstream.arrayBuffer());
       res.writeHead(upstream.status, {
         'content-type': upstream.headers.get('content-type') || 'application/json',
       });
-      res.end(Buffer.from(await upstream.arrayBuffer()));
+      res.end(body);
     } catch {
-      res.writeHead(502).end();
+      if (res.headersSent) res.destroy();
+      else res.writeHead(502).end();
     }
   });
   await new Promise((resolve) => registry.listen(0, '127.0.0.1', resolve));

@@ -106,7 +106,7 @@ function snapshotDb(db: Database.Database): DbSnapshot {
   // Only count rows in real tables (skip virtual FTS tables and indexes/triggers/views).
   // Virtual table row counts are implicitly verified via the underlying content table.
   // Skip the _migrations bookkeeping table — we apply migrations directly here,
-  // not through umzug, so it's empty and uninteresting.
+  // not through the runner in migrate.ts, so it's empty and uninteresting.
   const tables = db
     .prepare(
       `SELECT name FROM sqlite_master
@@ -129,7 +129,7 @@ function snapshotDb(db: Database.Database): DbSnapshot {
 
 /**
  * Apply migrations 001..targetIndex (inclusive) by direct up() calls.
- * This sidesteps umzug's storage table so each test gets a clean schema
+ * This sidesteps the runner's _migrations tracking table so each test gets a clean schema
  * matching exactly what those migrations produce.
  */
 async function applyMigrationsUpTo(

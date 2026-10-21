@@ -11,6 +11,35 @@ vulnerabilities, supply-chain pinning) are always called out under `Security`.
 
 ## [Unreleased]
 
+### Added
+- **CI fails if a global install prints a deprecation warning.** The
+  cross-OS `global-install-smoke` job now checks the output of
+  `npm i -g` of the freshly packed tarball and fails on any
+  `npm warn deprecated` line, printing each one with its `npm ls`
+  dependency path. Other npm warnings (e.g. Windows `npm warn cleanup`
+  EPERM noise) are shown but not counted.
+
+### Changed
+- **Umzug replaced by an in-house migration runner** (`src/db/migrate.ts`).
+  No user action: it reads the same `_migrations` table, so existing
+  databases see nothing pending. Removing umzug drops the `lodash.get` and
+  `lodash.isequal` deprecation warnings from `npm i -g wood-fired-tasks`.
+- **better-sqlite3 12 → 13.** `npm i -g wood-fired-tasks` no longer prints the
+  `prebuild-install` deprecation warning: 13.x ships its prebuilt binaries in
+  the package itself. Those binaries need Node-API 10, so `engines.node` is
+  now `>=22.14.0` (older 22.x releases crash on `new Database()`). The bundled
+  `wft-router` package moves to the same versions.
+- **Contributor `npm ci` needs npm 11.21.1 or newer.** npm drops
+  better-sqlite3's `gypfile: false` when installing from a lockfile and
+  compiles it from source instead (npm/cli#9837), which fails on machines
+  without a C++ toolchain. `package.json` `allowScripts` denies that synthetic
+  build; older npm ignores the field. CI runs every `npm ci` through npm 11.21.1
+  (`npx --yes npm@11.21.1 ci`); global installs still use the runner's stock
+  npm, matching what Node 22 users have.
+- Contributor `npm ci` no longer warns about the deprecated `whatwg-encoding`:
+  a dev-only `overrides` entry moves cheerio's `encoding-sniffer` to 1.0.2,
+  which uses `@exodus/bytes` instead.
+
 ## [2.8.0] - 2026-10-20
 
 Maintenance and security release. Updates runtime dependencies past one

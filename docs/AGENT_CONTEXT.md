@@ -259,7 +259,7 @@ Repo-specific terms. Definitions are extractive (read the source if you need mor
 | **service** | Shared business-logic layer under `src/services/`; every surface (API, MCP, CLI, Slack) calls services, never repositories. |
 | **repository** | SQL access layer under `src/repositories/`; the only code that talks to better-sqlite3 directly. |
 | **schema** | Zod schemas in `src/schemas/`; the single validation source of truth for every surface. |
-| **migration** | A file under `src/db/migrations/` run by umzug; named with a monotonic numeric prefix. |
+| **migration** | A file under `src/db/migrations/` run by `src/db/migrate.ts`; named with a monotonic numeric prefix. |
 | **event** | In-process event-bus payload; types listed in `src/events/types.ts` (e.g. `task.created`, `task.status_changed`, `project.deleted`). |
 | **WorkflowEngine** | Service that cascades parent task completion and auto-unblocks dependents when their predecessors finish. |
 | **idempotency** | 24h replay cache keyed by `Idempotency-Key` header; applied today only on the claim endpoint. |
@@ -286,9 +286,10 @@ Changes to this contract require:
 
 `package.json`'s top-level `overrides` object force-pins a transitive dependency's
 resolved version tree-wide, bypassing whatever semver range its actual parent
-package declares. Each key exists to close one or more disclosed vulnerabilities
-that the parent package(s) haven't (yet) picked up via an ordinary caret-range
-bump. Every key present in `package.json`'s `overrides` object MUST have a row
+package declares. Most keys close one or more disclosed vulnerabilities that the
+parent package(s) haven't (yet) picked up via an ordinary caret-range bump; a
+key with no GHSA instead removes a deprecated package that `npm ci` would warn
+about (zero-warning policy). Every key present in `package.json`'s `overrides` object MUST have a row
 here; `npm run agent-context:check` asserts the two key sets are identical
 (script: `scripts/agent-context/check.ts`, `checkDependencyOverridesConsistency`).
 
@@ -297,6 +298,7 @@ here; `npm run agent-context:check` asserts the two key sets are identical
 | `qs` | `qs` (via `@fastify/formbody`/body-parsing stack) | [GHSA-q8mj-m7cp-5q26](https://github.com/advisories/GHSA-q8mj-m7cp-5q26) — `qs.stringify` DoS on null/undefined comma-format array entries |
 | `undici` | `undici` (dev-only transitive, various tooling) | [GHSA-vmh5-mc38-953g](https://github.com/advisories/GHSA-vmh5-mc38-953g) — TLS certificate validation bypass via dropped `requestTls` in SOCKS5 `ProxyAgent` |
 | `esbuild` | `esbuild` (dev-only transitive, via `tsx`/`vitest` toolchain) | [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) — arbitrary file read via the dev server on Windows |
+| `cheerio` | `encoding-sniffer` → `^1.0.2` under `cheerio` (dev-only, test HTML parsing) | None — `encoding-sniffer@0.2.1` (cheerio 1.2.0's range) pulls in the deprecated `whatwg-encoding@3.1.1`; 1.0.2 replaces it with `@exodus/bytes`. Drop once cheerio depends on `encoding-sniffer@^1` itself |
 
 Removing an override is safe once the direct dependency that pulls the package
 in has bumped past the vulnerable range on its own (verify with

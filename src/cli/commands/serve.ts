@@ -15,7 +15,7 @@ import { createServer } from '../../api/server.js';
  * `DATABASE_PATH` env var defaults to the OS app-data path
  * (`src/config/paths.ts` `defaultDbPath`), so no path is hardcoded here. We
  * thread `config.DATABASE_PATH` into `createServer`, which opens that DB and
- * runs migrations (Umzug) BEFORE we begin listening. Launched from any
+ * runs migrations (src/db/migrate.ts runner) BEFORE we begin listening. Launched from any
  * directory, the same app-data DB is migrated and served.
  *
  * The public `/health` route answers 200 unauthenticated regardless of cwd.

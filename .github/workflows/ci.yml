@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       # Tests assert on packaged assets (dist/skills/tasks, dist/skills/agents)
       # resolved via the asset resolver, so dist/ must be built first.
       - run: npm run build
@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       # Same as the test job: coverage exercises tests that read packaged
       # dist/skills assets via the resolver, so dist/ must exist first.
       - run: npm run build
@@ -59,7 +59,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Check unused dependencies
         run: npx knip --dependencies
 
@@ -72,7 +72,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Check import boundaries and cycles (dependency-cruiser)
         run: npm run depcruise
 
@@ -85,7 +85,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Lint (biome check)
         run: npm run lint
       - name: Format check (biome format, fails on unformatted files)
@@ -102,7 +102,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Build (tsc)
         run: npm run build
 
@@ -115,7 +115,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Audit production dependencies (fail on high/critical)
         run: npm audit --omit=dev --audit-level=high
 
@@ -135,7 +135,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Cognitive-complexity report (advisory, never fails)
         run: npm run quality:complexity
 
@@ -148,7 +148,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Verify agent context manifest, links, and budgets
         run: npm run agent-context:check
 
@@ -161,7 +161,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Vendor-neutrality gate (forbid vendor names in router core)
         run: npm run check:vendor-neutrality
 
@@ -174,7 +174,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Build (tsc)
         run: npm run build
       - name: Pack the router package and validate tarball contents

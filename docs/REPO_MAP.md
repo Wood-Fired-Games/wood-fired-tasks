@@ -62,7 +62,7 @@ than duplicating them.
 
 ### `src/db/` — SQLite + migrations
 - `database.ts` — better-sqlite3 connection.
-- `migrate.ts` — umzug runner (`npm run migrate`).
+- `migrate.ts` — in-house migration runner (`npm run migrate`).
 - `migrations/001-initial-schema.ts` … `017-scm-charter.ts` (WSJF added `013-wsjf-fields.ts`, `014-value-charter.ts`, `015-wsjf-audit.ts`; `016-model-policy.ts` added configurable task models; `017-scm-charter.ts` the SCM charter default).
 - Tests: `src/db/__tests__/` (includes migration tests).
 

@@ -59,7 +59,7 @@ Source-of-truth code is in `src/`. Everything else is regenerated or installed:
 
 ### 8. Add a DB migration
 
-- **Files:** new `src/db/migrations/NNN-<slug>.ts` (umzug; both `up` and `down`), `src/db/migrate.ts` only if migration plumbing changes, `src/repositories/*` and `src/schemas/*` to consume the new columns.
+- **Files:** new `src/db/migrations/NNN-<slug>.ts` (exports both `up` and `down`), `src/db/migrate.ts` only if migration plumbing changes, `src/repositories/*` and `src/schemas/*` to consume the new columns.
 - **Tests:** `src/db/__tests__/migrations-roundtrip.test.ts`, `src/db/__tests__/<slug>.test.ts` (new).
 - **Docs:** `docs/ARCHITECTURE.md`, `docs/SETUP.md` if the migration changes setup instructions.
 

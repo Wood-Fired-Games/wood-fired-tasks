@@ -58,18 +58,13 @@ npm i -g wood-fired-tasks
 After that, `npm i -g` and `wood-fired-tasks self-update` both work without sudo
 forever.
 
-### Deprecation warnings on install (harmless)
+### Deprecation warnings on install
 
-`npm i -g wood-fired-tasks` prints a few `npm warn deprecated` lines. They are
-**expected, harmless, and come from upstream transitive dependencies** — not
-from wood-fired-tasks itself. The install succeeds and `npm audit` is clean.
-
-| Warning | Where it comes from | Status |
-| --- | --- | --- |
-| `prebuild-install@7.x` | `better-sqlite3` (the SQLite driver) still depends on it, including the latest release | Upstream-owned; nothing to do until better-sqlite3 drops it |
-| `lodash.get@4.x`, `lodash.isequal@4.x` | `umzug` (migrations) → `@rushstack/ts-command-line` → `z-schema@5` | Upstream-owned; `z-schema@12` dropped them but forcing that major override under rushstack is deferred (it must not risk the migration path) |
-
-You can safely ignore them. Tracking: project-37 #789.
+`npm i -g wood-fired-tasks` should print no `npm warn deprecated` lines. The
+two former sources are gone: `umzug` (which pulled in `lodash.get` and
+`lodash.isequal`) was replaced by an in-house migration runner, and
+`better-sqlite3` 13 no longer depends on `prebuild-install`. If you see one,
+please open an issue.
 
 ### `wood-fired-tasks setup` — local Claude Code wiring
 
@@ -283,10 +278,17 @@ its backend — no configuration is required to get git behavior.
 
 ## Prerequisites
 
-- **Node.js 22 or higher** — matches the CI matrix (`actions/setup-node` with
+- **Node.js 22.14 or higher** — matches the CI matrix (`actions/setup-node` with
   `node-version: '22'`) and is enforced by the `engines` field in
-  `package.json`.
-- **npm** — comes with Node.js.
+  `package.json`. The floor is 22.14 (not 22.0) because the bundled
+  better-sqlite3 13 prebuilt binaries target Node-API 10, which Node 22 only
+  gained in 22.14.0; older 22.x releases crash on `new Database()`.
+- **npm** — comes with Node.js. `npm i -g wood-fired-tasks` works with the npm
+  bundled with Node 22 and uses better-sqlite3's prebuilt binary — no Python or
+  C++ toolchain needed. **Contributors** running `npm ci` in a clone should use
+  npm 11.21.1 (what CI pins) or newer: the repo's `allowScripts` entry is what stops
+  npm from compiling better-sqlite3 from source on lockfile installs (see
+  `package.json` `allowScripts`); older npm ignores it and needs a C++ toolchain.
 
 The npm-only flow above (`npm i -g wood-fired-tasks` → `setup` → `serve`) needs
 **only Node.js + npm** — `setup` merges `~/.claude.json` with native Node JSON
@@ -1007,7 +1009,8 @@ artefacts and starting the service. The upgrade path assumes the
 migration is **reversible** — i.e. the matching `down` works and is
 covered by `migrations-roundtrip.test.ts`. For forward-only migrations,
 the rollback recipe above restores `tasks.db` from the pre-deploy backup
-**but** schema-only `down` revert via Umzug is not safe; treat the SQLite
+**but** a schema-only `down` revert is not safe (the migration runner
+only ever applies `up`); treat the SQLite
 backup as the recovery surface. Re-read `docs/RELEASE.md`
 [Migration expectations](RELEASE.md#migration-expectations) before
 shipping any release that adds a migration — it spells out the
@@ -1301,7 +1304,7 @@ includes) that are invoked from workflows rather than typed directly — see
 
 - **Driver:** better-sqlite3 (synchronous SQLite library for Node.js)
 - **Mode:** WAL (Write-Ahead Logging) for better concurrency
-- **Migrations:** Umzug for automatic schema versioning
+- **Migrations:** in-house forward-only runner (`src/db/migrate.ts`) for automatic schema versioning
 
 ### Database Path
 
