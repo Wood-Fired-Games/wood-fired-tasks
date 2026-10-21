@@ -191,7 +191,7 @@ export { program };
 if (isMain(import.meta.url)) {
   // Task #752: non-fatal advisory when running on an odd-numbered ("Current",
   // non-LTS) Node major. Writes one stderr line and returns — never throws,
-  // never exits. `engines.node` stays >=22 as the hard floor.
+  // never exits. `engines.node` (>=22.14.0) is the hard floor.
   warnIfNotEvenLts();
 
   // Plan 30-05: top-level catch surfaces NotAuthenticatedError as the

@@ -84,7 +84,7 @@ npm i -g wood-fired-tasks      # never needs sudo — see the admin-free note be
 ```
 
 This puts three identical CLI entry points on your PATH — `wood-fired-tasks`,
-`tasks`, and the short alias `wft` — plus `wft-router`. Requires **Node ≥ 22**;
+`tasks`, and the short alias `wft` — plus `wft-router`. Requires **Node ≥ 22.14**;
 works on Linux, macOS, and Windows. (There is no `curl | bash` bootstrap and the
 old `install.sh` / `install.ps1` git-clone scripts are retired — npm is the one
 supported install path.)

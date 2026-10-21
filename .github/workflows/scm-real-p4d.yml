@@ -32,7 +32,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
 
       # Install the p4 CLI (helix-command-line) as a single pinned, sha256-
       # verified static binary from Perforce's official CDN — the same

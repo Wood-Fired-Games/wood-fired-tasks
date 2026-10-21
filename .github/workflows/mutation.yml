@@ -166,7 +166,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       # postinstall.cjs is intentionally side-effect-free (#752), so `npm ci`
       # never produces dist/. Stryker copies the project into its sandbox and
       # runs the FULL vitest suite as a dry run before mutating; some tests read
@@ -223,7 +223,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - run: npm ci
+      - run: npx --yes npm@11.21.1 ci # this npm honours package.json allowScripts (npm/cli#9837, docs/SETUP.md)
       - name: Require every mutation shard to succeed
         env:
           SHARD_RESULT: ${{ needs.shard.result }}
