@@ -259,7 +259,7 @@ Repo-specific terms. Definitions are extractive (read the source if you need mor
 | **service** | Shared business-logic layer under `src/services/`; every surface (API, MCP, CLI, Slack) calls services, never repositories. |
 | **repository** | SQL access layer under `src/repositories/`; the only code that talks to better-sqlite3 directly. |
 | **schema** | Zod schemas in `src/schemas/`; the single validation source of truth for every surface. |
-| **migration** | A file under `src/db/migrations/` run by umzug; named with a monotonic numeric prefix. |
+| **migration** | A file under `src/db/migrations/` run by `src/db/migrate.ts`; named with a monotonic numeric prefix. |
 | **event** | In-process event-bus payload; types listed in `src/events/types.ts` (e.g. `task.created`, `task.status_changed`, `project.deleted`). |
 | **WorkflowEngine** | Service that cascades parent task completion and auto-unblocks dependents when their predecessors finish. |
 | **idempotency** | 24h replay cache keyed by `Idempotency-Key` header; applied today only on the claim endpoint. |

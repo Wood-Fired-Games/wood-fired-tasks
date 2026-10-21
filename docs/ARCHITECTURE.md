@@ -28,7 +28,7 @@ navigation hub.
                      v
             src/repositories/  (better-sqlite3 prepared statements)
                      v
-                  src/db/  (SQLite + umzug, WAL journal)
+                  src/db/  (SQLite + migrate.ts runner, WAL journal)
 
    eventBus (src/events/event-bus.ts, process-wide singleton)
         ^  emitted by services after every mutation
@@ -247,7 +247,7 @@ WAL mode is enabled by `src/db/database.ts`:
 ## Migration rules
 
 - Files live in `src/db/migrations/NNN-<slug>.ts` (monotonic prefix).
-- Run via `npm run migrate` (umzug; see `src/db/migrate.ts`).
+- Run via `npm run migrate` (in-house runner; see `src/db/migrate.ts`).
 - Names stored extensionless in `_migrations`, so `.ts` (dev) and `.js`
   (dist) of the same migration are treated as one. `runMigrations` wraps
   discovery + apply in `BEGIN EXCLUSIVE` so concurrent starters serialise.

@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-10-20T14:51:17.444Z",
+    "generated_at": "2026-10-21T15:21:00.492Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -22,7 +22,7 @@
       "status": "present",
       "approx_token_budget": 3000,
       "actual_lines": 144,
-      "sha256": "132978a878a5c12b59e8d19ba9379a810b6437920abf435aecdb39d43048eb82",
+      "sha256": "3a8d0831529b570f0a6574725f2ab1a99518b6db0a7d8946680b6c2641a597af",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -36,7 +36,7 @@
       "status": "present",
       "approx_token_budget": 8000,
       "actual_lines": 307,
-      "sha256": "fc4cfe1e195c0ac4c75b6568c2e752c5db1c3c6a28f02dd041a350f35c9b3129",
+      "sha256": "70c9c0b38861b22e549e9a6cb86d409caefed9427818e588a07c998b1cc1eaa0",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -50,7 +50,7 @@
       "status": "present",
       "approx_token_budget": 5000,
       "actual_lines": 160,
-      "sha256": "c443f6a4a9bf1afbf3ec6e5453a0f90665a22bc4f87b6634e4c8101f28e1e3ed",
+      "sha256": "9497e358cc27ab59d649a2c284a10b17947bc51937952c4243ac5d9ff280182f",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -64,7 +64,7 @@
       "status": "present",
       "approx_token_budget": 7000,
       "actual_lines": 349,
-      "sha256": "a2b2be220cb1ad9cf2e9c6e43054ee38b6e69df83b514242d5bea7cab94e6f31",
+      "sha256": "d762cb0c64874d9e58fe9ff78c61cd211c74969f6d448573cabd4984b70fd094",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -107,7 +107,7 @@
       "status": "present",
       "approx_token_budget": 6000,
       "actual_lines": 271,
-      "sha256": "01172fabe128ea6f406084657a94e99f5c3cad6e0a5babb161519d6746c8765e",
+      "sha256": "ca19ef140b8ccd3a7941b0d104a40aa70deca06224e135b7173ad97a30d08d85",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -163,8 +163,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 32400,
-      "actual_lines": 1584,
-      "sha256": "81d689613b6109f335c460deaa38064a4729edf5a1eaf29cfb0472c7887033e8"
+      "actual_lines": 1583,
+      "sha256": "90218a4dd82fc7f3222310a77d3edb9658515da3519649b5896f170583b93e80"
     },
     {
       "path": "docs/SLACK.md",
