@@ -20,6 +20,14 @@ updates:
       # silently scans zero modules. Unpin once dependency-cruiser supports TS 7.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Stryker 10's vitest runner filters tests with space-joined names; vitest 5
+      # matches " > "-joined names, so no test runs for most mutants and they are
+      # scored as survived (mutation score 64% -> 19%). Unpin once Stryker's
+      # vitest runner supports vitest 5.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies", "automated"]
 
   - package-ecosystem: "github-actions"

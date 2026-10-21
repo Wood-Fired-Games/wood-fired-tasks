@@ -32,10 +32,12 @@ upgrade notes.
   `POST /api/v1/me/tokens` reject minute-precision values such as
   `2026-10-20T10:00Z`; send `2026-10-20T10:00:00Z`. The OpenAPI `pattern` for
   every `date-time` field is updated to match.
-- Dev toolchain: vitest 5, @vitest/coverage-v8 5, Stryker 10,
-  @fast-check/vitest 0.5, Biome 2.5.15, dependency-cruiser 18.6. TypeScript
-  stays on 6.x until dependency-cruiser supports TypeScript 7; Dependabot now
-  ignores TypeScript major updates. The `@babel/core` 7.x security override
+- Dev toolchain: Stryker 10, @fast-check/vitest 0.5, Biome 2.5.15,
+  dependency-cruiser 18.6. vitest stays on 4.x: Stryker 10's vitest runner
+  selects tests by space-joined names, but vitest 5 matches `" > "`-joined
+  names, so under vitest 5 no test ran for most mutants and they were scored
+  as survived. TypeScript stays on 6.x until dependency-cruiser supports
+  TypeScript 7. Dependabot ignores major updates to both. The `@babel/core` 7.x security override
   is dropped: its only consumer, Stryker 10, uses Babel 8, and forcing 7.x
   crashed the instrumenter.
 
@@ -50,7 +52,8 @@ upgrade notes.
   about the wft-router unit still fail the job.
 - Nightly mutation testing completes again: the api-core shard (and three
   shards close to the cap) are split so every shard fits the 300-minute job
-  limit, and Stryker's dry-run timeout is raised from 5 to 20 minutes.
+  limit (src/config/env.ts is split by line range), and Stryker's dry-run
+  timeout is raised from 5 to 20 minutes.
 
 ### Security
 - Runtime dependencies: `@modelcontextprotocol/sdk`, `fastify`,
