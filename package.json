@@ -167,7 +167,7 @@
     "@slack/web-api": "^8.1.1",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.1.0",
     "@vitest/coverage-v8": "^4.1.12",
     "cheerio": "^1.2.0",
