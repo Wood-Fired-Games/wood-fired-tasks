@@ -14,6 +14,7 @@ import type {
   HealthResponse,
   PaginatedResponse,
   PaginationParams,
+  ProjectListParams,
   CompletionReportInput,
   CompletionReportResponse,
 } from '../../cli/api/types.js';
@@ -182,11 +183,8 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** Query parameters of `GET /api/v1/projects`. */
-export interface ProjectListParams extends PaginationParams {
-  /** Archived project state: `exclude` (server default), `include` or `only`. */
-  archived?: ArchivedFilter;
-}
+/** Query parameters of `GET /api/v1/projects` (shared with the CLI client). */
+export type { ProjectListParams };
 
 /**
  * REST API client for the remote MCP server.

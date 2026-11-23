@@ -3,17 +3,26 @@ import { listProjects } from '../api/client.js';
 import { formatProjectTable, colorError, colorWarn, colorInfo } from '../output/formatters.js';
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput } from '../output/json-output.js';
+import { archivedFilterFromFlags, ARCHIVED_FLAGS_CONFLICT } from './archived-flags.js';
 
 const MAX_LIMIT = 500;
 
 export const projectListCommand = new Command('project-list')
-  .description('List all projects')
+  .description('List projects (archived projects are hidden unless asked for)')
+  .option('--include-archived', 'Also list archived projects')
+  .option('--archived-only', 'List only archived projects')
   .option('--limit <n>', `Max rows to return (default 50, max ${MAX_LIMIT})`, (v) =>
     parseInt(v, 10),
   )
   .option('--offset <n>', 'Zero-based offset for pagination (default 0)', (v) => parseInt(v, 10))
   .action(async (options) => {
     try {
+      const archived = archivedFilterFromFlags(options);
+      if (archived === null) {
+        console.error(colorError(ARCHIVED_FLAGS_CONFLICT));
+        process.exitCode = 1;
+        return;
+      }
       if (options.limit !== undefined) {
         if (!Number.isInteger(options.limit) || options.limit <= 0 || options.limit > MAX_LIMIT) {
           console.error(
@@ -35,6 +44,7 @@ export const projectListCommand = new Command('project-list')
       const projects = await listProjects({
         limit: options.limit,
         offset: options.offset,
+        ...(archived !== undefined && { archived }),
       });
 
       // Check if JSON mode (global flag from program)

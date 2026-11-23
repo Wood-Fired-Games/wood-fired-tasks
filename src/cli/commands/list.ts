@@ -4,6 +4,7 @@ import { formatTaskTable, colorError, colorWarn, colorInfo } from '../output/for
 import { handleError } from '../output/error-handler.js';
 import { jsonOutput, messageOutput } from '../output/json-output.js';
 import type { TaskFilters } from '../api/types.js';
+import { archivedFilterFromFlags, ARCHIVED_FLAGS_CONFLICT } from './archived-flags.js';
 
 const VALID_STATUSES = ['open', 'in_progress', 'done', 'closed', 'blocked'];
 // `all` is a CLI-only sentinel meaning "no server-side status filter" — it is
@@ -30,12 +31,22 @@ export const listCommand = new Command('list')
   .option('--tags <tags>', 'Filter by tags (comma-separated)')
   .option('--due-before <date>', 'Tasks due before date (ISO8601)')
   .option('--due-after <date>', 'Tasks due after date (ISO8601)')
+  // Archived project state (WFT #2478): without --project, tasks of archived
+  // projects are hidden unless asked for; --project always returns its tasks.
+  .option('--include-archived', 'Also list tasks of archived projects')
+  .option('--archived-only', 'List only tasks of archived projects')
   .option('--limit <n>', `Max rows to return (default 50, max ${MAX_LIMIT})`, (v) =>
     parseInt(v, 10),
   )
   .option('--offset <n>', 'Zero-based offset for pagination (default 0)', (v) => parseInt(v, 10))
   .action(async (options) => {
     try {
+      const archived = archivedFilterFromFlags(options);
+      if (archived === null) {
+        console.error(colorError(ARCHIVED_FLAGS_CONFLICT));
+        process.exitCode = 1;
+        return;
+      }
       // Validate status if provided. `all` is the explicit "every status"
       // sentinel and is accepted alongside the real statuses.
       if (
@@ -109,6 +120,9 @@ export const listCommand = new Command('list')
       }
       if (options.offset !== undefined) {
         filters.offset = options.offset;
+      }
+      if (archived !== undefined) {
+        filters.archived = archived;
       }
 
       // Call API

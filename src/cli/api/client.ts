@@ -26,6 +26,7 @@ import type {
   HealthResponse,
   PaginatedResponse,
   PaginationParams,
+  ProjectListParams,
 } from './types.js';
 import type { ModelPolicyNullable } from '../../schemas/model-policy.schema.js';
 import type { ModelCatalogEntry } from '../../schemas/model-catalog.schema.js';
@@ -292,7 +293,7 @@ export async function createProject(data: CreateProjectInput): Promise<ProjectRe
 /**
  * List projects (paginated). Returns the rows only.
  */
-export async function listProjects(pagination?: PaginationParams): Promise<ProjectResponse[]> {
+export async function listProjects(pagination?: ProjectListParams): Promise<ProjectResponse[]> {
   const endpoint = buildProjectListEndpoint(pagination);
   const payload = await apiRequest<unknown>(endpoint);
   // Trust boundary (task #774): validate every row + envelope shape.
@@ -303,7 +304,7 @@ export async function listProjects(pagination?: PaginationParams): Promise<Proje
  * List projects and return the full pagination envelope.
  */
 export async function listProjectsPaginated(
-  pagination?: PaginationParams,
+  pagination?: ProjectListParams,
 ): Promise<PaginatedResponse<ProjectResponse>> {
   const endpoint = buildProjectListEndpoint(pagination);
   const payload = await apiRequest<unknown>(endpoint);
@@ -311,12 +312,14 @@ export async function listProjectsPaginated(
   return parseProjectListResponse(payload, `GET ${endpoint}`);
 }
 
-function buildProjectListEndpoint(pagination?: PaginationParams): string {
+function buildProjectListEndpoint(pagination?: ProjectListParams): string {
   let endpoint = '/api/v1/projects';
   if (pagination) {
     const params = new URLSearchParams();
     if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
     if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+    // Archived project state (WFT #2478): omitted means the server default.
+    if (pagination.archived !== undefined) params.append('archived', pagination.archived);
     const qs = params.toString();
     if (qs) endpoint += `?${qs}`;
   }

@@ -53,6 +53,22 @@ describe('createCompletionsCommand', () => {
     exitSpy.mockRestore();
   });
 
+  it('completes the archived project flags in bash and zsh (WFT #2478)', async () => {
+    await program.parseAsync(['node', 'tasks', 'completions', 'bash']);
+    const bash = consoleLogSpy.mock.calls[0][0] as string;
+    for (const flag of ['--include-archived', '--archived-only', '--reason']) {
+      expect(bash).toContain(flag);
+    }
+
+    consoleLogSpy.mockClear();
+    await program.parseAsync(['node', 'tasks', 'completions', 'zsh']);
+    const zsh = consoleLogSpy.mock.calls[0][0] as string;
+    expect(zsh).toMatch(/list\)[\s\S]*?'--include-archived\[[^\]]+\]'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-list\)[\s\S]*?'--archived-only\[[^\]]+\]'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-archive\)[\s\S]*?'--reason\[[^\]]+\]:reason:'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-archive\)[\s\S]*?'--force\[[^\]]+\]'[\s\S]*?;;/);
+  });
+
   it('emits a bash completion script containing all registered subcommands', async () => {
     await program.parseAsync(['node', 'tasks', 'completions', 'bash']);
     expect(consoleLogSpy).toHaveBeenCalledOnce();

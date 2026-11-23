@@ -18,7 +18,13 @@ vi.mock('../../auth/credentials.js', () => ({
   resolveAuth: vi.fn(async () => ({ kind: 'bearer' as const, token: 'test-token' })),
 }));
 
-import { ApiClientError, archiveProject, unarchiveProject } from '../client.js';
+import {
+  ApiClientError,
+  archiveProject,
+  listProjects,
+  listTasks,
+  unarchiveProject,
+} from '../client.js';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -101,6 +107,22 @@ describe('CLI client: archiveProject / unarchiveProject (WFT #2477)', () => {
     expect(url).toBe('http://localhost:3000/api/v1/projects/7/unarchive');
     expect(init.method).toBe('POST');
     expect(project).toMatchObject({ id: 7, archived: false, archived_at: null });
+  });
+
+  it('listProjects sends the archived filter with the pagination (WFT #2478)', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ data: [], total: 0, limit: 10, offset: 0 }));
+
+    await listProjects({ limit: 10, archived: 'only' });
+
+    expect(lastCall().url).toBe('http://localhost:3000/api/v1/projects?limit=10&archived=only');
+  });
+
+  it('listTasks sends the archived filter (WFT #2478)', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ data: [], total: 0, limit: 50, offset: 0 }));
+
+    await listTasks({ status: 'open', archived: 'include' });
+
+    expect(lastCall().url).toBe('http://localhost:3000/api/v1/tasks?status=open&archived=include');
   });
 
   it('a 422 refusal keeps the server message with its counts, and the details', async () => {
