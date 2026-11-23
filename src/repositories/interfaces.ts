@@ -1,5 +1,6 @@
 import type {
   ArchivedFilter,
+  NonTerminalTaskCounts,
   Project,
   CreateProjectDTO,
   Task,
@@ -95,14 +96,27 @@ export interface ITaskRepository {
   /**
    * Filter + paginate tasks. `filters.limit`/`filters.offset` ride along on
    * the TaskFilters object so callers (CLI, MCP, REST) all share one shape.
+   *
+   * Archived projects: with no `filters.project_id`, tasks of archived
+   * projects are omitted unless `filters.archived` is `include` (return them
+   * too) or `only` (return nothing else). With `filters.project_id` the
+   * project's tasks are always returned, archived or not.
    */
   findByFilters(filters: TaskFilters): Array<Task & { tags: string[] }>;
   findChildren(parentId: number, pagination?: PaginationOptions): Array<Task & { tags: string[] }>;
   /**
-   * Total match count for the same filter set, ignoring pagination.
-   * Powers the `total` field in the {data,total,limit,offset} envelope.
+   * Total match count for the same filter set, ignoring pagination — the
+   * `archived` rule of `findByFilters` included. Powers the `total` field in
+   * the {data,total,limit,offset} envelope. Called with NO argument it is the
+   * raw count of every task, archived projects included.
    */
   count(filters?: TaskFilters): number;
+  /**
+   * Count of one project's non-terminal tasks (`open`, `in_progress`,
+   * `blocked`, `backlogged`) per status. Every status is present in the
+   * result, zero included. Backs the archive precondition.
+   */
+  countNonTerminalByStatus(projectId: number): NonTerminalTaskCounts;
   /** Total children count for a parent task, ignoring pagination. */
   countChildren(parentId: number): number;
   /**

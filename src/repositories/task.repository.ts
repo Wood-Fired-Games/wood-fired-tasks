@@ -5,8 +5,15 @@ import type {
   UpdateTaskDTO,
   TaskFilters,
   VerificationEvidence,
+  NonTerminalTaskCounts,
+  NonTerminalTaskStatus,
 } from '../types/task.js';
-import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
+import {
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_OFFSET,
+  MAX_PAGE_LIMIT,
+  NON_TERMINAL_TASK_STATUSES,
+} from '../types/task.js';
 import type { Fib, WsjfSource } from '../types/wsjf.js';
 import type { ITaskRepository, CompletionRangeFilters, PaginationOptions } from './interfaces.js';
 import { FtsSyntaxError, isSqliteFtsSyntaxError } from './errors.js';
@@ -122,6 +129,29 @@ function inflateWsjf<T extends Record<string, unknown>>(task: T): T {
     out[col] = typeof raw === 'string' ? parseJsonColumn(raw) : (raw ?? null);
   }
   return out as T;
+}
+
+/**
+ * Archived project state: the WHERE predicate (on the joined `projects p`)
+ * for the `archived` listing filter, or `null` when no predicate applies.
+ *
+ * With no `project_id`, tasks of archived projects are omitted by default
+ * (`exclude`), `include` returns them and `only` returns nothing else. When
+ * `project_id` is given the filter is ignored: asking for a project by id
+ * always returns its tasks, even if that project is archived.
+ */
+function archivedProjectPredicate(filters: TaskFilters): string | null {
+  if (filters.project_id !== undefined) {
+    return null;
+  }
+  switch (filters.archived ?? 'exclude') {
+    case 'exclude':
+      return 'p.archived_at IS NULL';
+    case 'only':
+      return 'p.archived_at IS NOT NULL';
+    case 'include':
+      return null;
+  }
 }
 
 export class TaskRepository implements ITaskRepository {
@@ -593,6 +623,11 @@ export class TaskRepository implements ITaskRepository {
       );
     }
 
+    const archivedPredicate = archivedProjectPredicate(filters);
+    if (archivedPredicate !== null) {
+      whereClauses.push(archivedPredicate);
+    }
+
     // Build final query
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
@@ -855,11 +890,22 @@ export class TaskRepository implements ITaskRepository {
       );
     }
 
+    // Archived project state: mirror findByFilters so `total` matches the
+    // visible rows. The predicate reads `projects`, so join it only then
+    // (tasks.project_id is NOT NULL with an FK — the join never drops a row).
+    const archivedPredicate = archivedProjectPredicate(filters);
+    if (archivedPredicate !== null) {
+      whereClauses.push(archivedPredicate);
+    }
+    const projectJoin =
+      archivedPredicate !== null ? 'INNER JOIN projects p ON p.id = t.project_id' : '';
+
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const query = `
       SELECT COUNT(DISTINCT t.id) as count
       FROM tasks t
+      ${projectJoin}
       ${whereClause}
     `;
 
@@ -876,6 +922,27 @@ export class TaskRepository implements ITaskRepository {
     }
     // COUNT(*) always returns exactly one row — `result` is never undefined.
     return result?.count ?? 0;
+  }
+
+  countNonTerminalByStatus(projectId: number): NonTerminalTaskCounts {
+    const placeholders = NON_TERMINAL_TASK_STATUSES.map(() => '?').join(', ');
+    const rows = mapRows<{ status: NonTerminalTaskStatus; count: number }>(
+      this.db.prepare(
+        `SELECT status, COUNT(*) as count
+         FROM tasks
+         WHERE project_id = ? AND status IN (${placeholders})
+         GROUP BY status`,
+      ),
+      projectId,
+      ...NON_TERMINAL_TASK_STATUSES,
+    );
+    // GROUP BY returns no row for a status with no tasks; seed every status
+    // with zero so callers always get one entry per status.
+    const counts: NonTerminalTaskCounts = { open: 0, in_progress: 0, blocked: 0, backlogged: 0 };
+    for (const row of rows) {
+      counts[row.status] = row.count;
+    }
+    return counts;
   }
 
   findCompletedInRange(filters: CompletionRangeFilters): Array<Task & { tags: string[] }> {

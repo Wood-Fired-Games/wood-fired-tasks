@@ -32,6 +32,21 @@ export const TASK_STATUSES = [
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
 /**
+ * The statuses of a task that is not finished — everything except `done` and
+ * `closed`. A project with any task in one of these cannot be archived
+ * without `force` (docs/design/project-archived-state.md §2.2).
+ */
+export const NON_TERMINAL_TASK_STATUSES = [
+  'open',
+  'in_progress',
+  'blocked',
+  'backlogged',
+] as const satisfies readonly (typeof TASK_STATUSES)[number][];
+export type NonTerminalTaskStatus = (typeof NON_TERMINAL_TASK_STATUSES)[number];
+/** Task count per non-terminal status; every status is present, zero included. */
+export type NonTerminalTaskCounts = Record<NonTerminalTaskStatus, number>;
+
+/**
  * Wave 1.4 (task #312): structured verification evidence stored in
  * `tasks.verification_evidence` as a JSON string. Surface-level callers see
  * the parsed object; the repository handles serialization on write and parse
