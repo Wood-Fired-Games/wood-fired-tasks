@@ -40,3 +40,16 @@ rules:
     with:
       url: https://hooks.example.com/wft-router
       token_env: WFT_WEBHOOK_TOKEN
+
+  # 3) Tell an operator endpoint when a project is archived (frozen, read-only).
+  #    Project events carry no task, so task predicates such as `project:` or
+  #    `tags_contains_any:` never match them; leave `where:` empty. Use
+  #    `on: project.unarchived` for the reverse. An archived project emits no
+  #    task events, and the startup sweep skips it.
+  - name: archived-project-notifies-operator
+    on: project.archived
+    where: {}
+    do: webhook_post
+    with:
+      url: https://hooks.example.com/wft-router
+      token_env: WFT_WEBHOOK_TOKEN

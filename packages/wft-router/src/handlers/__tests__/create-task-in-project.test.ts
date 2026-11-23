@@ -210,6 +210,34 @@ describe('createTaskInProject', () => {
     expect(statusOf(store, 'rule-A', 'evt-1')).toBe('PERMANENTLY_FAILED');
   });
 
+  // Archived project state (design §3.8): creating a task in an archived
+  // project answers 422 `project_archived`. That is a permanent refusal —
+  // retrying cannot succeed until a human unarchives — so it must land
+  // PERMANENTLY_FAILED with retryable:false (no handler change needed).
+  it('422 project_archived: permanent, non-retryable, PERMANENTLY_FAILED row', async () => {
+    const store = makeStore();
+    const { fetchImpl, calls } = recordingFetch(
+      422,
+      JSON.stringify({
+        error: 'BUSINESS_RULE_VIOLATION',
+        message:
+          'project_archived: project 7 is archived and read-only; unarchive it before making changes',
+      }),
+    );
+    const ctx = baseContext({ store, fetchImpl });
+
+    const outcome = await createTaskInProject(ctx);
+
+    expect(outcome.kind).toBe('failed');
+    if (outcome.kind === 'failed') {
+      expect(outcome.retryable).toBe(false);
+      expect(outcome.detail).toBe('HTTP 422 (client error)');
+    }
+    expect(statusOf(store, 'rule-A', 'evt-1')).toBe('PERMANENTLY_FAILED');
+    // Exactly one POST: the refusal is not retried inside the handler.
+    expect(calls).toHaveLength(1);
+  });
+
   it('5xx WITH RETRY: retryable → failed retryable, FAILED row', async () => {
     const store = makeStore();
     const { fetchImpl } = recordingFetch(503, 'upstream down');
