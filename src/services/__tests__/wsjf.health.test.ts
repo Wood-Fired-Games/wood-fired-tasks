@@ -11,6 +11,10 @@ import type { WsjfComponents } from '../../types/wsjf.js';
 import type { ITaskRepository } from '../../repositories/interfaces.js';
 import type { IWsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
 import { createTestApp, type App } from '../../index.js';
+import { DependencyRepository } from '../../repositories/dependency.repository.js';
+import { ProjectRepository } from '../../repositories/project.repository.js';
+import { TaskRepository } from '../../repositories/task.repository.js';
+import { WsjfHistoryRepository } from '../../repositories/wsjf-history.repository.js';
 import { createMcpServer } from '../../mcp/server.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -544,5 +548,182 @@ describe('WsjfHealthService + wsjf_health tool (#646)', () => {
     const churn = report.findings.find((f) => f.check === 'score-churn');
     expect(churn).toBeDefined();
     expect(churn!.taskIds).toEqual([99]);
+  });
+});
+
+// --- Archived project state (docs/design/project-archived-state.md §3.3, §3.9) ---
+
+describe('analyzeWsjfHealth — blocked-by-archived-project', () => {
+  it('fires for each task blocked by unfinished work in an archived project', () => {
+    const report = analyzeWsjfHealth(7, HEALTHY_SNAPSHOTS, NO_HISTORY, DEFAULT_HEALTH_THRESHOLDS, [
+      { taskId: 2, blockerTaskId: 90, blockerProjectId: 30 },
+      { taskId: 2, blockerTaskId: 91, blockerProjectId: 30 },
+      { taskId: 4, blockerTaskId: 95, blockerProjectId: 31 },
+    ]);
+
+    expect(report.healthy).toBe(false);
+    const finding = report.findings.find((f) => f.check === 'blocked-by-archived-project');
+    expect(finding).toMatchObject({ severity: 'warning', taskIds: [2, 4] });
+    expect(finding?.message).toContain('#90');
+    expect(finding?.message).toContain('#91');
+    expect(finding?.message).toContain('#95');
+    expect(finding?.message).toContain('project 30');
+    expect(finding?.message).toContain('project 31');
+    expect(finding?.suggestion).toMatch(/unarchive/i);
+    expect(finding?.suggestion).toMatch(/remove the dependency/i);
+  });
+
+  it('is silent with no archived blockers (default argument)', () => {
+    expect(fired(analyzeWsjfHealth(7, HEALTHY_SNAPSHOTS, NO_HISTORY).findings)).not.toContain(
+      'blocked-by-archived-project',
+    );
+    expect(
+      analyzeWsjfHealth(7, HEALTHY_SNAPSHOTS, NO_HISTORY, DEFAULT_HEALTH_THRESHOLDS, []).healthy,
+    ).toBe(true);
+  });
+});
+
+describe('WsjfHealthService — blocked-by-archived-project', () => {
+  let app: App;
+  let svc: WsjfHealthService;
+  let activeProjectId: number;
+  let otherProjectId: number;
+  let blockedTaskId: number;
+  let blockerTaskId: number;
+
+  const newTask = (title: string, projectId: number) =>
+    app.taskService.createTask({ title, project_id: projectId, created_by: 'test' }).id;
+
+  const archivedFinding = (projectId: number) =>
+    svc.check(projectId).findings.find((f) => f.check === 'blocked-by-archived-project');
+
+  beforeEach(async () => {
+    app = await createTestApp();
+    svc = new WsjfHealthService({
+      tasks: new TaskRepository(app.db),
+      history: new WsjfHistoryRepository(app.db),
+      dependencies: new DependencyRepository(app.db),
+      projects: new ProjectRepository(app.db),
+    });
+    activeProjectId = app.projectService.createProject({ name: 'Active' }).id;
+    otherProjectId = app.projectService.createProject({ name: 'Other' }).id;
+    blockedTaskId = newTask('Needs the other project', activeProjectId);
+    blockerTaskId = newTask('Unfinished upstream work', otherProjectId);
+    // blockerTaskId blocks blockedTaskId, across projects.
+    app.dependencyService.addDependency({ task_id: blockerTaskId, blocks_task_id: blockedTaskId });
+  });
+
+  afterEach(() => {
+    app.dispose();
+  });
+
+  it('produces blocked-by-archived-project when the blocker sits in a force-archived project', () => {
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+
+    const finding = archivedFinding(activeProjectId);
+
+    expect(finding).toMatchObject({
+      check: 'blocked-by-archived-project',
+      severity: 'warning',
+      taskIds: [blockedTaskId],
+    });
+    expect(finding?.message).toContain(`#${blockerTaskId}`);
+    expect(finding?.message).toContain(`project ${otherProjectId}`);
+    expect(svc.check(activeProjectId).healthy).toBe(false);
+  });
+
+  it("no finding when the blocker's project is not archived", () => {
+    expect(archivedFinding(activeProjectId)).toBeUndefined();
+  });
+
+  it('no finding once the archived project is unarchived', () => {
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+    app.projectService.unarchiveProject(otherProjectId, 'alice');
+
+    expect(archivedFinding(activeProjectId)).toBeUndefined();
+  });
+
+  it('no finding when the blocker in the archived project is already finished', () => {
+    app.taskService.updateTask(blockerTaskId, { status: 'closed' });
+    app.projectService.archiveProject(otherProjectId, {}, 'alice');
+
+    expect(archivedFinding(activeProjectId)).toBeUndefined();
+  });
+
+  it('no finding when the blocked task itself is already finished', () => {
+    app.taskService.updateTask(blockedTaskId, { status: 'closed' });
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+
+    expect(archivedFinding(activeProjectId)).toBeUndefined();
+  });
+
+  it('lists every implicated task once, even with several archived blockers', () => {
+    const secondBlocked = newTask('Also stuck', activeProjectId);
+    const secondBlocker = newTask('More unfinished upstream', otherProjectId);
+    app.dependencyService.addDependency({ task_id: secondBlocker, blocks_task_id: blockedTaskId });
+    app.dependencyService.addDependency({ task_id: secondBlocker, blocks_task_id: secondBlocked });
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+
+    expect(archivedFinding(activeProjectId)?.taskIds).toEqual([blockedTaskId, secondBlocked]);
+  });
+
+  it('an archived project itself reports no such finding (its read path is unchanged)', () => {
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+    const before = svc.check(otherProjectId);
+
+    expect(before.findings.map((f) => f.check)).not.toContain('blocked-by-archived-project');
+  });
+
+  it('a project that is archived is not flagged for its own cross-project blockers', () => {
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+    app.projectService.archiveProject(activeProjectId, { force: true, reason: 'too' }, 'alice');
+
+    expect(archivedFinding(activeProjectId)).toBeUndefined();
+  });
+
+  it('is skipped (no finding, no crash) when the optional collaborators are not wired', () => {
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+    const bare = new WsjfHealthService({
+      tasks: new TaskRepository(app.db),
+      history: new WsjfHistoryRepository(app.db),
+    });
+
+    expect(bare.check(activeProjectId).findings.map((f) => f.check)).not.toContain(
+      'blocked-by-archived-project',
+    );
+  });
+
+  it('surfaces through the wsjf_health MCP tool', async () => {
+    app.projectService.archiveProject(otherProjectId, { force: true, reason: 'dropped' }, 'alice');
+    const server = createMcpServer(
+      app.taskService,
+      app.projectService,
+      app.dependencyService,
+      app.commentService,
+      app.db,
+      undefined,
+      app.topologyService,
+    );
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
+    await client.connect(clientTransport);
+
+    const result = (await client.callTool({
+      name: 'wsjf_health',
+      arguments: { project_id: activeProjectId },
+    })) as ToolResult;
+
+    const sc = result.structuredContent as {
+      healthy: boolean;
+      findings: Array<{ check: string; taskIds: number[] }>;
+    };
+    expect(sc.healthy).toBe(false);
+    expect(sc.findings.find((f) => f.check === 'blocked-by-archived-project')?.taskIds).toEqual([
+      blockedTaskId,
+    ]);
+
+    await clientTransport.close();
+    await serverTransport.close();
   });
 });

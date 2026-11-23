@@ -378,6 +378,37 @@ describe('project WSJF remote-parity REST surface', () => {
     expect(body.findings.every((f: { check: string }) => typeof f.check === 'string')).toBe(true);
   });
 
+  it('GET /:id/wsjf-health reports blocked-by-archived-project for a task blocked by an archived project', async () => {
+    const active = app.projectService.createProject({ name: 'Health Active' });
+    const dropped = app.projectService.createProject({ name: 'Health Dropped' });
+    const blocked = app.taskService.createTask({
+      title: 'Stuck',
+      project_id: active.id,
+      created_by: 'tester',
+    });
+    const blocker = app.taskService.createTask({
+      title: 'Unfinished upstream',
+      project_id: dropped.id,
+      created_by: 'tester',
+    });
+    app.dependencyService.addDependency({ task_id: blocker.id, blocks_task_id: blocked.id });
+
+    const url = `/api/v1/projects/${active.id}/wsjf-health`;
+    const before = (await server.inject({ method: 'GET', url, headers })).json();
+    expect(before.findings.map((f: { check: string }) => f.check)).not.toContain(
+      'blocked-by-archived-project',
+    );
+
+    app.projectService.archiveProject(dropped.id, { force: true, reason: 'dropped' }, 'tester');
+
+    const response = await server.inject({ method: 'GET', url, headers });
+    expect(response.statusCode).toBe(200);
+    const finding = response
+      .json()
+      .findings.find((f: { check: string }) => f.check === 'blocked-by-archived-project');
+    expect(finding).toMatchObject({ severity: 'warning', taskIds: [blocked.id] });
+  });
+
   it('GET /:id/wsjf-health returns 404 for a missing project', async () => {
     const response = await server.inject({
       method: 'GET',

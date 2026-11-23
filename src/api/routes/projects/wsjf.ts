@@ -122,6 +122,9 @@ const HealthFindingSchema = z.object({
     // Task #1004: emitted by check_health (edge-less blocked lint); part of
     // the shared HealthCheckId union, never produced by the WSJF linter.
     'blocked-without-edge',
+    // Archived project state: a task blocked by unfinished work that sits in
+    // an archived project.
+    'blocked-by-archived-project',
   ]),
   severity: z.enum(['info', 'warning', 'critical']),
   message: z.string(),
@@ -352,6 +355,8 @@ const projectWsjfRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const healthService = new WsjfHealthService({
         tasks: new TaskRepository(fastify.db),
         history: new WsjfHistoryRepository(fastify.db),
+        dependencies: new DependencyRepository(fastify.db),
+        projects: new ProjectRepository(fastify.db),
       });
       const report = healthService.check(request.params.id);
       return reply.send({

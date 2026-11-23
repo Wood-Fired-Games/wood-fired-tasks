@@ -34,7 +34,11 @@
 //                              rescore runs (unstable estimate) — detectable only
 //                              because `wsjf_score_history` exists.
 
-import type { ITaskRepository } from '../repositories/interfaces.js';
+import type {
+  IDependencyRepository,
+  IProjectRepository,
+  ITaskRepository,
+} from '../repositories/interfaces.js';
 import type { IWsjfHistoryRepository } from '../repositories/wsjf-history.repository.js';
 import type { Task, TaskPriority, TaskStatus } from '../types/task.js';
 import type { WsjfComponents, WsjfComponentKey } from '../types/wsjf.js';
@@ -56,7 +60,23 @@ export type HealthCheckId =
   // Task #1004: emitted by `check_health` (src/mcp/tools/health-tools.ts), not
   // the WSJF linter — it shares this findings shape so all health surfaces
   // speak one language.
-  | 'blocked-without-edge';
+  | 'blocked-without-edge'
+  // Archived project state: an unfinished task in an active project blocked
+  // by an unfinished task that belongs to an archived (frozen) project. The
+  // blocker can never finish while its project stays archived, so the blocked
+  // task is stuck until someone unarchives the project or removes the edge.
+  | 'blocked-by-archived-project';
+
+/**
+ * One edge behind a `blocked-by-archived-project` finding: `taskId` (in the
+ * linted project) is blocked by `blockerTaskId`, an unfinished task in the
+ * archived project `blockerProjectId`.
+ */
+export interface ArchivedBlockerEdge {
+  taskId: number;
+  blockerTaskId: number;
+  blockerProjectId: number;
+}
 
 /** One linter finding: which check fired, how bad, why, and what to do. */
 export interface HealthFinding {
@@ -181,6 +201,7 @@ export function analyzeWsjfHealth(
   snapshots: HealthTaskSnapshot[],
   historyByTask: Map<number, HealthHistoryPoint[]>,
   thresholds: WsjfHealthThresholds = DEFAULT_HEALTH_THRESHOLDS,
+  archivedBlockers: ArchivedBlockerEdge[] = [],
 ): WsjfHealthReport {
   const findings: HealthFinding[] = [];
   const scored = snapshots.filter(
@@ -349,6 +370,31 @@ export function analyzeWsjfHealth(
     });
   }
 
+  // --- Check: blocked by an archived project ---------------------------------
+  // Not a WSJF degeneracy but a stuck-forever dependency, reported here so
+  // every health surface carries it. Possible after a forced archive.
+  if (archivedBlockers.length > 0) {
+    const taskIds = [...new Set(archivedBlockers.map((e) => e.taskId))].sort((a, b) => a - b);
+    const blockers = [
+      ...new Map(archivedBlockers.map((e) => [e.blockerTaskId, e] as const)).values(),
+    ].sort((a, b) => a.blockerTaskId - b.blockerTaskId);
+    const projectIds = [...new Set(blockers.map((e) => e.blockerProjectId))].sort((a, b) => a - b);
+    findings.push({
+      check: 'blocked-by-archived-project',
+      severity: 'warning',
+      message:
+        `${taskIds.length} task(s) are blocked by unfinished work in an archived project: ` +
+        `${blockers.map((e) => `#${e.blockerTaskId} (project ${e.blockerProjectId})`).join(', ')}. ` +
+        `An archived project is frozen, so those blockers cannot be finished and the ` +
+        `blocked task(s) will stay stuck.`,
+      suggestion:
+        `Unarchive ${projectIds.map((id) => `project ${id}`).join(', ')} so the blocking ` +
+        `work can be finished, or remove the dependency if the blocked task no longer ` +
+        `needs it (the archived project must be unarchived to remove the edge).`,
+      taskIds,
+    });
+  }
+
   return {
     projectId,
     healthy: findings.length === 0,
@@ -402,6 +448,14 @@ const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(['done', 
 export interface WsjfHealthDeps {
   tasks: ITaskRepository;
   history: IWsjfHistoryRepository;
+  /**
+   * Archived project state: edge reader and project reader for the
+   * `blocked-by-archived-project` check. Optional as a pair — when either is
+   * absent the check is skipped (the other checks need neither). Production
+   * wiring (REST route + MCP server) supplies both.
+   */
+  dependencies?: Pick<IDependencyRepository, 'findAll'>;
+  projects?: Pick<IProjectRepository, 'findById'>;
 }
 
 /**
@@ -445,7 +499,56 @@ export class WsjfHealthService {
       );
     }
 
-    return analyzeWsjfHealth(projectId, snapshots, historyByTask, options.thresholds);
+    return analyzeWsjfHealth(
+      projectId,
+      snapshots,
+      historyByTask,
+      options.thresholds,
+      this.findArchivedBlockers(projectId, tasks),
+    );
+  }
+
+  /**
+   * Edges where an unfinished task of `projectId` is blocked by an unfinished
+   * task that belongs to an archived project. Empty when the linted project is
+   * itself archived (its read path is unchanged — everything in it is frozen
+   * anyway) or when the collaborators are not wired.
+   */
+  private findArchivedBlockers(projectId: number, tasks: Task[]): ArchivedBlockerEdge[] {
+    const { dependencies, projects } = this.deps;
+    if (!dependencies || !projects) return [];
+    if (projects.findById(projectId)?.archived === true) return [];
+
+    const unfinished = new Set(
+      tasks.filter((t) => !TERMINAL_STATUSES.has(t.status)).map((t) => t.id),
+    );
+    if (unfinished.size === 0) return [];
+
+    // Memoised so each blocker's project is read once.
+    const archivedByProject = new Map<number, boolean>();
+    const isArchived = (id: number): boolean => {
+      let archived = archivedByProject.get(id);
+      if (archived === undefined) {
+        archived = projects.findById(id)?.archived === true;
+        archivedByProject.set(id, archived);
+      }
+      return archived;
+    };
+
+    const edges: ArchivedBlockerEdge[] = [];
+    // A dependency row reads "task_id blocks blocks_task_id".
+    for (const dep of dependencies.findAll()) {
+      if (!unfinished.has(dep.blocks_task_id)) continue;
+      const blocker = this.deps.tasks.findById(dep.task_id);
+      if (!blocker || TERMINAL_STATUSES.has(blocker.status)) continue;
+      if (!isArchived(blocker.project_id)) continue;
+      edges.push({
+        taskId: dep.blocks_task_id,
+        blockerTaskId: blocker.id,
+        blockerProjectId: blocker.project_id,
+      });
+    }
+    return edges;
   }
 
   /** Page through every task in the project (findByFilters clamps at 500). */

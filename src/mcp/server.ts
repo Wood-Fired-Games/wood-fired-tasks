@@ -229,6 +229,9 @@ export function createMcpServer(
   const wsjfHealthService = new WsjfHealthService({
     tasks: wsjfTaskRepo,
     history: wsjfHistoryRepo,
+    // Archived project state: back the blocked-by-archived-project finding.
+    dependencies: wsjfDependencyRepo,
+    projects: new ProjectRepository(db),
   });
   registerWsjfTools(
     server,

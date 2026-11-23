@@ -5929,6 +5929,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                               "score-churn",
                               "auto-sized-pending",
                               "blocked-without-edge",
+                              "blocked-by-archived-project",
                             ],
                             "type": "string",
                           },
