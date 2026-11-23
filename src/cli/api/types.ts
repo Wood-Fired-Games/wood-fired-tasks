@@ -248,6 +248,11 @@ export interface HealthResponse {
   database?: {
     path: string;
     projects: number;
+    /**
+     * How many of `projects` are archived. Optional: a server that predates
+     * the archived project state does not send it.
+     */
+    archived_projects?: number;
     maxTaskId: number | null;
     latestActivity: string | null;
   };

@@ -53,11 +53,14 @@ const REST_ROUTE_FILES = [
 // Expected totals quoted by docs/INTERFACES.md. Shared between the count
 // assertions, the test titles, and the doc-anchor check so one constant is
 // the single place a legitimate surface change gets recorded.
-const EXPECTED_REST_ROUTE_TOTAL = 22;
+// 22 → 24: Archived project state (WFT #2471) added POST /projects/:id/archive
+// and POST /projects/:id/unarchive in src/api/routes/projects/index.ts.
+const EXPECTED_REST_ROUTE_TOTAL = 24;
 // 59 → 60: Security Audit M5 (task #1637) added the single read-only GET in
 // src/api/routes/audit/index.ts (`GET /api/v1/audit-events`).
-const EXPECTED_REST_ROUTE_FULL_TOTAL = 60;
-const EXPECTED_MCP_TOOL_TOTAL = 31;
+// 60 → 62: the two archive routes above.
+const EXPECTED_REST_ROUTE_FULL_TOTAL = 62;
+const EXPECTED_MCP_TOOL_TOTAL = 33;
 const EXPECTED_CLI_COMMAND_TOTAL = 46;
 
 const MCP_TOOLS_DIR = 'src/mcp/tools';

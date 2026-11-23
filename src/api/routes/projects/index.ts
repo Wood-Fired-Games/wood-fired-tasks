@@ -1,6 +1,12 @@
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { CreateProjectSchema, UpdateProjectSchema } from '../../../schemas/task.schema.js';
+import {
+  ArchivedFilterSchema,
+  ArchiveProjectSchema,
+  CreateProjectSchema,
+  UpdateProjectSchema,
+} from '../../../schemas/task.schema.js';
+import { requireUser } from '../../plugins/auth/index.js';
 import { ProjectResponseSchema, ProjectListPaginatedResponseSchema } from './schemas.js';
 import dependencyGraphRoutes from './dependency-graph.js';
 import topologyRoutes from './topology.js';
@@ -11,6 +17,9 @@ import projectWsjfRoutes from './wsjf.js';
 const QueryProjectListSchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
+  // Archived project state (design §2.5): archived projects are omitted
+  // unless asked for. `total` counts the filtered set.
+  archived: ArchivedFilterSchema,
 });
 
 const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
@@ -56,6 +65,61 @@ const projectRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const result = fastify.projectService.listProjectsPaginated(request.query);
       return reply.send(result);
+    },
+  );
+
+  // POST /:id/archive - Archive a project (Archived project state, §2.2/§2.6)
+  fastify.post(
+    '/:id/archive',
+    {
+      // `write`, like update: archiving destroys nothing and is reversible.
+      config: { requiredScope: 'write' },
+      schema: {
+        tags: ['projects'],
+        description:
+          'Archive a project: it leaves default listings and becomes read-only. ' +
+          'Refused with 422 `project_has_unfinished_tasks` while any task is open, ' +
+          'in_progress, blocked or backlogged, unless `force: true` with a `reason`. ' +
+          'Archiving an already archived project returns it unchanged.',
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: ArchiveProjectSchema.nullish(),
+        response: {
+          200: ProjectResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      // archived_by is the authenticated caller, never a body field.
+      const project = fastify.projectService.archiveProject(
+        request.params.id,
+        request.body ?? {},
+        requireUser(request).displayName,
+      );
+      return reply.send(project);
+    },
+  );
+
+  // POST /:id/unarchive - Return an archived project to normal use
+  fastify.post(
+    '/:id/unarchive',
+    {
+      config: { requiredScope: 'write' },
+      schema: {
+        tags: ['projects'],
+        description:
+          'Unarchive a project. Unarchiving a project that is not archived returns it unchanged.',
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        response: {
+          200: ProjectResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const project = fastify.projectService.unarchiveProject(
+        request.params.id,
+        requireUser(request).displayName,
+      );
+      return reply.send(project);
     },
   );
 

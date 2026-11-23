@@ -945,6 +945,40 @@ export class TaskRepository implements ITaskRepository {
     return counts;
   }
 
+  findUnblockableIds(projectId: number): number[] {
+    return mapRows<{ id: number }>(
+      this.db.prepare(
+        `SELECT t.id
+         FROM tasks t
+         WHERE t.project_id = ? AND t.status = 'blocked'
+           AND EXISTS (SELECT 1 FROM task_dependencies d WHERE d.blocks_task_id = t.id)
+           AND NOT EXISTS (
+             SELECT 1 FROM task_dependencies d
+             INNER JOIN tasks b ON b.id = d.task_id
+             WHERE d.blocks_task_id = t.id AND b.status != 'done'
+           )
+         ORDER BY t.id`,
+      ),
+      projectId,
+    ).map((row) => row.id);
+  }
+
+  findCompletableParentIds(projectId: number): number[] {
+    return mapRows<{ id: number }>(
+      this.db.prepare(
+        `SELECT t.id
+         FROM tasks t
+         WHERE t.project_id = ? AND t.status IN ('open', 'in_progress')
+           AND EXISTS (SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id)
+           AND NOT EXISTS (
+             SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id AND c.status != 'done'
+           )
+         ORDER BY t.id`,
+      ),
+      projectId,
+    ).map((row) => row.id);
+  }
+
   findCompletedInRange(filters: CompletionRangeFilters): Array<Task & { tags: string[] }> {
     // Use SQLite's datetime() to normalize comparison: completed_at may be
     // stored as ISO8601 ("2026-04-12T16:17:17Z") or SQLite format

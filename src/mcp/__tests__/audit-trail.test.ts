@@ -194,6 +194,29 @@ describe('stdio MCP audit trail (#1632)', () => {
       expect(rows[0]?.resource_id).toBe(String(task.id));
     });
 
+    it('archive_project and unarchive_project each record a projects row carrying the project id', async () => {
+      await bootMcp(mintPat(['write']));
+      const project = app.projectService.createProject({ name: 'Archive audited' });
+
+      const archived = await call('archive_project', { id: project.id, reason: 'shipped' });
+      expect(archived.isError).toBeFalsy();
+      const unarchived = await call('unarchive_project', { id: project.id });
+      expect(unarchived.isError).toBeFalsy();
+
+      const rows = allRows();
+      expect(rows.map((row) => row.action)).toEqual([
+        'MCP archive_project',
+        'MCP unarchive_project',
+      ]);
+      for (const row of rows) {
+        expect(row.resource_type).toBe('projects');
+        expect(row.resource_id).toBe(String(project.id));
+      }
+      // The free-text reason never reaches the trail.
+      expect(JSON.stringify(rows.map((row) => row.metadata))).not.toContain('shipped');
+      expect(app.auditEventRepository.verifyChain()).toBeNull();
+    });
+
     it('records one row per call — three calls, three rows, no duplicates', async () => {
       await bootMcp(mintPat(['write']));
       const project = app.projectService.createProject({ name: 'Repeat' });
@@ -507,6 +530,10 @@ describe('stdio MCP audit trail (#1632)', () => {
         'delete_comment',
         'rescore_project',
         'set_model_defaults',
+        // Archive then straight back: an archived project refuses every
+        // other write, so nothing else may run in between.
+        'archive_project',
+        'unarchive_project',
         'delete_task',
         'delete_project',
       ];
@@ -683,6 +710,8 @@ function mutatingInvocations(ids: {
     create_project: { name: 'Swept project' },
     update_project: { id: ids.project, updates: { name: 'Swept renamed' } },
     delete_project: { id: ids.project },
+    archive_project: { id: ids.project, force: true, reason: 'swept' },
+    unarchive_project: { id: ids.project },
     add_dependency: { task_id: ids.taskB, blocks_task_id: ids.taskC },
     remove_dependency: { task_id: ids.taskA, blocks_task_id: ids.taskB },
     add_comment: { task_id: ids.taskA, author: 'agent', content: 'swept' },

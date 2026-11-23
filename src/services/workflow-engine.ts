@@ -3,7 +3,7 @@ import { ITaskRepository, IDependencyRepository } from '../repositories/interfac
 import { TaskService } from './task.service.js';
 import { EventBus } from '../events/event-bus.js';
 import { VALID_STATUS_TRANSITIONS } from '../types/task.js';
-import type { TaskEvent } from '../events/types.js';
+import type { ProjectEvent, TaskEvent } from '../events/types.js';
 
 /**
  * WorkflowEngine - automates parent task completion and dependency auto-unblock.
@@ -25,6 +25,16 @@ import type { TaskEvent } from '../events/types.js';
  *   service refuses writes in an archived project, and a refusal thrown
  *   mid-cascade would roll back the whole transaction — losing the unblocks
  *   and completions in live projects too. A skipped target is not an error.
+ * - Unarchive re-evaluation (WFT #2522): the skip above means a project can
+ *   come back from the archive with a task still `blocked` although every
+ *   blocker finished meanwhile, or a parent still open although every child is
+ *   done. The engine therefore also subscribes to `project.unarchived` and,
+ *   AFTER the unarchive has committed, re-evaluates that one project in its
+ *   own cascade transaction: each blocked task whose blockers are all done is
+ *   opened, and each parent whose children are all done is auto-completed,
+ *   with the normal `source: 'workflow'` events. It is idempotent — a second
+ *   run finds no candidate — and does nothing if the project is archived
+ *   again by the time the event is handled.
  * - Cascade depth counts actual auto-completions and auto-unblocks, not intermediate transitions.
  *
  * Transaction atomicity (SC-5):
@@ -60,7 +70,7 @@ export class WorkflowEngine {
   ) {}
 
   /**
-   * Start listening for task.status_changed events.
+   * Start listening for task.status_changed and project.unarchived events.
    *
    * Subscribes with `ignoreTransaction: true` so the engine still receives
    * status_changed emits synchronously while a transactional emit buffer is
@@ -75,6 +85,15 @@ export class WorkflowEngine {
       { ignoreTransaction: true },
     );
     this.unsubscribes.push(unsub);
+
+    // Deliberately NOT `ignoreTransaction`: if the unarchive is ever emitted
+    // inside a transactional buffer, the re-evaluation must wait for that
+    // transaction to commit, never run inside it.
+    this.unsubscribes.push(
+      this.eventBus.subscribe('project.unarchived', (event: ProjectEvent) =>
+        this.handleProjectUnarchived(event),
+      ),
+    );
   }
 
   /**
@@ -99,34 +118,69 @@ export class WorkflowEngine {
    */
   private handleStatusChanged(event: TaskEvent): void {
     if (this.cascadeDepth === 0) {
-      // Entry point — wrap entire cascade in one DB transaction AND one
-      // EventBus transactional buffer so external subscribers (SSE / Slack /
-      // MCP) only see events for state the DB actually committed (task #244).
-      // The engine's own subscription bypasses the buffer so cascade recursion
-      // still drives synchronously inside the transaction.
-      try {
-        this.eventBus.runInTransaction(() => {
-          const cascadeTx = this.db.transaction(() => {
-            this.processCascade(event);
-            // If any nested cascade operation set an error, throw to trigger rollback
-            if (this.cascadeError) {
-              const err = this.cascadeError;
-              this.cascadeError = null;
-              throw err;
-            }
-          });
-          cascadeTx();
-        });
-      } catch (error) {
-        // Transaction rolled back AND event buffer discarded — log but don't
-        // throw (this handler is called from EventBus which has its own
-        // try/catch).
-        this.cascadeError = null;
-        console.error('WorkflowEngine: cascade rolled back due to error:', error);
-      }
+      this.runCascade(() => this.processCascade(event));
     } else {
       // Already inside a transaction (recursive call from EventBus)
       this.processCascade(event);
+    }
+  }
+
+  /**
+   * Handle a project.unarchived event: re-evaluate the project once, as its
+   * own cascade (see the class doc, "Unarchive re-evaluation").
+   */
+  private handleProjectUnarchived(event: ProjectEvent): void {
+    const projectId = event.data.id;
+    this.runCascade(() => this.reevaluateProject(projectId));
+  }
+
+  /**
+   * Run `work` as one cascade entry point: one DB transaction AND one EventBus
+   * transactional buffer, so external subscribers (SSE / Slack / MCP) only see
+   * events for state the DB actually committed (task #244). The engine's own
+   * task.status_changed subscription bypasses the buffer so cascade recursion
+   * still drives synchronously inside the transaction.
+   */
+  private runCascade(work: () => void): void {
+    try {
+      this.eventBus.runInTransaction(() => {
+        const cascadeTx = this.db.transaction(() => {
+          work();
+          // If any nested cascade operation set an error, throw to trigger rollback
+          if (this.cascadeError) {
+            const err = this.cascadeError;
+            this.cascadeError = null;
+            throw err;
+          }
+        });
+        cascadeTx();
+      });
+    } catch (error) {
+      // Transaction rolled back AND event buffer discarded — log but don't
+      // throw (this handler is called from EventBus which has its own
+      // try/catch).
+      this.cascadeError = null;
+      console.error('WorkflowEngine: cascade rolled back due to error:', error);
+    }
+  }
+
+  /**
+   * Bring one just-unarchived project to the state it would have had: open
+   * every blocked task whose blockers are all done, then auto-complete every
+   * parent whose children are all done. Each write goes through the same
+   * checks as the normal cascade, and a completed parent drives the normal
+   * cascade from there (its own parent, its dependents).
+   */
+  private reevaluateProject(projectId: number): void {
+    // Archived again (or deleted) since the event was emitted: frozen, skip.
+    if (this.taskService.isProjectArchived(projectId)) {
+      return;
+    }
+    for (const taskId of this.taskRepo.findUnblockableIds(projectId)) {
+      this.unblockIfAllBlockersDone(taskId);
+    }
+    for (const parentId of this.taskRepo.findCompletableParentIds(projectId)) {
+      this.completeParentIfAllChildrenDone(parentId);
     }
   }
 
@@ -184,11 +238,18 @@ export class WorkflowEngine {
       return;
     }
 
-    const parentId = task.parent_task_id;
+    this.completeParentIfAllChildrenDone(task.parent_task_id);
+  }
 
+  /**
+   * Auto-complete one parent if ALL its children are done and it can legally
+   * reach 'done'. Shared by the status-change cascade and the unarchive
+   * re-evaluation.
+   */
+  private completeParentIfAllChildrenDone(parentId: number): void {
     // Check if ALL siblings (children of parent) are done
     const siblings = this.taskRepo.findChildren(parentId);
-    const allDone = siblings.every((s) => s.status === 'done');
+    const allDone = siblings.length > 0 && siblings.every((s) => s.status === 'done');
 
     if (!allDone) {
       return;
@@ -254,43 +315,52 @@ export class WorkflowEngine {
     const dependenciesWhereThisBlocks = this.dependencyRepo.findByTaskId(task.id);
 
     for (const dep of dependenciesWhereThisBlocks) {
-      const blockedTaskId = dep.blocks_task_id;
+      this.unblockIfAllBlockersDone(dep.blocks_task_id);
+    }
+  }
 
-      // Get the blocked task to check its current status
-      const blockedTask = this.taskRepo.findById(blockedTaskId);
-      if (!blockedTask) {
-        continue;
-      }
+  /**
+   * Transition one task from 'blocked' to 'open' if it has blockers and ALL
+   * of them are done. Shared by the status-change cascade and the unarchive
+   * re-evaluation.
+   */
+  private unblockIfAllBlockersDone(blockedTaskId: number): void {
+    // Get the blocked task to check its current status
+    const blockedTask = this.taskRepo.findById(blockedTaskId);
+    if (!blockedTask) {
+      return;
+    }
 
-      // Only unblock tasks that are currently 'blocked'
-      if (blockedTask.status !== 'blocked') {
-        continue;
-      }
+    // Only unblock tasks that are currently 'blocked'
+    if (blockedTask.status !== 'blocked') {
+      return;
+    }
 
-      // Skip a dependent in an archived project: it stays blocked and the
-      // rest of the cascade carries on (frozen; see class doc).
-      if (this.taskService.isProjectArchived(blockedTask.project_id)) {
-        continue;
-      }
+    // Skip a dependent in an archived project: it stays blocked and the
+    // rest of the cascade carries on (frozen; see class doc).
+    if (this.taskService.isProjectArchived(blockedTask.project_id)) {
+      return;
+    }
 
-      // Check if ALL blockers of this task are done
-      const allBlockers = this.dependencyRepo.findBlockingTask(blockedTaskId);
-      const allBlockersDone = allBlockers.every((blocker) => {
+    // Check if ALL blockers of this task are done
+    const allBlockers = this.dependencyRepo.findBlockingTask(blockedTaskId);
+    const allBlockersDone =
+      allBlockers.length > 0 &&
+      allBlockers.every((blocker) => {
         const blockerTask = this.taskRepo.findById(blocker.task_id);
         return blockerTask && blockerTask.status === 'done';
       });
 
-      if (!allBlockersDone) {
-        continue;
-      }
+    if (!allBlockersDone) {
+      return;
+    }
 
-      // All blockers are done -- unblock the task (blocked -> open)
-      this.cascadeDepth++;
-      try {
-        this.taskService.updateTask(blockedTaskId, { status: 'open' }, 'workflow');
-      } finally {
-        this.cascadeDepth--;
-      }
+    // All blockers are done -- unblock the task (blocked -> open)
+    this.cascadeDepth++;
+    try {
+      this.taskService.updateTask(blockedTaskId, { status: 'open' }, 'workflow');
+    } finally {
+      this.cascadeDepth--;
     }
   }
 }

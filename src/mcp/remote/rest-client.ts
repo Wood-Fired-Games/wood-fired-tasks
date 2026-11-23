@@ -17,6 +17,7 @@ import type {
   CompletionReportInput,
   CompletionReportResponse,
 } from '../../cli/api/types.js';
+import type { ArchivedFilter } from '../../types/task.js';
 import type { TopologyReport } from '../../schemas/topology.schema.js';
 import type {
   ModelPolicy,
@@ -158,6 +159,34 @@ function asPage<T>(payload: PaginatedResponse<T> | T[]): PaginatedResponse<T> {
 }
 
 /**
+ * A non-2xx answer from the REST API.
+ *
+ * `message` keeps the long-standing `API request failed: <server message>`
+ * text every existing caller reads. The structured fields are what let the
+ * tool layer keep a refusal's class and stable code across the bridge
+ * (WFT #2476): `status` is the HTTP status, `errorCode` the body's `error`
+ * field (`BUSINESS_RULE_VIOLATION`, `NOT_FOUND`, …; null when the body was
+ * not JSON or carried none) and `apiMessage` the server's own message with
+ * no prefix.
+ */
+export class ApiRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly errorCode: string | null,
+    readonly apiMessage: string,
+  ) {
+    super(`API request failed: ${apiMessage}`);
+    this.name = 'ApiRequestError';
+  }
+}
+
+/** Query parameters of `GET /api/v1/projects`. */
+export interface ProjectListParams extends PaginationParams {
+  /** Archived project state: `exclude` (server default), `include` or `only`. */
+  archived?: ArchivedFilter;
+}
+
+/**
  * REST API client for the remote MCP server.
  *
  * Wraps HTTP calls to the Wood Fired Tasks REST API.
@@ -217,14 +246,16 @@ export class RestClient {
 
       if (!response.ok) {
         let errorMessage: string;
+        let errorCode: string | null = null;
         try {
           const body = (await response.json()) as { message?: string; error?: string };
           errorMessage =
             body.message || body.error || `HTTP ${response.status}: ${response.statusText}`;
+          errorCode = typeof body.error === 'string' ? body.error : null;
         } catch {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-        throw new Error(`API request failed: ${errorMessage}`);
+        throw new ApiRequestError(response.status, errorCode, errorMessage);
       }
 
       // 204 No Content has no body to parse
@@ -366,19 +397,42 @@ export class RestClient {
     return parseProjectResponse(payload, `PUT ${endpoint}`);
   }
 
-  async listProjects(pagination?: PaginationParams): Promise<ProjectResponse[]> {
-    const page = await this.listProjectsPaginated(pagination);
+  /**
+   * Archive a project (Archived project state). `archived_by` is not sent:
+   * the server takes it from this client's token.
+   */
+  async archiveProject(
+    id: number,
+    options: { reason?: string; force?: boolean } = {},
+  ): Promise<ProjectResponse> {
+    const endpoint = `/api/v1/projects/${id}/archive`;
+    const payload = await this.request<unknown>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+    return parseProjectResponse(payload, `POST ${endpoint}`);
+  }
+
+  async unarchiveProject(id: number): Promise<ProjectResponse> {
+    const endpoint = `/api/v1/projects/${id}/unarchive`;
+    const payload = await this.request<unknown>(endpoint, { method: 'POST' });
+    return parseProjectResponse(payload, `POST ${endpoint}`);
+  }
+
+  async listProjects(params?: ProjectListParams): Promise<ProjectResponse[]> {
+    const page = await this.listProjectsPaginated(params);
     return page.data;
   }
 
   async listProjectsPaginated(
-    pagination?: PaginationParams,
+    pagination?: ProjectListParams,
   ): Promise<PaginatedResponse<ProjectResponse>> {
     let endpoint = '/api/v1/projects';
     if (pagination) {
       const params = new URLSearchParams();
       if (pagination.limit !== undefined) params.append('limit', String(pagination.limit));
       if (pagination.offset !== undefined) params.append('offset', String(pagination.offset));
+      if (pagination.archived !== undefined) params.append('archived', pagination.archived);
       const qs = params.toString();
       if (qs) endpoint += `?${qs}`;
     }

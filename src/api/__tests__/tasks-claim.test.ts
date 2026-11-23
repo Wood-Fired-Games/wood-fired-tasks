@@ -111,6 +111,73 @@ describe('POST /api/v1/tasks/:id/claim', () => {
       expect(after.status).toBe('open');
     });
 
+    it('a repeated claim with a cached idempotency key answers 422 once the project is archived, and replays again after unarchive (WFT #2523)', async () => {
+      const project = app.projectService.createProject({ name: 'Claim Replay Archived Project' });
+      const task = app.taskService.createTask({
+        title: 'Claimed, then frozen',
+        project_id: project.id,
+        created_by: 'test-user',
+      });
+      const claim = () =>
+        server.inject({
+          method: 'POST',
+          url: `/api/v1/tasks/${task.id}/claim`,
+          headers: { ...headers, 'x-idempotency-key': 'replay-archived-key' },
+          payload: { assignee: 'agent-1' },
+        });
+
+      const first = await claim();
+      expect(first.statusCode).toBe(200);
+      app.projectService.archiveProject(project.id, { force: true, reason: 'shelved' }, 'tester');
+      const frozen = app.taskService.getTask(task.id);
+
+      const repeated = await claim();
+
+      expect(repeated.statusCode).toBe(422);
+      const body = JSON.parse(repeated.body);
+      expect(body.error).toBe('BUSINESS_RULE_VIOLATION');
+      expect(body.message).toMatch(/^project_archived/);
+      // The refusal wrote nothing.
+      expect(app.taskService.getTask(task.id)).toEqual(frozen);
+
+      // The cached success is still the right answer once the freeze is lifted.
+      app.projectService.unarchiveProject(project.id, 'tester');
+      const afterUnarchive = await claim();
+      expect(afterUnarchive.statusCode).toBe(200);
+      expect(JSON.parse(afterUnarchive.body)).toEqual(JSON.parse(first.body));
+    });
+
+    it('a cached idempotency key for a task deleted since still replays its 200', async () => {
+      // The archive check on a replay must not turn a missing task into a 404.
+      const task = createOpenTask('Claimed, then deleted');
+      const claim = () =>
+        server.inject({
+          method: 'POST',
+          url: `/api/v1/tasks/${task.id}/claim`,
+          headers: { ...headers, 'x-idempotency-key': 'replay-deleted-key' },
+          payload: { assignee: 'agent-1' },
+        });
+      const first = await claim();
+      expect(first.statusCode).toBe(200);
+      app.taskService.deleteTask(task.id);
+
+      const repeated = await claim();
+
+      expect(repeated.statusCode).toBe(200);
+      expect(JSON.parse(repeated.body)).toEqual(JSON.parse(first.body));
+    });
+
+    it('declares 422 on the claim route in the OpenAPI document', async () => {
+      const spec = server.swagger() as {
+        paths: Record<string, { post?: { responses?: Record<string, unknown> } }>;
+      };
+      const claimPath = Object.keys(spec.paths).find((path) => path.endsWith('/tasks/{id}/claim'));
+      expect(claimPath).toBeDefined();
+      expect(Object.keys(spec.paths[claimPath as string].post?.responses ?? {})).toEqual(
+        expect.arrayContaining(['200', '400', '409', '422']),
+      );
+    });
+
     it('a genuine claim conflict in an unarchived project is still 409 CONFLICT', async () => {
       const task = createOpenTask('Conflict stays 409');
       app.taskService.claimTask(task.id, 'agent-1');

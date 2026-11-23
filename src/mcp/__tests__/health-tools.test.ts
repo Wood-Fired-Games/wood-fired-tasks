@@ -81,6 +81,59 @@ describe('MCP Health Tools', () => {
     });
 
     // Task #1004: lint finding for the edge-less blocked dead end.
+    // Archived project state (WFT #2474): the same fingerprint field as
+    // GET /health/detailed.
+    describe('archived_projects', () => {
+      interface DatabaseFingerprint {
+        projects: number;
+        archived_projects: number;
+      }
+
+      async function callHealth(): Promise<{ database: DatabaseFingerprint; text: string }> {
+        const result = (await client.callTool({
+          name: 'check_health',
+          arguments: {},
+        })) as ToolResult;
+        return {
+          database: (result.structuredContent as { database: DatabaseFingerprint }).database,
+          text: result.content[0].text ?? '',
+        };
+      }
+
+      it('is zero when nothing is archived', async () => {
+        app.projectService.createProject({ name: 'Live' });
+
+        const { database, text } = await callHealth();
+
+        expect(database.archived_projects).toBe(0);
+        expect(text).toContain('Archived Projects: 0');
+      });
+
+      it('counts archived projects, while projects stays the total', async () => {
+        app.projectService.createProject({ name: 'Live' });
+        for (const name of ['Archived one', 'Archived two']) {
+          const project = app.projectService.createProject({ name });
+          app.projectService.archiveProject(project.id, {}, 'tester');
+        }
+
+        const { database, text } = await callHealth();
+
+        expect(database.projects).toBe(3);
+        expect(database.archived_projects).toBe(2);
+        expect(text).toContain('Projects: 3, Archived Projects: 2');
+      });
+
+      it('goes back down after an unarchive', async () => {
+        const project = app.projectService.createProject({ name: 'Round trip' });
+        app.projectService.archiveProject(project.id, {}, 'tester');
+        app.projectService.unarchiveProject(project.id, 'tester');
+
+        const { database } = await callHealth();
+
+        expect(database.archived_projects).toBe(0);
+      });
+    });
+
     describe('blocked-without-edge finding', () => {
       interface Finding {
         check: string;

@@ -138,6 +138,76 @@ describe('project binding — direct resolution (project id in the path)', () =>
   });
 });
 
+describe('project binding — archive and unarchive (Archived project state §2.6)', () => {
+  const force = { force: true, reason: 'binding test' };
+
+  function archived(projectId: number): boolean {
+    const row = harness.db
+      .prepare('SELECT archived_at FROM projects WHERE id = ?')
+      .get(projectId) as { archived_at: string | null };
+    return row.archived_at !== null;
+  }
+
+  it('a token bound to A is refused 403 archiving project B, and B is not archived', async () => {
+    const res = await harness.server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${harness.projectB}/archive`,
+      headers: boundWriteHeaders(harness.projectA),
+      payload: force,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe('project_scope_denied');
+    expect(archived(harness.projectB)).toBe(false);
+  });
+
+  it('a token bound to A may archive and unarchive project A, but not unarchive B', async () => {
+    const headers = boundWriteHeaders(harness.projectA);
+    const archive = await harness.server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${harness.projectA}/archive`,
+      headers,
+      payload: force,
+    });
+    expect(archive.statusCode).toBe(200);
+    expect(archived(harness.projectA)).toBe(true);
+
+    // Put B in the archived state with an unbound token, then try to lift it
+    // with the token bound to A.
+    const unbound = unboundWriteHeaders();
+    const archiveB = await harness.server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${harness.projectB}/archive`,
+      headers: unbound,
+      payload: force,
+    });
+    expect(archiveB.statusCode).toBe(200);
+    const denied = await harness.server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${harness.projectB}/unarchive`,
+      headers,
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(archived(harness.projectB)).toBe(true);
+
+    const unarchive = await harness.server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${harness.projectA}/unarchive`,
+      headers,
+    });
+    expect(unarchive.statusCode).toBe(200);
+    expect(archived(harness.projectA)).toBe(false);
+
+    // Leave the shared harness as the other suites expect it.
+    const restore = await harness.server.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${harness.projectB}/unarchive`,
+      headers: unbound,
+    });
+    expect(restore.statusCode).toBe(200);
+    expect(archived(harness.projectB)).toBe(false);
+  });
+});
+
 describe('project binding — INDIRECT resolution (project reached via task id)', () => {
   // This is the criterion the whole feature turns on: the route names a TASK,
   // never a project, so the gate has to dereference the task row to decide.

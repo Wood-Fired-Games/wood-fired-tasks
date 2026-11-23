@@ -113,7 +113,7 @@ async function main() {
     version: VERSION,
   });
 
-  // Register all 27 tools backed by REST API
+  // Register every tool, backed by the REST API
   registerRemoteTools(server, restClient);
 
   // Register the events resource (discovery/documentation)

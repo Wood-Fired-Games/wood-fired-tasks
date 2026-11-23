@@ -110,10 +110,10 @@ const DEFAULT_CTX: McpServerContext = { actorUserId: null };
 /**
  * Create and configure an MCP server instance
  *
- * Factory function that creates an McpServer with 31 tools and 1 resource:
+ * Factory function that creates an McpServer with 33 tools and 1 resource:
  * - 9 task tools (create, get, update, list, delete, claim, list_subtasks, completion_report, get_subtasks)
  * - 1 wait tool (wait_for_unblock) — Task #455, in-process long-poll on blocked->open
- * - 5 project tools (create, get, update, list, delete)
+ * - 7 project tools (create, get, update, list, archive, unarchive, delete)
  * - 3 dependency tools (add, remove, list)
  * - 3 comment tools (add, list, delete)
  * - 1 health tool (check_health)

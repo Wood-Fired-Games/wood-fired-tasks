@@ -10,7 +10,7 @@ Wood Fired Tasks exposes task management capabilities via the Model Context Prot
 
 The MCP server provides:
 
-- 31 tools for task, project, comment, dependency, reporting, health, topology, WSJF, model, and wait operations
+- 33 tools for task, project, comment, dependency, reporting, health, topology, WSJF, model, and wait operations
 - 1 resource for SSE event stream discovery
 - stdio transport for seamless Claude Code integration
 - 12 pre-built skill files for common workflows
@@ -368,7 +368,7 @@ The remote server carries every tool the local server does. `completion_report` 
 
 ## Tools Reference
 
-The MCP server exposes 31 tools organized by domain:
+The MCP server exposes 33 tools organized by domain:
 
 | Tool | Domain | One-line description |
 |------|--------|----------------------|
@@ -383,8 +383,10 @@ The MCP server exposes 31 tools organized by domain:
 | `completion_report` | Task | Dashboard report of completed tasks over a time window with per-project / assignee / priority / daily aggregates. |
 | `create_project` | Project | Create a new project container. |
 | `get_project` | Project | Get a project by ID. |
-| `list_projects` | Project | List all projects. |
+| `list_projects` | Project | List projects; archived ones are hidden unless `archived` is `include` or `only`. |
 | `update_project` | Project | Update project name or description. |
+| `archive_project` | Project | Archive a project: read-only and hidden from default lists. Reversible. |
+| `unarchive_project` | Project | Return an archived project to normal use. |
 | `delete_project` | Project | Permanently delete a project. |
 | `add_comment` | Comment | Add a comment to a task. |
 | `get_comments` | Comment | Chronological comment thread for a task. |
@@ -670,7 +672,7 @@ The text content returns a short summary including total count, range, and top-5
 
 **Usage:** When Claude Code or a dashboard skill needs completion throughput over a period — e.g., weekly velocity, per-assignee throughput, time-to-complete distributions, daily burn-down.
 
-### Project Tools (5 tools)
+### Project Tools (7 tools)
 
 #### create_project
 
@@ -713,15 +715,19 @@ See [SETUP.md](SETUP.md#source-control-scm-configuration) and the
 
 #### list_projects
 
-List all projects.
+List projects (paginated). Archived projects are omitted by default.
 
 **Input Schema:**
 
 ```json
-{}
+{
+  "limit": "number (optional, default 50, max 500)",
+  "offset": "number (optional, default 0)",
+  "archived": "\"exclude\" | \"include\" | \"only\" (optional, default \"exclude\")"
+}
 ```
 
-**Usage:** When Claude Code needs to see all available projects or help users select a project.
+**Usage:** When Claude Code needs to see all available projects or help users select a project. `total` counts the filtered set; with `include`, an archived project is marked `(archived)` in the text.
 
 #### update_project
 
@@ -747,6 +753,45 @@ the WSJF `value_charter`, `model_policy`, or the `scm` default. The `scm` object
 takes an optional `backend` hint (`"git" | "perforce" | "none" | "auto"`) and
 optional `behaviors` toggles; pass `null` to clear it. A malformed `scm` value
 (unknown key, non-boolean toggle) is rejected at the boundary.
+
+#### archive_project
+
+Archive a project. It leaves default listings and becomes read-only: its tasks
+stay readable by id and comments are still allowed, but every other write is
+refused with an `InvalidRequest` error whose message starts with
+`project_archived:`. Requires the `write` scope. `archived_by` is the caller's
+identity, never an argument.
+
+**Input Schema:**
+
+```json
+{
+  "id": "number (required, positive integer)",
+  "reason": "string (optional, max 500 chars; required with force)",
+  "force": "boolean (optional)"
+}
+```
+
+**Usage:** When a project's work is finished. Refused with
+`project_has_unfinished_tasks:` while any task is `open`, `in_progress`,
+`blocked` or `backlogged`, unless `force: true` is given with a `reason`.
+Archiving an already archived project returns it unchanged.
+
+#### unarchive_project
+
+Return an archived project to normal use. Requires the `write` scope.
+
+**Input Schema:**
+
+```json
+{
+  "id": "number (required, positive integer)"
+}
+```
+
+**Usage:** When work on an archived project resumes. Blocked tasks whose
+blockers all finished while it was archived are reopened. Unarchiving a project
+that is not archived returns it unchanged.
 
 #### delete_project
 
@@ -1332,7 +1377,7 @@ The API and MCP server share the same database file. If changes made via the API
 ## Next Steps
 
 - Try the skill files in Claude Code: `/tasks:create-task`, `/tasks:my-work`, `/tasks:project-status`, `/tasks:new-project`
-- Explore the 31 MCP tools for custom workflows (including `completion_report` for dashboards)
+- Explore the 33 MCP tools for custom workflows (including `completion_report` for dashboards)
 - Charter a project with `/tasks:new-project`, then rank the backlog by economic value with the WSJF tools (`wsjf_ranking`, `wsjf_health`) instead of a hand-set priority enum
 - Use `claim_task` for multi-agent task coordination
 - Switch to the [Remote MCP Server](#remote-mcp-server) when your bugs API runs on a different host

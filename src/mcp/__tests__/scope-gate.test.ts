@@ -249,6 +249,8 @@ describe('stdio MCP per-tool scope enforcement (#1631)', () => {
         create_project: { name: 'nope' },
         update_project: { id: project.id, updates: { name: 'renamed' } },
         delete_project: { id: project.id },
+        archive_project: { id: project.id, force: true, reason: 'nope' },
+        unarchive_project: { id: project.id },
         add_dependency: { task_id: taskB.id, blocks_task_id: taskA.id },
         remove_dependency: { task_id: taskA.id, blocks_task_id: taskB.id },
         add_comment: { task_id: taskA.id, author: 'attacker', content: 'nope' },
@@ -310,6 +312,19 @@ describe('stdio MCP per-tool scope enforcement (#1631)', () => {
 
       // The row the write-scoped call legitimately created is still there.
       expect(app.taskService.getTask(createdId).title).toBe('Written by a write PAT');
+    });
+
+    it('may archive and unarchive a project: both are write-tier, not admin', async () => {
+      await bootMcp(mintPat(['write']));
+      const project = app.projectService.createProject({ name: 'Archivable' });
+
+      const archived = await call('archive_project', { id: project.id });
+      expect(archived.isError).toBeFalsy();
+      expect(app.projectService.getProject(project.id).archived).toBe(true);
+
+      const unarchived = await call('unarchive_project', { id: project.id });
+      expect(unarchived.isError).toBeFalsy();
+      expect(app.projectService.getProject(project.id).archived).toBe(false);
     });
 
     it('is refused by the other admin-tier tools but allowed on write-tier ones', async () => {

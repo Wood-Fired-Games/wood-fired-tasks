@@ -74,6 +74,8 @@ import { grantSatisfiesScope, type PatScope } from '../schemas/pat-scope.schema.
  * | wait_for_unblock     | no        | (ungated)   |
  * | create_project       | yes       | write       |
  * | update_project       | yes       | write       |
+ * | archive_project      | yes       | write       |
+ * | unarchive_project    | yes       | write       |
  * | delete_project       | yes       | admin       |
  * | get_project          | no        | (ungated)   |
  * | list_projects        | no        | (ungated)   |
@@ -103,6 +105,10 @@ export const MUTATING_TOOL_SCOPES = {
   // --- project-tools.ts ----------------------------------------------------
   create_project: 'write',
   update_project: 'write',
+  // Archived project state: reversible and destroys nothing, so `write` like
+  // update_project — not `admin` like delete_project (design §2.6).
+  archive_project: 'write',
+  unarchive_project: 'write',
   delete_project: 'admin',
   // --- dependency-tools.ts -------------------------------------------------
   add_dependency: 'write',

@@ -56,6 +56,7 @@ The core task/project/comment/dependency CRUD surface:
 | GET | `/api/v1/projects/:id` | `routes/projects/index.ts` | Get project by id. | Yes |
 | PUT | `/api/v1/projects/:id` | `routes/projects/index.ts` | Update project by id. | Yes |
 | DELETE | `/api/v1/projects/:id` | `routes/projects/index.ts` | Delete project by id. | Yes |
+| POST | `/api/v1/projects/:id/archive`, `/api/v1/projects/:id/unarchive` | `routes/projects/index.ts` | Archive a project (read-only, hidden from default lists; body `{reason?, force?}`) and return it to normal use. Two routes. | Yes |
 | GET | `/api/v1/projects/:id/topology` | `routes/projects/topology.ts` | Topology classification (FLAT/DAG/DAG_CYCLIC). | Yes |
 | GET | `/api/v1/projects/:id/dependency-graph` | `routes/projects/dependency-graph.ts` | Dependency-graph tree view (#342). | Yes |
 | GET | `/api/v1/projects/:id/resolve-model` | `routes/projects/resolve-model.ts` | Configurable Task Models (#926): resolve the model for a pipeline role (`{ model }` or `null`). | Yes |
@@ -104,26 +105,26 @@ POST `/auth/logout`) and `routes/auth/device-disabled-stub.ts` (POST
 `/auth/device/verify`) replace the live `/auth/*` handlers above — the two
 sets are mutually exclusive at runtime.
 
-**Core CRUD subtotal — Total: 22 routes** across the six
+**Core CRUD subtotal — Total: 24 routes** across the six
 `{health,events}` + `{tasks,projects,comments,dependencies}/index.ts` files
 (the drift-detection anchor counted by
 `scripts/agent-context/__tests__/interfaces-counts.test.ts`); the `topology`
 and `dependency-graph` rows above live in their own sibling files and are
 counted in the full-surface total below.
 
-**Full surface — Total: 60 route handlers; up to 53 reachable in any single
+**Full surface — Total: 62 route handlers; up to 55 reachable in any single
 running instance.** Counted by
 `/(fastify|server|app)\.(get|post|put|patch|delete)\(/g` across
 `src/api/routes/` (excluding `__tests__`). The 7 OIDC-disabled stub handlers
 are mutually exclusive with the 8 live `/auth/*` routes, so a given instance
-serves 60 − 7 = 53. Security Audit M5 (#1637) added 1 (the single GET in
-`routes/audit/index.ts` — the audit-trail surface is read-only by
-construction). WSJF 4.5 (#645) added 5 verb registrations (2 in
+serves 62 − 7 = 55. Archived project state (#2471) added 2 (archive and
+unarchive in `routes/projects/index.ts`); Security Audit M5 (#1637) added 1
+(the read-only GET in `routes/audit/index.ts`). WSJF 4.5 (#645) added 5 verb registrations (2 in
 `routes/projects/wsjf.ts`, 3 in `routes/tasks/wsjf.ts`); Configurable Task
 Models added 4 (1 in `routes/models/index.ts`, 2 in
 `routes/settings/model-policy.ts`, 1 in `routes/projects/resolve-model.ts`).
 (The POST `/api/v1/me/tokens` route is registered via `fastify.route` rather
-than a verb method, so it is *not* part of the 60 verb count; the table lists
+than a verb method, so it is *not* part of the 62 verb count; the table lists
 it for completeness.)
 
 Deep reference: [`docs/API.md`](API.md). Interactive OpenAPI is exposed at
@@ -155,8 +156,9 @@ so REST and MCP cannot drift on validation.
 | `tools/task-tools.ts` | `get_subtasks` | read | Paginated children of a parent task. |
 | `tools/project-tools.ts` | `create_project` | write | Create a project. |
 | `tools/project-tools.ts` | `get_project` | read | Get a project by id. |
-| `tools/project-tools.ts` | `list_projects` | read | Paginated project list. |
+| `tools/project-tools.ts` | `list_projects` | read | Paginated project list; `archived` filter (hidden by default). |
 | `tools/project-tools.ts` | `update_project` | write | Update name/description. |
+| `tools/project-tools.ts` | `archive_project`, `unarchive_project` | write (×2) | Archive a project (read-only, hidden from default lists) and bring it back. |
 | `tools/project-tools.ts` | `delete_project` | write | Delete a project. |
 | `tools/dependency-tools.ts` | `add_dependency` | write | Declare that task A blocks task B. |
 | `tools/dependency-tools.ts` | `remove_dependency` | write | Remove a dependency. |
@@ -170,10 +172,10 @@ so REST and MCP cannot drift on validation.
 | `tools/wsjf-tools.ts` | `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` | read (×3) / write (rescore) | WSJF 1.10: propagation-adjusted ranking, score-history timeline, deterministic project rescore, degeneracy linter. |
 | `tools/model-tools.ts` | `list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults` | read (×3) / write (set) | Configurable Task Models: runtime model catalog, per-role policy resolution, get/set of the DB-wide default policy. |
 
-**Total: 31 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
-topology, 1 wait, 4 WSJF, 4 model). 17 are read-only; 14 mutate state. Counted
+**Total: 33 tools** (9 task, 7 project, 3 dependency, 3 comment, 1 health, 1
+topology, 1 wait, 4 WSJF, 4 model). 17 are read-only; 16 mutate state. Counted
 by `grep registerTool` across the nine files above. The remote server registers
-all **31 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
+all **33 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
 classifier reaches the same `TopologyService` over REST
 (`GET /api/v1/projects/:id/topology`) rather than via a direct in-process
 call, and the four WSJF tools proxy `GET /api/v1/projects/:id/wsjf-ranking`,
@@ -363,7 +365,7 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. The remote server exposes all **31 REST-backed tools** with
+`src/schemas/`. The remote server exposes all **33 REST-backed tools** with
 identical input validation; behavioural differences are limited to transport
 (stdio vs HTTP) and the auth boundary. `topology_check` (#318) reaches the
 same `TopologyService` over REST — the remote server proxies it to
@@ -378,7 +380,7 @@ schema and the three return envelopes are byte-identical either way.
 **Parity rule:** any new MCP tool MUST land in both servers in the same PR.
 The drift-detection test enforces the local count; the remote registration
 count is asserted by the `register-tools` unit test's expected-tools list
-(now 31, matching the 31-tool local total — 4 of which are the WSJF tools, 4
+(now 33, matching the 33-tool local total — 4 of which are the WSJF tools, 4
 the model tools, and 1 is `wait_for_unblock`).
 
 ## Pointers
