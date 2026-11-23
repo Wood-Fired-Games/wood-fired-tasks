@@ -25,6 +25,17 @@ export interface PaginationOptions {
   offset?: number;
 }
 
+/**
+ * Result of `archive` / `unarchive`. `changed` is `true` only when the call
+ * actually moved the project between states (the UPDATE touched a row), so a
+ * caller can emit exactly one event per transition and none on a no-op
+ * without reading the project first.
+ */
+export interface ProjectArchiveResult {
+  project: Project;
+  changed: boolean;
+}
+
 export interface IProjectRepository {
   create(dto: CreateProjectDTO): Project;
   findById(id: number): Project | null;
@@ -43,18 +54,19 @@ export interface IProjectRepository {
   count(archived?: ArchivedFilter): number;
   /**
    * Archive a project: stamps `archived_at` (now), `archived_by` and
-   * `archive_reason`. `archivedBy` is the authenticated caller. Archiving an
-   * already archived project changes nothing — the first archive is kept.
-   * Preconditions (non-terminal tasks, `force`) are the service's concern.
-   * Throws if the project does not exist.
+   * `archive_reason` (trimmed; blank is stored as NULL) and bumps
+   * `updated_at`. `archivedBy` is the authenticated caller. Archiving an
+   * already archived project changes nothing — the first archive is kept and
+   * `changed` is `false`. Preconditions (non-terminal tasks, `force`) are the
+   * service's concern. Throws if the project does not exist.
    */
-  archive(id: number, archivedBy: string, reason?: string | null): Project;
+  archive(id: number, archivedBy: string, reason?: string | null): ProjectArchiveResult;
   /**
    * Unarchive a project: clears `archived_at`, `archived_by` and
-   * `archive_reason`. A no-op on a project that is not archived. Throws if
-   * the project does not exist.
+   * `archive_reason` and bumps `updated_at`. A no-op with `changed: false`
+   * on a project that is not archived. Throws if the project does not exist.
    */
-  unarchive(id: number): Project;
+  unarchive(id: number): ProjectArchiveResult;
 }
 
 export interface CompletionRangeFilters {

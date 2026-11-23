@@ -373,6 +373,16 @@ Smaller points settled in the text unless you object: the three stored
 columns (2.1), names staying unique while archived (2.4), `completion_report`
 including archived work (2.5), and version `2.10.0` (section 4).
 
+Settled during the build, where the text above was silent: `updated_at` bumps
+on a real archive or unarchive and not on a no-op; `archived_at` is a JS ISO
+timestamp (`2026-11-23T12:00:00.000Z`), so any SQL comparison against it must
+wrap both sides in `datetime()`; the first archive wins (re-archiving keeps
+the original time, actor and reason, and the repository reports that nothing
+changed); `reason` is trimmed before it is validated and stored, and a
+whitespace-only `reason` is invalid with or without `force`; and
+`TaskRepository.count()` with no argument stays the raw total of every task,
+archived projects included.
+
 ## 8. Out of scope
 
 - Archiving individual tasks.

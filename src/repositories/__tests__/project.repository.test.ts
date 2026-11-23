@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type Database from '../../db/driver.js';
 import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
-import { ProjectRepository } from '../project.repository.js';
+import { ProjectRepository, toProject } from '../project.repository.js';
 
 describe('ProjectRepository', () => {
   let db: Database.Database;
@@ -253,7 +253,7 @@ describe('ProjectRepository', () => {
     it('archive sets archived_at, archived_by and archive_reason and derives archived', () => {
       const project = repo.create({ name: 'Shipped' });
 
-      const archived = repo.archive(project.id, 'alice', 'shipped in v2.9.0');
+      const { project: archived } = repo.archive(project.id, 'alice', 'shipped in v2.9.0');
 
       expect(archived).toMatchObject({
         id: project.id,
@@ -278,9 +278,9 @@ describe('ProjectRepository', () => {
     it('archive stores a null reason when none is given', () => {
       const project = repo.create({ name: 'No Reason' });
 
-      expect(repo.archive(project.id, 'alice').archive_reason).toBeNull();
+      expect(repo.archive(project.id, 'alice').project.archive_reason).toBeNull();
       const other = repo.create({ name: 'Null Reason' });
-      expect(repo.archive(other.id, 'alice', null).archive_reason).toBeNull();
+      expect(repo.archive(other.id, 'alice', null).project.archive_reason).toBeNull();
     });
 
     it('archive leaves the other columns untouched', () => {
@@ -291,7 +291,7 @@ describe('ProjectRepository', () => {
         model_policy: samplePolicy,
       });
 
-      const archived = repo.archive(project.id, 'alice', 'done');
+      const { project: archived } = repo.archive(project.id, 'alice', 'done');
 
       expect(archived).toEqual({
         ...project,
@@ -308,7 +308,8 @@ describe('ProjectRepository', () => {
       repo.archive(project.id, 'alice', 'first');
 
       vi.setSystemTime(new Date('2026-12-01T00:00:00.000Z'));
-      const again = repo.archive(project.id, 'bob', 'second');
+      const { project: again, changed } = repo.archive(project.id, 'bob', 'second');
+      expect(changed).toBe(false);
 
       expect(again).toMatchObject({
         archived: true,
@@ -316,6 +317,67 @@ describe('ProjectRepository', () => {
         archived_by: 'alice',
         archive_reason: 'first',
       });
+    });
+
+    it('archive reports changed: true on a real transition and false on a repeat', () => {
+      const project = repo.create({ name: 'Transition' });
+
+      expect(repo.archive(project.id, 'alice', 'shipped').changed).toBe(true);
+      expect(repo.archive(project.id, 'alice', 'shipped').changed).toBe(false);
+      expect(repo.archive(project.id, 'bob', null).changed).toBe(false);
+    });
+
+    it('unarchive reports changed: true on a real transition and false on a repeat', () => {
+      const project = repo.create({ name: 'Round Trip' });
+      expect(repo.unarchive(project.id).changed).toBe(false);
+
+      repo.archive(project.id, 'alice', null);
+
+      expect(repo.unarchive(project.id).changed).toBe(true);
+      expect(repo.unarchive(project.id).changed).toBe(false);
+      // A fresh archive after an unarchive is a real transition again.
+      expect(repo.archive(project.id, 'bob', 'again')).toMatchObject({
+        changed: true,
+        project: { archived: true, archived_by: 'bob', archive_reason: 'again' },
+      });
+    });
+
+    it('a no-op archive or unarchive does not bump updated_at', () => {
+      const project = repo.create({ name: 'Quiet' });
+      db.prepare("UPDATE projects SET updated_at = '2020-01-01 00:00:00' WHERE id = ?").run(
+        project.id,
+      );
+
+      expect(repo.unarchive(project.id).project.updated_at).toBe('2020-01-01 00:00:00');
+
+      const archived = repo.archive(project.id, 'alice', null).project;
+      expect(archived.updated_at).not.toBe('2020-01-01 00:00:00');
+      db.prepare("UPDATE projects SET updated_at = '2020-01-01 00:00:00' WHERE id = ?").run(
+        project.id,
+      );
+
+      expect(repo.archive(project.id, 'bob', null).project.updated_at).toBe('2020-01-01 00:00:00');
+    });
+
+    it('archive trims the reason and stores a whitespace-only reason as null', () => {
+      const padded = repo.create({ name: 'Padded' });
+      expect(repo.archive(padded.id, 'alice', '  shipped \n').project.archive_reason).toBe(
+        'shipped',
+      );
+
+      const blank = repo.create({ name: 'Blank' });
+      expect(repo.archive(blank.id, 'alice', ' \t ').project.archive_reason).toBeNull();
+      const empty = repo.create({ name: 'Empty' });
+      expect(repo.archive(empty.id, 'alice', '').project.archive_reason).toBeNull();
+    });
+
+    it('toProject treats a missing archived_at column as not archived', () => {
+      const { archived: _archived, archived_at: _at, ...legacyRow } = repo.create({ name: 'Old' });
+      const row = { ...legacyRow, value_charter: null, model_policy: null, scm: null };
+
+      expect(toProject(row as Parameters<typeof toProject>[0]).archived).toBe(false);
+      expect(toProject({ ...row, archived_at: null }).archived).toBe(false);
+      expect(toProject({ ...row, archived_at: '2026-11-23T12:00:00.000Z' }).archived).toBe(true);
     });
 
     it('archive throws for a project that does not exist', () => {
@@ -326,7 +388,7 @@ describe('ProjectRepository', () => {
       const project = repo.create({ name: 'Back Again' });
       repo.archive(project.id, 'alice', 'shipped');
 
-      const restored = repo.unarchive(project.id);
+      const { project: restored } = repo.unarchive(project.id);
 
       expect(restored).toMatchObject({
         id: project.id,
@@ -345,7 +407,7 @@ describe('ProjectRepository', () => {
     it('unarchive on a project that is not archived is a no-op', () => {
       const project = repo.create({ name: 'Never Archived' });
 
-      expect(repo.unarchive(project.id)).toEqual(project);
+      expect(repo.unarchive(project.id)).toEqual({ project, changed: false });
     });
 
     it('unarchive throws for a project that does not exist', () => {

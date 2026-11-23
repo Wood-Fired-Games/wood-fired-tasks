@@ -179,6 +179,30 @@ describe('project.schema — ArchiveProjectSchema', () => {
     expect(ArchiveProjectSchema.safeParse({ force: false }).success).toBe(true);
   });
 
+  it('trims reason before validating and returning it', () => {
+    expect(ArchiveProjectSchema.parse({ reason: '  shipped \n' })).toEqual({ reason: 'shipped' });
+    expect(ArchiveProjectSchema.parse({ force: true, reason: ' abandoned ' })).toEqual({
+      force: true,
+      reason: 'abandoned',
+    });
+  });
+
+  it('rejects an empty or whitespace-only reason whether or not force is set', () => {
+    for (const reason of ['', '   ', '\t\n ']) {
+      for (const body of [{ reason }, { reason, force: false }, { reason, force: true }]) {
+        const res = ArchiveProjectSchema.safeParse(body);
+        expect(res.success, JSON.stringify(body)).toBe(false);
+        expect(res.error?.issues[0]?.path).toEqual(['reason']);
+      }
+    }
+  });
+
+  it('measures the 500-character limit after trimming', () => {
+    const padded = `  ${'x'.repeat(500)}  `;
+    expect(ArchiveProjectSchema.parse({ reason: padded }).reason).toBe('x'.repeat(500));
+    expect(ArchiveProjectSchema.safeParse({ reason: ` ${'x'.repeat(501)} ` }).success).toBe(false);
+  });
+
   it('caps reason at 500 characters', () => {
     expect(ArchiveProjectSchema.safeParse({ reason: 'x'.repeat(500) }).success).toBe(true);
     expect(ArchiveProjectSchema.safeParse({ reason: 'x'.repeat(501) }).success).toBe(false);

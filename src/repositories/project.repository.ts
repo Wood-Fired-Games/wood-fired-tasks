@@ -10,7 +10,7 @@ import type {
   ScmCharter,
 } from '../types/task.js';
 import { DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, MAX_PAGE_LIMIT } from '../types/task.js';
-import type { IProjectRepository, PaginationOptions } from './interfaces.js';
+import type { IProjectRepository, PaginationOptions, ProjectArchiveResult } from './interfaces.js';
 import { mapRow, mapRows } from './row-mapper.js';
 import type { SqlParams } from './types.js';
 import { parseJsonColumn } from '../utils/parse-json-column.js';
@@ -71,19 +71,27 @@ function inflateValueCharter<
  * A `projects` row as SQLite returns it: the three JSON columns are still
  * TEXT, and `archived` does not exist (it is derived from `archived_at`).
  */
-type ProjectRow = Omit<Project, 'value_charter' | 'model_policy' | 'scm' | 'archived'> & {
+type ProjectRow = Omit<
+  Project,
+  'value_charter' | 'model_policy' | 'scm' | 'archived' | 'archived_at'
+> & {
   value_charter: string | null;
   model_policy: string | null;
   scm: string | null;
+  /** Absent on a row read from a pre-021 schema. */
+  archived_at?: string | null;
 };
 
 /**
  * The single row → `Project` mapping every read goes through: parses the JSON
  * columns and derives `archived` — a project is archived exactly when
- * `archived_at` is not null (migration 021).
+ * `archived_at` is not null (migration 021). Exported for its unit test.
  */
-function toProject(row: ProjectRow): Project {
-  return { ...inflateValueCharter(row), archived: row.archived_at !== null };
+export function toProject(row: ProjectRow): Project {
+  // `!= null` on purpose: a row with no `archived_at` column at all (a
+  // pre-021 schema) is NOT archived, exactly like a NULL column.
+  const archivedAt = row.archived_at ?? null;
+  return { ...inflateValueCharter(row), archived_at: archivedAt, archived: archivedAt != null };
 }
 
 /**
@@ -199,19 +207,20 @@ export class ProjectRepository implements IProjectRepository {
     return row ? toProject(row) : null;
   }
 
-  archive(id: number, archivedBy: string, reason?: string | null): Project {
-    this.archiveStmt.run({
+  archive(id: number, archivedBy: string, reason?: string | null): ProjectArchiveResult {
+    const info = this.archiveStmt.run({
       id,
       archived_at: new Date().toISOString(),
       archived_by: archivedBy,
-      archive_reason: reason ?? null,
+      // Trimmed; a whitespace-only reason is "no reason" and stored as NULL.
+      archive_reason: reason?.trim() || null,
     });
-    return this.requireById(id);
+    return { project: this.requireById(id), changed: info.changes > 0 };
   }
 
-  unarchive(id: number): Project {
-    this.unarchiveStmt.run({ id });
-    return this.requireById(id);
+  unarchive(id: number): ProjectArchiveResult {
+    const info = this.unarchiveStmt.run({ id });
+    return { project: this.requireById(id), changed: info.changes > 0 };
   }
 
   private requireById(id: number): Project {

@@ -85,17 +85,24 @@ export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
  * Archived project state: body of `POST /projects/:id/archive` and input of
  * the `archive_project` tool (docs/design/project-archived-state.md §2.2).
  *
- * `reason` is optional free text, at most 500 characters. `force: true`
- * archives a project that still has non-terminal tasks, and then a non-empty
- * (non-whitespace) `reason` is required. `archived_by` is deliberately NOT
+ * `reason` is optional free text. It is trimmed first, and the trimmed text
+ * must be 1 to 500 characters: an empty or whitespace-only `reason` is "no
+ * reason" and is rejected outright (omit the field instead), with or without
+ * `force`. `force: true` archives a project that still has non-terminal
+ * tasks, and then `reason` is required. `archived_by` is deliberately NOT
  * here — it comes from the authenticated caller, never the request body.
  */
 export const ArchiveProjectSchema = z
   .object({
-    reason: z.string().max(500, 'Reason must be 500 characters or less').optional(),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Reason must not be empty or whitespace only')
+      .max(500, 'Reason must be 500 characters or less')
+      .optional(),
     force: z.boolean().optional(),
   })
-  .refine((body) => body.force !== true || (body.reason ?? '').trim().length > 0, {
+  .refine((body) => body.force !== true || body.reason !== undefined, {
     message: 'reason is required when force is true',
     path: ['reason'],
   });
