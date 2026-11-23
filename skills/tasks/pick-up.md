@@ -31,6 +31,7 @@ This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fir
 4. **Atomic claim via `claim_task` (NOT `update_task`)** — the dedicated tool encodes race-condition protection that `update_task` does not:
    - Call `wood-fired-tasks:claim_task` with `task_id=<id>, assignee=$ASSIGNEE`.
    - On race-loss (another runner won the claim between our get_task and claim_task): re-fetch and re-evaluate — do NOT force.
+   - A task in an archived project cannot be claimed: `claim_task` is refused with `project_archived`. Report it and stop (no retry); the project must be unarchived first (`unarchive_project` / `tasks project-unarchive <id>`). Cross-project listings hide archived projects' tasks by default (`archived: "exclude"`).
 
 5. **Confirm successful pickup:**
    - Display: "Task <id> claimed by <$ASSIGNEE>, status now `in_progress`."

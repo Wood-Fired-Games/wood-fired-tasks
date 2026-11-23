@@ -981,3 +981,33 @@ certainly still exists locally. Before doing §2a discovery from scratch:
 The artifact is advisory input — the tasks database remains the source of
 truth for status, ACs, and edges. Never treat a stale artifact as overriding
 live task state.
+
+---
+
+## §U. Archived project guard (run start and mid-run)
+
+An archived project is frozen and read-only: every task write into it (create,
+update, claim, comment-free mutations, dependency edges) is refused with
+`project_archived`. `/tasks:loop`, `/tasks:loop-dag` and `/tasks:decompose`
+therefore never run against one.
+
+**At run start (after Resolve Project ID).** `list_projects` hides archived
+projects by default (`archived: "exclude"`), so an archived project does not
+match the argument. When nothing matches, call `list_projects` again with
+`archived: "only"` and match the same way. If the argument matches there,
+STOP before any other call with:
+
+```
+Project #<id> "<name>" is archived (read-only). Unarchive it first:
+`unarchive_project { id: <id> }` or `tasks project-unarchive <id>`.
+```
+
+Only when it matches nowhere fall through to the usual "list available
+projects and stop". If the project was resolved some other way (a bare id
+passed straight to `get_project`), check the returned `archived` field and
+stop with the same message when it is `true`.
+
+**Mid-run.** A project can be archived while a run is in flight. Any tool call
+refused with a message starting `project_archived` means exactly that: stop
+dispatching, do not retry, do not mark the refused work failed, record
+`archived mid-run` in LOOP-RUN.md, and end the run with the message above.

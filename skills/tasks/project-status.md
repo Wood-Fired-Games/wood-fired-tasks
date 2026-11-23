@@ -8,7 +8,7 @@ disable-model-invocation: false
 
 ## Preflight: MCP tools
 
-This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__wsjf_health`) and retry.
+This skill calls tools on the `wood-fired-tasks` MCP server. The doc uses shorthand `wood-fired-tasks:<tool>`; harness tool names are `mcp__wood-fired-tasks__<tool>`. On `InputValidationError`, load via `ToolSearch` (`select:mcp__wood-fired-tasks__list_projects,mcp__wood-fired-tasks__list_tasks,mcp__wood-fired-tasks__wsjf_health,mcp__wood-fired-tasks__archive_project`) and retry.
 
 ## Purpose
 Show high-level overview of all projects with task counts broken down by status and completion percentage.
@@ -16,15 +16,15 @@ Show high-level overview of all projects with task counts broken down by status 
 ## Process
 
 ### 1. Retrieve all projects
-Call `wood-fired-tasks:list_projects` with empty parameters to get all projects.
+Call `wood-fired-tasks:list_projects` with `{ archived: "include" }` so archived projects come back too, each carrying `archived: true` and `archived_at` / `archived_by` / `archive_reason`. (The default, `archived: "exclude"`, hides them.)
 
 ### 2. Check for project filter
 If $ARGUMENTS contains a project name or ID:
-- Filter to show only that specific project's details
-- Otherwise, process all projects
+- Filter to show only that specific project's details (archived or not)
+- Otherwise, process all projects that are not archived; archived projects get the one-line section in §4c
 
 ### 3. For each project, aggregate task data
-For every project returned:
+For every project being shown:
 
 a. **Issue all `wood-fired-tasks:list_tasks` calls in a SINGLE message with multiple function_calls blocks** — that's the mechanism for parallel tool execution. Do NOT chain them with `await` semantics or list them sequentially across multiple messages. One call per project with filter: `{ project_id: project.id }`. On a workspace with N projects this is one round-trip wave instead of N sequential round-trips.
 
@@ -60,6 +60,25 @@ Total: <count> tasks | Completion: <percentage>%
 ```
 Do NOT render the per-status breakdown for empty projects (every line would be `0` — noise). The single `(no tasks)` line is the entire body.
 
+**Archived project shown by name or ID:** add `(archived)` to the heading and an `Archived: <archived_at> by <archived_by> (reason: <archive_reason>)` line under it (drop the parts that are null). It is read-only: unarchive it with `unarchive_project { id }` or `tasks project-unarchive <id>` before any change.
+
+### 4a. Offer to archive a finished project
+For a project that is not archived, has `total > 0`, and has every task `done` or `closed`, add under its block:
+
+```
+All tasks are done or closed. Archive it? (archive_project { id: <id> })
+```
+
+Ask the user; call `wood-fired-tasks:archive_project` with `{ id }` only on a yes. Never archive without asking, and never pass `force` from this skill (`force` needs a `reason` and archives over unfinished work). If the call is refused with `project_has_unfinished_tasks`, a task changed since the listing: show the returned counts and do not retry.
+
+### 4c. Archived projects section
+When no project filter was given and any archived project came back in §1, end the per-project output with one compact section, one line each, no task breakdown and no `wsjf_health` call:
+
+```
+## Archived (<n>)
+- <Project Name> (#<id>) archived <archived_at> by <archived_by>
+```
+
 ### 4b. Surface WSJF health findings
 For each project being shown, also probe the `wood-fired-tasks:wsjf_health` MCP tool with `{ project_id: project.id }`. This is the non-blocking spec §9 degeneracy / pitfall linter — it is a pure read and writes nothing. Issue these calls in the SAME single message as the §3a `list_tasks` wave (one `wsjf_health` call per project) so the whole status pass stays one round-trip.
 
@@ -75,7 +94,8 @@ After all projects are shown, add highlights:
 - ATTENTION: Flag projects with blocked tasks (blocked count > 0) as needing attention
 - Flag projects with high completion (>80%) as nearly done
 - Flag any project whose `wsjf_health` returned a `critical` finding (e.g. past-deadline stale Time Criticality) as needing rescore attention.
-- Show overall totals across all projects (total tasks, overall completion %)
+- Flag each project offered for archiving in §4a as ready to archive.
+- Show overall totals across all projects (total tasks, overall completion %); archived projects are left out of the totals.
 
 ### 6. Handle empty state
 If no projects exist, display message: "No projects found. Use /tasks:create-task to get started."

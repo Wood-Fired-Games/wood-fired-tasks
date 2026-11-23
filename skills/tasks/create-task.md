@@ -24,7 +24,7 @@ This skill calls tools on the `wood-fired-tasks` MCP server. Shorthand `wood-fir
 
    Ask user for or extract from context:
 
-   - **project**: Use `wood-fired-tasks:list_projects` to show available projects if not specified
+   - **project**: Use `wood-fired-tasks:list_projects` to show available projects if not specified. The list hides archived projects by default; pass `archived: "include"` only when the user asks to see them. An archived project is read-only: `create_task` into it is refused with `project_archived`, so tell the user to unarchive it first (`unarchive_project` or `tasks project-unarchive <id>`) rather than retrying.
    - **priority**: Default 'medium'. Valid values: low, medium, high, urgent
    - **assignee**: Optional. If not specified, leave unset
    - **description**: Optional. If not specified, leave unset

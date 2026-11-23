@@ -39,7 +39,7 @@ Parse `$ARGUMENTS` — or, when invoked via natural language ("loop the backlog 
 
 ### Resolve Project ID
 
-Call `wood-fired-tasks:list_projects`, match the argument (by ID if numeric/`#`-prefixed, else by name), store `project_id` + `project_name`. If no match, list available projects and stop.
+Call `wood-fired-tasks:list_projects`, match the argument (by ID if numeric/`#`-prefixed, else by name), store `project_id` + `project_name`. If no match, check the archived projects (`list_projects` with `archived: "only"`): a project that matches there is archived, so stop with the archived message in [loop-shared.md §U](loop-shared.md#u-archived-project-guard-run-start-and-mid-run) — a loop never runs against an archived project, and a `project_archived` refusal mid-run ends the run the same way. Otherwise list available projects and stop.
 
 ---
 

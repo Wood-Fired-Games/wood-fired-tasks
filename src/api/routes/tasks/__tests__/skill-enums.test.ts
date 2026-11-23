@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { TASK_PRIORITIES, TASK_STATUSES } from '../../../../types/task.js';
+import { ARCHIVED_FILTERS, TASK_PRIORITIES, TASK_STATUSES } from '../../../../types/task.js';
 
 /**
  * Task #347 — central enum source-of-truth gate.
@@ -230,6 +230,48 @@ describe('skill enum-value consistency (#347)', () => {
     }
     for (const value of TASK_PRIORITIES) {
       expect(enumsDoc).toContain(`\`${value}\``);
+    }
+  });
+
+  // Archived project state (design §3.7): `_enums.md` documents the
+  // `archived` filter, sourced from ARCHIVED_FILTERS, with its default.
+  it('_enums.md lists every ARCHIVED_FILTERS value and the exclude default', () => {
+    const enumsDoc = readFileSync(resolve(SKILLS_DIR, '_enums.md'), 'utf8');
+    expect(enumsDoc).toContain('ARCHIVED_FILTERS');
+    for (const value of ARCHIVED_FILTERS) {
+      expect(enumsDoc).toContain(`\`${value}\``);
+    }
+    expect(enumsDoc).toMatch(/default[^\n]*`exclude`/i);
+  });
+
+  // Design §3.7: the skills that resolve a project stop on an archived one;
+  // the project pickers say archived projects are hidden and how to include
+  // them; project-status offers archive_project; the cross-project listings
+  // carry one line. Every one of them must mention `archived`.
+  it('every skill named by design §3.7 handles the archived state', () => {
+    const files = [
+      'loop.md',
+      'loop-dag.md',
+      'loop-shared.md',
+      'decompose.md',
+      'create-task.md',
+      'log-bug.md',
+      'new-project.md',
+      'search.md',
+      'project-status.md',
+      'my-work.md',
+      'pick-up.md',
+      'blocked.md',
+      '_enums.md',
+    ];
+    const missing = files.filter(
+      (f) => !/archived/.test(readFileSync(resolve(SKILLS_DIR, f), 'utf8')),
+    );
+    expect(missing).toEqual([]);
+    const status = readFileSync(resolve(SKILLS_DIR, 'project-status.md'), 'utf8');
+    expect(status).toContain('archive_project');
+    for (const f of ['create-task.md', 'log-bug.md', 'new-project.md', 'search.md']) {
+      expect(readFileSync(resolve(SKILLS_DIR, f), 'utf8'), f).toMatch(/archived:\s*"?include/);
     }
   });
 });

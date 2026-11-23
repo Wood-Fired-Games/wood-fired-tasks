@@ -38,7 +38,7 @@ Parse `$ARGUMENTS` — or, when invoked via natural language ("drain DAG project
 
 ### Resolve Project ID
 
-Reuse `loop.md` §1 Resolve Project ID verbatim. Same `wood-fired-tasks:list_projects` call, same match precedence (ID first, then case-insensitive partial name match), same "list available projects and stop" fallback when nothing matches.
+Reuse `loop.md` §1 Resolve Project ID verbatim. Same `wood-fired-tasks:list_projects` call, same match precedence (ID first, then case-insensitive partial name match), same "list available projects and stop" fallback when nothing matches. Same archived guard too: a project that matches only under `archived: "only"` is archived, so stop with the message in [loop-shared.md §U](loop-shared.md#u-archived-project-guard-run-start-and-mid-run) before `topology_check`; a `project_archived` refusal mid-run stops dispatching new waves and ends the run the same way.
 
 ---
 
