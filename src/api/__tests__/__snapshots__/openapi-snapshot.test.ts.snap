@@ -12927,6 +12927,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "database": {
                       "additionalProperties": false,
                       "properties": {
+                        "archived_projects": {
+                          "type": "number",
+                        },
                         "latestActivity": {
                           "nullable": true,
                           "type": "string",
@@ -12945,6 +12948,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "required": [
                         "path",
                         "projects",
+                        "archived_projects",
                         "maxTaskId",
                         "latestActivity",
                       ],
@@ -13090,6 +13094,9 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                     "database": {
                       "additionalProperties": false,
                       "properties": {
+                        "archived_projects": {
+                          "type": "number",
+                        },
                         "latestActivity": {
                           "nullable": true,
                           "type": "string",
@@ -13108,6 +13115,7 @@ exports[`OpenAPI snapshot (contract drift detection) > matches the committed Ope
                       "required": [
                         "path",
                         "projects",
+                        "archived_projects",
                         "maxTaskId",
                         "latestActivity",
                       ],
