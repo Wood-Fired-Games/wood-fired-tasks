@@ -362,37 +362,18 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
       // A repeated unarchive emits no event; it retries only remembered
       // failures (WFT #2543), and there are none...
       app.projectService.unarchiveProject(archivedProjectId, 'tester');
-      // ...and a redelivered event finds nothing left to do.
-      eventBus.emit('project.unarchived', {
-        eventType: 'project.unarchived',
-        timestamp: new Date().toISOString(),
-        data: app.projectService.getProject(archivedProjectId),
-        metadata: { source: 'user', actor: 'tester' },
+      // ...and a second full pass finds nothing left to do. (WFT #2552
+      // point 5: this used to emit `project.unarchived`, which the engine
+      // does not subscribe to, so it could not fail. A stale event for a
+      // project archived again was the same; "re-evaluating a project that
+      // is archived right now changes nothing" covers that case.)
+      expect(app.workflowEngine.reevaluateProject(archivedProjectId)).toEqual({
+        failedTaskIds: [],
       });
     });
 
     expect(app.taskService.getTask(dependent.id)).toEqual(after);
     expect(seen).toEqual([]);
-    expect(errorSpy).not.toHaveBeenCalled();
-  });
-
-  it('does nothing if the project is archived again before the event is handled', () => {
-    const blocker = createTask('Blocker', liveProjectId);
-    const dependent = createTask('Dependent', archivedProjectId);
-    block(blocker.id, dependent.id);
-    forceArchive();
-    finish(blocker.id);
-    const before = app.taskService.getTask(dependent.id);
-
-    // A stale `project.unarchived` for a project that is archived right now.
-    eventBus.emit('project.unarchived', {
-      eventType: 'project.unarchived',
-      timestamp: new Date().toISOString(),
-      data: { ...app.projectService.getProject(archivedProjectId), archived: false },
-      metadata: { source: 'user', actor: 'tester' },
-    });
-
-    expect(app.taskService.getTask(dependent.id)).toEqual(before);
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
@@ -728,6 +709,44 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
       app.taskService.deleteTask(failing.id);
 
       expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([]);
+    });
+
+    it('a candidate query that throws surfaces the error, and a repeated unarchive then runs the full pass (WFT #2552 point 3)', () => {
+      const held = heldBackByArchive('Held back');
+      const taskRepo = new TaskRepository(app.db);
+      const engine = new WorkflowEngine(
+        app.taskService,
+        taskRepo,
+        new DependencyRepository(app.db),
+        eventBus,
+        app.db,
+      );
+      app.workflowEngine.stop();
+      engine.start();
+      app.projectService.setUnarchiveReevaluator(engine);
+      try {
+        const query = vi.spyOn(taskRepo, 'findUnblockableIds').mockImplementationOnce(() => {
+          throw new Error('simulated query failure');
+        });
+        expect(() => app.projectService.unarchiveProject(archivedProjectId, 'tester')).toThrow(
+          'simulated query failure',
+        );
+        // The unarchive itself had committed; the pass did not finish.
+        expect(app.projectService.getProject(archivedProjectId).archived).toBe(false);
+        expect(status(held.id)).toBe('blocked');
+
+        const retried = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+
+        expect(retried.reevaluationFailedTaskIds).toEqual([]);
+        expect(status(held.id)).toBe('open');
+        expect(query).toHaveBeenCalledTimes(2);
+
+        // The pass finished, so a further repeated unarchive is a plain retry again.
+        app.projectService.unarchiveProject(archivedProjectId, 'tester');
+        expect(query).toHaveBeenCalledTimes(2);
+      } finally {
+        engine.stop();
+      }
     });
 
     it('a real unarchive replaces the remembered failures with its own result', () => {

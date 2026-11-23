@@ -125,6 +125,10 @@ nothing.
 - A remembered task is forgotten when its retry succeeds (or it is no longer
   a candidate, or no longer in the project), when it is deleted, or when the
   project is archived again.
+- If a candidate query of the pass itself throws (not one task's write), the
+  error reaches the caller although the unarchive has committed, and the pass
+  is marked unfinished: the next repeated unarchive runs the full pass, not
+  only the retry (WFT #2552 point 3).
 - **After a server restart nothing is remembered.** A repeated unarchive then
   retries nothing and reports nothing failed, although a task the caller was
   told about may still be held back. The way out is to archive the project

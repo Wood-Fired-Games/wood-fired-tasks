@@ -83,6 +83,8 @@ export class WorkflowEngine {
    * back in this process, and which step to retry. In memory only.
    */
   private readonly failedByProject = new Map<number, Map<number, RetryKind>>();
+  /** Projects whose last pass stopped on a thrown candidate query (WFT #2552 point 3). */
+  private readonly unfinishedPasses = new Set<number>();
 
   constructor(
     private readonly taskService: TaskService,
@@ -93,11 +95,13 @@ export class WorkflowEngine {
   ) {}
 
   /**
-   * Start listening for task.status_changed and project.unarchived events.
+   * Start listening for task.status_changed (the cascade), and for
+   * task.deleted and project.archived (which forget remembered re-evaluation
+   * failures, WFT #2543). It does not listen for project.unarchived.
    *
-   * Subscribes with `ignoreTransaction: true` so the engine still receives
-   * status_changed emits synchronously while a transactional emit buffer is
-   * active. Cascade recursion depends on synchronous redelivery during the
+   * The status_changed subscription uses `ignoreTransaction: true` so the
+   * engine still receives those emits synchronously while a transactional
+   * emit buffer is active. Cascade recursion depends on synchronous redelivery during the
    * transaction — see processCascade and the class doc comment for the
    * phantom-event suppression contract (task #244).
    */
@@ -115,6 +119,7 @@ export class WorkflowEngine {
       this.eventBus.subscribe('task.deleted', (event: TaskEvent) => this.forgetTask(event.data.id)),
       this.eventBus.subscribe('project.archived', (event: ProjectEvent) => {
         this.failedByProject.delete(event.data.id);
+        this.unfinishedPasses.delete(event.data.id);
       }),
     );
     // The unarchive re-evaluation is NOT driven by `project.unarchived`:
@@ -212,12 +217,22 @@ export class WorkflowEngine {
     // Replaced, not merged: this pass re-examines every candidate, so an id
     // remembered from an earlier pass that is no longer a candidate is gone.
     this.failedByProject.delete(projectId);
-    for (const taskId of this.taskRepo.findUnblockableIds(projectId)) {
-      this.attempt(projectId, taskId, 'unblock', failed);
+    try {
+      for (const taskId of this.taskRepo.findUnblockableIds(projectId)) {
+        this.attempt(projectId, taskId, 'unblock', failed);
+      }
+      for (const parentId of this.taskRepo.findCompletableParentIds(projectId)) {
+        this.attempt(projectId, parentId, 'complete', failed);
+      }
+    } catch (error) {
+      // WFT #2552 point 3: a candidate query threw, after the unarchive had
+      // committed. The error still reaches the caller, but the pass is marked
+      // unfinished so a repeated unarchive runs it in full, not just a retry.
+      this.unfinishedPasses.add(projectId);
+      this.remember(projectId, failed);
+      throw error;
     }
-    for (const parentId of this.taskRepo.findCompletableParentIds(projectId)) {
-      this.attempt(projectId, parentId, 'complete', failed);
-    }
+    this.unfinishedPasses.delete(projectId);
     this.remember(projectId, failed);
     return { failedTaskIds: [...failed.keys()] };
   }
@@ -236,6 +251,9 @@ export class WorkflowEngine {
    * WFT #2553 replaces this with a table).
    */
   retryFailedTasks(projectId: number): ReevaluationResult {
+    if (this.unfinishedPasses.has(projectId)) {
+      return this.reevaluateProject(projectId);
+    }
     const remembered = this.failedByProject.get(projectId);
     if (!remembered || this.taskService.isProjectArchived(projectId)) {
       return { failedTaskIds: [] };
