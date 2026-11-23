@@ -3,13 +3,16 @@ import { ITaskRepository, IDependencyRepository } from '../repositories/interfac
 import { TaskService } from './task.service.js';
 import { EventBus } from '../events/event-bus.js';
 import { VALID_STATUS_TRANSITIONS } from '../types/task.js';
-import type { TaskEvent } from '../events/types.js';
+import type { ProjectEvent, TaskEvent } from '../events/types.js';
 
-/** Outcome of one unarchive re-evaluation pass (WFT #2532). */
+/** Outcome of one unarchive re-evaluation pass or retry (WFT #2532). */
 export interface ReevaluationResult {
   /** Candidates whose own cascade rolled back; empty on a clean pass. */
   failedTaskIds: number[];
 }
+
+/** Which re-evaluation step a remembered failure retries (WFT #2543). */
+type RetryKind = 'unblock' | 'complete';
 
 /**
  * WorkflowEngine - automates parent task completion and dependency auto-unblock.
@@ -42,8 +45,14 @@ export interface ReevaluationResult {
  *   transaction, so one failing task does not undo the others (WFT #2532),
  *   and the ids that failed are returned to the unarchive's caller
  *   (WFT #2542). It is idempotent — a second run finds no candidate — and
- *   does nothing if the project is archived. A repeated (no-op) unarchive
- *   runs it again, which is the retry path for a task that failed.
+ *   does nothing if the project is archived.
+ * - Retry (WFT #2543, option B): the ids that failed are remembered in
+ *   memory per project. A repeated (no-op) unarchive calls
+ *   `retryFailedTasks`, which re-attempts only those ids and never runs the
+ *   general pass, so it does not open a task blocked by hand and does
+ *   nothing on a project with nothing remembered. A real unarchive replaces
+ *   the remembered ids with its own result; a deleted task, and every id of
+ *   a project archived again, is forgotten. Nothing survives a restart.
  * - Cascade depth counts actual auto-completions and auto-unblocks, not intermediate transitions.
  *
  * Transaction atomicity (SC-5):
@@ -69,6 +78,13 @@ export class WorkflowEngine {
   private static readonly MAX_CASCADE_DEPTH = 5;
   private unsubscribes: Array<() => void> = [];
   private cascadeError: Error | null = null;
+  /**
+   * WFT #2543: per project, the tasks whose unarchive re-evaluation rolled
+   * back in this process, and which step to retry. In memory only.
+   */
+  private readonly failedByProject = new Map<number, Map<number, RetryKind>>();
+  /** Projects whose last pass stopped on a thrown candidate query (WFT #2552 point 3). */
+  private readonly unfinishedPasses = new Set<number>();
 
   constructor(
     private readonly taskService: TaskService,
@@ -79,11 +95,13 @@ export class WorkflowEngine {
   ) {}
 
   /**
-   * Start listening for task.status_changed and project.unarchived events.
+   * Start listening for task.status_changed (the cascade), and for
+   * task.deleted and project.archived (which forget remembered re-evaluation
+   * failures, WFT #2543). It does not listen for project.unarchived.
    *
-   * Subscribes with `ignoreTransaction: true` so the engine still receives
-   * status_changed emits synchronously while a transactional emit buffer is
-   * active. Cascade recursion depends on synchronous redelivery during the
+   * The status_changed subscription uses `ignoreTransaction: true` so the
+   * engine still receives those emits synchronously while a transactional
+   * emit buffer is active. Cascade recursion depends on synchronous redelivery during the
    * transaction — see processCascade and the class doc comment for the
    * phantom-event suppression contract (task #244).
    */
@@ -94,6 +112,16 @@ export class WorkflowEngine {
       { ignoreTransaction: true },
     );
     this.unsubscribes.push(unsub);
+    // WFT #2543: a remembered failure is dropped when its task is deleted or
+    // its project is archived again (the next real unarchive runs the full
+    // pass anyway). Delivered on commit, like any external subscriber.
+    this.unsubscribes.push(
+      this.eventBus.subscribe('task.deleted', (event: TaskEvent) => this.forgetTask(event.data.id)),
+      this.eventBus.subscribe('project.archived', (event: ProjectEvent) => {
+        this.failedByProject.delete(event.data.id);
+        this.unfinishedPasses.delete(event.data.id);
+      }),
+    );
     // The unarchive re-evaluation is NOT driven by `project.unarchived`:
     // `ProjectService.unarchiveProject` calls `reevaluateProject` itself after
     // the unarchive has committed, so it can return `failedTaskIds` to the
@@ -176,32 +204,112 @@ export class WorkflowEngine {
    * other candidates still commit. A failure is logged with the task and
    * project ids and reported in `failedTaskIds`, which
    * `ProjectService.unarchiveProject` hands back to its caller (WFT #2542).
-   * The pass is idempotent, so it is safe to run again: a repeated (no-op)
-   * unarchive runs it again, which is the retry path for a failed task.
+   * The pass is idempotent, so it is safe to run again. Its failures replace
+   * the ones remembered for the project, for `retryFailedTasks` (WFT #2543).
    *
    * Does nothing when the project is archived (again) or gone.
    */
   reevaluateProject(projectId: number): ReevaluationResult {
-    const failedTaskIds: number[] = [];
     if (this.taskService.isProjectArchived(projectId)) {
-      return { failedTaskIds };
+      return { failedTaskIds: [] };
     }
-    const attempt = (taskId: number, work: () => void): void => {
-      const ok = this.runCascade(
-        work,
-        `WorkflowEngine: unarchive re-evaluation of task ${taskId} in project ${projectId} rolled back:`,
-      );
-      if (!ok) {
-        failedTaskIds.push(taskId);
+    const failed = new Map<number, RetryKind>();
+    // Replaced, not merged: this pass re-examines every candidate, so an id
+    // remembered from an earlier pass that is no longer a candidate is gone.
+    this.failedByProject.delete(projectId);
+    try {
+      for (const taskId of this.taskRepo.findUnblockableIds(projectId)) {
+        this.attempt(projectId, taskId, 'unblock', failed);
       }
-    };
-    for (const taskId of this.taskRepo.findUnblockableIds(projectId)) {
-      attempt(taskId, () => this.unblockIfAllBlockersDone(taskId));
+      for (const parentId of this.taskRepo.findCompletableParentIds(projectId)) {
+        this.attempt(projectId, parentId, 'complete', failed);
+      }
+    } catch (error) {
+      // WFT #2552 point 3: a candidate query threw, after the unarchive had
+      // committed. The error still reaches the caller, but the pass is marked
+      // unfinished so a repeated unarchive runs it in full, not just a retry.
+      this.unfinishedPasses.add(projectId);
+      this.remember(projectId, failed);
+      throw error;
     }
-    for (const parentId of this.taskRepo.findCompletableParentIds(projectId)) {
-      attempt(parentId, () => this.completeParentIfAllChildrenDone(parentId));
+    this.unfinishedPasses.delete(projectId);
+    this.remember(projectId, failed);
+    return { failedTaskIds: [...failed.keys()] };
+  }
+
+  /**
+   * The retry behind a repeated (no-op) unarchive (WFT #2543, option B):
+   * re-attempts only the tasks whose re-evaluation failed earlier in this
+   * process for `projectId`. It never runs the general pass, so a task
+   * blocked by hand is left alone, and a project with nothing remembered is
+   * not touched. An id whose retry succeeds (including one that is no longer
+   * a candidate, or no longer in the project) is forgotten; one that fails
+   * again stays and is reported again.
+   *
+   * The ids live in memory only: after a restart nothing is remembered, and
+   * the way out is to archive and unarchive the project again (design §2.4;
+   * WFT #2553 replaces this with a table).
+   */
+  retryFailedTasks(projectId: number): ReevaluationResult {
+    if (this.unfinishedPasses.has(projectId)) {
+      return this.reevaluateProject(projectId);
     }
-    return { failedTaskIds };
+    const remembered = this.failedByProject.get(projectId);
+    if (!remembered || this.taskService.isProjectArchived(projectId)) {
+      return { failedTaskIds: [] };
+    }
+    const failed = new Map<number, RetryKind>();
+    for (const [taskId, kind] of remembered) {
+      const task = this.taskRepo.findById(taskId);
+      if (!task || task.project_id !== projectId) {
+        continue;
+      }
+      this.attempt(projectId, taskId, kind, failed);
+    }
+    this.remember(projectId, failed);
+    return { failedTaskIds: [...failed.keys()] };
+  }
+
+  /** The task ids remembered as failed for `projectId`, in the order they failed. */
+  rememberedFailures(projectId: number): number[] {
+    return [...(this.failedByProject.get(projectId)?.keys() ?? [])];
+  }
+
+  /** Runs one candidate as its own cascade; records it in `failed` if it rolls back. */
+  private attempt(
+    projectId: number,
+    taskId: number,
+    kind: RetryKind,
+    failed: Map<number, RetryKind>,
+  ): void {
+    const work =
+      kind === 'unblock'
+        ? () => this.unblockIfAllBlockersDone(taskId)
+        : () => this.completeParentIfAllChildrenDone(taskId);
+    const ok = this.runCascade(
+      work,
+      `WorkflowEngine: unarchive re-evaluation of task ${taskId} in project ${projectId} rolled back:`,
+    );
+    if (!ok) {
+      failed.set(taskId, kind);
+    }
+  }
+
+  private remember(projectId: number, failed: Map<number, RetryKind>): void {
+    if (failed.size === 0) {
+      this.failedByProject.delete(projectId);
+    } else {
+      this.failedByProject.set(projectId, failed);
+    }
+  }
+
+  /** A deleted task is forgotten, wherever it was remembered. */
+  private forgetTask(taskId: number): void {
+    for (const [projectId, failed] of this.failedByProject) {
+      if (failed.delete(taskId) && failed.size === 0) {
+        this.failedByProject.delete(projectId);
+      }
+    }
   }
 
   /**

@@ -369,7 +369,8 @@ export async function createApp(dbPath?: string): Promise<App> {
   // Create and start WorkflowEngine (with db for transaction atomicity)
   const workflowEngine = new WorkflowEngine(taskService, taskRepo, dependencyRepo, eventBus, db);
   workflowEngine.start();
-  // WFT #2532: a repeated (no-op) unarchive re-runs the re-evaluation.
+  // WFT #2532 / #2543: a real unarchive runs the re-evaluation pass; a
+  // repeated (no-op) one retries only the tasks that failed in this process.
   projectService.setUnarchiveReevaluator(workflowEngine);
 
   // Phase 30 Plan 08 — start the device-flow store's periodic cleanup

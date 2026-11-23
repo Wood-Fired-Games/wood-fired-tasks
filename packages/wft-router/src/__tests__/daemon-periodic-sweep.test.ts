@@ -306,6 +306,59 @@ describe('WftRouterDaemon — periodic re-sweep (task #1035)', () => {
     store.close();
   });
 
+  it('re-reads the project on every tick: a project archived between two ticks stops the kicks (WFT #2552 point 6)', async () => {
+    const store = new IdempotencyStore({ dbPath: ':memory:' });
+    const record: KickRecord = { kicks: [], suppressed: [] };
+    const calls: string[] = [];
+    const sched = fakeScheduler();
+    let clock = 10_000_000;
+    let archived = false;
+    const tasks = taskListFetch(OPEN_BACKLOG, []);
+    const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+      calls.push(String(input));
+      if (new URL(String(input)).pathname === '/api/v1/projects/5') {
+        return new Response(JSON.stringify({ id: 5, archived }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return tasks(input);
+    }) as typeof fetch;
+
+    const daemon = periodicDaemon({
+      config: periodicConfig(),
+      store,
+      record,
+      fetchImpl,
+      scheduler: sched.scheduler,
+      now: () => clock,
+    });
+    daemon.start();
+    await daemon.waitForSweep();
+
+    // Tick 1: live project, one kick.
+    sched.tickLive();
+    await daemon.settle();
+    expect(record.kicks).toEqual(['sweep:wake-on-backlog:166']);
+
+    // The project is archived; tick 2 is in a fresh bucket, so only the
+    // archived check can stop the kick — and only if the project is re-read.
+    archived = true;
+    clock = 10_000_000 + 60_000;
+    sched.tickLive();
+    await daemon.settle();
+
+    expect(record.kicks).toEqual(['sweep:wake-on-backlog:166']);
+    expect(record.suppressed).toHaveLength(0);
+    const projectReads = calls.filter((u) => new URL(u).pathname === '/api/v1/projects/5');
+    expect(projectReads).toHaveLength(2);
+    // Skipped on the definite "archived": no task-list query on tick 2.
+    expect(calls.filter((u) => u.includes('/api/v1/tasks?'))).toHaveLength(1);
+
+    await daemon.stop();
+    store.close();
+  });
+
   it('AC #3: absent sweep_interval_s schedules no timer and changes nothing', async () => {
     const store = new IdempotencyStore({ dbPath: ':memory:' });
     const record: KickRecord = { kicks: [], suppressed: [] };

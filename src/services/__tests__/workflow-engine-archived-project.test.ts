@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestApp } from '../../index.js';
 import { eventBus } from '../../events/event-bus.js';
+import { DependencyRepository } from '../../repositories/dependency.repository.js';
+import { TaskRepository } from '../../repositories/task.repository.js';
+import { WorkflowEngine } from '../workflow-engine.js';
 import type { App } from '../../index.js';
 import type { Task } from '../../types/task.js';
 import type { TaskEvent } from '../../events/types.js';
@@ -356,40 +359,21 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
     expect(after.status).toBe('open');
 
     const seen = taskEventsDuring(() => {
-      // A repeated unarchive emits no event; it re-runs the pass (WFT #2532),
-      // which finds nothing left to do...
+      // A repeated unarchive emits no event; it retries only remembered
+      // failures (WFT #2543), and there are none...
       app.projectService.unarchiveProject(archivedProjectId, 'tester');
-      // ...and a redelivered event finds nothing left to do.
-      eventBus.emit('project.unarchived', {
-        eventType: 'project.unarchived',
-        timestamp: new Date().toISOString(),
-        data: app.projectService.getProject(archivedProjectId),
-        metadata: { source: 'user', actor: 'tester' },
+      // ...and a second full pass finds nothing left to do. (WFT #2552
+      // point 5: this used to emit `project.unarchived`, which the engine
+      // does not subscribe to, so it could not fail. A stale event for a
+      // project archived again was the same; "re-evaluating a project that
+      // is archived right now changes nothing" covers that case.)
+      expect(app.workflowEngine.reevaluateProject(archivedProjectId)).toEqual({
+        failedTaskIds: [],
       });
     });
 
     expect(app.taskService.getTask(dependent.id)).toEqual(after);
     expect(seen).toEqual([]);
-    expect(errorSpy).not.toHaveBeenCalled();
-  });
-
-  it('does nothing if the project is archived again before the event is handled', () => {
-    const blocker = createTask('Blocker', liveProjectId);
-    const dependent = createTask('Dependent', archivedProjectId);
-    block(blocker.id, dependent.id);
-    forceArchive();
-    finish(blocker.id);
-    const before = app.taskService.getTask(dependent.id);
-
-    // A stale `project.unarchived` for a project that is archived right now.
-    eventBus.emit('project.unarchived', {
-      eventType: 'project.unarchived',
-      timestamp: new Date().toISOString(),
-      data: { ...app.projectService.getProject(archivedProjectId), archived: false },
-      metadata: { source: 'user', actor: 'tester' },
-    });
-
-    expect(app.taskService.getTask(dependent.id)).toEqual(before);
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
@@ -453,7 +437,7 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
       expect(app.projectService.getProject(archivedProjectId).archived).toBe(false);
     });
 
-    it('a repeated unarchive re-runs the pass, so a task that failed is opened on the retry; no project event is emitted', () => {
+    it('a repeated unarchive retries the task that failed, so it is opened on the retry; no project event is emitted', () => {
       const blocker = createTask('Blocker', liveProjectId);
       const failing = createTask('Failing dependent', archivedProjectId);
       block(blocker.id, failing.id);
@@ -534,6 +518,9 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
         metadata: { source: 'user', actor: 'tester' },
       });
       expect(passes).toHaveBeenCalledTimes(1);
+      // A repeated unarchive does not run the pass either (WFT #2543).
+      app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      expect(passes).toHaveBeenCalledTimes(1);
       passes.mockRestore();
     });
 
@@ -584,6 +571,206 @@ describe('WorkflowEngine: unarchive re-evaluates the project', () => {
 
       expect(status(handBlocked.id)).toBe('open');
       expect(status(noEdge.id)).toBe('blocked');
+    });
+  });
+
+  /**
+   * WFT #2543, option B: a repeated (no-op) unarchive retries only the task
+   * ids whose re-evaluation failed earlier in this process for that project.
+   * It never runs the general pass, so it does not open a task blocked by
+   * hand, and on a project with nothing remembered it changes nothing.
+   */
+  describe('a repeated unarchive retries only remembered failures (WFT #2543)', () => {
+    function failUpdatesOf(taskId: number): ReturnType<typeof vi.spyOn> {
+      const original = app.taskService.updateTask.bind(app.taskService);
+      return vi
+        .spyOn(app.taskService, 'updateTask')
+        .mockImplementation((id: number, ...rest: unknown[]) => {
+          if (id === taskId) {
+            throw new Error(`simulated write failure on task ${id}`);
+          }
+          return (original as (...args: unknown[]) => Task)(id, ...rest);
+        });
+    }
+
+    /** Hand-blocks a task whose dependency edges all point at done tasks. */
+    function handBlockOverDoneBlocker(projectId: number, title: string): Task {
+      const blocker = createTask(`${title} blocker`, liveProjectId);
+      const task = createTask(title, projectId);
+      app.dependencyService.addDependency({ task_id: blocker.id, blocks_task_id: task.id });
+      finish(blocker.id);
+      app.taskService.updateTask(task.id, { status: 'blocked' });
+      return task;
+    }
+
+    /** Real unarchive while `failing`'s writes throw; returns with them restored. */
+    function realUnarchiveWithFailure(failingId: number): void {
+      const spy = failUpdatesOf(failingId);
+      try {
+        const result = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+        expect(result.reevaluationFailedTaskIds).toEqual([failingId]);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(status(failingId)).toBe('blocked');
+    }
+
+    /**
+     * A task in the project to be archived, blocked on a live task; the
+     * project is force-archived and then the blocker finishes, so the
+     * cascade skips the dependent and the real unarchive must open it.
+     */
+    function heldBackByArchive(title: string): Task {
+      const blocker = createTask(`${title} blocker`, liveProjectId);
+      const task = createTask(title, archivedProjectId);
+      block(blocker.id, task.id);
+      forceArchive();
+      finish(blocker.id);
+      return task;
+    }
+
+    it('(a) a no-op unarchive of a never-archived project leaves a hand-blocked task over done blockers blocked', () => {
+      const handBlocked = handBlockOverDoneBlocker(liveProjectId, 'Hand blocked');
+      const before = app.taskService.getTask(handBlocked.id);
+
+      let result;
+      const seen = taskEventsDuring(() => {
+        result = app.projectService.unarchiveProject(liveProjectId, 'tester');
+      });
+
+      expect(app.taskService.getTask(handBlocked.id)).toEqual(before);
+      expect(seen).toEqual([]);
+      expect(result).toMatchObject({ reevaluationFailedTaskIds: [] });
+    });
+
+    it('(b) after a real unarchive with one failure, a no-op unarchive retries only that task and forgets it', () => {
+      const failing = heldBackByArchive('Failing dependent');
+      realUnarchiveWithFailure(failing.id);
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([failing.id]);
+      // Blocked by hand after the unarchive, over blockers that are all done:
+      // not a failure, so the retry must leave it alone.
+      const handBlocked = handBlockOverDoneBlocker(archivedProjectId, 'Hand blocked later');
+
+      const retried = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+
+      expect(retried.reevaluationFailedTaskIds).toEqual([]);
+      expect(status(failing.id)).toBe('open');
+      expect(status(handBlocked.id)).toBe('blocked');
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([]);
+
+      // Nothing left to retry: a further no-op unarchive changes nothing.
+      const seen = taskEventsDuring(() => {
+        app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      });
+      expect(seen).toEqual([]);
+      expect(status(handBlocked.id)).toBe('blocked');
+    });
+
+    it('(c) after a restart (a new engine) a no-op unarchive retries nothing and reports nothing failed', () => {
+      const failing = heldBackByArchive('Failing dependent');
+      realUnarchiveWithFailure(failing.id);
+
+      const restarted = new WorkflowEngine(
+        app.taskService,
+        new TaskRepository(app.db),
+        new DependencyRepository(app.db),
+        eventBus,
+        app.db,
+      );
+      app.workflowEngine.stop();
+      restarted.start();
+      app.projectService.setUnarchiveReevaluator(restarted);
+      try {
+        const result = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+
+        expect(result.reevaluationFailedTaskIds).toEqual([]);
+        expect(status(failing.id)).toBe('blocked');
+        expect(restarted.rememberedFailures(archivedProjectId)).toEqual([]);
+      } finally {
+        restarted.stop();
+      }
+    });
+
+    it('(d) archiving the project again forgets its remembered failures', () => {
+      const failing = heldBackByArchive('Failing dependent');
+      realUnarchiveWithFailure(failing.id);
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([failing.id]);
+
+      forceArchive();
+
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([]);
+    });
+
+    it('deleting a remembered task forgets it', () => {
+      const failing = heldBackByArchive('Failing dependent');
+      realUnarchiveWithFailure(failing.id);
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([failing.id]);
+
+      app.taskService.deleteTask(failing.id);
+
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([]);
+    });
+
+    it('a candidate query that throws surfaces the error, and a repeated unarchive then runs the full pass (WFT #2552 point 3)', () => {
+      const held = heldBackByArchive('Held back');
+      const taskRepo = new TaskRepository(app.db);
+      const engine = new WorkflowEngine(
+        app.taskService,
+        taskRepo,
+        new DependencyRepository(app.db),
+        eventBus,
+        app.db,
+      );
+      app.workflowEngine.stop();
+      engine.start();
+      app.projectService.setUnarchiveReevaluator(engine);
+      try {
+        const query = vi.spyOn(taskRepo, 'findUnblockableIds').mockImplementationOnce(() => {
+          throw new Error('simulated query failure');
+        });
+        expect(() => app.projectService.unarchiveProject(archivedProjectId, 'tester')).toThrow(
+          'simulated query failure',
+        );
+        // The unarchive itself had committed; the pass did not finish.
+        expect(app.projectService.getProject(archivedProjectId).archived).toBe(false);
+        expect(status(held.id)).toBe('blocked');
+
+        const retried = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+
+        expect(retried.reevaluationFailedTaskIds).toEqual([]);
+        expect(status(held.id)).toBe('open');
+        expect(query).toHaveBeenCalledTimes(2);
+
+        // The pass finished, so a further repeated unarchive is a plain retry again.
+        app.projectService.unarchiveProject(archivedProjectId, 'tester');
+        expect(query).toHaveBeenCalledTimes(2);
+      } finally {
+        engine.stop();
+      }
+    });
+
+    it('a real unarchive replaces the remembered failures with its own result', () => {
+      const failing = heldBackByArchive('Failing dependent');
+      realUnarchiveWithFailure(failing.id);
+      // While the project is live again, a second task comes to depend on a
+      // live blocker; the project is archived and the blocker finishes.
+      const otherBlocker = createTask('Other blocker', liveProjectId);
+      const other = createTask('Other failing dependent', archivedProjectId);
+      block(otherBlocker.id, other.id);
+      forceArchive();
+      finish(otherBlocker.id);
+
+      const spy = failUpdatesOf(other.id);
+      let result;
+      try {
+        result = app.projectService.unarchiveProject(archivedProjectId, 'tester');
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(result).toMatchObject({ reevaluationFailedTaskIds: [other.id] });
+      expect(status(failing.id)).toBe('open');
+      expect(app.workflowEngine.rememberedFailures(archivedProjectId)).toEqual([other.id]);
     });
   });
 });

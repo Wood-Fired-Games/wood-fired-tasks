@@ -274,6 +274,17 @@ describe('project-archive / project-unarchive commands (WFT #2477)', () => {
       expect(errorSpy).not.toHaveBeenCalled();
     });
 
+    it('notes on stderr that the result is unknown when the server sent no failed-ids field (WFT #2552)', async () => {
+      const { unarchiveProject } = await client();
+      // `unarchived` has no `reevaluation_failed_task_ids`: a pre-#2542 server.
+      vi.mocked(unarchiveProject).mockResolvedValue(unarchived);
+
+      await run('project-unarchive', '7');
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('the server did not report'));
+      expect(process.exitCode).toBe(0);
+    });
+
     it('prints no warning when no task failed', async () => {
       const { unarchiveProject } = await client();
       vi.mocked(unarchiveProject).mockResolvedValue({

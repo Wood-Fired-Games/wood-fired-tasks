@@ -52,14 +52,18 @@ export interface ProjectServiceDeps {
 
 /** Re-evaluates one unarchived project (implemented by the WorkflowEngine). */
 export interface UnarchiveReevaluator {
+  /** The full pass, run by a real unarchive (WFT #2532). */
   reevaluateProject(projectId: number): { failedTaskIds: number[] };
+  /** Only the ids that failed earlier in this process, run by a no-op unarchive (WFT #2543). */
+  retryFailedTasks(projectId: number): { failedTaskIds: number[] };
 }
 
 /**
  * What an unarchive returns (WFT #2542): the project, and the tasks whose
  * re-evaluation rolled back. Empty when the pass was clean or no re-evaluator
  * is bound. A non-empty list means the unarchive itself succeeded but those
- * tasks kept their old state; unarchiving again retries them.
+ * tasks kept their old state; unarchiving again (before a server restart)
+ * retries them.
  */
 export interface UnarchiveResult {
   project: Project;
@@ -107,11 +111,12 @@ export class ProjectService {
   }
 
   /**
-   * The unarchive re-evaluation (WFT #2532). Every unarchive calls it after
-   * the unarchive has committed — a real one and a repeated (no-op) one, which
-   * is the retry path for a task whose re-evaluation failed — and returns its
-   * failed task ids to the caller (WFT #2542). Bound late because the workflow
-   * engine is built after this service; `null` unbinds it.
+   * The unarchive re-evaluation (WFT #2532). A real unarchive runs the full
+   * pass after it has committed; a repeated (no-op) unarchive only retries
+   * the tasks whose re-evaluation failed earlier in this process (WFT #2543).
+   * Either way the failed task ids go back to the caller (WFT #2542). Bound
+   * late because the workflow engine is built after this service; `null`
+   * unbinds it.
    */
   private unarchiveReevaluator: UnarchiveReevaluator | null = null;
 
@@ -271,9 +276,9 @@ export class ProjectService {
    * Unarchive a project: clears `archived_at`, `archived_by` and
    * `archive_reason`. A no-op that emits nothing when the project is not
    * archived; otherwise emits `project.unarchived` exactly once (never
-   * `project.updated`). Either way it then runs the re-evaluation (see
-   * `setUnarchiveReevaluator`) and returns the ids that failed. `actor` is the
-   * authenticated caller.
+   * `project.updated`) and runs the full re-evaluation; a no-op only retries
+   * the tasks that failed before (see `setUnarchiveReevaluator`). Either way
+   * it returns the ids that failed. `actor` is the authenticated caller.
    */
   unarchiveProject(id: number, actor: string): UnarchiveResult {
     if (!this.projectRepo.findById(id)) {
@@ -289,10 +294,13 @@ export class ProjectService {
         metadata: { source: 'user', actor },
       });
     }
-    // The unarchive has committed. Run the idempotent re-evaluation; on a
-    // repeated unarchive this is the retry for a task that failed before
-    // (WFT #2532), and its failures go back to the caller (WFT #2542).
-    const outcome = this.unarchiveReevaluator?.reevaluateProject(id);
+    // The unarchive has committed. A real one runs the full pass (WFT #2532);
+    // a repeated one retries only what failed before, so it never opens a
+    // task blocked by hand (WFT #2543). Failures go back to the caller
+    // (WFT #2542).
+    const outcome = changed
+      ? this.unarchiveReevaluator?.reevaluateProject(id)
+      : this.unarchiveReevaluator?.retryFailedTasks(id);
     return { project, reevaluationFailedTaskIds: outcome?.failedTaskIds ?? [] };
   }
 
