@@ -568,6 +568,31 @@ function parseStrictId(token: string | undefined): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
+/**
+ * The tracker user a Slack caller maps to, or null after telling them they
+ * cannot `verb` a project (WFT #2531). Archive and unarchive need a mapped
+ * user — the same `findBySlackUserId` mapping every Slack write uses — with
+ * no fall-back to the slack-bot account or a raw Slack id; an unmapped caller
+ * is refused and nothing is written.
+ */
+async function requireMappedTrackerUser(
+  respond: RespondFn,
+  services: Services,
+  command: SlashCommand,
+  verb: 'archive' | 'unarchive',
+): Promise<{ display_name: string } | null> {
+  const user = services.userRepository.findBySlackUserId(command.user_id);
+  if (user) {
+    return user;
+  }
+  await respondError(
+    respond,
+    `Only a Slack user linked to a tracker user can ${verb} a project.`,
+    'Ask an administrator to link your Slack account to your tracker user.',
+  );
+  return null;
+}
+
 /** A one-line success confirmation block. */
 function confirmation(text: string): KnownBlock[] {
   return [
@@ -582,14 +607,14 @@ function confirmation(text: string): KnownBlock[] {
  * handleProjectArchive — /tasks project-archive <id> [reason]
  *
  * Everything after the id is the reason, taken verbatim (no flags). The actor
- * recorded as `archived_by` is the Slack user's display name. There is no
+ * recorded as `archived_by` is the mapped tracker user's display name; an
+ * unmapped Slack user is refused (WFT #2531). There is no
  * force from Slack: a project with unfinished tasks is refused by the service
  * and the refusal is shown.
  */
 async function handleProjectArchive(
   respond: RespondFn,
   services: Services,
-  identityCache: UserIdentityCache,
   command: SlashCommand,
   args: string[],
 ): Promise<void> {
@@ -603,8 +628,15 @@ async function handleProjectArchive(
     return;
   }
   const reason = args.slice(1).join(' ');
-  const actor = await identityCache.resolve(command.user_id);
-  const project = services.projectService.archiveProject(id, reason ? { reason } : {}, actor);
+  const user = await requireMappedTrackerUser(respond, services, command, 'archive');
+  if (user === null) {
+    return;
+  }
+  const project = services.projectService.archiveProject(
+    id,
+    reason ? { reason } : {},
+    user.display_name,
+  );
   await respondBlocks(
     respond,
     [...confirmation(`Project #${id} archived.`), ...formatProjectDetail(project)],
@@ -618,7 +650,6 @@ async function handleProjectArchive(
 async function handleProjectUnarchive(
   respond: RespondFn,
   services: Services,
-  identityCache: UserIdentityCache,
   command: SlashCommand,
   args: string[],
 ): Promise<void> {
@@ -627,8 +658,11 @@ async function handleProjectUnarchive(
     await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-unarchive <id>`');
     return;
   }
-  const actor = await identityCache.resolve(command.user_id);
-  const project = services.projectService.unarchiveProject(id, actor);
+  const user = await requireMappedTrackerUser(respond, services, command, 'unarchive');
+  if (user === null) {
+    return;
+  }
+  const project = services.projectService.unarchiveProject(id, user.display_name);
   await respondBlocks(
     respond,
     [...confirmation(`Project #${id} unarchived.`), ...formatProjectDetail(project)],
@@ -1359,10 +1393,10 @@ export function registerTasksCommand(
             await handleProjectList(respond, services, args);
             break;
           case 'project-archive':
-            await handleProjectArchive(respond, services, identityCache, command, args);
+            await handleProjectArchive(respond, services, command, args);
             break;
           case 'project-unarchive':
-            await handleProjectUnarchive(respond, services, identityCache, command, args);
+            await handleProjectUnarchive(respond, services, command, args);
             break;
           case 'project-show':
             await handleProjectShow(respond, services, args);

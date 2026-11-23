@@ -135,6 +135,12 @@ not `delete_project` (`admin`). A token bound to one project may archive that
 project only; the existing project-binding table enforces this once the new
 routes are classified in it.
 
+Slack has no token scopes, so archive and unarchive from Slack require the
+Slack user to map to a tracker user (the `findBySlackUserId` mapping other
+Slack writes use). An unmapped user is refused with a clear message and
+nothing is written; there is no fall-back to the slack-bot account or the raw
+Slack id. `archived_by` is the mapped user's display name (WFT #2531).
+
 ### 2.7 Events and audit
 
 - Two new event types, `project.archived` and `project.unarchived`, carrying
