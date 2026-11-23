@@ -146,6 +146,16 @@ describe('project-archive / project-unarchive commands (WFT #2477)', () => {
         expect(process.exitCode).toBe(0);
       });
 
+      it('a --force between the id and --reason is the same global flag and forces nothing', async () => {
+        const { archiveProject } = await client();
+        vi.mocked(archiveProject).mockResolvedValue(archived);
+
+        await run('project-archive', '7', '--force', '--reason', 'x');
+
+        expect(archiveProject).toHaveBeenCalledWith(7, { reason: 'x' });
+        expect(process.exitCode).toBe(0);
+      });
+
       it('(c) --with-unfinished without --reason is refused without calling the API', async () => {
         const { archiveProject } = await client();
 

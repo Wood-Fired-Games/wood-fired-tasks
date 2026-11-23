@@ -64,7 +64,7 @@ _tasks_completions() {
 
   # Complete flags
   if [[ "\${cur}" == -* ]]; then
-    COMPREPLY=( $(compgen -W "\${global_flags} --status --priority --assignee --tags --search --title --description --project --include-archived --archived-only --reason --with-unfinished" --"\${cur}") )
+    COMPREPLY=( $(compgen -W "\${global_flags} --status --priority --assignee --tags --search --title --description --project --include-archived --archived-only --reason --with-unfinished" -- "\${cur}") )
     return 0
   fi
 
