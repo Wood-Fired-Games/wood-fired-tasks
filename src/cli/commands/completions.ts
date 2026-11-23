@@ -53,11 +53,32 @@ function globalValueFlagsOf(program: Command): string[] {
  * Commander options, like the command list itself.
  */
 function bashCommandFlagCases(program: Command): string {
-  return program.commands
-    .filter((cmd) => cmd.name() !== 'help')
-    .map((cmd) => ({ name: cmd.name(), flags: longFlagsOf(cmd) }))
+  // Keyed `cmd` for a top-level command and `cmd:sub` for a nested one
+  // (WFT #2552 point 7): `db mint-token` declares its flags on `mint-token`.
+  const entries: Array<{ key: string; flags: string[] }> = [];
+  for (const cmd of userCommands(program)) {
+    entries.push({ key: cmd.name(), flags: longFlagsOf(cmd) });
+    for (const sub of userCommands(cmd)) {
+      entries.push({ key: `${cmd.name()}:${sub.name()}`, flags: longFlagsOf(sub) });
+    }
+  }
+  return entries
     .filter((entry) => entry.flags.length > 0)
-    .map((entry) => `      ${entry.name}) cmd_flags="${entry.flags.join(' ')}" ;;`)
+    .map((entry) => `      ${entry.key}) cmd_flags="${entry.flags.join(' ')}" ;;`)
+    .join('\n');
+}
+
+/** A command's subcommands, without Commander's built-in `help`. */
+function userCommands(cmd: Command): readonly Command[] {
+  return cmd.commands.filter((sub) => sub.name() !== 'help');
+}
+
+/** One bash `case` arm per command with subcommands, setting `subs` to their names. */
+function bashSubcommandCases(program: Command): string {
+  return userCommands(program)
+    .map((cmd) => ({ name: cmd.name(), subs: userCommands(cmd).map((sub) => sub.name()) }))
+    .filter((entry) => entry.subs.length > 0)
+    .map((entry) => `      ${entry.name}) subs="${entry.subs.join(' ')}" ;;`)
     .join('\n');
 }
 
@@ -71,7 +92,7 @@ function generateBashScript(program: Command): string {
 #   or:    tasks completions bash > /etc/bash_completion.d/tasks
 
 _tasks_completions() {
-  local cur prev commands global_flags statuses priorities cmd cmd_flags i
+  local cur prev commands global_flags statuses priorities cmd sub subs cmd_flags i
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
@@ -93,9 +114,28 @@ _tasks_completions() {
     i=$(( i + 1 ))
   done
 
-  # The flags this command accepts (WFT #2551).
-  cmd_flags=""
+  # A command with subcommands: the subcommand is the next word that is not
+  # a flag (WFT #2552 point 7).
+  subs=""
   case "\${cmd}" in
+${bashSubcommandCases(program)}
+      *) ;;
+  esac
+  sub=""
+  if [[ -n "\${subs}" ]]; then
+    i=$(( i + 1 ))
+    while (( i < COMP_CWORD )); do
+      case "\${COMP_WORDS[i]}" in
+        -*) ;;
+        *) sub="\${COMP_WORDS[i]}"; break ;;
+      esac
+      i=$(( i + 1 ))
+    done
+  fi
+
+  # The flags this command (or nested subcommand) accepts (WFT #2551).
+  cmd_flags=""
+  case "\${cmd}\${sub:+:\${sub}}" in
 ${bashCommandFlagCases(program)}
       *) ;;
   esac
@@ -127,6 +167,12 @@ ${bashCommandFlagCases(program)}
   # Complete commands (the first word that is not a flag)
   if [[ -z "\${cmd}" ]]; then
     COMPREPLY=( $(compgen -W "\${commands}" -- "\${cur}") )
+    return 0
+  fi
+
+  # Complete the subcommand of a command that has them
+  if [[ -n "\${subs}" && -z "\${sub}" ]]; then
+    COMPREPLY=( $(compgen -W "\${subs}" -- "\${cur}") )
     return 0
   fi
   return 0

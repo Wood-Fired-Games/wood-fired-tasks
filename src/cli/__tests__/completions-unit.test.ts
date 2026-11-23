@@ -17,6 +17,7 @@ import { createCompletionsCommand } from '../commands/completions.js';
 import { scmCommand } from '../commands/scm.js';
 import { listCommand } from '../commands/list.js';
 import { projectArchiveCommand } from '../commands/project-archive.js';
+import { dbCommand } from '../commands/db.js';
 
 /** True when a `zsh` binary is on PATH. */
 function hasZsh(): boolean {
@@ -55,6 +56,9 @@ describe('createCompletionsCommand', () => {
     // list proves `scm` is a completion-visible subcommand.
     program.addCommand(scmCommand);
     program.addCommand(projectArchiveCommand);
+    // The real `db` command: its flags live on nested subcommands
+    // (`db mint-token`, `db migrate-identities`), WFT #2552 point 7.
+    program.addCommand(dbCommand);
     program.option('--json', 'Output as JSON');
     program.option('--token <token>', 'Use the given PAT');
     program.addCommand(createCompletionsCommand(program));
@@ -202,6 +206,34 @@ describe('createCompletionsCommand', () => {
         expect(afterToken.reply).toEqual(['--with-unfinished']);
         const commandAfterJson = complete(script, ['tasks', '--json', 'cre']);
         expect(commandAfterJson.reply).toEqual(['create']);
+      });
+
+      // WFT #2552 point 7: commands with nested subcommands (db, docs,
+      // service, models) declare their flags on the subcommand.
+      describe('nested subcommands (WFT #2552 point 7)', () => {
+        it('after a command with subcommands, a word completes to its subcommand names', async () => {
+          const { reply, stderr } = complete(await bashScript(), ['tasks', 'db', '']);
+          expect(stderr).toBe('');
+          expect(reply.sort()).toEqual(['migrate-identities', 'mint-token']);
+          const prefixed = complete(await bashScript(), ['tasks', 'db', 'mi']);
+          expect(prefixed.reply.sort()).toEqual(['migrate-identities', 'mint-token']);
+        });
+
+        it('a nested subcommand offers its own flags, not its sibling’s', async () => {
+          const script = await bashScript();
+          const mint = complete(script, ['tasks', 'db', 'mint-token', '--']);
+          for (const flag of ['--name', '--expires-at', '--json']) {
+            expect(mint.reply).toContain(flag);
+          }
+          expect(mint.reply).not.toContain('--commit');
+          const migrate = complete(script, ['tasks', '--json', 'db', 'migrate-identities', '--co']);
+          expect(migrate.reply).toEqual(['--commit']);
+        });
+
+        it('a word after the subcommand completes to nothing, not to the subcommands again', async () => {
+          const { reply } = complete(await bashScript(), ['tasks', 'db', 'mint-token', '']);
+          expect(reply).toEqual([]);
+        });
       });
 
       it('before any command, a flag completes to the global flags only', async () => {
