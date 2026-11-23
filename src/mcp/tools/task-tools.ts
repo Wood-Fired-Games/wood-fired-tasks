@@ -428,7 +428,7 @@ export function registerTaskTools(
     'list_tasks',
     {
       description:
-        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search) and pagination (limit default 50, max 500; offset default 0). Returns `{ tasks, total, limit, offset }`. Compact task projection by default; pass verbose=true for description + audit fields.',
+        'List tasks with optional filters (project_id, status, assignee, tags, due_before, due_after, updated_before, updated_after, search, archived) and pagination (limit default 50, max 500; offset default 0). Returns `{ tasks, total, limit, offset }`. Compact task projection by default; pass verbose=true for description + audit fields. Tasks of archived projects are omitted unless archived is "include" (return them too) or "only" (return nothing else); an explicit project_id always returns that project\'s tasks, archived or not.',
       inputSchema: ListTasksMcpSchema,
     },
     async (args) => {

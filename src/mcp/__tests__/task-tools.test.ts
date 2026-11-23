@@ -338,6 +338,103 @@ describe('MCP Task Tools', () => {
   });
 
   describe('list_tasks tool', () => {
+    // --- Archived project state (docs/design/project-archived-state.md §2.5, §3.5) ---
+    describe('archived filter', () => {
+      let activeTaskId: number;
+      let archivedTaskId: number;
+      let archivedProjectId: number;
+
+      const listIds = async (args: Record<string, unknown>) => {
+        const result = (await client.callTool({
+          name: 'list_tasks',
+          arguments: args,
+        })) as ToolResult;
+        expect(result.isError).toBeFalsy();
+        const sc = result.structuredContent as { tasks: Array<{ id: number }>; total: number };
+        return { ids: sc.tasks.map((t) => t.id).sort(), total: sc.total };
+      };
+
+      beforeEach(() => {
+        archivedProjectId = app.projectService.createProject({ name: 'Archived Project' }).id;
+        activeTaskId = app.taskService.createTask({
+          title: 'Active task',
+          project_id: testProjectId,
+          created_by: 'test-agent',
+        }).id;
+        archivedTaskId = app.taskService.createTask({
+          title: 'Task in archived project',
+          project_id: archivedProjectId,
+          created_by: 'test-agent',
+        }).id;
+        app.projectService.archiveProject(
+          archivedProjectId,
+          { force: true, reason: 'test' },
+          'test-agent',
+        );
+      });
+
+      it('omits tasks of archived projects when archived is not given', async () => {
+        expect(await listIds({})).toEqual({ ids: [activeTaskId], total: 1 });
+      });
+
+      it('archived=exclude omits tasks of archived projects', async () => {
+        expect(await listIds({ archived: 'exclude' })).toEqual({ ids: [activeTaskId], total: 1 });
+      });
+
+      it('archived=include returns tasks of archived and unarchived projects', async () => {
+        expect(await listIds({ archived: 'include' })).toEqual({
+          ids: [activeTaskId, archivedTaskId].sort(),
+          total: 2,
+        });
+      });
+
+      it('archived=only returns nothing but tasks of archived projects', async () => {
+        expect(await listIds({ archived: 'only' })).toEqual({ ids: [archivedTaskId], total: 1 });
+      });
+
+      it.each([undefined, 'exclude', 'include', 'only'])(
+        'an explicit project_id of an archived project always returns its tasks (archived=%s)',
+        async (archived) => {
+          const args = { project_id: archivedProjectId, ...(archived && { archived }) };
+
+          expect(await listIds(args)).toEqual({ ids: [archivedTaskId], total: 1 });
+        },
+      );
+
+      it('combines with other filters and with verbose', async () => {
+        expect(await listIds({ archived: 'only', status: 'open', verbose: true })).toEqual({
+          ids: [archivedTaskId],
+          total: 1,
+        });
+        expect(await listIds({ archived: 'only', status: 'done' })).toEqual({ ids: [], total: 0 });
+      });
+
+      it('rejects an unknown archived value', async () => {
+        let failed = false;
+        try {
+          const result = (await client.callTool({
+            name: 'list_tasks',
+            arguments: { archived: 'all' },
+          })) as ToolResult;
+          failed = result.isError === true;
+        } catch (err) {
+          failed = err instanceof McpError && err.code === ErrorCode.InvalidParams;
+        }
+        expect(failed).toBe(true);
+      });
+
+      it('advertises archived in the tool input schema and description', async () => {
+        const { tools } = await client.listTools();
+        const tool = tools.find((t) => t.name === 'list_tasks');
+        const archived = (tool?.inputSchema.properties as Record<string, { enum?: string[] }>)
+          .archived;
+
+        expect(archived?.enum).toEqual(['exclude', 'include', 'only']);
+        expect(tool?.inputSchema.required ?? []).not.toContain('archived');
+        expect(tool?.description).toContain('archived');
+      });
+    });
+
     it('lists all tasks when no filters', async () => {
       // Create multiple tasks
       app.taskService.createTask({
