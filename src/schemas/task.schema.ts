@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TASK_STATUSES, TASK_PRIORITIES } from '../types/task.js';
+import { ArchivedFilterValueSchema } from './project.schema.js';
 import { WSJF_HISTORY_TRIGGERS } from '../types/wsjf.js';
 import {
   FibSchema,
@@ -267,8 +268,13 @@ export type UpdateTaskClientInput = z.infer<typeof UpdateTaskClientSchema>;
 export {
   CreateProjectSchema,
   UpdateProjectSchema,
+  ArchiveProjectSchema,
+  ArchivedFilterSchema,
+  ArchivedFilterValueSchema,
   type CreateProjectInput,
   type UpdateProjectInput,
+  type ArchiveProjectInput,
+  type ArchivedFilterInput,
 } from './project.schema.js';
 
 /**
@@ -340,6 +346,10 @@ export const TaskFiltersSchema = z
     // src/types/task.ts for semantics. The repository builds the
     // json_extract(verification_evidence, '$.verdict') predicate.
     verified: z.boolean(),
+    // Archived project state: whether tasks of archived projects are listed.
+    // See TaskFilters.archived in src/types/task.ts. Left without a default so
+    // an absent filter stays absent; the repository treats that as `exclude`.
+    archived: ArchivedFilterValueSchema,
     limit: z.coerce.number().int().positive().max(500),
     offset: z.coerce.number().int().nonnegative(),
   })

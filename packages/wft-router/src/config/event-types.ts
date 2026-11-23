@@ -26,6 +26,8 @@ export const ALLOWED_EVENT_TYPES = [
   'project.created',
   'project.updated',
   'project.deleted',
+  'project.archived',
+  'project.unarchived',
 ] as const;
 
 export type AllowedEventType = (typeof ALLOWED_EVENT_TYPES)[number];

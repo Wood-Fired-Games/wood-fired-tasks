@@ -417,6 +417,225 @@ describe('TaskRepository', () => {
     });
   });
 
+  // --- Archived project state (docs/design/project-archived-state.md §2.5, §3.3) ---
+
+  describe('archived filter', () => {
+    let archivedProjectId: number;
+    let activeTaskId: number;
+    let archivedOpenTaskId: number;
+    let archivedDoneTaskId: number;
+
+    beforeEach(() => {
+      archivedProjectId = projectRepo.create({ name: 'Archived Project' }).id;
+      activeTaskId = taskRepo.create(createTestTask({ title: 'active task' }), ['shared']).id;
+      archivedOpenTaskId = taskRepo.create(
+        createTestTask({ title: 'archived open task', project_id: archivedProjectId }),
+        ['shared'],
+      ).id;
+      archivedDoneTaskId = taskRepo.create(
+        createTestTask({
+          title: 'archived done task',
+          project_id: archivedProjectId,
+          status: 'done',
+        }),
+      ).id;
+      projectRepo.archive(archivedProjectId, 'alice', 'shipped');
+    });
+
+    const ids = (tasks: Array<{ id: number }>) => tasks.map((t) => t.id).sort((a, b) => a - b);
+
+    it("an archived project's task is absent without project_id and present with it", () => {
+      const withoutProject = taskRepo.findByFilters({});
+      expect(ids(withoutProject)).toEqual([activeTaskId]);
+      expect(ids(withoutProject)).not.toContain(archivedOpenTaskId);
+      expect(taskRepo.count({})).toBe(1);
+
+      const withProject = taskRepo.findByFilters({ project_id: archivedProjectId });
+      expect(ids(withProject)).toEqual([archivedOpenTaskId, archivedDoneTaskId]);
+      expect(taskRepo.count({ project_id: archivedProjectId })).toBe(2);
+    });
+
+    it('archived=exclude is the default: both list and count omit archived projects', () => {
+      expect(ids(taskRepo.findByFilters({ archived: 'exclude' }))).toEqual([activeTaskId]);
+      expect(taskRepo.count({ archived: 'exclude' })).toBe(1);
+    });
+
+    it('archived=include returns tasks of archived and unarchived projects', () => {
+      expect(ids(taskRepo.findByFilters({ archived: 'include' }))).toEqual([
+        activeTaskId,
+        archivedOpenTaskId,
+        archivedDoneTaskId,
+      ]);
+      expect(taskRepo.count({ archived: 'include' })).toBe(3);
+    });
+
+    it('archived=only returns nothing but tasks of archived projects', () => {
+      expect(ids(taskRepo.findByFilters({ archived: 'only' }))).toEqual([
+        archivedOpenTaskId,
+        archivedDoneTaskId,
+      ]);
+      expect(taskRepo.count({ archived: 'only' })).toBe(2);
+    });
+
+    it.each(['exclude', 'include', 'only'] as const)(
+      'with project_id of an archived project, archived=%s still returns its tasks',
+      (archived) => {
+        const filters = { project_id: archivedProjectId, archived };
+        expect(ids(taskRepo.findByFilters(filters))).toEqual([
+          archivedOpenTaskId,
+          archivedDoneTaskId,
+        ]);
+        expect(taskRepo.count(filters)).toBe(2);
+      },
+    );
+
+    it.each(['exclude', 'include', 'only'] as const)(
+      'with project_id of an unarchived project, archived=%s still returns its tasks',
+      (archived) => {
+        const filters = { project_id: testProjectId, archived };
+        expect(ids(taskRepo.findByFilters(filters))).toEqual([activeTaskId]);
+        expect(taskRepo.count(filters)).toBe(1);
+      },
+    );
+
+    it('combines with the other filters, and count matches the list', () => {
+      expect(ids(taskRepo.findByFilters({ status: 'open' }))).toEqual([activeTaskId]);
+      expect(taskRepo.count({ status: 'open' })).toBe(1);
+
+      expect(ids(taskRepo.findByFilters({ status: 'open', archived: 'include' }))).toEqual([
+        activeTaskId,
+        archivedOpenTaskId,
+      ]);
+      expect(taskRepo.count({ status: 'open', archived: 'include' })).toBe(2);
+
+      expect(ids(taskRepo.findByFilters({ status: 'done', archived: 'only' }))).toEqual([
+        archivedDoneTaskId,
+      ]);
+      expect(taskRepo.count({ status: 'done', archived: 'only' })).toBe(1);
+
+      expect(ids(taskRepo.findByFilters({ tags: ['shared'] }))).toEqual([activeTaskId]);
+      expect(taskRepo.count({ tags: ['shared'] })).toBe(1);
+      expect(taskRepo.count({ tags: ['shared'], archived: 'include' })).toBe(2);
+
+      expect(ids(taskRepo.findByFilters({ search: 'task' }))).toEqual([activeTaskId]);
+      expect(taskRepo.count({ search: 'task' })).toBe(1);
+      expect(taskRepo.count({ search: 'task', archived: 'only' })).toBe(2);
+    });
+
+    it('applies without the tags join (include_tags: false)', () => {
+      expect(ids(taskRepo.findByFilters({ include_tags: false }))).toEqual([activeTaskId]);
+      expect(ids(taskRepo.findByFilters({ include_tags: false, archived: 'only' }))).toEqual([
+        archivedOpenTaskId,
+        archivedDoneTaskId,
+      ]);
+    });
+
+    it('pagination applies to the filtered set', () => {
+      const second = taskRepo.create(createTestTask({ title: 'second active task' })).id;
+
+      const page1 = taskRepo.findByFilters({ limit: 1, offset: 0 });
+      const page2 = taskRepo.findByFilters({ limit: 1, offset: 1 });
+      const page3 = taskRepo.findByFilters({ limit: 1, offset: 2 });
+
+      expect(ids([...page1, ...page2])).toEqual([activeTaskId, second]);
+      expect(page3).toEqual([]);
+    });
+
+    it('tasks reappear in the default listing once the project is unarchived', () => {
+      projectRepo.unarchive(archivedProjectId);
+
+      expect(ids(taskRepo.findByFilters({}))).toEqual([
+        activeTaskId,
+        archivedOpenTaskId,
+        archivedDoneTaskId,
+      ]);
+      expect(taskRepo.count({})).toBe(3);
+      expect(taskRepo.count({ archived: 'only' })).toBe(0);
+    });
+
+    it('reads by id are unaffected by the archive', () => {
+      expect(taskRepo.findById(archivedOpenTaskId)?.title).toBe('archived open task');
+      expect(taskRepo.count()).toBe(3);
+    });
+  });
+
+  describe('countNonTerminalByStatus', () => {
+    it('returns one entry per status, each zero for a project with no tasks', () => {
+      expect(taskRepo.countNonTerminalByStatus(testProjectId)).toEqual({
+        open: 0,
+        in_progress: 0,
+        blocked: 0,
+        backlogged: 0,
+      });
+    });
+
+    it('non-terminal count returns one entry per status and ignores done and closed', () => {
+      const statuses = [
+        'open',
+        'open',
+        'open',
+        'in_progress',
+        'in_progress',
+        'blocked',
+        'backlogged',
+        'backlogged',
+        'done',
+        'done',
+        'closed',
+      ] as const;
+      for (const status of statuses) {
+        taskRepo.create(createTestTask({ status }));
+      }
+
+      const counts = taskRepo.countNonTerminalByStatus(testProjectId);
+
+      expect(counts).toEqual({ open: 3, in_progress: 2, blocked: 1, backlogged: 2 });
+      expect(Object.keys(counts).sort()).toEqual(['backlogged', 'blocked', 'in_progress', 'open']);
+    });
+
+    it('counts only the given project', () => {
+      const other = projectRepo.create({ name: 'Other Project' });
+      taskRepo.create(createTestTask({ status: 'open' }));
+      taskRepo.create(createTestTask({ status: 'blocked', project_id: other.id }));
+
+      expect(taskRepo.countNonTerminalByStatus(testProjectId)).toEqual({
+        open: 1,
+        in_progress: 0,
+        blocked: 0,
+        backlogged: 0,
+      });
+      expect(taskRepo.countNonTerminalByStatus(other.id)).toEqual({
+        open: 0,
+        in_progress: 0,
+        blocked: 1,
+        backlogged: 0,
+      });
+    });
+
+    it('counts subtasks as well as top-level tasks', () => {
+      const parent = taskRepo.create(createTestTask({ status: 'done' }));
+      taskRepo.create(createTestTask({ status: 'open', parent_task_id: parent.id }));
+
+      expect(taskRepo.countNonTerminalByStatus(testProjectId).open).toBe(1);
+    });
+
+    it('still counts after the project is archived', () => {
+      taskRepo.create(createTestTask({ status: 'in_progress' }));
+      projectRepo.archive(testProjectId, 'alice', 'forced');
+
+      expect(taskRepo.countNonTerminalByStatus(testProjectId).in_progress).toBe(1);
+    });
+
+    it('returns all zeros for a project that does not exist', () => {
+      expect(taskRepo.countNonTerminalByStatus(999)).toEqual({
+        open: 0,
+        in_progress: 0,
+        blocked: 0,
+        backlogged: 0,
+      });
+    });
+  });
+
   describe('findAll', () => {
     it('should return all tasks with tags ordered by created_at DESC', () => {
       const task1 = taskRepo.create(createTestTask({ title: 'First' }), ['tag1']);

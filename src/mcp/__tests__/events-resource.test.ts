@@ -120,6 +120,8 @@ describe('MCP Events Resource', () => {
       expect(text).toContain('project.created');
       expect(text).toContain('project.updated');
       expect(text).toContain('project.deleted');
+      expect(text).toContain('`project.archived` - ');
+      expect(text).toContain('`project.unarchived` - ');
 
       // Heartbeat
       expect(text).toContain('ping');

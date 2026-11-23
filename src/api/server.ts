@@ -294,6 +294,8 @@ export async function createServer(options?: { dbPath?: string }): Promise<{
     eventBus.subscribe('project.created', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.updated', (event) => sseManager.broadcast(event)),
     eventBus.subscribe('project.deleted', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('project.archived', (event) => sseManager.broadcast(event)),
+    eventBus.subscribe('project.unarchived', (event) => sseManager.broadcast(event)),
   ];
 
   // Create and start ClaimReleaseService for auto-releasing stale claims

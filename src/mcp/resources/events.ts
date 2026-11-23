@@ -70,6 +70,8 @@ Authorization: Bearer <pat>
 - \`project.created\` - New project created
 - \`project.updated\` - Project updated
 - \`project.deleted\` - Project deleted
+- \`project.archived\` - Project archived (frozen for writes, hidden from default listings; carries the full project)
+- \`project.unarchived\` - Project unarchived (writable and listed again; carries the full project)
 - \`ping\` - Heartbeat (every 30 seconds)
 
 ## Reconnection

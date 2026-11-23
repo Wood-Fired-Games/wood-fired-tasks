@@ -6,7 +6,12 @@ import {
   ValueCharterNullableSchema,
   CreateProjectSchema,
   UpdateProjectSchema,
+  ArchiveProjectSchema,
+  ArchivedFilterSchema,
 } from '../project.schema.js';
+import * as taskSchemaBarrel from '../task.schema.js';
+import { TaskFiltersSchema, ListTasksMcpSchema } from '../task.schema.js';
+import { ProjectResponseSchema } from '../../api/routes/projects/schemas.js';
 
 describe('project.schema — ValueCharter', () => {
   const validCharter = {
@@ -135,5 +140,157 @@ describe('project.schema — model_policy DTO wiring', () => {
       model_policy: { execution: { default: 'auto' } },
     });
     expect(parsed.model_policy).toEqual({ execution: { default: 'auto' } });
+  });
+});
+
+/**
+ * Archived project state (docs/design/project-archived-state.md §2.2, §3.2).
+ */
+describe('project.schema — ArchiveProjectSchema', () => {
+  it('accepts an empty body (plain archive)', () => {
+    expect(ArchiveProjectSchema.parse({})).toEqual({});
+  });
+
+  it('accepts an optional reason without force', () => {
+    expect(ArchiveProjectSchema.parse({ reason: 'shipped in v2.9.0' })).toEqual({
+      reason: 'shipped in v2.9.0',
+    });
+  });
+
+  it('accepts force: true with a reason', () => {
+    expect(ArchiveProjectSchema.parse({ force: true, reason: 'abandoned' })).toEqual({
+      force: true,
+      reason: 'abandoned',
+    });
+  });
+
+  it('rejects force: true without reason', () => {
+    const res = ArchiveProjectSchema.safeParse({ force: true });
+    expect(res.success).toBe(false);
+    expect(res.error?.issues[0]?.path).toEqual(['reason']);
+  });
+
+  it('rejects force: true with an empty or whitespace-only reason', () => {
+    expect(ArchiveProjectSchema.safeParse({ force: true, reason: '' }).success).toBe(false);
+    expect(ArchiveProjectSchema.safeParse({ force: true, reason: '   ' }).success).toBe(false);
+  });
+
+  it('accepts force: false without reason', () => {
+    expect(ArchiveProjectSchema.safeParse({ force: false }).success).toBe(true);
+  });
+
+  it('trims reason before validating and returning it', () => {
+    expect(ArchiveProjectSchema.parse({ reason: '  shipped \n' })).toEqual({ reason: 'shipped' });
+    expect(ArchiveProjectSchema.parse({ force: true, reason: ' abandoned ' })).toEqual({
+      force: true,
+      reason: 'abandoned',
+    });
+  });
+
+  it('rejects an empty or whitespace-only reason whether or not force is set', () => {
+    for (const reason of ['', '   ', '\t\n ']) {
+      for (const body of [{ reason }, { reason, force: false }, { reason, force: true }]) {
+        const res = ArchiveProjectSchema.safeParse(body);
+        expect(res.success, JSON.stringify(body)).toBe(false);
+        expect(res.error?.issues[0]?.path).toEqual(['reason']);
+      }
+    }
+  });
+
+  it('measures the 500-character limit after trimming', () => {
+    const padded = `  ${'x'.repeat(500)}  `;
+    expect(ArchiveProjectSchema.parse({ reason: padded }).reason).toBe('x'.repeat(500));
+    expect(ArchiveProjectSchema.safeParse({ reason: ` ${'x'.repeat(501)} ` }).success).toBe(false);
+  });
+
+  it('caps reason at 500 characters', () => {
+    expect(ArchiveProjectSchema.safeParse({ reason: 'x'.repeat(500) }).success).toBe(true);
+    expect(ArchiveProjectSchema.safeParse({ reason: 'x'.repeat(501) }).success).toBe(false);
+  });
+
+  it('rejects a non-boolean force', () => {
+    expect(ArchiveProjectSchema.safeParse({ force: 'yes', reason: 'r' }).success).toBe(false);
+  });
+});
+
+describe('project.schema — ArchivedFilterSchema', () => {
+  it('accepts exclude, include and only', () => {
+    for (const value of ['exclude', 'include', 'only']) {
+      expect(ArchivedFilterSchema.parse(value)).toBe(value);
+    }
+  });
+
+  it('defaults to exclude when absent', () => {
+    expect(ArchivedFilterSchema.parse(undefined)).toBe('exclude');
+  });
+
+  it('rejects any other value', () => {
+    for (const bad of ['all', 'true', '', true, null]) {
+      expect(ArchivedFilterSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('is re-exported from the task.schema barrel (same object)', () => {
+    expect(taskSchemaBarrel.ArchivedFilterSchema).toBe(ArchivedFilterSchema);
+    expect(taskSchemaBarrel.ArchiveProjectSchema).toBe(ArchiveProjectSchema);
+  });
+});
+
+describe('task.schema — archived filter', () => {
+  it.each([
+    ['TaskFiltersSchema', TaskFiltersSchema],
+    ['ListTasksMcpSchema', ListTasksMcpSchema],
+  ])('%s accepts each archived value and keeps it', (_name, schema) => {
+    for (const value of ['exclude', 'include', 'only'] as const) {
+      expect(schema.parse({ archived: value }).archived).toBe(value);
+    }
+  });
+
+  it.each([
+    ['TaskFiltersSchema', TaskFiltersSchema],
+    ['ListTasksMcpSchema', ListTasksMcpSchema],
+  ])(
+    '%s leaves archived undefined when absent (the repository applies the default)',
+    (_name, schema) => {
+      const parsed = schema.parse({});
+      expect(parsed.archived).toBeUndefined();
+      expect('archived' in parsed).toBe(false);
+    },
+  );
+
+  it.each([
+    ['TaskFiltersSchema', TaskFiltersSchema],
+    ['ListTasksMcpSchema', ListTasksMcpSchema],
+  ])('%s rejects an unknown archived value', (_name, schema) => {
+    expect(schema.safeParse({ archived: 'all' }).success).toBe(false);
+  });
+});
+
+describe('ProjectResponseSchema — archived fields', () => {
+  const base = {
+    id: 1,
+    name: 'p',
+    description: null,
+    created_at: '2026-11-23 12:00:00',
+    updated_at: '2026-11-23 12:00:00',
+  };
+
+  it('keeps the four archived fields instead of stripping them', () => {
+    const archived = {
+      archived: true,
+      archived_at: '2026-11-23T12:00:00.000Z',
+      archived_by: 'alice',
+      archive_reason: 'shipped',
+    };
+    expect(ProjectResponseSchema.parse({ ...base, ...archived })).toEqual({ ...base, ...archived });
+  });
+
+  it('keeps null archive columns on an unarchived project', () => {
+    const active = { archived: false, archived_at: null, archived_by: null, archive_reason: null };
+    expect(ProjectResponseSchema.parse({ ...base, ...active })).toEqual({ ...base, ...active });
+  });
+
+  it('still parses a response without the fields (old server)', () => {
+    expect(ProjectResponseSchema.parse(base)).toEqual(base);
   });
 });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ModelPolicyNullableSchema } from './model-policy.schema.js';
 import { ScmCharterNullableSchema } from './scm-charter.schema.js';
+import { ARCHIVED_FILTERS } from '../types/task.js';
 
 /**
  * WSJF (Phase 3.1): the modified Fibonacci scale {1,2,3,5,8,13} used for
@@ -79,3 +80,44 @@ export const UpdateProjectSchema = z.object({
   scm: ScmCharterNullableSchema.optional(),
 });
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
+
+/**
+ * Archived project state: body of `POST /projects/:id/archive` and input of
+ * the `archive_project` tool (docs/design/project-archived-state.md §2.2).
+ *
+ * `reason` is optional free text. It is trimmed first, and the trimmed text
+ * must be 1 to 500 characters: an empty or whitespace-only `reason` is "no
+ * reason" and is rejected outright (omit the field instead), with or without
+ * `force`. `force: true` archives a project that still has non-terminal
+ * tasks, and then `reason` is required. `archived_by` is deliberately NOT
+ * here — it comes from the authenticated caller, never the request body.
+ */
+export const ArchiveProjectSchema = z
+  .object({
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Reason must not be empty or whitespace only')
+      .max(500, 'Reason must be 500 characters or less')
+      .optional(),
+    force: z.boolean().optional(),
+  })
+  .refine((body) => body.force !== true || body.reason !== undefined, {
+    message: 'reason is required when force is true',
+    path: ['reason'],
+  });
+export type ArchiveProjectInput = z.infer<typeof ArchiveProjectSchema>;
+
+/**
+ * The bare `archived` listing-filter enum, for object fields that must stay
+ * genuinely optional (absent stays absent). See `ArchivedFilter` in
+ * `src/types/task.ts` for the semantics of each value.
+ */
+export const ArchivedFilterValueSchema = z.enum(ARCHIVED_FILTERS);
+
+/**
+ * The `archived` listing filter with its default applied: `exclude` when the
+ * caller does not say.
+ */
+export const ArchivedFilterSchema = ArchivedFilterValueSchema.default('exclude');
+export type ArchivedFilterInput = z.infer<typeof ArchivedFilterSchema>;

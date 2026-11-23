@@ -15,7 +15,14 @@ export type TaskEventType =
 /**
  * Event types for project lifecycle
  */
-export type ProjectEventType = 'project.created' | 'project.updated' | 'project.deleted';
+export type ProjectEventType =
+  | 'project.created'
+  | 'project.updated'
+  | 'project.deleted'
+  // Archived project state: each carries the full project as a ProjectEvent.
+  // An archive or unarchive emits ONLY its own event — never `project.updated`.
+  | 'project.archived'
+  | 'project.unarchived';
 
 /**
  * Runtime allowlist of every event type that the system actually emits.
@@ -35,6 +42,8 @@ export const ALLOWED_EVENT_TYPES = [
   'project.created',
   'project.updated',
   'project.deleted',
+  'project.archived',
+  'project.unarchived',
 ] as const satisfies readonly (TaskEventType | ProjectEventType)[];
 
 export type AllowedEventType = (typeof ALLOWED_EVENT_TYPES)[number];
