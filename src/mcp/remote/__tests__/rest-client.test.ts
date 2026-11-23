@@ -5,7 +5,7 @@
  * HTTP server. Covers the asPage envelope normalization plus each REST verb.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { RestClient } from '../rest-client.js';
+import { ApiRequestError, RestClient } from '../rest-client.js';
 
 const ORIGINAL_FETCH = global.fetch;
 
@@ -447,5 +447,99 @@ describe('RestClient', () => {
   it('falls back to "HTTP NNN: status text" when body lacks both fields', async () => {
     fetchMock.mockResolvedValue(err(503, { something: 'else' }));
     await expect(client.getTask(1)).rejects.toThrow(/HTTP 503/);
+  });
+
+  // ── Archived project state (WFT #2476) ─────────────────────────────────
+
+  it('archiveProject POSTs reason and force to /projects/:id/archive and parses the project', async () => {
+    fetchMock.mockResolvedValue(
+      ok(
+        projectFixture({
+          id: 7,
+          archived: true,
+          archived_at: '2026-11-23T12:00:00.000Z',
+          archived_by: 'tester',
+          archive_reason: 'shelved',
+        }),
+      ),
+    );
+
+    const project = await client.archiveProject(7, { reason: 'shelved', force: true });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://localhost:3000/api/v1/projects/7/archive');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'shelved', force: true });
+    expect(project).toMatchObject({ id: 7, archived: true, archive_reason: 'shelved' });
+  });
+
+  it('archiveProject with no options sends an empty JSON object', async () => {
+    fetchMock.mockResolvedValue(ok(projectFixture({ archived: true })));
+
+    await client.archiveProject(1);
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({});
+  });
+
+  it('archiveProject REJECTS a body that is not a project', async () => {
+    fetchMock.mockResolvedValue(ok({ nope: true }));
+    await expect(client.archiveProject(1)).rejects.toThrow();
+  });
+
+  it('unarchiveProject POSTs to /projects/:id/unarchive with no body and parses the project', async () => {
+    fetchMock.mockResolvedValue(ok(projectFixture({ id: 7, archived: false, archived_at: null })));
+
+    const project = await client.unarchiveProject(7);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://localhost:3000/api/v1/projects/7/unarchive');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+    expect(project).toMatchObject({ id: 7, archived: false });
+  });
+
+  it('listProjectsPaginated sends the archived filter, and omits it when absent', async () => {
+    fetchMock.mockImplementation(async () => ok({ data: [], total: 0, limit: 50, offset: 0 }));
+
+    await client.listProjectsPaginated({ archived: 'only', limit: 5 });
+    await client.listProjectsPaginated({ limit: 5 });
+
+    const withFilter = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(withFilter.searchParams.get('archived')).toBe('only');
+    expect(withFilter.searchParams.get('limit')).toBe('5');
+    const withoutFilter = new URL(fetchMock.mock.calls[1][0] as string);
+    expect(withoutFilter.searchParams.has('archived')).toBe(false);
+  });
+
+  it('a failed request throws an ApiRequestError carrying the status, error code and server message', async () => {
+    fetchMock.mockResolvedValue(
+      err(422, {
+        error: 'BUSINESS_RULE_VIOLATION',
+        message: 'project_archived: project 3 is archived and read-only',
+      }),
+    );
+
+    const error = await client.getTask(1).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({
+      status: 422,
+      errorCode: 'BUSINESS_RULE_VIOLATION',
+      apiMessage: 'project_archived: project 3 is archived and read-only',
+      // Unchanged for every existing reader of the message.
+      message: 'API request failed: project_archived: project 3 is archived and read-only',
+    });
+  });
+
+  it('an ApiRequestError for a non-JSON error body has no error code', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('not json', { status: 500, statusText: 'Internal Server Error' }),
+    );
+
+    const error = await client.getTask(1).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({ status: 500, errorCode: null });
   });
 });

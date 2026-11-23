@@ -6,7 +6,6 @@ import {
   CreateProjectSchema,
   ValueCharterNullableSchema,
 } from '../../schemas/project.schema.js';
-import type { Project } from '../../types/task.js';
 import { ModelPolicyNullableSchema } from '../../schemas/model-policy.schema.js';
 import { ScmCharterNullableSchema } from '../../schemas/scm-charter.schema.js';
 import { z } from 'zod';
@@ -14,69 +13,17 @@ import { convertToMcpError } from '../errors.js';
 import { enforceToolScope } from '../scope-gate.js';
 import { omitUndefined } from '../../utils/omit-undefined.js';
 import type { McpServerContext } from '../server.js';
-
-// ---------------------------------------------------------------------------
-// Archived project state (design §3.5). Everything below is shared verbatim
-// with the remote bridge (`src/mcp/remote/register-tools.ts`) so the two
-// transports cannot drift on a schema, a description or a line of text.
-// ---------------------------------------------------------------------------
-
-export const LIST_PROJECTS_DESCRIPTION =
-  'List projects with pagination (limit default 50, max 500; offset default 0). Returns ' +
-  '`{ projects, total, limit, offset }`. Archived projects are omitted unless archived is ' +
-  '"include" (return them too) or "only" (return nothing else); total counts the filtered set.';
-
-export const ARCHIVE_PROJECT_DESCRIPTION =
-  'Archive a project: it leaves default listings and becomes read-only (its tasks stay ' +
-  'readable by id; comments are still allowed). Refused with `project_has_unfinished_tasks` ' +
-  'while any task is open, in_progress, blocked or backlogged, unless `force: true` with a ' +
-  '`reason`. Archiving an already archived project returns it unchanged. Reversible with ' +
-  'unarchive_project.';
-
-export const UNARCHIVE_PROJECT_DESCRIPTION =
-  'Unarchive a project so it accepts work again and returns to default listings. Blocked ' +
-  'tasks whose blockers all finished while it was archived are reopened. Unarchiving a ' +
-  'project that is not archived returns it unchanged.';
-
-/**
- * `archive_project` arguments. `reason` and `force` are validated by the
- * service's `ArchiveProjectSchema` (trim, 500-character cap, `force` needs a
- * `reason`); the tool schema only fixes their types so the two cannot disagree.
- */
-export const ArchiveProjectToolSchema = z.object({
-  id: z.number().int().positive(),
-  reason: z.string().optional(),
-  force: z.boolean().optional(),
-});
-
-export const UnarchiveProjectToolSchema = z.object({
-  id: z.number().int().positive(),
-});
-
-/** The `Archived: …` line of a `get_project` summary, or null when not archived. */
-export function formatArchivedLine(
-  project: Pick<Project, 'archived' | 'archived_at' | 'archived_by' | 'archive_reason'>,
-): string | null {
-  if (!project.archived) {
-    return null;
-  }
-  const by = project.archived_by ? ` by ${project.archived_by}` : '';
-  const reason = project.archive_reason ? ` (reason: ${project.archive_reason})` : '';
-  return `Archived: ${project.archived_at ?? 'unknown'}${by}${reason}`;
-}
-
-/** One `list_projects` text line; an archived project is marked. */
-export function formatProjectListLine(project: Pick<Project, 'id' | 'name' | 'archived'>): string {
-  return `- [${project.id}] ${project.name}${project.archived ? ' (archived)' : ''}`;
-}
-
-export function formatArchiveResult(project: Pick<Project, 'id' | 'name'>): string {
-  return `Project ${project.id} archived: ${project.name}`;
-}
-
-export function formatUnarchiveResult(project: Pick<Project, 'id' | 'name'>): string {
-  return `Project ${project.id} unarchived: ${project.name}`;
-}
+import {
+  ARCHIVE_PROJECT_DESCRIPTION,
+  ArchiveProjectToolSchema,
+  LIST_PROJECTS_DESCRIPTION,
+  UNARCHIVE_PROJECT_DESCRIPTION,
+  UnarchiveProjectToolSchema,
+  formatArchiveResult,
+  formatArchivedLine,
+  formatProjectListLine,
+  formatUnarchiveResult,
+} from '../lib/project-tool-definitions.js';
 
 /**
  * The name recorded as `archived_by` for a stdio MCP call: the display name

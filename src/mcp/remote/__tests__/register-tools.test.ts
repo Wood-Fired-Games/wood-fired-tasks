@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { registerRemoteTools } from '../register-tools.js';
+import { ApiRequestError } from '../rest-client.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 type Handler = (args: Record<string, unknown>) => Promise<{
@@ -46,6 +47,8 @@ function makeMockClient() {
     getProject: vi.fn(),
     listProjectsPaginated: vi.fn(),
     updateProject: vi.fn(),
+    archiveProject: vi.fn(),
+    unarchiveProject: vi.fn(),
     deleteProject: vi.fn(),
     addDependency: vi.fn(),
     removeDependency: vi.fn(),
@@ -98,6 +101,8 @@ describe('registerRemoteTools', () => {
       'get_project',
       'list_projects',
       'update_project',
+      'archive_project',
+      'unarchive_project',
       'delete_project',
       'add_dependency',
       'remove_dependency',
@@ -1075,5 +1080,225 @@ describe('registerRemoteTools', () => {
   it('wsjf_health error path wraps in McpError', async () => {
     client.getWsjfHealth.mockRejectedValue(new Error('e'));
     await expect(handlers.get('wsjf_health')!({ project_id: 1 })).rejects.toBeInstanceOf(McpError);
+  });
+
+  // ── Archived project state (WFT #2476) ──────────────────────────────────
+
+  it('archive_project forwards reason and force and formats the result', async () => {
+    client.archiveProject.mockResolvedValue({ id: 4, name: 'Old', archived: true });
+
+    const r = await handlers.get('archive_project')!({ id: 4, reason: 'shelved', force: true });
+
+    expect(client.archiveProject).toHaveBeenCalledWith(4, { reason: 'shelved', force: true });
+    expect(r.content[0].text).toBe('Project 4 archived: Old');
+    expect(r.structuredContent).toMatchObject({ id: 4, archived: true });
+  });
+
+  it('archive_project sends no reason or force when the caller gave none', async () => {
+    client.archiveProject.mockResolvedValue({ id: 4, name: 'Old', archived: true });
+
+    await handlers.get('archive_project')!({ id: 4 });
+
+    expect(client.archiveProject).toHaveBeenCalledWith(4, {});
+  });
+
+  it('archive_project rejects malformed arguments with InvalidParams before any request', async () => {
+    const error = await handlers.get('archive_project')!({ id: 'four' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(McpError);
+    expect((error as McpError).code).toBe(ErrorCode.InvalidParams);
+    expect(client.archiveProject).not.toHaveBeenCalled();
+  });
+
+  it('archive_project error path wraps in McpError', async () => {
+    client.archiveProject.mockRejectedValue(new Error('e'));
+    await expect(handlers.get('archive_project')!({ id: 1 })).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('unarchive_project calls the client and formats the result', async () => {
+    client.unarchiveProject.mockResolvedValue({ id: 4, name: 'Old', archived: false });
+
+    const r = await handlers.get('unarchive_project')!({ id: 4 });
+
+    expect(client.unarchiveProject).toHaveBeenCalledWith(4);
+    expect(r.content[0].text).toBe('Project 4 unarchived: Old');
+    expect(r.structuredContent).toMatchObject({ id: 4, archived: false });
+  });
+
+  it('unarchive_project error path wraps in McpError', async () => {
+    client.unarchiveProject.mockRejectedValue(new Error('e'));
+    await expect(handlers.get('unarchive_project')!({ id: 1 })).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('list_projects forwards the archived filter and marks archived projects', async () => {
+    client.listProjectsPaginated.mockResolvedValue({
+      data: [
+        { id: 1, name: 'live' },
+        { id: 2, name: 'old', archived: true },
+      ],
+      total: 2,
+      limit: 50,
+      offset: 0,
+    });
+
+    const r = await handlers.get('list_projects')!({ archived: 'include' });
+
+    expect(client.listProjectsPaginated).toHaveBeenCalledWith({ archived: 'include' });
+    expect(r.content[0].text).toContain('- [1] live\n');
+    expect(r.content[0].text).toContain('- [2] old (archived)');
+  });
+
+  it('list_projects sends no archived filter by default', async () => {
+    client.listProjectsPaginated.mockResolvedValue({ data: [], total: 0, limit: 50, offset: 0 });
+
+    await handlers.get('list_projects')!({});
+
+    expect(client.listProjectsPaginated).toHaveBeenCalledWith({});
+  });
+
+  it('get_project shows the archived line', async () => {
+    client.getProject.mockResolvedValue({
+      id: 1,
+      name: 'p',
+      description: null,
+      created_at: 'now',
+      archived: true,
+      archived_at: '2026-11-23T12:00:00.000Z',
+      archived_by: 'tester',
+      archive_reason: 'shelved',
+    });
+
+    const r = await handlers.get('get_project')!({ id: 1 });
+
+    expect(r.content[0].text).toContain(
+      'Archived: 2026-11-23T12:00:00.000Z by tester (reason: shelved)',
+    );
+  });
+
+  it('get_project from a server that predates the archive fields shows no archived line', async () => {
+    client.getProject.mockResolvedValue({ id: 1, name: 'p', description: null, created_at: 'now' });
+
+    const r = await handlers.get('get_project')!({ id: 1 });
+
+    expect(r.content[0].text).not.toContain('Archived:');
+  });
+
+  it('check_health shows archived projects when the server reports them', async () => {
+    client.checkHealth.mockResolvedValue({
+      status: 'healthy',
+      timestamp: '2026-11-23T10:00:00Z',
+      version: '2.10.0',
+      checks: { database: 'ok' },
+      database: {
+        path: '/db',
+        projects: 3,
+        archived_projects: 2,
+        maxTaskId: 9,
+        latestActivity: null,
+      },
+    });
+
+    const r = await handlers.get('check_health')!({});
+
+    expect(r.content[0].text).toContain('Projects: 3, Archived Projects: 2, Max Task ID: 9');
+    expect(r.structuredContent).toMatchObject({ database: { archived_projects: 2 } });
+  });
+
+  it('check_health against a server that predates archived_projects omits it from the text', async () => {
+    client.checkHealth.mockResolvedValue({
+      status: 'healthy',
+      checks: { database: 'ok' },
+      database: { path: '/db', projects: 3, maxTaskId: 9, latestActivity: null },
+    });
+
+    const r = await handlers.get('check_health')!({});
+
+    expect(r.content[0].text).toContain('Projects: 3, Max Task ID: 9');
+    expect(r.content[0].text).not.toContain('Archived Projects');
+  });
+
+  describe('a refusal with a stable code keeps its class and code (parity with stdio)', () => {
+    const ARCHIVED_MESSAGE =
+      'project_archived: project 3 is archived and read-only; unarchive it before making changes';
+
+    function refusal(status: number, apiMessage: string): ApiRequestError {
+      return new ApiRequestError(status, 'BUSINESS_RULE_VIOLATION', apiMessage);
+    }
+
+    // Every remote tool that can reach a write the freeze refuses.
+    const frozenWrites: Array<{
+      tool: string;
+      method: keyof ReturnType<typeof makeMockClient>;
+      args: Record<string, unknown>;
+    }> = [
+      {
+        tool: 'create_task',
+        method: 'createTask',
+        args: { title: 'x', project_id: 3, created_by: 't' },
+      },
+      { tool: 'update_task', method: 'updateTask', args: { id: 1, updates: { priority: 'high' } } },
+      { tool: 'delete_task', method: 'deleteTask', args: { id: 1 } },
+      { tool: 'claim_task', method: 'claimTask', args: { task_id: 1, assignee: 'a' } },
+      { tool: 'update_project', method: 'updateProject', args: { id: 3, updates: { name: 'n' } } },
+      {
+        tool: 'add_dependency',
+        method: 'addDependency',
+        args: { task_id: 1, blocks_task_id: 2 },
+      },
+      {
+        tool: 'remove_dependency',
+        method: 'removeDependency',
+        args: { task_id: 1, blocks_task_id: 2 },
+      },
+      {
+        tool: 'rescore_project',
+        method: 'rescoreProject',
+        args: { project_id: 3, submissions: [] },
+      },
+    ];
+
+    it.each(frozenWrites)(
+      '$tool surfaces project_archived as InvalidRequest with the bare message',
+      async ({ tool, method, args }) => {
+        client[method].mockRejectedValue(refusal(422, ARCHIVED_MESSAGE));
+
+        const error = await handlers.get(tool)!(args).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(McpError);
+        expect((error as McpError).code).toBe(ErrorCode.InvalidRequest);
+        // Same text stdio produces: the code is the first thing in the message.
+        expect((error as McpError).message).toBe(`MCP error -32600: ${ARCHIVED_MESSAGE}`);
+      },
+    );
+
+    it('archive_project surfaces project_has_unfinished_tasks as InvalidRequest with the bare message', async () => {
+      const message = 'project_has_unfinished_tasks: project 3 has 2 unfinished task(s)';
+      client.archiveProject.mockRejectedValue(refusal(422, message));
+
+      const error = await handlers.get('archive_project')!({ id: 3 }).catch((e: unknown) => e);
+
+      expect((error as McpError).code).toBe(ErrorCode.InvalidRequest);
+      expect((error as McpError).message).toBe(`MCP error -32600: ${message}`);
+    });
+
+    it('a 422 with no stable code, and any other status, stay InternalError with the wrapped message', async () => {
+      client.updateTask.mockRejectedValue(refusal(422, 'Invalid status transition'));
+      const plain = await handlers.get('update_task')!({
+        id: 1,
+        updates: { priority: 'high' },
+      }).catch((e: unknown) => e);
+      expect((plain as McpError).code).toBe(ErrorCode.InternalError);
+      expect((plain as McpError).message).toContain(
+        'API request failed: Invalid status transition',
+      );
+
+      // The code only counts on the status the server uses for it.
+      client.updateTask.mockRejectedValue(refusal(500, ARCHIVED_MESSAGE));
+      const wrongStatus = await handlers.get('update_task')!({
+        id: 1,
+        updates: { priority: 'high' },
+      }).catch((e: unknown) => e);
+      expect((wrongStatus as McpError).code).toBe(ErrorCode.InternalError);
+    });
   });
 });

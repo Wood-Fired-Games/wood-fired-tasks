@@ -60,7 +60,7 @@ const EXPECTED_REST_ROUTE_TOTAL = 24;
 // src/api/routes/audit/index.ts (`GET /api/v1/audit-events`).
 // 60 → 62: the two archive routes above.
 const EXPECTED_REST_ROUTE_FULL_TOTAL = 62;
-const EXPECTED_MCP_TOOL_TOTAL = 31;
+const EXPECTED_MCP_TOOL_TOTAL = 33;
 const EXPECTED_CLI_COMMAND_TOTAL = 46;
 
 const MCP_TOOLS_DIR = 'src/mcp/tools';

@@ -156,8 +156,9 @@ so REST and MCP cannot drift on validation.
 | `tools/task-tools.ts` | `get_subtasks` | read | Paginated children of a parent task. |
 | `tools/project-tools.ts` | `create_project` | write | Create a project. |
 | `tools/project-tools.ts` | `get_project` | read | Get a project by id. |
-| `tools/project-tools.ts` | `list_projects` | read | Paginated project list. |
+| `tools/project-tools.ts` | `list_projects` | read | Paginated project list; `archived` filter (hidden by default). |
 | `tools/project-tools.ts` | `update_project` | write | Update name/description. |
+| `tools/project-tools.ts` | `archive_project`, `unarchive_project` | write (×2) | Archive a project (read-only, hidden from default lists) and bring it back. |
 | `tools/project-tools.ts` | `delete_project` | write | Delete a project. |
 | `tools/dependency-tools.ts` | `add_dependency` | write | Declare that task A blocks task B. |
 | `tools/dependency-tools.ts` | `remove_dependency` | write | Remove a dependency. |
@@ -171,10 +172,10 @@ so REST and MCP cannot drift on validation.
 | `tools/wsjf-tools.ts` | `wsjf_ranking`, `wsjf_history`, `rescore_project`, `wsjf_health` | read (×3) / write (rescore) | WSJF 1.10: propagation-adjusted ranking, score-history timeline, deterministic project rescore, degeneracy linter. |
 | `tools/model-tools.ts` | `list_models`, `resolve_model`, `get_model_defaults`, `set_model_defaults` | read (×3) / write (set) | Configurable Task Models: runtime model catalog, per-role policy resolution, get/set of the DB-wide default policy. |
 
-**Total: 31 tools** (9 task, 5 project, 3 dependency, 3 comment, 1 health, 1
-topology, 1 wait, 4 WSJF, 4 model). 17 are read-only; 14 mutate state. Counted
+**Total: 33 tools** (9 task, 7 project, 3 dependency, 3 comment, 1 health, 1
+topology, 1 wait, 4 WSJF, 4 model). 17 are read-only; 16 mutate state. Counted
 by `grep registerTool` across the nine files above. The remote server registers
-all **31 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
+all **33 REST-backed tools** via `src/mcp/remote/register-tools.ts`; the topology
 classifier reaches the same `TopologyService` over REST
 (`GET /api/v1/projects/:id/topology`) rather than via a direct in-process
 call, and the four WSJF tools proxy `GET /api/v1/projects/:id/wsjf-ranking`,
@@ -364,7 +365,7 @@ remote MCP server proxies every tool call to the REST API via
 `src/mcp/remote/rest-client.ts`. Tools are defined **once** in
 `src/mcp/tools/*` and re-registered into the remote server by
 `src/mcp/remote/register-tools.ts`, which imports the same Zod schemas from
-`src/schemas/`. The remote server exposes all **31 REST-backed tools** with
+`src/schemas/`. The remote server exposes all **33 REST-backed tools** with
 identical input validation; behavioural differences are limited to transport
 (stdio vs HTTP) and the auth boundary. `topology_check` (#318) reaches the
 same `TopologyService` over REST — the remote server proxies it to
@@ -379,7 +380,7 @@ schema and the three return envelopes are byte-identical either way.
 **Parity rule:** any new MCP tool MUST land in both servers in the same PR.
 The drift-detection test enforces the local count; the remote registration
 count is asserted by the `register-tools` unit test's expected-tools list
-(now 31, matching the 31-tool local total — 4 of which are the WSJF tools, 4
+(now 33, matching the 33-tool local total — 4 of which are the WSJF tools, 4
 the model tools, and 1 is `wait_for_unblock`).
 
 ## Pointers
