@@ -50,3 +50,18 @@ export class NotFoundError extends Error {
     Object.setPrototypeOf(this, NotFoundError.prototype);
   }
 }
+
+/**
+ * Archived project state: the error every refused write into an archived
+ * project throws (docs/design/project-archived-state.md §2.3). A plain
+ * {@link BusinessError} — HTTP 422 on REST, InvalidRequest on MCP — whose
+ * message STARTS WITH the stable code `project_archived`, so clients and
+ * tests can match on `/^project_archived/` without parsing prose.
+ */
+export const PROJECT_ARCHIVED_CODE = 'project_archived';
+
+export function projectArchivedError(projectId: number): BusinessError {
+  return new BusinessError(
+    `${PROJECT_ARCHIVED_CODE}: project ${projectId} is archived and read-only; unarchive it before making changes`,
+  );
+}
