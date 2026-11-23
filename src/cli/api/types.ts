@@ -109,6 +109,14 @@ export interface CreateProjectInput {
   value_charter?: ValueCharter | null;
 }
 
+/** Body of `POST /api/v1/projects/:id/archive` (WFT #2477). */
+export interface ArchiveProjectOptions {
+  /** Free text, max 500 characters; required with `force`. */
+  reason?: string;
+  /** Archive although tasks are unfinished; needs `reason`. */
+  force?: boolean;
+}
+
 export interface UpdateProjectInput {
   name?: string;
   description?: string | null;

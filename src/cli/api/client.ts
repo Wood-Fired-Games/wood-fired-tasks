@@ -17,6 +17,7 @@ import type {
   ProjectResponse,
   CreateProjectInput,
   UpdateProjectInput,
+  ArchiveProjectOptions,
   DependencyResponse,
   DependencyListResponse,
   CreateDependencyInput,
@@ -344,6 +345,34 @@ export async function updateProject(
     body: JSON.stringify(data),
   });
   return parseProjectResponse(payload, `PUT ${endpoint}`);
+}
+
+/**
+ * Archive a project (WFT #2477). The server refuses with 422
+ * `project_has_unfinished_tasks` while tasks are unfinished, unless `force`
+ * comes with a `reason`; an already archived project comes back unchanged.
+ * `archived_by` is the authenticated caller, never sent.
+ */
+export async function archiveProject(
+  id: number,
+  options: ArchiveProjectOptions = {},
+): Promise<ProjectResponse> {
+  const endpoint = `/api/v1/projects/${id}/archive`;
+  const payload = await apiRequest<unknown>(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+  return parseProjectResponse(payload, `POST ${endpoint}`);
+}
+
+/**
+ * Unarchive a project (WFT #2477). A project that is not archived comes back
+ * unchanged.
+ */
+export async function unarchiveProject(id: number): Promise<ProjectResponse> {
+  const endpoint = `/api/v1/projects/${id}/unarchive`;
+  const payload = await apiRequest<unknown>(endpoint, { method: 'POST' });
+  return parseProjectResponse(payload, `POST ${endpoint}`);
 }
 
 /**

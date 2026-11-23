@@ -12,6 +12,8 @@ import { projectListCommand } from '../commands/project-list.js';
 import { projectShowCommand } from '../commands/project-show.js';
 import { projectUpdateCommand } from '../commands/project-update.js';
 import { projectDeleteCommand } from '../commands/project-delete.js';
+import { projectArchiveCommand } from '../commands/project-archive.js';
+import { projectUnarchiveCommand } from '../commands/project-unarchive.js';
 import { projectSetModelsCommand } from '../commands/project-set-models.js';
 import { settingsSetModelsCommand } from '../commands/settings-set-models.js';
 import { modelsCommand } from '../commands/models.js';
@@ -80,6 +82,8 @@ program.addCommand(projectListCommand);
 program.addCommand(projectShowCommand);
 program.addCommand(projectUpdateCommand);
 program.addCommand(projectDeleteCommand);
+program.addCommand(projectArchiveCommand);
+program.addCommand(projectUnarchiveCommand);
 program.addCommand(projectSetModelsCommand);
 
 // Register model / settings commands (Configurable Task Models, Task 12)

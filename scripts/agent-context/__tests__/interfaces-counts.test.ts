@@ -61,7 +61,7 @@ const EXPECTED_REST_ROUTE_TOTAL = 24;
 // 60 → 62: the two archive routes above.
 const EXPECTED_REST_ROUTE_FULL_TOTAL = 62;
 const EXPECTED_MCP_TOOL_TOTAL = 33;
-const EXPECTED_CLI_COMMAND_TOTAL = 46;
+const EXPECTED_CLI_COMMAND_TOTAL = 48;
 
 const MCP_TOOLS_DIR = 'src/mcp/tools';
 const REST_ROUTES_DIR = 'src/api/routes';
