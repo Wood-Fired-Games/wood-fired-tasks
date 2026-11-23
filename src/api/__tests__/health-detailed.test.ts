@@ -98,4 +98,47 @@ describe('Authenticated /health/detailed', () => {
     });
     expect(response.headers['content-type']).toContain('application/json');
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.5, §3.4) ---
+
+  describe('archived_projects', () => {
+    const fingerprint = async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/health/detailed',
+        headers: auth,
+      });
+      expect(response.statusCode).toBe(200);
+      return JSON.parse(response.payload).database as {
+        projects: number;
+        archived_projects: number;
+      };
+    };
+
+    it('reports archived_projects as 0 on a database with no archived project', async () => {
+      app.projectService.createProject({ name: 'Active One' });
+
+      expect(await fingerprint()).toMatchObject({ projects: 1, archived_projects: 0 });
+    });
+
+    it('counts archived projects in archived_projects while projects stays the total', async () => {
+      app.projectService.createProject({ name: 'Active One' });
+      const shipped = app.projectService.createProject({ name: 'Shipped' });
+      const dropped = app.projectService.createProject({ name: 'Dropped' });
+
+      app.projectService.archiveProject(shipped.id, {}, 'tester');
+      expect(await fingerprint()).toMatchObject({ projects: 3, archived_projects: 1 });
+
+      app.projectService.archiveProject(dropped.id, { reason: 'dropped' }, 'tester');
+      expect(await fingerprint()).toMatchObject({ projects: 3, archived_projects: 2 });
+    });
+
+    it('archived_projects drops again after an unarchive; projects is unchanged', async () => {
+      const shipped = app.projectService.createProject({ name: 'Shipped' });
+      app.projectService.archiveProject(shipped.id, {}, 'tester');
+      app.projectService.unarchiveProject(shipped.id, 'tester');
+
+      expect(await fingerprint()).toMatchObject({ projects: 1, archived_projects: 0 });
+    });
+  });
 });

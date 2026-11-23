@@ -2,6 +2,7 @@ import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { eventBus } from '../../events/event-bus.js';
 import { VERSION } from '../../utils/version.js';
+import { ProjectRepository } from '../../repositories/project.repository.js';
 
 /**
  * Public, unauthenticated health check.
@@ -95,6 +96,7 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
             database: z.object({
               path: z.string(),
               projects: z.number(),
+              archived_projects: z.number(),
               maxTaskId: z.number().nullable(),
               latestActivity: z.string().nullable(),
             }),
@@ -130,6 +132,7 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
             database: z.object({
               path: z.string(),
               projects: z.number(),
+              archived_projects: z.number(),
               maxTaskId: z.number().nullable(),
               latestActivity: z.string().nullable(),
             }),
@@ -172,11 +175,13 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       let database: {
         path: string;
         projects: number;
+        archived_projects: number;
         maxTaskId: number | null;
         latestActivity: string | null;
       } = {
         path: fastify.db.name,
         projects: 0,
+        archived_projects: 0,
         maxTaskId: null,
         latestActivity: null,
       };
@@ -193,7 +198,12 @@ export const detailedHealthRoutes: FastifyPluginAsyncZod = async (fastify) => {
         };
         database = {
           path: fastify.db.name,
+          // `projects` stays the TOTAL, archived included: it is the upgrade
+          // fingerprint operators compare across a deploy.
           projects: projectRow.n,
+          // Archived project state: how many of those are archived. Read
+          // through the repository that owns the archive columns.
+          archived_projects: new ProjectRepository(fastify.db).count('only'),
           maxTaskId: maxIdRow.m ?? null,
           latestActivity: latestRow.t ?? null,
         };

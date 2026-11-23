@@ -198,4 +198,48 @@ describe('CommentService', () => {
     }).not.toThrow();
     expect(commentService.getComments(taskId)).toHaveLength(0);
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.3) ---
+  // Comments are deliberately NOT behind the project_archived write guard: a
+  // note such as "regression tracked in #N" on a finished task changes no state.
+
+  describe('archived project', () => {
+    beforeEach(() => {
+      projectRepo.archive(projectId, 'alice', 'shipped');
+    });
+
+    it('still allows adding a comment to a task in an archived project', () => {
+      const comment = commentService.addComment({
+        task_id: taskId,
+        author: 'bob',
+        content: 'regression tracked in #42',
+      });
+
+      expect(comment).toMatchObject({
+        task_id: taskId,
+        author: 'bob',
+        content: 'regression tracked in #42',
+      });
+      expect(commentService.getComments(taskId).map((c) => c.id)).toEqual([comment.id]);
+    });
+
+    it('adding a comment leaves the archived project and the task untouched', () => {
+      const taskBefore = taskRepo.findById(taskId);
+      const projectBefore = projectRepo.findById(projectId);
+
+      commentService.addComment({ task_id: taskId, author: 'bob', content: 'note' });
+
+      expect(taskRepo.findById(taskId)).toEqual(taskBefore);
+      expect(projectRepo.findById(projectId)).toEqual(projectBefore);
+      expect(projectBefore?.archived).toBe(true);
+    });
+
+    it('still allows deleting a comment on a task in an archived project', () => {
+      const comment = commentService.addComment({ task_id: taskId, author: 'bob', content: 'x' });
+
+      commentService.deleteComment(comment.id, taskId);
+
+      expect(commentService.getComments(taskId)).toEqual([]);
+    });
+  });
 });

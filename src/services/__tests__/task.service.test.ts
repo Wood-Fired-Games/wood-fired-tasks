@@ -1380,4 +1380,153 @@ describe('TaskService', () => {
       emitSpy.mockRestore();
     });
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.3) ---
+
+  describe('archived project write guard', () => {
+    let taskId: number;
+    let doneTaskId: number;
+
+    const expectProjectArchived = (fn: () => unknown) => {
+      let thrown: unknown;
+      try {
+        fn();
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(BusinessError);
+      expect((thrown as BusinessError).message).toMatch(/^project_archived/);
+    };
+
+    beforeEach(() => {
+      taskId = taskService.createTask({
+        title: 'Open in soon-archived project',
+        project_id: testProjectId,
+        created_by: 'creator',
+        tags: ['keep'],
+      }).id;
+      const done = taskService.createTask({
+        title: 'Finished work',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      taskService.updateTask(done.id, { status: 'closed' });
+      doneTaskId = done.id;
+      projectService.archiveProject(testProjectId, { force: true, reason: 'frozen' }, 'alice');
+    });
+
+    it('rejects create in an archived project', () => {
+      expectProjectArchived(() =>
+        taskService.createTask({ title: 'New', project_id: testProjectId, created_by: 'creator' }),
+      );
+      expect(taskService.countTasks({ project_id: testProjectId })).toBe(2);
+    });
+
+    it('rejects subtask creation under a task in an archived project', () => {
+      expectProjectArchived(() =>
+        taskService.createTask({
+          title: 'Child',
+          project_id: testProjectId,
+          parent_task_id: taskId,
+          created_by: 'creator',
+        }),
+      );
+      expect(taskService.getSubtasks(taskId)).toEqual([]);
+    });
+
+    it.each([
+      ['title', { title: 'Renamed' }],
+      ['status', { status: 'in_progress' }],
+      ['closing', { status: 'closed' }],
+      ['tags', { tags: ['changed'] }],
+      ['assignee', { assignee: 'bob' }],
+    ])('rejects update (%s) of a task in an archived project', (_what, patch) => {
+      const before = taskService.getTask(taskId);
+
+      expectProjectArchived(() => taskService.updateTask(taskId, patch));
+
+      expect(taskService.getTask(taskId)).toEqual(before);
+    });
+
+    it('rejects update of a finished task in an archived project', () => {
+      expectProjectArchived(() => taskService.updateTask(doneTaskId, { status: 'open' }));
+      expect(taskService.getTask(doneTaskId).status).toBe('closed');
+    });
+
+    it('rejects a workflow-sourced update as well', () => {
+      expectProjectArchived(() => taskService.updateTask(taskId, { status: 'done' }, 'workflow'));
+      expect(taskService.getTask(taskId).status).toBe('open');
+    });
+
+    it('rejects delete of a task in an archived project and emits no event', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expectProjectArchived(() => taskService.deleteTask(taskId));
+
+      expect(taskService.getTask(taskId).id).toBe(taskId);
+      expect(emitSpy).not.toHaveBeenCalled();
+      emitSpy.mockRestore();
+    });
+
+    it('a rejected write emits no task event', () => {
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      expectProjectArchived(() => taskService.updateTask(taskId, { title: 'x' }));
+      expectProjectArchived(() =>
+        taskService.createTask({ title: 'New', project_id: testProjectId, created_by: 'c' }),
+      );
+
+      expect(emitSpy).not.toHaveBeenCalled();
+      emitSpy.mockRestore();
+    });
+
+    it('getTask still returns a task in an archived project', () => {
+      expect(taskService.getTask(taskId)).toMatchObject({
+        id: taskId,
+        title: 'Open in soon-archived project',
+        status: 'open',
+        project_id: testProjectId,
+        tags: ['keep'],
+      });
+    });
+
+    it('listing by project_id and subtask reads still work for an archived project', () => {
+      expect(
+        taskService
+          .listTasks({ project_id: testProjectId })
+          .map((t) => t.id)
+          .sort(),
+      ).toEqual([taskId, doneTaskId].sort());
+      expect(taskService.getSubtasks(taskId)).toEqual([]);
+    });
+
+    it('validation and not-found errors still come first', () => {
+      expect(() => taskService.updateTask(taskId, { priority: 'nope' })).toThrow(ValidationError);
+      expect(() => taskService.updateTask(999999, { title: 'x' })).toThrow(NotFoundError);
+      expect(() => taskService.deleteTask(999999)).toThrow(NotFoundError);
+    });
+
+    it('writes work again after unarchive', () => {
+      projectService.unarchiveProject(testProjectId, 'alice');
+
+      expect(taskService.updateTask(taskId, { title: 'Renamed' }).title).toBe('Renamed');
+      expect(
+        taskService.createTask({ title: 'New', project_id: testProjectId, created_by: 'c' }).id,
+      ).toBeGreaterThan(0);
+      taskService.deleteTask(taskId);
+      expect(() => taskService.getTask(taskId)).toThrow(NotFoundError);
+    });
+
+    it('does not affect writes in another, unarchived project', () => {
+      const other = projectService.createProject({ name: 'Still Active' });
+
+      const task = taskService.createTask({
+        title: 'Fine',
+        project_id: other.id,
+        created_by: 'creator',
+      });
+
+      expect(taskService.updateTask(task.id, { status: 'in_progress' }).status).toBe('in_progress');
+    });
+  });
 });

@@ -36,7 +36,7 @@ import type { WsjfComponents, WsjfComponentKey, WsjfLocks } from '../types/wsjf.
 import type { TopologyService } from './topology.service.js';
 import { computeWsjf, validateScoreSubmission, type ScoreSubmission } from './wsjf.service.js';
 import { MAX_PAGE_LIMIT } from '../types/task.js';
-import { BusinessError } from './errors.js';
+import { BusinessError, projectArchivedError } from './errors.js';
 
 /** The four component keys, in canonical order. */
 const COMPONENT_KEYS: readonly WsjfComponentKey[] = [
@@ -208,6 +208,11 @@ export class WsjfRescoreService {
     const project = this.deps.projects.findById(projectId);
     if (!project) {
       throw new BusinessError(`Project with id ${projectId} does not exist`);
+    }
+    // Archived project state: a rescore writes scores, so a frozen project
+    // refuses it outright. `collectRescoreSet` is a read and stays allowed.
+    if (project.archived) {
+      throw projectArchivedError(projectId);
     }
     const charter = project.value_charter;
     const charterVersion = charter?.interview_version ?? null;

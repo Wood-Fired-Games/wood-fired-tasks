@@ -84,6 +84,92 @@ describe('POST /api/v1/tasks/:id/claim', () => {
     expect(body.message).toContain('cannot be claimed');
   });
 
+  describe('archived project', () => {
+    it('returns 422 BUSINESS_RULE_VIOLATION with the project_archived prefix, not 409', async () => {
+      const project = app.projectService.createProject({ name: 'Claim Archived Project' });
+      const task = app.taskService.createTask({
+        title: 'Frozen',
+        project_id: project.id,
+        created_by: 'test-user',
+      });
+      app.projectService.archiveProject(project.id, { force: true, reason: 'shelved' }, 'tester');
+
+      const response = await server.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/claim`,
+        headers,
+        payload: { assignee: 'agent-1' },
+      });
+
+      expect(response.statusCode).toBe(422);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('BUSINESS_RULE_VIOLATION');
+      expect(body.message).toMatch(/^project_archived/);
+      // Nothing was claimed.
+      const after = app.taskService.getTask(task.id);
+      expect(after.assignee).toBeNull();
+      expect(after.status).toBe('open');
+    });
+
+    it('a genuine claim conflict in an unarchived project is still 409 CONFLICT', async () => {
+      const task = createOpenTask('Conflict stays 409');
+      app.taskService.claimTask(task.id, 'agent-1');
+
+      const response = await server.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/claim`,
+        headers,
+        payload: { assignee: 'agent-2' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('CONFLICT');
+      expect(body.message).not.toMatch(/^project_archived/);
+    });
+
+    it('an already-claimed task in an archived project answers 422, the freeze wins over the conflict', async () => {
+      const project = app.projectService.createProject({ name: 'Claim Archived Held Project' });
+      const task = app.taskService.createTask({
+        title: 'Held then frozen',
+        project_id: project.id,
+        created_by: 'test-user',
+      });
+      app.taskService.claimTask(task.id, 'agent-1');
+      app.projectService.archiveProject(project.id, { force: true, reason: 'shelved' }, 'tester');
+
+      const response = await server.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/claim`,
+        headers,
+        payload: { assignee: 'agent-2' },
+      });
+
+      expect(response.statusCode).toBe(422);
+      expect(JSON.parse(response.body).message).toMatch(/^project_archived/);
+    });
+
+    it('claim answers 200 again after unarchive', async () => {
+      const project = app.projectService.createProject({ name: 'Claim Unarchived Project' });
+      const task = app.taskService.createTask({
+        title: 'Thawed',
+        project_id: project.id,
+        created_by: 'test-user',
+      });
+      app.projectService.archiveProject(project.id, { force: true, reason: 'shelved' }, 'tester');
+      app.projectService.unarchiveProject(project.id, 'tester');
+
+      const response = await server.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${task.id}/claim`,
+        headers,
+        payload: { assignee: 'agent-1' },
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
   it('returns 404 for non-existent task', async () => {
     const response = await server.inject({
       method: 'POST',

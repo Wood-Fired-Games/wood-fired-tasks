@@ -44,7 +44,7 @@ describe('rankFrontier (WSJF 1.9)', () => {
     depRepo = new DependencyRepository(db);
     deps = {
       topology: new TopologyService(taskRepo, depRepo),
-      dependency: new DependencyService(depRepo, taskRepo),
+      dependency: new DependencyService(depRepo, taskRepo, projectRepo),
       tasks: taskRepo,
     };
     const p = projectRepo.create({ name: 'Rank Project' });
@@ -296,7 +296,7 @@ describe('auto-sized size-only tasks stay unscored in ranking (task #994)', () =
     taskService = new TaskService(taskRepo, projectRepo, db, wsjfHistoryRepo);
     deps = {
       topology: new TopologyService(taskRepo, depRepo),
-      dependency: new DependencyService(depRepo, taskRepo),
+      dependency: new DependencyService(depRepo, taskRepo, projectRepo),
       tasks: taskRepo,
     };
     projectId = projectRepo.create({ name: 'Auto-size Rank Project' }).id;

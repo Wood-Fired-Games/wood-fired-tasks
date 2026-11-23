@@ -1,8 +1,13 @@
-import type { IDependencyRepository, ITaskRepository } from '../repositories/interfaces.js';
+import type {
+  IDependencyRepository,
+  IProjectRepository,
+  ITaskRepository,
+} from '../repositories/interfaces.js';
 import type { Dependency } from '../types/task.js';
 import { CreateDependencySchema } from '../schemas/dependency.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
 import { CycleDetector } from '../utils/cycle-detector.js';
+import { assertProjectWritable } from './project-write-guard.js';
 
 /**
  * DependencyService - handles task dependency business logic and cycle detection
@@ -11,6 +16,9 @@ export class DependencyService {
   constructor(
     private readonly dependencyRepo: IDependencyRepository,
     private readonly taskRepo: ITaskRepository,
+    // Archived project state: required (not optional) so the write guard on
+    // add/remove can never be skipped by a construction that forgot it.
+    private readonly projectRepo: Pick<IProjectRepository, 'findById'>,
   ) {}
 
   /**
@@ -19,7 +27,8 @@ export class DependencyService {
    * @returns The created dependency
    * @throws ValidationError if input is invalid or self-dependency
    * @throws NotFoundError if either task doesn't exist
-   * @throws BusinessError if adding dependency would create a cycle
+   * @throws BusinessError if adding dependency would create a cycle, or
+   *   (`project_archived`) if either task belongs to an archived project
    */
   addDependency(input: unknown): Dependency {
     // Validate input
@@ -49,6 +58,11 @@ export class DependencyService {
       throw new NotFoundError('Task', blocks_task_id);
     }
 
+    // Archived project state: no new edge may touch a frozen project, on
+    // either end.
+    assertProjectWritable(this.projectRepo, task.project_id);
+    assertProjectWritable(this.projectRepo, blockedTask.project_id);
+
     // Load all existing dependencies for cycle detection
     const existingDeps = this.dependencyRepo.findAll();
 
@@ -67,8 +81,19 @@ export class DependencyService {
   /**
    * Remove a dependency between two tasks
    * @throws NotFoundError if dependency doesn't exist
+   * @throws BusinessError (`project_archived`) if either task belongs to an
+   *   archived project — existing edges of a frozen project stay
    */
   removeDependency(taskId: number, blocksTaskId: number): void {
+    // Archived project state: guard both ends. A task id that does not exist
+    // is skipped here and surfaces as the dependency NotFoundError below.
+    for (const id of [taskId, blocksTaskId]) {
+      const task = this.taskRepo.findById(id);
+      if (task) {
+        assertProjectWritable(this.projectRepo, task.project_id);
+      }
+    }
+
     const deleted = this.dependencyRepo.delete(taskId, blocksTaskId);
     if (!deleted) {
       throw new NotFoundError('Dependency', `${taskId}->${blocksTaskId}` as any);

@@ -697,4 +697,106 @@ describe('Task CRUD Routes', () => {
       expect(body.data).toHaveLength(3);
     });
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.5) ---
+
+  describe('archived filter', () => {
+    let activeTaskId: number;
+    let archivedTaskId: number;
+    let archivedProjectId: number;
+
+    // Every listing here adds `tags=archfilter` so the shared database's other
+    // tasks stay out of the picture.
+    const list = async (query: string) => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks?tags=archfilter${query}`,
+        headers,
+      });
+      return {
+        status: response.statusCode,
+        body: response.json() as { data: Array<{ id: number }>; total: number },
+      };
+    };
+    const ids = (body: { data: Array<{ id: number }> }) => body.data.map((t) => t.id).sort();
+
+    beforeAll(() => {
+      const active = app.projectService.createProject({ name: 'Archived Filter Active' });
+      const archived = app.projectService.createProject({ name: 'Archived Filter Archived' });
+      archivedProjectId = archived.id;
+      activeTaskId = app.taskService.createTask({
+        title: 'archfilter active',
+        project_id: active.id,
+        created_by: 'tester',
+        tags: ['archfilter'],
+      }).id;
+      archivedTaskId = app.taskService.createTask({
+        title: 'archfilter archived',
+        project_id: archived.id,
+        created_by: 'tester',
+        tags: ['archfilter'],
+      }).id;
+      app.projectService.archiveProject(archived.id, { force: true, reason: 'test' }, 'tester');
+    });
+
+    it('omits tasks of archived projects by default', async () => {
+      const { status, body } = await list('');
+
+      expect(status).toBe(200);
+      expect(ids(body)).toEqual([activeTaskId]);
+      expect(body.total).toBe(1);
+    });
+
+    it('archived=exclude omits tasks of archived projects', async () => {
+      const { status, body } = await list('&archived=exclude');
+
+      expect(status).toBe(200);
+      expect(ids(body)).toEqual([activeTaskId]);
+      expect(body.total).toBe(1);
+    });
+
+    it('archived=include returns tasks of archived and unarchived projects', async () => {
+      const { status, body } = await list('&archived=include');
+
+      expect(status).toBe(200);
+      expect(ids(body)).toEqual([activeTaskId, archivedTaskId].sort());
+      expect(body.total).toBe(2);
+    });
+
+    it('archived=only returns nothing but tasks of archived projects', async () => {
+      const { status, body } = await list('&archived=only');
+
+      expect(status).toBe(200);
+      expect(ids(body)).toEqual([archivedTaskId]);
+      expect(body.total).toBe(1);
+    });
+
+    it.each(['', '&archived=exclude', '&archived=include', '&archived=only'])(
+      "an explicit project_id of an archived project always returns its tasks (query '%s')",
+      async (archived) => {
+        const { status, body } = await list(`&project_id=${archivedProjectId}${archived}`);
+
+        expect(status).toBe(200);
+        expect(ids(body)).toEqual([archivedTaskId]);
+        expect(body.total).toBe(1);
+      },
+    );
+
+    it('rejects an unknown archived value with 400', async () => {
+      const { status } = await list('&archived=all');
+
+      expect(status).toBe(400);
+    });
+
+    it('GET /tasks/:id still returns a task in an archived project', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/api/v1/tasks/${archivedTaskId}`,
+        headers,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().id).toBe(archivedTaskId);
+    });
+  });
 });

@@ -371,4 +371,60 @@ describe('TaskService - claimTask', () => {
       expect(renewed.claim_remaining_seconds).toBeGreaterThan(25 * 60);
     });
   });
+
+  // --- Archived project state (docs/design/project-archived-state.md §2.3) ---
+
+  describe('archived project write guard', () => {
+    it('rejects claim of a task in an archived project with a project_archived message', () => {
+      const task = taskService.createTask({
+        title: 'Open in archived project',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      projectService.archiveProject(testProjectId, { force: true, reason: 'frozen' }, 'alice');
+      const emitSpy = vi.spyOn(eventBus, 'emit');
+
+      let thrown: unknown;
+      try {
+        taskService.claimTask(task.id, 'agent-1');
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(BusinessError);
+      expect((thrown as BusinessError).message).toMatch(/^project_archived/);
+      expect(taskService.getTask(task.id)).toMatchObject({ status: 'open', assignee: null });
+      expect(emitSpy).not.toHaveBeenCalled();
+      emitSpy.mockRestore();
+    });
+
+    it('rejects a claim renewal by the current holder once the project is archived', () => {
+      const task = taskService.createTask({
+        title: 'Held in archived project',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      const claimed = taskService.claimTask(task.id, 'agent-1');
+      projectService.archiveProject(testProjectId, { force: true, reason: 'frozen' }, 'alice');
+
+      expect(() => taskService.claimTask(task.id, 'agent-1')).toThrow(/^project_archived/);
+      expect(taskService.getTask(task.id).claimed_at).toBe(claimed.claimed_at);
+    });
+
+    it('claim works again after unarchive', () => {
+      const task = taskService.createTask({
+        title: 'Claimable later',
+        project_id: testProjectId,
+        created_by: 'creator',
+      });
+      projectService.archiveProject(testProjectId, { force: true, reason: 'frozen' }, 'alice');
+      projectService.unarchiveProject(testProjectId, 'alice');
+
+      expect(taskService.claimTask(task.id, 'agent-1').assignee).toBe('agent-1');
+    });
+
+    it('a missing task is still a NotFoundError', () => {
+      expect(() => taskService.claimTask(999999, 'agent-1')).toThrow(NotFoundError);
+    });
+  });
 });

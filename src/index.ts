@@ -295,12 +295,14 @@ export async function createApp(dbPath?: string): Promise<App> {
   const projectService = new ProjectService(projectRepo, {
     charterHistory: charterHistoryRepo,
     db,
+    // Archived project state: backs the "no unfinished tasks" archive check.
+    taskRepo,
   });
   // Task #1004: DependencyService is constructed BEFORE TaskService so the
   // atomic block-with-dependency path (`update_task` with `blocked_by`) can be
   // injected — the edge adds and the status write share `db` and commit in one
   // transaction.
-  const dependencyService = new DependencyService(dependencyRepo, taskRepo);
+  const dependencyService = new DependencyService(dependencyRepo, taskRepo, projectRepo);
   const taskService = new TaskService(
     taskRepo,
     projectRepo,
