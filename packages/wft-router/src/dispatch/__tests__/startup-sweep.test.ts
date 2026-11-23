@@ -256,6 +256,7 @@ describe('findFirstMatchingOpenTask', () => {
 
     it.each([
       ['404 (deleted project)', 404, /HTTP 404/],
+      ['401 (token revoked or expired)', 401, /HTTP 401/],
       ['403 (token bound to another project)', 403, /HTTP 403/],
       ['503', 503, /HTTP 503/],
     ] as const)(
@@ -325,6 +326,34 @@ describe('findFirstMatchingOpenTask', () => {
       expect(match?.payload.task?.id).toBe(1);
       expect(failures[0]?.error).toMatch(/unparseable/);
     });
+
+    it.each([
+      ['an array', '[{"archived":true}]'],
+      ['null', 'null'],
+      ['a string', '"archived"'],
+      ['a number', '1'],
+    ])(
+      'on a 2xx whose body is %s it reports a non-object body and runs the rule',
+      async (_label, body) => {
+        const tasks = pagedFetch(backlog, []);
+        const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+          if (new URL(String(input)).pathname.startsWith('/api/v1/projects/')) {
+            return new Response(body, { status: 200 });
+          }
+          return tasks(input);
+        }) as typeof fetch;
+        const failures: Array<{ projectId: number; error: string }> = [];
+
+        const match = await findFirstMatchingOpenTask(
+          rule({ where: { project: 9 } } as Partial<TriggersRule>),
+          { ...OPTS, fetchImpl, onProjectLookupFailed: (f) => failures.push(f) },
+        );
+
+        expect(match?.payload.task?.id).toBe(1);
+        expect(failures).toHaveLength(1);
+        expect(failures[0]?.error).toMatch(/non-object body/);
+      },
+    );
 
     it('a failure without a reporter still runs the rule (never throws)', async () => {
       const fetchImpl = pagedFetch(backlog, [], {});
