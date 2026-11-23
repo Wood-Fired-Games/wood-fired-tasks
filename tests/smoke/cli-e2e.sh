@@ -647,15 +647,34 @@ rm -f "${do_}" "${de_}"
 
 # ----- Step 3 (round-trip k): archived project state (WFT #2483) ---------------
 # project-archive → hidden from project-list → create refused with
-# project_archived → project-unarchive → listed again. `--force --reason`
-# archives whatever is left in the project (the dep-src/dep-dst tasks).
-# `--force` sits after the subcommand: project-archive reads its own flag and
-# the global one (they collide in commander), either spelling forces.
-echo "[e2e] step 3k: tasks project-archive ${pid} --force --reason 'e2e round trip'"
+# project_archived → project-unarchive → listed again. The project still has
+# unfinished tasks (dep-src/dep-dst), so the global `--force` (skip prompts)
+# must NOT archive it; `--with-unfinished --reason` does.
+echo "[e2e] step 3k0: tasks --force project-archive ${pid} --reason ... (unfinished tasks) is refused"
+fo="$(mktemp)"; fe="$(mktemp)"
+set +e
+"${bin_name}" --json --force --token "${pat}" \
+  project-archive "${pid}" --reason "global force is not an archive override" >"${fo}" 2>"${fe}"
+force_rc=$?
+set -e
+if [ "${force_rc}" -eq 0 ]; then
+  record_fail "project-archive (global --force)" "global --force archived a project with unfinished tasks"
+  cat "${fo}" >&2
+  exit 1
+fi
+if ! grep -q "project_has_unfinished_tasks" "${fo}" "${fe}"; then
+  record_fail "project-archive (global --force)" "refusal does not carry project_has_unfinished_tasks"
+  cat "${fo}" "${fe}" >&2
+  exit 1
+fi
+record_pass "k0) global --force + --reason does not force an archive (rc=${force_rc})"
+rm -f "${fo}" "${fe}"
+
+echo "[e2e] step 3k: tasks project-archive ${pid} --with-unfinished --reason 'e2e round trip'"
 ao="$(mktemp)"; ae="$(mktemp)"
 if ! run_cli "${ao}" "${ae}" -- \
   "${bin_name}" --json --token "${pat}" \
-  project-archive "${pid}" --force --reason "e2e round trip"; then
+  project-archive "${pid}" --with-unfinished --reason "e2e round trip"; then
   record_fail "project-archive" "non-zero exit"
   cat "${ae}" >&2
   exit 1
@@ -665,7 +684,7 @@ if [ "$(jq -r '.data.project.archived' "${ao}")" != "true" ]; then
   cat "${ao}" >&2
   exit 1
 fi
-record_pass "k1) project-archive ${pid} (force + reason) → archived=true"
+record_pass "k1) project-archive ${pid} --with-unfinished --reason → archived=true"
 rm -f "${ao}" "${ae}"
 
 # project_listed <pid> <file>: 0 when the project-list JSON in <file> has <pid>.

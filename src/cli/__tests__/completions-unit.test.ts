@@ -56,7 +56,7 @@ describe('createCompletionsCommand', () => {
   it('completes the archived project flags in bash and zsh (WFT #2478)', async () => {
     await program.parseAsync(['node', 'tasks', 'completions', 'bash']);
     const bash = consoleLogSpy.mock.calls[0][0] as string;
-    for (const flag of ['--include-archived', '--archived-only', '--reason']) {
+    for (const flag of ['--include-archived', '--archived-only', '--reason', '--with-unfinished']) {
       expect(bash).toContain(flag);
     }
 
@@ -66,7 +66,11 @@ describe('createCompletionsCommand', () => {
     expect(zsh).toMatch(/list\)[\s\S]*?'--include-archived\[[^\]]+\]'[\s\S]*?;;/);
     expect(zsh).toMatch(/project-list\)[\s\S]*?'--archived-only\[[^\]]+\]'[\s\S]*?;;/);
     expect(zsh).toMatch(/project-archive\)[\s\S]*?'--reason\[[^\]]+\]:reason:'[\s\S]*?;;/);
-    expect(zsh).toMatch(/project-archive\)[\s\S]*?'--force\[[^\]]+\]'[\s\S]*?;;/);
+    expect(zsh).toMatch(/project-archive\)[\s\S]*?'--with-unfinished\[[^\]]+\]'[\s\S]*?;;/);
+    // The archive override is --with-unfinished; project-archive offers no
+    // --force of its own (the global --force only skips prompts).
+    const archiveCase = /project-archive\)([\s\S]*?);;/.exec(zsh)?.[1] ?? '';
+    expect(archiveCase).not.toContain("'--force[");
   });
 
   it('emits a bash completion script containing all registered subcommands', async () => {

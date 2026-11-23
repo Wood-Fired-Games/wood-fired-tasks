@@ -98,22 +98,82 @@ describe('project-archive / project-unarchive commands (WFT #2477)', () => {
       expect(process.exitCode).toBe(0);
     });
 
-    it('passes --reason and --force', async () => {
-      const { archiveProject } = await client();
-      vi.mocked(archiveProject).mockResolvedValue(archived);
+    // The archive override is `--with-unfinished` (verifier decision on PR
+    // #171). The global `--force` means only "skip prompts": it never forces
+    // an archive, wherever it sits on the line.
+    describe('--with-unfinished, and the global --force that never forces', () => {
+      const unfinished =
+        'project_has_unfinished_tasks: project 7 has 1 unfinished task (open: 1, in_progress: 0, ' +
+        'blocked: 0, backlogged: 0); finish or close them, or archive with force: true and a reason';
 
-      await run('project-archive', '7', '--reason', 'shipped', '--force');
+      it('(a) global --force plus --reason on a project with unfinished tasks is refused as before', async () => {
+        const { archiveProject, ApiClientError } = await client();
+        vi.mocked(archiveProject).mockRejectedValue(
+          new ApiClientError(unfinished, 422, {
+            error: 'BUSINESS_RULE_VIOLATION',
+            message: unfinished,
+          }),
+        );
 
-      expect(archiveProject).toHaveBeenCalledWith(7, { reason: 'shipped', force: true });
-    });
+        await run('--force', 'project-archive', '7', '--reason', 'shelved');
 
-    it('--force before the command name forces too (commander gives it to the program)', async () => {
-      const { archiveProject } = await client();
-      vi.mocked(archiveProject).mockResolvedValue(archived);
+        // No force is sent: the reason alone is an ordinary archive's reason.
+        expect(archiveProject).toHaveBeenCalledWith(7, { reason: 'shelved' });
+        expect(errorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('project_has_unfinished_tasks'),
+        );
+        expect(process.exitCode).toBe(1);
+      });
 
-      await run('--force', 'project-archive', '7', '--reason', 'shelved');
+      it('(b) global --force alone on a finished project archives cleanly', async () => {
+        const { archiveProject } = await client();
+        vi.mocked(archiveProject).mockResolvedValue(archived);
 
-      expect(archiveProject).toHaveBeenCalledWith(7, { reason: 'shelved', force: true });
+        await run('--force', 'project-archive', '7');
+
+        expect(archiveProject).toHaveBeenCalledWith(7, {});
+        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Project #7 archived'));
+        expect(process.exitCode).toBe(0);
+      });
+
+      it('a --force after the command name is the same global flag and forces nothing', async () => {
+        const { archiveProject } = await client();
+        vi.mocked(archiveProject).mockResolvedValue(archived);
+
+        await run('project-archive', '7', '--reason', 'shipped', '--force');
+
+        expect(archiveProject).toHaveBeenCalledWith(7, { reason: 'shipped' });
+        expect(process.exitCode).toBe(0);
+      });
+
+      it('(c) --with-unfinished without --reason is refused without calling the API', async () => {
+        const { archiveProject } = await client();
+
+        await run('project-archive', '7', '--with-unfinished');
+
+        expect(archiveProject).not.toHaveBeenCalled();
+        expect(errorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('--with-unfinished requires --reason'),
+        );
+        expect(process.exitCode).toBe(1);
+      });
+
+      it('(d) --with-unfinished with --reason forces the archive', async () => {
+        const { archiveProject } = await client();
+        vi.mocked(archiveProject).mockResolvedValue(archived);
+
+        await run('project-archive', '7', '--with-unfinished', '--reason', 'shelved');
+
+        expect(archiveProject).toHaveBeenCalledWith(7, { reason: 'shelved', force: true });
+        expect(process.exitCode).toBe(0);
+      });
+
+      it('help names --with-unfinished and no longer offers a --force of its own', async () => {
+        const { projectArchiveCommand } = await import('../project-archive.js');
+        const help = projectArchiveCommand.helpInformation();
+        expect(help).toContain('--with-unfinished');
+        expect(help).not.toMatch(/^\s+--force\b/m);
+      });
     });
 
     it('--json prints the project in the JSON envelope', async () => {

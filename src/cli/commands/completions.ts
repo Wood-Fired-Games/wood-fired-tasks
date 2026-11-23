@@ -64,7 +64,7 @@ _tasks_completions() {
 
   # Complete flags
   if [[ "\${cur}" == -* ]]; then
-    COMPREPLY=( $(compgen -W "\${global_flags} --status --priority --assignee --tags --search --title --description --project --include-archived --archived-only --reason" -- "\${cur}") )
+    COMPREPLY=( $(compgen -W "\${global_flags} --status --priority --assignee --tags --search --title --description --project --include-archived --archived-only --reason --with-unfinished" --"\${cur}") )
     return 0
   fi
 
@@ -136,7 +136,7 @@ _tasks() {
         project-archive)
           _arguments \\
             '--reason[Why the project is archived]:reason:' \\
-            '--force[Archive although tasks are unfinished (needs --reason)]' \\
+            '--with-unfinished[Archive although tasks are unfinished (requires --reason)]' \\
             $global_flags
           ;;
         create|subtask-create)

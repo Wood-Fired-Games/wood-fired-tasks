@@ -228,7 +228,7 @@ remote twin fails), `tool-count-drift.test.ts` (project tools go 5 → 7),
 | File | Change |
 | --- | --- |
 | `src/cli/api/client.ts` | `archiveProject`, `unarchiveProject`; listing helpers take `archived`. |
-| `src/cli/commands/project-archive.ts`, `project-unarchive.ts` (new) | `tasks project-archive <id> [--reason] [--force]`, `tasks project-unarchive <id>`. Registered in `src/cli/bin/tasks.ts`. |
+| `src/cli/commands/project-archive.ts`, `project-unarchive.ts` (new) | `tasks project-archive <id> [--reason <text>] [--with-unfinished]`, `tasks project-unarchive <id>`. Registered in `src/cli/bin/tasks.ts`. `--with-unfinished` sends `force: true` and requires `--reason` (refused before any request without one). |
 | `src/cli/commands/project-list.ts`, `list.ts` | `--include-archived`, `--archived-only`. |
 | `src/cli/commands/project-show.ts`, `src/cli/output/formatters.ts` | Show archived date, actor and reason. |
 | `src/cli/commands/completions.ts` | New commands and flags. |
@@ -236,6 +236,17 @@ remote twin fails), `tool-count-drift.test.ts` (project tools go 5 → 7),
 
 Guards: `cli-surface-coverage-link` runs `--help` for every registered
 command; `tests/smoke/cli-e2e.sh` gets an archive round trip.
+
+Flag name (changed from this design's first draft, WFT #2477 / PR #171):
+the draft spelled the override `--force`, but the program already has a
+global `--force` ("skip confirmation prompts"), and commander gives that flag
+to the program wherever it appears on the line. Reading both spellings, the
+first implementation, made the global flag plus a `--reason` force-archive a
+project with unfinished tasks (a reason is legitimate on an ordinary archive,
+so it does not show intent), and made the global flag alone turn a clean
+archive of a finished project into a 400 `archive_reason_required`. The
+override is therefore `--with-unfinished`; the global `--force` only skips
+prompts and never forces an archive.
 
 The direct-SQLite commands (`topology`, `stats`, `completed`, `wsjf`) do not
 go through REST. They need no change for this feature, but see WFT #2370:

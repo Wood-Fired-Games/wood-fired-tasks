@@ -213,7 +213,7 @@ call.
 | project | `project-show` | `commands/project-show.ts` | Show project details. |
 | project | `project-update` | `commands/project-update.ts` | Update a project. |
 | project | `project-delete` | `commands/project-delete.ts` | Delete a project. |
-| project | `project-archive`, `project-unarchive` | `commands/project-archive.ts`, `commands/project-unarchive.ts` | Archive (`--reason`, `--force`) or unarchive a project (two commands). |
+| project | `project-archive`, `project-unarchive` | `commands/project-archive.ts`, `commands/project-unarchive.ts` | Archive (`--reason`, `--with-unfinished`) or unarchive a project (two commands). |
 | project | `project-set-models` | `commands/project-set-models.ts` | Configurable Task Models (Task 12): set a project's model policy from per-role/per-category flags; persists via `PUT /projects/:id`. |
 | models | `models list` | `commands/models.ts` | Configurable Task Models (Task 12): list the runtime-discovered Claude model catalog (`GET /models`); marks a `(stale)` fallback. |
 | settings | `settings-set-models` | `commands/settings-set-models.ts` | Configurable Task Models (Task 12): set the database-wide default model policy (`PUT /settings/model-policy`). |

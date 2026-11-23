@@ -18,26 +18,35 @@ export function parseProjectId(raw: string): number | null {
 }
 
 /**
- * `tasks project-archive <id> [--reason <text>] [--force]` (WFT #2477).
+ * `tasks project-archive <id> [--reason <text>] [--with-unfinished]` (WFT #2477).
  *
- * `--force` archives although tasks are unfinished, and the server then
- * requires `--reason`. The program already has a global `--force` (skip
- * confirmation prompts), and commander gives a flag of the same name to the
- * program wherever it appears on the line, so the command reads both: either
- * spelling forces the archive. That is safe because a force still needs a
- * reason. A refusal (422) prints the server's message, with the per-status
- * counts, and exits 1.
+ * `--with-unfinished` archives although tasks are unfinished (the API's
+ * `force: true`) and requires `--reason`; without one it is refused here,
+ * before any request. The override has its own name because the program
+ * already has a global `--force` ("skip confirmation prompts"), and commander
+ * gives that flag to the program wherever it appears on the line. The global
+ * `--force` is never read here: it must not turn an ordinary archive (a
+ * reason is legitimate on one) into a forced one, nor make a clean archive
+ * of a finished project need a reason. A refusal (422) prints the server's
+ * message, with the per-status counts, and exits 1.
  */
 export const projectArchiveCommand = new Command('project-archive')
   .description('Archive a project: hide it from default listings and make it read-only')
   .argument('<id>', 'Project ID to archive')
-  .option('-r, --reason <text>', 'Why the project is archived (required with --force)')
-  .option('--force', 'Archive although tasks are still unfinished (needs --reason)')
-  .action(async (idStr: string, options: { reason?: string; force?: boolean }) => {
+  .option('-r, --reason <text>', 'Why the project is archived (required with --with-unfinished)')
+  .option('--with-unfinished', 'Archive although tasks are still unfinished (requires --reason)')
+  .action(async (idStr: string, options: { reason?: string; withUnfinished?: boolean }) => {
     try {
       const id = parseProjectId(idStr);
       if (id === null) {
         console.error(colorError('Invalid project ID: must be a positive whole number'));
+        process.exitCode = 1;
+        return;
+      }
+      if (options.withUnfinished === true && options.reason === undefined) {
+        console.error(
+          colorError('--with-unfinished requires --reason: say why unfinished work is archived'),
+        );
         process.exitCode = 1;
         return;
       }
@@ -47,7 +56,7 @@ export const projectArchiveCommand = new Command('project-archive')
       if (options.reason !== undefined) {
         body.reason = options.reason;
       }
-      if (options.force === true || globalOpts['force'] === true) {
+      if (options.withUnfinished === true) {
         body.force = true;
       }
 
