@@ -224,10 +224,12 @@ const HELP_BLOCKS: KnownBlock[] = [
       type: 'mrkdwn',
       text: [
         '*Project commands*',
-        '`/tasks project-list`',
+        '`/tasks project-list [--all]`',
         '`/tasks project-show <id>`',
         '`/tasks project-create <name>`',
         '`/tasks project-update <id> --name <name>`',
+        '`/tasks project-archive <id> [reason]`',
+        '`/tasks project-unarchive <id>`',
         '`/tasks project-delete <id>`',
       ].join('\n'),
     },
@@ -526,12 +528,112 @@ async function handleClaim(
 // ---------------------------------------------------------------------------
 
 /**
- * handleProjectList — /tasks project-list
+ * handleProjectList — /tasks project-list [--all]
+ *
+ * Archived projects are hidden unless `--all` is given (Archived project
+ * state, design §2.5). Anything else on the line is a usage error rather than
+ * being ignored, so a mistyped flag cannot pass for the default listing.
  */
-async function handleProjectList(respond: RespondFn, services: Services): Promise<void> {
-  const projects = services.projectService.listProjects();
+async function handleProjectList(
+  respond: RespondFn,
+  services: Services,
+  args: string[],
+): Promise<void> {
+  const includeArchived = args.length === 1 && args[0] === '--all';
+  if (args.length > 0 && !includeArchived) {
+    await respondError(
+      respond,
+      'Unknown option for project-list.',
+      'Usage: `/tasks project-list [--all]`',
+    );
+    return;
+  }
+  const projects = services.projectService.listProjects({
+    archived: includeArchived ? 'include' : 'exclude',
+  });
   const blocks = formatProjectList(projects);
   await respondBlocks(respond, blocks, `Projects (${projects.length})`);
+}
+
+/**
+ * Parse a project id that must be the whole token: `5` yes, `5abc` no.
+ * The archive commands change state, so a typo must not resolve to another
+ * project the way `parseInt` would.
+ */
+function parseStrictId(token: string | undefined): number | null {
+  if (token === undefined || !/^\d+$/.test(token)) {
+    return null;
+  }
+  const id = Number(token);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/** A one-line success confirmation block. */
+function confirmation(text: string): KnownBlock[] {
+  return [
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:white_check_mark: ${text}` },
+    } as KnownBlock,
+  ];
+}
+
+/**
+ * handleProjectArchive — /tasks project-archive <id> [reason]
+ *
+ * Everything after the id is the reason, taken verbatim (no flags). The actor
+ * recorded as `archived_by` is the Slack user's display name. There is no
+ * force from Slack: a project with unfinished tasks is refused by the service
+ * and the refusal is shown.
+ */
+async function handleProjectArchive(
+  respond: RespondFn,
+  services: Services,
+  identityCache: UserIdentityCache,
+  command: SlashCommand,
+  args: string[],
+): Promise<void> {
+  const id = parseStrictId(args[0]);
+  if (id === null) {
+    await respondError(
+      respond,
+      'Project ID required.',
+      'Usage: `/tasks project-archive <id> [reason]`',
+    );
+    return;
+  }
+  const reason = args.slice(1).join(' ');
+  const actor = await identityCache.resolve(command.user_id);
+  const project = services.projectService.archiveProject(id, reason ? { reason } : {}, actor);
+  await respondBlocks(
+    respond,
+    [...confirmation(`Project #${id} archived.`), ...formatProjectDetail(project)],
+    `Project #${id} archived`,
+  );
+}
+
+/**
+ * handleProjectUnarchive — /tasks project-unarchive <id>
+ */
+async function handleProjectUnarchive(
+  respond: RespondFn,
+  services: Services,
+  identityCache: UserIdentityCache,
+  command: SlashCommand,
+  args: string[],
+): Promise<void> {
+  const id = parseStrictId(args[0]);
+  if (id === null || args.length > 1) {
+    await respondError(respond, 'Project ID required.', 'Usage: `/tasks project-unarchive <id>`');
+    return;
+  }
+  const actor = await identityCache.resolve(command.user_id);
+  const project = services.projectService.unarchiveProject(id, actor);
+  await respondBlocks(
+    respond,
+    [...confirmation(`Project #${id} unarchived.`), ...formatProjectDetail(project)],
+    `Project #${id} unarchived`,
+  );
 }
 
 /**
@@ -1254,7 +1356,13 @@ export function registerTasksCommand(
 
           // ── Project commands ───────────────────────────────────────────────────
           case 'project-list':
-            await handleProjectList(respond, services);
+            await handleProjectList(respond, services, args);
+            break;
+          case 'project-archive':
+            await handleProjectArchive(respond, services, identityCache, command, args);
+            break;
+          case 'project-unarchive':
+            await handleProjectUnarchive(respond, services, identityCache, command, args);
             break;
           case 'project-show':
             await handleProjectShow(respond, services, args);

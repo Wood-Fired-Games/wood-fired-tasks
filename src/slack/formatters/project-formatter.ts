@@ -53,7 +53,9 @@ export function formatProjectList(projects: Project[]): KnownBlock[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*#${project.id} ${escapeSlackMrkdwn(project.name)}*\n${descPreview}`,
+        text: `*#${project.id} ${escapeSlackMrkdwn(project.name)}*${
+          project.archived ? ' _(archived)_' : ''
+        }\n${descPreview}`,
       },
     };
     blocks.push(section);
@@ -78,7 +80,7 @@ export function formatProjectList(projects: Project[]): KnownBlock[] {
  * Returns:
  *   - HeaderBlock: project name (truncated to 150 chars, plain_text, emoji: true)
  *   - SectionBlock with fields: ID, Description (truncated to 200 chars or "_none_"),
- *     Created, Updated
+ *     Created, Updated, and Archived (date, actor, reason) when the project is archived
  */
 export function formatProjectDetail(project: Project): KnownBlock[] {
   const nameText = project.name.length > 147 ? project.name.slice(0, 147) + '...' : project.name;
@@ -105,6 +107,19 @@ export function formatProjectDetail(project: Project): KnownBlock[] {
       { type: 'mrkdwn', text: `*Updated*\n${project.updated_at}` },
     ],
   };
+
+  // Archived project state: when, by whom and (if given) why. The actor and
+  // the reason are user-supplied text, so both are escaped.
+  if (project.archived) {
+    const by = project.archived_by ? ` by ${escapeSlackMrkdwn(project.archived_by)}` : '';
+    const reason = project.archive_reason
+      ? `\n_${escapeSlackMrkdwn(truncate(project.archive_reason, 200))}_`
+      : '';
+    fieldsSection.fields?.push({
+      type: 'mrkdwn',
+      text: `*Archived*\n${project.archived_at ?? 'unknown'}${by}${reason}`,
+    });
+  }
 
   return [header, fieldsSection];
 }

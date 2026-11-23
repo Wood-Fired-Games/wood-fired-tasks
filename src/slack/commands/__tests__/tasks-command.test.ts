@@ -138,6 +138,8 @@ function makeMockServices(): Services {
       getProject: vi.fn().mockReturnValue(makeMockProject()),
       createProject: vi.fn().mockReturnValue(makeMockProject()),
       updateProject: vi.fn().mockReturnValue(makeMockProject()),
+      archiveProject: vi.fn().mockReturnValue(makeMockProject({ archived: true })),
+      unarchiveProject: vi.fn().mockReturnValue(makeMockProject()),
       deleteProject: vi.fn().mockReturnValue(undefined),
     } as unknown as Services['projectService'],
     dependencyService: {
@@ -892,6 +894,199 @@ describe('registerTasksCommand', () => {
       expect(respondArg.blocks[0]?.text?.text).toContain(':white_check_mark:');
       expect(respondArg.blocks[0]?.text?.text).toContain('5');
       expect(respondArg.blocks[0]?.text?.text).toContain('deleted');
+    });
+  });
+
+  // ── archived project state (WFT #2480) ─────────────────────────────────────
+
+  describe('archived project state', () => {
+    let app: ReturnType<typeof makeMockApp>;
+    let services: Services;
+    let identityCache: ReturnType<typeof makeMockIdentityCache>;
+
+    type Responded = {
+      response_type: string;
+      text: string;
+      blocks: Array<{
+        type: string;
+        text?: { text: string };
+        fields?: Array<{ text: string }>;
+      }>;
+    };
+
+    beforeEach(() => {
+      app = makeMockApp();
+      services = makeMockServices();
+      identityCache = makeMockIdentityCache();
+      registerTasksCommand(app as unknown as App, services, identityCache);
+    });
+
+    async function run(text: string): Promise<Responded> {
+      const args = makeHandlerArgs(text);
+      await getHandler(app)(args);
+      expect(args.ack).toHaveBeenCalledOnce();
+      expect(args.respond).toHaveBeenCalledOnce();
+      return args.respond.mock.calls[0]![0] as Responded;
+    }
+
+    const archivedProject = makeMockProject({
+      archived: true,
+      archived_at: '2026-11-23T12:00:00.000Z',
+      archived_by: 'Alice',
+      archive_reason: null,
+    });
+
+    describe('/tasks project-archive', () => {
+      it('archives the project as the Slack user and confirms', async () => {
+        vi.mocked(services.projectService.archiveProject).mockReturnValue(archivedProject);
+
+        const responded = await run('project-archive 5');
+
+        expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
+        expect(services.projectService.archiveProject).toHaveBeenCalledWith(5, {}, 'Alice');
+        expect(responded.response_type).toBe('ephemeral');
+        expect(responded.text).toBe('Project #5 archived');
+        expect(responded.blocks[0]?.text?.text).toContain(':white_check_mark:');
+        expect(responded.blocks[0]?.text?.text).toContain('Project #5 archived');
+      });
+
+      it('passes the rest of the line as the reason', async () => {
+        vi.mocked(services.projectService.archiveProject).mockReturnValue(archivedProject);
+
+        await run('project-archive 5 shipped in the spring release');
+
+        expect(services.projectService.archiveProject).toHaveBeenCalledWith(
+          5,
+          { reason: 'shipped in the spring release' },
+          'Alice',
+        );
+      });
+
+      it('keeps a reason word that starts with two dashes', async () => {
+        vi.mocked(services.projectService.archiveProject).mockReturnValue(archivedProject);
+
+        await run('project-archive 5 superseded --force was considered');
+
+        expect(services.projectService.archiveProject).toHaveBeenCalledWith(
+          5,
+          { reason: 'superseded --force was considered' },
+          'Alice',
+        );
+      });
+
+      it('responds with a usage error when no id is given', async () => {
+        const responded = await run('project-archive');
+
+        expect(services.projectService.archiveProject).not.toHaveBeenCalled();
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+        expect(responded.blocks[0]?.text?.text).toContain('/tasks project-archive <id> [reason]');
+      });
+
+      it('rejects an id with trailing characters instead of archiving another project', async () => {
+        const responded = await run('project-archive 5abc');
+
+        expect(services.projectService.archiveProject).not.toHaveBeenCalled();
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+      });
+
+      it('shows the refusal when the project still has unfinished tasks', async () => {
+        vi.mocked(services.projectService.archiveProject).mockImplementation(() => {
+          throw new BusinessError(
+            'project_has_unfinished_tasks: project 5 has 2 unfinished task(s)',
+          );
+        });
+
+        const responded = await run('project-archive 5');
+
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+        expect(responded.blocks[0]?.text?.text).toContain('project_has_unfinished_tasks');
+      });
+
+      it('shows not-found for an unknown project', async () => {
+        vi.mocked(services.projectService.archiveProject).mockImplementation(() => {
+          throw new NotFoundError('Project', 99);
+        });
+
+        const responded = await run('project-archive 99');
+
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+        expect(responded.blocks[0]?.text?.text).toContain('99');
+      });
+    });
+
+    describe('/tasks project-unarchive', () => {
+      it('unarchives the project as the Slack user and confirms', async () => {
+        vi.mocked(services.projectService.unarchiveProject).mockReturnValue(makeMockProject());
+
+        const responded = await run('project-unarchive 5');
+
+        expect(identityCache.resolve).toHaveBeenCalledWith('U0123ABC');
+        expect(services.projectService.unarchiveProject).toHaveBeenCalledWith(5, 'Alice');
+        expect(responded.response_type).toBe('ephemeral');
+        expect(responded.text).toBe('Project #5 unarchived');
+        expect(responded.blocks[0]?.text?.text).toContain(':white_check_mark:');
+      });
+
+      it('responds with a usage error when no id is given', async () => {
+        const responded = await run('project-unarchive');
+
+        expect(services.projectService.unarchiveProject).not.toHaveBeenCalled();
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+        expect(responded.blocks[0]?.text?.text).toContain('/tasks project-unarchive <id>');
+      });
+
+      it('shows not-found for an unknown project', async () => {
+        vi.mocked(services.projectService.unarchiveProject).mockImplementation(() => {
+          throw new NotFoundError('Project', 99);
+        });
+
+        const responded = await run('project-unarchive 99');
+
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+      });
+    });
+
+    describe('/tasks project-list', () => {
+      it('hides archived projects by default', async () => {
+        await run('project-list');
+
+        expect(services.projectService.listProjects).toHaveBeenCalledWith({ archived: 'exclude' });
+      });
+
+      it('project-list --all includes archived projects and marks them', async () => {
+        vi.mocked(services.projectService.listProjects).mockReturnValue([
+          makeMockProject({ id: 1, name: 'Alpha', archived: false }),
+          { ...archivedProject, id: 2, name: 'Beta' },
+        ] as ReturnType<Services['projectService']['listProjects']>);
+
+        const responded = await run('project-list --all');
+
+        expect(services.projectService.listProjects).toHaveBeenCalledWith({ archived: 'include' });
+        const sections = responded.blocks
+          .filter((block) => block.type === 'section')
+          .map((block) => block.text?.text ?? '');
+        expect(sections[0]).toContain('#1 Alpha');
+        expect(sections[0]).not.toContain('archived');
+        expect(sections[1]).toContain('#2 Beta');
+        expect(sections[1]).toContain('_(archived)_');
+      });
+
+      it('rejects an unknown flag instead of silently listing', async () => {
+        const responded = await run('project-list --archived');
+
+        expect(services.projectService.listProjects).not.toHaveBeenCalled();
+        expect(responded.blocks[0]?.text?.text).toContain(':x:');
+        expect(responded.blocks[0]?.text?.text).toContain('/tasks project-list [--all]');
+      });
+    });
+
+    it('help lists the two new subcommands and the --all flag', async () => {
+      const responded = await run('help');
+
+      const helpText = responded.blocks.map((block) => block.text?.text ?? '').join('\n');
+      expect(helpText).toContain('`/tasks project-list [--all]`');
+      expect(helpText).toContain('`/tasks project-archive <id> [reason]`');
+      expect(helpText).toContain('`/tasks project-unarchive <id>`');
     });
   });
 

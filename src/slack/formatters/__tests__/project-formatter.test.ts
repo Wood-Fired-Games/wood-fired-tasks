@@ -239,3 +239,81 @@ describe('Slack mrkdwn escaping', () => {
     expect(idField?.text).not.toContain('&amp;');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Archived project state (WFT #2480)
+// ---------------------------------------------------------------------------
+
+describe('archived project state', () => {
+  const archived = {
+    archived: true,
+    archived_at: '2026-11-23T12:00:00.000Z',
+    archived_by: 'Alice',
+    archive_reason: 'shipped',
+  };
+
+  function detailFields(project: Project): string[] {
+    const fieldsSection = formatProjectDetail(project)[1] as { fields: Array<{ text: string }> };
+    return fieldsSection.fields.map((field) => field.text);
+  }
+
+  function listSections(projects: Project[]): string[] {
+    return formatProjectList(projects)
+      .filter((block) => block.type === 'section')
+      .map((block) => (block as { text: { text: string } }).text.text);
+  }
+
+  it('formatProjectDetail shows an Archived field with date, actor and reason', () => {
+    const fields = detailFields(makeProject(archived));
+
+    expect(fields).toContain('*Archived*\n2026-11-23T12:00:00.000Z by Alice\n_shipped_');
+  });
+
+  it('formatProjectDetail omits the reason line when none was given', () => {
+    const fields = detailFields(makeProject({ ...archived, archive_reason: null }));
+
+    expect(fields).toContain('*Archived*\n2026-11-23T12:00:00.000Z by Alice');
+  });
+
+  it('formatProjectDetail has no Archived field for a project that is not archived', () => {
+    const notArchived = makeProject({
+      archived: false,
+      archived_at: null,
+      archived_by: null,
+      archive_reason: null,
+    });
+
+    for (const project of [makeProject(), notArchived]) {
+      expect(detailFields(project).some((field) => field.includes('*Archived*'))).toBe(false);
+      expect(detailFields(project)).toHaveLength(4);
+    }
+  });
+
+  it('formatProjectDetail escapes the actor and the reason, and truncates a long reason', () => {
+    const fields = detailFields(
+      makeProject({
+        ...archived,
+        archived_by: '<!channel>',
+        archive_reason: `<@U1> ${'x'.repeat(300)}`,
+      }),
+    );
+    const field = fields.find((text) => text.includes('*Archived*')) ?? '';
+
+    expect(field).toContain('by &lt;!channel&gt;');
+    expect(field).toContain('&lt;@U1&gt;');
+    expect(field).not.toContain('<@U1>');
+    expect(field).toContain('...');
+    expect(field.length).toBeLessThan(300);
+  });
+
+  it('formatProjectList marks an archived project and leaves the others alone', () => {
+    const sections = listSections([
+      makeProject({ id: 1, name: 'Alpha' }),
+      makeProject({ id: 2, name: 'Beta', ...archived }),
+    ]);
+
+    expect(sections[0]).toContain('*#1 Alpha*\n');
+    expect(sections[0]).not.toContain('archived');
+    expect(sections[1]).toContain('*#2 Beta* _(archived)_\n');
+  });
+});
