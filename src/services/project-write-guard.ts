@@ -18,7 +18,20 @@ export function assertProjectWritable(
   projectRepo: Pick<IProjectRepository, 'findById'>,
   projectId: number,
 ): void {
-  if (projectRepo.findById(projectId)?.archived === true) {
+  if (isProjectArchived(projectRepo, projectId)) {
     throw projectArchivedError(projectId);
   }
+}
+
+/**
+ * The non-throwing form of the same test, for internal callers that must
+ * decide up front NOT to attempt a write (the workflow cascade) instead of
+ * attempting it and handling the refusal. A project that does not exist is
+ * not archived.
+ */
+export function isProjectArchived(
+  projectRepo: Pick<IProjectRepository, 'findById'>,
+  projectId: number,
+): boolean {
+  return projectRepo.findById(projectId)?.archived === true;
 }

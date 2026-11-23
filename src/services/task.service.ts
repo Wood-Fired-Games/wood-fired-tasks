@@ -36,7 +36,7 @@ import {
   type VerificationEvidence as VerificationEvidenceInput,
 } from '../schemas/task.schema.js';
 import { ValidationError, BusinessError, NotFoundError } from './errors.js';
-import { assertProjectWritable } from './project-write-guard.js';
+import { assertProjectWritable, isProjectArchived } from './project-write-guard.js';
 import type { DependencyService } from './dependency.service.js';
 import { FtsSyntaxError } from '../repositories/errors.js';
 import { eventBus } from '../events/event-bus.js';
@@ -230,6 +230,16 @@ export class TaskService {
    */
   private assertProjectWritable(projectId: number): void {
     assertProjectWritable(this.projectRepo, projectId);
+  }
+
+  /**
+   * Archived project state: the same test as the write guard, without the
+   * throw. The workflow engine asks this BEFORE a cascade write so it can
+   * skip a target in an archived project instead of having `updateTask`
+   * refuse it mid-cascade (which would roll the whole cascade back).
+   */
+  isProjectArchived(projectId: number): boolean {
+    return isProjectArchived(this.projectRepo, projectId);
   }
 
   /**
@@ -789,8 +799,10 @@ export class TaskService {
       throw new NotFoundError('Task', id);
     }
     // Archived project state: no task writes in a frozen project — whatever
-    // the `source`. A workflow cascade that reaches into an archived project
-    // is refused like any other write (the engine isolates the error).
+    // the `source`. The workflow engine does NOT isolate a refusal: any throw
+    // inside a cascade rolls the whole cascade transaction back. So the
+    // engine checks `isProjectArchived` first and skips such a target; this
+    // guard is the backstop, not the mechanism.
     this.assertProjectWritable(existing.project_id);
 
     // task #608 (PIECE A) / #1624 (M2 audit finding): server-side

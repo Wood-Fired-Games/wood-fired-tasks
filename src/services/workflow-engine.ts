@@ -20,6 +20,11 @@ import type { TaskEvent } from '../events/types.js';
  *   stack. The cascadeDepth counter accurately tracks recursion depth.
  * - Workflow-triggered updates carry source: 'workflow' attribution.
  * - Parents in 'blocked' or 'closed' status are skipped (invalid transition to 'done').
+ * - Archived project state: a cascade target (a task to unblock, a parent to
+ *   complete) whose project is archived is SKIPPED before any write. The
+ *   service refuses writes in an archived project, and a refusal thrown
+ *   mid-cascade would roll back the whole transaction — losing the unblocks
+ *   and completions in live projects too. A skipped target is not an error.
  * - Cascade depth counts actual auto-completions and auto-unblocks, not intermediate transitions.
  *
  * Transaction atomicity (SC-5):
@@ -200,6 +205,11 @@ export class WorkflowEngine {
       return;
     }
 
+    // Skip a parent in an archived project (frozen; see class doc).
+    if (this.taskService.isProjectArchived(parent.project_id)) {
+      return;
+    }
+
     // Increment cascade depth for this parent auto-completion
     this.cascadeDepth++;
     try {
@@ -254,6 +264,12 @@ export class WorkflowEngine {
 
       // Only unblock tasks that are currently 'blocked'
       if (blockedTask.status !== 'blocked') {
+        continue;
+      }
+
+      // Skip a dependent in an archived project: it stays blocked and the
+      // rest of the cascade carries on (frozen; see class doc).
+      if (this.taskService.isProjectArchived(blockedTask.project_id)) {
         continue;
       }
 
