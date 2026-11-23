@@ -108,14 +108,10 @@ REST API. Remote MCP (`src/mcp/remote/`) is the same pattern. Local MCP
    writes with 422 `project_archived`; `ProjectService.updateProject` refuses
    too. Comments and project deletion stay allowed. The `WorkflowEngine`
    cascade skips targets in an archived project instead of failing.
-4. After an unarchive commits, `ProjectService.unarchiveProject` calls the
-   `WorkflowEngine` directly (bound with `setUnarchiveReevaluator`):
-   `reevaluateProject` opens blocked tasks whose blockers are all done and
-   completes parents whose children are all done, one transaction per task.
-   The ids that rolled back are returned as `reevaluation_failed_task_ids` and
-   remembered in memory. A repeat (no-op) unarchive calls `retryFailedTasks`,
-   which retries only those ids (or finishes a pass a thrown query left
-   unfinished). Nothing survives a restart (WFT #2553 tracks a table).
+4. After an unarchive commits, `ProjectService.unarchiveProject` calls
+   `WorkflowEngine.reevaluateProject` directly (one transaction per task);
+   a repeat unarchive calls `retryFailedTasks`, which retries only the ids
+   remembered in memory. Rules: [design §2.4](design/project-archived-state.md#24-unarchive).
 
 ### WSJF scoring / ranking
 

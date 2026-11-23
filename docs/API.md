@@ -417,9 +417,9 @@ curl -X DELETE http://localhost:3000/api/v1/projects/1 \
 
 ### Archived projects
 
-A finished project can be **archived** instead of deleted. It stays readable by
-id, drops out of default listings, and stops accepting work. It can be
-unarchived at any time.
+A finished project can be **archived** instead of deleted, and unarchived at
+any time. Design of record:
+[project-archived-state.md](design/project-archived-state.md).
 
 - **Fields.** Every project response carries `archived` (boolean),
   `archived_at` (ISO timestamp), `archived_by` (the caller who archived it,
@@ -482,41 +482,22 @@ curl -X POST http://localhost:3000/api/v1/projects/7/archive \
 
 Return an archived project to normal use. No request body.
 
-**Response:** 200 OK: the project plus `reevaluation_failed_task_ids`.
+**Response:** 200 OK: the project (with `archived: false` and the three
+archive fields `null`) plus `"reevaluation_failed_task_ids": []`.
 
-```json
-{
-  "id": 7,
-  "name": "Project Alpha",
-  "archived": false,
-  "archived_at": null,
-  "archived_by": null,
-  "archive_reason": null,
-  "reevaluation_failed_task_ids": [],
-  "created_at": "2026-02-14T12:00:00.000Z",
-  "updated_at": "2026-11-23T12:00:00.000Z"
-}
-```
-
-While a project is archived, the workflow cascade skips its tasks. So after an
-unarchive the server re-evaluates the project once: each `blocked` task whose
-blockers are all `done` becomes `open`, and each `open` or `in_progress` parent
-whose children are all `done` is completed, with the usual `task.updated` and
-`task.status_changed` events (`source: "workflow"`). Each task is re-evaluated
-on its own; if one fails, the others still change and the unarchive still
-succeeds. `reevaluation_failed_task_ids` names the tasks that kept their old
-state (empty on a clean pass). A client must treat a response **without** the
-field (a server older than this feature) as "result unknown", not as "nothing
-failed".
+While a project is archived the workflow cascade skips its tasks, so the
+unarchive then re-evaluates it once: `blocked` tasks whose blockers are all
+`done` become `open`, and open parents whose children are all `done` are
+completed (`source: "workflow"`, usual events). Each task is re-evaluated on
+its own; `reevaluation_failed_task_ids` names those that kept their old state
+(empty on a clean pass). A response **without** the field (an older server)
+means "unknown", not "nothing failed".
 
 Unarchiving a project that is not archived returns it unchanged, sends no
-event and does **not** run the re-evaluation again: it only retries the tasks
-whose re-evaluation failed earlier **in this server process** (or finishes a
-pass an earlier error left unfinished). On a project that was never archived,
-or with nothing to retry, it changes nothing. Nothing is remembered across a
-server restart; after one, the way to re-run the re-evaluation is to archive
-the project again (with `force` and a reason if it has unfinished tasks) and
-unarchive it.
+event and does **not** re-run the pass: it only retries tasks that failed
+earlier **in this server process**. After a restart nothing is remembered;
+archive and unarchive again instead. Full rules:
+[design §2.4](design/project-archived-state.md#24-unarchive).
 
 | Status | When |
 |--------|------|

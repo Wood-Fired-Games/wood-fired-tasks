@@ -463,7 +463,6 @@ project shown with `--include-archived` is marked `[archived]` after its name.
 
 ```bash
 tasks project-list
-tasks project-list --include-archived
 ```
 
 **Options:**
@@ -552,58 +551,33 @@ Project #1 deleted successfully
 
 ### tasks project-archive <id>
 
-Archive a finished project instead of deleting it. It drops out of default
-listings and becomes read-only: its tasks stay readable by id and comments
-can still be added, but every other change is refused (`project_archived`)
-until it is unarchived. Archiving an already archived project changes nothing.
-
-**Example:**
+Archive a finished project instead of deleting it: it leaves default listings
+and becomes read-only until unarchived (what that means:
+[API.md, Archived projects](API.md#archived-projects)). Needs the `write` scope.
 
 ```bash
-tasks project-archive 7
-tasks project-archive 7 --reason "Shipped in 2.10.0"
 tasks project-archive 7 --with-unfinished --reason "Abandoned; tracked in project 9"
 ```
-
-**Options:**
 
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
 | --reason | -r | string | Why the project is archived (1-500 characters; required with `--with-unfinished`) |
-| --with-unfinished | | flag | Archive although tasks are still unfinished. Requires `--reason`; without one the command exits 1 before sending anything. Task statuses are not changed. |
+| --with-unfinished | | flag | Archive although tasks are unfinished; task statuses are not changed. Without `--reason` the command exits 1 before sending anything. |
 
-While any task is `open`, `in_progress`, `blocked` or `backlogged`, the server
-refuses the archive and the command prints the count per status and exits 1;
-add `--with-unfinished --reason <text>` to archive anyway. The global `--force`
-only skips prompts and never forces an archive. Needs a token with the
-`write` scope.
-
+Without `--with-unfinished`, a project with `open`, `in_progress`, `blocked`
+or `backlogged` tasks is refused: the command prints the count per status and
+exits 1. The global `--force` only skips prompts and never forces an archive.
 **JSON output:** the project is under `.data.project`.
 
 ### tasks project-unarchive <id>
 
-Return an archived project to default listings and allow changes again.
-Unarchiving a project that is not archived changes nothing.
-
-**Example:**
-
-```bash
-tasks project-unarchive 7
-```
-
-While the project was archived, tasks whose blockers finished stayed
-`blocked`, and parents whose children all finished stayed open. The server
-re-evaluates the project once on unarchive and opens or completes them. If
-some of them could not be re-evaluated, the command still exits 0 but prints
-a warning on stderr naming those tasks; run `tasks project-unarchive <id>`
-again to retry them. The retry works only while the server has not restarted
-since; after a restart, archive the project again (with `--with-unfinished
---reason` if it has unfinished tasks) and unarchive it. If the server is
-older than this client and does not report the result, stderr carries a note
-saying so instead: that means "unknown", not "nothing failed".
-
-**JSON output:** the project, including `reevaluation_failed_task_ids`, is
-under `.data.project`; no warning is printed under `--json`, so read the field.
+Return an archived project to normal use; the server then re-evaluates its
+held-back tasks ([API.md](API.md#post-apiv1projectsidunarchive)). If some
+could not be re-evaluated, the command still exits 0 and prints a warning on
+stderr naming them; running it again retries them, but only until the server
+restarts. A note on stderr that the server did not report the result (an
+older server) means "unknown", not "nothing failed". Under `--json` nothing is
+printed on stderr: read `reevaluation_failed_task_ids` in `.data.project`.
 
 ## Model Commands
 

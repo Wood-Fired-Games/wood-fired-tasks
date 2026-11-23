@@ -180,7 +180,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     // exactly 300/300, leaving no room for any subsequent edit; 50 lines of
     // headroom lets the freshness rule (#281) stay useful without forcing a
     // split today. Tighten back to 300 once a future task trims the doc.
-    line_budget: 350,
+    // 350 -> 380 by WFT #2484 (archived project state): the doc was at
+    // 349/350 and the archive / unarchive mutation flow took it to 374.
+    line_budget: 380,
     authority: 'authoritative',
     owner_role: 'Repository maintainers',
     status: 'present',
@@ -223,7 +225,9 @@ export const MANIFEST_SOURCE: readonly ManifestSourceEntry[] = [
     role: 'deep-doc',
     purpose: 'Authoritative REST API reference.',
     when_to_read: 'on-demand',
-    line_budget: 1650,
+    // 1650 -> 1730 by WFT #2484 (archived project state): the archive and
+    // unarchive routes, the 422 business-rule format and the `archived` filter.
+    line_budget: 1730,
     authority: 'authoritative',
     owner_role: 'API maintainers',
     status: 'present',

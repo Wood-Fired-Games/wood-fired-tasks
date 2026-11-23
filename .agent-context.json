@@ -2,7 +2,7 @@
   "$schema_version": "1",
   "_generated": {
     "by": "scripts/agent-context/generate.ts",
-    "generated_at": "2026-11-23T23:37:26.157Z",
+    "generated_at": "2026-11-23T23:39:18.356Z",
     "do_not_edit": "Regenerate with `npm run agent-context:gen` after changing scripts/agent-context/manifest.ts."
   },
   "project": {
@@ -58,13 +58,13 @@
       "role": "architecture-one-pager",
       "purpose": "System one-pager: data flow across API, MCP, CLI, Slack, DB. Boundaries, not internals.",
       "when_to_read": "second",
-      "line_budget": 350,
+      "line_budget": 380,
       "authority": "authoritative",
       "owner_role": "Repository maintainers",
       "status": "present",
-      "approx_token_budget": 7000,
-      "actual_lines": 378,
-      "sha256": "26bfa25f2a56b0eace50a1ea4bc8f43dc746c8ba474be5b44349a13323522ed3",
+      "approx_token_budget": 7600,
+      "actual_lines": 374,
+      "sha256": "0044bdae0e8170c7eb940831ff688a746125e0f4ea57145ff6ce7eb2cecf1efc",
       "actual_owner": "Repository maintainers"
     },
     {
@@ -115,14 +115,14 @@
       "role": "deep-doc",
       "purpose": "Authoritative REST API reference.",
       "when_to_read": "on-demand",
-      "line_budget": 1650,
+      "line_budget": 1730,
       "authority": "authoritative",
       "owner_role": "API maintainers",
       "status": "present",
       "notes": "Advisory budget — currently exceeds the contract target; tighten in a follow-up.",
-      "approx_token_budget": 33000,
-      "actual_lines": 1743,
-      "sha256": "047f5093d5ad016e9ea4c64657ed89a24b8cb34960cebb72f990fd528f75745d"
+      "approx_token_budget": 34600,
+      "actual_lines": 1724,
+      "sha256": "5a7f62df5b0dec2c030d61e9c330823de12ba9032245068efd100dcef922f31c"
     },
     {
       "path": "docs/MCP.md",
@@ -149,8 +149,8 @@
       "status": "present",
       "notes": "Advisory budget — tighten in a follow-up.",
       "approx_token_budget": 39000,
-      "actual_lines": 2028,
-      "sha256": "f2f36200e58aad4cdc04c0ab1ae2764d15e3ce22226e375ea281189ce0d51f12"
+      "actual_lines": 2002,
+      "sha256": "6ea09a4649d93083dfc78edc3909c182408a6d71ffa1183417a0870e1fd31dc1"
     },
     {
       "path": "docs/SETUP.md",
