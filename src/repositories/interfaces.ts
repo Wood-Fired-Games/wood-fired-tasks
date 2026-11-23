@@ -129,6 +129,19 @@ export interface ITaskRepository {
    * result, zero included. Backs the archive precondition.
    */
   countNonTerminalByStatus(projectId: number): NonTerminalTaskCounts;
+  /**
+   * Ids (ascending) of one project's `blocked` tasks that have at least one
+   * blocker and whose blockers are ALL `done`, whatever project the blockers
+   * are in. A task blocked by hand (no dependency edge) is not returned.
+   * Backs the re-evaluation that follows an unarchive.
+   */
+  findUnblockableIds(projectId: number): number[];
+  /**
+   * Ids (ascending) of one project's `open` or `in_progress` tasks that have
+   * at least one child and whose children are ALL `done`, whatever project
+   * the children are in. Backs the re-evaluation that follows an unarchive.
+   */
+  findCompletableParentIds(projectId: number): number[];
   /** Total children count for a parent task, ignoring pagination. */
   countChildren(parentId: number): number;
   /**

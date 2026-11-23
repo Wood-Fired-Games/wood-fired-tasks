@@ -75,6 +75,28 @@ Supported. It clears all three columns; the history stays in the audit trail
 and the event stream. Project names stay unique while archived, so an archived
 name cannot be reused without renaming after unarchive.
 
+**Unarchive leaves the project in the state it would have had** (WFT #2522).
+While a project is archived the workflow cascade skips its tasks, so after a
+forced archive a task can stay `blocked` although every blocker has finished,
+and a parent can stay open although every child is done. When an unarchive
+actually changes the project, the workflow engine — as a subscriber to
+`project.unarchived`, after the unarchive has committed — re-evaluates that
+project once, in one transaction:
+
+- each `blocked` task that has at least one blocker, all of them `done`,
+  becomes `open`;
+- each `open` or `in_progress` parent that has at least one child, all of them
+  `done`, is auto-completed, and the normal cascade carries on from it (its
+  own parent, the tasks it blocks).
+
+These writes carry `source: 'workflow'` and emit the usual `task.updated` and
+`task.status_changed` events. A task blocked by hand (no dependency edge), a
+task with an unfinished blocker, and a `blocked`, `backlogged` or `closed`
+parent are left alone. The pass is idempotent, a repeated unarchive emits no
+event and so runs nothing, and a project archived again before the event is
+handled is skipped. If any write in the pass fails, the whole pass rolls back
+and is logged; the project stays unarchived.
+
 ### 2.5 Default visibility
 
 One parameter, `archived`, with values `exclude` (default), `include`, `only`,

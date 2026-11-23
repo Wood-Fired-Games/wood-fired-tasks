@@ -4,6 +4,7 @@ import { initDatabase } from '../../db/database.js';
 import { runMigrations } from '../../db/migrate.js';
 import { ProjectRepository } from '../project.repository.js';
 import { TaskRepository } from '../task.repository.js';
+import { DependencyRepository } from '../dependency.repository.js';
 import { FtsSyntaxError } from '../errors.js';
 import type { CreateTaskDTO, Task } from '../../types/task.js';
 
@@ -633,6 +634,97 @@ describe('TaskRepository', () => {
         blocked: 0,
         backlogged: 0,
       });
+    });
+  });
+
+  describe('findUnblockableIds', () => {
+    let otherProjectId: number;
+    let dependencyRepo: DependencyRepository;
+
+    beforeEach(() => {
+      otherProjectId = projectRepo.create({ name: 'Other Project' }).id;
+      dependencyRepo = new DependencyRepository(db);
+    });
+
+    it('returns blocked tasks whose blockers are all done, in id order, across projects', () => {
+      const doneHere = taskRepo.create(createTestTask({ status: 'done' }));
+      const doneElsewhere = taskRepo.create(
+        createTestTask({ status: 'done', project_id: otherProjectId }),
+      );
+      const first = taskRepo.create(createTestTask({ status: 'blocked' }));
+      const second = taskRepo.create(createTestTask({ status: 'blocked' }));
+      dependencyRepo.create({ task_id: doneHere.id, blocks_task_id: first.id });
+      dependencyRepo.create({ task_id: doneElsewhere.id, blocks_task_id: first.id });
+      dependencyRepo.create({ task_id: doneElsewhere.id, blocks_task_id: second.id });
+
+      expect(taskRepo.findUnblockableIds(testProjectId)).toEqual([first.id, second.id]);
+    });
+
+    it('omits a task with any blocker not done, a task blocked by hand, and a task not blocked', () => {
+      const done = taskRepo.create(createTestTask({ status: 'done' }));
+      for (const blockerStatus of [
+        'open',
+        'in_progress',
+        'blocked',
+        'backlogged',
+        'closed',
+      ] as const) {
+        const unfinished = taskRepo.create(createTestTask({ status: blockerStatus }));
+        const blocked = taskRepo.create(createTestTask({ status: 'blocked' }));
+        dependencyRepo.create({ task_id: done.id, blocks_task_id: blocked.id });
+        dependencyRepo.create({ task_id: unfinished.id, blocks_task_id: blocked.id });
+      }
+      taskRepo.create(createTestTask({ status: 'blocked' }));
+      const open = taskRepo.create(createTestTask({ status: 'open' }));
+      dependencyRepo.create({ task_id: done.id, blocks_task_id: open.id });
+
+      expect(taskRepo.findUnblockableIds(testProjectId)).toEqual([]);
+    });
+
+    it('returns only the given project', () => {
+      const done = taskRepo.create(createTestTask({ status: 'done' }));
+      const elsewhere = taskRepo.create(
+        createTestTask({ status: 'blocked', project_id: otherProjectId }),
+      );
+      dependencyRepo.create({ task_id: done.id, blocks_task_id: elsewhere.id });
+
+      expect(taskRepo.findUnblockableIds(testProjectId)).toEqual([]);
+      expect(taskRepo.findUnblockableIds(otherProjectId)).toEqual([elsewhere.id]);
+    });
+  });
+
+  describe('findCompletableParentIds', () => {
+    it('returns open and in_progress parents whose children are all done, across projects', () => {
+      const otherProjectId = projectRepo.create({ name: 'Other Project' }).id;
+      const openParent = taskRepo.create(createTestTask({ status: 'open' }));
+      const startedParent = taskRepo.create(createTestTask({ status: 'in_progress' }));
+      taskRepo.create(createTestTask({ status: 'done', parent_task_id: openParent.id }));
+      taskRepo.create(
+        createTestTask({
+          status: 'done',
+          parent_task_id: startedParent.id,
+          project_id: otherProjectId,
+        }),
+      );
+
+      expect(taskRepo.findCompletableParentIds(testProjectId)).toEqual([
+        openParent.id,
+        startedParent.id,
+      ]);
+      expect(taskRepo.findCompletableParentIds(otherProjectId)).toEqual([]);
+    });
+
+    it('omits a parent with an unfinished child, a childless task, and a parent in any other status', () => {
+      const mixed = taskRepo.create(createTestTask({ status: 'open' }));
+      taskRepo.create(createTestTask({ status: 'done', parent_task_id: mixed.id }));
+      taskRepo.create(createTestTask({ status: 'closed', parent_task_id: mixed.id }));
+      taskRepo.create(createTestTask({ status: 'open' }));
+      for (const parentStatus of ['blocked', 'backlogged', 'done', 'closed'] as const) {
+        const parent = taskRepo.create(createTestTask({ status: parentStatus }));
+        taskRepo.create(createTestTask({ status: 'done', parent_task_id: parent.id }));
+      }
+
+      expect(taskRepo.findCompletableParentIds(testProjectId)).toEqual([]);
     });
   });
 
